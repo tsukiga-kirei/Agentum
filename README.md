@@ -8,10 +8,13 @@ Agentum 是一个面向企业 SOP 场景的智能体装配式工作流平台。
 
 - [项目说明与实现规范](./docs/README.md)
 - [系统架构](./docs/architecture.md)
+- [产品界面分区](./docs/product-surfaces.md)
 - [技术栈建议](./docs/technology-stack.md)
 - [工作流引擎设计](./docs/workflow-engine.md)
+- [AI 交互运行设计](./docs/ai-interaction-runtime.md)
 - [权限模型](./docs/permission-model.md)
 - [前端设计规范](./docs/frontend-guidelines.md)
+- [前端工作流展示规范](./docs/frontend-workflow-visualization.md)
 - [开发规范](./docs/development-standards.md)
 - [Skills 与 MCP 推荐](./docs/skills-and-mcp.md)
 - [项目结构说明](./docs/project-structure.md)

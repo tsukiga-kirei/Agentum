@@ -5,10 +5,13 @@
 本目录用于沉淀 Agentum 的产品、架构和工程规范。
 
 - [architecture.md](./architecture.md)：系统架构、模块边界、核心链路。
+- [product-surfaces.md](./product-surfaces.md)：业务使用区、流程设计工作台、能力管理区、系统管理区的界面分区。
 - [technology-stack.md](./technology-stack.md)：推荐语言、前后端技术栈、React 与 Vue3 对比。
 - [workflow-engine.md](./workflow-engine.md)：工作流定义、节点协议、变量系统、执行状态机。
+- [ai-interaction-runtime.md](./ai-interaction-runtime.md)：智能体运行时、Skills 装配、MCP 调用、知识库检索、Prompt 组装和输出校验。
 - [permission-model.md](./permission-model.md)：角色、资源权限、审计与敏感操作。
 - [frontend-guidelines.md](./frontend-guidelines.md)：前端画布、交互、视觉和组件规范。
+- [frontend-workflow-visualization.md](./frontend-workflow-visualization.md)：工作流步骤、工具调用、追问、并行、用户输入和运行证据链展示规范。
 - [development-standards.md](./development-standards.md)：代码格式、命名、注释、接口与错误规范。
 - [skills-and-mcp.md](./skills-and-mcp.md)：推荐内置 Skills、MCP 服务和智能体模板。
 - [project-structure.md](./project-structure.md)：代码目录、工程骨架和本地开发基础设施。

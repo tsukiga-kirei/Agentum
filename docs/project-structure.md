@@ -57,12 +57,30 @@ React + TypeScript 前端应用。
 
 主要包含：
 
+- 业务使用区
+- 流程设计工作台
+- 能力管理区
+- 系统管理区
+- 运行审计区
 - 工作流画布
 - 节点配置面板
 - 运行态页面
 - 智能体模板库
 - Skills / MCP 资产管理
 - 权限与审计页面
+
+前端建议后续按 `surfaces` 区分产品入口：
+
+```text
+apps/web/src/surfaces/
+  workbench/
+  designer/
+  assets/
+  admin/
+  audit/
+```
+
+`surfaces` 负责页面入口和角色心智，`features` 负责可复用业务能力。
 
 ### 3.2 apps/api
 
