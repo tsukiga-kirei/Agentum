@@ -45,7 +45,19 @@ apps/api/
       permission/
       audit/
       delivery/
+      knowledge/
+      modelprovider/
+      config/
+      shared/
 ```
+
+当前工程后端采用 Gradle Kotlin DSL 管理多模块：
+
+- 根目录 `build.gradle.kts` 管理公共插件和 Java 版本。
+- 根目录 `settings.gradle.kts` 声明 `apps:api` 和 `workers:document-worker`。
+- 各模块保留自己的 `build.gradle.kts`。
+
+Gradle Kotlin DSL 中的注释同样使用中文，复杂构建逻辑需要说明原因。
 
 ## 3. 命名规范
 
@@ -167,10 +179,10 @@ API 返回格式统一：
 - Checkstyle / Spotless
 - 单元测试
 - 集成测试
+- Gradle Kotlin DSL 配置保持类型明确，避免把复杂业务逻辑塞进构建脚本。
 
 文档：
 
 - Markdown 标题层级清晰。
 - 同类表格字段统一。
 - 文档内的业务术语保持一致。
-

@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentum.local/schemas/variable.schema.json",
+  "title": "Variable",
+  "type": "object",
+  "description": "工作流变量协议占位 Schema。"
+}
+

@@ -1,0 +1,10 @@
+spring:
+  application:
+    name: agentum-document-worker
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+

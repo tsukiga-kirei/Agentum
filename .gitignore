@@ -11,11 +11,26 @@ out/
 .nuxt/
 .svelte-kit/
 coverage/
+target/
 
 # Environment files
 .env
 .env.*
 !.env.example
+
+# Java / Gradle
+.gradle/
+*.class
+*.jar
+*.war
+*.ear
+
+# Python
+__pycache__/
+*.py[cod]
+.python-version
+.venv/
+venv/
 
 # Logs
 logs/
@@ -35,6 +50,10 @@ pnpm-debug.log*
 # Editors
 .idea/
 .vscode/
+.settings/
+.classpath
+.project
+.factorypath
 *.swp
 *.swo
 

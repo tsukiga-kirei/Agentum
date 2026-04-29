@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentum.local/schemas/agent.schema.json",
+  "title": "Agent",
+  "type": "object",
+  "description": "智能体配置协议占位 Schema。"
+}
+

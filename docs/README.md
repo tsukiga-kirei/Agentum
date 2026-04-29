@@ -11,6 +11,7 @@
 - [frontend-guidelines.md](./frontend-guidelines.md)：前端画布、交互、视觉和组件规范。
 - [development-standards.md](./development-standards.md)：代码格式、命名、注释、接口与错误规范。
 - [skills-and-mcp.md](./skills-and-mcp.md)：推荐内置 Skills、MCP 服务和智能体模板。
+- [project-structure.md](./project-structure.md)：代码目录、工程骨架和本地开发基础设施。
 
 ## 1. 项目定位
 
@@ -649,6 +650,13 @@ Agentum/
 - `workers/document-worker`：文档解析、Word / PDF 生成等后台任务。
 - `workers/ai-worker`：可选 AI Worker，用于复杂模型调用、批处理或 Python 生态任务。
 - `deploy`：部署、Docker、环境配置。
+
+构建与命令入口：
+
+- 前端使用 `pnpm workspace`。
+- 后端与 Java Worker 使用 Gradle Kotlin DSL，即 `build.gradle.kts` 和 `settings.gradle.kts`。
+- 本地基础设施使用 `docker-compose.dev.yml`。
+- 常用命令通过 `Makefile` 做快捷封装。
 
 ## 15. 版本与发布规范
 

@@ -12,6 +12,7 @@ Agentum 更看重长期维护、企业级稳定和后期少改动，因此推荐
 队列：RabbitMQ / Kafka
 文件：S3 兼容对象存储
 AI Worker：Java 优先，复杂文档解析可引入 Python Worker
+构建工具：Gradle Kotlin DSL
 ```
 
 ## 2. 为什么后端推荐 Java / Kotlin
@@ -115,7 +116,30 @@ React 在这类复杂交互产品上更有优势。
 - Micrometer + Prometheus + Grafana
 - OpenTelemetry
 
-## 7. 推荐基础设施
+## 7. 构建工具选择
+
+当前工程采用 Gradle Kotlin DSL：
+
+- `build.gradle.kts`
+- `settings.gradle.kts`
+
+这里的 Kotlin 不是要求业务代码必须使用 Kotlin，而是指 Gradle 配置文件使用 Kotlin DSL。
+
+选择原因：
+
+- 比 Maven XML 更适合多模块工程和后续任务编排。
+- 比普通 Gradle Groovy DSL 类型更明确，IDE 补全和重构体验更好。
+- 后续增加契约生成、前端构建联动、Worker 构建、发布任务时扩展性更好。
+- 适合 Agentum 这种会逐步扩展为平台型 monorepo 的项目。
+
+可以接受的替代方案：
+
+- 如果团队是传统 Java 团队，且已有 Maven 标准，可以切换为 Maven 多模块。
+- 如果团队已有 Gradle Groovy 经验，也可以使用普通 `build.gradle`。
+
+当前推荐保持 Gradle Kotlin DSL，除非团队维护习惯明确偏向 Maven。
+
+## 8. 推荐基础设施
 
 开发环境：
 
@@ -124,6 +148,7 @@ React 在这类复杂交互产品上更有优势。
 - Redis
 - MinIO
 - RabbitMQ
+- Mailpit
 
 生产环境：
 
@@ -133,4 +158,3 @@ React 在这类复杂交互产品上更有优势。
 - 链路追踪。
 - 数据库定期备份。
 - 对象存储生命周期管理。
-

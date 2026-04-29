@@ -1,0 +1,60 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: agentum-postgres-dev
+    environment:
+      POSTGRES_DB: agentum
+      POSTGRES_USER: agentum
+      POSTGRES_PASSWORD: agentum_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - agentum_postgres_data:/var/lib/postgresql/data
+      - ./deploy/local/postgres/init:/docker-entrypoint-initdb.d:ro
+
+  redis:
+    image: redis:7-alpine
+    container_name: agentum-redis-dev
+    ports:
+      - "6379:6379"
+    volumes:
+      - agentum_redis_data:/data
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: agentum-rabbitmq-dev
+    environment:
+      RABBITMQ_DEFAULT_USER: agentum
+      RABBITMQ_DEFAULT_PASS: agentum_dev_password
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - agentum_rabbitmq_data:/var/lib/rabbitmq
+
+  minio:
+    image: minio/minio:RELEASE.2024-10-13T13-34-11Z
+    container_name: agentum-minio-dev
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: agentum
+      MINIO_ROOT_PASSWORD: agentum_dev_password
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - agentum_minio_data:/data
+
+  mailpit:
+    image: axllent/mailpit:v1.20
+    container_name: agentum-mailpit-dev
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+volumes:
+  agentum_postgres_data:
+  agentum_redis_data:
+  agentum_rabbitmq_data:
+  agentum_minio_data:
+

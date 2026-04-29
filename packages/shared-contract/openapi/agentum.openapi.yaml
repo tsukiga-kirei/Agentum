@@ -1,0 +1,12 @@
+openapi: 3.1.0
+info:
+  title: Agentum API
+  version: 0.1.0
+  description: Agentum 平台 API 契约占位文件。
+servers:
+  - url: http://localhost:8080
+    description: 本地开发环境
+paths: {}
+components:
+  schemas: {}
+

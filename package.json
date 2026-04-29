@@ -1,0 +1,14 @@
+{
+  "name": "agentum",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev:web": "pnpm --filter @agentum/web dev",
+    "build:web": "pnpm --filter @agentum/web build",
+    "lint:web": "pnpm --filter @agentum/web lint",
+    "dev:infra": "docker compose -f docker-compose.dev.yml up -d",
+    "down:infra": "docker compose -f docker-compose.dev.yml down"
+  }
+}
+

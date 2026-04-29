@@ -1,0 +1,10 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/agentum
+    username: agentum
+    password: agentum_dev_password
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+
