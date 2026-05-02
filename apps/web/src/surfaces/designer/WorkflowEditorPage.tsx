@@ -236,10 +236,12 @@ const workflowVariables: WorkflowVariable[] = [
 ];
 
 export function WorkflowEditorPage({ workflow, onBack }: WorkflowEditorPageProps) {
+  // 节点列表先保存在组件状态中，方便验证本地配置保存；后续会改为调用工作流草稿保存 API。
+  const [nodes, setNodes] = useState(initialNodes);
   const [selectedNodeId, setSelectedNodeId] = useState(initialNodes[0].id);
 
   const decoratedNodes = useMemo(() => {
-    return initialNodes.map((node) => {
+    return nodes.map((node) => {
       const meta = nodeTypeMeta[node.data.nodeType];
 
       return {
@@ -253,10 +255,35 @@ export function WorkflowEditorPage({ workflow, onBack }: WorkflowEditorPageProps
         },
       };
     });
-  }, [selectedNodeId]);
+  }, [nodes, selectedNodeId]);
 
   const selectedNode = decoratedNodes.find((node) => node.id === selectedNodeId) ?? decoratedNodes[0];
   const incompleteNodes = decoratedNodes.filter((node) => node.data.configStatus === "incomplete");
+  const selectedNodeIndex = decoratedNodes.findIndex((node) => node.id === selectedNode.id);
+  const availableVariables = workflowVariables.filter((variable) => {
+    const sourceIndex = decoratedNodes.findIndex((node) => node.data.label === variable.sourceNode);
+
+    return sourceIndex >= 0 && sourceIndex < selectedNodeIndex;
+  });
+
+  function handleSaveSelectedNode() {
+    // 当前保存只更新前端配置状态，后续应提交 NodeDefinition.config 并接入 Zod 表单校验。
+    setNodes((currentNodes) =>
+      currentNodes.map((node) => {
+        if (node.id !== selectedNode.id) {
+          return node;
+        }
+
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            configStatus: "complete",
+          },
+        };
+      }),
+    );
+  }
 
   const handleNodeClick = (_event: MouseEvent, node: Node<EditorNodeData>) => {
     // 节点选中态驱动右侧配置面板，后续接入表单保存时也以该 id 定位 NodeDefinition。
@@ -280,9 +307,9 @@ export function WorkflowEditorPage({ workflow, onBack }: WorkflowEditorPageProps
           <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-600">{workflow.description}</p>
         </div>
         <div className="grid gap-3 sm:grid-cols-3">
-          <EditorMetric label="节点" value={String(initialNodes.length)} />
-          <EditorMetric label="暂停点" value={String(initialNodes.filter((node) => node.data.pausePoint).length)} />
-          <EditorMetric label="待配置" value={String(initialNodes.filter((node) => node.data.configStatus === "incomplete").length)} />
+          <EditorMetric label="节点" value={String(nodes.length)} />
+          <EditorMetric label="暂停点" value={String(nodes.filter((node) => node.data.pausePoint).length)} />
+          <EditorMetric label="待配置" value={String(nodes.filter((node) => node.data.configStatus === "incomplete").length)} />
         </div>
       </div>
 
@@ -345,7 +372,7 @@ export function WorkflowEditorPage({ workflow, onBack }: WorkflowEditorPageProps
           </ReactFlow>
         </section>
 
-        <NodeConfigPanel node={selectedNode} />
+        <NodeConfigPanel node={selectedNode} availableVariables={availableVariables} onSave={handleSaveSelectedNode} />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
@@ -365,7 +392,15 @@ function EditorMetric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function NodeConfigPanel({ node }: { node: Node<EditorNodeData> }) {
+function NodeConfigPanel({
+  node,
+  availableVariables,
+  onSave,
+}: {
+  node: Node<EditorNodeData>;
+  availableVariables: WorkflowVariable[];
+  onSave: () => void;
+}) {
   const meta = nodeTypeMeta[node.data.nodeType];
   const Icon = meta.icon;
 
@@ -398,6 +433,10 @@ function NodeConfigPanel({ node }: { node: Node<EditorNodeData> }) {
           <VariableList variables={node.data.inputVariables} emptyText="该节点不需要上游输入" />
         </PanelGroup>
 
+        <PanelGroup title="可引用变量">
+          <VariableList variables={availableVariables.map((variable) => variable.name)} emptyText="当前节点前没有可引用变量" />
+        </PanelGroup>
+
         <PanelGroup title="输出变量">
           <VariableList variables={node.data.outputVariables} emptyText="暂未声明输出变量" />
         </PanelGroup>
@@ -408,6 +447,7 @@ function NodeConfigPanel({ node }: { node: Node<EditorNodeData> }) {
 
         <button
           type="button"
+          onClick={onSave}
           className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-zinc-950 px-3 text-sm font-medium text-white hover:bg-zinc-800"
         >
           <Milestone className="h-4 w-4" aria-hidden="true" />
