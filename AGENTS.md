@@ -8,6 +8,7 @@
 
 - `README.md`
 - `docs/README.md`
+- `docs/development-plan.md`
 - `docs/development-standards.md`
 - `docs/project-structure.md`
 

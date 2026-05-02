@@ -13,6 +13,7 @@
 - [frontend-guidelines.md](./frontend-guidelines.md)：前端画布、交互、视觉和组件规范。
 - [frontend-workflow-visualization.md](./frontend-workflow-visualization.md)：工作流步骤、工具调用、追问、并行、用户输入和运行证据链展示规范。
 - [development-standards.md](./development-standards.md)：代码格式、命名、注释、接口与错误规范。
+- [development-plan.md](./development-plan.md)：阶段化开发顺序、验收标准和每次任务交付要求。
 - [skills-and-mcp.md](./skills-and-mcp.md)：推荐内置 Skills、MCP 服务和智能体模板。
 - [project-structure.md](./project-structure.md)：代码目录、工程骨架和本地开发基础设施。
 
