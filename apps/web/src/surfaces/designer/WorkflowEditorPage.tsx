@@ -4,8 +4,11 @@ import ReactFlow, {
   Background,
   Controls,
   Edge,
+  Handle,
   MiniMap,
   Node,
+  NodeProps,
+  Position,
 } from "reactflow";
 import "reactflow/dist/style.css";
 import {
@@ -92,10 +95,15 @@ const nodeTypeMeta: Record<WorkflowNodeType, { color: string; icon: typeof Zap }
   },
 };
 
+const nodeTypes = {
+  workflow: WorkflowCanvasNode,
+};
+
 // 画布先使用固定节点样例验证交互结构，后续保存时应替换为 WorkflowDefinition.nodes。
 const initialNodes: Node<EditorNodeData>[] = [
   {
     id: "trigger_manual",
+    type: "workflow",
     position: { x: 40, y: 180 },
     data: {
       label: "手动触发",
@@ -110,6 +118,7 @@ const initialNodes: Node<EditorNodeData>[] = [
   },
   {
     id: "input_materials",
+    type: "workflow",
     position: { x: 300, y: 110 },
     data: {
       label: "补充业务材料",
@@ -124,6 +133,7 @@ const initialNodes: Node<EditorNodeData>[] = [
   },
   {
     id: "agent_analysis",
+    type: "workflow",
     position: { x: 600, y: 110 },
     data: {
       label: "智能体分析",
@@ -138,6 +148,7 @@ const initialNodes: Node<EditorNodeData>[] = [
   },
   {
     id: "parallel_collect",
+    type: "workflow",
     position: { x: 900, y: 110 },
     data: {
       label: "并行获取数据",
@@ -152,6 +163,7 @@ const initialNodes: Node<EditorNodeData>[] = [
   },
   {
     id: "merge_report",
+    type: "workflow",
     position: { x: 1180, y: 110 },
     data: {
       label: "合并组装报告",
@@ -166,6 +178,7 @@ const initialNodes: Node<EditorNodeData>[] = [
   },
   {
     id: "condition_risk",
+    type: "workflow",
     position: { x: 1460, y: 110 },
     data: {
       label: "风险判断",
@@ -180,6 +193,7 @@ const initialNodes: Node<EditorNodeData>[] = [
   },
   {
     id: "human_review",
+    type: "workflow",
     position: { x: 1740, y: 40 },
     data: {
       label: "人工审核",
@@ -194,6 +208,7 @@ const initialNodes: Node<EditorNodeData>[] = [
   },
   {
     id: "delivery_email",
+    type: "workflow",
     position: { x: 2020, y: 110 },
     data: {
       label: "邮件交付",
@@ -210,14 +225,14 @@ const initialNodes: Node<EditorNodeData>[] = [
 
 // 边关系对应工作流 MVP 主链路，后续应由 WorkflowDefinition.edges 持久化。
 const initialEdges: Edge[] = [
-  { id: "e_trigger_input", source: "trigger_manual", target: "input_materials" },
-  { id: "e_input_agent", source: "input_materials", target: "agent_analysis" },
-  { id: "e_agent_parallel", source: "agent_analysis", target: "parallel_collect" },
-  { id: "e_parallel_merge", source: "parallel_collect", target: "merge_report" },
-  { id: "e_merge_condition", source: "merge_report", target: "condition_risk" },
-  { id: "e_condition_review", source: "condition_risk", target: "human_review", label: "高风险" },
-  { id: "e_review_delivery", source: "human_review", target: "delivery_email" },
-  { id: "e_condition_delivery", source: "condition_risk", target: "delivery_email", label: "低风险" },
+  { id: "e_trigger_input", source: "trigger_manual", target: "input_materials", type: "smoothstep" },
+  { id: "e_input_agent", source: "input_materials", target: "agent_analysis", type: "smoothstep" },
+  { id: "e_agent_parallel", source: "agent_analysis", target: "parallel_collect", type: "smoothstep" },
+  { id: "e_parallel_merge", source: "parallel_collect", target: "merge_report", type: "smoothstep" },
+  { id: "e_merge_condition", source: "merge_report", target: "condition_risk", type: "smoothstep" },
+  { id: "e_condition_review", source: "condition_risk", target: "human_review", label: "高风险", type: "smoothstep" },
+  { id: "e_review_delivery", source: "human_review", target: "delivery_email", type: "smoothstep" },
+  { id: "e_condition_delivery", source: "condition_risk", target: "delivery_email", label: "低风险", type: "smoothstep" },
 ];
 
 // 变量清单由节点输出推导而来，后续应改为读取后端 VariableSnapshot 和契约校验结果。
@@ -247,10 +262,10 @@ export function WorkflowEditorPage({ workflow, onBack }: WorkflowEditorPageProps
       return {
         ...node,
         style: {
-          border: selectedNodeId === node.id ? `2px solid ${meta.color}` : "1px solid #d4d4d8",
-          borderRadius: 8,
-          boxShadow: selectedNodeId === node.id ? "0 8px 24px rgb(24 24 27 / 0.14)" : "none",
-          minWidth: 190,
+          border: "none",
+          borderRadius: 12,
+          boxShadow: selectedNodeId === node.id ? "0 14px 32px rgb(15 23 42 / 0.18)" : "0 6px 18px rgb(15 23 42 / 0.08)",
+          minWidth: 220,
           padding: 0,
         },
       };
@@ -292,19 +307,19 @@ export function WorkflowEditorPage({ workflow, onBack }: WorkflowEditorPageProps
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-4 px-5 py-6 lg:px-8">
-      <div className="flex flex-col gap-4 rounded-lg border border-zinc-200 bg-white p-4 xl:flex-row xl:items-center xl:justify-between">
+      <div className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm xl:flex-row xl:items-center xl:justify-between">
         <div className="min-w-0">
           <button
             type="button"
             onClick={onBack}
-            className="mb-3 inline-flex h-9 items-center gap-2 rounded-lg border border-zinc-300 px-3 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
+            className="mb-3 inline-flex h-9 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-800 transition-colors duration-200 hover:bg-slate-50"
           >
             <ChevronLeft className="h-4 w-4" aria-hidden="true" />
             返回列表
           </button>
-          <p className="text-sm text-zinc-500">工作流编辑器</p>
-          <h2 className="mt-1 text-lg font-semibold text-zinc-950">{workflow.name}</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-600">{workflow.description}</p>
+          <p className="text-sm font-medium text-emerald-700">工作流编辑器</p>
+          <h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-950">{workflow.name}</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{workflow.description}</p>
         </div>
         <div className="grid gap-3 sm:grid-cols-3">
           <EditorMetric label="节点" value={String(nodes.length)} />
@@ -314,12 +329,12 @@ export function WorkflowEditorPage({ workflow, onBack }: WorkflowEditorPageProps
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)_360px]">
-        <section className="rounded-lg border border-zinc-200 bg-white" aria-labelledby="outline-title">
-          <div className="border-b border-zinc-200 px-4 py-3">
-            <h3 id="outline-title" className="text-sm font-semibold">
+        <section className="rounded-xl border border-slate-200 bg-white shadow-sm" aria-labelledby="outline-title">
+          <div className="border-b border-slate-200 px-4 py-3">
+            <h3 id="outline-title" className="text-sm font-semibold text-slate-950">
               流程大纲
             </h3>
-            <p className="mt-1 text-xs text-zinc-500">快速定位节点和配置状态</p>
+            <p className="mt-1 text-xs text-slate-500">快速定位节点和配置状态</p>
           </div>
           <div className="space-y-2 p-3">
             {decoratedNodes.map((node, index) => {
@@ -332,13 +347,13 @@ export function WorkflowEditorPage({ workflow, onBack }: WorkflowEditorPageProps
                   key={node.id}
                   type="button"
                   onClick={() => setSelectedNodeId(node.id)}
-                  className={`flex w-full items-start gap-3 rounded-lg border px-3 py-3 text-left transition ${
-                    isActive ? "border-zinc-950 bg-zinc-950 text-white" : "border-zinc-200 bg-white text-zinc-800 hover:bg-zinc-50"
+                  className={`flex w-full items-start gap-3 rounded-lg border px-3 py-3 text-left transition-colors duration-200 ${
+                    isActive ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-800 hover:bg-slate-50"
                   }`}
                 >
                   <span
                     className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded ${
-                      isActive ? "bg-white/15 text-white" : "bg-zinc-100"
+                      isActive ? "bg-white/15 text-white" : "bg-slate-100"
                     }`}
                   >
                     <Icon className="h-4 w-4" aria-hidden="true" />
@@ -347,7 +362,7 @@ export function WorkflowEditorPage({ workflow, onBack }: WorkflowEditorPageProps
                     <span className="block text-xs font-medium">
                       {index + 1}. {node.data.label}
                     </span>
-                    <span className={`mt-1 block text-xs ${isActive ? "text-zinc-300" : "text-zinc-500"}`}>
+                    <span className={`mt-1 block text-xs ${isActive ? "text-slate-300" : "text-slate-500"}`}>
                       {node.data.typeLabel}
                     </span>
                   </span>
@@ -357,16 +372,17 @@ export function WorkflowEditorPage({ workflow, onBack }: WorkflowEditorPageProps
           </div>
         </section>
 
-        <section className="min-h-[620px] overflow-hidden rounded-lg border border-zinc-200 bg-white" aria-label="工作流画布">
+        <section className="min-h-[620px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm" aria-label="工作流画布">
           <ReactFlow
             nodes={decoratedNodes}
             edges={initialEdges}
+            nodeTypes={nodeTypes}
             onNodeClick={handleNodeClick}
             fitView
             fitViewOptions={{ padding: 0.22 }}
             nodesDraggable={false}
           >
-            <Background color="#d4d4d8" gap={18} />
+            <Background color="#cbd5e1" gap={18} />
             <Controls />
             <MiniMap nodeStrokeWidth={3} zoomable pannable />
           </ReactFlow>
@@ -385,9 +401,45 @@ export function WorkflowEditorPage({ workflow, onBack }: WorkflowEditorPageProps
 
 function EditorMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-zinc-200 px-4 py-3">
-      <p className="text-xs text-zinc-500">{label}</p>
-      <p className="mt-1 text-xl font-semibold text-zinc-950">{value}</p>
+    <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+      <p className="text-xs text-slate-500">{label}</p>
+      <p className="mt-1 text-xl font-semibold text-slate-950">{value}</p>
+    </div>
+  );
+}
+
+function WorkflowCanvasNode({ data, selected }: NodeProps<EditorNodeData>) {
+  const meta = nodeTypeMeta[data.nodeType];
+  const Icon = meta.icon;
+
+  return (
+    <div className={`w-56 overflow-hidden rounded-xl border bg-white ${selected ? "border-slate-950" : "border-slate-200"}`}>
+      <Handle type="target" position={Position.Left} className="!h-3 !w-3 !border-2 !border-white" style={{ background: meta.color }} />
+      <div className="border-b border-slate-100 p-3">
+        <div className="flex items-start gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: `${meta.color}18`, color: meta.color }}>
+            <Icon className="h-4 w-4" aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-slate-950">{data.label}</p>
+            <p className="mt-0.5 text-xs text-slate-500">{data.typeLabel}</p>
+          </div>
+        </div>
+      </div>
+      <div className="space-y-3 p-3">
+        <p className="line-clamp-2 text-xs leading-5 text-slate-600">{data.summary}</p>
+        <div className="flex flex-wrap gap-1.5">
+          <span className="rounded bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-700">
+            入 {data.inputVariables.length}
+          </span>
+          <span className="rounded bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-700">
+            出 {data.outputVariables.length}
+          </span>
+          {data.pausePoint ? <span className="rounded bg-amber-100 px-2 py-1 text-[11px] font-medium text-amber-800">暂停</span> : null}
+        </div>
+        <StatusBadge complete={data.configStatus === "complete"} compact />
+      </div>
+      <Handle type="source" position={Position.Right} className="!h-3 !w-3 !border-2 !border-white" style={{ background: meta.color }} />
     </div>
   );
 }
@@ -405,15 +457,15 @@ function NodeConfigPanel({
   const Icon = meta.icon;
 
   return (
-    <aside className="rounded-lg border border-zinc-200 bg-white" aria-labelledby="node-config-title">
-      <div className="border-b border-zinc-200 px-4 py-4">
+    <aside className="rounded-xl border border-slate-200 bg-white shadow-sm" aria-labelledby="node-config-title">
+      <div className="border-b border-slate-200 px-4 py-4">
         <div className="flex items-center gap-3">
           <span className="flex h-10 w-10 items-center justify-center rounded-lg" style={{ backgroundColor: `${meta.color}18`, color: meta.color }}>
             <Icon className="h-5 w-5" aria-hidden="true" />
           </span>
           <div>
-            <p className="text-xs text-zinc-500">{node.data.typeLabel}</p>
-            <h3 id="node-config-title" className="text-base font-semibold text-zinc-950">
+            <p className="text-xs text-slate-500">{node.data.typeLabel}</p>
+            <h3 id="node-config-title" className="text-base font-semibold text-slate-950">
               {node.data.label}
             </h3>
           </div>
@@ -422,7 +474,7 @@ function NodeConfigPanel({
 
       <div className="space-y-5 p-4">
         <PanelGroup title="基础信息">
-          <p className="text-sm leading-6 text-zinc-600">{node.data.summary}</p>
+          <p className="text-sm leading-6 text-slate-600">{node.data.summary}</p>
           <div className="mt-3 flex flex-wrap gap-2">
             <StatusBadge complete={node.data.configStatus === "complete"} />
             {node.data.pausePoint ? <span className="rounded bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800">暂停点</span> : null}
@@ -448,7 +500,7 @@ function NodeConfigPanel({
         <button
           type="button"
           onClick={onSave}
-          className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-zinc-950 px-3 text-sm font-medium text-white hover:bg-zinc-800"
+          className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-emerald-700 px-3 text-sm font-semibold text-white shadow-sm shadow-emerald-900/20 transition-colors duration-200 hover:bg-emerald-800"
         >
           <Milestone className="h-4 w-4" aria-hidden="true" />
           保存节点配置
@@ -524,8 +576,8 @@ function ConfigRows({ rows }: { rows: Array<[string, string]> }) {
     <dl className="space-y-2">
       {rows.map(([label, value]) => (
         <div key={label} className="grid grid-cols-[88px_minmax(0,1fr)] gap-3 text-sm">
-          <dt className="text-zinc-500">{label}</dt>
-          <dd className="min-w-0 font-medium text-zinc-800">{value}</dd>
+          <dt className="text-slate-500">{label}</dt>
+          <dd className="min-w-0 font-medium text-slate-800">{value}</dd>
         </div>
       ))}
     </dl>
@@ -535,7 +587,7 @@ function ConfigRows({ rows }: { rows: Array<[string, string]> }) {
 function PanelGroup({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section>
-      <h4 className="text-sm font-semibold text-zinc-950">{title}</h4>
+      <h4 className="text-sm font-semibold text-slate-950">{title}</h4>
       <div className="mt-2">{children}</div>
     </section>
   );
@@ -543,13 +595,13 @@ function PanelGroup({ title, children }: { title: string; children: ReactNode })
 
 function VariableList({ variables, emptyText }: { variables: string[]; emptyText: string }) {
   if (variables.length === 0) {
-    return <p className="text-sm text-zinc-500">{emptyText}</p>;
+    return <p className="text-sm text-slate-500">{emptyText}</p>;
   }
 
   return (
     <div className="flex flex-wrap gap-2">
       {variables.map((variable) => (
-        <span key={variable} className="rounded bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-700">
+        <span key={variable} className="rounded bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
           {variable}
         </span>
       ))}
@@ -557,36 +609,36 @@ function VariableList({ variables, emptyText }: { variables: string[]; emptyText
   );
 }
 
-function StatusBadge({ complete }: { complete: boolean }) {
+function StatusBadge({ complete, compact = false }: { complete: boolean; compact?: boolean }) {
   if (complete) {
     return (
-      <span className="inline-flex items-center gap-1 rounded bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-800">
-        <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+      <span className={`inline-flex items-center gap-1 rounded bg-emerald-100 px-2 py-1 font-medium text-emerald-800 ${compact ? "text-[11px]" : "text-xs"}`}>
+        <CheckCircle2 className={compact ? "h-3 w-3" : "h-3.5 w-3.5"} aria-hidden="true" />
         配置完整
       </span>
     );
   }
 
-  return <span className="rounded bg-red-100 px-2 py-1 text-xs font-medium text-red-700">待补配置</span>;
+  return <span className={`rounded bg-red-100 px-2 py-1 font-medium text-red-700 ${compact ? "text-[11px]" : "text-xs"}`}>待补配置</span>;
 }
 
 function VariableRegistry({ variables }: { variables: WorkflowVariable[] }) {
   return (
-    <section className="rounded-lg border border-zinc-200 bg-white" aria-labelledby="variable-title">
-      <div className="border-b border-zinc-200 px-4 py-3">
-        <h3 id="variable-title" className="text-sm font-semibold">
+    <section className="rounded-xl border border-slate-200 bg-white shadow-sm" aria-labelledby="variable-title">
+      <div className="border-b border-slate-200 px-4 py-3">
+        <h3 id="variable-title" className="text-sm font-semibold text-slate-950">
           变量面板
         </h3>
-        <p className="mt-1 text-xs text-zinc-500">展示节点输出变量、来源和敏感标记</p>
+        <p className="mt-1 text-xs text-slate-500">展示节点输出变量、来源和敏感标记</p>
       </div>
       <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
         {variables.map((variable) => (
-          <article key={variable.name} className="rounded-lg border border-zinc-200 p-3">
+          <article key={variable.name} className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
             <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-semibold text-zinc-950">{variable.name}</p>
-              <span className="rounded bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-700">{variable.type}</span>
+              <p className="text-sm font-semibold text-slate-950">{variable.name}</p>
+              <span className="rounded bg-white px-2 py-1 text-xs font-medium text-slate-700 ring-1 ring-slate-200">{variable.type}</span>
             </div>
-            <p className="mt-2 text-xs text-zinc-500">来源：{variable.sourceNode}</p>
+            <p className="mt-2 text-xs text-slate-500">来源：{variable.sourceNode}</p>
             {variable.sensitive ? (
               <p className="mt-2 rounded bg-red-50 px-2 py-1 text-xs font-medium text-red-700">敏感变量，交付前需校验权限</p>
             ) : null}
@@ -599,12 +651,12 @@ function VariableRegistry({ variables }: { variables: WorkflowVariable[] }) {
 
 function PublishCheckSummary({ incompleteNodes }: { incompleteNodes: Node<EditorNodeData>[] }) {
   return (
-    <section className="rounded-lg border border-zinc-200 bg-white" aria-labelledby="publish-check-title">
-      <div className="border-b border-zinc-200 px-4 py-3">
-        <h3 id="publish-check-title" className="text-sm font-semibold">
+    <section className="rounded-xl border border-slate-200 bg-white shadow-sm" aria-labelledby="publish-check-title">
+      <div className="border-b border-slate-200 px-4 py-3">
+        <h3 id="publish-check-title" className="text-sm font-semibold text-slate-950">
           发布校验摘要
         </h3>
-        <p className="mt-1 text-xs text-zinc-500">先做前端提示，后续接入后端发布校验 API</p>
+        <p className="mt-1 text-xs text-slate-500">先做前端提示，后续接入后端发布校验 API</p>
       </div>
       <div className="space-y-3 p-4">
         {incompleteNodes.length > 0 ? (
@@ -624,7 +676,7 @@ function PublishCheckSummary({ incompleteNodes }: { incompleteNodes: Node<Editor
             所有节点已满足当前阶段发布校验。
           </div>
         )}
-        <p className="text-sm leading-6 text-zinc-600">
+        <p className="text-sm leading-6 text-slate-600">
           当前摘要覆盖节点必填配置和敏感变量提示，下一步会补变量可见性规则和节点保存校验。
         </p>
       </div>
