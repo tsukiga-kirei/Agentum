@@ -6,6 +6,7 @@ Agentum 是一个面向企业 SOP 场景的智能体装配式工作流平台。
 
 ## 文档入口
 
+- [AI 开发必读规范](./AGENTS.md)
 - [项目说明与实现规范](./docs/README.md)
 - [系统架构](./docs/architecture.md)
 - [产品界面分区](./docs/product-surfaces.md)
