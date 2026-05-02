@@ -52,6 +52,7 @@ type RunRecord = {
   duration: string;
 };
 
+// 产品分区先用前端内存态切换，后续接入路由后应映射到 product-surfaces.md 中的推荐路径。
 const navigationItems: NavigationItem[] = [
   {
     key: "workbench",
@@ -85,6 +86,7 @@ const navigationItems: NavigationItem[] = [
   },
 ];
 
+// 页面标题与导航分离，避免后续接入权限后在多个位置重复维护同一组产品分区文案。
 const pageTitles: Record<SurfaceKey, { title: string; eyebrow: string }> = {
   workbench: {
     title: "业务工作台",
@@ -108,6 +110,7 @@ const pageTitles: Record<SurfaceKey, { title: string; eyebrow: string }> = {
   },
 };
 
+// 工作台数据当前用于撑起业务信息层级，后续由待办、运行记录和资产统计 API 替换。
 const metrics: Metric[] = [
   {
     label: "待处理事项",
@@ -135,6 +138,7 @@ const metrics: Metric[] = [
   },
 ];
 
+// 待办项模拟了三类暂停点：用户输入、人工审核和交付确认，便于验证业务区不暴露画布也能完成处理。
 const todoItems: TodoItem[] = [
   {
     title: "确认合同风险分析结论",
@@ -159,6 +163,7 @@ const todoItems: TodoItem[] = [
   },
 ];
 
+// 模板卡片先展示 MVP 场景，后续接入工作流模板库后应带上模板版本和适用权限。
 const workflowTemplates: WorkflowTemplate[] = [
   {
     title: "需求分析闭环",
@@ -180,6 +185,7 @@ const workflowTemplates: WorkflowTemplate[] = [
   },
 ];
 
+// 运行态摘要暂时展示最近运行位置，后续应来自 WorkflowRun 和 NodeRun 的聚合结果。
 const runRecords: RunRecord[] = [
   {
     name: "客户续约风险评估",
@@ -202,6 +208,7 @@ const runRecords: RunRecord[] = [
 ];
 
 export function WorkbenchShell() {
+  // 当前还没有正式路由，先用本地状态模拟产品分区切换，保证设计区可以继续迭代。
   const [activeSurface, setActiveSurface] = useState<SurfaceKey>("workbench");
   const pageTitle = pageTitles[activeSurface];
 
@@ -278,7 +285,7 @@ export function WorkbenchShell() {
           </header>
 
           {activeSurface === "workbench" ? (
-          <div className="mx-auto max-w-7xl space-y-6 px-5 py-6 lg:px-8">
+            <div className="mx-auto max-w-7xl space-y-6 px-5 py-6 lg:px-8">
             <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="关键指标">
               {metrics.map((metric) => (
                 <article key={metric.label} className={`rounded-lg border border-zinc-200 border-l-4 ${metric.tone} bg-white p-4`}>
@@ -386,7 +393,7 @@ export function WorkbenchShell() {
                 ))}
               </div>
             </section>
-          </div>
+            </div>
           ) : null}
 
           {activeSurface === "designer" ? <WorkflowDraftsPage /> : null}

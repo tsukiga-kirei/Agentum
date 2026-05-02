@@ -10,10 +10,11 @@ import {
   Search,
   Sparkles,
 } from "lucide-react";
+import { WorkflowEditorPage } from "./WorkflowEditorPage";
 
 type WorkflowStatus = "draft" | "published" | "review";
 
-type WorkflowDraft = {
+export type WorkflowDraft = {
   id: string;
   name: string;
   description: string;
@@ -24,6 +25,7 @@ type WorkflowDraft = {
   updatedAt: string;
 };
 
+// 列表数据先模拟工作流定义 API 的返回结构，后续应替换为草稿查询接口和契约生成类型。
 const initialWorkflows: WorkflowDraft[] = [
   {
     id: "wf_requirement_review",
@@ -73,12 +75,14 @@ const statusMeta: Record<WorkflowStatus, { label: string; className: string }> =
 };
 
 export function WorkflowDraftsPage() {
+  // 当前阶段先让草稿创建和搜索在前端可操作，后续接入后端后只保留表单状态。
   const [workflows, setWorkflows] = useState(initialWorkflows);
   const [searchValue, setSearchValue] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [draftName, setDraftName] = useState("");
   const [draftDescription, setDraftDescription] = useState("");
   const [formError, setFormError] = useState("");
+  const [editingWorkflow, setEditingWorkflow] = useState<WorkflowDraft | null>(null);
 
   const filteredWorkflows = useMemo(() => {
     const keyword = searchValue.trim().toLowerCase();
@@ -111,6 +115,7 @@ export function WorkflowDraftsPage() {
       return;
     }
 
+    // 新建草稿会先落到内存列表，后续应改成调用“创建工作流草稿”API 后再刷新列表。
     setWorkflows((currentWorkflows) => [
       {
         id: `wf_${Date.now()}`,
@@ -128,6 +133,10 @@ export function WorkflowDraftsPage() {
     setDraftDescription("");
     setFormError("");
     setIsCreating(false);
+  }
+
+  if (editingWorkflow) {
+    return <WorkflowEditorPage workflow={editingWorkflow} onBack={() => setEditingWorkflow(null)} />;
   }
 
   return (
@@ -198,6 +207,7 @@ export function WorkflowDraftsPage() {
                   </button>
                   <button
                     type="button"
+                    onClick={() => setEditingWorkflow(workflow)}
                     className="inline-flex h-9 items-center gap-2 rounded-lg bg-zinc-950 px-3 text-sm font-medium text-white hover:bg-zinc-800"
                   >
                     <PanelRightOpen className="h-4 w-4" aria-hidden="true" />
