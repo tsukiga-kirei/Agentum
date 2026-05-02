@@ -63,3 +63,20 @@ textarea:focus-visible {
 .react-flow__edge-path {
   stroke-width: 2.25;
 }
+
+.dark .react-flow__renderer {
+  background: #0f172a;
+}
+
+.dark .react-flow__controls,
+.dark .react-flow__minimap {
+  background: #111827;
+  border-color: #334155;
+  color: #e2e8f0;
+}
+
+.dark .react-flow__controls-button {
+  background: #111827;
+  border-color: #334155;
+  color: #e2e8f0;
+}

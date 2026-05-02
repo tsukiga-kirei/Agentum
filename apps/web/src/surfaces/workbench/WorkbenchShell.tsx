@@ -9,12 +9,15 @@ import {
   GitBranch,
   LayoutDashboard,
   Library,
+  Moon,
   ShieldCheck,
+  Sun,
   UserRoundCheck,
 } from "lucide-react";
 import { WorkflowDraftsPage } from "../designer/WorkflowDraftsPage";
 
 type SurfaceKey = "workbench" | "designer" | "assets" | "audit" | "permission";
+type ThemeMode = "light" | "dark";
 
 type NavigationItem = {
   key: SurfaceKey;
@@ -215,10 +218,12 @@ const runRecords: RunRecord[] = [
 export function WorkbenchShell() {
   // 当前还没有正式路由，先用本地状态模拟产品分区切换，保证设计区可以继续迭代。
   const [activeSurface, setActiveSurface] = useState<SurfaceKey>("workbench");
+  const [themeMode, setThemeMode] = useState<ThemeMode>("light");
   const pageTitle = pageTitles[activeSurface];
+  const isDarkMode = themeMode === "dark";
 
   return (
-    <main className="min-h-screen text-slate-950">
+    <main className={`min-h-screen bg-slate-100 text-slate-950 transition-colors duration-200 dark:bg-slate-950 dark:text-slate-100 ${isDarkMode ? "dark" : ""}`}>
       <div className="flex min-h-screen">
         <aside className="hidden w-72 shrink-0 border-r border-slate-900/20 bg-slate-950 px-4 py-5 text-white lg:block">
           <div className="mb-8 flex items-center gap-3 px-2">
@@ -262,17 +267,26 @@ export function WorkbenchShell() {
         </aside>
 
         <section className="min-w-0 flex-1">
-          <header className="border-b border-slate-200 bg-white/90 backdrop-blur">
+          <header className="border-b border-slate-200 bg-white/90 backdrop-blur dark:border-slate-800 dark:bg-slate-950/90">
             <div className="mx-auto flex max-w-7xl flex-col gap-4 px-5 py-5 md:flex-row md:items-center md:justify-between lg:px-8">
               <div>
-                <p className="text-sm font-medium text-emerald-700">{pageTitle.eyebrow}</p>
-                <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{pageTitle.title}</h1>
+                <p className="text-sm font-medium text-emerald-700 dark:text-emerald-400">{pageTitle.eyebrow}</p>
+                <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">{pageTitle.title}</h1>
               </div>
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
+                  onClick={() => setThemeMode(isDarkMode ? "light" : "dark")}
+                  className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-800 transition-colors duration-200 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+                  aria-label={isDarkMode ? "切换到浅色模式" : "切换到深色模式"}
+                >
+                  {isDarkMode ? <Sun className="h-4 w-4" aria-hidden="true" /> : <Moon className="h-4 w-4" aria-hidden="true" />}
+                  {isDarkMode ? "浅色" : "深色"}
+                </button>
+                <button
+                  type="button"
                   onClick={() => setActiveSurface("workbench")}
-                  className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-800 transition-colors duration-200 hover:bg-slate-50"
+                  className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-800 transition-colors duration-200 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
                 >
                   <ClipboardList className="h-4 w-4" aria-hidden="true" />
                   我的待办
@@ -280,7 +294,7 @@ export function WorkbenchShell() {
                 <button
                   type="button"
                   onClick={() => setActiveSurface("designer")}
-                  className="inline-flex h-10 items-center gap-2 rounded-lg bg-emerald-700 px-3 text-sm font-semibold text-white shadow-sm shadow-emerald-900/20 transition-colors duration-200 hover:bg-emerald-800"
+                  className="inline-flex h-10 items-center gap-2 rounded-lg bg-emerald-700 px-3 text-sm font-semibold text-white shadow-sm shadow-emerald-900/20 transition-colors duration-200 hover:bg-emerald-800 dark:bg-emerald-600 dark:hover:bg-emerald-500"
                 >
                   <GitBranch className="h-4 w-4" aria-hidden="true" />
                   设计流程
@@ -291,23 +305,23 @@ export function WorkbenchShell() {
 
           {activeSurface === "workbench" ? (
             <div className="mx-auto max-w-7xl space-y-6 px-5 py-6 lg:px-8">
-              <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-label="工作台总览">
+              <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900" aria-label="工作台总览">
                 <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-center">
                   <div>
                     <p className="text-sm font-medium text-emerald-700">今日运行概览</p>
-                    <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
+                    <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">
                       从待办、运行态和模板入口开始推进核心闭环
                     </h2>
-                    <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
+                    <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-300">
                       业务区只展示用户需要处理的节点和交付状态，复杂画布留给流程设计工作台。
                     </p>
                   </div>
-                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
-                    <p className="text-sm font-semibold text-emerald-900">MVP 进度</p>
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900/70 dark:bg-emerald-950/40">
+                    <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-200">MVP 进度</p>
                     <div className="mt-3 h-2 rounded-full bg-emerald-100">
                       <div className="h-2 w-2/5 rounded-full bg-emerald-700" />
                     </div>
-                    <p className="mt-3 text-sm text-emerald-800">工作台、列表和编辑器骨架已就绪，下一步接入真实草稿 API。</p>
+                    <p className="mt-3 text-sm text-emerald-800 dark:text-emerald-200">工作台、列表和编辑器骨架已就绪，下一步接入真实草稿 API。</p>
                   </div>
                 </div>
               </section>
@@ -317,49 +331,49 @@ export function WorkbenchShell() {
                   const Icon = metric.icon;
 
                   return (
-                    <article key={metric.label} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-colors duration-200 hover:border-slate-300">
+                    <article key={metric.label} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-colors duration-200 hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700">
                       <div className="flex items-center justify-between gap-3">
-                        <p className="text-sm text-slate-500">{metric.label}</p>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">{metric.label}</p>
                         <span className={`flex h-9 w-9 items-center justify-center rounded-lg ring-1 ${metric.tone}`}>
                           <Icon className="h-4 w-4" aria-hidden="true" />
                         </span>
                       </div>
-                      <p className="mt-4 text-3xl font-semibold tracking-tight text-slate-950">{metric.value}</p>
-                      <p className="mt-2 text-sm text-slate-600">{metric.detail}</p>
+                      <p className="mt-4 text-3xl font-semibold tracking-tight text-slate-950 dark:text-white">{metric.value}</p>
+                      <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{metric.detail}</p>
                     </article>
                   );
                 })}
               </section>
 
               <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.65fr)]">
-              <section className="rounded-xl border border-slate-200 bg-white shadow-sm" aria-labelledby="todo-title">
-                <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+              <section className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900" aria-labelledby="todo-title">
+                <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
                   <div>
-                    <h2 id="todo-title" className="text-base font-semibold text-slate-950">
+                    <h2 id="todo-title" className="text-base font-semibold text-slate-950 dark:text-white">
                       我的待办
                     </h2>
-                    <p className="mt-1 text-sm text-slate-500">需要输入、确认或审核的流程节点</p>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">需要输入、确认或审核的流程节点</p>
                   </div>
                   <UserRoundCheck className="h-5 w-5 text-amber-600" aria-hidden="true" />
                 </div>
-                <div className="divide-y divide-slate-100">
+                <div className="divide-y divide-slate-100 dark:divide-slate-800">
                   {todoItems.map((item) => (
                     <article key={item.title} className="grid gap-3 px-5 py-4 md:grid-cols-[minmax(0,1fr)_160px] md:items-center">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="text-sm font-semibold text-slate-950">{item.title}</h3>
+                          <h3 className="text-sm font-semibold text-slate-950 dark:text-white">{item.title}</h3>
                           <span className="rounded bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800">
                             {item.status}
                           </span>
                         </div>
-                        <p className="mt-2 text-sm text-slate-600">{item.workflow}</p>
-                        <p className="mt-1 text-xs text-slate-500">
+                        <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{item.workflow}</p>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                           {item.owner} · {item.deadline}
                         </p>
                       </div>
                       <button
                         type="button"
-                        className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-800 transition-colors duration-200 hover:bg-slate-50"
+                        className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-800 transition-colors duration-200 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
                       >
                         <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
                         处理
@@ -369,57 +383,57 @@ export function WorkbenchShell() {
                 </div>
               </section>
 
-              <section className="rounded-xl border border-slate-200 bg-white shadow-sm" aria-labelledby="run-title">
-                <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+              <section className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900" aria-labelledby="run-title">
+                <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
                   <div>
-                    <h2 id="run-title" className="text-base font-semibold text-slate-950">
+                    <h2 id="run-title" className="text-base font-semibold text-slate-950 dark:text-white">
                       运行态摘要
                     </h2>
-                    <p className="mt-1 text-sm text-slate-500">当前流程位置和处理状态</p>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">当前流程位置和处理状态</p>
                   </div>
                   <Activity className="h-5 w-5 text-sky-700" aria-hidden="true" />
                 </div>
                 <div className="space-y-3 p-5">
                   {runRecords.map((record) => (
-                    <article key={record.name} className="rounded-lg border border-slate-200 bg-slate-50/70 p-4">
+                    <article key={record.name} className="rounded-lg border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/60">
                       <div className="flex items-center justify-between gap-3">
                         <h3 className="min-w-0 text-sm font-semibold">{record.name}</h3>
-                        <span className="shrink-0 rounded bg-white px-2 py-1 text-xs font-medium text-slate-700 ring-1 ring-slate-200">
+                        <span className="shrink-0 rounded bg-white px-2 py-1 text-xs font-medium text-slate-700 ring-1 ring-slate-200 dark:bg-slate-900 dark:text-slate-200 dark:ring-slate-700">
                           {record.state}
                         </span>
                       </div>
-                      <p className="mt-3 text-sm text-slate-600">{record.node}</p>
-                      <p className="mt-1 text-xs text-slate-500">已执行 {record.duration}</p>
+                      <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">{record.node}</p>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">已执行 {record.duration}</p>
                     </article>
                   ))}
                 </div>
               </section>
             </div>
 
-            <section className="rounded-xl border border-slate-200 bg-white shadow-sm" aria-labelledby="template-title">
-              <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+            <section className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900" aria-labelledby="template-title">
+              <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
                 <div>
-                  <h2 id="template-title" className="text-base font-semibold text-slate-950">
+                  <h2 id="template-title" className="text-base font-semibold text-slate-950 dark:text-white">
                     可用流程模板
                   </h2>
-                  <p className="mt-1 text-sm text-slate-500">从固定节点类型开始搭建业务流程</p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">从固定节点类型开始搭建业务流程</p>
                 </div>
                 <Archive className="h-5 w-5 text-violet-700" aria-hidden="true" />
               </div>
               <div className="grid gap-4 p-5 lg:grid-cols-3">
                 {workflowTemplates.map((template) => (
-                  <article key={template.title} className="rounded-lg border border-slate-200 bg-slate-50/60 p-4 transition-colors duration-200 hover:border-emerald-300 hover:bg-white">
+                  <article key={template.title} className="rounded-lg border border-slate-200 bg-slate-50/60 p-4 transition-colors duration-200 hover:border-emerald-300 hover:bg-white dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-emerald-800 dark:hover:bg-slate-950">
                     <div className="flex items-center justify-between gap-3">
                       <span className="rounded bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-800">
                         {template.tag}
                       </span>
-                      <span className="text-xs text-slate-500">{template.nodes}</span>
+                      <span className="text-xs text-slate-500 dark:text-slate-400">{template.nodes}</span>
                     </div>
-                    <h3 className="mt-4 text-sm font-semibold text-slate-950">{template.title}</h3>
-                    <p className="mt-2 min-h-12 text-sm leading-6 text-slate-600">{template.description}</p>
+                    <h3 className="mt-4 text-sm font-semibold text-slate-950 dark:text-white">{template.title}</h3>
+                    <p className="mt-2 min-h-12 text-sm leading-6 text-slate-600 dark:text-slate-300">{template.description}</p>
                     <button
                       type="button"
-                      className="mt-4 inline-flex h-9 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-800 transition-colors duration-200 hover:bg-slate-50"
+                      className="mt-4 inline-flex h-9 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-800 transition-colors duration-200 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
                     >
                       <FileText className="h-4 w-4" aria-hidden="true" />
                       查看模板
@@ -445,10 +459,10 @@ export function WorkbenchShell() {
 function PlaceholderSurface({ title }: { title: string }) {
   return (
     <div className="mx-auto max-w-7xl px-5 py-6 lg:px-8">
-      <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+      <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <p className="text-sm font-medium text-emerald-700">待开发模块</p>
-        <h2 className="mt-2 text-lg font-semibold text-slate-950">{title}</h2>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+        <h2 className="mt-2 text-lg font-semibold text-slate-950 dark:text-white">{title}</h2>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">
           当前阶段先打通工作流核心闭环，该区域会在后续阶段按 `docs/development-plan.md` 继续补齐。
         </p>
       </section>
