@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Activity,
   Archive,
@@ -11,12 +12,15 @@ import {
   ShieldCheck,
   UserRoundCheck,
 } from "lucide-react";
+import { WorkflowDraftsPage } from "../designer/WorkflowDraftsPage";
+
+type SurfaceKey = "workbench" | "designer" | "assets" | "audit" | "permission";
 
 type NavigationItem = {
+  key: SurfaceKey;
   label: string;
   description: string;
   icon: typeof LayoutDashboard;
-  active?: boolean;
 };
 
 type Metric = {
@@ -50,32 +54,59 @@ type RunRecord = {
 
 const navigationItems: NavigationItem[] = [
   {
+    key: "workbench",
     label: "业务工作台",
     description: "待办、发起和结果",
     icon: LayoutDashboard,
-    active: true,
   },
   {
+    key: "designer",
     label: "流程设计",
     description: "画布与节点配置",
     icon: GitBranch,
   },
   {
+    key: "assets",
     label: "能力资产",
     description: "智能体、Skills、MCP",
     icon: Library,
   },
   {
+    key: "audit",
     label: "运行审计",
     description: "日志和证据链",
     icon: Activity,
   },
   {
+    key: "permission",
     label: "权限管理",
     description: "角色、空间、授权",
     icon: ShieldCheck,
   },
 ];
+
+const pageTitles: Record<SurfaceKey, { title: string; eyebrow: string }> = {
+  workbench: {
+    title: "业务工作台",
+    eyebrow: "阶段一：核心闭环",
+  },
+  designer: {
+    title: "流程设计工作台",
+    eyebrow: "阶段一：工作流定义管理",
+  },
+  assets: {
+    title: "能力资产",
+    eyebrow: "阶段二：资产治理",
+  },
+  audit: {
+    title: "运行审计",
+    eyebrow: "阶段一：执行证据链",
+  },
+  permission: {
+    title: "权限管理",
+    eyebrow: "阶段二：权限与治理",
+  },
+};
 
 const metrics: Metric[] = [
   {
@@ -171,6 +202,9 @@ const runRecords: RunRecord[] = [
 ];
 
 export function WorkbenchShell() {
+  const [activeSurface, setActiveSurface] = useState<SurfaceKey>("workbench");
+  const pageTitle = pageTitles[activeSurface];
+
   return (
     <main className="min-h-screen bg-zinc-100 text-zinc-950">
       <div className="flex min-h-screen">
@@ -188,13 +222,15 @@ export function WorkbenchShell() {
           <nav className="space-y-1" aria-label="主导航">
             {navigationItems.map((item) => {
               const Icon = item.icon;
+              const isActive = activeSurface === item.key;
 
               return (
                 <button
                   key={item.label}
                   type="button"
+                  onClick={() => setActiveSurface(item.key)}
                   className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left transition ${
-                    item.active
+                    isActive
                       ? "bg-zinc-950 text-white"
                       : "text-zinc-700 hover:bg-zinc-100 hover:text-zinc-950"
                   }`}
@@ -203,7 +239,7 @@ export function WorkbenchShell() {
                   <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
                   <span className="min-w-0">
                     <span className="block text-sm font-medium">{item.label}</span>
-                    <span className={`block text-xs ${item.active ? "text-zinc-300" : "text-zinc-500"}`}>
+                    <span className={`block text-xs ${isActive ? "text-zinc-300" : "text-zinc-500"}`}>
                       {item.description}
                     </span>
                   </span>
@@ -217,12 +253,13 @@ export function WorkbenchShell() {
           <header className="border-b border-zinc-200 bg-white">
             <div className="mx-auto flex max-w-7xl flex-col gap-4 px-5 py-5 md:flex-row md:items-center md:justify-between lg:px-8">
               <div>
-                <p className="text-sm text-zinc-500">阶段一：核心闭环</p>
-                <h1 className="mt-1 text-2xl font-semibold text-zinc-950">业务工作台</h1>
+                <p className="text-sm text-zinc-500">{pageTitle.eyebrow}</p>
+                <h1 className="mt-1 text-2xl font-semibold text-zinc-950">{pageTitle.title}</h1>
               </div>
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
+                  onClick={() => setActiveSurface("workbench")}
                   className="inline-flex h-10 items-center gap-2 rounded-lg border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
                 >
                   <ClipboardList className="h-4 w-4" aria-hidden="true" />
@@ -230,15 +267,17 @@ export function WorkbenchShell() {
                 </button>
                 <button
                   type="button"
+                  onClick={() => setActiveSurface("designer")}
                   className="inline-flex h-10 items-center gap-2 rounded-lg bg-emerald-700 px-3 text-sm font-medium text-white hover:bg-emerald-800"
                 >
                   <GitBranch className="h-4 w-4" aria-hidden="true" />
-                  发起流程
+                  设计流程
                 </button>
               </div>
             </div>
           </header>
 
+          {activeSurface === "workbench" ? (
           <div className="mx-auto max-w-7xl space-y-6 px-5 py-6 lg:px-8">
             <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="关键指标">
               {metrics.map((metric) => (
@@ -348,8 +387,29 @@ export function WorkbenchShell() {
               </div>
             </section>
           </div>
+          ) : null}
+
+          {activeSurface === "designer" ? <WorkflowDraftsPage /> : null}
+
+          {activeSurface !== "workbench" && activeSurface !== "designer" ? (
+            <PlaceholderSurface title={pageTitle.title} />
+          ) : null}
         </section>
       </div>
     </main>
+  );
+}
+
+function PlaceholderSurface({ title }: { title: string }) {
+  return (
+    <div className="mx-auto max-w-7xl px-5 py-6 lg:px-8">
+      <section className="rounded-lg border border-zinc-200 bg-white p-6">
+        <p className="text-sm font-medium text-zinc-500">待开发模块</p>
+        <h2 className="mt-2 text-lg font-semibold text-zinc-950">{title}</h2>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-600">
+          当前阶段先打通工作流核心闭环，该区域会在后续阶段按 `docs/development-plan.md` 继续补齐。
+        </p>
+      </section>
+    </div>
   );
 }
