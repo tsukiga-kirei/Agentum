@@ -14,6 +14,7 @@
 
 涉及前端、页面、组件、交互或样式时，还必须阅读：
 
+- `.codex/skills/ui-ux-pro-max/SKILL.md`
 - `docs/frontend-guidelines.md`
 - `docs/frontend-workflow-visualization.md`
 

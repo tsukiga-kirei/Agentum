@@ -9,6 +9,8 @@
     "lint:web": "pnpm --filter @agentum/web lint",
     "dev:infra": "docker compose -f docker-compose.dev.yml up -d",
     "down:infra": "docker compose -f docker-compose.dev.yml down"
+  },
+  "devDependencies": {
+    "uipro-cli": "^2.2.3"
   }
 }
-
