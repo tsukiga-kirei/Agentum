@@ -74,7 +74,7 @@ const nodeTypeMeta: Record<WorkflowNodeType, { color: string; icon: typeof Zap }
     icon: TextCursorInput,
   },
   agent: {
-    color: "#0284c7",
+    color: "#4f46e5",
     icon: Bot,
   },
   parallel_group: {
@@ -270,7 +270,7 @@ export function WorkflowEditorPage({ workflow, onBack }: WorkflowEditorPageProps
         style: {
           border: "none",
           borderRadius: 12,
-          boxShadow: selectedNodeId === node.id ? "0 14px 32px rgb(15 23 42 / 0.18)" : "0 6px 18px rgb(15 23 42 / 0.08)",
+          boxShadow: selectedNodeId === node.id ? "0 14px 32px rgb(79 70 229 / 0.22)" : "0 6px 18px rgb(15 23 42 / 0.08)",
           minWidth: 220,
           padding: 0,
         },
@@ -320,38 +320,38 @@ export function WorkflowEditorPage({ workflow, onBack }: WorkflowEditorPageProps
           : "xl:grid-cols-[220px_minmax(0,1fr)_320px]";
 
   return (
-    <div className="mx-auto max-w-[1800px] space-y-4 px-5 py-5 lg:px-6">
-      <div className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 xl:flex-row xl:items-center xl:justify-between">
+    <div className="mx-auto max-w-[1800px] space-y-3 px-4 py-4 lg:px-5">
+      <div className="agent-card flex flex-col gap-3 p-3.5 xl:flex-row xl:items-center xl:justify-between">
         <div className="min-w-0">
           <button
             type="button"
             onClick={onBack}
-            className="mb-2 inline-flex h-9 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-800 transition-colors duration-200 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+            className="agent-button mb-2 h-8 px-3 text-sm"
           >
             <ChevronLeft className="h-4 w-4" aria-hidden="true" />
             返回列表
           </button>
-          <p className="text-sm font-medium text-emerald-700">工作流编辑器</p>
-          <h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-950 dark:text-white">{workflow.name}</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-300">{workflow.description}</p>
+          <p className="text-sm font-medium text-[var(--color-primary)]">工作流编辑器</p>
+          <h2 className="mt-1 text-xl font-semibold text-[var(--color-text-primary)]">{workflow.name}</h2>
+          <p className="agent-muted mt-2 max-w-3xl text-sm leading-6">{workflow.description}</p>
         </div>
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-2 sm:grid-cols-3">
           <EditorMetric label="节点" value={String(nodes.length)} />
           <EditorMetric label="暂停点" value={String(nodes.filter((node) => node.data.pausePoint).length)} />
           <EditorMetric label="待配置" value={String(nodes.filter((node) => node.data.configStatus === "incomplete").length)} />
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div className="agent-card flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
         <div>
-          <p className="text-sm font-semibold text-slate-950 dark:text-white">画布工作区</p>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">以画布为主，可按需收起大纲和配置面板；支持滚轮缩放与拖拽平移。</p>
+          <p className="text-sm font-semibold text-[var(--color-text-primary)]">画布工作区</p>
+          <p className="agent-muted mt-1 text-xs">以画布为主，可按需收起大纲和配置面板；支持滚轮缩放与拖拽平移。</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
             onClick={() => setIsOutlineCollapsed((current) => !current)}
-            className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-800 transition-colors duration-200 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
+            className="agent-button h-9 px-3 text-sm"
           >
             {isOutlineCollapsed ? <PanelLeftOpen className="h-4 w-4" aria-hidden="true" /> : <PanelLeftClose className="h-4 w-4" aria-hidden="true" />}
             {isOutlineCollapsed ? "展开大纲" : "收起大纲"}
@@ -359,7 +359,7 @@ export function WorkflowEditorPage({ workflow, onBack }: WorkflowEditorPageProps
           <button
             type="button"
             onClick={() => setIsConfigCollapsed((current) => !current)}
-            className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-800 transition-colors duration-200 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
+            className="agent-button h-9 px-3 text-sm"
           >
             {isConfigCollapsed ? <PanelRightOpen className="h-4 w-4" aria-hidden="true" /> : <PanelRightClose className="h-4 w-4" aria-hidden="true" />}
             {isConfigCollapsed ? "展开配置" : "收起配置"}
@@ -369,12 +369,12 @@ export function WorkflowEditorPage({ workflow, onBack }: WorkflowEditorPageProps
 
       <div className={`grid gap-3 ${editorGridClass}`}>
         {!isOutlineCollapsed ? (
-        <section className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900" aria-labelledby="outline-title">
-          <div className="border-b border-slate-200 px-3 py-3 dark:border-slate-800">
-            <h3 id="outline-title" className="text-sm font-semibold text-slate-950 dark:text-white">
+        <section className="agent-card" aria-labelledby="outline-title">
+          <div className="px-3 pb-2 pt-3">
+            <h3 id="outline-title" className="text-sm font-semibold text-[var(--color-text-primary)]">
               流程大纲
             </h3>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">快速定位节点和配置状态</p>
+            <p className="agent-muted mt-1 text-xs">快速定位节点和配置状态</p>
           </div>
           <div className="space-y-2 p-2.5">
             {decoratedNodes.map((node, index) => {
@@ -388,12 +388,12 @@ export function WorkflowEditorPage({ workflow, onBack }: WorkflowEditorPageProps
                   type="button"
                   onClick={() => setSelectedNodeId(node.id)}
                   className={`flex w-full items-start gap-2.5 rounded-lg border px-2.5 py-2.5 text-left transition-colors duration-200 ${
-                    isActive ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-800 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+                    isActive ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white" : "border-[var(--color-border-light)] bg-[var(--color-bg-card)] text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]"
                   }`}
                 >
                   <span
                     className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded ${
-                      isActive ? "bg-white/15 text-white" : "bg-slate-100 dark:bg-slate-800"
+                      isActive ? "bg-white/15 text-white" : "bg-[var(--color-bg-hover)]"
                     }`}
                   >
                     <Icon className="h-4 w-4" aria-hidden="true" />
@@ -402,7 +402,7 @@ export function WorkflowEditorPage({ workflow, onBack }: WorkflowEditorPageProps
                     <span className="block text-xs font-medium">
                       {index + 1}. {node.data.label}
                     </span>
-                    <span className={`mt-1 block text-xs ${isActive ? "text-slate-300" : "text-slate-500"}`}>
+                    <span className={`mt-1 block text-xs ${isActive ? "text-indigo-100" : "text-[var(--color-text-tertiary)]"}`}>
                       {node.data.typeLabel}
                     </span>
                   </span>
@@ -413,14 +413,13 @@ export function WorkflowEditorPage({ workflow, onBack }: WorkflowEditorPageProps
         </section>
         ) : null}
 
-        <section className="min-h-[720px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 xl:h-[calc(100vh-236px)]" aria-label="工作流画布">
+        <section className="agent-card min-h-[760px] overflow-hidden xl:h-[calc(100vh-196px)]" aria-label="工作流画布">
           <ReactFlow
             nodes={decoratedNodes}
             edges={initialEdges}
             nodeTypes={nodeTypes}
             onNodeClick={handleNodeClick}
-            fitView
-            fitViewOptions={{ padding: 0.12 }}
+            defaultViewport={{ x: 26, y: 145, zoom: 0.78 }}
             nodesDraggable={false}
             panOnScroll
             zoomOnScroll
@@ -447,9 +446,9 @@ export function WorkflowEditorPage({ workflow, onBack }: WorkflowEditorPageProps
 
 function EditorMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/70">
-      <p className="text-xs text-slate-500 dark:text-slate-400">{label}</p>
-      <p className="mt-1 text-xl font-semibold text-slate-950 dark:text-white">{value}</p>
+    <div className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] px-4 py-2.5">
+      <p className="text-xs text-[var(--color-text-secondary)]">{label}</p>
+      <p className="mt-1 text-xl font-semibold text-[var(--color-text-primary)]">{value}</p>
     </div>
   );
 }
@@ -459,26 +458,26 @@ function WorkflowCanvasNode({ data, selected }: NodeProps<EditorNodeData>) {
   const Icon = meta.icon;
 
   return (
-    <div className={`w-56 overflow-hidden rounded-xl border bg-white dark:bg-slate-900 ${selected ? "border-slate-950 dark:border-emerald-400" : "border-slate-200 dark:border-slate-700"}`}>
+    <div className={`w-56 overflow-hidden rounded-[var(--radius-lg)] border bg-[var(--color-bg-card)] ${selected ? "border-[var(--color-primary)]" : "border-[var(--color-border-light)]"}`}>
       <Handle type="target" position={Position.Left} className="!h-3 !w-3 !border-2 !border-white" style={{ background: meta.color }} />
-      <div className="border-b border-slate-100 p-3 dark:border-slate-800">
+      <div className="p-3 pb-2">
         <div className="flex items-start gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: `${meta.color}18`, color: meta.color }}>
             <Icon className="h-4 w-4" aria-hidden="true" />
           </span>
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-slate-950 dark:text-white">{data.label}</p>
-            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{data.typeLabel}</p>
+            <p className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{data.label}</p>
+            <p className="mt-0.5 text-xs text-[var(--color-text-tertiary)]">{data.typeLabel}</p>
           </div>
         </div>
       </div>
       <div className="space-y-3 p-3">
-        <p className="line-clamp-2 text-xs leading-5 text-slate-600 dark:text-slate-300">{data.summary}</p>
+        <p className="line-clamp-2 text-xs leading-5 text-[var(--color-text-secondary)]">{data.summary}</p>
         <div className="flex flex-wrap gap-1.5">
-          <span className="rounded bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+          <span className="rounded bg-[var(--color-bg-hover)] px-2 py-1 text-[11px] font-medium text-[var(--color-text-secondary)]">
             入 {data.inputVariables.length}
           </span>
-          <span className="rounded bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+          <span className="rounded bg-[var(--color-bg-hover)] px-2 py-1 text-[11px] font-medium text-[var(--color-text-secondary)]">
             出 {data.outputVariables.length}
           </span>
           {data.pausePoint ? <span className="rounded bg-amber-100 px-2 py-1 text-[11px] font-medium text-amber-800">暂停</span> : null}
@@ -503,24 +502,24 @@ function NodeConfigPanel({
   const Icon = meta.icon;
 
   return (
-    <aside className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900" aria-labelledby="node-config-title">
-      <div className="border-b border-slate-200 px-4 py-4 dark:border-slate-800">
+    <aside className="agent-card" aria-labelledby="node-config-title">
+      <div className="px-4 pb-2 pt-4">
         <div className="flex items-center gap-3">
           <span className="flex h-10 w-10 items-center justify-center rounded-lg" style={{ backgroundColor: `${meta.color}18`, color: meta.color }}>
             <Icon className="h-5 w-5" aria-hidden="true" />
           </span>
           <div>
-            <p className="text-xs text-slate-500 dark:text-slate-400">{node.data.typeLabel}</p>
-            <h3 id="node-config-title" className="text-base font-semibold text-slate-950 dark:text-white">
+            <p className="text-xs text-[var(--color-text-tertiary)]">{node.data.typeLabel}</p>
+            <h3 id="node-config-title" className="text-base font-semibold text-[var(--color-text-primary)]">
               {node.data.label}
             </h3>
           </div>
         </div>
       </div>
 
-      <div className="space-y-5 p-4">
+      <div className="space-y-4 p-4">
         <PanelGroup title="基础信息">
-          <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">{node.data.summary}</p>
+          <p className="agent-muted text-sm leading-6">{node.data.summary}</p>
           <div className="mt-3 flex flex-wrap gap-2">
             <StatusBadge complete={node.data.configStatus === "complete"} />
             {node.data.pausePoint ? <span className="rounded bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800">暂停点</span> : null}
@@ -546,7 +545,7 @@ function NodeConfigPanel({
         <button
           type="button"
           onClick={onSave}
-          className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-emerald-700 px-3 text-sm font-semibold text-white shadow-sm shadow-emerald-900/20 transition-colors duration-200 hover:bg-emerald-800"
+          className="agent-button agent-button-primary h-10 w-full px-3 text-sm"
         >
           <Milestone className="h-4 w-4" aria-hidden="true" />
           保存节点配置
@@ -622,8 +621,8 @@ function ConfigRows({ rows }: { rows: Array<[string, string]> }) {
     <dl className="space-y-2">
       {rows.map(([label, value]) => (
         <div key={label} className="grid grid-cols-[88px_minmax(0,1fr)] gap-3 text-sm">
-          <dt className="text-slate-500 dark:text-slate-400">{label}</dt>
-          <dd className="min-w-0 font-medium text-slate-800 dark:text-slate-200">{value}</dd>
+          <dt className="text-[var(--color-text-tertiary)]">{label}</dt>
+          <dd className="min-w-0 font-medium text-[var(--color-text-primary)]">{value}</dd>
         </div>
       ))}
     </dl>
@@ -632,8 +631,8 @@ function ConfigRows({ rows }: { rows: Array<[string, string]> }) {
 
 function PanelGroup({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section>
-      <h4 className="text-sm font-semibold text-slate-950 dark:text-white">{title}</h4>
+    <section className="rounded-[var(--radius-md)] bg-[var(--color-bg-hover)] px-3 py-3">
+      <h4 className="text-sm font-semibold text-[var(--color-text-primary)]">{title}</h4>
       <div className="mt-2">{children}</div>
     </section>
   );
@@ -641,13 +640,13 @@ function PanelGroup({ title, children }: { title: string; children: ReactNode })
 
 function VariableList({ variables, emptyText }: { variables: string[]; emptyText: string }) {
   if (variables.length === 0) {
-    return <p className="text-sm text-slate-500 dark:text-slate-400">{emptyText}</p>;
+    return <p className="text-sm text-[var(--color-text-tertiary)]">{emptyText}</p>;
   }
 
   return (
     <div className="flex flex-wrap gap-2">
       {variables.map((variable) => (
-        <span key={variable} className="rounded bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+        <span key={variable} className="rounded bg-[var(--color-bg-card)] px-2 py-1 text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-[var(--color-border-light)]">
           {variable}
         </span>
       ))}
@@ -670,21 +669,21 @@ function StatusBadge({ complete, compact = false }: { complete: boolean; compact
 
 function VariableRegistry({ variables }: { variables: WorkflowVariable[] }) {
   return (
-    <section className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900" aria-labelledby="variable-title">
-      <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-800">
-        <h3 id="variable-title" className="text-sm font-semibold text-slate-950 dark:text-white">
+    <section className="agent-card" aria-labelledby="variable-title">
+      <div className="px-4 pb-2 pt-3">
+        <h3 id="variable-title" className="text-sm font-semibold text-[var(--color-text-primary)]">
           变量面板
         </h3>
-        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">展示节点输出变量、来源和敏感标记</p>
+        <p className="agent-muted mt-1 text-xs">展示节点输出变量、来源和敏感标记</p>
       </div>
       <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
         {variables.map((variable) => (
-          <article key={variable.name} className="rounded-lg border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-950/60">
+          <article key={variable.name} className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-3">
             <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-semibold text-slate-950 dark:text-white">{variable.name}</p>
-              <span className="rounded bg-white px-2 py-1 text-xs font-medium text-slate-700 ring-1 ring-slate-200 dark:bg-slate-900 dark:text-slate-200 dark:ring-slate-700">{variable.type}</span>
+              <p className="text-sm font-semibold text-[var(--color-text-primary)]">{variable.name}</p>
+              <span className="rounded bg-[var(--color-bg-card)] px-2 py-1 text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-[var(--color-border-light)]">{variable.type}</span>
             </div>
-            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">来源：{variable.sourceNode}</p>
+            <p className="mt-2 text-xs text-[var(--color-text-tertiary)]">来源：{variable.sourceNode}</p>
             {variable.sensitive ? (
               <p className="mt-2 rounded bg-red-50 px-2 py-1 text-xs font-medium text-red-700">敏感变量，交付前需校验权限</p>
             ) : null}
@@ -697,12 +696,12 @@ function VariableRegistry({ variables }: { variables: WorkflowVariable[] }) {
 
 function PublishCheckSummary({ incompleteNodes }: { incompleteNodes: Node<EditorNodeData>[] }) {
   return (
-    <section className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900" aria-labelledby="publish-check-title">
-      <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-800">
-        <h3 id="publish-check-title" className="text-sm font-semibold text-slate-950 dark:text-white">
+    <section className="agent-card" aria-labelledby="publish-check-title">
+      <div className="px-4 pb-2 pt-3">
+        <h3 id="publish-check-title" className="text-sm font-semibold text-[var(--color-text-primary)]">
           发布校验摘要
         </h3>
-        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">先做前端提示，后续接入后端发布校验 API</p>
+        <p className="agent-muted mt-1 text-xs">先做前端提示，后续接入后端发布校验 API</p>
       </div>
       <div className="space-y-3 p-4">
         {incompleteNodes.length > 0 ? (
@@ -722,7 +721,7 @@ function PublishCheckSummary({ incompleteNodes }: { incompleteNodes: Node<Editor
             所有节点已满足当前阶段发布校验。
           </div>
         )}
-        <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
+        <p className="agent-muted text-sm leading-6">
           当前摘要覆盖节点必填配置和敏感变量提示，下一步会补变量可见性规则和节点保存校验。
         </p>
       </div>

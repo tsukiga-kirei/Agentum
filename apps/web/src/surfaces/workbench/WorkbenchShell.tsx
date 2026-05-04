@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Activity,
   Archive,
@@ -10,6 +10,8 @@ import {
   LayoutDashboard,
   Library,
   Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
   ShieldCheck,
   Sun,
   UserRoundCheck,
@@ -127,7 +129,7 @@ const metrics: Metric[] = [
     label: "今日运行",
     value: "24",
     detail: "21 次完成，3 次暂停",
-    tone: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+    tone: "bg-indigo-50 text-indigo-700 ring-indigo-200",
     icon: Activity,
   },
   {
@@ -218,25 +220,68 @@ const runRecords: RunRecord[] = [
 export function WorkbenchShell() {
   // 当前还没有正式路由，先用本地状态模拟产品分区切换，保证设计区可以继续迭代。
   const [activeSurface, setActiveSurface] = useState<SurfaceKey>("workbench");
+  // 侧栏折叠属于工作台级偏好，后续接入用户设置 API 后应从服务端恢复并跨设备同步。
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [themeMode, setThemeMode] = useState<ThemeMode>("light");
   const pageTitle = pageTitles[activeSurface];
   const isDarkMode = themeMode === "dark";
 
+  useEffect(() => {
+    const savedThemeMode = window.localStorage.getItem("agentum_theme_mode");
+
+    if (savedThemeMode === "dark" || savedThemeMode === "light") {
+      setThemeMode(savedThemeMode);
+    }
+  }, []);
+
+  useEffect(() => {
+    // 同步 data-theme 方便后续接入图表、弹窗或第三方组件时复用 AuraOA 同类主题变量。
+    document.documentElement.setAttribute("data-theme", themeMode);
+    window.localStorage.setItem("agentum_theme_mode", themeMode);
+  }, [themeMode]);
+
+  function handleToggleTheme() {
+    const nextThemeMode: ThemeMode = isDarkMode ? "light" : "dark";
+    const overlay = document.createElement("div");
+
+    // 切换主题时用轻量遮罩承接色彩变化，避免大面积背景和画布同时变色时产生闪烁。
+    overlay.style.cssText = `
+      position: fixed; inset: 0; z-index: 99999;
+      pointer-events: none;
+      background: ${nextThemeMode === "dark" ? "rgba(15, 23, 42, 0.38)" : "rgba(248, 250, 252, 0.52)"};
+      opacity: 0;
+      transition: opacity 0.42s cubic-bezier(0.4, 0, 0.2, 1);
+    `;
+    document.body.appendChild(overlay);
+
+    requestAnimationFrame(() => {
+      overlay.style.opacity = "1";
+    });
+    window.setTimeout(() => setThemeMode(nextThemeMode), 180);
+    window.setTimeout(() => {
+      overlay.style.opacity = "0";
+    }, 330);
+    window.setTimeout(() => overlay.remove(), 760);
+  }
+
   return (
-    <main className={`min-h-screen bg-slate-100 text-slate-950 transition-colors duration-200 dark:bg-slate-950 dark:text-slate-100 ${isDarkMode ? "dark" : ""}`}>
+    <main className={`min-h-screen bg-[var(--color-bg-page)] text-[var(--color-text-primary)] transition-colors duration-300 ${isDarkMode ? "dark" : ""}`}>
       <div className="flex min-h-screen">
-        <aside className="hidden w-72 shrink-0 border-r border-slate-900/20 bg-slate-950 px-4 py-5 text-white lg:block">
-          <div className="mb-8 flex items-center gap-3 px-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500 text-slate-950 shadow-sm shadow-emerald-950/20">
+        <aside className={`hidden shrink-0 border-r border-[var(--color-sidebar-border)] bg-[var(--color-bg-sidebar)] text-[var(--color-text-sidebar)] transition-[width,background-color,border-color] duration-300 lg:block ${isSidebarCollapsed ? "w-[var(--sidebar-collapsed-width)]" : "w-[var(--sidebar-width)]"}`}>
+          <div className={`flex h-[var(--header-height)] items-center gap-3 border-b border-[var(--color-sidebar-border)] px-5 ${isSidebarCollapsed ? "justify-center px-0" : ""}`}>
+            <div className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-[var(--color-bg-hover)] text-[var(--color-primary)]">
               <Bot className="h-5 w-5" aria-hidden="true" />
             </div>
-            <div>
-              <p className="text-sm font-semibold">Agentum</p>
-              <p className="text-xs text-slate-400">智能体装配式工作流</p>
+            <div className={isSidebarCollapsed ? "hidden" : ""}>
+              <p className="text-lg font-bold text-[var(--color-sidebar-logo-text)]">Agentum</p>
+              <p className="text-xs text-[var(--color-text-tertiary)]">智能体装配式工作流</p>
             </div>
           </div>
 
-          <nav className="space-y-1" aria-label="主导航">
+          <nav className="space-y-1 px-2 py-3" aria-label="主导航">
+            <p className={`px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--color-sidebar-section-title)] ${isSidebarCollapsed ? "sr-only" : ""}`}>
+              主工作区
+            </p>
             {navigationItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeSurface === item.key;
@@ -246,20 +291,21 @@ export function WorkbenchShell() {
                   key={item.label}
                   type="button"
                   onClick={() => setActiveSurface(item.key)}
-                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left transition-colors duration-200 ${
+                  className={`relative flex h-11 w-full items-center rounded-[10px] text-left transition-colors duration-200 ${isSidebarCollapsed ? "justify-center px-0" : "gap-3 px-4"} ${
                     isActive
-                      ? "bg-white text-slate-950 shadow-sm"
-                      : "text-slate-300 hover:bg-white/10 hover:text-white"
+                      ? "bg-[var(--color-bg-sidebar-active)] text-[var(--color-text-sidebar-active)]"
+                      : "text-[var(--color-text-sidebar)] hover:bg-[var(--color-bg-sidebar-hover)] hover:text-[var(--color-text-primary)]"
                   }`}
                   title={item.description}
                 >
-                  <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
-                  <span className="min-w-0">
+                  <Icon className={`h-5 w-5 shrink-0 ${isActive ? "text-[var(--color-primary)]" : ""}`} aria-hidden="true" />
+                  <span className={`min-w-0 ${isSidebarCollapsed ? "hidden" : ""}`}>
                     <span className="block text-sm font-medium">{item.label}</span>
-                    <span className={`block text-xs ${isActive ? "text-slate-500" : "text-slate-500"}`}>
+                    <span className="block text-xs text-[var(--color-text-tertiary)]">
                       {item.description}
                     </span>
                   </span>
+                  {isActive ? <span className="absolute right-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-l bg-[var(--color-primary)]" /> : null}
                 </button>
               );
             })}
@@ -267,26 +313,43 @@ export function WorkbenchShell() {
         </aside>
 
         <section className="min-w-0 flex-1">
-          <header className="border-b border-slate-200 bg-white/90 backdrop-blur dark:border-slate-800 dark:bg-slate-950/90">
-            <div className="mx-auto flex max-w-7xl flex-col gap-4 px-5 py-5 md:flex-row md:items-center md:justify-between lg:px-8">
-              <div>
-                <p className="text-sm font-medium text-emerald-700 dark:text-emerald-400">{pageTitle.eyebrow}</p>
-                <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">{pageTitle.title}</h1>
+          <header className="border-b border-[var(--color-border-light)] bg-[var(--color-bg-card)]/95 backdrop-blur">
+            <div className="mx-auto flex min-h-[var(--header-height)] max-w-[1400px] flex-col gap-3 px-5 py-4 md:flex-row md:items-center md:justify-between lg:px-6">
+              <div className="flex min-w-0 items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsSidebarCollapsed((current) => !current)}
+                  className="agent-button hidden h-9 w-9 shrink-0 px-0 lg:inline-flex"
+                  aria-label={isSidebarCollapsed ? "展开左侧导航" : "收起左侧导航"}
+                >
+                  {isSidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" aria-hidden="true" /> : <PanelLeftClose className="h-4 w-4" aria-hidden="true" />}
+                </button>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--color-primary)]">{pageTitle.eyebrow}</p>
+                  <h1 className="mt-1 truncate text-xl font-semibold text-[var(--color-text-primary)]">{pageTitle.title}</h1>
+                </div>
               </div>
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => setThemeMode(isDarkMode ? "light" : "dark")}
-                  className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-800 transition-colors duration-200 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+                  onClick={handleToggleTheme}
+                  className="relative inline-flex h-9 w-[58px] items-center rounded-full border border-[var(--color-border)] bg-[var(--color-bg-hover)] p-0.5 transition-colors duration-300 hover:border-[var(--color-primary)]"
                   aria-label={isDarkMode ? "切换到浅色模式" : "切换到深色模式"}
                 >
-                  {isDarkMode ? <Sun className="h-4 w-4" aria-hidden="true" /> : <Moon className="h-4 w-4" aria-hidden="true" />}
-                  {isDarkMode ? "浅色" : "深色"}
+                  <span className="pointer-events-none absolute left-2 text-[var(--color-text-tertiary)]">
+                    <Sun className="h-3.5 w-3.5" aria-hidden="true" />
+                  </span>
+                  <span className="pointer-events-none absolute right-2 text-[var(--color-text-tertiary)]">
+                    <Moon className="h-3.5 w-3.5" aria-hidden="true" />
+                  </span>
+                  <span className={`relative z-10 flex h-7 w-7 items-center justify-center rounded-full bg-[var(--color-primary)] text-white shadow-sm transition-transform duration-300 ${isDarkMode ? "translate-x-6" : "translate-x-0"}`}>
+                    {isDarkMode ? <Moon className="h-4 w-4" aria-hidden="true" /> : <Sun className="h-4 w-4" aria-hidden="true" />}
+                  </span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setActiveSurface("workbench")}
-                  className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-800 transition-colors duration-200 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+                  className="agent-button h-10 px-3 text-sm"
                 >
                   <ClipboardList className="h-4 w-4" aria-hidden="true" />
                   我的待办
@@ -294,7 +357,7 @@ export function WorkbenchShell() {
                 <button
                   type="button"
                   onClick={() => setActiveSurface("designer")}
-                  className="inline-flex h-10 items-center gap-2 rounded-lg bg-emerald-700 px-3 text-sm font-semibold text-white shadow-sm shadow-emerald-900/20 transition-colors duration-200 hover:bg-emerald-800 dark:bg-emerald-600 dark:hover:bg-emerald-500"
+                  className="agent-button agent-button-primary h-10 px-3 text-sm"
                 >
                   <GitBranch className="h-4 w-4" aria-hidden="true" />
                   设计流程
@@ -304,24 +367,24 @@ export function WorkbenchShell() {
           </header>
 
           {activeSurface === "workbench" ? (
-            <div className="mx-auto max-w-7xl space-y-6 px-5 py-6 lg:px-8">
-              <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900" aria-label="工作台总览">
+            <div className="mx-auto max-w-[1400px] space-y-5 px-5 py-6 lg:px-6">
+              <section className="agent-card p-5" aria-label="工作台总览">
                 <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-center">
                   <div>
-                    <p className="text-sm font-medium text-emerald-700">今日运行概览</p>
-                    <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">
+                    <p className="text-sm font-medium text-[var(--color-primary)]">今日运行概览</p>
+                    <h2 className="mt-2 text-xl font-semibold text-[var(--color-text-primary)]">
                       从待办、运行态和模板入口开始推进核心闭环
                     </h2>
-                    <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-300">
+                    <p className="agent-muted mt-3 max-w-3xl text-sm leading-6">
                       业务区只展示用户需要处理的节点和交付状态，复杂画布留给流程设计工作台。
                     </p>
                   </div>
-                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900/70 dark:bg-emerald-950/40">
-                    <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-200">MVP 进度</p>
-                    <div className="mt-3 h-2 rounded-full bg-emerald-100">
-                      <div className="h-2 w-2/5 rounded-full bg-emerald-700" />
+                  <div className="rounded-[var(--radius-md)] border border-indigo-200 bg-indigo-50 p-4 dark:border-indigo-900/60 dark:bg-indigo-950/30">
+                    <p className="text-sm font-semibold text-indigo-950 dark:text-indigo-100">MVP 进度</p>
+                    <div className="mt-3 h-2 rounded-full bg-indigo-100 dark:bg-indigo-950">
+                      <div className="h-2 w-2/5 rounded-full bg-[var(--color-primary)]" />
                     </div>
-                    <p className="mt-3 text-sm text-emerald-800 dark:text-emerald-200">工作台、列表和编辑器骨架已就绪，下一步接入真实草稿 API。</p>
+                    <p className="mt-3 text-sm text-indigo-800 dark:text-indigo-100">工作台、列表和编辑器骨架已就绪，下一步接入真实草稿 API。</p>
                   </div>
                 </div>
               </section>
@@ -331,49 +394,49 @@ export function WorkbenchShell() {
                   const Icon = metric.icon;
 
                   return (
-                    <article key={metric.label} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-colors duration-200 hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700">
+                    <article key={metric.label} className="agent-card p-4">
                       <div className="flex items-center justify-between gap-3">
-                        <p className="text-sm text-slate-500 dark:text-slate-400">{metric.label}</p>
+                        <p className="text-sm text-[var(--color-text-secondary)]">{metric.label}</p>
                         <span className={`flex h-9 w-9 items-center justify-center rounded-lg ring-1 ${metric.tone}`}>
                           <Icon className="h-4 w-4" aria-hidden="true" />
                         </span>
                       </div>
-                      <p className="mt-4 text-3xl font-semibold tracking-tight text-slate-950 dark:text-white">{metric.value}</p>
-                      <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{metric.detail}</p>
+                      <p className="mt-4 text-3xl font-semibold text-[var(--color-text-primary)]">{metric.value}</p>
+                      <p className="agent-muted mt-2 text-sm">{metric.detail}</p>
                     </article>
                   );
                 })}
               </section>
 
               <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.65fr)]">
-              <section className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900" aria-labelledby="todo-title">
-                <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+              <section className="agent-card" aria-labelledby="todo-title">
+                <div className="agent-card-header flex items-center justify-between">
                   <div>
-                    <h2 id="todo-title" className="text-base font-semibold text-slate-950 dark:text-white">
+                    <h2 id="todo-title" className="text-base font-semibold text-[var(--color-text-primary)]">
                       我的待办
                     </h2>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">需要输入、确认或审核的流程节点</p>
+                    <p className="agent-muted mt-1 text-sm">需要输入、确认或审核的流程节点</p>
                   </div>
                   <UserRoundCheck className="h-5 w-5 text-amber-600" aria-hidden="true" />
                 </div>
-                <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                <div className="divide-y divide-[var(--color-border-light)]">
                   {todoItems.map((item) => (
                     <article key={item.title} className="grid gap-3 px-5 py-4 md:grid-cols-[minmax(0,1fr)_160px] md:items-center">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="text-sm font-semibold text-slate-950 dark:text-white">{item.title}</h3>
+                          <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">{item.title}</h3>
                           <span className="rounded bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800">
                             {item.status}
                           </span>
                         </div>
-                        <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{item.workflow}</p>
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        <p className="agent-muted mt-2 text-sm">{item.workflow}</p>
+                        <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">
                           {item.owner} · {item.deadline}
                         </p>
                       </div>
                       <button
                         type="button"
-                        className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-800 transition-colors duration-200 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
+                        className="agent-button h-9 px-3 text-sm"
                       >
                         <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
                         处理
@@ -383,57 +446,57 @@ export function WorkbenchShell() {
                 </div>
               </section>
 
-              <section className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900" aria-labelledby="run-title">
-                <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+              <section className="agent-card" aria-labelledby="run-title">
+                <div className="agent-card-header flex items-center justify-between">
                   <div>
-                    <h2 id="run-title" className="text-base font-semibold text-slate-950 dark:text-white">
+                    <h2 id="run-title" className="text-base font-semibold text-[var(--color-text-primary)]">
                       运行态摘要
                     </h2>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">当前流程位置和处理状态</p>
+                    <p className="agent-muted mt-1 text-sm">当前流程位置和处理状态</p>
                   </div>
                   <Activity className="h-5 w-5 text-sky-700" aria-hidden="true" />
                 </div>
                 <div className="space-y-3 p-5">
                   {runRecords.map((record) => (
-                    <article key={record.name} className="rounded-lg border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/60">
+                    <article key={record.name} className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-4">
                       <div className="flex items-center justify-between gap-3">
                         <h3 className="min-w-0 text-sm font-semibold">{record.name}</h3>
-                        <span className="shrink-0 rounded bg-white px-2 py-1 text-xs font-medium text-slate-700 ring-1 ring-slate-200 dark:bg-slate-900 dark:text-slate-200 dark:ring-slate-700">
+                        <span className="shrink-0 rounded bg-[var(--color-bg-card)] px-2 py-1 text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-[var(--color-border-light)]">
                           {record.state}
                         </span>
                       </div>
-                      <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">{record.node}</p>
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">已执行 {record.duration}</p>
+                      <p className="agent-muted mt-3 text-sm">{record.node}</p>
+                      <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">已执行 {record.duration}</p>
                     </article>
                   ))}
                 </div>
               </section>
             </div>
 
-            <section className="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900" aria-labelledby="template-title">
-              <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+            <section className="agent-card" aria-labelledby="template-title">
+              <div className="agent-card-header flex items-center justify-between">
                 <div>
-                  <h2 id="template-title" className="text-base font-semibold text-slate-950 dark:text-white">
+                  <h2 id="template-title" className="text-base font-semibold text-[var(--color-text-primary)]">
                     可用流程模板
                   </h2>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">从固定节点类型开始搭建业务流程</p>
+                  <p className="agent-muted mt-1 text-sm">从固定节点类型开始搭建业务流程</p>
                 </div>
                 <Archive className="h-5 w-5 text-violet-700" aria-hidden="true" />
               </div>
               <div className="grid gap-4 p-5 lg:grid-cols-3">
                 {workflowTemplates.map((template) => (
-                  <article key={template.title} className="rounded-lg border border-slate-200 bg-slate-50/60 p-4 transition-colors duration-200 hover:border-emerald-300 hover:bg-white dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-emerald-800 dark:hover:bg-slate-950">
+                  <article key={template.title} className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-4 transition-colors duration-200 hover:border-[var(--color-primary)] hover:bg-[var(--color-bg-card)]">
                     <div className="flex items-center justify-between gap-3">
-                      <span className="rounded bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-800">
+                      <span className="rounded bg-indigo-100 px-2 py-1 text-xs font-medium text-indigo-800">
                         {template.tag}
                       </span>
-                      <span className="text-xs text-slate-500 dark:text-slate-400">{template.nodes}</span>
+                      <span className="text-xs text-[var(--color-text-tertiary)]">{template.nodes}</span>
                     </div>
-                    <h3 className="mt-4 text-sm font-semibold text-slate-950 dark:text-white">{template.title}</h3>
-                    <p className="mt-2 min-h-12 text-sm leading-6 text-slate-600 dark:text-slate-300">{template.description}</p>
+                    <h3 className="mt-4 text-sm font-semibold text-[var(--color-text-primary)]">{template.title}</h3>
+                    <p className="agent-muted mt-2 min-h-12 text-sm leading-6">{template.description}</p>
                     <button
                       type="button"
-                      className="mt-4 inline-flex h-9 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-800 transition-colors duration-200 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+                      className="agent-button mt-4 h-9 px-3 text-sm"
                     >
                       <FileText className="h-4 w-4" aria-hidden="true" />
                       查看模板
@@ -458,11 +521,11 @@ export function WorkbenchShell() {
 
 function PlaceholderSurface({ title }: { title: string }) {
   return (
-    <div className="mx-auto max-w-7xl px-5 py-6 lg:px-8">
-      <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <p className="text-sm font-medium text-emerald-700">待开发模块</p>
-        <h2 className="mt-2 text-lg font-semibold text-slate-950 dark:text-white">{title}</h2>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">
+    <div className="mx-auto max-w-[1400px] px-5 py-6 lg:px-6">
+      <section className="agent-card p-6">
+        <p className="text-sm font-medium text-[var(--color-primary)]">待开发模块</p>
+        <h2 className="mt-2 text-lg font-semibold text-[var(--color-text-primary)]">{title}</h2>
+        <p className="agent-muted mt-2 max-w-2xl text-sm leading-6">
           当前阶段先打通工作流核心闭环，该区域会在后续阶段按 `docs/development-plan.md` 继续补齐。
         </p>
       </section>
