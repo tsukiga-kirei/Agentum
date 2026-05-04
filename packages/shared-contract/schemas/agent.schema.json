@@ -1,8 +1,48 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agentum.local/schemas/agent.schema.json",
-  "title": "Agent",
+  "title": "AgentTemplate",
   "type": "object",
-  "description": "智能体配置协议占位 Schema。"
+  "description": "智能体模板协议，引用 Skills、MCP、知识库、模型配置和输出模式。",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string"
+    },
+    "skills": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "mcpServices": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "knowledgeBases": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "modelConfig": {
+      "type": "object"
+    },
+    "interactionMode": {
+      "type": "string",
+      "enum": ["once", "ask_then_confirm", "pause_then_continue"]
+    },
+    "outputSchema": {
+      "type": "object"
+    }
+  },
+  "required": ["id", "name", "version", "skills", "mcpServices", "modelConfig", "interactionMode"],
+  "additionalProperties": false
 }
-

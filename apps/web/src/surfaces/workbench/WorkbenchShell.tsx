@@ -16,6 +16,9 @@ import {
   Sun,
   UserRoundCheck,
 } from "lucide-react";
+import { PermissionPage } from "../admin/PermissionPage";
+import { AssetsPage } from "../assets/AssetsPage";
+import { RunAuditPage } from "../audit/RunAuditPage";
 import { WorkflowDraftsPage } from "../designer/WorkflowDraftsPage";
 
 type SurfaceKey = "workbench" | "designer" | "assets" | "audit" | "permission";
@@ -104,7 +107,7 @@ const pageTitles: Record<SurfaceKey, { title: string; eyebrow: string }> = {
   },
   assets: {
     title: "能力资产",
-    eyebrow: "阶段二：资产治理",
+    eyebrow: "阶段一：智能体与能力资产",
   },
   audit: {
     title: "运行审计",
@@ -510,25 +513,13 @@ export function WorkbenchShell() {
 
           {activeSurface === "designer" ? <WorkflowDraftsPage /> : null}
 
-          {activeSurface !== "workbench" && activeSurface !== "designer" ? (
-            <PlaceholderSurface title={pageTitle.title} />
-          ) : null}
+          {activeSurface === "assets" ? <AssetsPage /> : null}
+
+          {activeSurface === "audit" ? <RunAuditPage /> : null}
+
+          {activeSurface === "permission" ? <PermissionPage /> : null}
         </section>
       </div>
     </main>
-  );
-}
-
-function PlaceholderSurface({ title }: { title: string }) {
-  return (
-    <div className="mx-auto max-w-[1400px] px-5 py-6 lg:px-6">
-      <section className="agent-card p-6">
-        <p className="text-sm font-medium text-[var(--color-primary)]">待开发模块</p>
-        <h2 className="mt-2 text-lg font-semibold text-[var(--color-text-primary)]">{title}</h2>
-        <p className="agent-muted mt-2 max-w-2xl text-sm leading-6">
-          当前阶段先打通工作流核心闭环，该区域会在后续阶段按 `docs/development-plan.md` 继续补齐。
-        </p>
-      </section>
-    </div>
   );
 }

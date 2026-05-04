@@ -24,6 +24,7 @@ import {
   PanelRightOpen,
   PackageCheck,
   Route,
+  Search,
   ShieldCheck,
   Split,
   TextCursorInput,
@@ -50,6 +51,10 @@ type EditorNodeData = {
   outputVariables: string[];
   pausePoint: boolean;
   configStatus: "complete" | "incomplete";
+  runState: "未开始" | "等待输入" | "执行中" | "等待审核" | "已完成" | "待配置";
+  outputMode: "一次性输出" | "追问确认" | "分析后暂停";
+  toolCount: number;
+  allowQuestion: boolean;
 };
 
 type WorkflowVariable = {
@@ -118,6 +123,10 @@ const initialNodes: Node<EditorNodeData>[] = [
       outputVariables: ["starter", "started_at"],
       pausePoint: false,
       configStatus: "complete",
+      runState: "已完成",
+      outputMode: "一次性输出",
+      toolCount: 0,
+      allowQuestion: false,
     },
   },
   {
@@ -133,6 +142,10 @@ const initialNodes: Node<EditorNodeData>[] = [
       outputVariables: ["project_info", "attachments"],
       pausePoint: true,
       configStatus: "complete",
+      runState: "等待输入",
+      outputMode: "一次性输出",
+      toolCount: 0,
+      allowQuestion: false,
     },
   },
   {
@@ -148,6 +161,10 @@ const initialNodes: Node<EditorNodeData>[] = [
       outputVariables: ["analysis_result", "risk_level"],
       pausePoint: true,
       configStatus: "incomplete",
+      runState: "待配置",
+      outputMode: "分析后暂停",
+      toolCount: 2,
+      allowQuestion: true,
     },
   },
   {
@@ -163,6 +180,10 @@ const initialNodes: Node<EditorNodeData>[] = [
       outputVariables: ["research_pack"],
       pausePoint: false,
       configStatus: "complete",
+      runState: "执行中",
+      outputMode: "一次性输出",
+      toolCount: 3,
+      allowQuestion: false,
     },
   },
   {
@@ -178,6 +199,10 @@ const initialNodes: Node<EditorNodeData>[] = [
       outputVariables: ["report_draft"],
       pausePoint: false,
       configStatus: "complete",
+      runState: "未开始",
+      outputMode: "一次性输出",
+      toolCount: 1,
+      allowQuestion: false,
     },
   },
   {
@@ -193,6 +218,10 @@ const initialNodes: Node<EditorNodeData>[] = [
       outputVariables: ["review_required"],
       pausePoint: false,
       configStatus: "complete",
+      runState: "未开始",
+      outputMode: "一次性输出",
+      toolCount: 0,
+      allowQuestion: false,
     },
   },
   {
@@ -208,6 +237,10 @@ const initialNodes: Node<EditorNodeData>[] = [
       outputVariables: ["review_decision"],
       pausePoint: true,
       configStatus: "incomplete",
+      runState: "等待审核",
+      outputMode: "一次性输出",
+      toolCount: 0,
+      allowQuestion: false,
     },
   },
   {
@@ -223,6 +256,10 @@ const initialNodes: Node<EditorNodeData>[] = [
       outputVariables: ["delivery_record"],
       pausePoint: false,
       configStatus: "incomplete",
+      runState: "待配置",
+      outputMode: "一次性输出",
+      toolCount: 1,
+      allowQuestion: false,
     },
   },
 ];
@@ -260,6 +297,8 @@ export function WorkflowEditorPage({ workflow, onBack }: WorkflowEditorPageProps
   const [selectedNodeId, setSelectedNodeId] = useState(initialNodes[0].id);
   const [isOutlineCollapsed, setIsOutlineCollapsed] = useState(false);
   const [isConfigCollapsed, setIsConfigCollapsed] = useState(false);
+  const [nodeSearchValue, setNodeSearchValue] = useState("");
+  const [insertedVariableName, setInsertedVariableName] = useState("");
 
   const decoratedNodes = useMemo(() => {
     return nodes.map((node) => {
@@ -286,6 +325,7 @@ export function WorkflowEditorPage({ workflow, onBack }: WorkflowEditorPageProps
 
     return sourceIndex >= 0 && sourceIndex < selectedNodeIndex;
   });
+  const matchedNodes = decoratedNodes.filter((node) => node.data.label.includes(nodeSearchValue.trim()));
 
   function handleSaveSelectedNode() {
     // 当前保存只更新前端配置状态，后续应提交 NodeDefinition.config 并接入 Zod 表单校验。
@@ -310,6 +350,15 @@ export function WorkflowEditorPage({ workflow, onBack }: WorkflowEditorPageProps
     // 节点选中态驱动右侧配置面板，后续接入表单保存时也以该 id 定位 NodeDefinition。
     setSelectedNodeId(node.id);
   };
+
+  function handleSearchLocate() {
+    const nextNode = matchedNodes[0];
+
+    if (nextNode) {
+      // 搜索只负责定位选中态，后续接入自动布局后再同步控制 React Flow viewport。
+      setSelectedNodeId(nextNode.id);
+    }
+  }
   const editorGridClass =
     isOutlineCollapsed && isConfigCollapsed
       ? "xl:grid-cols-[minmax(0,1fr)]"
@@ -348,6 +397,21 @@ export function WorkflowEditorPage({ workflow, onBack }: WorkflowEditorPageProps
           <p className="agent-muted mt-1 text-xs">以画布为主，可按需收起大纲和配置面板；支持滚轮缩放与拖拽平移。</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <label className="relative block w-64">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-tertiary)]" aria-hidden="true" />
+            <span className="sr-only">搜索节点</span>
+            <input
+              value={nodeSearchValue}
+              onChange={(event) => setNodeSearchValue(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  handleSearchLocate();
+                }
+              }}
+              className="agent-input h-9 w-full pl-9 pr-3 text-sm outline-none"
+              placeholder="搜索节点并定位"
+            />
+          </label>
           <button
             type="button"
             onClick={() => setIsOutlineCollapsed((current) => !current)}
@@ -433,7 +497,15 @@ export function WorkflowEditorPage({ workflow, onBack }: WorkflowEditorPageProps
           </ReactFlow>
         </section>
 
-        {!isConfigCollapsed ? <NodeConfigPanel node={selectedNode} availableVariables={availableVariables} onSave={handleSaveSelectedNode} /> : null}
+        {!isConfigCollapsed ? (
+          <NodeConfigPanel
+            node={selectedNode}
+            availableVariables={availableVariables}
+            insertedVariableName={insertedVariableName}
+            onInsertVariable={setInsertedVariableName}
+            onSave={handleSaveSelectedNode}
+          />
+        ) : null}
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
@@ -473,6 +545,9 @@ function WorkflowCanvasNode({ data, selected }: NodeProps<EditorNodeData>) {
       </div>
       <div className="space-y-3 p-3">
         <p className="line-clamp-2 text-xs leading-5 text-[var(--color-text-secondary)]">{data.summary}</p>
+        <p className="text-[11px] font-medium text-[var(--color-text-tertiary)]">
+          {data.runState} · {data.outputMode}
+        </p>
         <div className="flex flex-wrap gap-1.5">
           <span className="rounded bg-[var(--color-bg-hover)] px-2 py-1 text-[11px] font-medium text-[var(--color-text-secondary)]">
             入 {data.inputVariables.length}
@@ -480,7 +555,11 @@ function WorkflowCanvasNode({ data, selected }: NodeProps<EditorNodeData>) {
           <span className="rounded bg-[var(--color-bg-hover)] px-2 py-1 text-[11px] font-medium text-[var(--color-text-secondary)]">
             出 {data.outputVariables.length}
           </span>
+          <span className="rounded bg-[var(--color-bg-hover)] px-2 py-1 text-[11px] font-medium text-[var(--color-text-secondary)]">
+            工具 {data.toolCount}
+          </span>
           {data.pausePoint ? <span className="rounded bg-amber-100 px-2 py-1 text-[11px] font-medium text-amber-800">暂停</span> : null}
+          {data.allowQuestion ? <span className="rounded bg-sky-100 px-2 py-1 text-[11px] font-medium text-sky-800">可追问</span> : null}
         </div>
         <StatusBadge complete={data.configStatus === "complete"} compact />
       </div>
@@ -492,10 +571,14 @@ function WorkflowCanvasNode({ data, selected }: NodeProps<EditorNodeData>) {
 function NodeConfigPanel({
   node,
   availableVariables,
+  insertedVariableName,
+  onInsertVariable,
   onSave,
 }: {
   node: Node<EditorNodeData>;
   availableVariables: WorkflowVariable[];
+  insertedVariableName: string;
+  onInsertVariable: (variableName: string) => void;
   onSave: () => void;
 }) {
   const meta = nodeTypeMeta[node.data.nodeType];
@@ -531,7 +614,16 @@ function NodeConfigPanel({
         </PanelGroup>
 
         <PanelGroup title="可引用变量">
-          <VariableList variables={availableVariables.map((variable) => variable.name)} emptyText="当前节点前没有可引用变量" />
+          <VariableList
+            variables={availableVariables.map((variable) => variable.name)}
+            emptyText="当前节点前没有可引用变量"
+            onInsertVariable={onInsertVariable}
+          />
+          {insertedVariableName ? (
+            <p className="mt-3 rounded bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-800">
+              已插入变量占位：{"{{"}{insertedVariableName}{"}}"}
+            </p>
+          ) : null}
         </PanelGroup>
 
         <PanelGroup title="输出变量">
@@ -540,6 +632,35 @@ function NodeConfigPanel({
 
         <PanelGroup title="核心配置">
           <NodeTypeConfig node={node} />
+        </PanelGroup>
+
+        <PanelGroup title="能力装配">
+          <ConfigRows
+            rows={[
+              ["Skills", node.data.nodeType === "agent" ? "需求拆解、追问澄清、风险识别" : "按节点类型自动隐藏"],
+              ["MCP", node.data.toolCount > 0 ? `${node.data.toolCount} 个工具已启用` : "未启用外部工具"],
+              ["知识库", node.data.nodeType === "agent" ? "产品制度库" : "未引用"],
+            ]}
+          />
+        </PanelGroup>
+
+        <PanelGroup title="交互模式">
+          <ConfigRows
+            rows={[
+              ["输出模式", node.data.outputMode],
+              ["允许追问", node.data.allowQuestion ? "允许用户确认后继续" : "不允许追问"],
+              ["暂停策略", node.data.pausePoint ? "写入 waiting_event" : "执行后进入下游"],
+            ]}
+          />
+        </PanelGroup>
+
+        <PanelGroup title="权限与审计">
+          <ConfigRows
+            rows={[
+              ["权限校验", node.data.toolCount > 0 || node.data.pausePoint ? "需要后端复核" : "基础读取"],
+              ["审计事件", node.data.toolCount > 0 ? "记录工具调用与脱敏摘要" : "记录节点状态变更"],
+            ]}
+          />
         </PanelGroup>
 
         <button
@@ -638,7 +759,15 @@ function PanelGroup({ title, children }: { title: string; children: ReactNode })
   );
 }
 
-function VariableList({ variables, emptyText }: { variables: string[]; emptyText: string }) {
+function VariableList({
+  variables,
+  emptyText,
+  onInsertVariable,
+}: {
+  variables: string[];
+  emptyText: string;
+  onInsertVariable?: (variableName: string) => void;
+}) {
   if (variables.length === 0) {
     return <p className="text-sm text-[var(--color-text-tertiary)]">{emptyText}</p>;
   }
@@ -646,9 +775,15 @@ function VariableList({ variables, emptyText }: { variables: string[]; emptyText
   return (
     <div className="flex flex-wrap gap-2">
       {variables.map((variable) => (
-        <span key={variable} className="rounded bg-[var(--color-bg-card)] px-2 py-1 text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-[var(--color-border-light)]">
+        <button
+          key={variable}
+          type="button"
+          onClick={() => onInsertVariable?.(variable)}
+          className="rounded bg-[var(--color-bg-card)] px-2 py-1 text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-[var(--color-border-light)] transition-colors duration-200 hover:text-[var(--color-primary)]"
+          title={onInsertVariable ? "点击插入变量占位符" : undefined}
+        >
           {variable}
-        </span>
+        </button>
       ))}
     </div>
   );

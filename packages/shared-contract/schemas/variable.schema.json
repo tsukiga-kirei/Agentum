@@ -3,6 +3,32 @@
   "$id": "https://agentum.local/schemas/variable.schema.json",
   "title": "Variable",
   "type": "object",
-  "description": "工作流变量协议占位 Schema。"
+  "description": "工作流变量协议，用于声明变量来源、类型、敏感性和交付可用性。",
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "type": {
+      "type": "string",
+      "enum": ["string", "number", "boolean", "object", "array", "file", "decision"]
+    },
+    "sourceNode": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "jsonSchema": {
+      "type": "object"
+    },
+    "sensitive": {
+      "type": "boolean"
+    },
+    "deliverable": {
+      "type": "boolean"
+    }
+  },
+  "required": ["name", "type", "sourceNode", "sensitive", "deliverable"],
+  "additionalProperties": false
 }
-

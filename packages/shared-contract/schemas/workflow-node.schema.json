@@ -3,6 +3,44 @@
   "$id": "https://agentum.local/schemas/workflow-node.schema.json",
   "title": "WorkflowNode",
   "type": "object",
-  "description": "工作流节点协议占位 Schema。"
+  "description": "工作流节点协议，用于约束固定节点类型、变量引用和核心配置。",
+  "properties": {
+    "nodeId": {
+      "type": "string"
+    },
+    "nodeType": {
+      "type": "string",
+      "enum": ["trigger", "user_input", "agent", "parallel_group", "merge", "condition", "human_review", "delivery"]
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "inputVariables": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "outputVariables": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "config": {
+      "type": "object"
+    },
+    "retryPolicy": {
+      "type": "object"
+    },
+    "timeoutSeconds": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "required": ["nodeId", "nodeType", "name", "inputVariables", "outputVariables"],
+  "additionalProperties": false
 }
-

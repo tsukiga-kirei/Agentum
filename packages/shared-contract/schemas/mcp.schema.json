@@ -3,6 +3,40 @@
   "$id": "https://agentum.local/schemas/mcp.schema.json",
   "title": "McpService",
   "type": "object",
-  "description": "MCP 服务配置协议占位 Schema。"
+  "description": "MCP 服务配置协议，用于控制工具可见性、调用风险和审计要求。",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string"
+    },
+    "visibleScopes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "authorizedRoles": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "riskLevel": {
+      "type": "string",
+      "enum": ["low", "medium", "high"]
+    },
+    "requiresApproval": {
+      "type": "boolean"
+    },
+    "auditRequired": {
+      "type": "boolean"
+    }
+  },
+  "required": ["id", "name", "version", "authorizedRoles", "riskLevel", "auditRequired"],
+  "additionalProperties": false
 }
-

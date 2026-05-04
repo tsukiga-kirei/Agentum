@@ -8,5 +8,114 @@ servers:
     description: 本地开发环境
 paths: {}
 components:
-  schemas: {}
-
+  schemas:
+    ApiError:
+      type: object
+      properties:
+        code:
+          type: string
+          example: WORKFLOW_NODE_CONFIG_INVALID
+        message:
+          type: string
+          example: 智能体节点缺少输出变量配置
+        details:
+          type: object
+      required:
+        - code
+        - message
+    ApiResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          nullable: true
+        error:
+          anyOf:
+            - $ref: "#/components/schemas/ApiError"
+            - type: "null"
+        requestId:
+          type: string
+      required:
+        - success
+        - data
+        - error
+        - requestId
+    WorkflowDefinition:
+      type: object
+      description: 工作流定义草稿或发布版本的前后端共享结构。
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+          enum: [draft, review, published]
+        version:
+          type: string
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowNode"
+        variables:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowVariable"
+      required:
+        - id
+        - name
+        - status
+        - nodes
+        - variables
+    WorkflowNode:
+      type: object
+      properties:
+        nodeId:
+          type: string
+        nodeType:
+          type: string
+          enum: [trigger, user_input, agent, parallel_group, merge, condition, human_review, delivery]
+        name:
+          type: string
+        inputVariables:
+          type: array
+          items:
+            type: string
+        outputVariables:
+          type: array
+          items:
+            type: string
+        config:
+          type: object
+        timeoutSeconds:
+          type: integer
+      required:
+        - nodeId
+        - nodeType
+        - name
+        - inputVariables
+        - outputVariables
+    WorkflowVariable:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [string, number, boolean, object, array, file, decision]
+        sourceNode:
+          type: string
+        description:
+          type: string
+        sensitive:
+          type: boolean
+        deliverable:
+          type: boolean
+      required:
+        - name
+        - type
+        - sourceNode
+        - sensitive
+        - deliverable
