@@ -359,163 +359,156 @@ export function WorkflowEditorPage({ workflow, onBack }: WorkflowEditorPageProps
       setSelectedNodeId(nextNode.id);
     }
   }
+  // 画布区域占据主要视觉空间，大纲和配置面板作为辅助侧栏
   const editorGridClass =
     isOutlineCollapsed && isConfigCollapsed
       ? "xl:grid-cols-[minmax(0,1fr)]"
       : isOutlineCollapsed
-        ? "xl:grid-cols-[minmax(0,1fr)_320px]"
+        ? "xl:grid-cols-[minmax(0,1fr)_300px]"
         : isConfigCollapsed
-          ? "xl:grid-cols-[220px_minmax(0,1fr)]"
-          : "xl:grid-cols-[220px_minmax(0,1fr)_320px]";
+          ? "xl:grid-cols-[200px_minmax(0,1fr)]"
+          : "xl:grid-cols-[200px_minmax(0,1fr)_300px]";
 
   return (
-    <div className="mx-auto max-w-[1800px] space-y-3 px-4 py-4 lg:px-5">
-      <div className="agent-card flex flex-col gap-3 p-3.5 xl:flex-row xl:items-center xl:justify-between">
-        <div className="min-w-0">
-          <button
-            type="button"
-            onClick={onBack}
-            className="agent-button mb-2 h-8 px-3 text-sm"
-          >
-            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-            返回列表
-          </button>
-          <p className="text-sm font-medium text-[var(--color-primary)]">工作流编辑器</p>
-          <h2 className="mt-1 text-xl font-semibold text-[var(--color-text-primary)]">{workflow.name}</h2>
-          <p className="agent-muted mt-2 max-w-3xl text-sm leading-6">{workflow.description}</p>
+    <div className="flex h-[calc(100vh-var(--header-height))] flex-col">
+      {/* 紧凑内联工具栏 —— 返回、标题、搜索、面板开关并排展示 */}
+      <div className="flex flex-wrap items-center gap-3 border-b border-[var(--color-border-light)] bg-[var(--color-bg-card)] px-4 py-2">
+        <button
+          type="button"
+          onClick={onBack}
+          className="agent-button h-7 px-2 text-xs"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" aria-hidden="true" />
+          返回
+        </button>
+        <div className="mr-auto min-w-0">
+          <h2 className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{workflow.name}</h2>
         </div>
-        <div className="grid gap-2 sm:grid-cols-3">
-          <EditorMetric label="节点" value={String(nodes.length)} />
-          <EditorMetric label="暂停点" value={String(nodes.filter((node) => node.data.pausePoint).length)} />
-          <EditorMetric label="待配置" value={String(nodes.filter((node) => node.data.configStatus === "incomplete").length)} />
+        <div className="flex items-center gap-1.5 text-xs text-[var(--color-text-tertiary)]">
+          <span className="rounded bg-[var(--color-bg-hover)] px-1.5 py-0.5">节点 {nodes.length}</span>
+          <span className="rounded bg-[var(--color-bg-hover)] px-1.5 py-0.5">暂停 {nodes.filter((n) => n.data.pausePoint).length}</span>
+          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">待配 {incompleteNodes.length}</span>
         </div>
+        <label className="relative block w-48">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--color-text-tertiary)]" aria-hidden="true" />
+          <span className="sr-only">搜索节点</span>
+          <input
+            value={nodeSearchValue}
+            onChange={(event) => setNodeSearchValue(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                handleSearchLocate();
+              }
+            }}
+            className="agent-input h-7 w-full pl-7 pr-2 text-xs outline-none"
+            placeholder="搜索节点"
+          />
+        </label>
+        <button
+          type="button"
+          onClick={() => setIsOutlineCollapsed((c) => !c)}
+          className="agent-button h-7 px-2 text-xs"
+          title={isOutlineCollapsed ? "展开大纲" : "收起大纲"}
+        >
+          {isOutlineCollapsed ? <PanelLeftOpen className="h-3.5 w-3.5" /> : <PanelLeftClose className="h-3.5 w-3.5" />}
+        </button>
+        <button
+          type="button"
+          onClick={() => setIsConfigCollapsed((c) => !c)}
+          className="agent-button h-7 px-2 text-xs"
+          title={isConfigCollapsed ? "展开配置" : "收起配置"}
+        >
+          {isConfigCollapsed ? <PanelRightOpen className="h-3.5 w-3.5" /> : <PanelRightClose className="h-3.5 w-3.5" />}
+        </button>
       </div>
 
-      <div className="agent-card flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
-        <div>
-          <p className="text-sm font-semibold text-[var(--color-text-primary)]">画布工作区</p>
-          <p className="agent-muted mt-1 text-xs">以画布为主，可按需收起大纲和配置面板；支持滚轮缩放与拖拽平移。</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <label className="relative block w-64">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-tertiary)]" aria-hidden="true" />
-            <span className="sr-only">搜索节点</span>
-            <input
-              value={nodeSearchValue}
-              onChange={(event) => setNodeSearchValue(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  handleSearchLocate();
-                }
-              }}
-              className="agent-input h-9 w-full pl-9 pr-3 text-sm outline-none"
-              placeholder="搜索节点并定位"
-            />
-          </label>
-          <button
-            type="button"
-            onClick={() => setIsOutlineCollapsed((current) => !current)}
-            className="agent-button h-9 px-3 text-sm"
-          >
-            {isOutlineCollapsed ? <PanelLeftOpen className="h-4 w-4" aria-hidden="true" /> : <PanelLeftClose className="h-4 w-4" aria-hidden="true" />}
-            {isOutlineCollapsed ? "展开大纲" : "收起大纲"}
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsConfigCollapsed((current) => !current)}
-            className="agent-button h-9 px-3 text-sm"
-          >
-            {isConfigCollapsed ? <PanelRightOpen className="h-4 w-4" aria-hidden="true" /> : <PanelRightClose className="h-4 w-4" aria-hidden="true" />}
-            {isConfigCollapsed ? "展开配置" : "收起配置"}
-          </button>
-        </div>
-      </div>
-
-      <div className={`grid gap-3 ${editorGridClass}`}>
+      {/* 画布主体 —— 撑满剩余高度 */}
+      <div className={`grid min-h-0 flex-1 ${editorGridClass}`}>
+        {/* 左侧大纲 */}
         {!isOutlineCollapsed ? (
-        <section className="agent-card" aria-labelledby="outline-title">
-          <div className="px-3 pb-2 pt-3">
-            <h3 id="outline-title" className="text-sm font-semibold text-[var(--color-text-primary)]">
-              流程大纲
-            </h3>
-            <p className="agent-muted mt-1 text-xs">快速定位节点和配置状态</p>
-          </div>
-          <div className="space-y-2 p-2.5">
-            {decoratedNodes.map((node, index) => {
-              const meta = nodeTypeMeta[node.data.nodeType];
-              const Icon = meta.icon;
-              const isActive = selectedNodeId === node.id;
+          <section className="overflow-y-auto border-r border-[var(--color-border-light)] bg-[var(--color-bg-card)]" aria-labelledby="outline-title">
+            <div className="px-3 pb-1.5 pt-3">
+              <h3 id="outline-title" className="text-xs font-semibold text-[var(--color-text-primary)]">流程大纲</h3>
+            </div>
+            <div className="space-y-1.5 px-2 pb-3">
+              {decoratedNodes.map((node, index) => {
+                const meta = nodeTypeMeta[node.data.nodeType];
+                const Icon = meta.icon;
+                const isActive = selectedNodeId === node.id;
 
-              return (
-                <button
-                  key={node.id}
-                  type="button"
-                  onClick={() => setSelectedNodeId(node.id)}
-                  className={`flex w-full items-start gap-2.5 rounded-lg border px-2.5 py-2.5 text-left transition-colors duration-200 ${
-                    isActive ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white" : "border-[var(--color-border-light)] bg-[var(--color-bg-card)] text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]"
-                  }`}
-                >
-                  <span
-                    className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded ${
-                      isActive ? "bg-white/15 text-white" : "bg-[var(--color-bg-hover)]"
+                return (
+                  <button
+                    key={node.id}
+                    type="button"
+                    onClick={() => setSelectedNodeId(node.id)}
+                    className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors duration-150 ${
+                      isActive
+                        ? "bg-[var(--color-primary)] text-white"
+                        : "text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]"
                     }`}
                   >
-                    <Icon className="h-4 w-4" aria-hidden="true" />
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block text-xs font-medium">
-                      {index + 1}. {node.data.label}
+                    <span
+                      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded ${
+                        isActive ? "bg-white/15" : "bg-[var(--color-bg-hover)]"
+                      }`}
+                      style={isActive ? {} : { color: meta.color }}
+                    >
+                      <Icon className="h-3.5 w-3.5" aria-hidden="true" />
                     </span>
-                    <span className={`mt-1 block text-xs ${isActive ? "text-indigo-100" : "text-[var(--color-text-tertiary)]"}`}>
-                      {node.data.typeLabel}
+                    <span className="min-w-0">
+                      <span className="block truncate text-[11px] font-medium">
+                        {index + 1}. {node.data.label}
+                      </span>
+                      <span className={`block text-[10px] ${isActive ? "text-indigo-100" : "text-[var(--color-text-tertiary)]"}`}>
+                        {node.data.typeLabel}
+                      </span>
                     </span>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </section>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
         ) : null}
 
-        <section className="agent-card min-h-[760px] overflow-hidden xl:h-[calc(100vh-196px)]" aria-label="工作流画布">
+        {/* 中间画布 —— 完整撑满 */}
+        <section className="relative min-h-0 overflow-hidden bg-[var(--color-canvas-bg)]" aria-label="工作流画布">
           <ReactFlow
             nodes={decoratedNodes}
             edges={initialEdges}
             nodeTypes={nodeTypes}
             onNodeClick={handleNodeClick}
-            defaultViewport={{ x: 26, y: 145, zoom: 0.78 }}
+            defaultViewport={{ x: 40, y: 120, zoom: 0.82 }}
             nodesDraggable={false}
             panOnScroll
             zoomOnScroll
             zoomOnPinch
-            minZoom={0.25}
-            maxZoom={2.2}
+            minZoom={0.2}
+            maxZoom={2.5}
           >
-            <Background color="#cbd5e1" gap={18} />
-            <Controls />
+            <Background color="var(--color-canvas-dot)" gap={20} size={1.5} />
+            <Controls position="bottom-left" />
             <MiniMap nodeStrokeWidth={3} zoomable pannable />
           </ReactFlow>
         </section>
 
+        {/* 右侧配置面板 */}
         {!isConfigCollapsed ? (
-          <NodeConfigPanel
-            node={selectedNode}
-            availableVariables={availableVariables}
-            insertedVariableName={insertedVariableName}
-            onInsertVariable={setInsertedVariableName}
-            onSave={handleSaveSelectedNode}
-          />
+          <div className="overflow-y-auto border-l border-[var(--color-border-light)] bg-[var(--color-bg-card)]">
+            <NodeConfigPanel
+              node={selectedNode}
+              availableVariables={availableVariables}
+              insertedVariableName={insertedVariableName}
+              onInsertVariable={setInsertedVariableName}
+              onSave={handleSaveSelectedNode}
+            />
+          </div>
         ) : null}
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
-        <VariableRegistry variables={workflowVariables} />
-        <PublishCheckSummary incompleteNodes={incompleteNodes} />
       </div>
     </div>
   );
 }
 
+// 编辑器指标卡片（当前未在主布局中使用，保留供后续工具栏扩展）
 function EditorMetric({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] px-4 py-2.5">
@@ -585,7 +578,7 @@ function NodeConfigPanel({
   const Icon = meta.icon;
 
   return (
-    <aside className="agent-card" aria-labelledby="node-config-title">
+    <aside aria-labelledby="node-config-title">
       <div className="px-4 pb-2 pt-4">
         <div className="flex items-center gap-3">
           <span className="flex h-10 w-10 items-center justify-center rounded-lg" style={{ backgroundColor: `${meta.color}18`, color: meta.color }}>
