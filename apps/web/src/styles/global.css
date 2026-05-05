@@ -471,6 +471,63 @@ textarea:focus-visible {
   background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.04'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
 }
 
+.login-brand-mark {
+  position: relative;
+  width: 76px;
+  height: 76px;
+  margin-bottom: 22px;
+  border-radius: 17px;
+  isolation: isolate;
+}
+
+.login-brand-mark::before {
+  content: "";
+  position: absolute;
+  inset: -18px;
+  z-index: -1;
+  border-radius: 34px;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.72), transparent 30%),
+    radial-gradient(circle at 76% 76%, rgba(34, 211, 238, 0.76), transparent 38%),
+    radial-gradient(circle at 38% 78%, rgba(16, 185, 129, 0.58), transparent 34%),
+    linear-gradient(135deg, rgba(165, 180, 252, 0.76), rgba(16, 185, 129, 0.36));
+  filter: blur(14px);
+  opacity: 0.86;
+  animation: login-brand-breathe 2.15s ease-in-out infinite;
+}
+
+.login-brand-mark::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.04) 52%, rgba(103, 232, 249, 0.22));
+  opacity: 0.45;
+  pointer-events: none;
+  mix-blend-mode: screen;
+}
+
+.login-brand-mark img {
+  position: relative;
+  z-index: 1;
+  border-radius: 17px;
+  box-shadow:
+    0 18px 42px rgba(17, 24, 39, 0.24),
+    0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+@keyframes login-brand-breathe {
+  0%, 100% {
+    transform: scale(0.92);
+    opacity: 0.48;
+  }
+
+  50% {
+    transform: scale(1.18);
+    opacity: 1;
+  }
+}
+
 .login-form-side {
   flex: 1;
   background: var(--color-bg-card);
@@ -494,6 +551,13 @@ textarea:focus-visible {
   .login-form-side {
     padding: 32px 24px;
     border-radius: var(--radius-lg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-bg-shape,
+  .login-brand-mark::before {
+    animation: none;
   }
 }
 

@@ -1,0 +1,20 @@
+{
+  "name": "Agentum",
+  "short_name": "Agentum",
+  "icons": [
+    {
+      "src": "/brand/agentum-mark.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon.ico",
+      "sizes": "32x32",
+      "type": "image/x-icon"
+    }
+  ],
+  "theme_color": "#4F46E5",
+  "background_color": "#F0F2F7",
+  "display": "standalone"
+}

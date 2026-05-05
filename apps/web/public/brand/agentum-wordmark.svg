@@ -1,0 +1,20 @@
+<svg width="680" height="160" viewBox="0 0 680 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="160" height="160" rx="36" fill="url(#bg)" />
+  <path d="M48 116L76 42C77.2 38.6 82.8 38.6 84 42L112 116" stroke="white" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M64 89H96" stroke="url(#bar)" stroke-width="14" stroke-linecap="round" />
+  <circle cx="80" cy="40" r="10" fill="#A5B4FC" stroke="white" stroke-width="4" />
+  <circle cx="48" cy="116" r="11" fill="#22D3EE" stroke="white" stroke-width="4" />
+  <circle cx="112" cy="116" r="11" fill="#10B981" stroke="white" stroke-width="4" />
+  <text x="196" y="102" fill="#0F172A" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="72" font-weight="750" letter-spacing="0">Agentum</text>
+  <defs>
+    <linearGradient id="bg" x1="22" y1="15" x2="139" y2="145" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#111827" />
+      <stop offset="0.55" stop-color="#4F46E5" />
+      <stop offset="1" stop-color="#0891B2" />
+    </linearGradient>
+    <linearGradient id="bar" x1="64" y1="89" x2="96" y2="89" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#67E8F9" />
+      <stop offset="1" stop-color="#A7F3D0" />
+    </linearGradient>
+  </defs>
+</svg>

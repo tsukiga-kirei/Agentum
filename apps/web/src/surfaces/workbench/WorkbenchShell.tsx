@@ -2,7 +2,6 @@ import { useState } from "react";
 import {
   Activity,
   Archive,
-  Bot,
   CheckCircle2,
   ClipboardList,
   FileText,
@@ -23,6 +22,7 @@ import { AssetsPage } from "../assets/AssetsPage";
 import { RunAuditPage } from "../audit/RunAuditPage";
 import { WorkflowDraftsPage } from "../designer/WorkflowDraftsPage";
 import { ThemeToggle } from "../../components/ThemeToggle";
+import { AgentumMark } from "../../components/brand/AgentumMark";
 import { useAuthStore } from "../../stores/authStore";
 import type { UserRole } from "../../types/auth";
 
@@ -240,8 +240,8 @@ export function WorkbenchShell() {
         <aside className={`hidden shrink-0 sticky top-0 h-screen max-h-screen overflow-hidden bg-[var(--color-bg-sidebar)] text-[var(--color-text-sidebar)] transition-[width,background-color] duration-300 lg:flex lg:flex-col ${isSidebarCollapsed ? "w-[var(--sidebar-collapsed-width)]" : "w-[var(--sidebar-width)]"}`}>
           {/* Logo 区 */}
           <div className={`flex h-[var(--header-height)] items-center gap-3 px-5 ${isSidebarCollapsed ? "justify-center px-0" : ""}`}>
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--color-primary)] text-white">
-              <Bot className="h-5 w-5" aria-hidden="true" />
+            <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg shadow-sm">
+              <AgentumMark className="h-9 w-9" />
             </div>
             <div className={isSidebarCollapsed ? "hidden" : ""}>
               <p className="text-lg font-bold text-[var(--color-sidebar-logo-text)]">Agentum</p>

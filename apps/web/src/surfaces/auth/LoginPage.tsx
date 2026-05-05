@@ -1,7 +1,8 @@
 import { FormEvent, useState } from "react";
-import { Bot, KeyRound, LayoutDashboard, Settings, Shield, User } from "lucide-react";
+import { KeyRound, LayoutDashboard, Settings, Shield, User } from "lucide-react";
 import { useAuthStore } from "../../stores/authStore";
 import { ThemeToggle } from "../../components/ThemeToggle";
+import { AgentumMark } from "../../components/brand/AgentumMark";
 import type { PortalType } from "../../types/auth";
 
 // 登录入口选项，与 docs/system-overview.md 中角色定义对齐。
@@ -98,21 +99,8 @@ export function LoginPage() {
         {/* 左侧品牌区 */}
         <div className="login-branding">
           <div style={{ position: "relative", zIndex: 1 }}>
-            <div
-              style={{
-                width: 56,
-                height: 56,
-                borderRadius: 14,
-                background: "rgba(255,255,255,0.15)",
-                backdropFilter: "blur(10px)",
-                border: "1px solid rgba(255,255,255,0.2)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                marginBottom: 20,
-              }}
-            >
-              <Bot className="h-7 w-7 text-white" />
+            <div className="login-brand-mark">
+              <AgentumMark className="h-full w-full" variant="full" />
             </div>
             <h1 style={{ fontSize: 28, fontWeight: 700, color: "#fff", margin: "0 0 8px", letterSpacing: "-0.02em" }}>
               Agentum
