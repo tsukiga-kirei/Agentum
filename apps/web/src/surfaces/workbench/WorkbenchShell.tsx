@@ -12,24 +12,28 @@ import {
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
+  Settings,
   ShieldCheck,
   User,
   UserRoundCheck,
 } from "lucide-react";
 import { PermissionPage } from "../admin/PermissionPage";
+import { SystemManagementPage } from "../admin/SystemManagementPage";
 import { AssetsPage } from "../assets/AssetsPage";
 import { RunAuditPage } from "../audit/RunAuditPage";
 import { WorkflowDraftsPage } from "../designer/WorkflowDraftsPage";
 import { ThemeToggle } from "../../components/ThemeToggle";
 import { useAuthStore } from "../../stores/authStore";
+import type { UserRole } from "../../types/auth";
 
-type SurfaceKey = "workbench" | "designer" | "assets" | "audit" | "permission";
+type SurfaceKey = "workbench" | "designer" | "assets" | "audit" | "permission" | "system";
 
 type NavigationItem = {
   key: SurfaceKey;
   label: string;
   description: string;
   icon: typeof LayoutDashboard;
+  visibleFor?: UserRole[];
 };
 
 type Metric = {
@@ -62,7 +66,7 @@ type RunRecord = {
   duration: string;
 };
 
-// 产品分区先用前端内存态切换，后续接入路由后应映射到 product-surfaces.md 中的推荐路径。
+// 产品分区先用前端内存态切换，后续接入路由后应映射到 system-overview.md 中的产品区域。
 const navigationItems: NavigationItem[] = [
   {
     key: "workbench",
@@ -75,24 +79,35 @@ const navigationItems: NavigationItem[] = [
     label: "流程设计",
     description: "画布与节点配置",
     icon: GitBranch,
+    visibleFor: ["designer", "agent_admin", "capability_admin", "space_admin", "system_admin"],
   },
   {
     key: "assets",
     label: "能力资产",
     description: "智能体、Skills、MCP",
     icon: Library,
+    visibleFor: ["designer", "agent_admin", "capability_admin", "space_admin", "system_admin"],
   },
   {
     key: "audit",
     label: "运行审计",
     description: "日志和证据链",
     icon: Activity,
+    visibleFor: ["reviewer", "space_admin", "system_admin"],
   },
   {
     key: "permission",
     label: "权限管理",
-    description: "角色、空间、授权",
+    description: "人员、部门、角色",
     icon: ShieldCheck,
+    visibleFor: ["space_admin", "system_admin"],
+  },
+  {
+    key: "system",
+    label: "系统管理",
+    description: "租户、模型、交付",
+    icon: Settings,
+    visibleFor: ["system_admin"],
   },
 ];
 
@@ -213,12 +228,16 @@ export function WorkbenchShell() {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const isDarkMode = themeMode === "dark";
+  const currentRole = user?.role ?? "executor";
+  const canDesignWorkflow = ["designer", "agent_admin", "capability_admin", "space_admin", "system_admin"].includes(currentRole);
+  const canOpenSystemManagement = currentRole === "system_admin";
+  const visibleNavigationItems = navigationItems.filter((item) => !item.visibleFor || item.visibleFor.includes(currentRole));
 
   return (
     <main className={`min-h-screen bg-[var(--color-bg-page)] text-[var(--color-text-primary)] transition-colors duration-300 ${isDarkMode ? "dark" : ""}`}>
       <div className="flex min-h-screen">
         {/* ===== 侧边栏 ===== */}
-        <aside className={`hidden shrink-0 bg-[var(--color-bg-sidebar)] text-[var(--color-text-sidebar)] transition-[width,background-color] duration-300 lg:flex lg:flex-col ${isSidebarCollapsed ? "w-[var(--sidebar-collapsed-width)]" : "w-[var(--sidebar-width)]"}`}>
+        <aside className={`hidden shrink-0 sticky top-0 h-screen max-h-screen overflow-hidden bg-[var(--color-bg-sidebar)] text-[var(--color-text-sidebar)] transition-[width,background-color] duration-300 lg:flex lg:flex-col ${isSidebarCollapsed ? "w-[var(--sidebar-collapsed-width)]" : "w-[var(--sidebar-width)]"}`}>
           {/* Logo 区 */}
           <div className={`flex h-[var(--header-height)] items-center gap-3 px-5 ${isSidebarCollapsed ? "justify-center px-0" : ""}`}>
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--color-primary)] text-white">
@@ -230,11 +249,11 @@ export function WorkbenchShell() {
           </div>
 
           {/* 导航菜单 */}
-          <nav className="flex-1 space-y-1 px-3 py-3" aria-label="主导航">
+          <nav className="flex-1 overflow-y-auto min-h-0 space-y-1 px-3 py-3" aria-label="主导航">
             <p className={`px-3 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--color-sidebar-section-title)] ${isSidebarCollapsed ? "sr-only" : ""}`}>
               主工作区
             </p>
-            {navigationItems.map((item) => {
+            {visibleNavigationItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeSurface === item.key;
 
@@ -320,14 +339,26 @@ export function WorkbenchShell() {
                   <ClipboardList className="h-3.5 w-3.5" aria-hidden="true" />
                   我的待办
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveSurface("designer")}
-                  className="agent-button agent-button-primary h-8 px-3 text-[13px]"
-                >
-                  <GitBranch className="h-3.5 w-3.5" aria-hidden="true" />
-                  设计流程
-                </button>
+                {canDesignWorkflow ? (
+                  <button
+                    type="button"
+                    onClick={() => setActiveSurface("designer")}
+                    className="agent-button agent-button-primary h-8 px-3 text-[13px]"
+                  >
+                    <GitBranch className="h-3.5 w-3.5" aria-hidden="true" />
+                    设计流程
+                  </button>
+                ) : null}
+                {canOpenSystemManagement ? (
+                  <button
+                    type="button"
+                    onClick={() => setActiveSurface("system")}
+                    className="agent-button h-8 px-3 text-[13px]"
+                  >
+                    <Settings className="h-3.5 w-3.5" aria-hidden="true" />
+                    系统管理
+                  </button>
+                ) : null}
               </div>
             </div>
           </header>
@@ -486,6 +517,8 @@ export function WorkbenchShell() {
           {activeSurface === "audit" ? <RunAuditPage /> : null}
 
           {activeSurface === "permission" ? <PermissionPage /> : null}
+
+          {activeSurface === "system" ? <SystemManagementPage /> : null}
         </section>
       </div>
     </main>

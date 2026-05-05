@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentum.local/schemas/prompt-template.schema.json",
+  "title": "PromptTemplate",
+  "type": "object",
+  "description": "提示词模板协议，用于追问、组装、交付话术等可复用 Prompt 片段。",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string"
+    },
+    "category": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "published", "disabled"]
+    },
+    "content": {
+      "type": "string"
+    },
+    "tenantId": {
+      "type": "string"
+    }
+  },
+  "required": ["id", "name", "version", "category", "status", "content"],
+  "additionalProperties": false
+}

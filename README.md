@@ -1,83 +1,109 @@
 # Agentum
 
-Agentum 是一个面向企业 SOP 场景的智能体装配式工作流平台。
+Agentum 是一个以智能体为载体的企业工作流平台。它不是把所有业务都塞进一段 AI 聊天，而是把任务拆成清晰的工作步骤：用户在具体节点补充信息、追问确认、审核、回退或暂停，智能体在具体节点调用 Skills、MCP、提示词模板和交付能力，最终形成可审计、可恢复、可交付的业务结果。
 
-当前仓库处于项目初始化阶段，重点先沉淀文档、工程骨架、配置规范和本地开发基础设施。
+## 当前进度
 
-## 文档入口
+项目当前处于早期框架阶段，重点是先把产品心智、文档结构、前端工作台骨架、基础权限设计和数据库迁移路线稳定下来。
 
-- [AI 开发必读规范](./AGENTS.md)
-- [项目说明与实现规范](./docs/README.md)
-- [系统架构](./docs/architecture.md)
-- [产品界面分区](./docs/product-surfaces.md)
-- [技术栈建议](./docs/technology-stack.md)
-- [工作流引擎设计](./docs/workflow-engine.md)
-- [AI 交互运行设计](./docs/ai-interaction-runtime.md)
-- [权限模型](./docs/permission-model.md)
-- [前端设计规范](./docs/frontend-guidelines.md)
-- [前端工作流展示规范](./docs/frontend-workflow-visualization.md)
-- [开发规范](./docs/development-standards.md)
-- [开发计划](./docs/development-plan.md)
-- [Skills 与 MCP 推荐](./docs/skills-and-mcp.md)
-- [项目结构说明](./docs/project-structure.md)
+已具备：
 
-## 推荐技术路线
+- React + TypeScript 前端工作台骨架。
+- 登录页、业务工作台、流程设计、能力资产、运行审计、权限管理的静态演示入口。
+- Spring Boot API 服务骨架。
+- PostgreSQL、Redis、RabbitMQ、MinIO、Mailpit 的本地开发 Compose 配置。
+- OpenAPI / JSON Schema 的共享契约占位。
+
+正在推进：
+
+- 文档收敛为三份长期主文档。
+- 当前进度和后续任务独立记录到 `docs/progress/`。
+- 去掉知识库相关第一阶段范围，优先沉淀智能体模板、Skills、MCP、提示词模板和交付能力。
+- 先补齐租户、用户、部门、角色、权限策略、模型配置和交付能力的基础框架。
+
+详细阶段记录见 [docs/progress/README.md](./docs/progress/README.md)。
+
+## 文档
+
+长期主文档只维护三份：
+
+- [开发规范](./docs/development-standards.md)：开发约束、代码风格、测试要求、接口规范和当前任务入口。
+- [系统详细梳理介绍](./docs/system-overview.md)：产品定位、角色视角、核心工作流、能力资产、权限和运行态说明。
+- [架构文档](./docs/architecture.md)：技术栈、模块边界、数据模型、数据库版本管理和部署演进。
+
+当前执行状态与后续计划单独维护：
+
+- [当前进度与后续计划](./docs/progress/README.md)
+
+## 推荐技术栈
 
 ```text
-前端：React + TypeScript + React Flow
-后端：Java 21 / Kotlin + Spring Boot
-数据库：PostgreSQL
+前端：React + TypeScript + React Flow + Tailwind CSS
+后端：Java 21 + Spring Boot
+数据库：PostgreSQL + Flyway
 缓存：Redis
-队列：RabbitMQ / Kafka
-文件存储：S3 兼容对象存储
-Worker：Java / Python 按任务类型拆分
+队列：RabbitMQ
+文件存储：S3 兼容对象存储 / MinIO
+Worker：Java Worker 优先，复杂文档或 AI 辅助任务可补 Python Worker
+契约：OpenAPI + JSON Schema
 ```
 
-## 本地开发命令
+## 本地开发
 
-当前仓库只提供工程骨架和基础配置，业务实现会在后续补充。
-
-常用命令：
+启动本地基础设施：
 
 ```bash
 make dev-infra
-make down-infra
+```
+
+启动前端：
+
+```bash
 pnpm dev:web
 ```
 
-等价命令：
+关闭本地基础设施：
 
 ```bash
-docker compose -f docker-compose.dev.yml up -d
-docker compose -f docker-compose.dev.yml down
-pnpm --filter @agentum/web dev
+make down-infra
 ```
 
-本地基础设施包含：
+常用验证：
 
-- PostgreSQL：`localhost:5432`
-- Redis：`localhost:6379`
-- RabbitMQ：`localhost:5672`，管理台 `localhost:15672`
-- MinIO：`localhost:9000`，控制台 `localhost:9001`
-- Mailpit：SMTP `localhost:1025`，控制台 `localhost:8025`
+```bash
+pnpm lint:web
+pnpm build:web
+./gradlew test
+```
 
-## 当前目录
+本地基础设施默认端口：
+
+| 服务 | 地址 |
+| --- | --- |
+| PostgreSQL | `localhost:5432` |
+| Redis | `localhost:6379` |
+| RabbitMQ | `localhost:5672`，管理台 `localhost:15672` |
+| MinIO | `localhost:9000`，控制台 `localhost:9001` |
+| Mailpit | SMTP `localhost:1025`，控制台 `localhost:8025` |
+
+## 目录结构
 
 ```text
 apps/web                  前端应用
 apps/api                  后端 API 服务
-packages/shared-contract  共享协议与 Schema
+packages/shared-contract  OpenAPI、JSON Schema 和事件契约
 packages/ui               前端通用 UI 包
 workers/document-worker   文档处理 Worker
-workers/ai-worker         AI 任务 Worker
-deploy                    部署与 Docker 相关配置
-scripts                   辅助脚本目录
+workers/ai-worker         AI 辅助任务 Worker
+deploy                    Docker、Nginx、本地和部署配置
+scripts                   辅助脚本
 docs                      项目文档
 ```
 
-## 构建与配置
+## 贡献
 
-- 前端使用 `pnpm workspace` 管理。
-- 后端与 Java Worker 使用 Gradle Kotlin DSL，也就是 `build.gradle.kts` 和 `settings.gradle.kts`。
-- Docker 开发环境使用 [docker-compose.dev.yml](./docker-compose.dev.yml)。
-- 生产/集成环境的 Compose 骨架放在 [docker-compose.yml](./docker-compose.yml)。
+欢迎通过 Pull Request 一起推进。建议 PR 保持小步提交，说明变更背景、影响范围和验证结果；涉及权限、状态机、变量解析、MCP 调用、模型输出解析、审计、重试和交付能力时，请同步补测试或说明剩余风险。
+
+## License
+
+本项目计划采用 MIT License。许可证正文见 [LICENSE](./LICENSE)。

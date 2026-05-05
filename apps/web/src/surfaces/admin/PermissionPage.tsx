@@ -1,4 +1,4 @@
-import { Database, Eye, KeyRound, LockKeyhole, ShieldCheck, UserRoundCog } from "lucide-react";
+import { Building2, Database, Eye, KeyRound, LockKeyhole, ShieldCheck, UserRoundCog, UsersRound } from "lucide-react";
 
 type RolePolicy = {
   role: string;
@@ -20,6 +20,12 @@ const protectedResources = [
   { type: "McpService", policy: "按角色、智能体、工作流和环境控制工具可见性。", owner: "能力管理员" },
   { type: "ToolCredential", policy: "前端只展示脱敏状态，绑定与更新必须审计。", owner: "空间管理员" },
   { type: "AuditLog", policy: "只允许审计角色和管理员查询，敏感参数默认脱敏。", owner: "审计人员" },
+];
+
+const organizationItems = [
+  { title: "人员管理", detail: "成员状态、所属部门、空间角色、最近登录和禁用入口。", icon: UsersRound },
+  { title: "部门管理", detail: "租户内部门树，后续用于待办分派、审核范围和资源过滤。", icon: Building2 },
+  { title: "角色分配", detail: "一个用户可在不同空间拥有不同角色，角色只授予动作能力。", icon: UserRoundCog },
 ];
 
 export function PermissionPage() {
@@ -90,6 +96,25 @@ export function PermissionPage() {
               </p>
             </div>
           </div>
+        </div>
+      </section>
+
+      <section className="agent-card">
+        <SectionHeader icon={UsersRound} title="人员、部门与角色" description="权限管理先解决谁属于哪里、以什么角色处理哪些流程" />
+        <div className="grid gap-3 p-4 md:grid-cols-3">
+          {organizationItems.map((item) => {
+            const Icon = item.icon;
+
+            return (
+              <article key={item.title} className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-3">
+                <div className="flex items-center gap-2">
+                  <Icon className="h-4 w-4 text-[var(--color-primary)]" aria-hidden="true" />
+                  <h3 className="text-sm font-semibold">{item.title}</h3>
+                </div>
+                <p className="agent-muted mt-2 text-sm leading-6">{item.detail}</p>
+              </article>
+            );
+          })}
         </div>
       </section>
 

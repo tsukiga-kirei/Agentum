@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentum.local/schemas/delivery-capability.schema.json",
+  "title": "DeliveryCapability",
+  "type": "object",
+  "description": "交付能力协议，供交付节点引用并由系统管理配置底层通道。",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string"
+    },
+    "channel": {
+      "type": "string",
+      "enum": ["document", "email", "oa", "im", "webhook", "database"]
+    },
+    "riskLevel": {
+      "type": "string",
+      "enum": ["low", "medium", "high"]
+    },
+    "requiresApproval": {
+      "type": "boolean"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "published", "disabled"]
+    }
+  },
+  "required": ["id", "name", "version", "channel", "riskLevel", "requiresApproval", "status"],
+  "additionalProperties": false
+}

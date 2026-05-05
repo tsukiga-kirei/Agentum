@@ -43,6 +43,7 @@ export type AgentTemplateAsset = {
   status: "draft" | "published";
   skills: string[];
   mcpServices: string[];
+  promptTemplates: string[];
   model: string;
   outputMode: "once" | "ask_then_confirm" | "pause_then_continue";
 };
@@ -72,4 +73,29 @@ export type DeliveryRecord = {
   status: "pending" | "success" | "failed";
   artifact: string;
   retryable: boolean;
+};
+
+export type PromptTemplateAsset = {
+  id: string;
+  name: string;
+  version: string;
+  category: string;
+  status: "draft" | "published";
+  usage: string;
+};
+
+export type DeliveryCapabilityAsset = {
+  id: string;
+  name: string;
+  channel: "document" | "email" | "oa" | "im" | "webhook" | "database";
+  version: string;
+  riskLevel: "low" | "medium" | "high";
+  status: "draft" | "published";
+};
+
+export type TenantCapabilityGrant = {
+  tenantId: string;
+  capabilityId: string;
+  capabilityType: "model" | "skill" | "mcp" | "prompt_template" | "delivery";
+  status: "enabled" | "disabled";
 };

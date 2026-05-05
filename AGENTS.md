@@ -7,34 +7,34 @@
 所有任务都必须先阅读：
 
 - `README.md`
-- `docs/README.md`
-- `docs/development-plan.md`
 - `docs/development-standards.md`
-- `docs/project-structure.md`
+- `docs/system-overview.md`
+- `docs/architecture.md`
+- `docs/progress/README.md`
 
 涉及前端、页面、组件、交互或样式时，还必须阅读：
 
 - `.codex/skills/ui-ux-pro-max/SKILL.md`
-- `docs/frontend-guidelines.md`
-- `docs/frontend-workflow-visualization.md`
+- `docs/system-overview.md`
 
 涉及工作流、节点、变量、运行态或 AI 交互时，还必须阅读：
 
-- `docs/workflow-engine.md`
-- `docs/ai-interaction-runtime.md`
+- `docs/system-overview.md`
+- `docs/architecture.md`
 
 涉及权限、审计、角色、凭证或敏感操作时，还必须阅读：
 
-- `docs/permission-model.md`
+- `docs/system-overview.md`
+- `docs/architecture.md`
 
 涉及 Skills、MCP、智能体模板或能力资产时，还必须阅读：
 
-- `docs/skills-and-mcp.md`
+- `docs/system-overview.md`
+- `docs/architecture.md`
 
 涉及架构、模块边界、技术选型或新增服务时，还必须阅读：
 
 - `docs/architecture.md`
-- `docs/technology-stack.md`
 
 ## 2. 开发约束
 
@@ -52,7 +52,7 @@
 - 优先复用已有模式、类型、组件、工具函数和测试风格。
 - 修改范围尽量小，避免顺手重构无关代码。
 - 不覆盖或回滚他人未说明的改动。
-- 新增文档时同步维护 `README.md` 或 `docs/README.md` 中的入口索引。
+- 新增文档时同步维护 `README.md` 中的入口索引；阶段进度类文档同步维护 `docs/progress/README.md`。
 
 ## 4. 验证要求
 

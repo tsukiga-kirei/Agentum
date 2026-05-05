@@ -4,7 +4,7 @@ import { useAuthStore } from "../../stores/authStore";
 import { ThemeToggle } from "../../components/ThemeToggle";
 import type { PortalType } from "../../types/auth";
 
-// 登录入口选项，与 docs/permission-model.md 中角色定义对齐。
+// 登录入口选项，与 docs/system-overview.md 中角色定义对齐。
 // 三种入口面向不同角色，登录后进入不同默认页面。
 const portals: Array<{
   key: PortalType;
@@ -133,11 +133,11 @@ export function LoginPage() {
 
         {/* 右侧登录表单 */}
         <div className="login-form-side">
-          <div style={{ maxWidth: 380, width: "100%", margin: "0 auto" }}>
-            <h2 style={{ fontSize: 22, fontWeight: 700, color: "var(--color-text-primary)", margin: "0 0 4px" }}>
+          <div style={{ maxWidth: 420, width: "100%", margin: "0 auto" }}>
+            <h2 style={{ fontSize: 28, fontWeight: 700, color: "var(--color-text-primary)", margin: "0 0 8px" }}>
               欢迎回来
             </h2>
-            <p style={{ fontSize: 13, color: "var(--color-text-tertiary)", margin: "0 0 24px" }}>
+            <p style={{ fontSize: 15, color: "var(--color-text-tertiary)", margin: "0 0 32px" }}>
               选择身份入口并登录工作台
             </p>
 
@@ -158,7 +158,7 @@ export function LoginPage() {
                       alignItems: "center",
                       justifyContent: "center",
                       gap: 6,
-                      padding: "10px 8px",
+                      padding: "12px 8px",
                       border: isActive ? `1.5px solid ${portal.color}` : "1.5px solid var(--color-border)",
                       borderRadius: "var(--radius-lg)",
                       background: isActive ? `color-mix(in srgb, ${portal.color} 8%, var(--color-bg-card))` : "var(--color-bg-card)",
@@ -169,13 +169,13 @@ export function LoginPage() {
                     }}
                   >
                     <Icon
-                      className="h-4 w-4"
+                      className="h-5 w-5"
                       style={{ color: isActive ? portal.color : "var(--color-text-tertiary)" }}
                       aria-hidden="true"
                     />
                     <span
                       style={{
-                        fontSize: 12,
+                        fontSize: 14,
                         fontWeight: isActive ? 600 : 500,
                         color: isActive ? portal.color : "var(--color-text-secondary)",
                       }}
@@ -188,18 +188,18 @@ export function LoginPage() {
             </div>
 
             {/* 当前入口描述 */}
-            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--color-text-tertiary)", marginBottom: 20, padding: "0 2px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--color-text-tertiary)", marginBottom: 24, padding: "0 4px" }}>
               <span style={{ width: 6, height: 6, borderRadius: "50%", background: currentPortal.color, flexShrink: 0 }} />
               {currentPortal.description}
             </div>
 
             {/* 登录表单 */}
             <form onSubmit={handleSubmit}>
-              <div style={{ marginBottom: 14 }}>
+              <div style={{ marginBottom: 16 }}>
                 <div style={{ position: "relative" }}>
                   <User
-                    className="h-4 w-4"
-                    style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: "var(--color-text-tertiary)" }}
+                    className="h-5 w-5"
+                    style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--color-text-tertiary)" }}
                     aria-hidden="true"
                   />
                   <input
@@ -208,16 +208,16 @@ export function LoginPage() {
                     className="agent-input"
                     placeholder="用户名"
                     autoComplete="username"
-                    style={{ width: "100%", height: 44, paddingLeft: 40, paddingRight: 14, fontSize: 14 }}
+                    style={{ width: "100%", height: 48, paddingLeft: 44, paddingRight: 16, fontSize: 15 }}
                   />
                 </div>
               </div>
 
-              <div style={{ marginBottom: 14 }}>
+              <div style={{ marginBottom: 16 }}>
                 <div style={{ position: "relative" }}>
                   <KeyRound
-                    className="h-4 w-4"
-                    style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: "var(--color-text-tertiary)" }}
+                    className="h-5 w-5"
+                    style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--color-text-tertiary)" }}
                     aria-hidden="true"
                   />
                   <input
@@ -227,23 +227,23 @@ export function LoginPage() {
                     className="agent-input"
                     placeholder="密码"
                     autoComplete="current-password"
-                    style={{ width: "100%", height: 44, paddingLeft: 40, paddingRight: 14, fontSize: 14 }}
+                    style={{ width: "100%", height: 48, paddingLeft: 44, paddingRight: 16, fontSize: 15 }}
                   />
                 </div>
               </div>
 
               {/* 记住我 */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--color-text-secondary)", cursor: "pointer" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14, color: "var(--color-text-secondary)", cursor: "pointer" }}>
                   <input
                     type="checkbox"
                     checked={rememberMe}
                     onChange={(e) => setRememberMe(e.target.checked)}
-                    style={{ accentColor: "var(--color-primary)" }}
+                    style={{ accentColor: "var(--color-primary)", width: 16, height: 16 }}
                   />
                   记住我
                 </label>
-                <button type="button" style={{ border: "none", background: "none", fontSize: 13, color: "var(--color-primary)", cursor: "pointer", padding: 0 }}>
+                <button type="button" style={{ border: "none", background: "none", fontSize: 14, color: "var(--color-primary)", cursor: "pointer", padding: 0 }}>
                   忘记密码？
                 </button>
               </div>
@@ -269,12 +269,12 @@ export function LoginPage() {
                 disabled={loading}
                 style={{
                   width: "100%",
-                  height: 44,
+                  height: 48,
                   borderRadius: "var(--radius-md)",
                   border: "none",
                   background: `linear-gradient(135deg, ${currentPortal.color}, ${currentPortal.color}dd)`,
                   color: "#fff",
-                  fontSize: 14,
+                  fontSize: 16,
                   fontWeight: 600,
                   cursor: loading ? "wait" : "pointer",
                   opacity: loading ? 0.7 : 1,
@@ -291,14 +291,14 @@ export function LoginPage() {
             </form>
 
             {/* SSO 占位 */}
-            <div style={{ marginTop: 20, textAlign: "center" }}>
-              <p style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
+            <div style={{ marginTop: 24, textAlign: "center" }}>
+              <p style={{ fontSize: 13, color: "var(--color-text-tertiary)" }}>
                 企业 SSO 登录即将支持
               </p>
             </div>
 
             {/* 页脚 */}
-            <div style={{ textAlign: "center", marginTop: 24, color: "var(--color-text-tertiary)", fontSize: 12 }}>
+            <div style={{ textAlign: "center", marginTop: 32, color: "var(--color-text-tertiary)", fontSize: 13 }}>
               Agentum © 2025
             </div>
           </div>

@@ -3,7 +3,7 @@
   "$id": "https://agentum.local/schemas/agent.schema.json",
   "title": "AgentTemplate",
   "type": "object",
-  "description": "智能体模板协议，引用 Skills、MCP、知识库、模型配置和输出模式。",
+  "description": "智能体模板协议，引用 Skills、MCP、提示词模板、模型配置和输出模式。",
   "properties": {
     "id": {
       "type": "string"
@@ -26,7 +26,7 @@
         "type": "string"
       }
     },
-    "knowledgeBases": {
+    "promptTemplates": {
       "type": "array",
       "items": {
         "type": "string"
@@ -43,6 +43,6 @@
       "type": "object"
     }
   },
-  "required": ["id", "name", "version", "skills", "mcpServices", "modelConfig", "interactionMode"],
+  "required": ["id", "name", "version", "skills", "mcpServices", "promptTemplates", "modelConfig", "interactionMode"],
   "additionalProperties": false
 }

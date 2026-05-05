@@ -23,7 +23,7 @@ const currentRun = {
 const runSteps: RunStep[] = [
   { name: "补充业务材料", type: "用户输入", state: "已完成", duration: "2m 10s", summary: "收集需求背景、附件和交付物要求。" },
   { name: "智能体分析", type: "智能体", state: "已完成", duration: "38s", summary: "调用需求拆解与风险识别 Skill，生成 analysis_result 和 risk_level。" },
-  { name: "并行获取数据", type: "并行节点组", state: "已完成", duration: "1m 12s", summary: "文件读取 MCP、知识库检索和数据库只读查询均已返回。" },
+  { name: "并行获取数据", type: "并行节点组", state: "已完成", duration: "1m 12s", summary: "资料核验子智能体、文件读取 MCP 和数据库只读查询均已返回。" },
   { name: "人工审核", type: "人工审核", state: "等待审核", duration: "暂停 18m", summary: "等待负责人确认风险等级和交付范围。" },
   { name: "邮件交付", type: "交付", state: "等待输入", duration: "-", summary: "审核后生成邮件交付记录。" },
 ];
@@ -33,7 +33,7 @@ const variableSnapshots: WorkflowVariableContract[] = [
   { name: "attachments", sourceNode: "补充业务材料", type: "file", description: "需求附件清单", sensitive: true, deliverable: false },
   { name: "analysis_result", sourceNode: "智能体分析", type: "object", description: "需求拆解、风险和追问建议", sensitive: false, deliverable: true },
   { name: "risk_level", sourceNode: "智能体分析", type: "decision", description: "高风险", sensitive: false, deliverable: false },
-  { name: "research_pack", sourceNode: "并行获取数据", type: "object", description: "知识库和外部数据摘要", sensitive: false, deliverable: true },
+  { name: "research_pack", sourceNode: "并行获取数据", type: "object", description: "并行子智能体和外部数据摘要", sensitive: false, deliverable: true },
 ];
 
 const auditEvents: AuditEvent[] = [

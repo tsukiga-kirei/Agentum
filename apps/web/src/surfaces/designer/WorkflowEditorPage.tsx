@@ -175,7 +175,7 @@ const initialNodes: Node<EditorNodeData>[] = [
       label: "并行获取数据",
       typeLabel: "并行节点组",
       nodeType: "parallel_group",
-      summary: "并行执行资料核验、知识库检索和外部数据查询。",
+      summary: "并行执行资料核验、子智能体数据收集和外部数据查询。",
       inputVariables: ["analysis_result"],
       outputVariables: ["research_pack"],
       pausePoint: false,
@@ -632,7 +632,7 @@ function NodeConfigPanel({
             rows={[
               ["Skills", node.data.nodeType === "agent" ? "需求拆解、追问澄清、风险识别" : "按节点类型自动隐藏"],
               ["MCP", node.data.toolCount > 0 ? `${node.data.toolCount} 个工具已启用` : "未启用外部工具"],
-              ["知识库", node.data.nodeType === "agent" ? "产品制度库" : "未引用"],
+              ["提示词模板", node.data.nodeType === "agent" ? "需求追问模板" : "按节点类型选择"],
             ]}
           />
         </PanelGroup>
