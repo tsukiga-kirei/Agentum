@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, ClipboardCheck, Clock3, FileText, ListChecks, Mail, RotateCcw, ScrollText, TableProperties, UserCheck, Wrench } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock3, Eye, FileText, ListChecks, Mail, ScrollText, ShieldCheck, TableProperties, Wrench } from "lucide-react";
 import type { AuditEvent, DeliveryRecord, WorkflowRunState, WorkflowVariableContract } from "../../types/workflow-contract";
 
 type RunStep = {
@@ -17,6 +17,7 @@ const currentRun = {
   currentNode: "人工审核",
   pauseReason: "智能体识别到高风险范围变更，需要流程负责人确认。",
   waitingFor: "产品负责人 / 法务观察员",
+  pendingAction: "业务待办页处理人工审核，审计页仅保留证据快照。",
   requestId: "req_run_6f9c21",
 };
 
@@ -54,18 +55,19 @@ export function RunAuditPage() {
       <section className="agent-card p-5">
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px] xl:items-center">
           <div>
-            <p className="text-sm font-medium text-[var(--color-primary)]">阶段一：运行详情与审计证据链</p>
+            <p className="text-sm font-medium text-[var(--color-primary)]">阶段一：运行记录与审计证据</p>
             <h2 className="mt-2 text-xl font-semibold">{currentRun.workflow}</h2>
             <p className="agent-muted mt-3 max-w-3xl text-sm leading-6">
-              当前流程暂停在“{currentRun.currentNode}”，原因是：{currentRun.pauseReason}
+              审计视角只读展示执行证据。当前流程暂停在“{currentRun.currentNode}”，业务处理入口由待办或运行详情页承接。
             </p>
           </div>
           <div className="rounded-[var(--radius-md)] border border-amber-200 bg-amber-50 p-4 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
             <div className="flex items-center gap-2 text-sm font-semibold">
               <AlertTriangle className="h-4 w-4" aria-hidden="true" />
-              等待处理
+              当前暂停
             </div>
             <p className="mt-2 text-sm">等待对象：{currentRun.waitingFor}</p>
+            <p className="mt-1 text-xs">{currentRun.pendingAction}</p>
             <p className="mt-1 text-xs">Run：{currentRun.id} · {currentRun.version} · {currentRun.requestId}</p>
           </div>
         </div>
@@ -73,7 +75,7 @@ export function RunAuditPage() {
 
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
         <div className="agent-card">
-          <SectionHeader icon={ListChecks} title="运行步骤" description="展示流程为什么停住、下一步由谁处理" />
+          <SectionHeader icon={ListChecks} title="执行链路" description="按节点还原流程经过、停顿原因和耗时，仅作审计查看" />
           <div className="divide-y divide-[var(--color-border-light)]">
             {runSteps.map((step, index) => (
               <article key={step.name} className="grid gap-3 px-4 py-3 md:grid-cols-[40px_minmax(0,1fr)_120px] md:items-center">
@@ -93,18 +95,13 @@ export function RunAuditPage() {
         </div>
 
         <div className="agent-card">
-          <SectionHeader icon={ClipboardCheck} title="恢复操作" description="前端先模拟暂停恢复入口，后续接入恢复事件 API" />
+          <SectionHeader icon={ShieldCheck} title="审计边界" description="审计页不推动业务流程，只确认证据是否完整" />
           <div className="space-y-3 p-4">
-            <button type="button" className="agent-button agent-button-primary h-10 w-full px-3 text-sm">
-              <UserCheck className="h-4 w-4" aria-hidden="true" />
-              审核通过并继续
-            </button>
-            <button type="button" className="agent-button h-10 w-full px-3 text-sm">
-              <RotateCcw className="h-4 w-4" aria-hidden="true" />
-              驳回到智能体分析
-            </button>
+            <AuditBoundary title="业务处理归属" detail="审核通过、驳回、恢复运行等动作属于业务待办或运行详情页。" />
+            <AuditBoundary title="审计查看范围" detail="审计人员查看执行链路、变量快照、工具调用和交付记录，默认只读。" />
+            <AuditBoundary title="敏感数据处理" detail="凭证、附件和敏感变量只展示脱敏摘要；明文读取需要单独授权。" />
             <p className="agent-muted rounded-[var(--radius-md)] bg-[var(--color-bg-hover)] p-3 text-sm leading-6">
-              恢复事件需要记录操作人、审核意见、附件和来源渠道；后端仍需重新校验权限。
+              如确需管理员介入取消、重试或补偿，应进入运行监控能力，并写入新的审计事件。
             </p>
           </div>
         </div>
@@ -112,7 +109,7 @@ export function RunAuditPage() {
 
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
         <div className="agent-card">
-          <SectionHeader icon={TableProperties} title="变量快照" description="运行中的变量值、来源和交付可用性" />
+          <SectionHeader icon={TableProperties} title="节点输入输出快照" description="记录当时节点输入、输出来源和脱敏状态，不允许在审计页修改" />
           <div className="grid gap-3 p-4 md:grid-cols-2">
             {variableSnapshots.map((variable) => (
               <article key={variable.name} className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-3">
@@ -146,7 +143,7 @@ export function RunAuditPage() {
       </section>
 
       <section className="agent-card">
-        <SectionHeader icon={ScrollText} title="审计日志" description="MCP、模型输出解析、暂停和人工操作都进入证据链" />
+        <SectionHeader icon={ScrollText} title="审计日志" description="MCP、模型输出解析、暂停和人工操作都进入只读证据链" />
         <div className="divide-y divide-[var(--color-border-light)]">
           {auditEvents.map((event) => (
             <article key={event.id} className="grid gap-3 px-4 py-3 md:grid-cols-[110px_140px_minmax(0,1fr)_120px] md:items-center">
@@ -171,6 +168,18 @@ function SectionHeader({ icon: Icon, title, description }: { icon: typeof ListCh
       </div>
       <p className="agent-muted mt-1 text-sm">{description}</p>
     </div>
+  );
+}
+
+function AuditBoundary({ title, detail }: { title: string; detail: string }) {
+  return (
+    <article className="rounded-[var(--radius-md)] bg-[var(--color-bg-hover)] p-3">
+      <div className="flex items-center gap-2">
+        <Eye className="h-4 w-4 text-[var(--color-primary)]" aria-hidden="true" />
+        <h3 className="text-sm font-semibold">{title}</h3>
+      </div>
+      <p className="agent-muted mt-2 text-sm leading-6">{detail}</p>
+    </article>
   );
 }
 

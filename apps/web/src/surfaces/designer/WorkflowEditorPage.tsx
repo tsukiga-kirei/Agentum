@@ -64,6 +64,19 @@ type WorkflowVariable = {
   sensitive: boolean;
 };
 
+type ParallelTask = {
+  name: string;
+  assignee: string;
+  output: string;
+  purpose: string;
+};
+
+type MergeMapping = {
+  source: string;
+  target: string;
+  rule: string;
+};
+
 type WorkflowEditorPageProps = {
   workflow: WorkflowDraft;
   onBack: () => void;
@@ -289,6 +302,34 @@ const workflowVariables: WorkflowVariable[] = [
   { name: "review_required", sourceNode: "风险判断", type: "boolean", sensitive: false },
   { name: "review_decision", sourceNode: "人工审核", type: "decision", sensitive: false },
   { name: "delivery_record", sourceNode: "邮件交付", type: "object", sensitive: false },
+];
+
+// 并行与合并先用静态配置解释设计意图，后续会落到 parallel_group.config.tasks 和 merge.config.mappings。
+const parallelTasks: ParallelTask[] = [
+  {
+    name: "资料核验智能体",
+    assignee: "需求分析智能体 / 文件读取 MCP",
+    output: "material_check",
+    purpose: "核验附件完整性、材料版本和缺失字段。",
+  },
+  {
+    name: "外部数据查询智能体",
+    assignee: "数据查询 MCP",
+    output: "external_facts",
+    purpose: "并发读取业务系统中的客户、合同或经营指标摘要。",
+  },
+  {
+    name: "风险补充分析智能体",
+    assignee: "风险识别 Skill",
+    output: "risk_findings",
+    purpose: "补充范围变更、合规风险和需要人工确认的问题。",
+  },
+];
+
+const mergeMappings: MergeMapping[] = [
+  { source: "material_check", target: "report_draft.materials", rule: "按附件类型分组写入报告材料段落" },
+  { source: "external_facts", target: "report_draft.facts", rule: "保留来源摘要和查询时间，供审计追溯" },
+  { source: "risk_findings", target: "report_draft.risks", rule: "按风险等级排序，并生成审核关注点" },
 ];
 
 export function WorkflowEditorPage({ workflow, onBack }: WorkflowEditorPageProps) {
@@ -627,12 +668,24 @@ function NodeConfigPanel({
           <NodeTypeConfig node={node} />
         </PanelGroup>
 
+        {node.data.nodeType === "parallel_group" ? (
+          <PanelGroup title="并行子智能体">
+            <ParallelTaskList tasks={parallelTasks} />
+          </PanelGroup>
+        ) : null}
+
+        {node.data.nodeType === "merge" ? (
+          <PanelGroup title="合并映射">
+            <MergeMappingList mappings={mergeMappings} />
+          </PanelGroup>
+        ) : null}
+
         <PanelGroup title="能力装配">
           <ConfigRows
             rows={[
-              ["Skills", node.data.nodeType === "agent" ? "需求拆解、追问澄清、风险识别" : "按节点类型自动隐藏"],
+              ["Skills", node.data.nodeType === "agent" || node.data.nodeType === "merge" ? "需求拆解、追问澄清、风险识别" : "按节点类型自动隐藏"],
               ["MCP", node.data.toolCount > 0 ? `${node.data.toolCount} 个工具已启用` : "未启用外部工具"],
-              ["提示词模板", node.data.nodeType === "agent" ? "需求追问模板" : "按节点类型选择"],
+              ["提示词模板", node.data.nodeType === "agent" ? "需求追问模板" : node.data.nodeType === "merge" ? "报告组装模板" : "按节点类型选择"],
             ]}
           />
         </PanelGroup>
@@ -696,6 +749,30 @@ function NodeTypeConfig({ node }: { node: Node<EditorNodeData> }) {
     );
   }
 
+  if (node.data.nodeType === "parallel_group") {
+    return (
+      <ConfigRows
+        rows={[
+          ["执行方式", "3 个子智能体并发"],
+          ["失败策略", "单个失败可重试，全部失败才阻断"],
+          ["输出变量", "research_pack"],
+        ]}
+      />
+    );
+  }
+
+  if (node.data.nodeType === "merge") {
+    return (
+      <ConfigRows
+        rows={[
+          ["组装方式", "模板组装 + 报告组装智能体"],
+          ["输入来源", "并行结果、智能体分析"],
+          ["输出变量", "report_draft"],
+        ]}
+      />
+    );
+  }
+
   if (node.data.nodeType === "delivery") {
     return (
       <ConfigRows
@@ -727,6 +804,39 @@ function NodeTypeConfig({ node }: { node: Node<EditorNodeData> }) {
         ["后续表单", "按节点协议生成"],
       ]}
     />
+  );
+}
+
+function ParallelTaskList({ tasks }: { tasks: ParallelTask[] }) {
+  return (
+    <div className="space-y-2">
+      {tasks.map((task) => (
+        <article key={task.name} className="rounded bg-[var(--color-bg-card)] px-2 py-2 ring-1 ring-[var(--color-border-light)]">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h5 className="text-xs font-semibold text-[var(--color-text-primary)]">{task.name}</h5>
+            <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800">{task.output}</span>
+          </div>
+          <p className="mt-1 text-xs text-[var(--color-text-secondary)]">{task.purpose}</p>
+          <p className="mt-1 text-[11px] text-[var(--color-text-tertiary)]">执行能力：{task.assignee}</p>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function MergeMappingList({ mappings }: { mappings: MergeMapping[] }) {
+  return (
+    <div className="space-y-2">
+      {mappings.map((mapping) => (
+        <article key={mapping.target} className="rounded bg-[var(--color-bg-card)] px-2 py-2 ring-1 ring-[var(--color-border-light)]">
+          <div className="grid gap-1 text-xs md:grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)]">
+            <span className="font-medium text-[var(--color-text-secondary)]">{mapping.source}</span>
+            <span className="font-semibold text-[var(--color-text-primary)]">{mapping.target}</span>
+          </div>
+          <p className="mt-1 text-[11px] leading-5 text-[var(--color-text-tertiary)]">{mapping.rule}</p>
+        </article>
+      ))}
+    </div>
   );
 }
 

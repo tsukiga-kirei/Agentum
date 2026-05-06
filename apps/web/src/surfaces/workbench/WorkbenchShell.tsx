@@ -57,6 +57,7 @@ type WorkflowTemplate = {
   description: string;
   nodes: string;
   tag: string;
+  startLabel: string;
 };
 
 type RunRecord = {
@@ -91,7 +92,7 @@ const navigationItems: NavigationItem[] = [
   {
     key: "audit",
     label: "运行审计",
-    description: "日志和证据链",
+    description: "只读证据链",
     icon: Activity,
     visibleFor: ["reviewer", "space_admin", "system_admin"],
   },
@@ -175,18 +176,21 @@ const workflowTemplates: WorkflowTemplate[] = [
     description: "输入需求材料，自动拆解要点，人工确认后生成评审文档。",
     nodes: "7 个节点",
     tag: "需求",
+    startLabel: "发起需求分析",
   },
   {
     title: "合同审查交付",
     description: "识别风险条款，汇总修改建议，审核通过后生成交付记录。",
     nodes: "8 个节点",
     tag: "法务",
+    startLabel: "发起合同审查",
   },
   {
     title: "经营报告组装",
     description: "并行获取数据摘要，合并分析结论，输出报告草稿。",
     nodes: "9 个节点",
     tag: "经营",
+    startLabel: "发起报告流程",
   },
 ];
 
@@ -416,7 +420,7 @@ export function WorkbenchShell() {
                       <h2 id="todo-title" className="text-sm font-semibold text-[var(--color-text-primary)]">
                         我的待办
                       </h2>
-                      <p className="agent-muted mt-0.5 text-xs">需要输入、确认或审核的流程节点</p>
+                      <p className="agent-muted mt-0.5 text-xs">流程已暂停，并且现在轮到我处理</p>
                     </div>
                     <UserRoundCheck className="h-4 w-4 text-amber-600" aria-hidden="true" />
                   </div>
@@ -453,7 +457,7 @@ export function WorkbenchShell() {
                       <h2 id="run-title" className="text-sm font-semibold text-[var(--color-text-primary)]">
                         运行态摘要
                       </h2>
-                      <p className="agent-muted mt-0.5 text-xs">当前流程位置和处理状态</p>
+                      <p className="agent-muted mt-0.5 text-xs">我有权限查看的流程位置，不一定需要我处理</p>
                     </div>
                     <Activity className="h-4 w-4 text-sky-600" aria-hidden="true" />
                   </div>
@@ -481,7 +485,7 @@ export function WorkbenchShell() {
                     <h2 id="template-title" className="text-sm font-semibold text-[var(--color-text-primary)]">
                       可用流程模板
                     </h2>
-                    <p className="agent-muted mt-0.5 text-xs">从固定节点类型开始搭建业务流程</p>
+                    <p className="agent-muted mt-0.5 text-xs">点击后创建一次流程运行，进入业务步骤页</p>
                   </div>
                   <Archive className="h-4 w-4 text-violet-600" aria-hidden="true" />
                 </div>
@@ -498,10 +502,10 @@ export function WorkbenchShell() {
                       <p className="agent-muted mt-1.5 min-h-10 text-xs leading-5">{template.description}</p>
                       <button
                         type="button"
-                        className="agent-button mt-3 h-8 px-2.5 text-xs"
+                        className="agent-button agent-button-primary mt-3 h-8 px-2.5 text-xs"
                       >
                         <FileText className="h-3.5 w-3.5" aria-hidden="true" />
-                        查看模板
+                        {template.startLabel}
                       </button>
                     </article>
                   ))}

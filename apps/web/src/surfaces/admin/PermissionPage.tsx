@@ -1,160 +1,310 @@
-import { Building2, Database, Eye, KeyRound, LockKeyhole, ShieldCheck, UserRoundCog, UsersRound } from "lucide-react";
+import { useState } from "react";
+import { Building2, Database, Eye, FileText, LockKeyhole, ShieldCheck, UserRoundCog, UsersRound } from "lucide-react";
+
+type PermissionTabKey = "organization" | "roles" | "resources" | "sensitive" | "audit";
+
+type PermissionTab = {
+  key: PermissionTabKey;
+  label: string;
+  description: string;
+};
+
+type BusinessAction = {
+  label: string;
+  code: string;
+};
 
 type RolePolicy = {
   role: string;
   scope: string;
-  actions: string[];
-  sensitiveActions: string[];
+  actions: BusinessAction[];
+  sensitiveActions: BusinessAction[];
 };
 
-const rolePolicies: RolePolicy[] = [
-  { role: "系统管理员", scope: "全局配置、模型和系统级 MCP", actions: ["read", "create", "update", "delete"], sensitiveActions: ["manage_credential", "view_audit_log"] },
-  { role: "空间管理员", scope: "业务空间成员、资产和权限", actions: ["read", "create", "update", "publish"], sensitiveActions: ["manage_permission", "invoke_sensitive_mcp"] },
-  { role: "流程设计者", scope: "工作流定义、节点配置和测试运行", actions: ["read", "create", "update", "execute"], sensitiveActions: ["publish"] },
-  { role: "审核人", scope: "人工审核节点和待办处理", actions: ["read", "approve"], sensitiveActions: ["download_file"] },
-  { role: "执行人", scope: "发起流程、补充输入和查看结果", actions: ["read", "execute"], sensitiveActions: [] },
-];
+type ResourceGrant = {
+  resource: string;
+  owner: string;
+  grants: string;
+  rule: string;
+};
 
-const protectedResources = [
-  { type: "Workflow", policy: "发布前校验节点配置、变量引用和敏感交付目标。", owner: "流程设计者" },
-  { type: "McpService", policy: "按角色、智能体、工作流和环境控制工具可见性。", owner: "能力管理员" },
-  { type: "ToolCredential", policy: "前端只展示脱敏状态，绑定与更新必须审计。", owner: "空间管理员" },
-  { type: "AuditLog", policy: "只允许审计角色和管理员查询，敏感参数默认脱敏。", owner: "审计人员" },
+type SensitivePolicy = {
+  action: string;
+  owner: string;
+  approval: string;
+  note: string;
+};
+
+const permissionTabs: PermissionTab[] = [
+  { key: "organization", label: "人员组织", description: "用户、部门和空间成员关系" },
+  { key: "roles", label: "角色权限", description: "角色能做哪些业务动作" },
+  { key: "resources", label: "资源授权", description: "具体流程、资产和结果给谁看" },
+  { key: "sensitive", label: "敏感动作", description: "高风险调用、外部交付和凭证审批" },
+  { key: "audit", label: "审计可见性", description: "谁能看证据链和脱敏字段" },
 ];
 
 const organizationItems = [
   { title: "人员管理", detail: "成员状态、所属部门、空间角色、最近登录和禁用入口。", icon: UsersRound },
-  { title: "部门管理", detail: "租户内部门树，后续用于待办分派、审核范围和资源过滤。", icon: Building2 },
+  { title: "部门管理", detail: "租户内部门树，用于待办分派、审核范围和资源过滤。", icon: Building2 },
   { title: "角色分配", detail: "一个用户可在不同空间拥有不同角色，角色只授予动作能力。", icon: UserRoundCog },
 ];
 
+const rolePolicies: RolePolicy[] = [
+  {
+    role: "系统管理员",
+    scope: "全局租户、模型、系统级能力和凭证策略",
+    actions: [
+      { label: "查看", code: "read" },
+      { label: "新增", code: "create" },
+      { label: "编辑", code: "update" },
+      { label: "删除", code: "delete" },
+    ],
+    sensitiveActions: [
+      { label: "管理凭证策略", code: "manage_credential" },
+      { label: "查看审计日志", code: "view_audit_log" },
+    ],
+  },
+  {
+    role: "租户 / 空间管理员",
+    scope: "租户内成员、部门、空间、资产授权和发布策略",
+    actions: [
+      { label: "查看", code: "read" },
+      { label: "新增", code: "create" },
+      { label: "编辑", code: "update" },
+      { label: "发布", code: "publish" },
+    ],
+    sensitiveActions: [
+      { label: "分配权限", code: "manage_permission" },
+      { label: "审批高风险 MCP", code: "invoke_sensitive_mcp" },
+    ],
+  },
+  {
+    role: "流程设计者",
+    scope: "工作流定义、节点配置、测试运行和发布申请",
+    actions: [
+      { label: "查看", code: "read" },
+      { label: "新建草稿", code: "create" },
+      { label: "编辑配置", code: "update" },
+      { label: "测试运行", code: "execute" },
+    ],
+    sensitiveActions: [{ label: "提交发布", code: "publish" }],
+  },
+  {
+    role: "审核人",
+    scope: "人工审核节点、高风险审批和待办处理",
+    actions: [
+      { label: "查看", code: "read" },
+      { label: "审核", code: "approve" },
+    ],
+    sensitiveActions: [{ label: "下载敏感文件", code: "download_sensitive_file" }],
+  },
+  {
+    role: "执行人",
+    scope: "发起流程、补充输入、追问确认和查看授权结果",
+    actions: [
+      { label: "查看", code: "read" },
+      { label: "发起流程", code: "execute" },
+    ],
+    sensitiveActions: [],
+  },
+];
+
+const resourceGrants: ResourceGrant[] = [
+  { resource: "流程模板", owner: "流程设计者", grants: "按角色、部门或空间授权发起和查看", rule: "只展示已发布且当前用户可发起的模板。" },
+  { resource: "智能体模板", owner: "智能体管理员", grants: "授权给流程、设计者或业务空间", rule: "节点引用模板版本，运行时再次校验可用性。" },
+  { resource: "运行记录", owner: "流程负责人", grants: "发起人、处理人、负责人、审计角色可见", rule: "业务用户看摘要，审计角色看只读证据链。" },
+  { resource: "交付物", owner: "业务负责人", grants: "按用户、部门、角色或外部交付目标授权", rule: "敏感文件下载需要单独动作权限和审计。" },
+];
+
+const sensitivePolicies: SensitivePolicy[] = [
+  { action: "高风险 MCP 调用", owner: "租户 / 空间管理员", approval: "需要审批", note: "例如邮件发送、OA 创建、数据库写入；调用前由后端网关复核。" },
+  { action: "外部系统交付", owner: "流程负责人", approval: "需要二次确认", note: "交付到邮件、OA、IM、Webhook 前需要记录目标和交付变量。" },
+  { action: "凭证绑定与更新", owner: "系统管理员", approval: "系统管理处理", note: "权限管理只控制谁能申请或审批，凭证明文永远不进前端。" },
+  { action: "敏感文件下载", owner: "审计 / 空间管理员", approval: "按策略控制", note: "下载动作单独授权，和普通查看运行摘要分开。" },
+];
+
 export function PermissionPage() {
+  // 权限页按租户管理员的日常任务组织展示，动作码只作为后端策略标识露出在次级文本中。
+  const [activeTab, setActiveTab] = useState<PermissionTabKey>("organization");
+  const activeTabMeta = permissionTabs.find((tab) => tab.key === activeTab) ?? permissionTabs[0];
+
   return (
     <div className="mx-auto max-w-[1400px] space-y-5 px-5 py-6 lg:px-6">
       <section className="agent-card p-5">
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-center">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_390px] xl:items-center">
           <div>
-            <p className="text-sm font-medium text-[var(--color-primary)]">阶段一：权限前端占位</p>
-            <h2 className="mt-2 text-xl font-semibold">把权限、凭证和敏感操作从第一版就显式展示出来</h2>
+            <p className="text-sm font-medium text-[var(--color-primary)]">权限管理</p>
+            <h2 className="mt-2 text-xl font-semibold">按租户内角色、资源和敏感动作分配可见范围</h2>
             <p className="agent-muted mt-3 max-w-3xl text-sm leading-6">
-              前端只负责展示权限边界和操作入口，真实鉴权、MCP 调用和凭证读取必须由后端再次校验。
+              页面按业务管理员能理解的对象组织；后端仍使用动作码、资源授权和敏感动作策略做最终判断。
             </p>
           </div>
           <div className="rounded-[var(--radius-md)] border border-red-200 bg-red-50 p-4 text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-100">
             <div className="flex items-center gap-2 text-sm font-semibold">
               <LockKeyhole className="h-4 w-4" aria-hidden="true" />
-              敏感操作前端不持有最终授权
+              页面入口不是安全边界
             </div>
-            <p className="mt-2 text-sm">发布、凭证、生产交付、敏感 MCP 均需要后端二次判断。</p>
+            <p className="mt-2 text-sm">发布、凭证、外部交付、敏感 MCP 和审计查看都必须由后端再次校验。</p>
           </div>
         </div>
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
-        <div className="agent-card">
-          <SectionHeader icon={UserRoundCog} title="角色策略" description="RBAC + 资源级权限的前端可视化" />
-          <div className="divide-y divide-[var(--color-border-light)]">
-            {rolePolicies.map((policy) => (
-              <article key={policy.role} className="px-4 py-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-sm font-semibold">{policy.role}</h3>
-                    <p className="agent-muted mt-1 text-xs">{policy.scope}</p>
-                  </div>
-                  <span className="rounded bg-[var(--color-bg-hover)] px-2 py-1 text-xs text-[var(--color-text-secondary)] ring-1 ring-[var(--color-border-light)]">
-                    {policy.actions.length} 个基础动作
-                  </span>
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {policy.actions.map((action) => (
-                    <Tag key={action}>{action}</Tag>
-                  ))}
-                  {policy.sensitiveActions.map((action) => (
-                    <span key={action} className="rounded bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800">{action}</span>
-                  ))}
-                </div>
-              </article>
+      <section className="agent-card overflow-hidden">
+        <div className="grid gap-0 lg:grid-cols-[250px_minmax(0,1fr)]">
+          <div className="border-b border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-3 lg:border-b-0 lg:border-r">
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
+              {permissionTabs.map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setActiveTab(tab.key)}
+                  className={`rounded-[var(--radius-md)] px-3 py-2 text-left transition-colors duration-200 ${
+                    activeTab === tab.key
+                      ? "bg-[var(--color-primary)] text-white"
+                      : "bg-[var(--color-bg-card)] text-[var(--color-text-primary)] hover:bg-[var(--color-bg-sidebar-active)]"
+                  }`}
+                >
+                  <span className="block text-sm font-semibold">{tab.label}</span>
+                  <span className={`mt-1 block text-xs ${activeTab === tab.key ? "text-indigo-100" : "text-[var(--color-text-tertiary)]"}`}>{tab.description}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="min-w-0 p-4">
+            <div className="mb-4 flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-[var(--color-primary)]" aria-hidden="true" />
+              <div>
+                <h3 className="text-base font-semibold">{activeTabMeta.label}</h3>
+                <p className="agent-muted mt-1 text-sm">{activeTabMeta.description}</p>
+              </div>
+            </div>
+
+            {activeTab === "organization" ? <OrganizationPanel /> : null}
+            {activeTab === "roles" ? <RolePolicyPanel /> : null}
+            {activeTab === "resources" ? <ResourceGrantPanel /> : null}
+            {activeTab === "sensitive" ? <SensitivePolicyPanel /> : null}
+            {activeTab === "audit" ? <AuditVisibilityPanel /> : null}
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function OrganizationPanel() {
+  return (
+    <div className="grid gap-3 md:grid-cols-3">
+      {organizationItems.map((item) => {
+        const Icon = item.icon;
+
+        return (
+          <article key={item.title} className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-3">
+            <div className="flex items-center gap-2">
+              <Icon className="h-4 w-4 text-[var(--color-primary)]" aria-hidden="true" />
+              <h3 className="text-sm font-semibold">{item.title}</h3>
+            </div>
+            <p className="agent-muted mt-2 text-sm leading-6">{item.detail}</p>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+function RolePolicyPanel() {
+  return (
+    <div className="divide-y divide-[var(--color-border-light)] rounded-[var(--radius-md)] border border-[var(--color-border-light)]">
+      {rolePolicies.map((policy) => (
+        <article key={policy.role} className="px-4 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold">{policy.role}</h3>
+              <p className="agent-muted mt-1 text-xs">{policy.scope}</p>
+            </div>
+            <span className="rounded bg-[var(--color-bg-hover)] px-2 py-1 text-xs text-[var(--color-text-secondary)] ring-1 ring-[var(--color-border-light)]">
+              {policy.actions.length + policy.sensitiveActions.length} 项权限
+            </span>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {policy.actions.map((action) => (
+              <ActionTag key={action.code} action={action} />
+            ))}
+            {policy.sensitiveActions.map((action) => (
+              <ActionTag key={action.code} action={action} sensitive />
             ))}
           </div>
-        </div>
-
-        <div className="space-y-5">
-          <div className="agent-card">
-            <SectionHeader icon={KeyRound} title="凭证与 MCP 安全" description="凭证不落前端，调用由网关统一审计" />
-            <div className="space-y-3 p-4">
-              <SecurityNotice title="凭证状态" detail="mcp_mail_sender 已绑定测试凭证，生产凭证需空间管理员审批。" />
-              <SecurityNotice title="参数白名单" detail="邮件 MCP 只允许读取收件人、标题、正文摘要和附件 ID。" />
-              <SecurityNotice title="频率限制" detail="高风险 MCP 当前限制 60 次 / 小时，超限需要审批。" />
-            </div>
-          </div>
-
-          <div className="agent-card">
-            <SectionHeader icon={Eye} title="审计可见性" description="根据角色展示证据链，不暴露敏感参数" />
-            <div className="p-4">
-              <p className="agent-muted rounded-[var(--radius-md)] bg-[var(--color-bg-hover)] p-3 text-sm leading-6">
-                审计人员可查看完整操作链路；业务执行人仅查看与自己相关的运行摘要；敏感变量和凭证参数始终脱敏。
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="agent-card">
-        <SectionHeader icon={UsersRound} title="人员、部门与角色" description="权限管理先解决谁属于哪里、以什么角色处理哪些流程" />
-        <div className="grid gap-3 p-4 md:grid-cols-3">
-          {organizationItems.map((item) => {
-            const Icon = item.icon;
-
-            return (
-              <article key={item.title} className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-3">
-                <div className="flex items-center gap-2">
-                  <Icon className="h-4 w-4 text-[var(--color-primary)]" aria-hidden="true" />
-                  <h3 className="text-sm font-semibold">{item.title}</h3>
-                </div>
-                <p className="agent-muted mt-2 text-sm leading-6">{item.detail}</p>
-              </article>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="agent-card">
-        <SectionHeader icon={Database} title="资源保护清单" description="后端权限模块需要覆盖的资源和前端提示文案" />
-        <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-4">
-          {protectedResources.map((resource) => (
-            <article key={resource.type} className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-3">
-              <h3 className="text-sm font-semibold">{resource.type}</h3>
-              <p className="agent-muted mt-2 text-sm leading-6">{resource.policy}</p>
-              <p className="mt-3 text-xs text-[var(--color-text-tertiary)]">责任角色：{resource.owner}</p>
-            </article>
-          ))}
-        </div>
-      </section>
+        </article>
+      ))}
     </div>
   );
 }
 
-function SectionHeader({ icon: Icon, title, description }: { icon: typeof ShieldCheck; title: string; description: string }) {
+function ResourceGrantPanel() {
   return (
-    <div className="px-4 pb-2 pt-4">
-      <div className="flex items-center gap-2">
-        <Icon className="h-4 w-4 text-[var(--color-primary)]" aria-hidden="true" />
-        <h2 className="text-base font-semibold">{title}</h2>
-      </div>
-      <p className="agent-muted mt-1 text-sm">{description}</p>
+    <div className="grid gap-3 md:grid-cols-2">
+      {resourceGrants.map((resource) => (
+        <article key={resource.resource} className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-3">
+          <div className="flex items-center gap-2">
+            <Database className="h-4 w-4 text-[var(--color-primary)]" aria-hidden="true" />
+            <h3 className="text-sm font-semibold">{resource.resource}</h3>
+          </div>
+          <p className="agent-muted mt-2 text-sm leading-6">{resource.grants}</p>
+          <p className="mt-2 text-xs text-[var(--color-text-tertiary)]">{resource.rule}</p>
+          <p className="mt-3 text-xs text-[var(--color-text-tertiary)]">责任角色：{resource.owner}</p>
+        </article>
+      ))}
     </div>
   );
 }
 
-function Tag({ children }: { children: string }) {
-  return <span className="rounded bg-indigo-100 px-2 py-1 text-xs font-medium text-indigo-800">{children}</span>;
+function SensitivePolicyPanel() {
+  return (
+    <div className="grid gap-3 md:grid-cols-2">
+      {sensitivePolicies.map((policy) => (
+        <article key={policy.action} className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-3">
+          <div className="flex items-center gap-2">
+            <LockKeyhole className="h-4 w-4 text-amber-600" aria-hidden="true" />
+            <h3 className="text-sm font-semibold">{policy.action}</h3>
+          </div>
+          <p className="agent-muted mt-2 text-sm leading-6">{policy.note}</p>
+          <div className="mt-3 flex flex-wrap gap-2 text-xs">
+            <span className="rounded bg-[var(--color-bg-card)] px-2 py-1 text-[var(--color-text-secondary)] ring-1 ring-[var(--color-border-light)]">责任：{policy.owner}</span>
+            <span className="rounded bg-amber-100 px-2 py-1 font-medium text-amber-800">{policy.approval}</span>
+          </div>
+        </article>
+      ))}
+    </div>
+  );
 }
 
-function SecurityNotice({ title, detail }: { title: string; detail: string }) {
+function AuditVisibilityPanel() {
   return (
-    <article className="rounded-[var(--radius-md)] bg-[var(--color-bg-hover)] p-3">
-      <h3 className="text-sm font-semibold">{title}</h3>
-      <p className="agent-muted mt-2 text-sm leading-6">{detail}</p>
-    </article>
+    <div className="grid gap-3 md:grid-cols-2">
+      <article className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-3">
+        <div className="flex items-center gap-2">
+          <Eye className="h-4 w-4 text-[var(--color-primary)]" aria-hidden="true" />
+          <h3 className="text-sm font-semibold">业务用户</h3>
+        </div>
+        <p className="agent-muted mt-2 text-sm leading-6">只查看与自己相关的运行摘要、待办状态和被授权交付物。</p>
+      </article>
+      <article className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-3">
+        <div className="flex items-center gap-2">
+          <FileText className="h-4 w-4 text-[var(--color-primary)]" aria-hidden="true" />
+          <h3 className="text-sm font-semibold">审计人员</h3>
+        </div>
+        <p className="agent-muted mt-2 text-sm leading-6">查看只读证据链、节点快照、MCP 调用摘要和交付记录，敏感字段默认脱敏。</p>
+      </article>
+    </div>
+  );
+}
+
+function ActionTag({ action, sensitive = false }: { action: BusinessAction; sensitive?: boolean }) {
+  const className = sensitive ? "bg-amber-100 text-amber-800" : "bg-indigo-100 text-indigo-800";
+
+  return (
+    <span className={`rounded px-2 py-1 text-xs font-medium ${className}`} title={action.code}>
+      {action.label}
+    </span>
   );
 }

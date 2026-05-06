@@ -19,6 +19,7 @@ Agentum 是一个以智能体为载体的企业工作流平台。它不是把所
 - 文档收敛为三份长期主文档。
 - 当前进度和后续任务独立记录到 `docs/progress/`。
 - 去掉知识库相关第一阶段范围，优先沉淀智能体模板、Skills、MCP、提示词模板和交付能力。
+- 补齐 `capabilities/` 能力源码目录，用于存放产品运行时 Skills、自研 MCP Server、提示词模板和交付适配实现。
 - 先补齐租户、用户、部门、角色、权限策略、模型配置和交付能力的基础框架。
 
 详细阶段记录见 [docs/progress/README.md](./docs/progress/README.md)。
@@ -93,6 +94,11 @@ apps/web                  前端应用
 apps/api                  后端 API 服务
 packages/shared-contract  OpenAPI、JSON Schema 和事件契约
 packages/ui               前端通用 UI 包
+capabilities              产品运行时能力源码与自研连接器
+capabilities/skills       产品运行时 Skill 定义、说明、测试和发布材料
+capabilities/mcp-servers  自研 MCP Server 实现
+capabilities/prompt-templates 提示词模板源码
+capabilities/delivery     交付能力适配器、模板和脚本
 workers/document-worker   文档处理 Worker
 workers/ai-worker         AI 辅助任务 Worker
 deploy                    Docker、Nginx、本地和部署配置

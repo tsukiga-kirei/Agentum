@@ -53,6 +53,11 @@ Agentum/
   packages/
     shared-contract/
     ui/
+  capabilities/
+    skills/
+    mcp-servers/
+    prompt-templates/
+    delivery/
   workers/
     document-worker/
     ai-worker/
@@ -110,6 +115,15 @@ apps/api/src/main/java/com/agentum/
 ```
 
 当前第一阶段不再把知识库作为核心模块推进。如后续重新引入 RAG，应在 `asset` 或独立 `knowledge` 模块下按版本、权限和审计重新设计。
+
+`capabilities/` 存放产品运行时可版本化的能力源码和自研连接器，不等同于数据库里的资产记录：
+
+- `capabilities/skills/`：产品运行时 Skill 的说明、提示词片段、输入输出约束、测试样例和发布材料。
+- `capabilities/mcp-servers/`：自研 MCP Server 的源码、manifest、启动说明、测试和部署配置。
+- `capabilities/prompt-templates/`：可复用提示词模板源码，发布后再登记为提示词模板资产。
+- `capabilities/delivery/`：交付能力适配器、文档模板、脚本和本地验证材料。
+
+`.codex/skills/` 只用于本仓库开发时辅助 Codex 工作，不作为 Agentum 产品运行时 Skill 资产目录。
 
 ## 5. 命名规范
 
@@ -255,6 +269,7 @@ API 返回结构统一：
 - 系统管理员管理租户、模型、全局能力开关、系统配置和敏感凭证策略。
 - 权限管理要支持用户、部门、角色、资源权限和敏感动作控制。
 - 运行态必须清楚展示当前步骤、暂停原因、等待对象、可执行动作和最终交付物。
+- 审核、运行监控和运行审计必须分层：业务待办处理暂停恢复，运行监控处理取消 / 重试 / 补偿，运行审计只读展示证据链。
 - 图标优先使用 `lucide-react`。
 - UI 元素不要互相遮挡，移动端至少可浏览核心信息。
 
