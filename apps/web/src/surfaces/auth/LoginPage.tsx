@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
-import { KeyRound, LayoutDashboard, Settings, Shield, User } from "lucide-react";
-import { useAuthStore } from "../../stores/authStore";
+import { ConfigProvider, Select, theme as antdTheme } from "antd";
+import { Building2, KeyRound, LayoutDashboard, Settings, Shield, User } from "lucide-react";
+import { mockTenants, useAuthStore } from "../../stores/authStore";
 import { ThemeToggle } from "../../components/ThemeToggle";
 import { AgentumMark } from "../../components/brand/AgentumMark";
 import type { PortalType } from "../../types/auth";
@@ -43,6 +44,7 @@ export function LoginPage() {
   const isDark = themeMode === "dark";
 
   const [activePortal, setActivePortal] = useState<PortalType>("business");
+  const [tenantId, setTenantId] = useState(mockTenants[0]?.id ?? "");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -50,10 +52,30 @@ export function LoginPage() {
   const [rememberMe, setRememberMe] = useState(false);
 
   const currentPortal = portals.find((p) => p.key === activePortal) ?? portals[0];
+  const shouldSelectTenant = activePortal !== "system_admin";
+  const tenantOptions = mockTenants.map((tenant) => ({
+    value: tenant.id,
+    label: (
+      <span className="agent-tenant-option">
+        <span className="agent-tenant-name">{tenant.name}</span>
+        <span className="agent-tenant-code">{tenant.code}</span>
+      </span>
+    ),
+  }));
+
+  function handlePortalChange(portal: PortalType) {
+    setActivePortal(portal);
+    setError("");
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
+
+    if (shouldSelectTenant && !tenantId) {
+      setError("请选择租户");
+      return;
+    }
 
     if (!username.trim()) {
       setError("请输入用户名");
@@ -70,10 +92,10 @@ export function LoginPage() {
     try {
       // 模拟网络延迟，让用户看到加载状态
       await new Promise((resolve) => setTimeout(resolve, 600));
-      const success = await login(username, password, activePortal);
+      const success = await login(username, password, activePortal, shouldSelectTenant ? tenantId : undefined);
 
       if (!success) {
-        setError("用户名或密码不正确");
+        setError(shouldSelectTenant ? "租户、用户名或密码不正确" : "用户名或密码不正确");
       }
     } finally {
       setLoading(false);
@@ -139,7 +161,7 @@ export function LoginPage() {
                   <button
                     key={portal.key}
                     type="button"
-                    onClick={() => setActivePortal(portal.key)}
+                    onClick={() => handlePortalChange(portal.key)}
                     style={{
                       flex: "1 1 0",
                       display: "flex",
@@ -182,101 +204,139 @@ export function LoginPage() {
             </div>
 
             {/* 登录表单 */}
-            <form onSubmit={handleSubmit}>
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ position: "relative" }}>
-                  <User
-                    className="h-5 w-5"
-                    style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--color-text-tertiary)" }}
-                    aria-hidden="true"
-                  />
-                  <input
-                    value={username}
-                    onChange={(e) => { setUsername(e.target.value); setError(""); }}
-                    className="agent-input"
-                    placeholder="用户名"
-                    autoComplete="username"
-                    style={{ width: "100%", height: 48, paddingLeft: 44, paddingRight: 16, fontSize: 15 }}
-                  />
-                </div>
-              </div>
+            <ConfigProvider
+              theme={{
+                algorithm: isDark ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
+                token: {
+                  borderRadius: 8,
+                  colorBgContainer: "var(--color-bg-input)",
+                  colorBgElevated: "var(--color-bg-card)",
+                  colorBorder: "var(--color-border)",
+                  colorPrimary: currentPortal.color,
+                  colorText: "var(--color-text-primary)",
+                  colorTextPlaceholder: "var(--color-text-tertiary)",
+                  controlHeight: 48,
+                  fontFamily: "var(--font-sans)",
+                },
+                components: {
+                  Select: {
+                    optionActiveBg: isDark ? "#1a2540" : "#f5f6fa",
+                    optionSelectedBg: isDark ? "rgba(79, 70, 229, 0.2)" : "#eef2ff",
+                  },
+                },
+              }}
+            >
+              <form onSubmit={handleSubmit}>
+                {shouldSelectTenant ? (
+                  <div style={{ marginBottom: 16 }}>
+                    <Select
+                      aria-label="选择租户"
+                      className="agent-tenant-select"
+                      classNames={{ popup: { root: "agent-select-dropdown" } }}
+                      options={tenantOptions}
+                      placeholder="请选择租户"
+                      prefix={<Building2 className="h-5 w-5 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+                      value={tenantId || undefined}
+                      onChange={(value) => { setTenantId(value); setError(""); }}
+                    />
+                  </div>
+                ) : null}
 
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ position: "relative" }}>
-                  <KeyRound
-                    className="h-5 w-5"
-                    style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--color-text-tertiary)" }}
-                    aria-hidden="true"
-                  />
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => { setPassword(e.target.value); setError(""); }}
-                    className="agent-input"
-                    placeholder="密码"
-                    autoComplete="current-password"
-                    style={{ width: "100%", height: 48, paddingLeft: 44, paddingRight: 16, fontSize: 15 }}
-                  />
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ position: "relative" }}>
+                    <User
+                      className="h-5 w-5"
+                      style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--color-text-tertiary)" }}
+                      aria-hidden="true"
+                    />
+                    <input
+                      value={username}
+                      onChange={(e) => { setUsername(e.target.value); setError(""); }}
+                      className="agent-input"
+                      placeholder="用户名"
+                      autoComplete="username"
+                      style={{ width: "100%", height: 48, paddingLeft: 44, paddingRight: 16, fontSize: 15 }}
+                    />
+                  </div>
                 </div>
-              </div>
 
-              {/* 记住我 */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14, color: "var(--color-text-secondary)", cursor: "pointer" }}>
-                  <input
-                    type="checkbox"
-                    checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
-                    style={{ accentColor: "var(--color-primary)", width: 16, height: 16 }}
-                  />
-                  记住我
-                </label>
-                <button type="button" style={{ border: "none", background: "none", fontSize: 14, color: "var(--color-primary)", cursor: "pointer", padding: 0 }}>
-                  忘记密码？
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ position: "relative" }}>
+                    <KeyRound
+                      className="h-5 w-5"
+                      style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--color-text-tertiary)" }}
+                      aria-hidden="true"
+                    />
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={(e) => { setPassword(e.target.value); setError(""); }}
+                      className="agent-input"
+                      placeholder="密码"
+                      autoComplete="current-password"
+                      style={{ width: "100%", height: 48, paddingLeft: 44, paddingRight: 16, fontSize: 15 }}
+                    />
+                  </div>
+                </div>
+
+                {/* 记住我 */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14, color: "var(--color-text-secondary)", cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={rememberMe}
+                      onChange={(e) => setRememberMe(e.target.checked)}
+                      style={{ accentColor: "var(--color-primary)", width: 16, height: 16 }}
+                    />
+                    记住我
+                  </label>
+                  <button type="button" style={{ border: "none", background: "none", fontSize: 14, color: "var(--color-primary)", cursor: "pointer", padding: 0 }}>
+                    忘记密码？
+                  </button>
+                </div>
+
+                {/* 错误提示 */}
+                {error ? (
+                  <div style={{
+                    padding: "10px 14px",
+                    borderRadius: "var(--radius-md)",
+                    border: "1px solid var(--color-danger)",
+                    background: "var(--color-danger-bg)",
+                    color: "var(--color-danger)",
+                    fontSize: 13,
+                    marginBottom: 16,
+                  }}>
+                    {error}
+                  </div>
+                ) : null}
+
+                {/* 登录按钮 */}
+                <button
+                  type="submit"
+                  disabled={loading}
+                  style={{
+                    width: "100%",
+                    height: 48,
+                    borderRadius: "var(--radius-md)",
+                    border: "none",
+                    background: `linear-gradient(135deg, ${currentPortal.color}, ${currentPortal.color}dd)`,
+                    color: "#fff",
+                    fontSize: 16,
+                    fontWeight: 600,
+                    cursor: loading ? "wait" : "pointer",
+                    opacity: loading ? 0.7 : 1,
+                    boxShadow: `0 4px 14px ${currentPortal.color}40`,
+                    transition: "all 0.3s ease",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 8,
+                  }}
+                >
+                  {loading ? "登录中…" : `以${currentPortal.label}身份登录`}
                 </button>
-              </div>
-
-              {/* 错误提示 */}
-              {error ? (
-                <div style={{
-                  padding: "10px 14px",
-                  borderRadius: "var(--radius-md)",
-                  border: "1px solid var(--color-danger)",
-                  background: "var(--color-danger-bg)",
-                  color: "var(--color-danger)",
-                  fontSize: 13,
-                  marginBottom: 16,
-                }}>
-                  {error}
-                </div>
-              ) : null}
-
-              {/* 登录按钮 */}
-              <button
-                type="submit"
-                disabled={loading}
-                style={{
-                  width: "100%",
-                  height: 48,
-                  borderRadius: "var(--radius-md)",
-                  border: "none",
-                  background: `linear-gradient(135deg, ${currentPortal.color}, ${currentPortal.color}dd)`,
-                  color: "#fff",
-                  fontSize: 16,
-                  fontWeight: 600,
-                  cursor: loading ? "wait" : "pointer",
-                  opacity: loading ? 0.7 : 1,
-                  boxShadow: `0 4px 14px ${currentPortal.color}40`,
-                  transition: "all 0.3s ease",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 8,
-                }}
-              >
-                {loading ? "登录中…" : `以${currentPortal.label}身份登录`}
-              </button>
-            </form>
+              </form>
+            </ConfigProvider>
 
             {/* SSO 占位 */}
             <div style={{ marginTop: 24, textAlign: "center" }}>

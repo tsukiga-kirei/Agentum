@@ -18,7 +18,7 @@ Agentum 的架构目标是支撑长期演进的企业级智能体工作流，而
 
 | 层 | 技术 |
 | --- | --- |
-| 前端 | React、TypeScript、Vite、React Flow、Tailwind CSS、lucide-react、Zustand |
+| 前端 | React、TypeScript、Vite、React Flow、Tailwind CSS、Ant Design、lucide-react、Zustand |
 | API | Java 21、Spring Boot、Spring Security、Spring Data JPA |
 | 数据库 | PostgreSQL |
 | 数据库版本 | Flyway |
@@ -135,6 +135,13 @@ capabilities/mcp-servers/<server-key>
 - 权限管理：用户、部门、角色、资源授权、敏感动作和审计可见性配置入口。
 - 系统管理：租户、模型、全局能力、交付通道和凭证策略配置入口。
 
+组件策略：
+
+- Tailwind CSS 和本地 CSS 变量负责页面布局、工作台信息层级、主题色和 Agentum 自身视觉语言。
+- Ant Design 负责复杂交互控件，例如选择器、表单校验、表格、弹窗、树、日期选择、上传和权限配置类组件。
+- lucide-react 继续作为轻量图标来源，避免为图标单独绑定组件库风格。
+- 引入大型组件库后，前端构建应通过 Vite 分包拆出 UI 框架和主要 vendor chunk，避免主入口包持续膨胀。
+
 前端不负责：
 
 - 认证最终判断。
@@ -190,6 +197,10 @@ roleIds
 requestId
 isSystemAdmin
 ```
+
+登录阶段就应确定活跃角色和租户上下文。业务用户、审核人、流程设计者、能力管理员和空间管理员登录时必须携带 `tenantId` 与期望入口角色，后端校验租户状态、成员关系和角色匹配后再签发令牌。系统管理员登录不要求 `tenantId`，其平台级接口通过系统管理员身份访问；当系统管理员操作某个租户资源时，再通过明确参数或页面选择指定目标租户。
+
+推荐公开一个轻量租户列表接口供内网登录页使用，只返回活跃租户的 `id`、`name` 和 `code`。如果后续改成公网 SaaS，应改为租户编码、企业邮箱域名或子域名识别，避免公开枚举租户名称。
 
 可参考 AuraOA 的分层思路：公开登录接口、已登录接口、租户管理员接口、系统管理员接口分组；JWT 解析后注入租户上下文，再做角色校验。
 

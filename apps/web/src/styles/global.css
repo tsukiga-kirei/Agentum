@@ -165,6 +165,7 @@ button,
 
 button:focus-visible,
 input:focus-visible,
+select:focus-visible,
 textarea:focus-visible {
   outline: 2px solid rgba(79, 70, 229, 0.3);
   outline-offset: 2px;
@@ -265,6 +266,72 @@ textarea:focus-visible {
 .agent-input:focus {
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+/* Ant Design 组件桥接层：组件库负责复杂交互，Agentum 继续用本地 token 统一视觉。 */
+.agent-tenant-select {
+  width: 100%;
+}
+
+.agent-tenant-select .ant-select-selector {
+  height: 48px !important;
+  border-radius: var(--radius-md) !important;
+  padding-left: 12px !important;
+  padding-right: 14px !important;
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast) !important;
+}
+
+.agent-tenant-select.ant-select-focused .ant-select-selector {
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1) !important;
+}
+
+.agent-tenant-select .ant-select-selection-item,
+.agent-tenant-select .ant-select-selection-placeholder {
+  display: flex;
+  align-items: center;
+  height: 46px;
+  line-height: 46px !important;
+  color: var(--color-text-primary);
+}
+
+.agent-tenant-option {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.agent-tenant-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-primary);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-tenant-code {
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-hover);
+  padding: 1px 6px;
+  color: var(--color-text-tertiary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+}
+
+.agent-select-dropdown {
+  border: 1px solid var(--color-border-light);
+  box-shadow: var(--shadow-md);
+}
+
+.agent-select-dropdown .ant-select-item {
+  border-radius: var(--radius-md);
+  min-height: 38px;
 }
 
 /* ==================== React Flow 画布样式 ==================== */

@@ -9,7 +9,7 @@ Agentum 是一个以智能体为载体的企业工作流平台。它不是把所
 已具备：
 
 - React + TypeScript 前端工作台骨架。
-- 登录页、业务工作台、流程设计、能力资产、运行审计、权限管理的静态演示入口。
+- 登录页、租户选择、业务工作台、流程设计、能力资产、运行审计、权限管理的静态演示入口。
 - Spring Boot API 服务骨架。
 - PostgreSQL、Redis、RabbitMQ、MinIO、Mailpit 的本地开发 Compose 配置。
 - OpenAPI / JSON Schema 的共享契约占位。
@@ -39,7 +39,7 @@ Agentum 是一个以智能体为载体的企业工作流平台。它不是把所
 ## 推荐技术栈
 
 ```text
-前端：React + TypeScript + React Flow + Tailwind CSS
+前端：React + TypeScript + React Flow + Tailwind CSS + Ant Design
 后端：Java 21 + Spring Boot
 数据库：PostgreSQL + Flyway
 缓存：Redis

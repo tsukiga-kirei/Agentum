@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AuthUser, PortalType, ThemeMode } from "../types/auth";
+import type { AuthUser, PortalType, TenantOption, ThemeMode } from "../types/auth";
 
 // 认证状态管理，当前使用 localStorage 模拟 JWT 持久化。
 // 后续接入后端 auth API 后，login/logout 应改为 fetch 调用并保存 JWT token。
@@ -17,7 +17,7 @@ type AuthState = {
 
 type AuthActions = {
   /** 模拟登录，当前直接写入本地状态，后续应调用 /api/auth/login */
-  login: (username: string, password: string, portal: PortalType) => Promise<boolean>;
+  login: (username: string, password: string, portal: PortalType, tenantId?: string) => Promise<boolean>;
   /** 退出登录 */
   logout: () => void;
   /** 从 localStorage 恢复会话 */
@@ -31,13 +31,20 @@ type AuthActions = {
 const STORAGE_KEY = "agentum_auth";
 const THEME_KEY = "agentum_theme_mode";
 
+export const mockTenants: TenantOption[] = [
+  { id: "tenant_yuncheng", name: "云程科技", code: "YUNCHENG" },
+  { id: "tenant_northstar", name: "北辰制造", code: "NORTHSTAR" },
+  { id: "tenant_law", name: "明衡法务", code: "MINGHENG" },
+];
+
 // 模拟用户数据，后续由后端 auth API 返回真实用户信息。
-function createMockUser(username: string, portal: PortalType): AuthUser {
+function createMockUser(username: string, portal: PortalType, tenantId?: string): AuthUser {
   const roleMap: Record<PortalType, AuthUser["role"]> = {
     business: "executor",
     space_admin: "space_admin",
     system_admin: "system_admin",
   };
+  const tenant = portal === "system_admin" ? null : (mockTenants.find((item) => item.id === tenantId) ?? mockTenants[0]);
 
   return {
     id: `user_${Date.now()}`,
@@ -46,8 +53,11 @@ function createMockUser(username: string, portal: PortalType): AuthUser {
     email: `${username}@agentum.dev`,
     avatar: "",
     role: roleMap[portal],
-    organization: "Agentum 演示组织",
-    space: "默认空间",
+    tenantId: tenant?.id ?? null,
+    tenantName: tenant?.name ?? "平台管理",
+    tenantCode: tenant?.code ?? "SYSTEM",
+    organization: tenant ? `${tenant.name} / 默认空间` : "Agentum 平台",
+    space: tenant ? "默认空间" : "全局系统管理",
     lastLoginAt: new Date().toISOString(),
   };
 }
@@ -58,13 +68,17 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   initialized: false,
   themeMode: "light",
 
-  login: async (username, password, portal) => {
-    // 当前模拟校验，只检查用户名非空。后续替换为 POST /api/auth/login。
+  login: async (username, password, portal, tenantId) => {
+    // 当前模拟校验，只检查用户名、密码和租户上下文。后续替换为 POST /api/auth/login。
     if (!username || !password) {
       return false;
     }
 
-    const user = createMockUser(username, portal);
+    if (portal !== "system_admin" && !tenantId) {
+      return false;
+    }
+
+    const user = createMockUser(username, portal, tenantId);
     const token = `mock_jwt_${Date.now()}`;
 
     // 模拟写入 localStorage 以便页面刷新后恢复
