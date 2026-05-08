@@ -7,6 +7,7 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
 
+// 租户是最高业务隔离边界，后续模型额度、能力授权、数据保留和凭证策略都会挂到这里。
 @Entity
 @Table(name = "tenants")
 public class TenantEntity {

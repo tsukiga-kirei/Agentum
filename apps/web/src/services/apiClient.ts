@@ -42,15 +42,31 @@ async function apiRequest<T>(path: string, options: RequestOptions = {}): Promis
     headers.set("Content-Type", "application/json");
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers,
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
-  });
+  let response: Response;
 
-  const envelope = (await response.json()) as ApiEnvelope<T>;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
+      headers,
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    });
+  } catch (error) {
+    // API client 是前端统一出入口，诊断日志只记录路径和错误摘要，禁止打印 body、Authorization 或 token。
+    console.error("[api] 请求异常", { path, message: error instanceof Error ? error.message : "unknown" });
+    throw error;
+  }
+
+  let envelope: ApiEnvelope<T>;
+
+  try {
+    envelope = (await response.json()) as ApiEnvelope<T>;
+  } catch (error) {
+    console.error("[api] 响应解析失败", { path, status: response.status, message: error instanceof Error ? error.message : "unknown" });
+    throw new AgentumApiError("后端响应格式不正确，请稍后重试", "SYSTEM_RESPONSE_INVALID", response.headers.get("X-Request-Id") ?? "req_unknown");
+  }
 
   if (!response.ok || !envelope.success) {
+    console.warn("[api] 请求失败", { path, status: response.status, code: envelope.error?.code, requestId: envelope.requestId });
     throw new AgentumApiError(envelope.error?.message ?? "请求失败，请稍后重试", envelope.error?.code ?? "SYSTEM_REQUEST_FAILED", envelope.requestId);
   }
 

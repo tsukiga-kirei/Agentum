@@ -21,6 +21,7 @@ public class TenantController {
 
     @GetMapping
     public ApiResponse<List<TenantOptionResponse>> listActiveTenants(HttpServletRequest request) {
+        // 公开租户列表只服务当前内网/本地登录体验；公网 SaaS 模式下应改为编码或域名识别。
         return ApiResponse.success(tenantService.listActiveTenants(), RequestIds.current(request));
     }
 }

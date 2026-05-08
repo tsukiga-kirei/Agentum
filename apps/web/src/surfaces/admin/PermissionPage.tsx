@@ -149,10 +149,12 @@ export function PermissionPage() {
     }
 
     let active = true;
+    const tenantId = user.tenantId;
     setOrganizationLoading(true);
     setOrganizationError("");
 
-    organizationApi.overview(user.tenantId, token)
+    // 权限页只展示租户治理视图；资源归属、角色和敏感动作仍由后端按 token + tenantId 重新判断。
+    organizationApi.overview(tenantId, token)
       .then((overview) => {
         if (active) {
           setOrganizationOverview(overview);
@@ -160,6 +162,7 @@ export function PermissionPage() {
       })
       .catch((error) => {
         if (active) {
+          console.warn("[permission] 组织概览加载失败", getPermissionErrorContext(error, tenantId));
           setOrganizationError(error instanceof AgentumApiError ? error.message : "无法加载人员组织数据");
           setOrganizationOverview(null);
         }
@@ -177,6 +180,7 @@ export function PermissionPage() {
 
   async function handleCreateMember(values: CreateMemberRequest) {
     if (!token || !user?.tenantId) {
+      console.warn("[permission] 新增成员失败：缺少租户上下文", { hasToken: Boolean(token), userId: user?.id });
       setOrganizationError("当前账号缺少租户上下文，无法新增成员");
       return;
     }
@@ -185,11 +189,13 @@ export function PermissionPage() {
     setOrganizationError("");
 
     try {
+      // 初始密码只随创建请求提交，禁止进入日志、localStorage、URL 或错误详情；诊断日志只记录脱敏字段。
       const overview = await organizationApi.createMember(user.tenantId, token, values);
       setOrganizationOverview(overview);
       setCreateMemberOpen(false);
       createMemberForm.resetFields();
     } catch (error) {
+      console.warn("[permission] 新增成员失败", getPermissionErrorContext(error, user.tenantId, { username: values.username, roleId: values.roleId, departmentId: values.departmentId }));
       setOrganizationError(error instanceof AgentumApiError ? error.message : "新增成员失败，请稍后重试");
     } finally {
       setCreateMemberSubmitting(false);
@@ -198,6 +204,7 @@ export function PermissionPage() {
 
   async function handleCreateDepartment(values: CreateDepartmentRequest) {
     if (!token || !user?.tenantId) {
+      console.warn("[permission] 新增部门失败：缺少租户上下文", { hasToken: Boolean(token), userId: user?.id });
       setOrganizationError("当前账号缺少租户上下文，无法新增部门");
       return;
     }
@@ -206,11 +213,13 @@ export function PermissionPage() {
     setOrganizationError("");
 
     try {
+      // 前端只提交部门治理动作；上级部门是否属于当前租户必须由后端再次校验。
       const overview = await organizationApi.createDepartment(user.tenantId, token, values);
       setOrganizationOverview(overview);
       setCreateDepartmentOpen(false);
       createDepartmentForm.resetFields();
     } catch (error) {
+      console.warn("[permission] 新增部门失败", getPermissionErrorContext(error, user.tenantId, { departmentCode: values.code, parentId: values.parentId }));
       setOrganizationError(error instanceof AgentumApiError ? error.message : "新增部门失败，请稍后重试");
     } finally {
       setCreateDepartmentSubmitting(false);
@@ -481,6 +490,14 @@ function OrganizationPanel({
       ) : null}
     </div>
   );
+}
+
+function getPermissionErrorContext(error: unknown, tenantId: string, extra?: Record<string, string | undefined>) {
+  if (error instanceof AgentumApiError) {
+    return { tenantId, code: error.code, requestId: error.requestId, ...extra };
+  }
+
+  return { tenantId, message: error instanceof Error ? error.message : "unknown", ...extra };
 }
 
 function RolePolicyPanel() {

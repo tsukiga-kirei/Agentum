@@ -1,6 +1,7 @@
 package com.agentum.auth.application;
 
 import com.agentum.shared.api.ApiException;
+import com.agentum.shared.api.RequestIds;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -20,11 +21,14 @@ import javax.crypto.spec.SecretKeySpec;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 @Service
 public class AuthTokenService {
 
+    private static final Logger log = LoggerFactory.getLogger(AuthTokenService.class);
     private static final String HMAC_ALGORITHM = "HmacSHA256";
 
     private final ObjectMapper objectMapper;
@@ -49,6 +53,7 @@ public class AuthTokenService {
     }
 
     public String createToken(CurrentUserPrincipal principal) {
+        // Token 只承载必要身份上下文，日志和异常都不能输出 token 原文。
         Instant issuedAt = clock.instant();
         Instant expiresAt = issuedAt.plus(tokenTtl);
 
@@ -88,13 +93,13 @@ public class AuthTokenService {
             JsonNode payload = objectMapper.readTree(decode(parts[1]));
             Instant issuedAt = Instant.ofEpochSecond(payload.path("iat").asLong());
             Instant expiresAt = Instant.ofEpochSecond(payload.path("exp").asLong());
-
-            if (!expiresAt.isAfter(clock.instant())) {
-                throw new ApiException(HttpStatus.UNAUTHORIZED, "AUTH_TOKEN_EXPIRED", "登录状态已过期，请重新登录");
-            }
-
             JsonNode tenantIdNode = payload.get("tenantId");
             UUID tenantId = tenantIdNode == null || tenantIdNode.isNull() ? null : UUID.fromString(tenantIdNode.asText());
+
+            if (!expiresAt.isAfter(clock.instant())) {
+                log.warn("Token 已过期 userId={} tenantId={} role={} requestId={}", payload.path("sub").asText(), tenantId, payload.path("role").asText(), RequestIds.current());
+                throw new ApiException(HttpStatus.UNAUTHORIZED, "AUTH_TOKEN_EXPIRED", "登录状态已过期，请重新登录");
+            }
 
             return new AuthTokenClaims(
                 UUID.fromString(payload.path("sub").asText()),

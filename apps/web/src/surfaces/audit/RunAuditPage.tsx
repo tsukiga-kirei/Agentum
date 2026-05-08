@@ -9,6 +9,7 @@ type RunStep = {
   summary: string;
 };
 
+// 审计页只读展示某次运行的聚合视图，后续应由 WorkflowRun、NodeRun、WaitingEvent 和 audit_logs 聚合生成。
 const currentRun = {
   id: "run_20260504_001",
   workflow: "需求分析与评审流程",
@@ -21,6 +22,7 @@ const currentRun = {
   requestId: "req_run_6f9c21",
 };
 
+// 节点链路样例用于确认审计信息层级，不承载恢复、审核、重试等业务动作。
 const runSteps: RunStep[] = [
   { name: "补充业务材料", type: "用户输入", state: "已完成", duration: "2m 10s", summary: "收集需求背景、附件和交付物要求。" },
   { name: "智能体分析", type: "智能体", state: "已完成", duration: "38s", summary: "调用需求拆解与风险识别 Skill，生成 analysis_result 和 risk_level。" },
@@ -29,6 +31,7 @@ const runSteps: RunStep[] = [
   { name: "邮件交付", type: "交付", state: "等待输入", duration: "-", summary: "审核后生成邮件交付记录。" },
 ];
 
+// 变量快照强调“当时的输入输出和脱敏状态”，真实数据后续来自变量快照表和节点运行记录。
 const variableSnapshots: WorkflowVariableContract[] = [
   { name: "project_info", sourceNode: "补充业务材料", type: "object", description: "项目背景、目标和约束", sensitive: false, deliverable: false },
   { name: "attachments", sourceNode: "补充业务材料", type: "file", description: "需求附件清单", sensitive: true, deliverable: false },
@@ -37,6 +40,7 @@ const variableSnapshots: WorkflowVariableContract[] = [
   { name: "research_pack", sourceNode: "并行获取数据", type: "object", description: "并行子智能体和外部数据摘要", sensitive: false, deliverable: true },
 ];
 
+// 审计事件样例覆盖启动、MCP 调用、输出解析和暂停；后续所有人工恢复动作也应追加事件。
 const auditEvents: AuditEvent[] = [
   { id: "audit_001", time: "15:20:11", actor: "张予安", resourceType: "WorkflowRun", action: "execute", result: "success", summary: "启动需求分析与评审流程 v1.2。" },
   { id: "audit_002", time: "15:22:44", actor: "Agent Runtime", resourceType: "NodeRun", action: "invoke_mcp", result: "success", summary: "调用文件读取 MCP，参数已脱敏，审计编号 mcp_8732。" },
@@ -44,6 +48,7 @@ const auditEvents: AuditEvent[] = [
   { id: "audit_004", time: "15:25:02", actor: "系统", resourceType: "WorkflowRun", action: "pause", result: "success", summary: "暂停事件已写入 waiting_event。" },
 ];
 
+// 交付记录先覆盖文档和邮件两类第一阶段目标，高风险交付后续需要审批、重试和补偿记录。
 const deliveryRecords: DeliveryRecord[] = [
   { id: "delivery_doc", target: "Word / PDF", status: "pending", artifact: "需求评审报告草稿", retryable: true },
   { id: "delivery_mail", target: "邮件发送 MCP", status: "pending", artifact: "评审结论邮件", retryable: true },

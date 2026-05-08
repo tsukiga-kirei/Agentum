@@ -14,6 +14,7 @@ import { WorkflowEditorPage } from "./WorkflowEditorPage";
 
 type WorkflowStatus = "draft" | "published" | "review";
 
+// 工作流草稿列表是设计态入口，不等同于运行实例；发布后需要生成不可变 WorkflowVersion。
 export type WorkflowDraft = {
   id: string;
   name: string;
@@ -59,6 +60,7 @@ const initialWorkflows: WorkflowDraft[] = [
   },
 ];
 
+// 前端状态文案先服务设计页可读性，真实状态流转后续以发布校验和版本状态机为准。
 const statusMeta: Record<WorkflowStatus, { label: string; className: string }> = {
   draft: {
     label: "草稿",
@@ -92,6 +94,7 @@ export function WorkflowDraftsPage() {
     }
 
     return workflows.filter((workflow) => {
+      // 搜索只在本地样例数据上过滤，接入后端后应由草稿查询 API 处理分页、权限和关键字匹配。
       return (
         workflow.name.toLowerCase().includes(keyword) ||
         workflow.description.toLowerCase().includes(keyword) ||

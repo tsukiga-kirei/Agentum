@@ -4,6 +4,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import java.util.UUID;
 
+// 当前成员创建使用初始密码直传，只用于本地治理闭环；后续应改为邀请链接和首次登录改密流程。
 public record CreateMemberRequest(
     @NotBlank(message = "请输入用户名") @Size(max = 100, message = "用户名不能超过 100 个字符") String username,
     @NotBlank(message = "请输入初始密码") @Size(min = 8, max = 80, message = "初始密码长度应为 8 到 80 个字符") String password,

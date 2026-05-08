@@ -361,11 +361,13 @@ export function WorkflowEditorPage({ workflow, onBack }: WorkflowEditorPageProps
   const selectedNode = decoratedNodes.find((node) => node.id === selectedNodeId) ?? decoratedNodes[0];
   const incompleteNodes = decoratedNodes.filter((node) => node.data.configStatus === "incomplete");
   const selectedNodeIndex = decoratedNodes.findIndex((node) => node.id === selectedNode.id);
+  // 变量只能引用上游节点输出，避免设计态形成循环依赖；后续由后端发布校验做最终判断。
   const availableVariables = workflowVariables.filter((variable) => {
     const sourceIndex = decoratedNodes.findIndex((node) => node.data.label === variable.sourceNode);
 
     return sourceIndex >= 0 && sourceIndex < selectedNodeIndex;
   });
+  // 搜索匹配保持轻量本地状态，真实画布较大时应交给节点索引或后端草稿查询辅助定位。
   const matchedNodes = decoratedNodes.filter((node) => node.data.label.includes(nodeSearchValue.trim()));
 
   function handleSaveSelectedNode() {
@@ -400,7 +402,7 @@ export function WorkflowEditorPage({ workflow, onBack }: WorkflowEditorPageProps
       setSelectedNodeId(nextNode.id);
     }
   }
-  // 画布区域占据主要视觉空间，大纲和配置面板作为辅助侧栏
+  // 画布区域占据主要视觉空间，大纲和配置面板作为辅助侧栏，折叠状态后续应进入用户偏好设置。
   const editorGridClass =
     isOutlineCollapsed && isConfigCollapsed
       ? "xl:grid-cols-[minmax(0,1fr)]"

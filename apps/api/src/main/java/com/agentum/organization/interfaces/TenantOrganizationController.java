@@ -46,7 +46,8 @@ public class TenantOrganizationController {
         HttpServletRequest request
     ) {
         tenantOrganizationAccess.assertCanManageTenant(principal, tenantId);
-        return ApiResponse.success(tenantOrganizationService.createMember(tenantId, createMemberRequest), RequestIds.current(request));
+        // 成员写入需要同时保留目标租户和操作者，便于后续审计日志与权限事件串联。
+        return ApiResponse.success(tenantOrganizationService.createMember(tenantId, principal.userId(), createMemberRequest), RequestIds.current(request));
     }
 
     @PostMapping("/departments")
@@ -57,6 +58,7 @@ public class TenantOrganizationController {
         HttpServletRequest request
     ) {
         tenantOrganizationAccess.assertCanManageTenant(principal, tenantId);
-        return ApiResponse.success(tenantOrganizationService.createDepartment(tenantId, createDepartmentRequest), RequestIds.current(request));
+        // 部门树会影响待办分派和资源过滤，写动作必须把操作者带入 service 日志上下文。
+        return ApiResponse.success(tenantOrganizationService.createDepartment(tenantId, principal.userId(), createDepartmentRequest), RequestIds.current(request));
     }
 }

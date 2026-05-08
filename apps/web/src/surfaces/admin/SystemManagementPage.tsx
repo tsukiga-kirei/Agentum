@@ -22,6 +22,7 @@ type SystemCapability = {
   grant: string;
 };
 
+// 系统管理页当前是平台治理视角的静态样例，后续应由租户、模型供应商、全局能力授权 API 替换。
 const tenants: TenantSummary[] = [
   { name: "Agentum 演示组织", code: "demo", status: "启用", modelScope: "默认模型池", capabilityScope: "需求 / 报告能力包" },
   { name: "法务试点租户", code: "legal-pilot", status: "启用", modelScope: "低温度审核模型", capabilityScope: "合同审查能力包" },
@@ -33,6 +34,7 @@ const modelProviders: ModelProvider[] = [
   { name: "本地私有模型", provider: "local", status: "待配置", tenants: "未授权" },
 ];
 
+// 全局能力先按类型和风险展示治理边界，真实凭证、配额和租户授权不进入前端明文。
 const systemCapabilities: SystemCapability[] = [
   { name: "文件读取 MCP", type: "MCP", risk: "中", grant: "授权给 demo / legal-pilot" },
   { name: "邮件发送 MCP", type: "MCP", risk: "高", grant: "仅 demo 测试环境" },

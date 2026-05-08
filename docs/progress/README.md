@@ -44,6 +44,7 @@
 - 数据库使用 PostgreSQL，版本随代码通过 Flyway 迁移同步。
 - 登录页参考 AuraOA 的多租户入口：业务用户和空间管理入口必须选择租户，系统管理入口不绑定租户；后续认证 API 需要把 `tenantId`、活跃角色和空间上下文写入会话或 JWT。
 - 前端引入 Ant Design 作为复杂表单、选择器、表格、弹窗和权限配置类组件库；Tailwind CSS 与本地 CSS 变量继续负责布局、主题和 Agentum 自有视觉风格。
+- 注释和日志纳入强制治理：权限、租户上下文、认证、组织成员写入、外部调用和失败分支必须补中文注释与脱敏日志，禁止输出密码、Token、密钥和敏感原始响应。
 
 ## 2. 已完成内容
 
@@ -142,6 +143,7 @@
 
 | 任务 | 说明 | 交付物 |
 | --- | --- | --- |
+| 注释与日志治理 | 梳理现有代码，补中文业务注释、后端结构化日志和前端脱敏诊断输出 | 正在推进 |
 | 基础数据库迁移 | 建立租户、用户、部门、角色、权限、系统能力和交付能力基础表 | 已完成 Flyway SQL，后续补实体和 API |
 | 前端系统管理页 | 新增租户、模型、全局能力和租户授权静态页 | 已完成 `SystemManagementPage` |
 | 能力资产页调整 | 移除知识库，补提示词模板和交付能力 | 已完成 `AssetsPage` |
@@ -167,6 +169,7 @@
 | 9 | 审计日志 | 记录节点、权限、MCP、模型、交付和人工操作 |
 | 10 | 基础交付 | 至少完成文档生成或邮件发送的本地验证 |
 | 11 | 自研能力示例 | 至少补一个示例 Skill 和一个示例 MCP Server，跑通登记、授权、调用和审计链路 |
+| 12 | 注释与日志治理 | 每轮开发同步补业务注释、结构化日志、脱敏前端诊断和验证记录 |
 
 ## 4. 功能放置建议
 
@@ -239,3 +242,14 @@
 | 2026-05-08 | `pnpm build:web` | 通过：新增部门弹窗接入后复验；Vite 提示 Ant Design vendor chunk 超过 500 kB |
 | 2026-05-08 | OpenAPI YAML 解析检查 | 通过：新增部门接口补入契约后复验 |
 | 2026-05-08 | `git diff --check` | 通过：新增部门接口和弹窗后复验 |
+| 2026-05-08 | `pnpm lint:web` | 通过：注释与日志治理后复验 |
+| 2026-05-08 | `pnpm build:web` | 通过：注释与日志治理后复验；Vite 提示 Ant Design vendor chunk 超过 500 kB |
+| 2026-05-08 | `git diff --check` | 通过：注释与日志治理后复验 |
+| 2026-05-08 | `./gradlew test` / `gradle test` / Docker Gradle 镜像 | 未执行成功：仓库缺少 Gradle wrapper，本机未安装 Gradle，Docker daemon 未启动 |
+| 2026-05-08 | `pnpm lint:web` | 通过：补齐登录响应 DTO 后复验 |
+| 2026-05-08 | `pnpm build:web` | 通过：补齐登录响应 DTO 后复验；Vite 提示 Ant Design vendor chunk 超过 500 kB |
+| 2026-05-08 | `git diff --check` | 通过：补齐登录响应 DTO 后复验 |
+| 2026-05-08 | `pnpm lint:web` | 通过：全代码注释补充后复验 |
+| 2026-05-08 | `pnpm build:web` | 通过：全代码注释补充后复验；Vite 提示 Ant Design vendor chunk 超过 500 kB |
+| 2026-05-08 | `git diff --check` | 通过：全代码注释补充后复验 |
+| 2026-05-08 | `gradle :apps:api:test --no-daemon` / Docker Gradle 镜像 | 未执行成功：本机未安装 Gradle，Docker daemon 未启动 |

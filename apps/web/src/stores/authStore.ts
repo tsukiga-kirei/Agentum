@@ -51,7 +51,8 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     try {
       const tenants = await authApi.listTenants();
       set({ tenants, tenantsLoading: false });
-    } catch {
+    } catch (error) {
+      console.warn("[auth] 租户列表加载失败", getErrorLogContext(error));
       set({ tenants: [], tenantsLoading: false });
       throw new Error("无法加载租户列表，请确认后端服务已启动");
     }
@@ -67,6 +68,7 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     }
 
     try {
+      // 系统管理员入口不绑定租户；业务和空间入口必须把租户交给后端重新校验成员关系和入口角色。
       const response = await authApi.login({
         username,
         password,
@@ -80,9 +82,11 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       return { success: true };
     } catch (error) {
       if (error instanceof AgentumApiError) {
+        console.warn("[auth] 登录失败", { code: error.code, requestId: error.requestId, portal, tenantId });
         return { success: false, message: error.message };
       }
 
+      console.error("[auth] 登录请求异常", getErrorLogContext(error));
       return { success: false, message: "无法连接后端服务，请确认 API 已启动" };
     }
   },
@@ -93,7 +97,8 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     if (token) {
       try {
         await authApi.logout(token);
-      } catch {
+      } catch (error) {
+        console.warn("[auth] 登出请求失败，本地会话仍会清理", getErrorLogContext(error));
         // 登出时以后端会话失效为最佳努力，前端仍需立即清除本地 token，避免继续使用过期身份。
       }
     }
@@ -114,11 +119,13 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         if (saved.token) {
           set({ token: saved.token });
 
+          // 本地 token 只是会话凭据，刷新后必须向后端重新确认用户、租户和角色上下文。
           void authApi.me(saved.token)
             .then((user) => {
               set({ user, token: saved.token ?? null, initialized: true });
             })
-            .catch(() => {
+            .catch((error) => {
+              console.warn("[auth] 会话恢复失败，已清理本地凭据", getErrorLogContext(error));
               window.localStorage.removeItem(STORAGE_KEY);
               set({ user: null, token: null, initialized: true });
             });
@@ -130,7 +137,8 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       } else {
         set({ initialized: true });
       }
-    } catch {
+    } catch (error) {
+      console.warn("[auth] 本地会话缓存损坏，已忽略", getErrorLogContext(error));
       set({ initialized: true });
     }
   },
@@ -157,4 +165,12 @@ function restoreTheme(set: (state: Partial<AuthState & AuthActions>) => void) {
     document.documentElement.classList.toggle("dark", savedTheme === "dark");
     document.documentElement.setAttribute("data-theme", savedTheme);
   }
+}
+
+function getErrorLogContext(error: unknown) {
+  if (error instanceof AgentumApiError) {
+    return { code: error.code, requestId: error.requestId };
+  }
+
+  return { message: error instanceof Error ? error.message : "unknown" };
 }

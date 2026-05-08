@@ -7,6 +7,7 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
 
+// 用户账号只描述登录主体，具体在某个租户/空间能做什么由成员关系和角色授权决定。
 @Entity
 @Table(name = "users")
 public class UserAccount {
@@ -38,6 +39,7 @@ public class UserAccount {
     protected UserAccount() {
     }
 
+    // 当前阶段由管理员直接创建本地账号；后续应替换为邀请注册、首次改密和账号安全审计。
     public static UserAccount create(String username, String passwordHash, String displayName, String email) {
         UserAccount user = new UserAccount();
         user.id = UUID.randomUUID();

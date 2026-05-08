@@ -6,6 +6,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.util.UUID;
 
+// 用户租户成员关系负责把用户、租户、部门、空间和角色绑定起来，是业务权限判断的基础。
 @Entity
 @Table(name = "user_memberships")
 public class UserMembershipEntity {
@@ -37,6 +38,7 @@ public class UserMembershipEntity {
     protected UserMembershipEntity() {
     }
 
+    // 当前新增成员默认成为该空间的默认成员；后续多空间、多角色和默认切换需要单独建模。
     public static UserMembershipEntity create(UUID tenantId, UUID userId, UUID departmentId, UUID roleId, String spaceCode) {
         UserMembershipEntity membership = new UserMembershipEntity();
         membership.id = UUID.randomUUID();

@@ -7,6 +7,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -26,6 +28,8 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 @Configuration
 public class SecurityConfiguration {
 
+    private static final Logger log = LoggerFactory.getLogger(SecurityConfiguration.class);
+
     private final ObjectMapper objectMapper;
 
     public SecurityConfiguration(ObjectMapper objectMapper) {
@@ -34,6 +38,7 @@ public class SecurityConfiguration {
 
     @Bean
     public SecurityFilterChain apiSecurity(HttpSecurity http, BearerTokenAuthenticationFilter bearerTokenAuthenticationFilter) throws Exception {
+        // 认证接口和健康检查公开，其余 API 统一走无状态 Bearer Token；前端入口隐藏不作为安全边界。
         return http
             .csrf(AbstractHttpConfigurer::disable)
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
@@ -61,6 +66,7 @@ public class SecurityConfiguration {
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
+        // 当前 CORS 策略只服务本地前后端分端口调试，生产部署应由网关或域名白名单收敛。
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOriginPatterns(List.of("http://localhost:*", "http://127.0.0.1:*"));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
@@ -78,6 +84,7 @@ public class SecurityConfiguration {
         String code,
         String message
     ) throws java.io.IOException {
+        log.warn("安全访问被拒绝 path={} code={} status={} requestId={}", request.getRequestURI(), code, status.value(), RequestIds.current(request));
         response.setStatus(status.value());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         ApiError error = new ApiError(code, message);

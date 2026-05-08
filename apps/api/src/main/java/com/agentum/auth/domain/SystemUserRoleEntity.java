@@ -6,6 +6,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.util.UUID;
 
+// 系统级角色关系独立于租户成员关系，用于支撑系统管理员进入平台治理入口。
 @Entity
 @Table(name = "system_user_roles")
 public class SystemUserRoleEntity {

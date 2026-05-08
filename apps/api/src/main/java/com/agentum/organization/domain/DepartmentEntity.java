@@ -6,6 +6,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.util.UUID;
 
+// 部门树用于待办分派、审核范围和资源过滤；排序与移动策略后续会进入组织管理 API。
 @Entity
 @Table(name = "departments")
 public class DepartmentEntity {
@@ -34,6 +35,7 @@ public class DepartmentEntity {
     protected DepartmentEntity() {
     }
 
+    // 第一阶段只开放新增部门，默认 active；后续停用、移动和排序都需要补审计事件。
     public static DepartmentEntity create(UUID tenantId, UUID parentId, String name, String code, int sortOrder) {
         DepartmentEntity department = new DepartmentEntity();
         department.id = UUID.randomUUID();

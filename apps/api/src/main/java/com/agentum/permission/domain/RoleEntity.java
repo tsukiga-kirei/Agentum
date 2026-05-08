@@ -6,6 +6,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.util.UUID;
 
+// 角色是动作能力集合；tenantId 为空表示平台级角色，非空表示租户内角色。
 @Entity
 @Table(name = "roles")
 public class RoleEntity {

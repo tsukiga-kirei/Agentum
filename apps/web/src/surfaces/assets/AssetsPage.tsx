@@ -15,6 +15,7 @@ type AssetCreateEntry = {
   action: string;
 };
 
+// 能力资产页先用静态资产解释治理对象，后续应替换为智能体模板、Skill、MCP、提示词和交付能力 API。
 const skills: SkillAsset[] = [
   { name: "需求拆解 Skill", version: "v2", category: "taskGuidance", status: "已发布", usage: "需求分析智能体" },
   { name: "追问澄清 Skill", version: "v1", category: "questionGuidance", status: "已发布", usage: "需求分析智能体" },
@@ -65,6 +66,7 @@ const deliveryCapabilities: DeliveryCapabilityAsset[] = [
   { id: "delivery_oa", name: "OA 流程创建", channel: "oa", version: "v0", riskLevel: "high", status: "draft" },
 ];
 
+// 这里保留各类资产独立入口，避免回到泛化“导入流程”的入口；真实创建动作后续归属各资产模块。
 const assetCreateEntries: AssetCreateEntry[] = [
   { title: "新增智能体模板", detail: "配置系统提示词、模型、输出 Schema 和交互模式。", action: "添加模板" },
   { title: "新增 Skill", detail: "沉淀需求拆解、追问澄清、风险识别等方法论能力。", action: "添加 Skill" },

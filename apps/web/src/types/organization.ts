@@ -1,3 +1,5 @@
+// 组织管理类型对齐后端租户人员组织概览接口。
+// 该文件仍是手写契约，后续接入 OpenAPI 生成后应替换为 generated types 的再导出。
 export type OrganizationMember = {
   id: string;
   username: string;
@@ -48,6 +50,7 @@ export type TenantOrganizationOverview = {
   memberships: OrganizationMembership[];
 };
 
+// 新增成员会携带初始密码，调用方必须避免写入日志、URL、localStorage 或错误详情。
 export type CreateMemberRequest = {
   username: string;
   password: string;
@@ -58,6 +61,7 @@ export type CreateMemberRequest = {
   spaceCode?: string;
 };
 
+// 部门新增只表达层级和排序意图；上级部门归属必须由后端按租户再次校验。
 export type CreateDepartmentRequest = {
   name: string;
   code?: string;

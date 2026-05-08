@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.util.UUID;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.slf4j.MDC;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -26,6 +27,14 @@ public class RequestIdFilter extends OncePerRequestFilter {
 
         request.setAttribute(RequestIds.ATTRIBUTE_NAME, requestId);
         response.setHeader(RequestIds.HEADER_NAME, requestId);
-        filterChain.doFilter(request, response);
+
+        // requestId 是串联 API 日志、运行记录、工具调用和审计记录的最小追踪单元，必须进入 MDC。
+        MDC.put(RequestIds.MDC_KEY, requestId);
+
+        try {
+            filterChain.doFilter(request, response);
+        } finally {
+            MDC.remove(RequestIds.MDC_KEY);
+        }
     }
 }
