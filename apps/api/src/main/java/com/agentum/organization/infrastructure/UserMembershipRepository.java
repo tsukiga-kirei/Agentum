@@ -8,4 +8,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface UserMembershipRepository extends JpaRepository<UserMembershipEntity, UUID> {
 
     List<UserMembershipEntity> findByUserIdAndTenantIdAndStatus(UUID userId, UUID tenantId, String status);
+
+    List<UserMembershipEntity> findByTenantIdAndStatus(UUID tenantId, String status);
 }

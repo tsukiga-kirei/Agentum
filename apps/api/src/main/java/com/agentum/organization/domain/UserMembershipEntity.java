@@ -53,11 +53,19 @@ public class UserMembershipEntity {
         return roleId;
     }
 
+    public UUID getDepartmentId() {
+        return departmentId;
+    }
+
     public String getSpaceCode() {
         return spaceCode;
     }
 
     public boolean isDefaultMembership() {
         return defaultMembership;
+    }
+
+    public String getStatus() {
+        return status;
     }
 }

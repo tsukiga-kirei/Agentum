@@ -87,6 +87,39 @@ paths:
       responses:
         "200":
           description: 已退出
+  /api/admin/tenants/{tenantId}/organization/overview:
+    get:
+      summary: 获取租户人员组织概览
+      description: 权限管理页使用的租户人员、部门、角色和成员关系聚合视图。
+      tags:
+        - Organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 租户人员组织概览
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/TenantOrganizationOverview"
+        "401":
+          description: 未登录或令牌无效
+        "403":
+          description: 当前账号不能管理该租户
+        "404":
+          description: 租户不存在或已停用
 components:
   securitySchemes:
     bearerAuth:
@@ -214,6 +247,150 @@ components:
         - organization
         - space
         - lastLoginAt
+    TenantOrganizationOverview:
+      type: object
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        tenantName:
+          type: string
+        tenantCode:
+          type: string
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrganizationMember"
+        departments:
+          type: array
+          items:
+            $ref: "#/components/schemas/Department"
+        roles:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrganizationRole"
+        memberships:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserMembership"
+      required:
+        - tenantId
+        - tenantName
+        - tenantCode
+        - members
+        - departments
+        - roles
+        - memberships
+    OrganizationMember:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        displayName:
+          type: string
+        email:
+          type: string
+        status:
+          type: string
+        lastLoginAt:
+          type: string
+      required:
+        - id
+        - username
+        - displayName
+        - email
+        - status
+        - lastLoginAt
+    Department:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        parentId:
+          type: string
+          format: uuid
+          nullable: true
+        name:
+          type: string
+        code:
+          type: string
+        sortOrder:
+          type: integer
+        status:
+          type: string
+      required:
+        - id
+        - parentId
+        - name
+        - code
+        - sortOrder
+        - status
+    OrganizationRole:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+        name:
+          type: string
+        scope:
+          type: string
+        status:
+          type: string
+      required:
+        - id
+        - code
+        - name
+        - scope
+        - status
+    UserMembership:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        userDisplayName:
+          type: string
+        departmentId:
+          type: string
+          format: uuid
+          nullable: true
+        departmentName:
+          type: string
+        roleId:
+          type: string
+          format: uuid
+        roleName:
+          type: string
+        roleCode:
+          type: string
+        spaceCode:
+          type: string
+        defaultMembership:
+          type: boolean
+        status:
+          type: string
+      required:
+        - id
+        - userId
+        - userDisplayName
+        - departmentId
+        - departmentName
+        - roleId
+        - roleName
+        - roleCode
+        - spaceCode
+        - defaultMembership
+        - status
     WorkflowDefinition:
       type: object
       description: 工作流定义草稿或发布版本的前后端共享结构。
