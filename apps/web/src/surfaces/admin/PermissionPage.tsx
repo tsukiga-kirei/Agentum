@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { Building2, Database, Eye, FileText, LockKeyhole, ShieldCheck, UserRoundCog, UsersRound } from "lucide-react";
+import { Form, Input, Modal, Select } from "antd";
+import { Building2, Database, Eye, FileText, LockKeyhole, ShieldCheck, UserPlus, UserRoundCog, UsersRound } from "lucide-react";
 import { AgentumApiError, organizationApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
-import type { TenantOrganizationOverview } from "../../types/organization";
+import type { CreateMemberRequest, TenantOrganizationOverview } from "../../types/organization";
 
 type PermissionTabKey = "organization" | "roles" | "resources" | "sensitive" | "audit";
 
@@ -134,6 +135,9 @@ export function PermissionPage() {
   const [organizationOverview, setOrganizationOverview] = useState<TenantOrganizationOverview | null>(null);
   const [organizationLoading, setOrganizationLoading] = useState(false);
   const [organizationError, setOrganizationError] = useState("");
+  const [createMemberOpen, setCreateMemberOpen] = useState(false);
+  const [createMemberSubmitting, setCreateMemberSubmitting] = useState(false);
+  const [createMemberForm] = Form.useForm<CreateMemberRequest>();
   const activeTabMeta = permissionTabs.find((tab) => tab.key === activeTab) ?? permissionTabs[0];
 
   useEffect(() => {
@@ -167,6 +171,27 @@ export function PermissionPage() {
       active = false;
     };
   }, [activeTab, token, user?.tenantId]);
+
+  async function handleCreateMember(values: CreateMemberRequest) {
+    if (!token || !user?.tenantId) {
+      setOrganizationError("当前账号缺少租户上下文，无法新增成员");
+      return;
+    }
+
+    setCreateMemberSubmitting(true);
+    setOrganizationError("");
+
+    try {
+      const overview = await organizationApi.createMember(user.tenantId, token, values);
+      setOrganizationOverview(overview);
+      setCreateMemberOpen(false);
+      createMemberForm.resetFields();
+    } catch (error) {
+      setOrganizationError(error instanceof AgentumApiError ? error.message : "新增成员失败，请稍后重试");
+    } finally {
+      setCreateMemberSubmitting(false);
+    }
+  }
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-5 px-5 py-6 lg:px-6">
@@ -226,6 +251,7 @@ export function PermissionPage() {
                 loading={organizationLoading}
                 error={organizationError}
                 hasTenantContext={Boolean(user?.tenantId)}
+                onCreateMember={() => setCreateMemberOpen(true)}
               />
             ) : null}
             {activeTab === "roles" ? <RolePolicyPanel /> : null}
@@ -235,6 +261,48 @@ export function PermissionPage() {
           </div>
         </div>
       </section>
+
+      <Modal
+        title="新增成员"
+        open={createMemberOpen}
+        okText="创建成员"
+        cancelText="取消"
+        confirmLoading={createMemberSubmitting}
+        onOk={() => void createMemberForm.submit()}
+        onCancel={() => setCreateMemberOpen(false)}
+        destroyOnClose
+      >
+        <Form form={createMemberForm} layout="vertical" onFinish={handleCreateMember} preserve={false}>
+          <Form.Item name="displayName" label="成员姓名" rules={[{ required: true, message: "请输入成员姓名" }]}>
+            <Input placeholder="例如：张三" />
+          </Form.Item>
+          <Form.Item name="username" label="用户名" rules={[{ required: true, message: "请输入用户名" }]}>
+            <Input placeholder="例如：zhangsan" autoComplete="off" />
+          </Form.Item>
+          <Form.Item name="password" label="初始密码" rules={[{ required: true, message: "请输入初始密码" }, { min: 8, message: "初始密码至少 8 位" }]}>
+            <Input.Password placeholder="至少 8 位" autoComplete="new-password" />
+          </Form.Item>
+          <Form.Item name="email" label="邮箱">
+            <Input placeholder="name@example.com" />
+          </Form.Item>
+          <Form.Item name="departmentId" label="部门">
+            <Select
+              allowClear
+              placeholder="可选"
+              options={(organizationOverview?.departments ?? []).map((department) => ({ value: department.id, label: department.name }))}
+            />
+          </Form.Item>
+          <Form.Item name="roleId" label="角色" rules={[{ required: true, message: "请选择角色" }]}>
+            <Select
+              placeholder="请选择角色"
+              options={(organizationOverview?.roles ?? []).map((role) => ({ value: role.id, label: `${role.name} (${role.code})` }))}
+            />
+          </Form.Item>
+          <Form.Item name="spaceCode" label="空间">
+            <Input placeholder="默认空间" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 }
@@ -244,11 +312,13 @@ function OrganizationPanel({
   loading,
   error,
   hasTenantContext,
+  onCreateMember,
 }: {
   overview: TenantOrganizationOverview | null;
   loading: boolean;
   error: string;
   hasTenantContext: boolean;
+  onCreateMember: () => void;
 }) {
   if (!hasTenantContext) {
     return (
@@ -274,6 +344,22 @@ function OrganizationPanel({
             </article>
           );
         })}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] px-4 py-3">
+        <div>
+          <h3 className="text-sm font-semibold">成员管理</h3>
+          <p className="agent-muted mt-1 text-xs">新增成员会同时创建账号并分配租户内角色，后端会再次校验租户、部门和角色归属。</p>
+        </div>
+        <button
+          type="button"
+          onClick={onCreateMember}
+          disabled={!overview}
+          className="inline-flex items-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white shadow-sm transition-opacity disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <UserPlus className="h-4 w-4" aria-hidden="true" />
+          新增成员
+        </button>
       </div>
 
       {loading ? (

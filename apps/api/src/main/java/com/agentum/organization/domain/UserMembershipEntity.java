@@ -37,6 +37,19 @@ public class UserMembershipEntity {
     protected UserMembershipEntity() {
     }
 
+    public static UserMembershipEntity create(UUID tenantId, UUID userId, UUID departmentId, UUID roleId, String spaceCode) {
+        UserMembershipEntity membership = new UserMembershipEntity();
+        membership.id = UUID.randomUUID();
+        membership.tenantId = tenantId;
+        membership.userId = userId;
+        membership.departmentId = departmentId;
+        membership.roleId = roleId;
+        membership.spaceCode = spaceCode;
+        membership.defaultMembership = true;
+        membership.status = "active";
+        return membership;
+    }
+
     public UUID getId() {
         return id;
     }

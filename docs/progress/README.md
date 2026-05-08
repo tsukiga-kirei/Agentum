@@ -91,6 +91,7 @@
 - 参考 AuraOA 的 UI 框架思路，引入 React 版 Ant Design，并将登录页租户下拉替换为组件库 Select；Vite 已配置 vendor 分包，避免组件库进入主入口 chunk。
 - 前端登录链路已接入后端认证 API：租户下拉调用 `/api/public/tenants`，登录调用 `/api/auth/login`，刷新恢复调用 `/api/auth/me`，登出调用 `/api/auth/logout`；本地 mock 登录数据已移除。
 - 权限管理页的人员组织标签已接入租户人员组织概览 API，展示后端返回的成员、部门、角色和成员关系摘要。
+- 权限管理页新增成员弹窗已接入后端新增成员接口，提交后刷新租户人员组织概览。
 
 ### 2.3 后端
 
@@ -107,6 +108,7 @@
 - 新增认证与租户上下文第一批后端实现：统一 API 响应结构、请求 ID、公开租户列表、登录、当前用户、登出、Bearer Token 校验和本地 CORS 配置。
 - 建立租户、用户、系统角色、用户租户成员关系和角色的实体 / 仓储边界。
 - 新增租户人员组织概览 API：按租户聚合返回成员、部门、角色和成员关系，并增加系统管理员 / 空间管理员访问校验。
+- 新增租户成员创建 API：创建用户账号、写入用户租户成员关系，并校验用户名唯一性、部门归属和角色归属。
 - 新增本地开发身份数据迁移，用于跑通系统管理、业务用户、流程设计者和空间管理员入口。
 - 修复 Gradle 仓库配置冲突，使后端测试可以在临时 Gradle Docker 镜像中执行。
 
@@ -146,7 +148,7 @@
 | 能力源码目录 | 建立 Skill、MCP Server、提示词模板和交付适配器的仓库边界 | 已补目录骨架和 README，后续补示例能力 |
 | 认证与租户上下文 API | 公开租户列表、登录、当前用户、登出和活跃角色上下文 | 已完成后端基础接口，前端登录已接入真实 API |
 | 后端 package 边界 | 建立认证、租户、组织、权限、系统管理包结构 | 已推进认证、租户、组织、权限第一批实体和仓储；系统管理待推进 |
-| 人员管理 API | 用户、部门、角色、成员关系 CRUD | 已完成只读组织概览 API；新增、编辑、禁用和角色分配待推进 |
+| 人员管理 API | 用户、部门、角色、成员关系 CRUD | 已完成组织概览和新增成员；编辑、禁用、部门创建和角色调整待推进 |
 
 ### 3.2 第一阶段后续任务
 
@@ -223,5 +225,11 @@
 | 2026-05-08 | `pnpm lint:web` | 通过：权限管理页接组织概览 API 后复验 |
 | 2026-05-08 | `pnpm build:web` | 通过：权限管理页接组织概览 API 后复验 |
 | 2026-05-08 | `make dev-infra` | 未通过：本机 Docker daemon 未启动，无法进行运行态前后端联调 |
+| 2026-05-08 | `gradle :apps:api:test --no-daemon` | 未执行：本机尚未安装 `gradle` |
+| 2026-05-08 | `docker run --rm -v "$PWD":/workspace -w /workspace gradle:8.10.2-jdk21 gradle :apps:api:test --no-daemon` | 未执行：本机 Docker daemon 未启动 |
+| 2026-05-08 | `pnpm lint:web` | 通过：新增成员弹窗接入后复验 |
+| 2026-05-08 | `pnpm build:web` | 通过：新增成员弹窗接入后复验；Vite 提示 Ant Design vendor chunk 超过 500 kB |
+| 2026-05-08 | OpenAPI YAML 解析检查 | 通过：新增成员接口补入契约后复验 |
+| 2026-05-08 | `git diff --check` | 通过：新增成员接口和弹窗后复验 |
 | 2026-05-08 | `gradle :apps:api:test --no-daemon` | 未执行：本机尚未安装 `gradle` |
 | 2026-05-08 | `docker run --rm -v "$PWD":/workspace -w /workspace gradle:8.10.2-jdk21 gradle :apps:api:test --no-daemon` | 未执行：本机 Docker daemon 未启动 |

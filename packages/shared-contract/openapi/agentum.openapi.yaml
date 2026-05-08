@@ -120,6 +120,47 @@ paths:
           description: 当前账号不能管理该租户
         "404":
           description: 租户不存在或已停用
+  /api/admin/tenants/{tenantId}/organization/members:
+    post:
+      summary: 新增租户成员
+      description: 创建用户账号并分配当前租户内部门、角色和空间。后端会校验租户、部门、角色归属。
+      tags:
+        - Organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMemberRequest"
+      responses:
+        "200":
+          description: 新增成功并返回最新人员组织概览
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/TenantOrganizationOverview"
+        "400":
+          description: 请求参数不完整或部门、角色不可用
+        "401":
+          description: 未登录或令牌无效
+        "403":
+          description: 当前账号不能管理该租户
+        "409":
+          description: 用户名已存在
 components:
   securitySchemes:
     bearerAuth:
@@ -281,6 +322,37 @@ components:
         - departments
         - roles
         - memberships
+    CreateMemberRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          maxLength: 100
+        password:
+          type: string
+          minLength: 8
+          maxLength: 80
+        displayName:
+          type: string
+          maxLength: 100
+        email:
+          type: string
+          maxLength: 255
+        departmentId:
+          type: string
+          format: uuid
+          nullable: true
+        roleId:
+          type: string
+          format: uuid
+        spaceCode:
+          type: string
+          maxLength: 80
+      required:
+        - username
+        - password
+        - displayName
+        - roleId
     OrganizationMember:
       type: object
       properties:

@@ -38,6 +38,18 @@ public class UserAccount {
     protected UserAccount() {
     }
 
+    public static UserAccount create(String username, String passwordHash, String displayName, String email) {
+        UserAccount user = new UserAccount();
+        user.id = UUID.randomUUID();
+        user.username = username;
+        user.passwordHash = passwordHash;
+        user.displayName = displayName;
+        user.email = email;
+        user.avatarUrl = "";
+        user.status = "active";
+        return user;
+    }
+
     public UUID getId() {
         return id;
     }

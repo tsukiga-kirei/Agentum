@@ -47,3 +47,13 @@ export type TenantOrganizationOverview = {
   roles: OrganizationRole[];
   memberships: OrganizationMembership[];
 };
+
+export type CreateMemberRequest = {
+  username: string;
+  password: string;
+  displayName: string;
+  email?: string;
+  departmentId?: string;
+  roleId: string;
+  spaceCode?: string;
+};
