@@ -1,7 +1,7 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { ConfigProvider, Select, theme as antdTheme } from "antd";
 import { Building2, KeyRound, LayoutDashboard, Settings, Shield, User } from "lucide-react";
-import { mockTenants, useAuthStore } from "../../stores/authStore";
+import { useAuthStore } from "../../stores/authStore";
 import { ThemeToggle } from "../../components/ThemeToggle";
 import { AgentumMark } from "../../components/brand/AgentumMark";
 import type { PortalType } from "../../types/auth";
@@ -39,12 +39,15 @@ const portals: Array<{
 ];
 
 export function LoginPage() {
+  const tenants = useAuthStore((s) => s.tenants);
+  const tenantsLoading = useAuthStore((s) => s.tenantsLoading);
+  const fetchTenants = useAuthStore((s) => s.fetchTenants);
   const login = useAuthStore((s) => s.login);
   const themeMode = useAuthStore((s) => s.themeMode);
   const isDark = themeMode === "dark";
 
   const [activePortal, setActivePortal] = useState<PortalType>("business");
-  const [tenantId, setTenantId] = useState(mockTenants[0]?.id ?? "");
+  const [tenantId, setTenantId] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -53,7 +56,7 @@ export function LoginPage() {
 
   const currentPortal = portals.find((p) => p.key === activePortal) ?? portals[0];
   const shouldSelectTenant = activePortal !== "system_admin";
-  const tenantOptions = mockTenants.map((tenant) => ({
+  const tenantOptions = tenants.map((tenant) => ({
     value: tenant.id,
     label: (
       <span className="agent-tenant-option">
@@ -62,6 +65,27 @@ export function LoginPage() {
       </span>
     ),
   }));
+
+  useEffect(() => {
+    let active = true;
+
+    fetchTenants()
+      .catch((tenantError) => {
+        if (active) {
+          setError(tenantError instanceof Error ? tenantError.message : "无法加载租户列表");
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [fetchTenants]);
+
+  useEffect(() => {
+    if (!tenantId && tenants[0]) {
+      setTenantId(tenants[0].id);
+    }
+  }, [tenantId, tenants]);
 
   function handlePortalChange(portal: PortalType) {
     setActivePortal(portal);
@@ -90,12 +114,10 @@ export function LoginPage() {
     setLoading(true);
 
     try {
-      // 模拟网络延迟，让用户看到加载状态
-      await new Promise((resolve) => setTimeout(resolve, 600));
-      const success = await login(username, password, activePortal, shouldSelectTenant ? tenantId : undefined);
+      const result = await login(username, password, activePortal, shouldSelectTenant ? tenantId : undefined);
 
-      if (!success) {
-        setError(shouldSelectTenant ? "租户、用户名或密码不正确" : "用户名或密码不正确");
+      if (!result.success) {
+        setError(result.message ?? (shouldSelectTenant ? "租户、用户名或密码不正确" : "用户名或密码不正确"));
       }
     } finally {
       setLoading(false);
@@ -236,6 +258,8 @@ export function LoginPage() {
                       options={tenantOptions}
                       placeholder="请选择租户"
                       prefix={<Building2 className="h-5 w-5 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+                      loading={tenantsLoading}
+                      disabled={tenantsLoading}
                       value={tenantId || undefined}
                       onChange={(value) => { setTenantId(value); setError(""); }}
                     />
