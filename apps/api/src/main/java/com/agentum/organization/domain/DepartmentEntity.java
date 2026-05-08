@@ -34,6 +34,18 @@ public class DepartmentEntity {
     protected DepartmentEntity() {
     }
 
+    public static DepartmentEntity create(UUID tenantId, UUID parentId, String name, String code, int sortOrder) {
+        DepartmentEntity department = new DepartmentEntity();
+        department.id = UUID.randomUUID();
+        department.tenantId = tenantId;
+        department.parentId = parentId;
+        department.name = name;
+        department.code = code;
+        department.sortOrder = sortOrder;
+        department.status = "active";
+        return department;
+    }
+
     public UUID getId() {
         return id;
     }

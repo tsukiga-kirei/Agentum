@@ -161,6 +161,45 @@ paths:
           description: 当前账号不能管理该租户
         "409":
           description: 用户名已存在
+  /api/admin/tenants/{tenantId}/organization/departments:
+    post:
+      summary: 新增租户部门
+      description: 创建当前租户内部门，可选上级部门。后端会校验上级部门归属。
+      tags:
+        - Organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDepartmentRequest"
+      responses:
+        "200":
+          description: 新增成功并返回最新人员组织概览
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/TenantOrganizationOverview"
+        "400":
+          description: 请求参数不完整或上级部门不可用
+        "401":
+          description: 未登录或令牌无效
+        "403":
+          description: 当前账号不能管理该租户
 components:
   securitySchemes:
     bearerAuth:
@@ -353,6 +392,23 @@ components:
         - password
         - displayName
         - roleId
+    CreateDepartmentRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 160
+        code:
+          type: string
+          maxLength: 80
+        parentId:
+          type: string
+          format: uuid
+          nullable: true
+        sortOrder:
+          type: integer
+      required:
+        - name
     OrganizationMember:
       type: object
       properties:

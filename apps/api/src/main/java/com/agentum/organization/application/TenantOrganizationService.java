@@ -8,6 +8,7 @@ import com.agentum.organization.infrastructure.DepartmentRepository;
 import com.agentum.organization.infrastructure.UserMembershipRepository;
 import com.agentum.organization.interfaces.DepartmentResponse;
 import com.agentum.organization.interfaces.CreateMemberRequest;
+import com.agentum.organization.interfaces.CreateDepartmentRequest;
 import com.agentum.organization.interfaces.MemberResponse;
 import com.agentum.organization.interfaces.MembershipResponse;
 import com.agentum.organization.interfaces.RoleResponse;
@@ -100,6 +101,31 @@ public class TenantOrganizationService {
             normalizeSpaceCode(request.spaceCode())
         );
         userMembershipRepository.save(membership);
+
+        return getOverview(tenantId);
+    }
+
+    @Transactional
+    public TenantOrganizationOverviewResponse createDepartment(UUID tenantId, CreateDepartmentRequest request) {
+        tenantRepository.findByIdAndStatus(tenantId, ACTIVE_STATUS)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "TENANT_NOT_FOUND", "租户不存在或已停用"));
+
+        UUID parentId = request.parentId();
+
+        if (parentId != null) {
+            departmentRepository.findByIdAndTenantIdAndStatus(parentId, tenantId, ACTIVE_STATUS)
+                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "ORG_PARENT_DEPARTMENT_NOT_AVAILABLE", "上级部门不属于当前租户或已停用"));
+        }
+
+        // 部门树是待办分派和资源过滤的基础，先开放新增动作；后续再补移动、停用和排序审计。
+        DepartmentEntity department = DepartmentEntity.create(
+            tenantId,
+            parentId,
+            normalizeRequired(request.name()),
+            normalizeOptional(request.code()),
+            request.sortOrder() == null ? 0 : request.sortOrder()
+        );
+        departmentRepository.save(department);
 
         return getOverview(tenantId);
     }

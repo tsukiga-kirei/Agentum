@@ -48,4 +48,15 @@ public class TenantOrganizationController {
         tenantOrganizationAccess.assertCanManageTenant(principal, tenantId);
         return ApiResponse.success(tenantOrganizationService.createMember(tenantId, createMemberRequest), RequestIds.current(request));
     }
+
+    @PostMapping("/departments")
+    public ApiResponse<TenantOrganizationOverviewResponse> createDepartment(
+        @PathVariable UUID tenantId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @Valid @RequestBody CreateDepartmentRequest createDepartmentRequest,
+        HttpServletRequest request
+    ) {
+        tenantOrganizationAccess.assertCanManageTenant(principal, tenantId);
+        return ApiResponse.success(tenantOrganizationService.createDepartment(tenantId, createDepartmentRequest), RequestIds.current(request));
+    }
 }

@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { Form, Input, Modal, Select } from "antd";
+import { Form, Input, InputNumber, Modal, Select } from "antd";
 import { Building2, Database, Eye, FileText, LockKeyhole, ShieldCheck, UserPlus, UserRoundCog, UsersRound } from "lucide-react";
 import { AgentumApiError, organizationApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
-import type { CreateMemberRequest, TenantOrganizationOverview } from "../../types/organization";
+import type { CreateDepartmentRequest, CreateMemberRequest, TenantOrganizationOverview } from "../../types/organization";
 
 type PermissionTabKey = "organization" | "roles" | "resources" | "sensitive" | "audit";
 
@@ -138,6 +138,9 @@ export function PermissionPage() {
   const [createMemberOpen, setCreateMemberOpen] = useState(false);
   const [createMemberSubmitting, setCreateMemberSubmitting] = useState(false);
   const [createMemberForm] = Form.useForm<CreateMemberRequest>();
+  const [createDepartmentOpen, setCreateDepartmentOpen] = useState(false);
+  const [createDepartmentSubmitting, setCreateDepartmentSubmitting] = useState(false);
+  const [createDepartmentForm] = Form.useForm<CreateDepartmentRequest>();
   const activeTabMeta = permissionTabs.find((tab) => tab.key === activeTab) ?? permissionTabs[0];
 
   useEffect(() => {
@@ -190,6 +193,27 @@ export function PermissionPage() {
       setOrganizationError(error instanceof AgentumApiError ? error.message : "新增成员失败，请稍后重试");
     } finally {
       setCreateMemberSubmitting(false);
+    }
+  }
+
+  async function handleCreateDepartment(values: CreateDepartmentRequest) {
+    if (!token || !user?.tenantId) {
+      setOrganizationError("当前账号缺少租户上下文，无法新增部门");
+      return;
+    }
+
+    setCreateDepartmentSubmitting(true);
+    setOrganizationError("");
+
+    try {
+      const overview = await organizationApi.createDepartment(user.tenantId, token, values);
+      setOrganizationOverview(overview);
+      setCreateDepartmentOpen(false);
+      createDepartmentForm.resetFields();
+    } catch (error) {
+      setOrganizationError(error instanceof AgentumApiError ? error.message : "新增部门失败，请稍后重试");
+    } finally {
+      setCreateDepartmentSubmitting(false);
     }
   }
 
@@ -252,6 +276,7 @@ export function PermissionPage() {
                 error={organizationError}
                 hasTenantContext={Boolean(user?.tenantId)}
                 onCreateMember={() => setCreateMemberOpen(true)}
+                onCreateDepartment={() => setCreateDepartmentOpen(true)}
               />
             ) : null}
             {activeTab === "roles" ? <RolePolicyPanel /> : null}
@@ -303,6 +328,36 @@ export function PermissionPage() {
           </Form.Item>
         </Form>
       </Modal>
+
+      <Modal
+        title="新增部门"
+        open={createDepartmentOpen}
+        okText="创建部门"
+        cancelText="取消"
+        confirmLoading={createDepartmentSubmitting}
+        onOk={() => void createDepartmentForm.submit()}
+        onCancel={() => setCreateDepartmentOpen(false)}
+        destroyOnClose
+      >
+        <Form form={createDepartmentForm} layout="vertical" onFinish={handleCreateDepartment} preserve={false}>
+          <Form.Item name="name" label="部门名称" rules={[{ required: true, message: "请输入部门名称" }]}>
+            <Input placeholder="例如：风控部" />
+          </Form.Item>
+          <Form.Item name="code" label="部门编码">
+            <Input placeholder="例如：risk" />
+          </Form.Item>
+          <Form.Item name="parentId" label="上级部门">
+            <Select
+              allowClear
+              placeholder="不选择则为一级部门"
+              options={(organizationOverview?.departments ?? []).map((department) => ({ value: department.id, label: department.name }))}
+            />
+          </Form.Item>
+          <Form.Item name="sortOrder" label="排序">
+            <InputNumber className="w-full" min={0} placeholder="0" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 }
@@ -313,12 +368,14 @@ function OrganizationPanel({
   error,
   hasTenantContext,
   onCreateMember,
+  onCreateDepartment,
 }: {
   overview: TenantOrganizationOverview | null;
   loading: boolean;
   error: string;
   hasTenantContext: boolean;
   onCreateMember: () => void;
+  onCreateDepartment: () => void;
 }) {
   if (!hasTenantContext) {
     return (
@@ -348,18 +405,29 @@ function OrganizationPanel({
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] px-4 py-3">
         <div>
-          <h3 className="text-sm font-semibold">成员管理</h3>
-          <p className="agent-muted mt-1 text-xs">新增成员会同时创建账号并分配租户内角色，后端会再次校验租户、部门和角色归属。</p>
+          <h3 className="text-sm font-semibold">人员组织维护</h3>
+          <p className="agent-muted mt-1 text-xs">新增成员和部门都会由后端再次校验租户归属，前端只负责提交治理动作。</p>
         </div>
-        <button
-          type="button"
-          onClick={onCreateMember}
-          disabled={!overview}
-          className="inline-flex items-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white shadow-sm transition-opacity disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          <UserPlus className="h-4 w-4" aria-hidden="true" />
-          新增成员
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={onCreateDepartment}
+            disabled={!overview}
+            className="inline-flex items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg-card)] px-3 py-2 text-sm font-medium text-[var(--color-text-primary)] shadow-sm transition-opacity disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Building2 className="h-4 w-4" aria-hidden="true" />
+            新增部门
+          </button>
+          <button
+            type="button"
+            onClick={onCreateMember}
+            disabled={!overview}
+            className="inline-flex items-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white shadow-sm transition-opacity disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <UserPlus className="h-4 w-4" aria-hidden="true" />
+            新增成员
+          </button>
+        </div>
       </div>
 
       {loading ? (

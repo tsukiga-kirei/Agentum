@@ -57,3 +57,10 @@ export type CreateMemberRequest = {
   roleId: string;
   spaceCode?: string;
 };
+
+export type CreateDepartmentRequest = {
+  name: string;
+  code?: string;
+  parentId?: string;
+  sortOrder?: number;
+};
