@@ -1,4 +1,5 @@
 import type { AuthUser, LoginRequest, LoginResponse, TenantOption } from "../types/auth";
+import type { TenantOrganizationOverview } from "../types/organization";
 
 type ApiEnvelope<T> = {
   success: boolean;
@@ -65,4 +66,8 @@ export const authApi = {
   login: (request: LoginRequest) => apiRequest<LoginResponse>("/api/auth/login", { method: "POST", body: request }),
   me: (token: string) => apiRequest<AuthUser>("/api/auth/me", { token }),
   logout: (token: string) => apiRequest<void>("/api/auth/logout", { method: "POST", token }),
+};
+
+export const organizationApi = {
+  overview: (tenantId: string, token: string) => apiRequest<TenantOrganizationOverview>(`/api/admin/tenants/${tenantId}/organization/overview`, { token }),
 };

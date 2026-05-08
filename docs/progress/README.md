@@ -90,6 +90,7 @@
 - 登录页补齐租户下拉占位，并在前端模拟认证状态中保存 `tenantId`、租户名称和租户编码，为后续接入公开租户列表和登录 API 留出契约位置。
 - 参考 AuraOA 的 UI 框架思路，引入 React 版 Ant Design，并将登录页租户下拉替换为组件库 Select；Vite 已配置 vendor 分包，避免组件库进入主入口 chunk。
 - 前端登录链路已接入后端认证 API：租户下拉调用 `/api/public/tenants`，登录调用 `/api/auth/login`，刷新恢复调用 `/api/auth/me`，登出调用 `/api/auth/logout`；本地 mock 登录数据已移除。
+- 权限管理页的人员组织标签已接入租户人员组织概览 API，展示后端返回的成员、部门、角色和成员关系摘要。
 
 ### 2.3 后端
 
@@ -219,6 +220,8 @@
 | 2026-05-08 | `git diff --check` | 通过 |
 | 2026-05-08 | `pnpm lint:web` | 通过 |
 | 2026-05-08 | `pnpm build:web` | 通过 |
+| 2026-05-08 | `pnpm lint:web` | 通过：权限管理页接组织概览 API 后复验 |
+| 2026-05-08 | `pnpm build:web` | 通过：权限管理页接组织概览 API 后复验 |
 | 2026-05-08 | `make dev-infra` | 未通过：本机 Docker daemon 未启动，无法进行运行态前后端联调 |
 | 2026-05-08 | `gradle :apps:api:test --no-daemon` | 未执行：本机尚未安装 `gradle` |
 | 2026-05-08 | `docker run --rm -v "$PWD":/workspace -w /workspace gradle:8.10.2-jdk21 gradle :apps:api:test --no-daemon` | 未执行：本机 Docker daemon 未启动 |

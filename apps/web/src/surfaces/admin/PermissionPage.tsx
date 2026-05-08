@@ -1,5 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Building2, Database, Eye, FileText, LockKeyhole, ShieldCheck, UserRoundCog, UsersRound } from "lucide-react";
+import { AgentumApiError, organizationApi } from "../../services/apiClient";
+import { useAuthStore } from "../../stores/authStore";
+import type { TenantOrganizationOverview } from "../../types/organization";
 
 type PermissionTabKey = "organization" | "roles" | "resources" | "sensitive" | "audit";
 
@@ -126,7 +129,44 @@ const sensitivePolicies: SensitivePolicy[] = [
 export function PermissionPage() {
   // 权限页按租户管理员的日常任务组织展示，动作码只作为后端策略标识露出在次级文本中。
   const [activeTab, setActiveTab] = useState<PermissionTabKey>("organization");
+  const user = useAuthStore((s) => s.user);
+  const token = useAuthStore((s) => s.token);
+  const [organizationOverview, setOrganizationOverview] = useState<TenantOrganizationOverview | null>(null);
+  const [organizationLoading, setOrganizationLoading] = useState(false);
+  const [organizationError, setOrganizationError] = useState("");
   const activeTabMeta = permissionTabs.find((tab) => tab.key === activeTab) ?? permissionTabs[0];
+
+  useEffect(() => {
+    if (activeTab !== "organization" || !token || !user?.tenantId) {
+      return;
+    }
+
+    let active = true;
+    setOrganizationLoading(true);
+    setOrganizationError("");
+
+    organizationApi.overview(user.tenantId, token)
+      .then((overview) => {
+        if (active) {
+          setOrganizationOverview(overview);
+        }
+      })
+      .catch((error) => {
+        if (active) {
+          setOrganizationError(error instanceof AgentumApiError ? error.message : "无法加载人员组织数据");
+          setOrganizationOverview(null);
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setOrganizationLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [activeTab, token, user?.tenantId]);
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-5 px-5 py-6 lg:px-6">
@@ -180,7 +220,14 @@ export function PermissionPage() {
               </div>
             </div>
 
-            {activeTab === "organization" ? <OrganizationPanel /> : null}
+            {activeTab === "organization" ? (
+              <OrganizationPanel
+                overview={organizationOverview}
+                loading={organizationLoading}
+                error={organizationError}
+                hasTenantContext={Boolean(user?.tenantId)}
+              />
+            ) : null}
             {activeTab === "roles" ? <RolePolicyPanel /> : null}
             {activeTab === "resources" ? <ResourceGrantPanel /> : null}
             {activeTab === "sensitive" ? <SensitivePolicyPanel /> : null}
@@ -192,22 +239,92 @@ export function PermissionPage() {
   );
 }
 
-function OrganizationPanel() {
-  return (
-    <div className="grid gap-3 md:grid-cols-3">
-      {organizationItems.map((item) => {
-        const Icon = item.icon;
+function OrganizationPanel({
+  overview,
+  loading,
+  error,
+  hasTenantContext,
+}: {
+  overview: TenantOrganizationOverview | null;
+  loading: boolean;
+  error: string;
+  hasTenantContext: boolean;
+}) {
+  if (!hasTenantContext) {
+    return (
+      <div className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-4 text-sm text-[var(--color-text-secondary)]">
+        系统管理员需要先在系统管理中选择目标租户，才能查看租户内人员组织。
+      </div>
+    );
+  }
 
-        return (
-          <article key={item.title} className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-3">
-            <div className="flex items-center gap-2">
-              <Icon className="h-4 w-4 text-[var(--color-primary)]" aria-hidden="true" />
-              <h3 className="text-sm font-semibold">{item.title}</h3>
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 md:grid-cols-3">
+        {organizationItems.map((item) => {
+          const Icon = item.icon;
+
+          return (
+            <article key={item.title} className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-3">
+              <div className="flex items-center gap-2">
+                <Icon className="h-4 w-4 text-[var(--color-primary)]" aria-hidden="true" />
+                <h3 className="text-sm font-semibold">{item.title}</h3>
+              </div>
+              <p className="agent-muted mt-2 text-sm leading-6">{item.detail}</p>
+            </article>
+          );
+        })}
+      </div>
+
+      {loading ? (
+        <div className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] p-4 text-sm text-[var(--color-text-secondary)]">正在加载人员组织数据…</div>
+      ) : null}
+
+      {error ? (
+        <div className="rounded-[var(--radius-md)] border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-100">{error}</div>
+      ) : null}
+
+      {overview ? (
+        <div className="grid gap-3 xl:grid-cols-[1fr_1fr]">
+          <section className="rounded-[var(--radius-md)] border border-[var(--color-border-light)]">
+            <div className="border-b border-[var(--color-border-light)] px-4 py-3">
+              <h3 className="text-sm font-semibold">{overview.tenantName} 成员</h3>
+              <p className="agent-muted mt-1 text-xs">{overview.members.length} 人，{overview.departments.length} 个部门，{overview.roles.length} 个角色</p>
             </div>
-            <p className="agent-muted mt-2 text-sm leading-6">{item.detail}</p>
-          </article>
-        );
-      })}
+            <div className="divide-y divide-[var(--color-border-light)]">
+              {overview.members.map((member) => (
+                <div key={member.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                  <div>
+                    <p className="text-sm font-medium">{member.displayName}</p>
+                    <p className="agent-muted mt-1 text-xs">{member.username} · {member.email || "未填写邮箱"}</p>
+                  </div>
+                  <span className="rounded bg-[var(--color-bg-hover)] px-2 py-1 text-xs text-[var(--color-text-secondary)] ring-1 ring-[var(--color-border-light)]">{member.status}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="rounded-[var(--radius-md)] border border-[var(--color-border-light)]">
+            <div className="border-b border-[var(--color-border-light)] px-4 py-3">
+              <h3 className="text-sm font-semibold">成员关系</h3>
+              <p className="agent-muted mt-1 text-xs">后端按租户、部门、空间和角色返回真实关系</p>
+            </div>
+            <div className="divide-y divide-[var(--color-border-light)]">
+              {overview.memberships.map((membership) => (
+                <div key={membership.id} className="px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium">{membership.userDisplayName}</p>
+                    <span className="rounded bg-indigo-50 px-2 py-1 text-xs text-indigo-700 ring-1 ring-indigo-100 dark:bg-indigo-950/40 dark:text-indigo-200 dark:ring-indigo-900/70">
+                      {membership.roleName || membership.roleCode}
+                    </span>
+                  </div>
+                  <p className="agent-muted mt-1 text-xs">{membership.departmentName || "未分配部门"} · {membership.spaceCode}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }
