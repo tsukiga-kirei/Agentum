@@ -7,10 +7,6 @@ plugins {
 allprojects {
     group = "com.agentum"
     version = "0.1.0-SNAPSHOT"
-
-    repositories {
-        mavenCentral()
-    }
 }
 
 subprojects {
@@ -22,4 +18,3 @@ subprojects {
         }
     }
 }
-

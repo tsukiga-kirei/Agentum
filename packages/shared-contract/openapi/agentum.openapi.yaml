@@ -6,8 +6,93 @@ info:
 servers:
   - url: http://localhost:8080
     description: 本地开发环境
-paths: {}
+paths:
+  /api/public/tenants:
+    get:
+      summary: 获取公开租户列表
+      description: 登录页使用的活跃租户轻量列表。公网 SaaS 场景后续应替换为租户编码或域名识别。
+      tags:
+        - Auth
+      responses:
+        "200":
+          description: 活跃租户列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/TenantOption"
+  /api/auth/login:
+    post:
+      summary: 登录并建立活跃入口上下文
+      tags:
+        - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/LoginResponse"
+        "400":
+          description: 请求参数不完整或租户不可用
+        "401":
+          description: 用户名、密码或登录状态不正确
+        "403":
+          description: 用户没有所选入口权限
+  /api/auth/me:
+    get:
+      summary: 获取当前登录用户
+      tags:
+        - Auth
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 当前用户上下文
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/AuthUser"
+        "401":
+          description: 未登录或令牌无效
+  /api/auth/logout:
+    post:
+      summary: 退出登录
+      tags:
+        - Auth
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 已退出
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
   schemas:
     ApiError:
       type: object
@@ -42,6 +127,93 @@ components:
         - data
         - error
         - requestId
+    TenantOption:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        code:
+          type: string
+      required:
+        - id
+        - name
+        - code
+    LoginRequest:
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+        portal:
+          type: string
+          enum: [business, space_admin, system_admin]
+        tenantId:
+          type: string
+          format: uuid
+          nullable: true
+      required:
+        - username
+        - password
+        - portal
+    LoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        user:
+          $ref: "#/components/schemas/AuthUser"
+      required:
+        - token
+        - user
+    AuthUser:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        displayName:
+          type: string
+        email:
+          type: string
+        avatar:
+          type: string
+        role:
+          type: string
+          enum: [system_admin, space_admin, designer, agent_admin, capability_admin, reviewer, executor, observer]
+        tenantId:
+          type: string
+          format: uuid
+          nullable: true
+        tenantName:
+          type: string
+        tenantCode:
+          type: string
+        organization:
+          type: string
+        space:
+          type: string
+        lastLoginAt:
+          type: string
+      required:
+        - id
+        - username
+        - displayName
+        - email
+        - avatar
+        - role
+        - tenantId
+        - tenantName
+        - tenantCode
+        - organization
+        - space
+        - lastLoginAt
     WorkflowDefinition:
       type: object
       description: 工作流定义草稿或发布版本的前后端共享结构。
