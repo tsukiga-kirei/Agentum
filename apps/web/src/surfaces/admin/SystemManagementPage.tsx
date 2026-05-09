@@ -5,14 +5,24 @@ import {
   Check,
   ChevronDown,
   Clock,
+  Code2,
   DatabaseZap,
   Edit,
+  Globe,
+  Hash,
   Info,
+  KeyRound,
   LayoutDashboard,
+  Mail,
   PlusCircle,
   PlayCircle,
+  Save,
   ServerCog,
   ShieldCheck,
+  ShieldAlert,
+  Tag,
+  Type,
+  User,
   Users,
   X,
 } from "lucide-react";
@@ -591,10 +601,10 @@ export function SystemManagementPage() {
 
           {/* 抽屉底部操作栏 */}
           <div className="sys-drawer-footer">
-            <button className="sys-btn sys-btn--danger" onClick={()=>setTenantDrawerOpen(false)}>关闭</button>
+            <button className="sys-btn sys-btn--danger" onClick={()=>setTenantDrawerOpen(false)}><X size={14}/> 关闭</button>
             <div className="sys-drawer-footer-right">
-              <button className="sys-btn sys-btn--default" onClick={()=>setTenantDrawerOpen(false)}>取消</button>
-              <button className="sys-btn sys-btn--primary" onClick={()=>{messageApi.success("配置已保存");setTenantDrawerOpen(false);}}>保存配置</button>
+              <button className="sys-btn sys-btn--default" onClick={()=>setTenantDrawerOpen(false)}><X size={14}/> 取消</button>
+              <button className="sys-btn sys-btn--primary" onClick={()=>{messageApi.success("配置已保存");setTenantDrawerOpen(false);}}><Save size={14}/> 保存配置</button>
             </div>
           </div>
         </>)}
@@ -616,8 +626,8 @@ export function SystemManagementPage() {
               {createTenantTab==="basic"&&(
                 <div className="sys-drawer-section">
                   <div className="sys-field-row">
-                    <div className="sys-field"><label className="sys-field-label sys-field-label--required">租户名称</label><input className="sys-field-input" placeholder="例如：某某科技有限公司" maxLength={160} defaultValue={ctRef.current.name||""} onChange={e=>{ctRef.current.name=e.target.value;}}/></div>
-                    <div className="sys-field"><label className="sys-field-label sys-field-label--required">租户编码</label><input className="sys-field-input" placeholder="英文数字标识，如 mx_tech" maxLength={100} defaultValue={ctRef.current.code||""} onChange={e=>{ctRef.current.code=e.target.value;}}/><div className="sys-field-hint">留空则由系统自动生成</div></div>
+                    <div className="sys-field"><label className="sys-field-label sys-field-label--required">租户名称</label><div className="sys-field-input-wrap"><Building2 size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如：某某科技有限公司" maxLength={160} defaultValue={ctRef.current.name||""} onChange={e=>{ctRef.current.name=e.target.value;}}/></div></div>
+                    <div className="sys-field"><label className="sys-field-label sys-field-label--required">租户编码</label><div className="sys-field-input-wrap"><Code2 size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="英文数字标识，如 mx_tech" maxLength={100} defaultValue={ctRef.current.code||""} onChange={e=>{ctRef.current.code=e.target.value;}}/></div><div className="sys-field-hint">留空则由系统自动生成</div></div>
                   </div>
                 </div>
               )}
@@ -625,19 +635,19 @@ export function SystemManagementPage() {
                 <div className="sys-drawer-section">
                   <div className="sys-hint"><Info size={14}/> 必须为新租户指定一名初始租户管理员，该管理员登录后可继续在「租户管理」中添加其他成员。</div>
                   <div className="sys-field-row">
-                    <div className="sys-field"><label className="sys-field-label sys-field-label--required">管理员账号</label><input className="sys-field-input" placeholder="登录用用户名" maxLength={50} defaultValue={ctRef.current.admin_username||""} onChange={e=>{ctRef.current.admin_username=e.target.value;}}/></div>
-                    <div className="sys-field"><label className="sys-field-label sys-field-label--required">管理员姓名</label><input className="sys-field-input" placeholder="显示名称" maxLength={50} defaultValue={ctRef.current.admin_displayName||""} onChange={e=>{ctRef.current.admin_displayName=e.target.value;}}/></div>
+                    <div className="sys-field"><label className="sys-field-label sys-field-label--required">管理员账号</label><div className="sys-field-input-wrap"><User size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="登录用用户名" maxLength={50} defaultValue={ctRef.current.admin_username||""} onChange={e=>{ctRef.current.admin_username=e.target.value;}}/></div></div>
+                    <div className="sys-field"><label className="sys-field-label sys-field-label--required">管理员姓名</label><div className="sys-field-input-wrap"><Type size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="显示名称" maxLength={50} defaultValue={ctRef.current.admin_displayName||""} onChange={e=>{ctRef.current.admin_displayName=e.target.value;}}/></div></div>
                   </div>
                   <div className="sys-field-row">
-                    <div className="sys-field"><label className="sys-field-label sys-field-label--required">初始密码</label><input className="sys-field-input" type="password" placeholder="请妥善保管" maxLength={100} defaultValue={ctRef.current.admin_password||""} onChange={e=>{ctRef.current.admin_password=e.target.value;}}/></div>
-                    <div className="sys-field"><label className="sys-field-label">联系邮箱</label><input className="sys-field-input" placeholder="可选" maxLength={100} defaultValue={ctRef.current.admin_email||""} onChange={e=>{ctRef.current.admin_email=e.target.value;}}/></div>
+                    <div className="sys-field"><label className="sys-field-label sys-field-label--required">初始密码</label><div className="sys-field-input-wrap"><KeyRound size={16} className="sys-field-prefix"/><input className="sys-field-input" type="password" placeholder="请妥善保管" maxLength={100} defaultValue={ctRef.current.admin_password||""} onChange={e=>{ctRef.current.admin_password=e.target.value;}}/></div></div>
+                    <div className="sys-field"><label className="sys-field-label">联系邮箱</label><div className="sys-field-input-wrap"><Mail size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="可选" maxLength={100} defaultValue={ctRef.current.admin_email||""} onChange={e=>{ctRef.current.admin_email=e.target.value;}}/></div></div>
                   </div>
                 </div>
               )}
             </div>
             <div className="sys-modal-footer">
-              <button className="sys-btn sys-btn--default" onClick={()=>setCreateTenantModalOpen(false)}>取消</button>
-              <button className="sys-btn sys-btn--primary" onClick={()=>void submitCreateTenant()}>确认创建</button>
+              <button className="sys-btn sys-btn--default" onClick={()=>setCreateTenantModalOpen(false)}><X size={14}/> 取消</button>
+              <button className="sys-btn sys-btn--primary" onClick={()=>void submitCreateTenant()}><PlusCircle size={14}/> 确认创建</button>
             </div>
           </div>
         </div>
@@ -652,15 +662,15 @@ export function SystemManagementPage() {
               <button className="sys-modal-close" onClick={()=>setModelModalOpen(false)}><X size={18}/></button>
             </div>
             <div className="sys-modal-body">
-              <div className="sys-field"><label className="sys-field-label sys-field-label--required">名称</label><input className="sys-field-input" maxLength={160} onChange={e=>{modelRef.current.name=e.target.value;}}/></div>
-              <div className="sys-field"><label className="sys-field-label sys-field-label--required">供应商类型</label><input className="sys-field-input" placeholder="例如 openai-compatible" maxLength={80} onChange={e=>{modelRef.current.providerType=e.target.value;}}/></div>
-              <div className="sys-field"><label className="sys-field-label">基址 URL</label><input className="sys-field-input" maxLength={500} onChange={e=>{modelRef.current.baseUrl=e.target.value;}}/></div>
-              <div className="sys-field"><label className="sys-field-label">默认模型</label><input className="sys-field-input" maxLength={160} onChange={e=>{modelRef.current.defaultModel=e.target.value;}}/></div>
+              <div className="sys-field"><label className="sys-field-label sys-field-label--required">名称</label><div className="sys-field-input-wrap"><Tag size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如：通义千问" maxLength={160} onChange={e=>{modelRef.current.name=e.target.value;}}/></div></div>
+              <div className="sys-field"><label className="sys-field-label sys-field-label--required">供应商类型</label><div className="sys-field-input-wrap"><ServerCog size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如 openai-compatible" maxLength={80} onChange={e=>{modelRef.current.providerType=e.target.value;}}/></div></div>
+              <div className="sys-field"><label className="sys-field-label">基址 URL</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="https://api.example.com" maxLength={500} onChange={e=>{modelRef.current.baseUrl=e.target.value;}}/></div></div>
+              <div className="sys-field"><label className="sys-field-label">默认模型</label><div className="sys-field-input-wrap"><DatabaseZap size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如 qwen-max" maxLength={160} onChange={e=>{modelRef.current.defaultModel=e.target.value;}}/></div></div>
               <div className="sys-field"><label className="sys-field-label">状态</label><SysSelect defaultValue="draft" options={[{value:"draft",label:"草稿"},{value:"active",label:"可用"}]} onChange={v=>{modelRef.current.status=v;}}/></div>
             </div>
             <div className="sys-modal-footer">
-              <button className="sys-btn sys-btn--default" onClick={()=>setModelModalOpen(false)}>取消</button>
-              <button className="sys-btn sys-btn--primary" onClick={()=>void submitModel()}>确认注册</button>
+              <button className="sys-btn sys-btn--default" onClick={()=>setModelModalOpen(false)}><X size={14}/> 取消</button>
+              <button className="sys-btn sys-btn--primary" onClick={()=>void submitModel()}><PlusCircle size={14}/> 确认注册</button>
             </div>
           </div>
         </div>
@@ -677,18 +687,18 @@ export function SystemManagementPage() {
             <div className="sys-modal-body">
               <div className="sys-field"><label className="sys-field-label sys-field-label--required">能力类型</label><SysSelect placeholder="请选择" options={capabilityTypeOptions} onChange={v=>{capRef.current.capabilityType=v;}}/></div>
               <div className="sys-field-row">
-                <div className="sys-field"><label className="sys-field-label sys-field-label--required">名称</label><input className="sys-field-input" maxLength={160} onChange={e=>{capRef.current.name=e.target.value;}}/></div>
-                <div className="sys-field"><label className="sys-field-label sys-field-label--required">编码</label><input className="sys-field-input" maxLength={100} onChange={e=>{capRef.current.code=e.target.value;}}/></div>
+                <div className="sys-field"><label className="sys-field-label sys-field-label--required">名称</label><div className="sys-field-input-wrap"><Tag size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如：文档解析器" maxLength={160} onChange={e=>{capRef.current.name=e.target.value;}}/></div></div>
+                <div className="sys-field"><label className="sys-field-label sys-field-label--required">编码</label><div className="sys-field-input-wrap"><Code2 size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如 doc_parser" maxLength={100} onChange={e=>{capRef.current.code=e.target.value;}}/></div></div>
               </div>
               <div className="sys-field-row">
-                <div className="sys-field"><label className="sys-field-label">版本</label><input className="sys-field-input" defaultValue="v1" maxLength={40} onChange={e=>{capRef.current.version=e.target.value;}}/></div>
+                <div className="sys-field"><label className="sys-field-label">版本</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" defaultValue="v1" maxLength={40} onChange={e=>{capRef.current.version=e.target.value;}}/></div></div>
                 <div className="sys-field"><label className="sys-field-label">风险等级</label><SysSelect defaultValue="low" options={[{value:"low",label:"低"},{value:"medium",label:"中"},{value:"high",label:"高"}]} onChange={v=>{capRef.current.riskLevel=v;}}/></div>
               </div>
               <div className="sys-field"><label className="sys-field-label">状态</label><SysSelect defaultValue="draft" options={[{value:"draft",label:"草稿"},{value:"active",label:"启用"}]} onChange={v=>{capRef.current.status=v;}}/></div>
             </div>
             <div className="sys-modal-footer">
-              <button className="sys-btn sys-btn--default" onClick={()=>setCapModalOpen(false)}>取消</button>
-              <button className="sys-btn sys-btn--primary" onClick={()=>void submitCapability()}>确认注册</button>
+              <button className="sys-btn sys-btn--default" onClick={()=>setCapModalOpen(false)}><X size={14}/> 取消</button>
+              <button className="sys-btn sys-btn--primary" onClick={()=>void submitCapability()}><PlusCircle size={14}/> 确认注册</button>
             </div>
           </div>
         </div>

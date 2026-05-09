@@ -158,6 +158,8 @@ export function LoginPage() {
   }
 
   return (
+    <>
+    {messageContextHolder}
     <div className={`login-page ${isDark ? "dark" : ""}`}>
       {/* 动态背景 */}
       <div className="login-bg">
@@ -236,7 +238,6 @@ export function LoginPage() {
                 },
               }}
             >
-              {messageContextHolder}
               <Form
                 form={form}
                 className="login-form"
@@ -314,5 +315,6 @@ export function LoginPage() {
         </div>
       </div>
     </div>
+    </>
   );
 }

@@ -1406,8 +1406,26 @@ textarea:focus-visible {
   color: var(--color-text-secondary); margin-bottom: 6px;
 }
 .sys-field-label--required::after { content: " *"; color: #ef4444; }
+
+/* 输入框包装器（支持前缀图标） */
+.sys-field-input-wrap {
+  position: relative; display: flex; align-items: center;
+}
+.sys-field-input-wrap .sys-field-prefix {
+  position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+  color: var(--color-text-tertiary); pointer-events: none;
+  transition: color var(--transition-fast);
+  z-index: 1;
+}
+.sys-field-input-wrap:focus-within .sys-field-prefix {
+  color: var(--color-primary);
+}
+.sys-field-input-wrap .sys-field-input {
+  padding-left: 40px;
+}
+
 .sys-field-input {
-  width: 100%; height: 48px; padding: 0 14px; font-size: 15px;
+  width: 100%; height: 44px; padding: 0 14px; font-size: 14px;
   border: 1px solid var(--color-border-light); border-radius: var(--radius-md);
   background: var(--color-bg-input, var(--color-bg-page));
   color: var(--color-text-primary); outline: none;
@@ -1419,6 +1437,23 @@ textarea:focus-visible {
 }
 .sys-field-input::placeholder { color: var(--color-text-tertiary); }
 .sys-field-input[type="password"] { letter-spacing: 2px; }
+.sys-field-input:disabled {
+  opacity: 0.6; cursor: not-allowed;
+  background: var(--color-bg-hover);
+}
+.sys-field-textarea {
+  width: 100%; min-height: 80px; padding: 10px 14px; font-size: 14px;
+  border: 1px solid var(--color-border-light); border-radius: var(--radius-md);
+  background: var(--color-bg-input, var(--color-bg-page));
+  color: var(--color-text-primary); outline: none; resize: vertical;
+  font-family: inherit;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.sys-field-textarea:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+.sys-field-textarea::placeholder { color: var(--color-text-tertiary); }
 .sys-field-hint { font-size: 11px; color: var(--color-text-tertiary); margin-top: 4px; }
 
 /* 自定义下拉选择器（替代原生 select，完全控制选项列表渲染） */
