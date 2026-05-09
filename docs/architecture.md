@@ -422,6 +422,46 @@ pending -> running -> paused -> resumed -> running -> completed
 
 租户管理生产页面同样不应依赖卡片跳转。左侧菜单只负责进入“租户管理”大模块，模块内再用人员组织、角色权限、资源授权、需求配置、敏感动作和租户内审计等页签区分功能；角色、部门、人员级授权决定用户能看到哪些页签和动作。
 
+### 5.13 分页与列表查询组件
+
+管理台（系统管理、租户管理、能力资产、审计）的一切列表接口应统一分页约定，并下沉到后端 `shared` 组件，避免各模块重复实现。
+
+建议在 `com.agentum.shared` 下提供：
+
+- `pagination/PageQuery`：承载 `page`、`size`、`sort` 并做边界校验（例如 page>=1、size 上限）。
+- `pagination/PageResult<T>`：统一返回 `items`、`page`、`size`、`total`、`totalPages`。
+- `pagination/PageableFactory`：把 `PageQuery` 转为 Spring `Pageable`，同时做排序字段白名单映射。
+- `pagination/SortWhitelist`（可选）：按模块声明允许排序字段，防止前端任意字段排序导致 SQL 风险或性能抖动。
+
+接口建议：
+
+```text
+GET /api/.../xxx?page=1&size=20&sort=createdAt,desc
+```
+
+返回建议：
+
+```json
+{
+  "success": true,
+  "data": {
+    "items": [],
+    "page": 1,
+    "size": 20,
+    "total": 0,
+    "totalPages": 0
+  },
+  "error": null,
+  "requestId": "req_xxx"
+}
+```
+
+实施规则：
+
+- 新增管理台列表接口时必须复用 `shared.pagination` 组件，不允许模块内各自定义分页 DTO。
+- OpenAPI 需同步分页参数与分页响应模型，前端按契约驱动分页组件。
+- 分页查询应与筛选条件同层声明（如 `keyword`、`status`、`tenantId`），避免把筛选塞入不透明 JSON。
+
 ## 6. 数据模型建议
 
 第一阶段优先建立以下表族：

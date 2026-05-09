@@ -32,6 +32,17 @@ public class RoleEntity {
     protected RoleEntity() {
     }
 
+    public static RoleEntity create(UUID tenantId, String code, String name, String scope, String description) {
+        RoleEntity role = new RoleEntity();
+        role.id = UUID.randomUUID();
+        role.tenantId = tenantId;
+        role.code = code;
+        role.name = name;
+        role.scope = scope;
+        role.status = "active";
+        return role;
+    }
+
     public UUID getId() {
         return id;
     }

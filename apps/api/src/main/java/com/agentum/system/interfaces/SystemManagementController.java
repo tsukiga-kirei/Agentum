@@ -55,6 +55,16 @@ public class SystemManagementController {
         return ApiResponse.success(systemManagementService.listTenants(), RequestIds.current(request));
     }
 
+    @PostMapping("/tenants")
+    public ApiResponse<SystemManagementApi.TenantRow> createTenant(
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @Valid @RequestBody SystemManagementApi.CreateTenantRequest body,
+        HttpServletRequest request
+    ) {
+        systemAdminAccess.assertSystemAdmin(principal);
+        return ApiResponse.success(systemManagementService.createTenant(body), RequestIds.current(request));
+    }
+
     @PatchMapping("/tenants/{tenantId}/status")
     public ApiResponse<SystemManagementApi.TenantRow> updateTenantStatus(
         @PathVariable UUID tenantId,

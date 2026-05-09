@@ -33,6 +33,17 @@ public class TenantEntity {
     protected TenantEntity() {
     }
 
+    public static TenantEntity create(String name, String code, Instant now) {
+        TenantEntity entity = new TenantEntity();
+        entity.id = UUID.randomUUID();
+        entity.name = name;
+        entity.code = code;
+        entity.status = "active";
+        entity.createdAt = now;
+        entity.updatedAt = now;
+        return entity;
+    }
+
     public UUID getId() {
         return id;
     }

@@ -303,7 +303,7 @@ export function TenantManagementPage() {
       <div className="mx-auto max-w-[1400px] px-5 lg:px-6">
         <header className="mb-5 flex flex-col gap-4 border-b border-[var(--color-border-light)] pb-5 sm:flex-row sm:items-end sm:justify-between">
           <div className="flex min-w-0 gap-4">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-primary-bg)] text-[var(--color-primary)] shadow-[var(--shadow-xs)]">
+            <div className="tenant-mgmt-page-mark flex h-12 w-12 shrink-0 items-center justify-center rounded-[var(--radius-lg)]">
               <ShieldCheck className="h-6 w-6" aria-hidden="true" />
             </div>
             <div className="min-w-0">

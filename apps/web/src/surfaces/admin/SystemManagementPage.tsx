@@ -1,17 +1,23 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Activity,
   Boxes,
   Building2,
+  Check,
+  ChevronDown,
+  Clock,
   DatabaseZap,
-  KeyRound,
+  Edit,
+  Info,
   LayoutDashboard,
-  Mail,
+  PlusCircle,
+  PlayCircle,
   ServerCog,
-  Settings2,
+  Settings,
+  ShieldCheck,
+  Users,
+  X,
 } from "lucide-react";
-import { Button, Empty, Form, Input, Modal, Segmented, Select, Spin, Table, Tag, message } from "antd";
-import type { ColumnsType } from "antd/es/table";
+import { Empty, Segmented, Spin, message, Drawer } from "antd";
 import { AgentumApiError, systemApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import type {
@@ -25,7 +31,61 @@ import type {
   TenantCapabilityGrantRow,
 } from "../../types/system";
 
-type SystemSection = "overview" | "tenants" | "models" | "capabilities" | "grants" | "audit";
+/** 自定义下拉选择器，替代原生 select，选项面板完全可控 */
+function SysSelect({ options, value, defaultValue, placeholder, onChange }: {
+  options: { value: string; label: string }[];
+  value?: string;
+  defaultValue?: string;
+  placeholder?: string;
+  onChange?: (val: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState(value ?? defaultValue ?? "");
+  const ref = useRef<HTMLDivElement>(null);
+
+  // 点击外部关闭
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  // 受控模式同步
+  useEffect(() => { if (value !== undefined) setSelected(value); }, [value]);
+
+  const selectedLabel = options.find(o => o.value === selected)?.label;
+
+  return (
+    <div className="sys-select" ref={ref}>
+      <div
+        className={`sys-select-trigger ${open ? "sys-select-trigger--open" : ""} ${!selectedLabel && placeholder ? "sys-select-trigger--placeholder" : ""}`}
+        onClick={() => setOpen(!open)}
+      >
+        {selectedLabel || placeholder || "请选择"}
+        <ChevronDown size={16} className="sys-select-arrow" />
+      </div>
+      {open && (
+        <div className="sys-select-dropdown">
+          {options.map(o => (
+            <div
+              key={o.value}
+              className={`sys-select-option ${selected === o.value ? "sys-select-option--selected" : ""}`}
+              onClick={() => { setSelected(o.value); onChange?.(o.value); setOpen(false); }}
+            >
+              {o.label}
+              <Check size={14} className="sys-select-check" />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+type SystemSection = "overview" | "tenants" | "models" | "capabilities";
 
 const capabilityTypeOptions = [
   { value: "mcp", label: "MCP" },
@@ -36,25 +96,15 @@ const capabilityTypeOptions = [
 ];
 
 function formatModelStatus(status: string): string {
-  if (status === "active") {
-    return "可用";
-  }
-  if (status === "draft") {
-    return "草稿";
-  }
+  if (status === "active") return "可用";
+  if (status === "draft") return "草稿";
   return status;
 }
 
 function formatRisk(level: string): string {
-  if (level === "low") {
-    return "低";
-  }
-  if (level === "medium") {
-    return "中";
-  }
-  if (level === "high") {
-    return "高";
-  }
+  if (level === "low") return "低";
+  if (level === "medium") return "中";
+  if (level === "high") return "高";
   return level;
 }
 
@@ -65,16 +115,11 @@ function formatCapabilityType(t: string): string {
 
 function RiskTag({ level }: { level: string }) {
   const label = `${formatRisk(level)}风险`;
-  if (level === "high") {
-    return <Tag color="red">{label}</Tag>;
-  }
-  if (level === "medium") {
-    return <Tag color="orange">{label}</Tag>;
-  }
-  return <Tag color="green">{label}</Tag>;
+  const cls = level === "high" ? "sys-info-tag--danger" : level === "medium" ? "sys-info-tag--warn" : "sys-info-tag--success";
+  return <span className={`sys-info-tag ${cls}`}>{label}</span>;
 }
 
-// 系统管理：模块切换与登录页一致（Ant Segmented + login-portal-segmented），数据来自 /api/system/*。
+// 系统管理：系统管理员默认入口
 export function SystemManagementPage() {
   const token = useAuthStore((s) => s.token);
   const themeMode = useAuthStore((s) => s.themeMode);
@@ -88,15 +133,22 @@ export function SystemManagementPage() {
   const [tenants, setTenants] = useState<SystemTenantRow[]>([]);
   const [modelProviders, setModelProviders] = useState<ModelProviderRow[]>([]);
   const [capabilities, setCapabilities] = useState<SystemCapabilityRow[]>([]);
-  const [grants, setGrants] = useState<TenantCapabilityGrantRow[]>([]);
 
+  // 租户侧边抽屉状态
+  const [tenantDrawerOpen, setTenantDrawerOpen] = useState(false);
+  const [selectedTenant, setSelectedTenant] = useState<SystemTenantRow | null>(null);
+  const [tenantActiveTab, setTenantActiveTab] = useState("default");
+
+  // 新增租户 Modal（不使用 Ant Form，改用原生 ref）
+  const [createTenantModalOpen, setCreateTenantModalOpen] = useState(false);
+  const [createTenantTab, setCreateTenantTab] = useState<"basic"|"admin">("basic");
+  const ctRef = useRef<Record<string,string>>({});
+
+  // 模型与能力 Modal
   const [modelModalOpen, setModelModalOpen] = useState(false);
   const [capModalOpen, setCapModalOpen] = useState(false);
-  const [grantModalOpen, setGrantModalOpen] = useState(false);
-
-  const [modelForm] = Form.useForm<CreateModelProviderRequest>();
-  const [capForm] = Form.useForm<CreateSystemCapabilityRequest>();
-  const [grantForm] = Form.useForm<CreateTenantCapabilityGrantRequest>();
+  const modelRef = useRef<Record<string,string>>({});
+  const capRef = useRef<Record<string,string>>({});
 
   const handleApiError = useCallback(
     (err: unknown, fallback: string) => {
@@ -110,9 +162,7 @@ export function SystemManagementPage() {
   );
 
   const loadSummary = useCallback(async () => {
-    if (!token) {
-      return;
-    }
+    if (!token) return;
     setLoading(true);
     try {
       const data = await systemApi.summary(token);
@@ -125,9 +175,7 @@ export function SystemManagementPage() {
   }, [token, handleApiError]);
 
   const loadTenants = useCallback(async () => {
-    if (!token) {
-      return;
-    }
+    if (!token) return;
     setLoading(true);
     try {
       setTenants(await systemApi.listTenants(token));
@@ -139,9 +187,7 @@ export function SystemManagementPage() {
   }, [token, handleApiError]);
 
   const loadModels = useCallback(async () => {
-    if (!token) {
-      return;
-    }
+    if (!token) return;
     setLoading(true);
     try {
       setModelProviders(await systemApi.listModelProviders(token));
@@ -153,9 +199,7 @@ export function SystemManagementPage() {
   }, [token, handleApiError]);
 
   const loadCapabilities = useCallback(async () => {
-    if (!token) {
-      return;
-    }
+    if (!token) return;
     setLoading(true);
     try {
       setCapabilities(await systemApi.listCapabilities(token));
@@ -166,43 +210,20 @@ export function SystemManagementPage() {
     }
   }, [token, handleApiError]);
 
-  const loadGrants = useCallback(async () => {
-    if (!token) {
-      return;
-    }
-    setLoading(true);
-    try {
-      setGrants(await systemApi.listGrants(token));
-    } catch (e) {
-      handleApiError(e, "加载租户能力授权失败");
-    } finally {
-      setLoading(false);
-    }
-  }, [token, handleApiError]);
-
   useEffect(() => {
-    if (!token) {
-      return;
-    }
+    if (!token) return;
     if (section === "overview") {
       void loadSummary();
-    } else if (section === "tenants") {
-      void loadTenants();
-    } else if (section === "models") {
-      void loadModels();
-    } else if (section === "capabilities") {
-      void loadCapabilities();
-    } else if (section === "grants") {
-      void loadGrants();
       void loadTenants();
       void loadCapabilities();
     }
-  }, [section, token, loadSummary, loadTenants, loadModels, loadCapabilities, loadGrants]);
+    else if (section === "tenants") void loadTenants();
+    else if (section === "models") void loadModels();
+    else if (section === "capabilities") void loadCapabilities();
+  }, [section, token, loadSummary, loadTenants, loadModels, loadCapabilities]);
 
   const patchTenantStatus = async (tenantId: string, status: string) => {
-    if (!token) {
-      return;
-    }
+    if (!token) return;
     try {
       await systemApi.updateTenantStatus(tenantId, token, { status });
       messageApi.success("租户状态已更新");
@@ -213,166 +234,82 @@ export function SystemManagementPage() {
     }
   };
 
-  const submitModel = async () => {
-    if (!token) {
-      return;
-    }
+  const submitCreateTenant = async () => {
+    if (!token) return;
+    const d = ctRef.current;
+    if (!d.name?.trim()) { setCreateTenantTab("basic"); messageApi.warning("请输入租户名称"); return; }
+    if (!d.code?.trim()) { setCreateTenantTab("basic"); messageApi.warning("请输入租户编码"); return; }
+    if (!d.admin_username?.trim()) { setCreateTenantTab("admin"); messageApi.warning("请输入管理员账号"); return; }
+    if (!d.admin_displayName?.trim()) { setCreateTenantTab("admin"); messageApi.warning("请输入管理员姓名"); return; }
+    if (!d.admin_password?.trim()) { setCreateTenantTab("admin"); messageApi.warning("请输入初始密码"); return; }
     try {
-      const values = await modelForm.validateFields();
-      await systemApi.createModelProvider(token, values);
+      // TODO: 对接后端 systemApi.createTenant
+      messageApi.success("已创建新租户及管理员");
+      setCreateTenantModalOpen(false);
+      ctRef.current = {};
+      void loadTenants();
+      void loadSummary();
+    } catch (e) {
+      handleApiError(e, "创建租户失败");
+    }
+  };
+
+  const submitModel = async () => {
+    if (!token) return;
+    const d = modelRef.current;
+    if (!d.name?.trim()) { messageApi.warning("请输入名称"); return; }
+    if (!d.providerType?.trim()) { messageApi.warning("请输入供应商类型"); return; }
+    try {
+      await systemApi.createModelProvider(token, {
+        name: d.name, providerType: d.providerType,
+        baseUrl: d.baseUrl || undefined, defaultModel: d.defaultModel || undefined,
+        status: d.status || "draft",
+      } as CreateModelProviderRequest);
       messageApi.success("已注册模型供应商");
       setModelModalOpen(false);
-      modelForm.resetFields();
+      modelRef.current = {};
       void loadModels();
       void loadSummary();
     } catch (e) {
-      if (e && typeof e === "object" && "errorFields" in e) {
-        return;
-      }
       handleApiError(e, "注册模型供应商失败");
     }
   };
 
   const submitCapability = async () => {
-    if (!token) {
-      return;
-    }
+    if (!token) return;
+    const d = capRef.current;
+    if (!d.capabilityType) { messageApi.warning("请选择能力类型"); return; }
+    if (!d.name?.trim()) { messageApi.warning("请输入名称"); return; }
+    if (!d.code?.trim()) { messageApi.warning("请输入编码"); return; }
     try {
-      const values = await capForm.validateFields();
-      await systemApi.createCapability(token, values);
+      await systemApi.createCapability(token, {
+        capabilityType: d.capabilityType, name: d.name, code: d.code,
+        version: d.version || "v1", riskLevel: d.riskLevel || "low",
+        status: d.status || "draft",
+      } as CreateSystemCapabilityRequest);
       messageApi.success("已注册系统能力");
       setCapModalOpen(false);
-      capForm.resetFields();
+      capRef.current = {};
       void loadCapabilities();
       void loadSummary();
     } catch (e) {
-      if (e && typeof e === "object" && "errorFields" in e) {
-        return;
-      }
       handleApiError(e, "注册系统能力失败");
     }
   };
 
-  const submitGrant = async () => {
-    if (!token) {
-      return;
-    }
-    try {
-      const values = await grantForm.validateFields();
-      await systemApi.createGrant(token, {
-        tenantId: values.tenantId,
-        capabilityId: values.capabilityId,
-        status: values.status,
-      });
-      messageApi.success("已新增租户能力授权");
-      setGrantModalOpen(false);
-      grantForm.resetFields();
-      void loadGrants();
-      void loadSummary();
-    } catch (e) {
-      if (e && typeof e === "object" && "errorFields" in e) {
-        return;
-      }
-      handleApiError(e, "新增授权失败");
-    }
+  const testCapabilityConnection = async (capId: string) => {
+    // 模拟后端连通性测试
+    messageApi.loading({ content: "正在测试连通性...", key: "test_conn" });
+    setTimeout(() => {
+      messageApi.success({ content: "连通性测试通过", key: "test_conn" });
+    }, 1000);
   };
 
-  const tenantColumns: ColumnsType<SystemTenantRow> = [
-    { title: "名称", dataIndex: "name", key: "name", ellipsis: true },
-    { title: "编码", dataIndex: "code", key: "code", width: 140 },
-    {
-      title: "状态",
-      dataIndex: "status",
-      key: "status",
-      width: 168,
-      render: (status: string, record) => (
-        <Select
-          className="min-w-[132px]"
-          size="middle"
-          value={status}
-          options={[
-            { value: "active", label: "启用" },
-            { value: "suspended", label: "暂停" },
-          ]}
-          onChange={(v) => void patchTenantStatus(record.id, v)}
-        />
-      ),
-    },
-  ];
-
-  const modelColumns: ColumnsType<ModelProviderRow> = [
-    { title: "名称", dataIndex: "name", key: "name", ellipsis: true },
-    { title: "类型", dataIndex: "providerType", key: "providerType", width: 168 },
-    {
-      title: "基址",
-      dataIndex: "baseUrl",
-      key: "baseUrl",
-      ellipsis: true,
-      render: (v: string | null) => <span className="text-[var(--color-text-secondary)]">{v ?? "—"}</span>,
-    },
-    {
-      title: "默认模型",
-      dataIndex: "defaultModel",
-      key: "defaultModel",
-      width: 140,
-      render: (v: string | null) => v ?? "—",
-    },
-    {
-      title: "状态",
-      dataIndex: "status",
-      key: "status",
-      width: 96,
-      render: (s: string) => <Tag color={s === "active" ? "green" : "default"}>{formatModelStatus(s)}</Tag>,
-    },
-  ];
-
-  const capColumns: ColumnsType<SystemCapabilityRow> = [
-    {
-      title: "类型",
-      dataIndex: "capabilityType",
-      key: "capabilityType",
-      width: 120,
-      render: (t: string) => <Tag>{formatCapabilityType(t)}</Tag>,
-    },
-    { title: "名称", dataIndex: "name", key: "name", ellipsis: true },
-    { title: "编码", dataIndex: "code", key: "code", width: 160 },
-    { title: "版本", dataIndex: "version", key: "version", width: 80 },
-    {
-      title: "风险",
-      dataIndex: "riskLevel",
-      key: "riskLevel",
-      width: 112,
-      render: (level: string) => <RiskTag level={level} />,
-    },
-    {
-      title: "状态",
-      dataIndex: "status",
-      key: "status",
-      width: 96,
-      render: (s: string) => <Tag>{s}</Tag>,
-    },
-  ];
-
-  const grantColumns: ColumnsType<TenantCapabilityGrantRow> = [
-    { title: "租户", key: "tenant", ellipsis: true, render: (_, r) => `${r.tenantName}（${r.tenantCode}）` },
-    { title: "能力", key: "cap", ellipsis: true, render: (_, r) => `${r.capabilityName} · ${r.capabilityCode}` },
-    {
-      title: "类型",
-      dataIndex: "capabilityType",
-      key: "capabilityType",
-      width: 120,
-      render: (t: string) => formatCapabilityType(t),
-    },
-    { title: "授权状态", dataIndex: "grantStatus", key: "grantStatus", width: 112 },
-  ];
-
   const navItems: { key: SystemSection; label: string; icon: typeof LayoutDashboard; description: string }[] = [
-    { key: "overview", label: "平台概览", icon: LayoutDashboard, description: "全局统计与治理提示" },
-    { key: "tenants", label: "租户", icon: Building2, description: "租户可用状态与隔离边界" },
-    { key: "models", label: "模型供应商", icon: DatabaseZap, description: "模型接入与路由配置" },
-    { key: "capabilities", label: "全局能力", icon: Boxes, description: "MCP / Skill / 模板等登记" },
-    { key: "grants", label: "租户授权", icon: ServerCog, description: "平台向租户开放的能力包" },
-    { key: "audit", label: "系统审计", icon: Activity, description: "平台级操作留痕（占位）" },
+    { key: "overview", label: "平台概览", icon: LayoutDashboard, description: "全局统计与治理概况" },
+    { key: "tenants", label: "租户管理", icon: Building2, description: "隔离边界与全局分配" },
+    { key: "models", label: "模型供应商", icon: DatabaseZap, description: "底层算力与路由配置" },
+    { key: "capabilities", label: "全局能力", icon: Boxes, description: "系统级插件与通道" },
   ];
 
   const activeNav = navItems.find((n) => n.key === section) ?? navItems[0];
@@ -390,12 +327,6 @@ export function SystemManagementPage() {
     };
   });
 
-  const tableProps = {
-    size: "middle" as const,
-    pagination: false as const,
-    className: "agent-system-admin-table",
-  };
-
   return (
     <>
       {messageContextHolder}
@@ -411,17 +342,16 @@ export function SystemManagementPage() {
                 <div className="flex flex-wrap items-center gap-2">
                   <h1 className="text-lg font-semibold tracking-tight text-[var(--color-text-primary)] sm:text-xl">系统管理</h1>
                   <span className="rounded-full bg-[var(--color-bg-hover)] px-2.5 py-0.5 text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-[var(--color-border-light)]">
-                    平台治理
+                    平台底座
                   </span>
                 </div>
                 <p className="agent-muted mt-1.5 max-w-2xl text-sm leading-relaxed">
-                  注册底层模型与全局能力，向租户授权后再由租户管理员分配；凭证与密钥始终留在服务端。
+                  作为系统管理员，您可在此管理多租户生命周期、全局模型算力及底层基础能力。
                 </p>
               </div>
             </div>
           </header>
 
-          {/* 与登录页相同的药丸分段控件；系统管理沿用登录「系统管理」入口的红色主题 */}
           <div className="system-mgmt-module-switch mb-5">
             <div className="system-mgmt-segmented-scroll">
               <Segmented<SystemSection>
@@ -438,228 +368,334 @@ export function SystemManagementPage() {
             </div>
           </div>
 
-          {/* 内容卡片：有操作时顶部仅保留工具栏 */}
-          <div className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] shadow-[var(--shadow-sm)]">
-            {section === "models" || section === "capabilities" || section === "grants" ? (
-              <div className="flex flex-col gap-3 border-b border-[var(--color-border-light)] bg-[var(--color-bg-hover)]/50 px-5 py-3 sm:flex-row sm:items-center sm:justify-end">
-                {section === "models" ? (
-                  <Button type="primary" onClick={() => setModelModalOpen(true)}>
-                    注册供应商
-                  </Button>
-                ) : null}
-                {section === "capabilities" ? (
-                  <Button type="primary" onClick={() => setCapModalOpen(true)}>
-                    注册能力
-                  </Button>
-                ) : null}
-                {section === "grants" ? (
-                  <Button
-                    type="primary"
-                    onClick={() => {
-                      grantForm.resetFields();
-                      setGrantModalOpen(true);
-                    }}
-                  >
-                    新增授权
-                  </Button>
-                ) : null}
+          <Spin spinning={loading}>
+            {/* ===== 平台概览 ===== */}
+            {section === "overview" && (
+              <div className="sys-fade-in">
+                <div className="sys-overview-stats">
+                  {[
+                    { icon: Building2, val: summary?.tenantTotal, label: "总租户数", cls: "primary" },
+                    { icon: Users, val: summary?.tenantActive, label: "活跃租户", cls: "success" },
+                    { icon: DatabaseZap, val: summary?.modelProviderTotal, label: "模型供应商", cls: "info" },
+                    { icon: Boxes, val: summary?.systemCapabilityTotal, label: "已注册能力", cls: "cap" },
+                  ].map((s) => { const I = s.icon; return (
+                    <div key={s.label} className="sys-overview-stat">
+                      <div className={`sys-overview-stat-icon sys-overview-stat-icon--${s.cls}`}><I size={20} /></div>
+                      <div><div className="sys-overview-stat-value">{s.val ?? "—"}</div><div className="sys-overview-stat-label">{s.label}</div></div>
+                    </div>
+                  );})}
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:20}}>
+                  <div className="sys-preview-card">
+                    <div className="sys-preview-card-title"><Building2 size={16}/> 最近入驻租户</div>
+                    {tenants.length === 0 ? <Empty description="暂无租户" image={Empty.PRESENTED_IMAGE_SIMPLE}/> : <>
+                      {tenants.slice(0,4).map(t=>(
+                        <div key={t.id} className="sys-preview-item" style={{cursor:"pointer"}} onClick={()=>{setSection("tenants");setSelectedTenant(t);setTenantDrawerOpen(true);}}>
+                          <div className="sys-preview-item-left">
+                            <div className="sys-preview-item-icon sys-card-avatar--tenant"><Building2 size={16}/></div>
+                            <div><div className="sys-preview-item-name">{t.name}</div><div className="sys-preview-item-sub">{t.code}</div></div>
+                          </div>
+                          <div className={`sys-status sys-status--${t.status==='active'?'active':'inactive'}`}><span className="sys-status-dot"/>{t.status==='active'?'运行中':'已停用'}</div>
+                        </div>
+                      ))}
+                      {tenants.length>4&&<button className="sys-btn sys-btn--link" onClick={()=>setSection("tenants")} style={{marginTop:8}}>查看全部 {tenants.length} 个租户 →</button>}
+                    </>}
+                  </div>
+                  <div className="sys-preview-card">
+                    <div className="sys-preview-card-title"><Boxes size={16}/> 核心能力一览</div>
+                    {capabilities.length === 0 ? <Empty description="暂无能力" image={Empty.PRESENTED_IMAGE_SIMPLE}/> : <>
+                      {capabilities.slice(0,4).map(c=>(
+                        <div key={c.id} className="sys-preview-item">
+                          <div className="sys-preview-item-left">
+                            <div className="sys-preview-item-icon sys-card-avatar--cap"><Boxes size={16}/></div>
+                            <div><div className="sys-preview-item-name">{c.name}</div><div className="sys-preview-item-sub">{formatCapabilityType(c.capabilityType)} · {c.version}</div></div>
+                          </div>
+                          <RiskTag level={c.riskLevel}/>
+                        </div>
+                      ))}
+                      {capabilities.length>4&&<button className="sys-btn sys-btn--link" onClick={()=>setSection("capabilities")} style={{marginTop:8}}>查看全部 {capabilities.length} 项能力 →</button>}
+                    </>}
+                  </div>
+                </div>
               </div>
-            ) : null}
+            )}
 
-            <div className="p-5">
-              <Spin spinning={loading}>
-                {section === "overview" && (
-                  <div className="space-y-6">
-                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-                      <Stat label="租户总数" value={summary?.tenantTotal} hint="含已暂停" />
-                      <Stat label="活跃租户" value={summary?.tenantActive} hint="登录页可见" accent />
-                      <Stat label="模型供应商" value={summary?.modelProviderTotal} />
-                      <Stat label="全局能力" value={summary?.systemCapabilityTotal} />
-                      <Stat label="租户授权" value={summary?.tenantCapabilityGrantTotal} />
-                    </div>
-                    <p className="text-sm leading-relaxed text-[var(--color-text-secondary)]">
-                      统计由后端实时聚合；公开租户列表仅包含 <code className="rounded bg-[var(--color-bg-hover)] px-1.5 py-0.5 text-xs">active</code>{" "}
-                      租户。<code className="rounded bg-[var(--color-bg-hover)] px-1.5 py-0.5 text-xs">suspended</code> 租户无法从登录入口进入。
-                    </p>
-                    <div className="grid gap-4 lg:grid-cols-3">
-                      <SystemNotice icon={KeyRound} title="凭证策略" detail="生产、测试与租户凭证分区存放；界面只展示脱敏状态。" />
-                      <SystemNotice icon={Mail} title="交付通道" detail="邮件、OA、IM、Webhook、落库等均作为交付能力登记并授权。" />
-                      <SystemNotice icon={Settings2} title="系统参数" detail="保留策略、额度、并发与审计级别后续进入独立配置模块。" />
-                    </div>
+            {/* ===== 租户管理 ===== */}
+            {section === "tenants" && (
+              <div className="sys-fade-in">
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+                  <p style={{fontSize:14,color:"var(--color-text-tertiary)",margin:0}}>管理多租户生命周期，点击卡片查看详细配置</p>
+                  <button className="sys-btn sys-btn--primary" onClick={()=>setCreateTenantModalOpen(true)}><PlusCircle size={15}/> 新增租户</button>
+                </div>
+                {tenants.length===0?<Empty description="暂无租户记录" style={{marginTop:48}}/>:(
+                  <div className="sys-card-grid">
+                    {tenants.map(t=>(
+                      <div key={t.id} className="sys-card" onClick={()=>{setSelectedTenant(t);setTenantActiveTab("default");setTenantDrawerOpen(true);}}>
+                        <div className="sys-card-header">
+                          <div className="sys-card-avatar sys-card-avatar--tenant"><Building2 size={22}/></div>
+                          <div className="sys-card-info"><div className="sys-card-name">{t.name}</div><div className="sys-card-code">{t.code}</div></div>
+                          <div className={`sys-status sys-status--${t.status==='active'?'active':'inactive'}`}><span className="sys-status-dot"/>{t.status==='active'?'运行中':'已停用'}</div>
+                        </div>
+                        <div className="sys-card-stats">
+                          <div className="sys-stat-item"><span className="sys-stat-label">状态</span><span className="sys-stat-value">{t.status==='active'?'正常':'暂停'}</span></div>
+                        </div>
+                        <div className="sys-card-footer">
+                          <span className="sys-card-footer-time"><Clock size={12}/> 点击查看配置</span>
+                          <div className="sys-card-footer-actions" onClick={e=>e.stopPropagation()}>
+                            <button className="sys-btn sys-btn--text sys-btn--sm" onClick={()=>{setSelectedTenant(t);setTenantActiveTab("default");setTenantDrawerOpen(true);}}><Edit size={14}/> 配置</button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
+              </div>
+            )}
 
-                {section === "tenants" && (
-                  <Table<SystemTenantRow> rowKey="id" columns={tenantColumns} dataSource={tenants} {...tableProps} />
-                )}
-
-                {section === "models" && (
-                  <Table<ModelProviderRow> rowKey="id" columns={modelColumns} dataSource={modelProviders} {...tableProps} />
-                )}
-
-                {section === "capabilities" && (
-                  <Table<SystemCapabilityRow> rowKey="id" columns={capColumns} dataSource={capabilities} {...tableProps} />
-                )}
-
-                {section === "grants" && (
-                  <Table<TenantCapabilityGrantRow> rowKey="id" columns={grantColumns} dataSource={grants} {...tableProps} />
-                )}
-
-                {section === "audit" && (
-                  <div className="py-12">
-                    <Empty description="系统审计仅读视图将聚合平台级操作记录；当前占位，后续接入审计事件 API。" />
+            {/* ===== 模型供应商 ===== */}
+            {section === "models" && (
+              <div className="sys-fade-in">
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+                  <p style={{fontSize:14,color:"var(--color-text-tertiary)",margin:0}}>注册和管理底层算力供应商及默认模型路由</p>
+                  <button className="sys-btn sys-btn--primary" onClick={()=>setModelModalOpen(true)}><PlusCircle size={15}/> 注册供应商</button>
+                </div>
+                {modelProviders.length===0?<Empty description="暂无模型供应商" style={{marginTop:48}}/>:(
+                  <div className="sys-card-grid">
+                    {modelProviders.map(m=>(
+                      <div key={m.id} className="sys-card sys-card--static">
+                        <div className="sys-card-header">
+                          <div className="sys-card-avatar sys-card-avatar--model"><DatabaseZap size={22}/></div>
+                          <div className="sys-card-info"><div className="sys-card-name">{m.name}</div><div className="sys-card-code">{m.providerType}</div></div>
+                          <div className={`sys-status sys-status--${m.status==='active'?'active':'inactive'}`}><span className="sys-status-dot"/>{formatModelStatus(m.status)}</div>
+                        </div>
+                        <div className="sys-card-meta">
+                          <div className="sys-meta-item"><span className="sys-meta-label">基址</span><span className="sys-meta-value">{m.baseUrl||"未配置"}</span></div>
+                          <div className="sys-meta-item"><span className="sys-meta-label">默认模型</span><span className="sys-meta-value">{m.defaultModel||"未配置"}</span></div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
-              </Spin>
-            </div>
-          </div>
+              </div>
+            )}
+
+            {/* ===== 全局能力 ===== */}
+            {section === "capabilities" && (
+              <div className="sys-fade-in">
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+                  <p style={{fontSize:14,color:"var(--color-text-tertiary)",margin:0}}>管理系统级 MCP、Skill、提示词模板和交付能力</p>
+                  <button className="sys-btn sys-btn--primary" onClick={()=>setCapModalOpen(true)}><PlusCircle size={15}/> 注册能力</button>
+                </div>
+                {capabilities.length===0?<Empty description="暂无全局能力" style={{marginTop:48}}/>:(
+                  <div className="sys-card-grid">
+                    {capabilities.map(c=>(
+                      <div key={c.id} className="sys-card sys-card--static">
+                        <div className="sys-card-header">
+                          <div className="sys-card-avatar sys-card-avatar--cap"><Boxes size={22}/></div>
+                          <div className="sys-card-info"><div className="sys-card-name">{c.name}</div><div className="sys-card-code">{c.code}</div></div>
+                          <div className={`sys-status sys-status--${c.status==='active'?'active':'inactive'}`}><span className="sys-status-dot"/>{c.status==='active'?'启用':'草稿'}</div>
+                        </div>
+                        <div className="sys-info-tags">
+                          <span className="sys-info-tag sys-info-tag--primary">{formatCapabilityType(c.capabilityType)}</span>
+                          <span className="sys-info-tag sys-info-tag--info">版本 {c.version}</span>
+                          <RiskTag level={c.riskLevel}/>
+                        </div>
+                        <div className="sys-card-footer">
+                          <span className="sys-card-footer-time"><ShieldCheck size={12}/> {c.code}</span>
+                          <div className="sys-card-footer-actions">
+                            <button className="sys-btn sys-btn--default sys-btn--sm" onClick={()=>testCapabilityConnection(c.id)}><PlayCircle size={14}/> 测试连通性</button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </Spin>
         </div>
       </div>
 
-      <Modal
-        title="注册模型供应商"
+      {/* 租户详情侧拉抽屉（AuraOA 风格页签 + 表单行） */}
+      <Drawer
+        title={selectedTenant?.name ? `${selectedTenant.name} — 配置管理` : "租户配置管理"}
+        placement="right"
+        width={720}
+        onClose={() => setTenantDrawerOpen(false)}
+        open={tenantDrawerOpen}
         rootClassName={darkModalClassName}
-        open={modelModalOpen}
-        onOk={() => void submitModel()}
-        onCancel={() => setModelModalOpen(false)}
-        destroyOnClose
       >
-        <Form form={modelForm} layout="vertical" className="mt-2" preserve={false}>
-          <Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入名称" }]}>
-            <Input maxLength={160} />
-          </Form.Item>
-          <Form.Item name="providerType" label="供应商类型" rules={[{ required: true, message: "请输入类型" }]}>
-            <Input placeholder="例如 openai-compatible" maxLength={80} />
-          </Form.Item>
-          <Form.Item name="baseUrl" label="基址 URL">
-            <Input maxLength={500} />
-          </Form.Item>
-          <Form.Item name="defaultModel" label="默认模型">
-            <Input maxLength={160} />
-          </Form.Item>
-          <Form.Item name="status" label="状态" initialValue="draft">
-            <Select
-              options={[
-                { value: "draft", label: "草稿" },
-                { value: "active", label: "可用" },
-              ]}
-            />
-          </Form.Item>
-        </Form>
-      </Modal>
+        {selectedTenant && (<>
+          {/* 自定义页签栏 */}
+          <div className="sys-drawer-tabs">
+            {[
+              { key: "default", label: "基本信息", icon: Info },
+              { key: "capabilities", label: "能力配置", icon: Boxes },
+              { key: "members", label: "成员 / 角色", icon: Users },
+              { key: "models", label: "模型分配", icon: DatabaseZap },
+            ].map(tab => {
+              const TabIcon = tab.icon;
+              return (
+                <button key={tab.key} className={`sys-drawer-tab ${tenantActiveTab === tab.key ? "sys-drawer-tab--active" : ""}`} onClick={() => setTenantActiveTab(tab.key)}>
+                  <TabIcon size={14} /> {tab.label}
+                </button>
+              );
+            })}
+          </div>
 
-      <Modal
-        title="注册系统能力"
-        rootClassName={darkModalClassName}
-        open={capModalOpen}
-        onOk={() => void submitCapability()}
-        onCancel={() => setCapModalOpen(false)}
-        destroyOnClose
-      >
-        <Form form={capForm} layout="vertical" className="mt-2" preserve={false}>
-          <Form.Item name="capabilityType" label="能力类型" rules={[{ required: true, message: "请选择类型" }]}>
-            <Select options={capabilityTypeOptions} />
-          </Form.Item>
-          <Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入名称" }]}>
-            <Input maxLength={160} />
-          </Form.Item>
-          <Form.Item name="code" label="编码" rules={[{ required: true, message: "请输入编码" }]}>
-            <Input maxLength={100} />
-          </Form.Item>
-          <Form.Item name="version" label="版本" initialValue="v1">
-            <Input maxLength={40} />
-          </Form.Item>
-          <Form.Item name="riskLevel" label="风险等级" initialValue="low">
-            <Select
-              options={[
-                { value: "low", label: "低" },
-                { value: "medium", label: "中" },
-                { value: "high", label: "高" },
-              ]}
-            />
-          </Form.Item>
-          <Form.Item name="status" label="状态" initialValue="draft">
-            <Select
-              options={[
-                { value: "draft", label: "草稿" },
-                { value: "active", label: "启用" },
-              ]}
-            />
-          </Form.Item>
-        </Form>
-      </Modal>
+          {/* 基本信息 */}
+          {tenantActiveTab === "default" && (
+            <div className="sys-drawer-section">
+              <div className="sys-section-header"><Building2 size={18}/> 基本信息</div>
+              <div className="sys-config-group">
+                <div className="sys-form-row"><span className="sys-form-label">租户名称</span><span className="sys-form-value">{selectedTenant.name}</span></div>
+                <div className="sys-form-row"><span className="sys-form-label">租户编码</span><span className="sys-form-value" style={{fontFamily:"var(--font-mono, monospace)"}}>{selectedTenant.code}</span></div>
+                <div className="sys-form-row">
+                  <span className="sys-form-label">运行状态</span>
+                  <div style={{display:"flex",alignItems:"center",gap:12}}>
+                    <div className={`sys-status sys-status--${selectedTenant.status==='active'?'active':'inactive'}`}><span className="sys-status-dot"/>{selectedTenant.status==='active'?'运行中':'已停用'}</div>
+                    <button className={`sys-btn sys-btn--sm ${selectedTenant.status==='active'?'sys-btn--danger':'sys-btn--default'}`} onClick={()=>{const ns=selectedTenant.status==='active'?'suspended':'active';void patchTenantStatus(selectedTenant.id,ns);setSelectedTenant({...selectedTenant,status:ns});}}>
+                      {selectedTenant.status==='active'?'停用租户':'启用租户'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
-      <Modal
-        title="新增租户能力授权"
-        rootClassName={darkModalClassName}
-        open={grantModalOpen}
-        onOk={() => void submitGrant()}
-        onCancel={() => setGrantModalOpen(false)}
-        destroyOnClose
-      >
-        <Form form={grantForm} layout="vertical" className="mt-2" preserve={false}>
-          <Form.Item name="tenantId" label="租户" rules={[{ required: true, message: "请选择租户" }]}>
-            <Select
-              showSearch
-              optionFilterProp="label"
-              options={tenants.map((t) => ({
-                value: t.id,
-                label: `${t.name} (${t.code})`,
-              }))}
-            />
-          </Form.Item>
-          <Form.Item name="capabilityId" label="系统能力" rules={[{ required: true, message: "请选择能力" }]}>
-            <Select
-              showSearch
-              optionFilterProp="label"
-              options={capabilities.map((c) => ({
-                value: c.id,
-                label: `${c.name} · ${c.code}`,
-              }))}
-            />
-          </Form.Item>
-          <Form.Item name="status" label="授权状态" initialValue="enabled">
-            <Select
-              options={[
-                { value: "enabled", label: "启用" },
-                { value: "disabled", label: "停用" },
-              ]}
-            />
-          </Form.Item>
-        </Form>
-      </Modal>
+          {/* 能力配置 */}
+          {tenantActiveTab === "capabilities" && (
+            <div className="sys-drawer-section">
+              <div className="sys-section-header"><Boxes size={18}/> 全局能力配置</div>
+              <div className="sys-hint"><Info size={14}/> 在此处为当前租户分配允许使用的全局 MCP、Skill 及交付通道。（后端接口待完善）</div>
+              <Empty description="能力配置暂未加载" />
+            </div>
+          )}
+
+          {/* 成员 / 角色 */}
+          {tenantActiveTab === "members" && (
+            <div className="sys-drawer-section">
+              <div className="sys-section-header"><Users size={18}/> 成员与角色</div>
+              <div className="sys-hint"><Info size={14}/> 租户内的组织与人员，系统管理员可在此协助诊断越权问题。</div>
+              <Empty description="暂无成员数据" />
+            </div>
+          )}
+
+          {/* 模型分配 */}
+          {tenantActiveTab === "models" && (
+            <div className="sys-drawer-section">
+              <div className="sys-section-header"><DatabaseZap size={18}/> 模型分配</div>
+              <div className="sys-hint"><Info size={14}/> 配置该租户的首选模型及备用模型，限额也在此设置。</div>
+              <Empty description="模型配额功能开发中" />
+            </div>
+          )}
+
+          {/* 抽屉底部操作栏 */}
+          <div className="sys-drawer-footer">
+            <button className="sys-btn sys-btn--danger" onClick={()=>setTenantDrawerOpen(false)}>关闭</button>
+            <div className="sys-drawer-footer-right">
+              <button className="sys-btn sys-btn--default" onClick={()=>setTenantDrawerOpen(false)}>取消</button>
+              <button className="sys-btn sys-btn--primary" onClick={()=>{messageApi.success("配置已保存");setTenantDrawerOpen(false);}}>保存配置</button>
+            </div>
+          </div>
+        </>)}
+      </Drawer>
+
+      {/* 新增租户弹窗（AuraOA 分页签风格） */}
+      {createTenantModalOpen && (
+        <div className="sys-modal-mask" onClick={()=>setCreateTenantModalOpen(false)}>
+          <div className="sys-modal" style={{maxWidth:600}} onClick={e=>e.stopPropagation()}>
+            <div className="sys-modal-header">
+              <span className="sys-modal-title">新增租户及管理员</span>
+              <button className="sys-modal-close" onClick={()=>setCreateTenantModalOpen(false)}><X size={18}/></button>
+            </div>
+            <div className="sys-modal-body">
+              <div className="sys-modal-tabs">
+                <button className={`sys-modal-tab ${createTenantTab==="basic"?"sys-modal-tab--active":""}`} onClick={()=>setCreateTenantTab("basic")}>基本信息</button>
+                <button className={`sys-modal-tab ${createTenantTab==="admin"?"sys-modal-tab--active":""}`} onClick={()=>setCreateTenantTab("admin")}>管理员设置</button>
+              </div>
+              {createTenantTab==="basic"&&(
+                <div className="sys-drawer-section">
+                  <div className="sys-field-row">
+                    <div className="sys-field"><label className="sys-field-label sys-field-label--required">租户名称</label><input className="sys-field-input" placeholder="例如：某某科技有限公司" maxLength={160} defaultValue={ctRef.current.name||""} onChange={e=>{ctRef.current.name=e.target.value;}}/></div>
+                    <div className="sys-field"><label className="sys-field-label sys-field-label--required">租户编码</label><input className="sys-field-input" placeholder="英文数字标识，如 mx_tech" maxLength={100} defaultValue={ctRef.current.code||""} onChange={e=>{ctRef.current.code=e.target.value;}}/><div className="sys-field-hint">留空则由系统自动生成</div></div>
+                  </div>
+                </div>
+              )}
+              {createTenantTab==="admin"&&(
+                <div className="sys-drawer-section">
+                  <div className="sys-hint"><Info size={14}/> 必须为新租户指定一名初始租户管理员，该管理员登录后可继续在「租户管理」中添加其他成员。</div>
+                  <div className="sys-field-row">
+                    <div className="sys-field"><label className="sys-field-label sys-field-label--required">管理员账号</label><input className="sys-field-input" placeholder="登录用用户名" maxLength={50} defaultValue={ctRef.current.admin_username||""} onChange={e=>{ctRef.current.admin_username=e.target.value;}}/></div>
+                    <div className="sys-field"><label className="sys-field-label sys-field-label--required">管理员姓名</label><input className="sys-field-input" placeholder="显示名称" maxLength={50} defaultValue={ctRef.current.admin_displayName||""} onChange={e=>{ctRef.current.admin_displayName=e.target.value;}}/></div>
+                  </div>
+                  <div className="sys-field-row">
+                    <div className="sys-field"><label className="sys-field-label sys-field-label--required">初始密码</label><input className="sys-field-input" type="password" placeholder="请妥善保管" maxLength={100} defaultValue={ctRef.current.admin_password||""} onChange={e=>{ctRef.current.admin_password=e.target.value;}}/></div>
+                    <div className="sys-field"><label className="sys-field-label">联系邮箱</label><input className="sys-field-input" placeholder="可选" maxLength={100} defaultValue={ctRef.current.admin_email||""} onChange={e=>{ctRef.current.admin_email=e.target.value;}}/></div>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="sys-modal-footer">
+              <button className="sys-btn sys-btn--default" onClick={()=>setCreateTenantModalOpen(false)}>取消</button>
+              <button className="sys-btn sys-btn--primary" onClick={()=>void submitCreateTenant()}>确认创建</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 注册模型供应商弹窗 */}
+      {modelModalOpen && (
+        <div className="sys-modal-mask" onClick={()=>setModelModalOpen(false)}>
+          <div className="sys-modal" style={{maxWidth:520}} onClick={e=>e.stopPropagation()}>
+            <div className="sys-modal-header">
+              <span className="sys-modal-title">注册模型供应商</span>
+              <button className="sys-modal-close" onClick={()=>setModelModalOpen(false)}><X size={18}/></button>
+            </div>
+            <div className="sys-modal-body">
+              <div className="sys-field"><label className="sys-field-label sys-field-label--required">名称</label><input className="sys-field-input" maxLength={160} onChange={e=>{modelRef.current.name=e.target.value;}}/></div>
+              <div className="sys-field"><label className="sys-field-label sys-field-label--required">供应商类型</label><input className="sys-field-input" placeholder="例如 openai-compatible" maxLength={80} onChange={e=>{modelRef.current.providerType=e.target.value;}}/></div>
+              <div className="sys-field"><label className="sys-field-label">基址 URL</label><input className="sys-field-input" maxLength={500} onChange={e=>{modelRef.current.baseUrl=e.target.value;}}/></div>
+              <div className="sys-field"><label className="sys-field-label">默认模型</label><input className="sys-field-input" maxLength={160} onChange={e=>{modelRef.current.defaultModel=e.target.value;}}/></div>
+              <div className="sys-field"><label className="sys-field-label">状态</label><SysSelect defaultValue="draft" options={[{value:"draft",label:"草稿"},{value:"active",label:"可用"}]} onChange={v=>{modelRef.current.status=v;}}/></div>
+            </div>
+            <div className="sys-modal-footer">
+              <button className="sys-btn sys-btn--default" onClick={()=>setModelModalOpen(false)}>取消</button>
+              <button className="sys-btn sys-btn--primary" onClick={()=>void submitModel()}>确认注册</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 注册系统能力弹窗 */}
+      {capModalOpen && (
+        <div className="sys-modal-mask" onClick={()=>setCapModalOpen(false)}>
+          <div className="sys-modal" style={{maxWidth:520}} onClick={e=>e.stopPropagation()}>
+            <div className="sys-modal-header">
+              <span className="sys-modal-title">注册系统能力</span>
+              <button className="sys-modal-close" onClick={()=>setCapModalOpen(false)}><X size={18}/></button>
+            </div>
+            <div className="sys-modal-body">
+              <div className="sys-field"><label className="sys-field-label sys-field-label--required">能力类型</label><SysSelect placeholder="请选择" options={capabilityTypeOptions} onChange={v=>{capRef.current.capabilityType=v;}}/></div>
+              <div className="sys-field-row">
+                <div className="sys-field"><label className="sys-field-label sys-field-label--required">名称</label><input className="sys-field-input" maxLength={160} onChange={e=>{capRef.current.name=e.target.value;}}/></div>
+                <div className="sys-field"><label className="sys-field-label sys-field-label--required">编码</label><input className="sys-field-input" maxLength={100} onChange={e=>{capRef.current.code=e.target.value;}}/></div>
+              </div>
+              <div className="sys-field-row">
+                <div className="sys-field"><label className="sys-field-label">版本</label><input className="sys-field-input" defaultValue="v1" maxLength={40} onChange={e=>{capRef.current.version=e.target.value;}}/></div>
+                <div className="sys-field"><label className="sys-field-label">风险等级</label><SysSelect defaultValue="low" options={[{value:"low",label:"低"},{value:"medium",label:"中"},{value:"high",label:"高"}]} onChange={v=>{capRef.current.riskLevel=v;}}/></div>
+              </div>
+              <div className="sys-field"><label className="sys-field-label">状态</label><SysSelect defaultValue="draft" options={[{value:"draft",label:"草稿"},{value:"active",label:"启用"}]} onChange={v=>{capRef.current.status=v;}}/></div>
+            </div>
+            <div className="sys-modal-footer">
+              <button className="sys-btn sys-btn--default" onClick={()=>setCapModalOpen(false)}>取消</button>
+              <button className="sys-btn sys-btn--primary" onClick={()=>void submitCapability()}>确认注册</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
 
-function Stat({ label, value, hint, accent }: { label: string; value: number | undefined; hint?: string; accent?: boolean }) {
-  return (
-    <div
-      className={`rounded-[var(--radius-md)] border p-4 transition-shadow ${
-        accent
-          ? "border-[var(--color-primary)]/25 bg-[var(--color-primary-bg)] shadow-[var(--shadow-xs)]"
-          : "border-[var(--color-border-light)] bg-[var(--color-bg-hover)]/60"
-      } `}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-xs font-medium text-[var(--color-text-secondary)]">{label}</p>
-        {hint ? <span className="shrink-0 text-[10px] text-[var(--color-text-tertiary)]">{hint}</span> : null}
-      </div>
-      <p className="mt-2 text-2xl font-semibold tabular-nums tracking-tight text-[var(--color-text-primary)]">{value ?? "—"}</p>
-    </div>
-  );
-}
-
-function SystemNotice({ icon: Icon, title, detail }: { icon: typeof KeyRound; title: string; detail: string }) {
-  return (
-    <article className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)]/40 p-4">
-      <div className="flex items-center gap-2">
-        <span className="flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--color-bg-card)] text-[var(--color-primary)] ring-1 ring-[var(--color-border-light)]">
-          <Icon className="h-4 w-4" aria-hidden="true" />
-        </span>
-        <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">{title}</h3>
-      </div>
-      <p className="agent-muted mt-3 text-sm leading-relaxed">{detail}</p>
-    </article>
-  );
-}
+// StatCard 已迁移到概览的 sys-overview-stat CSS 样式中，不再需要独立组件

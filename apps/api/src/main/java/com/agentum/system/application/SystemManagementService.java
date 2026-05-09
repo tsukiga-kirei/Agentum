@@ -9,6 +9,14 @@ import com.agentum.system.infrastructure.ModelProviderRepository;
 import com.agentum.system.infrastructure.SystemCapabilityRepository;
 import com.agentum.system.infrastructure.TenantCapabilityGrantRepository;
 import com.agentum.system.interfaces.SystemManagementApi;
+import com.agentum.auth.domain.UserAccount;
+import com.agentum.auth.infrastructure.UserAccountRepository;
+import com.agentum.organization.domain.DepartmentEntity;
+import com.agentum.organization.domain.UserMembershipEntity;
+import com.agentum.organization.infrastructure.DepartmentRepository;
+import com.agentum.organization.infrastructure.UserMembershipRepository;
+import com.agentum.permission.domain.RoleEntity;
+import com.agentum.permission.infrastructure.RoleRepository;
 import com.agentum.tenant.domain.TenantEntity;
 import com.agentum.tenant.infrastructure.TenantRepository;
 import java.time.Clock;
@@ -17,6 +25,7 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,6 +40,11 @@ public class SystemManagementService {
     private final ModelProviderRepository modelProviderRepository;
     private final SystemCapabilityRepository systemCapabilityRepository;
     private final TenantCapabilityGrantRepository tenantCapabilityGrantRepository;
+    private final UserAccountRepository userAccountRepository;
+    private final RoleRepository roleRepository;
+    private final DepartmentRepository departmentRepository;
+    private final UserMembershipRepository userMembershipRepository;
+    private final PasswordEncoder passwordEncoder;
     private final Clock clock;
 
     public SystemManagementService(
@@ -38,12 +52,22 @@ public class SystemManagementService {
         ModelProviderRepository modelProviderRepository,
         SystemCapabilityRepository systemCapabilityRepository,
         TenantCapabilityGrantRepository tenantCapabilityGrantRepository,
+        UserAccountRepository userAccountRepository,
+        RoleRepository roleRepository,
+        DepartmentRepository departmentRepository,
+        UserMembershipRepository userMembershipRepository,
+        PasswordEncoder passwordEncoder,
         Clock clock
     ) {
         this.tenantRepository = tenantRepository;
         this.modelProviderRepository = modelProviderRepository;
         this.systemCapabilityRepository = systemCapabilityRepository;
         this.tenantCapabilityGrantRepository = tenantCapabilityGrantRepository;
+        this.userAccountRepository = userAccountRepository;
+        this.roleRepository = roleRepository;
+        this.departmentRepository = departmentRepository;
+        this.userMembershipRepository = userMembershipRepository;
+        this.passwordEncoder = passwordEncoder;
         this.clock = clock;
     }
 
@@ -71,6 +95,41 @@ public class SystemManagementService {
         return tenantRepository.findAllByOrderByNameAsc().stream()
             .map(tenant -> new SystemManagementApi.TenantRow(tenant.getId(), tenant.getName(), tenant.getCode(), tenant.getStatus()))
             .toList();
+    }
+
+    @Transactional
+    public SystemManagementApi.TenantRow createTenant(SystemManagementApi.CreateTenantRequest request) {
+        if (tenantRepository.existsByCode(request.code().trim())) {
+            throw new ApiException(HttpStatus.CONFLICT, "SYSTEM_TENANT_DUPLICATE", "租户编码已被占用");
+        }
+        if (userAccountRepository.existsByUsername(request.adminUsername().trim())) {
+            throw new ApiException(HttpStatus.CONFLICT, "SYSTEM_USER_DUPLICATE", "管理员账号已被占用");
+        }
+
+        // 1. 创建租户
+        TenantEntity tenant = TenantEntity.create(request.name().trim(), request.code().trim(), clock.instant());
+        tenantRepository.save(tenant);
+
+        // 2. 为该租户初始化基础内置角色（这里只初始化租户管理员即可，其他角色可由平台或后续脚本自动补全）
+        RoleEntity tenantAdminRole = RoleEntity.create(tenant.getId(), "tenant_admin", "租户管理员", "tenant", "管理租户内配置与人员");
+        roleRepository.save(tenantAdminRole);
+
+        // 3. 创建默认部门
+        DepartmentEntity defaultDept = DepartmentEntity.create(tenant.getId(), null, "默认部门", "default", 0);
+        departmentRepository.save(defaultDept);
+
+        // 4. 创建管理员账号
+        String encodedPass = passwordEncoder.encode(request.adminPassword());
+        String adminEmail = request.adminEmail() != null ? request.adminEmail().trim() : null;
+        UserAccount adminUser = UserAccount.create(request.adminUsername().trim(), encodedPass, request.adminDisplayName().trim(), adminEmail);
+        userAccountRepository.save(adminUser);
+
+        // 5. 绑定关系
+        UserMembershipEntity membership = UserMembershipEntity.create(tenant.getId(), adminUser.getId(), defaultDept.getId(), tenantAdminRole.getId(), "默认空间");
+        userMembershipRepository.save(membership);
+
+        log.info("系统管理创建租户及初始管理员成功 tenantId={} adminId={} requestId={}", tenant.getId(), adminUser.getId(), RequestIds.current());
+        return new SystemManagementApi.TenantRow(tenant.getId(), tenant.getName(), tenant.getCode(), tenant.getStatus());
     }
 
     @Transactional

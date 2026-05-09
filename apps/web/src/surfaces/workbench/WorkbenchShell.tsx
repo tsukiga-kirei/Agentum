@@ -74,39 +74,40 @@ const navigationItems: NavigationItem[] = [
     label: "业务工作台",
     description: "待办、发起和结果",
     icon: LayoutDashboard,
+    visibleFor: ["executor", "reviewer", "designer", "agent_admin", "capability_admin", "tenant_admin"],
   },
   {
     key: "designer",
     label: "流程设计",
     description: "画布与节点配置",
     icon: GitBranch,
-    visibleFor: ["designer", "agent_admin", "capability_admin", "tenant_admin", "system_admin"],
+    visibleFor: ["designer", "agent_admin", "capability_admin", "tenant_admin"],
   },
   {
     key: "assets",
     label: "能力资产",
     description: "智能体、Skills、MCP",
     icon: Library,
-    visibleFor: ["designer", "agent_admin", "capability_admin", "tenant_admin", "system_admin"],
+    visibleFor: ["designer", "agent_admin", "capability_admin", "tenant_admin"],
   },
   {
     key: "audit",
     label: "运行审计",
     description: "只读证据链",
     icon: Activity,
-    visibleFor: ["reviewer", "tenant_admin", "system_admin"],
+    visibleFor: ["reviewer", "tenant_admin"],
   },
   {
     key: "tenant",
     label: "租户管理",
     description: "人员、角色、权限",
     icon: ShieldCheck,
-    visibleFor: ["tenant_admin", "system_admin"],
+    visibleFor: ["tenant_admin"],
   },
   {
     key: "system",
     label: "系统管理",
-    description: "租户、模型、交付",
+    description: "租户、模型、底座",
     icon: Settings,
     visibleFor: ["system_admin"],
   },
@@ -224,8 +225,11 @@ const stateColors: Record<string, string> = {
 };
 
 export function WorkbenchShell() {
-  // 当前还没有正式路由，先用本地状态模拟产品分区切换，保证设计区可以继续迭代。
-  const [activeSurface, setActiveSurface] = useState<SurfaceKey>("workbench");
+  // 根据用户角色初始化 activeSurface 以防闪烁
+  const [activeSurface, setActiveSurface] = useState<SurfaceKey>(() => {
+    const defaultRole = useAuthStore.getState().user?.role;
+    return defaultRole === "system_admin" ? "system" : "workbench";
+  });
   // 侧栏折叠属于工作台级偏好，后续接入用户设置 API 后应从服务端恢复并跨设备同步。
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const themeMode = useAuthStore((s) => s.themeMode);

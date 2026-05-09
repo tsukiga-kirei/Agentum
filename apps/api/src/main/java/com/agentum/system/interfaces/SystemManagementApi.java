@@ -25,6 +25,16 @@ public final class SystemManagementApi {
     public record TenantRow(UUID id, String name, String code, String status) {
     }
 
+    public record CreateTenantRequest(
+        @NotBlank @Size(max = 160) String name,
+        @NotBlank @Size(max = 100) String code,
+        @NotBlank @Size(max = 50) String adminUsername,
+        @NotBlank @Size(max = 50) String adminDisplayName,
+        @NotBlank @Size(max = 100) String adminPassword,
+        @Size(max = 100) String adminEmail
+    ) {
+    }
+
     public record UpdateTenantStatusRequest(
         @NotBlank @Size(max = 30) String status
     ) {
