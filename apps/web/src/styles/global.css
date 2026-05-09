@@ -284,11 +284,72 @@ textarea:focus-visible {
 }
 
 .agent-system-admin-table .ant-table-tbody > tr > td {
+  color: var(--color-text-primary);
+  background: transparent;
   border-color: var(--color-border-light);
 }
 
 .agent-system-admin-table .ant-table-tbody > tr:hover > td {
   background: var(--color-bg-hover) !important;
+}
+
+/* 深色模式下 Modal 渲染在 body 下，无法继承 .dark 变量；需单独覆盖系统管理/租户管理表单可读性 */
+.agent-dark-modal .ant-modal-content {
+  background: #151e31;
+  color: #f1f5f9;
+}
+
+.agent-dark-modal .ant-modal-header {
+  background: transparent;
+  border-bottom-color: #1e2e4a;
+}
+
+.agent-dark-modal .ant-modal-title,
+.agent-dark-modal .ant-form-item-label > label,
+.agent-dark-modal .ant-input,
+.agent-dark-modal .ant-input-password,
+.agent-dark-modal .ant-select-selection-item,
+.agent-dark-modal .ant-select-selection-placeholder,
+.agent-dark-modal .ant-empty-description {
+  color: #f1f5f9;
+}
+
+.agent-dark-modal .ant-form-item-explain-error,
+.agent-dark-modal .ant-input::placeholder,
+.agent-dark-modal .ant-select-arrow,
+.agent-dark-modal .ant-select-clear {
+  color: #94a3b8;
+}
+
+.agent-dark-modal .ant-input,
+.agent-dark-modal .ant-input-password,
+.agent-dark-modal .ant-select-selector {
+  background: #0f1829 !important;
+  border-color: #253352 !important;
+}
+
+.agent-dark-modal .ant-modal-close {
+  color: #94a3b8;
+}
+
+/* 租户管理与系统管理统一页签风格 */
+.agent-admin-tabs .ant-tabs-nav {
+  margin-bottom: 6px !important;
+}
+
+.agent-admin-tabs .ant-tabs-tab {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.agent-admin-tabs .ant-tabs-tab-btn {
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+
+.agent-admin-tabs .ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: var(--color-primary) !important;
+  font-weight: 600;
 }
 
 .agent-tenant-select {

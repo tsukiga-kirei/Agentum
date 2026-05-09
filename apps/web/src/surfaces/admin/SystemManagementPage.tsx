@@ -77,7 +77,9 @@ function RiskTag({ level }: { level: string }) {
 // 系统管理：模块切换与登录页一致（Ant Segmented + login-portal-segmented），数据来自 /api/system/*。
 export function SystemManagementPage() {
   const token = useAuthStore((s) => s.token);
+  const themeMode = useAuthStore((s) => s.themeMode);
   const [messageApi, messageContextHolder] = message.useMessage();
+  const darkModalClassName = themeMode === "dark" ? "agent-dark-modal" : undefined;
 
   const [section, setSection] = useState<SystemSection>("overview");
   const [loading, setLoading] = useState(false);
@@ -514,7 +516,14 @@ export function SystemManagementPage() {
         </div>
       </div>
 
-      <Modal title="注册模型供应商" open={modelModalOpen} onOk={() => void submitModel()} onCancel={() => setModelModalOpen(false)} destroyOnClose>
+      <Modal
+        title="注册模型供应商"
+        rootClassName={darkModalClassName}
+        open={modelModalOpen}
+        onOk={() => void submitModel()}
+        onCancel={() => setModelModalOpen(false)}
+        destroyOnClose
+      >
         <Form form={modelForm} layout="vertical" className="mt-2" preserve={false}>
           <Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入名称" }]}>
             <Input maxLength={160} />
@@ -539,7 +548,14 @@ export function SystemManagementPage() {
         </Form>
       </Modal>
 
-      <Modal title="注册系统能力" open={capModalOpen} onOk={() => void submitCapability()} onCancel={() => setCapModalOpen(false)} destroyOnClose>
+      <Modal
+        title="注册系统能力"
+        rootClassName={darkModalClassName}
+        open={capModalOpen}
+        onOk={() => void submitCapability()}
+        onCancel={() => setCapModalOpen(false)}
+        destroyOnClose
+      >
         <Form form={capForm} layout="vertical" className="mt-2" preserve={false}>
           <Form.Item name="capabilityType" label="能力类型" rules={[{ required: true, message: "请选择类型" }]}>
             <Select options={capabilityTypeOptions} />
@@ -573,7 +589,14 @@ export function SystemManagementPage() {
         </Form>
       </Modal>
 
-      <Modal title="新增租户能力授权" open={grantModalOpen} onOk={() => void submitGrant()} onCancel={() => setGrantModalOpen(false)} destroyOnClose>
+      <Modal
+        title="新增租户能力授权"
+        rootClassName={darkModalClassName}
+        open={grantModalOpen}
+        onOk={() => void submitGrant()}
+        onCancel={() => setGrantModalOpen(false)}
+        destroyOnClose
+      >
         <Form form={grantForm} layout="vertical" className="mt-2" preserve={false}>
           <Form.Item name="tenantId" label="租户" rules={[{ required: true, message: "请选择租户" }]}>
             <Select

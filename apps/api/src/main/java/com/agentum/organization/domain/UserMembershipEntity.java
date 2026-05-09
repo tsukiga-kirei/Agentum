@@ -83,4 +83,14 @@ public class UserMembershipEntity {
     public String getStatus() {
         return status;
     }
+
+    // 角色调整用于租户内权限治理，必须由后端校验目标角色归属当前租户。
+    public void assignRole(UUID roleId) {
+        this.roleId = roleId;
+    }
+
+    // 部门调整会影响待办分派与可见范围，允许清空部门以表示未归属。
+    public void assignDepartment(UUID departmentId) {
+        this.departmentId = departmentId;
+    }
 }

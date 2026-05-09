@@ -200,6 +200,100 @@ paths:
           description: 未登录或令牌无效
         "403":
           description: 当前账号不能管理该租户
+  /api/admin/tenants/{tenantId}/organization/memberships/{membershipId}/role:
+    patch:
+      summary: 调整成员角色
+      description: 更新成员关系中的角色，后端会校验目标角色归属当前租户且为启用状态。
+      tags:
+        - Organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: membershipId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMembershipRoleRequest"
+      responses:
+        "200":
+          description: 更新成功并返回最新人员组织概览
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/TenantOrganizationOverview"
+        "400":
+          description: 角色不可用或不属于当前租户
+        "401":
+          description: 未登录或令牌无效
+        "403":
+          description: 当前账号不能管理该租户
+        "404":
+          description: 成员关系不存在或已停用
+  /api/admin/tenants/{tenantId}/organization/memberships/{membershipId}/department:
+    patch:
+      summary: 调整成员部门
+      description: 更新成员关系中的部门，可置空。后端会校验目标部门归属当前租户且为启用状态。
+      tags:
+        - Organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: membershipId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMembershipDepartmentRequest"
+      responses:
+        "200":
+          description: 更新成功并返回最新人员组织概览
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/TenantOrganizationOverview"
+        "400":
+          description: 部门不可用或不属于当前租户
+        "401":
+          description: 未登录或令牌无效
+        "403":
+          description: 当前账号不能管理该租户
+        "404":
+          description: 成员关系不存在或已停用
   /api/system/summary:
     get:
       summary: 系统管理概览统计
@@ -671,6 +765,21 @@ components:
           type: integer
       required:
         - name
+    UpdateMembershipRoleRequest:
+      type: object
+      properties:
+        roleId:
+          type: string
+          format: uuid
+      required:
+        - roleId
+    UpdateMembershipDepartmentRequest:
+      type: object
+      properties:
+        departmentId:
+          type: string
+          format: uuid
+          nullable: true
     OrganizationMember:
       type: object
       properties:

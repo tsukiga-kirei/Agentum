@@ -1,9 +1,14 @@
 import { useEffect, useState } from "react";
-import { Button, Form, Input, InputNumber, Modal, Select, Tabs } from "antd";
+import { Button, Form, Input, InputNumber, Modal, Segmented, Select } from "antd";
 import { Building2, ClipboardList, Database, Eye, FileText, LockKeyhole, ShieldCheck, UserPlus, UserRoundCog, UsersRound } from "lucide-react";
 import { AgentumApiError, organizationApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
-import type { CreateDepartmentRequest, CreateMemberRequest, TenantOrganizationOverview } from "../../types/organization";
+import type {
+  CreateDepartmentRequest,
+  CreateMemberRequest,
+  OrganizationMembership,
+  TenantOrganizationOverview,
+} from "../../types/organization";
 
 type TenantManagementTabKey = "organization" | "roles" | "resources" | "requirements" | "sensitive" | "audit";
 
@@ -11,6 +16,7 @@ type TenantManagementTab = {
   key: TenantManagementTabKey;
   label: string;
   description: string;
+  icon: typeof ShieldCheck;
 };
 
 type BusinessAction = {
@@ -40,12 +46,12 @@ type SensitivePolicy = {
 };
 
 const tenantManagementTabs: TenantManagementTab[] = [
-  { key: "organization", label: "人员组织", description: "用户、部门和空间成员关系" },
-  { key: "roles", label: "角色权限", description: "角色、部门、人员的小权限" },
-  { key: "resources", label: "资源授权", description: "具体流程、资产和结果给谁看" },
-  { key: "requirements", label: "需求配置", description: "表单字段、审核规则和交付目标" },
-  { key: "sensitive", label: "敏感动作", description: "高风险调用、外部交付和凭证审批" },
-  { key: "audit", label: "审计可见性", description: "谁能看证据链和脱敏字段" },
+  { key: "organization", label: "人员组织", description: "用户、部门和空间成员关系", icon: UsersRound },
+  { key: "roles", label: "角色权限", description: "角色、部门、人员的小权限", icon: UserRoundCog },
+  { key: "resources", label: "资源授权", description: "具体流程、资产和结果给谁看", icon: Database },
+  { key: "requirements", label: "需求配置", description: "表单字段、审核规则和交付目标", icon: ClipboardList },
+  { key: "sensitive", label: "敏感动作", description: "高风险调用、外部交付和凭证审批", icon: LockKeyhole },
+  { key: "audit", label: "审计可见性", description: "谁能看证据链和脱敏字段", icon: Eye },
 ];
 
 const organizationItems = [
@@ -139,6 +145,8 @@ export function TenantManagementPage() {
   const [activeTab, setActiveTab] = useState<TenantManagementTabKey>("organization");
   const user = useAuthStore((s) => s.user);
   const token = useAuthStore((s) => s.token);
+  const themeMode = useAuthStore((s) => s.themeMode);
+  const darkModalClassName = themeMode === "dark" ? "agent-dark-modal" : undefined;
   const [organizationOverview, setOrganizationOverview] = useState<TenantOrganizationOverview | null>(null);
   const [organizationLoading, setOrganizationLoading] = useState(false);
   const [organizationError, setOrganizationError] = useState("");
@@ -148,8 +156,20 @@ export function TenantManagementPage() {
   const [createDepartmentOpen, setCreateDepartmentOpen] = useState(false);
   const [createDepartmentSubmitting, setCreateDepartmentSubmitting] = useState(false);
   const [createDepartmentForm] = Form.useForm<CreateDepartmentRequest>();
+  const [membershipUpdatingId, setMembershipUpdatingId] = useState<string | null>(null);
   const activeTabMeta = tenantManagementTabs.find((tab) => tab.key === activeTab) ?? tenantManagementTabs[0];
-  const tabItems = tenantManagementTabs.map((tab) => ({ key: tab.key, label: tab.label }));
+  const tabSegmentedOptions = tenantManagementTabs.map((tab) => {
+    const Icon = tab.icon;
+    return {
+      value: tab.key,
+      label: (
+        <span className="login-portal-option">
+          <Icon className="login-portal-option-icon" aria-hidden="true" />
+          <span>{tab.label}</span>
+        </span>
+      ),
+    };
+  });
 
   useEffect(() => {
     if (activeTab !== "organization" || !token || !user?.tenantId) {
@@ -234,59 +254,124 @@ export function TenantManagementPage() {
     }
   }
 
+  async function handleUpdateMembershipRole(membership: OrganizationMembership, roleId: string) {
+    if (!token || !user?.tenantId) {
+      setOrganizationError("当前账号缺少租户上下文，无法调整成员角色");
+      return;
+    }
+
+    setMembershipUpdatingId(membership.id);
+    setOrganizationError("");
+    try {
+      const overview = await organizationApi.updateMembershipRole(user.tenantId, membership.id, token, { roleId });
+      setOrganizationOverview(overview);
+    } catch (error) {
+      console.warn(
+        "[tenant-management] 成员角色调整失败",
+        getTenantManagementErrorContext(error, user.tenantId, { membershipId: membership.id, roleId })
+      );
+      setOrganizationError(error instanceof AgentumApiError ? error.message : "成员角色调整失败，请稍后重试");
+    } finally {
+      setMembershipUpdatingId(null);
+    }
+  }
+
+  async function handleUpdateMembershipDepartment(membership: OrganizationMembership, departmentId?: string) {
+    if (!token || !user?.tenantId) {
+      setOrganizationError("当前账号缺少租户上下文，无法调整成员部门");
+      return;
+    }
+
+    setMembershipUpdatingId(membership.id);
+    setOrganizationError("");
+    try {
+      const overview = await organizationApi.updateMembershipDepartment(user.tenantId, membership.id, token, { departmentId });
+      setOrganizationOverview(overview);
+    } catch (error) {
+      console.warn(
+        "[tenant-management] 成员部门调整失败",
+        getTenantManagementErrorContext(error, user.tenantId, { membershipId: membership.id, departmentId })
+      );
+      setOrganizationError(error instanceof AgentumApiError ? error.message : "成员部门调整失败，请稍后重试");
+    } finally {
+      setMembershipUpdatingId(null);
+    }
+  }
+
   return (
-    <div className="mx-auto max-w-[1400px] space-y-5 px-5 py-6 lg:px-6">
-      <section className="agent-card p-5">
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_390px] xl:items-center">
-          <div>
-            <p className="text-sm font-medium text-[var(--color-primary)]">租户管理</p>
-            <h2 className="mt-2 text-xl font-semibold">按租户内角色、资源和敏感动作分配可见范围</h2>
-            <p className="agent-muted mt-3 max-w-3xl text-sm leading-6">
-              左侧菜单只决定能否进入“租户管理”这个大模块；这里的页签用于细分当前模块内部功能，后端仍按角色、部门、人员、资源和敏感动作策略做最终判断。
-            </p>
-          </div>
-          <div className="rounded-[var(--radius-md)] border border-red-200 bg-red-50 p-4 text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-100">
-            <div className="flex items-center gap-2 text-sm font-semibold">
-              <LockKeyhole className="h-4 w-4" aria-hidden="true" />
-              页面入口不是安全边界
+    <div className="min-h-[calc(100vh-4rem)] bg-[var(--color-bg-page)] pb-10 pt-1">
+      <div className="mx-auto max-w-[1400px] px-5 lg:px-6">
+        <header className="mb-5 flex flex-col gap-4 border-b border-[var(--color-border-light)] pb-5 sm:flex-row sm:items-end sm:justify-between">
+          <div className="flex min-w-0 gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-primary-bg)] text-[var(--color-primary)] shadow-[var(--shadow-xs)]">
+              <ShieldCheck className="h-6 w-6" aria-hidden="true" />
             </div>
-            <p className="mt-2 text-sm">发布、凭证、外部交付、敏感 MCP 和审计查看都必须由后端再次校验。</p>
-          </div>
-        </div>
-      </section>
-
-      <section className="agent-card overflow-hidden p-4">
-        <Tabs activeKey={activeTab} items={tabItems} onChange={(key) => setActiveTab(key as TenantManagementTabKey)} />
-
-        <div className="min-w-0">
-          <div className="mb-4 flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4 text-[var(--color-primary)]" aria-hidden="true" />
-            <div>
-              <h3 className="text-base font-semibold">{activeTabMeta.label}</h3>
-              <p className="agent-muted mt-1 text-sm">{activeTabMeta.description}</p>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-lg font-semibold tracking-tight text-[var(--color-text-primary)] sm:text-xl">租户管理</h1>
+                <span className="rounded-full bg-[var(--color-bg-hover)] px-2.5 py-0.5 text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-[var(--color-border-light)]">
+                  租户内治理
+                </span>
+              </div>
+              <p className="agent-muted mt-1.5 max-w-2xl text-sm leading-relaxed">
+                左侧菜单决定能否进入租户管理；模块内页签进一步区分组织、权限、资源与审计能力，最终权限仍由后端复核。
+              </p>
             </div>
           </div>
+        </header>
 
-          {activeTab === "organization" ? (
-            <OrganizationPanel
-              overview={organizationOverview}
-              loading={organizationLoading}
-              error={organizationError}
-              hasTenantContext={Boolean(user?.tenantId)}
-              onCreateMember={() => setCreateMemberOpen(true)}
-              onCreateDepartment={() => setCreateDepartmentOpen(true)}
+        <div className="system-mgmt-module-switch mb-5">
+          <div className="system-mgmt-segmented-scroll">
+            <Segmented<TenantManagementTabKey>
+              aria-label="租户管理模块"
+              value={activeTab}
+              onChange={(key) => setActiveTab(key as TenantManagementTabKey)}
+              options={tabSegmentedOptions}
+              className="login-portal-segmented login-portal-segmented--tenant_admin system-mgmt-segmented"
             />
-          ) : null}
-          {activeTab === "roles" ? <RolePolicyPanel /> : null}
-          {activeTab === "resources" ? <ResourceGrantPanel /> : null}
-          {activeTab === "requirements" ? <RequirementConfigPanel /> : null}
-          {activeTab === "sensitive" ? <SensitivePolicyPanel /> : null}
-          {activeTab === "audit" ? <AuditVisibilityPanel /> : null}
+          </div>
+          <div className="login-portal-description login-portal-description--tenant_admin">
+            <span className="login-portal-description-dot" />
+            {activeTabMeta.description}
+          </div>
         </div>
-      </section>
+
+        <div className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] shadow-[var(--shadow-sm)]">
+
+          <div className="p-5">
+            <div className="mb-4 rounded-[var(--radius-md)] border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-100">
+              <div className="flex items-center gap-2 font-semibold">
+                <LockKeyhole className="h-4 w-4" aria-hidden="true" />
+                页面入口不是安全边界
+              </div>
+              <p className="mt-2">发布、凭证、外部交付、敏感 MCP 和审计查看都必须由后端再次校验。</p>
+            </div>
+
+            {activeTab === "organization" ? (
+              <OrganizationPanel
+                overview={organizationOverview}
+                loading={organizationLoading}
+                error={organizationError}
+                hasTenantContext={Boolean(user?.tenantId)}
+                onCreateMember={() => setCreateMemberOpen(true)}
+                onCreateDepartment={() => setCreateDepartmentOpen(true)}
+                membershipUpdatingId={membershipUpdatingId}
+                onUpdateMembershipRole={handleUpdateMembershipRole}
+                onUpdateMembershipDepartment={handleUpdateMembershipDepartment}
+              />
+            ) : null}
+            {activeTab === "roles" ? <RolePolicyPanel /> : null}
+            {activeTab === "resources" ? <ResourceGrantPanel /> : null}
+            {activeTab === "requirements" ? <RequirementConfigPanel /> : null}
+            {activeTab === "sensitive" ? <SensitivePolicyPanel /> : null}
+            {activeTab === "audit" ? <AuditVisibilityPanel /> : null}
+          </div>
+        </div>
+      </div>
 
       <Modal
         title="新增成员"
+        rootClassName={darkModalClassName}
         open={createMemberOpen}
         okText="创建成员"
         cancelText="取消"
@@ -329,6 +414,7 @@ export function TenantManagementPage() {
 
       <Modal
         title="新增部门"
+        rootClassName={darkModalClassName}
         open={createDepartmentOpen}
         okText="创建部门"
         cancelText="取消"
@@ -367,6 +453,9 @@ function OrganizationPanel({
   hasTenantContext,
   onCreateMember,
   onCreateDepartment,
+  membershipUpdatingId,
+  onUpdateMembershipRole,
+  onUpdateMembershipDepartment,
 }: {
   overview: TenantOrganizationOverview | null;
   loading: boolean;
@@ -374,6 +463,9 @@ function OrganizationPanel({
   hasTenantContext: boolean;
   onCreateMember: () => void;
   onCreateDepartment: () => void;
+  membershipUpdatingId: string | null;
+  onUpdateMembershipRole: (membership: OrganizationMembership, roleId: string) => void;
+  onUpdateMembershipDepartment: (membership: OrganizationMembership, departmentId?: string) => void;
 }) {
   if (!hasTenantContext) {
     return (
@@ -459,6 +551,24 @@ function OrganizationPanel({
                     </span>
                   </div>
                   <p className="agent-muted mt-1 text-xs">{membership.departmentName || "未分配部门"} · {membership.spaceCode}</p>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                    <Select
+                      size="small"
+                      value={membership.roleId}
+                      disabled={membershipUpdatingId === membership.id}
+                      options={overview.roles.map((role) => ({ value: role.id, label: `${role.name} (${role.code})` }))}
+                      onChange={(roleId) => onUpdateMembershipRole(membership, roleId)}
+                    />
+                    <Select
+                      size="small"
+                      value={membership.departmentId ?? undefined}
+                      allowClear
+                      disabled={membershipUpdatingId === membership.id}
+                      placeholder="未分配部门"
+                      options={overview.departments.map((department) => ({ value: department.id, label: department.name }))}
+                      onChange={(departmentId) => onUpdateMembershipDepartment(membership, departmentId)}
+                    />
+                  </div>
                 </div>
               ))}
             </div>

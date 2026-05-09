@@ -68,3 +68,11 @@ export type CreateDepartmentRequest = {
   parentId?: string;
   sortOrder?: number;
 };
+
+export type UpdateMembershipRoleRequest = {
+  roleId: string;
+};
+
+export type UpdateMembershipDepartmentRequest = {
+  departmentId?: string;
+};

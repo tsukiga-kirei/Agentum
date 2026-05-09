@@ -1,5 +1,11 @@
 import type { AuthUser, LoginRequest, LoginResponse, TenantOption } from "../types/auth";
-import type { CreateDepartmentRequest, CreateMemberRequest, TenantOrganizationOverview } from "../types/organization";
+import type {
+  CreateDepartmentRequest,
+  CreateMemberRequest,
+  TenantOrganizationOverview,
+  UpdateMembershipDepartmentRequest,
+  UpdateMembershipRoleRequest,
+} from "../types/organization";
 import type {
   CreateModelProviderRequest,
   CreateSystemCapabilityRequest,
@@ -101,6 +107,18 @@ export const organizationApi = {
     apiRequest<TenantOrganizationOverview>(`/api/admin/tenants/${tenantId}/organization/members`, { method: "POST", token, body: request }),
   createDepartment: (tenantId: string, token: string, request: CreateDepartmentRequest) =>
     apiRequest<TenantOrganizationOverview>(`/api/admin/tenants/${tenantId}/organization/departments`, { method: "POST", token, body: request }),
+  updateMembershipRole: (tenantId: string, membershipId: string, token: string, request: UpdateMembershipRoleRequest) =>
+    apiRequest<TenantOrganizationOverview>(`/api/admin/tenants/${tenantId}/organization/memberships/${membershipId}/role`, {
+      method: "PATCH",
+      token,
+      body: request,
+    }),
+  updateMembershipDepartment: (tenantId: string, membershipId: string, token: string, request: UpdateMembershipDepartmentRequest) =>
+    apiRequest<TenantOrganizationOverview>(`/api/admin/tenants/${tenantId}/organization/memberships/${membershipId}/department`, {
+      method: "PATCH",
+      token,
+      body: request,
+    }),
 };
 
 export const systemApi = {

@@ -10,6 +10,7 @@ import jakarta.validation.Valid;
 import java.util.UUID;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -60,5 +61,37 @@ public class TenantOrganizationController {
         tenantOrganizationAccess.assertCanManageTenant(principal, tenantId);
         // 部门树会影响待办分派和资源过滤，写动作必须把操作者带入 service 日志上下文。
         return ApiResponse.success(tenantOrganizationService.createDepartment(tenantId, principal.userId(), createDepartmentRequest), RequestIds.current(request));
+    }
+
+    @PatchMapping("/memberships/{membershipId}/role")
+    public ApiResponse<TenantOrganizationOverviewResponse> updateMembershipRole(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID membershipId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @Valid @RequestBody UpdateMembershipRoleRequest updateMembershipRoleRequest,
+        HttpServletRequest request
+    ) {
+        tenantOrganizationAccess.assertCanManageTenant(principal, tenantId);
+        // 角色调整会直接影响成员可执行动作和页面可见范围，必须保留操作上下文用于审计追踪。
+        return ApiResponse.success(
+            tenantOrganizationService.updateMembershipRole(tenantId, principal.userId(), membershipId, updateMembershipRoleRequest),
+            RequestIds.current(request)
+        );
+    }
+
+    @PatchMapping("/memberships/{membershipId}/department")
+    public ApiResponse<TenantOrganizationOverviewResponse> updateMembershipDepartment(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID membershipId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @Valid @RequestBody UpdateMembershipDepartmentRequest updateMembershipDepartmentRequest,
+        HttpServletRequest request
+    ) {
+        tenantOrganizationAccess.assertCanManageTenant(principal, tenantId);
+        // 部门调整会影响待办分派和数据过滤，前端只提交意图，部门归属由后端按租户二次校验。
+        return ApiResponse.success(
+            tenantOrganizationService.updateMembershipDepartment(tenantId, principal.userId(), membershipId, updateMembershipDepartmentRequest),
+            RequestIds.current(request)
+        );
     }
 }

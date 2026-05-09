@@ -13,6 +13,8 @@ import com.agentum.organization.interfaces.MemberResponse;
 import com.agentum.organization.interfaces.MembershipResponse;
 import com.agentum.organization.interfaces.RoleResponse;
 import com.agentum.organization.interfaces.TenantOrganizationOverviewResponse;
+import com.agentum.organization.interfaces.UpdateMembershipDepartmentRequest;
+import com.agentum.organization.interfaces.UpdateMembershipRoleRequest;
 import com.agentum.permission.domain.RoleEntity;
 import com.agentum.permission.infrastructure.RoleRepository;
 import com.agentum.shared.api.ApiException;
@@ -168,6 +170,112 @@ public class TenantOrganizationService {
             RequestIds.current()
         );
 
+        return getOverview(tenantId);
+    }
+
+    @Transactional
+    public TenantOrganizationOverviewResponse updateMembershipRole(
+        UUID tenantId,
+        UUID operatorUserId,
+        UUID membershipId,
+        UpdateMembershipRoleRequest request
+    ) {
+        tenantRepository.findByIdAndStatus(tenantId, ACTIVE_STATUS)
+            .orElseThrow(() -> {
+                log.warn("成员角色调整失败：租户不可用 tenantId={} operatorUserId={} requestId={}", tenantId, operatorUserId, RequestIds.current());
+                return new ApiException(HttpStatus.NOT_FOUND, "TENANT_NOT_FOUND", "租户不存在或已停用");
+            });
+
+        UserMembershipEntity membership = userMembershipRepository.findByIdAndTenantIdAndStatus(membershipId, tenantId, ACTIVE_STATUS)
+            .orElseThrow(() -> {
+                log.warn(
+                    "成员角色调整失败：成员关系不存在 tenantId={} operatorUserId={} membershipId={} requestId={}",
+                    tenantId,
+                    operatorUserId,
+                    membershipId,
+                    RequestIds.current()
+                );
+                return new ApiException(HttpStatus.NOT_FOUND, "ORG_MEMBERSHIP_NOT_FOUND", "成员关系不存在或已停用");
+            });
+
+        UUID roleId = request.roleId();
+        roleRepository.findByIdAndTenantIdAndStatus(roleId, tenantId, ACTIVE_STATUS)
+            .orElseThrow(() -> {
+                log.warn(
+                    "成员角色调整失败：角色不可用 tenantId={} operatorUserId={} membershipId={} roleId={} requestId={}",
+                    tenantId,
+                    operatorUserId,
+                    membershipId,
+                    roleId,
+                    RequestIds.current()
+                );
+                return new ApiException(HttpStatus.BAD_REQUEST, "ORG_ROLE_NOT_AVAILABLE", "所选角色不属于当前租户或已停用");
+            });
+
+        membership.assignRole(roleId);
+        userMembershipRepository.save(membership);
+        log.info(
+            "成员角色调整成功 tenantId={} operatorUserId={} membershipId={} roleId={} requestId={}",
+            tenantId,
+            operatorUserId,
+            membershipId,
+            roleId,
+            RequestIds.current()
+        );
+        return getOverview(tenantId);
+    }
+
+    @Transactional
+    public TenantOrganizationOverviewResponse updateMembershipDepartment(
+        UUID tenantId,
+        UUID operatorUserId,
+        UUID membershipId,
+        UpdateMembershipDepartmentRequest request
+    ) {
+        tenantRepository.findByIdAndStatus(tenantId, ACTIVE_STATUS)
+            .orElseThrow(() -> {
+                log.warn("成员部门调整失败：租户不可用 tenantId={} operatorUserId={} requestId={}", tenantId, operatorUserId, RequestIds.current());
+                return new ApiException(HttpStatus.NOT_FOUND, "TENANT_NOT_FOUND", "租户不存在或已停用");
+            });
+
+        UserMembershipEntity membership = userMembershipRepository.findByIdAndTenantIdAndStatus(membershipId, tenantId, ACTIVE_STATUS)
+            .orElseThrow(() -> {
+                log.warn(
+                    "成员部门调整失败：成员关系不存在 tenantId={} operatorUserId={} membershipId={} requestId={}",
+                    tenantId,
+                    operatorUserId,
+                    membershipId,
+                    RequestIds.current()
+                );
+                return new ApiException(HttpStatus.NOT_FOUND, "ORG_MEMBERSHIP_NOT_FOUND", "成员关系不存在或已停用");
+            });
+
+        UUID departmentId = request.departmentId();
+        if (departmentId != null) {
+            departmentRepository.findByIdAndTenantIdAndStatus(departmentId, tenantId, ACTIVE_STATUS)
+                .orElseThrow(() -> {
+                    log.warn(
+                        "成员部门调整失败：部门不可用 tenantId={} operatorUserId={} membershipId={} departmentId={} requestId={}",
+                        tenantId,
+                        operatorUserId,
+                        membershipId,
+                        departmentId,
+                        RequestIds.current()
+                    );
+                    return new ApiException(HttpStatus.BAD_REQUEST, "ORG_DEPARTMENT_NOT_AVAILABLE", "所选部门不属于当前租户或已停用");
+                });
+        }
+
+        membership.assignDepartment(departmentId);
+        userMembershipRepository.save(membership);
+        log.info(
+            "成员部门调整成功 tenantId={} operatorUserId={} membershipId={} departmentId={} requestId={}",
+            tenantId,
+            operatorUserId,
+            membershipId,
+            departmentId,
+            RequestIds.current()
+        );
         return getOverview(tenantId);
     }
 

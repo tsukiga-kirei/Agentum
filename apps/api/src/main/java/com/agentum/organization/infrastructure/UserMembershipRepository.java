@@ -2,6 +2,7 @@ package com.agentum.organization.infrastructure;
 
 import com.agentum.organization.domain.UserMembershipEntity;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -10,4 +11,6 @@ public interface UserMembershipRepository extends JpaRepository<UserMembershipEn
     List<UserMembershipEntity> findByUserIdAndTenantIdAndStatus(UUID userId, UUID tenantId, String status);
 
     List<UserMembershipEntity> findByTenantIdAndStatus(UUID tenantId, String status);
+
+    Optional<UserMembershipEntity> findByIdAndTenantIdAndStatus(UUID id, UUID tenantId, String status);
 }
