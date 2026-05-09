@@ -179,7 +179,7 @@ public class TenantOrganizationService {
                 return new ApiException(HttpStatus.NOT_FOUND, "TENANT_NOT_FOUND", "租户不存在或已停用");
             });
 
-        // 概览接口是权限管理页的聚合视图，不要求前端理解底层表结构；后续写动作仍按具体资源接口拆分。
+        // 概览接口是租户管理页的聚合视图，不要求前端理解底层表结构；后续写动作仍按具体资源接口拆分。
         List<UserMembershipEntity> memberships = userMembershipRepository.findByTenantIdAndStatus(tenantId, ACTIVE_STATUS);
         Map<UUID, UserAccount> usersById = userAccountRepository.findAllById(
                 memberships.stream().map(UserMembershipEntity::getUserId).collect(Collectors.toSet())

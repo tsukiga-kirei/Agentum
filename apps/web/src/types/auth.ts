@@ -4,8 +4,8 @@
 /** 主题模式 */
 export type ThemeMode = "light" | "dark";
 
-/** 登录入口类型：业务人员 / 空间管理员 / 系统管理员 */
-export type PortalType = "business" | "space_admin" | "system_admin";
+/** 登录入口类型：业务人员 / 租户管理员 / 系统管理员 */
+export type PortalType = "business" | "tenant_admin" | "system_admin";
 
 /** 登录页可选租户。后续由 GET /api/public/tenants 返回。 */
 export type TenantOption = {
@@ -17,7 +17,7 @@ export type TenantOption = {
 /** 用户角色 */
 export type UserRole =
   | "system_admin"
-  | "space_admin"
+  | "tenant_admin"
   | "designer"
   | "agent_admin"
   | "capability_admin"

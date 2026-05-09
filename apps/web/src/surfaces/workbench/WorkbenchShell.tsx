@@ -16,7 +16,7 @@ import {
   User,
   UserRoundCheck,
 } from "lucide-react";
-import { PermissionPage } from "../admin/PermissionPage";
+import { TenantManagementPage } from "../admin/TenantManagementPage";
 import { SystemManagementPage } from "../admin/SystemManagementPage";
 import { AssetsPage } from "../assets/AssetsPage";
 import { RunAuditPage } from "../audit/RunAuditPage";
@@ -26,7 +26,7 @@ import { AgentumMark } from "../../components/brand/AgentumMark";
 import { useAuthStore } from "../../stores/authStore";
 import type { UserRole } from "../../types/auth";
 
-type SurfaceKey = "workbench" | "designer" | "assets" | "audit" | "permission" | "system";
+type SurfaceKey = "workbench" | "designer" | "assets" | "audit" | "tenant" | "system";
 
 type NavigationItem = {
   key: SurfaceKey;
@@ -80,28 +80,28 @@ const navigationItems: NavigationItem[] = [
     label: "流程设计",
     description: "画布与节点配置",
     icon: GitBranch,
-    visibleFor: ["designer", "agent_admin", "capability_admin", "space_admin", "system_admin"],
+    visibleFor: ["designer", "agent_admin", "capability_admin", "tenant_admin", "system_admin"],
   },
   {
     key: "assets",
     label: "能力资产",
     description: "智能体、Skills、MCP",
     icon: Library,
-    visibleFor: ["designer", "agent_admin", "capability_admin", "space_admin", "system_admin"],
+    visibleFor: ["designer", "agent_admin", "capability_admin", "tenant_admin", "system_admin"],
   },
   {
     key: "audit",
     label: "运行审计",
     description: "只读证据链",
     icon: Activity,
-    visibleFor: ["reviewer", "space_admin", "system_admin"],
+    visibleFor: ["reviewer", "tenant_admin", "system_admin"],
   },
   {
-    key: "permission",
-    label: "权限管理",
-    description: "人员、部门、角色",
+    key: "tenant",
+    label: "租户管理",
+    description: "人员、角色、权限",
     icon: ShieldCheck,
-    visibleFor: ["space_admin", "system_admin"],
+    visibleFor: ["tenant_admin", "system_admin"],
   },
   {
     key: "system",
@@ -233,7 +233,7 @@ export function WorkbenchShell() {
   const logout = useAuthStore((s) => s.logout);
   const isDarkMode = themeMode === "dark";
   const currentRole = user?.role ?? "executor";
-  const canDesignWorkflow = ["designer", "agent_admin", "capability_admin", "space_admin", "system_admin"].includes(currentRole);
+  const canDesignWorkflow = ["designer", "agent_admin", "capability_admin", "tenant_admin", "system_admin"].includes(currentRole);
   const canOpenSystemManagement = currentRole === "system_admin";
   const visibleNavigationItems = navigationItems.filter((item) => !item.visibleFor || item.visibleFor.includes(currentRole));
 
@@ -520,7 +520,7 @@ export function WorkbenchShell() {
 
           {activeSurface === "audit" ? <RunAuditPage /> : null}
 
-          {activeSurface === "permission" ? <PermissionPage /> : null}
+          {activeSurface === "tenant" ? <TenantManagementPage /> : null}
 
           {activeSurface === "system" ? <SystemManagementPage /> : null}
         </section>

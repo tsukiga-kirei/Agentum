@@ -23,10 +23,10 @@ const portals: Array<{
     color: "#4f46e5",
   },
   {
-    key: "space_admin",
+    key: "tenant_admin",
     icon: Settings,
-    label: "空间管理",
-    description: "管理空间成员、资产和权限策略",
+    label: "租户管理",
+    description: "管理租户成员、角色权限和需求配置",
     color: "#f59e0b",
   },
   {

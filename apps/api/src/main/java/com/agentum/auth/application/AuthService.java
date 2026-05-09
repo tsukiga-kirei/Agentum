@@ -171,7 +171,7 @@ public class AuthService {
     }
 
     private AuthSession resolveTenantSession(UserAccount user, PortalType portal, UUID tenantId) {
-        // 业务和空间管理入口必须锁定租户成员关系，避免用户仅凭前端入口访问其他租户。
+        // 业务和租户管理入口必须锁定租户成员关系，避免用户仅凭前端入口访问其他租户。
         TenantEntity tenant = tenantRepository.findByIdAndStatus(tenantId, ACTIVE_STATUS)
             .orElseThrow(() -> {
                 log.warn("租户入口登录失败：租户不可用 userId={} portal={} tenantId={} requestId={}", user.getId(), portal.code(), tenantId, RequestIds.current());
@@ -219,7 +219,6 @@ public class AuthService {
     private static String toClientRole(String roleCode) {
         return switch (roleCode.toLowerCase(Locale.ROOT)) {
             case "workflow_designer" -> "designer";
-            case "tenant_admin" -> "space_admin";
             default -> roleCode;
         };
     }

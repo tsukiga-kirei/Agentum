@@ -8,7 +8,7 @@ import org.springframework.http.HttpStatus;
 // 登录入口决定首屏和允许角色范围；它只是入口约束，不能替代后续资源级权限判断。
 public enum PortalType {
     BUSINESS("business", Set.of("executor", "reviewer", "workflow_designer", "agent_admin", "capability_admin", "observer")),
-    SPACE_ADMIN("space_admin", Set.of("space_admin", "tenant_admin")),
+    TENANT_ADMIN("tenant_admin", Set.of("tenant_admin")),
     SYSTEM_ADMIN("system_admin", Set.of("system_admin"));
 
     private final String code;

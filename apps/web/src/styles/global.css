@@ -684,7 +684,7 @@ textarea:focus-visible {
   --login-portal-color: #4f46e5;
 }
 
-.login-portal-segmented--space_admin {
+.login-portal-segmented--tenant_admin {
   --login-portal-color: #f59e0b;
 }
 
@@ -762,7 +762,7 @@ textarea:focus-visible {
   --login-portal-color: #4f46e5;
 }
 
-.login-portal-description--space_admin {
+.login-portal-description--tenant_admin {
   --login-portal-color: #f59e0b;
 }
 

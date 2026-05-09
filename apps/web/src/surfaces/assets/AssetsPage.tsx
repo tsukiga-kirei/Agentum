@@ -51,7 +51,7 @@ const agentTemplates: AgentTemplateAsset[] = [
 const mcpServices: McpServiceAsset[] = [
   { id: "mcp_file_reader", name: "文件读取 MCP", version: "v1", riskLevel: "medium", authorizedRoles: ["流程设计者", "执行人"], auditRequired: true },
   { id: "mcp_doc_generator", name: "文档生成 MCP", version: "v1", riskLevel: "medium", authorizedRoles: ["流程设计者"], auditRequired: true },
-  { id: "mcp_mail_sender", name: "邮件发送 MCP", version: "v1", riskLevel: "high", authorizedRoles: ["空间管理员", "流程设计者"], auditRequired: true },
+  { id: "mcp_mail_sender", name: "邮件发送 MCP", version: "v1", riskLevel: "high", authorizedRoles: ["租户管理员", "流程设计者"], auditRequired: true },
 ];
 
 const promptTemplates: PromptTemplateAsset[] = [
@@ -154,7 +154,7 @@ export function AssetsPage() {
         </div>
 
         <div className="agent-card">
-          <SectionHeader icon={DatabaseZap} title="MCP 服务" description="外部系统和工具调用能力，具体授权由系统管理和权限管理控制" actionLabel="新增 MCP" />
+          <SectionHeader icon={DatabaseZap} title="MCP 服务" description="外部系统和工具调用能力，具体授权由系统管理和租户管理控制" actionLabel="新增 MCP" />
           <div className="space-y-4 p-4">
             {mcpServices.map((mcp) => (
               <article key={mcp.id} className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-3">

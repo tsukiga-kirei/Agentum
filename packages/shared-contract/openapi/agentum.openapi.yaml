@@ -90,7 +90,7 @@ paths:
   /api/admin/tenants/{tenantId}/organization/overview:
     get:
       summary: 获取租户人员组织概览
-      description: 权限管理页使用的租户人员、部门、角色和成员关系聚合视图。
+      description: 租户管理页使用的租户人员、部门、角色和成员关系聚合视图。
       tags:
         - Organization
       security:
@@ -264,7 +264,7 @@ components:
           format: password
         portal:
           type: string
-          enum: [business, space_admin, system_admin]
+          enum: [business, tenant_admin, system_admin]
         tenantId:
           type: string
           format: uuid
@@ -299,7 +299,7 @@ components:
           type: string
         role:
           type: string
-          enum: [system_admin, space_admin, designer, agent_admin, capability_admin, reviewer, executor, observer]
+          enum: [system_admin, tenant_admin, designer, agent_admin, capability_admin, reviewer, executor, observer]
         tenantId:
           type: string
           format: uuid

@@ -68,7 +68,7 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     }
 
     try {
-      // 系统管理员入口不绑定租户；业务和空间入口必须把租户交给后端重新校验成员关系和入口角色。
+      // 系统管理员入口不绑定租户；业务和租户管理入口必须把租户交给后端重新校验成员关系和入口角色。
       const response = await authApi.login({
         username,
         password,

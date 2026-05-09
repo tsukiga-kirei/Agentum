@@ -9,7 +9,7 @@ Agentum 是一个以智能体为载体的企业工作流平台。它不是把所
 已具备：
 
 - React + TypeScript 前端工作台骨架。
-- 登录页、租户选择、业务工作台、流程设计、能力资产、运行审计、权限管理的静态演示入口。
+- 登录页、租户选择、业务工作台、流程设计、能力资产、运行审计、租户管理的静态演示入口。
 - Spring Boot API 服务骨架。
 - PostgreSQL、Redis、RabbitMQ、MinIO、Mailpit 的本地开发 Compose 配置。
 - OpenAPI / JSON Schema 的共享契约占位。
@@ -20,7 +20,7 @@ Agentum 是一个以智能体为载体的企业工作流平台。它不是把所
 - 当前进度和后续任务独立记录到 `docs/progress/`。
 - 去掉知识库相关第一阶段范围，优先沉淀智能体模板、Skills、MCP、提示词模板和交付能力。
 - 补齐 `capabilities/` 能力源码目录，用于存放产品运行时 Skills、自研 MCP Server、提示词模板和交付适配实现。
-- 先补齐租户、用户、部门、角色、权限策略、模型配置和交付能力的基础框架。
+- 先补齐系统管理的租户与能力授权、租户管理的租户内组织权限、模型配置和交付能力的基础框架。
 
 详细阶段记录见 [docs/progress/README.md](./docs/progress/README.md)。
 

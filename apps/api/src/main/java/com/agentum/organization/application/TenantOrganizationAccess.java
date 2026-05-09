@@ -14,7 +14,7 @@ import org.springframework.stereotype.Component;
 public class TenantOrganizationAccess {
 
     private static final Logger log = LoggerFactory.getLogger(TenantOrganizationAccess.class);
-    private static final Set<String> TENANT_ADMIN_ROLES = Set.of("tenant_admin", "space_admin", "system_admin");
+    private static final Set<String> TENANT_ADMIN_ROLES = Set.of("tenant_admin", "system_admin");
 
     public void assertCanManageTenant(CurrentUserPrincipal principal, UUID tenantId) {
         if (principal == null) {

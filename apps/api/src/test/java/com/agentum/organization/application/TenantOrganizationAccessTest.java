@@ -28,14 +28,14 @@ class TenantOrganizationAccessTest {
     }
 
     @Test
-    void shouldAllowSpaceAdminInsideOwnTenant() {
+    void shouldAllowTenantAdminInsideOwnTenant() {
         UUID tenantId = UUID.fromString("00000000-0000-0000-0000-000000000101");
         CurrentUserPrincipal principal = new CurrentUserPrincipal(
             UUID.fromString("00000000-0000-0000-0000-000000000004"),
-            "spaceadmin",
+            "tenantadmin",
             tenantId,
-            "space_admin",
-            "space_admin",
+            "tenant_admin",
+            "tenant_admin",
             "默认空间"
         );
 
@@ -65,10 +65,10 @@ class TenantOrganizationAccessTest {
     void shouldRejectCrossTenantAccess() {
         CurrentUserPrincipal principal = new CurrentUserPrincipal(
             UUID.fromString("00000000-0000-0000-0000-000000000004"),
-            "spaceadmin",
+            "tenantadmin",
             UUID.fromString("00000000-0000-0000-0000-000000000101"),
-            "space_admin",
-            "space_admin",
+            "tenant_admin",
+            "tenant_admin",
             "默认空间"
         );
 
