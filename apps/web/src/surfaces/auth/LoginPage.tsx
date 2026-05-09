@@ -1,5 +1,5 @@
-import { FormEvent, useEffect, useState } from "react";
-import { ConfigProvider, Select, theme as antdTheme } from "antd";
+import { useCallback, useEffect, useState } from "react";
+import { Button, Checkbox, ConfigProvider, Form, Input, Select, Segmented, message, theme as antdTheme } from "antd";
 import { Building2, KeyRound, LayoutDashboard, Settings, Shield, User } from "lucide-react";
 import { useAuthStore } from "../../stores/authStore";
 import { ThemeToggle } from "../../components/ThemeToggle";
@@ -38,6 +38,13 @@ const portals: Array<{
   },
 ];
 
+type LoginFormValues = {
+  tenantId?: string;
+  username?: string;
+  password?: string;
+  rememberMe?: boolean;
+};
+
 export function LoginPage() {
   const tenants = useAuthStore((s) => s.tenants);
   const tenantsLoading = useAuthStore((s) => s.tenantsLoading);
@@ -46,16 +53,26 @@ export function LoginPage() {
   const themeMode = useAuthStore((s) => s.themeMode);
   const isDark = themeMode === "dark";
 
+  const [form] = Form.useForm<LoginFormValues>();
   const [activePortal, setActivePortal] = useState<PortalType>("business");
-  const [tenantId, setTenantId] = useState("");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [rememberMe, setRememberMe] = useState(false);
+  const [messageApi, messageContextHolder] = message.useMessage();
 
   const currentPortal = portals.find((p) => p.key === activePortal) ?? portals[0];
   const shouldSelectTenant = activePortal !== "system_admin";
+  const portalOptions = portals.map((portal) => {
+    const Icon = portal.icon;
+
+    return {
+      value: portal.key,
+      label: (
+        <span className="login-portal-option">
+          <Icon className="login-portal-option-icon" aria-hidden="true" />
+          <span>{portal.label}</span>
+        </span>
+      ),
+    };
+  });
   const tenantOptions = tenants.map((tenant) => ({
     value: tenant.id,
     label: (
@@ -66,48 +83,64 @@ export function LoginPage() {
     ),
   }));
 
+  const showLoginError = useCallback((content: string) => {
+    void messageApi.open({
+      key: "login-error",
+      type: "error",
+      content,
+      duration: 3,
+    });
+  }, [messageApi]);
+
+  const clearLoginError = useCallback(() => {
+    messageApi.destroy("login-error");
+  }, [messageApi]);
+
   useEffect(() => {
     let active = true;
 
     fetchTenants()
       .catch((tenantError) => {
         if (active) {
-          setError(tenantError instanceof Error ? tenantError.message : "无法加载租户列表");
+          showLoginError(tenantError instanceof Error ? tenantError.message : "无法加载租户列表");
         }
       });
 
     return () => {
       active = false;
     };
-  }, [fetchTenants]);
+  }, [fetchTenants, showLoginError]);
 
   useEffect(() => {
-    if (!tenantId && tenants[0]) {
-      setTenantId(tenants[0].id);
+    if (!form.getFieldValue("tenantId") && tenants[0]) {
+      form.setFieldValue("tenantId", tenants[0].id);
     }
-  }, [tenantId, tenants]);
+  }, [form, tenants]);
 
   function handlePortalChange(portal: PortalType) {
     setActivePortal(portal);
-    setError("");
+    clearLoginError();
   }
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError("");
+  async function handleSubmit(values: LoginFormValues) {
+    clearLoginError();
+
+    const username = values.username?.trim() ?? "";
+    const password = values.password?.trim() ?? "";
+    const tenantId = shouldSelectTenant ? values.tenantId : undefined;
 
     if (shouldSelectTenant && !tenantId) {
-      setError("请选择租户");
+      showLoginError("请选择租户");
       return;
     }
 
     if (!username.trim()) {
-      setError("请输入用户名");
+      showLoginError("请输入用户名");
       return;
     }
 
     if (!password.trim()) {
-      setError("请输入密码");
+      showLoginError("请输入密码");
       return;
     }
 
@@ -117,7 +150,7 @@ export function LoginPage() {
       const result = await login(username, password, activePortal, shouldSelectTenant ? tenantId : undefined);
 
       if (!result.success) {
-        setError(result.message ?? (shouldSelectTenant ? "租户、用户名或密码不正确" : "用户名或密码不正确"));
+        showLoginError(result.message ?? (shouldSelectTenant ? "租户、用户名或密码不正确" : "用户名或密码不正确"));
       }
     } finally {
       setLoading(false);
@@ -134,7 +167,7 @@ export function LoginPage() {
       </div>
 
       {/* 右上角主题切换（与 AuraOA 一致） */}
-      <div style={{ position: "absolute", top: 20, right: 20, zIndex: 10 }}>
+      <div className="login-theme-toggle">
         <ThemeToggle />
       </div>
 
@@ -142,20 +175,16 @@ export function LoginPage() {
       <div className="login-container">
         {/* 左侧品牌区 */}
         <div className="login-branding">
-          <div style={{ position: "relative", zIndex: 1 }}>
+          <div className="login-brand-content">
             <div className="login-brand-mark">
               <AgentumMark className="h-full w-full" variant="full" />
             </div>
-            <h1 style={{ fontSize: 28, fontWeight: 700, color: "#fff", margin: "0 0 8px", letterSpacing: "-0.02em" }}>
-              Agentum
-            </h1>
-            <p style={{ fontSize: 15, color: "rgba(255,255,255,0.8)", margin: "0 0 36px" }}>
-              智能体装配式工作流平台
-            </p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <h1 className="login-brand-title">Agentum</h1>
+            <p className="login-brand-subtitle">智能体装配式工作流平台</p>
+            <div className="login-feature-list">
               {["原子能力独立管理与版本化", "工作流可审计执行与暂停恢复", "多智能体协作与交付闭环"].map((feature) => (
-                <div key={feature} style={{ display: "flex", alignItems: "center", gap: 10, color: "rgba(255,255,255,0.9)", fontSize: 13 }}>
-                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#22d3ee", flexShrink: 0 }} />
+                <div key={feature} className="login-feature-item">
+                  <span className="login-feature-dot" />
                   <span>{feature}</span>
                 </div>
               ))}
@@ -165,63 +194,22 @@ export function LoginPage() {
 
         {/* 右侧登录表单 */}
         <div className="login-form-side">
-          <div style={{ maxWidth: 420, width: "100%", margin: "0 auto" }}>
-            <h2 style={{ fontSize: 28, fontWeight: 700, color: "var(--color-text-primary)", margin: "0 0 8px" }}>
-              欢迎回来
-            </h2>
-            <p style={{ fontSize: 15, color: "var(--color-text-tertiary)", margin: "0 0 32px" }}>
-              选择身份入口并登录工作台
-            </p>
+          <div className="login-panel">
+            <h2 className="login-heading">欢迎回来</h2>
+            <p className="login-subheading">选择身份入口并登录工作台</p>
 
             {/* 入口选择器 - 药丸式 */}
-            <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-              {portals.map((portal) => {
-                const Icon = portal.icon;
-                const isActive = activePortal === portal.key;
-
-                return (
-                  <button
-                    key={portal.key}
-                    type="button"
-                    onClick={() => handlePortalChange(portal.key)}
-                    style={{
-                      flex: "1 1 0",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 6,
-                      padding: "12px 8px",
-                      border: isActive ? `1.5px solid ${portal.color}` : "1.5px solid var(--color-border)",
-                      borderRadius: "var(--radius-lg)",
-                      background: isActive ? `color-mix(in srgb, ${portal.color} 8%, var(--color-bg-card))` : "var(--color-bg-card)",
-                      boxShadow: isActive ? `0 0 0 1px color-mix(in srgb, ${portal.color} 16%, transparent)` : "none",
-                      cursor: "pointer",
-                      transition: "all 0.25s ease",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    <Icon
-                      className="h-5 w-5"
-                      style={{ color: isActive ? portal.color : "var(--color-text-tertiary)" }}
-                      aria-hidden="true"
-                    />
-                    <span
-                      style={{
-                        fontSize: 14,
-                        fontWeight: isActive ? 600 : 500,
-                        color: isActive ? portal.color : "var(--color-text-secondary)",
-                      }}
-                    >
-                      {portal.label}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+            <Segmented
+              block
+              className={`login-portal-segmented login-portal-segmented--${activePortal}`}
+              options={portalOptions}
+              value={activePortal}
+              onChange={(value) => handlePortalChange(value as PortalType)}
+            />
 
             {/* 当前入口描述 */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--color-text-tertiary)", marginBottom: 24, padding: "0 4px" }}>
-              <span style={{ width: 6, height: 6, borderRadius: "50%", background: currentPortal.color, flexShrink: 0 }} />
+            <div className={`login-portal-description login-portal-description--${activePortal}`}>
+              <span className="login-portal-description-dot" />
               {currentPortal.description}
             </div>
 
@@ -248,9 +236,16 @@ export function LoginPage() {
                 },
               }}
             >
-              <form onSubmit={handleSubmit}>
+              {messageContextHolder}
+              <Form
+                form={form}
+                className="login-form"
+                initialValues={{ rememberMe: false }}
+                onFinish={handleSubmit}
+                onValuesChange={clearLoginError}
+              >
                 {shouldSelectTenant ? (
-                  <div style={{ marginBottom: 16 }}>
+                  <Form.Item name="tenantId">
                     <Select
                       aria-label="选择租户"
                       className="agent-tenant-select"
@@ -260,118 +255,60 @@ export function LoginPage() {
                       prefix={<Building2 className="h-5 w-5 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
                       loading={tenantsLoading}
                       disabled={tenantsLoading}
-                      value={tenantId || undefined}
-                      onChange={(value) => { setTenantId(value); setError(""); }}
                     />
-                  </div>
+                  </Form.Item>
                 ) : null}
 
-                <div style={{ marginBottom: 16 }}>
-                  <div style={{ position: "relative" }}>
-                    <User
-                      className="h-5 w-5"
-                      style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--color-text-tertiary)" }}
-                      aria-hidden="true"
-                    />
-                    <input
-                      value={username}
-                      onChange={(e) => { setUsername(e.target.value); setError(""); }}
-                      className="agent-input"
-                      placeholder="用户名"
-                      autoComplete="username"
-                      style={{ width: "100%", height: 48, paddingLeft: 44, paddingRight: 16, fontSize: 15 }}
-                    />
-                  </div>
-                </div>
+                <Form.Item name="username">
+                  <Input
+                    autoComplete="username"
+                    className="login-ant-input"
+                    placeholder="用户名"
+                    prefix={<User className="login-input-icon" aria-hidden="true" />}
+                  />
+                </Form.Item>
 
-                <div style={{ marginBottom: 16 }}>
-                  <div style={{ position: "relative" }}>
-                    <KeyRound
-                      className="h-5 w-5"
-                      style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--color-text-tertiary)" }}
-                      aria-hidden="true"
-                    />
-                    <input
-                      type="password"
-                      value={password}
-                      onChange={(e) => { setPassword(e.target.value); setError(""); }}
-                      className="agent-input"
-                      placeholder="密码"
-                      autoComplete="current-password"
-                      style={{ width: "100%", height: 48, paddingLeft: 44, paddingRight: 16, fontSize: 15 }}
-                    />
-                  </div>
-                </div>
+                <Form.Item name="password">
+                  <Input.Password
+                    autoComplete="current-password"
+                    className="login-ant-input"
+                    placeholder="密码"
+                    prefix={<KeyRound className="login-input-icon" aria-hidden="true" />}
+                  />
+                </Form.Item>
 
                 {/* 记住我 */}
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14, color: "var(--color-text-secondary)", cursor: "pointer" }}>
-                    <input
-                      type="checkbox"
-                      checked={rememberMe}
-                      onChange={(e) => setRememberMe(e.target.checked)}
-                      style={{ accentColor: "var(--color-primary)", width: 16, height: 16 }}
-                    />
-                    记住我
-                  </label>
-                  <button type="button" style={{ border: "none", background: "none", fontSize: 14, color: "var(--color-primary)", cursor: "pointer", padding: 0 }}>
+                <div className="login-form-actions">
+                  <Form.Item name="rememberMe" valuePropName="checked" noStyle>
+                    <Checkbox>记住我</Checkbox>
+                  </Form.Item>
+                  <Button type="link" className="login-forgot-button">
                     忘记密码？
-                  </button>
+                  </Button>
                 </div>
 
-                {/* 错误提示 */}
-                {error ? (
-                  <div style={{
-                    padding: "10px 14px",
-                    borderRadius: "var(--radius-md)",
-                    border: "1px solid var(--color-danger)",
-                    background: "var(--color-danger-bg)",
-                    color: "var(--color-danger)",
-                    fontSize: 13,
-                    marginBottom: 16,
-                  }}>
-                    {error}
-                  </div>
-                ) : null}
-
                 {/* 登录按钮 */}
-                <button
-                  type="submit"
-                  disabled={loading}
-                  style={{
-                    width: "100%",
-                    height: 48,
-                    borderRadius: "var(--radius-md)",
-                    border: "none",
-                    background: `linear-gradient(135deg, ${currentPortal.color}, ${currentPortal.color}dd)`,
-                    color: "#fff",
-                    fontSize: 16,
-                    fontWeight: 600,
-                    cursor: loading ? "wait" : "pointer",
-                    opacity: loading ? 0.7 : 1,
-                    boxShadow: `0 4px 14px ${currentPortal.color}40`,
-                    transition: "all 0.3s ease",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 8,
-                  }}
+                <Button
+                  block
+                  className="login-submit-button"
+                  htmlType="submit"
+                  loading={loading}
+                  size="large"
+                  type="primary"
                 >
-                  {loading ? "登录中…" : `以${currentPortal.label}身份登录`}
-                </button>
-              </form>
+                  {`以${currentPortal.label}身份登录`}
+                </Button>
+              </Form>
             </ConfigProvider>
 
             {/* SSO 占位 */}
-            <div style={{ marginTop: 24, textAlign: "center" }}>
-              <p style={{ fontSize: 13, color: "var(--color-text-tertiary)" }}>
-                企业 SSO 登录即将支持
-              </p>
+            <div className="login-sso-placeholder">
+              <p>企业 SSO 登录即将支持</p>
             </div>
 
             {/* 页脚 */}
-            <div style={{ textAlign: "center", marginTop: 32, color: "var(--color-text-tertiary)", fontSize: 13 }}>
-              Agentum © 2025
+            <div className="login-footer">
+              Agentum © 2026
             </div>
           </div>
         </div>

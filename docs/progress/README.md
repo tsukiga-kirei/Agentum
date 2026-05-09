@@ -253,3 +253,7 @@
 | 2026-05-08 | `pnpm build:web` | 通过：全代码注释补充后复验；Vite 提示 Ant Design vendor chunk 超过 500 kB |
 | 2026-05-08 | `git diff --check` | 通过：全代码注释补充后复验 |
 | 2026-05-08 | `gradle :apps:api:test --no-daemon` / Docker Gradle 镜像 | 未执行成功：本机未安装 Gradle，Docker daemon 未启动 |
+| 2026-05-09 | `pnpm --filter @agentum/web lint` | 通过：登录页表单切换为 Ant Design 组件、错误提示改为 `message` 后复验 |
+| 2026-05-09 | `pnpm --filter @agentum/web build` | 通过：登录页表单切换为 Ant Design 组件后复验；Vite 提示 Ant Design vendor chunk 超过 500 kB |
+| 2026-05-09 | `./gradlew :apps:api:test --no-daemon` | 通过：仓库已具备 Gradle Wrapper，本地 API 单元测试可直接通过 wrapper 执行 |
+| 2026-05-09 | `git diff --check` | 通过：登录页样式和验证记录更新后复验 |
