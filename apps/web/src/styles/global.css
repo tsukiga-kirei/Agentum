@@ -269,6 +269,28 @@ textarea:focus-visible {
 }
 
 /* Ant Design 组件桥接层：组件库负责复杂交互，Agentum 继续用本地 token 统一视觉。 */
+
+/* 系统管理页内表格：与卡片背景融合，表头弱化、行 hover 使用主题 hover 色 */
+.agent-system-admin-table .ant-table {
+  background: transparent;
+}
+
+.agent-system-admin-table .ant-table-thead > tr > th {
+  background: var(--color-bg-hover) !important;
+  color: var(--color-text-secondary);
+  font-weight: 600;
+  font-size: 12px;
+  border-bottom: 1px solid var(--color-border-light) !important;
+}
+
+.agent-system-admin-table .ant-table-tbody > tr > td {
+  border-color: var(--color-border-light);
+}
+
+.agent-system-admin-table .ant-table-tbody > tr:hover > td {
+  background: var(--color-bg-hover) !important;
+}
+
 .agent-tenant-select {
   width: 100%;
 }
@@ -776,6 +798,59 @@ textarea:focus-visible {
   flex-shrink: 0;
   border-radius: 999px;
   background: var(--login-portal-color);
+}
+
+/* 系统管理：模块切换复用登录 Segmented；模块较多时横向滑动，避免挤扁文案 */
+.system-mgmt-module-switch {
+  width: 100%;
+}
+
+.system-mgmt-module-switch .login-portal-description {
+  margin-bottom: 12px;
+}
+
+/* 系统管理页头图标：与登录「系统管理」入口同色点缀 */
+.system-mgmt-page-mark {
+  border: 1px solid color-mix(in srgb, #dc2626 22%, var(--color-border));
+  background: color-mix(in srgb, #dc2626 9%, var(--color-bg-card));
+  color: #dc2626;
+  box-shadow: var(--shadow-xs);
+}
+
+.dark .system-mgmt-page-mark {
+  border-color: color-mix(in srgb, #dc2626 35%, var(--color-border));
+  background: color-mix(in srgb, #dc2626 14%, var(--color-bg-card));
+  color: color-mix(in srgb, #f87171 90%, #ffffff);
+}
+
+.system-mgmt-segmented-scroll {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.system-mgmt-segmented-scroll .system-mgmt-segmented.ant-segmented {
+  width: max-content;
+}
+
+.system-mgmt-segmented.login-portal-segmented .ant-segmented-item {
+  min-height: 42px;
+  margin-right: 8px;
+}
+
+.system-mgmt-segmented.login-portal-segmented .ant-segmented-item:last-child {
+  margin-right: 0;
+}
+
+.system-mgmt-segmented.login-portal-segmented .ant-segmented-item-label {
+  min-height: 42px;
+  padding: 0 8px;
+}
+
+.system-mgmt-segmented.login-portal-segmented .ant-segmented-thumb {
+  border-radius: 999px;
 }
 
 .login-form .ant-form-item {

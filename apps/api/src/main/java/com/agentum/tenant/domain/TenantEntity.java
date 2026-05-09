@@ -48,4 +48,12 @@ public class TenantEntity {
     public String getStatus() {
         return status;
     }
+
+    /**
+     * 平台系统管理员调整租户可用状态；公开租户列表仅展示 active，suspended 用于暂停租户登录与资源写入。
+     */
+    public void applyPlatformStatus(String newStatus, Instant updatedAt) {
+        this.status = newStatus;
+        this.updatedAt = updatedAt;
+    }
 }

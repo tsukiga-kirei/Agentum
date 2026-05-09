@@ -10,5 +10,9 @@ public interface TenantRepository extends JpaRepository<TenantEntity, UUID> {
 
     List<TenantEntity> findByStatusOrderByNameAsc(String status);
 
+    List<TenantEntity> findAllByOrderByNameAsc();
+
+    long countByStatus(String status);
+
     Optional<TenantEntity> findByIdAndStatus(UUID id, String status);
 }

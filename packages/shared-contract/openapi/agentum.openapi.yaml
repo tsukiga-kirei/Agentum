@@ -200,6 +200,268 @@ paths:
           description: 未登录或令牌无效
         "403":
           description: 当前账号不能管理该租户
+  /api/system/summary:
+    get:
+      summary: 系统管理概览统计
+      description: 平台级统计，仅供 system_admin 使用。
+      tags:
+        - System
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 统计信息
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/SystemSummary"
+        "401":
+          description: 未登录或令牌无效
+        "403":
+          description: 当前账号不是系统管理员
+  /api/system/tenants:
+    get:
+      summary: 列出全部租户
+      tags:
+        - System
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 租户列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/SystemTenantRow"
+        "401":
+          description: 未登录或令牌无效
+        "403":
+          description: 当前账号不是系统管理员
+  /api/system/tenants/{tenantId}/status:
+    patch:
+      summary: 更新租户可用状态
+      description: active 表示正常；suspended 表示暂停登录与业务写入。公开租户列表仍只展示 active。
+      tags:
+        - System
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTenantStatusRequest"
+      responses:
+        "200":
+          description: 更新后的租户摘要
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/SystemTenantRow"
+        "400":
+          description: 状态取值非法
+        "401":
+          description: 未登录或令牌无效
+        "403":
+          description: 当前账号不是系统管理员
+        "404":
+          description: 租户不存在
+  /api/system/model-providers:
+    get:
+      summary: 列出模型供应商
+      tags:
+        - System
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 模型供应商列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/ModelProviderRow"
+        "401":
+          description: 未登录或令牌无效
+        "403":
+          description: 当前账号不是系统管理员
+    post:
+      summary: 注册模型供应商
+      tags:
+        - System
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateModelProviderRequest"
+      responses:
+        "200":
+          description: 已创建的供应商
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/ModelProviderRow"
+        "401":
+          description: 未登录或令牌无效
+        "403":
+          description: 当前账号不是系统管理员
+  /api/system/capabilities:
+    get:
+      summary: 列出系统级能力
+      tags:
+        - System
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 能力列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/SystemCapabilityRow"
+        "401":
+          description: 未登录或令牌无效
+        "403":
+          description: 当前账号不是系统管理员
+    post:
+      summary: 注册系统级能力
+      tags:
+        - System
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSystemCapabilityRequest"
+      responses:
+        "200":
+          description: 已创建的能力
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/SystemCapabilityRow"
+        "401":
+          description: 未登录或令牌无效
+        "403":
+          description: 当前账号不是系统管理员
+        "409":
+          description: 能力编码与版本已存在
+  /api/system/tenant-capability-grants:
+    get:
+      summary: 列出租户能力授权
+      tags:
+        - System
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 授权列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/TenantCapabilityGrantRow"
+        "401":
+          description: 未登录或令牌无效
+        "403":
+          description: 当前账号不是系统管理员
+    post:
+      summary: 新增租户能力授权
+      tags:
+        - System
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTenantCapabilityGrantRequest"
+      responses:
+        "200":
+          description: 已创建的授权
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/TenantCapabilityGrantRow"
+        "400":
+          description: 租户或能力不存在
+        "401":
+          description: 未登录或令牌无效
+        "403":
+          description: 当前账号不是系统管理员
+        "409":
+          description: 授权记录已存在
 components:
   securitySchemes:
     bearerAuth:
@@ -519,6 +781,187 @@ components:
         - spaceCode
         - defaultMembership
         - status
+    SystemSummary:
+      type: object
+      properties:
+        tenantTotal:
+          type: integer
+          format: int64
+        tenantActive:
+          type: integer
+          format: int64
+        modelProviderTotal:
+          type: integer
+          format: int64
+        systemCapabilityTotal:
+          type: integer
+          format: int64
+        tenantCapabilityGrantTotal:
+          type: integer
+          format: int64
+      required:
+        - tenantTotal
+        - tenantActive
+        - modelProviderTotal
+        - systemCapabilityTotal
+        - tenantCapabilityGrantTotal
+    SystemTenantRow:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        code:
+          type: string
+        status:
+          type: string
+      required:
+        - id
+        - name
+        - code
+        - status
+    UpdateTenantStatusRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          description: active 或 suspended
+      required:
+        - status
+    ModelProviderRow:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        providerType:
+          type: string
+        baseUrl:
+          type: string
+          nullable: true
+        defaultModel:
+          type: string
+          nullable: true
+        status:
+          type: string
+      required:
+        - id
+        - name
+        - providerType
+        - status
+    CreateModelProviderRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        providerType:
+          type: string
+        baseUrl:
+          type: string
+        defaultModel:
+          type: string
+        status:
+          type: string
+      required:
+        - name
+        - providerType
+    SystemCapabilityRow:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        capabilityType:
+          type: string
+        name:
+          type: string
+        code:
+          type: string
+        version:
+          type: string
+        riskLevel:
+          type: string
+        status:
+          type: string
+      required:
+        - id
+        - capabilityType
+        - name
+        - code
+        - version
+        - riskLevel
+        - status
+    CreateSystemCapabilityRequest:
+      type: object
+      properties:
+        capabilityType:
+          type: string
+        name:
+          type: string
+        code:
+          type: string
+        version:
+          type: string
+        riskLevel:
+          type: string
+        status:
+          type: string
+      required:
+        - capabilityType
+        - name
+        - code
+    TenantCapabilityGrantRow:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+          format: uuid
+        tenantName:
+          type: string
+        tenantCode:
+          type: string
+        capabilityId:
+          type: string
+          format: uuid
+        capabilityName:
+          type: string
+        capabilityCode:
+          type: string
+        capabilityType:
+          type: string
+        grantStatus:
+          type: string
+      required:
+        - id
+        - tenantId
+        - tenantName
+        - tenantCode
+        - capabilityId
+        - capabilityName
+        - capabilityCode
+        - capabilityType
+        - grantStatus
+    CreateTenantCapabilityGrantRequest:
+      type: object
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        capabilityId:
+          type: string
+          format: uuid
+        status:
+          type: string
+      required:
+        - tenantId
+        - capabilityId
     WorkflowDefinition:
       type: object
       description: 工作流定义草稿或发布版本的前后端共享结构。
