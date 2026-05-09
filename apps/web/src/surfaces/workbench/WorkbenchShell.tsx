@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Activity,
   Archive,
@@ -193,6 +193,16 @@ export function WorkbenchShell() {
     const firstMenu = menus[0];
     return (firstMenu?.key as SurfaceKey) ?? "workbench";
   });
+
+  useEffect(() => {
+    if (menus.length === 0) {
+      return;
+    }
+
+    if (!menus.some((menu) => menu.key === activeSurface)) {
+      setActiveSurface(menus[0].key as SurfaceKey);
+    }
+  }, [activeSurface, menus]);
 
   // 侧栏折叠属于工作台级偏好，后续接入用户设置 API 后应从服务端恢复并跨设备同步。
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);

@@ -3,14 +3,20 @@ package com.agentum.system.application;
 import com.agentum.shared.api.ApiException;
 import com.agentum.shared.api.RequestIds;
 import com.agentum.system.domain.ModelProviderEntity;
+import com.agentum.system.domain.ModelProviderTypeEntity;
 import com.agentum.system.domain.SystemCapabilityEntity;
 import com.agentum.system.domain.TenantCapabilityGrantEntity;
+import com.agentum.system.domain.TenantModelAssignmentEntity;
 import com.agentum.system.infrastructure.ModelProviderRepository;
+import com.agentum.system.infrastructure.ModelProviderTypeRepository;
 import com.agentum.system.infrastructure.SystemCapabilityRepository;
 import com.agentum.system.infrastructure.TenantCapabilityGrantRepository;
+import com.agentum.system.infrastructure.TenantModelAssignmentRepository;
 import com.agentum.system.interfaces.SystemManagementApi;
 import com.agentum.auth.domain.UserAccount;
+import com.agentum.auth.domain.UserRoleAssignmentEntity;
 import com.agentum.auth.infrastructure.UserAccountRepository;
+import com.agentum.auth.infrastructure.UserRoleAssignmentRepository;
 import com.agentum.organization.domain.DepartmentEntity;
 import com.agentum.organization.domain.UserMembershipEntity;
 import com.agentum.organization.infrastructure.DepartmentRepository;
@@ -21,6 +27,8 @@ import com.agentum.tenant.domain.TenantEntity;
 import com.agentum.tenant.infrastructure.TenantRepository;
 import java.time.Clock;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,12 +43,16 @@ public class SystemManagementService {
     private static final Logger log = LoggerFactory.getLogger(SystemManagementService.class);
     private static final String ACTIVE = "active";
     private static final String SUSPENDED = "suspended";
+    private static final Set<String> CAPABILITY_TYPES = Set.of("mcp", "skill", "prompt_template", "delivery");
 
     private final TenantRepository tenantRepository;
     private final ModelProviderRepository modelProviderRepository;
+    private final ModelProviderTypeRepository modelProviderTypeRepository;
     private final SystemCapabilityRepository systemCapabilityRepository;
     private final TenantCapabilityGrantRepository tenantCapabilityGrantRepository;
+    private final TenantModelAssignmentRepository tenantModelAssignmentRepository;
     private final UserAccountRepository userAccountRepository;
+    private final UserRoleAssignmentRepository userRoleAssignmentRepository;
     private final RoleRepository roleRepository;
     private final DepartmentRepository departmentRepository;
     private final UserMembershipRepository userMembershipRepository;
@@ -50,9 +62,12 @@ public class SystemManagementService {
     public SystemManagementService(
         TenantRepository tenantRepository,
         ModelProviderRepository modelProviderRepository,
+        ModelProviderTypeRepository modelProviderTypeRepository,
         SystemCapabilityRepository systemCapabilityRepository,
         TenantCapabilityGrantRepository tenantCapabilityGrantRepository,
+        TenantModelAssignmentRepository tenantModelAssignmentRepository,
         UserAccountRepository userAccountRepository,
+        UserRoleAssignmentRepository userRoleAssignmentRepository,
         RoleRepository roleRepository,
         DepartmentRepository departmentRepository,
         UserMembershipRepository userMembershipRepository,
@@ -61,9 +76,12 @@ public class SystemManagementService {
     ) {
         this.tenantRepository = tenantRepository;
         this.modelProviderRepository = modelProviderRepository;
+        this.modelProviderTypeRepository = modelProviderTypeRepository;
         this.systemCapabilityRepository = systemCapabilityRepository;
         this.tenantCapabilityGrantRepository = tenantCapabilityGrantRepository;
+        this.tenantModelAssignmentRepository = tenantModelAssignmentRepository;
         this.userAccountRepository = userAccountRepository;
+        this.userRoleAssignmentRepository = userRoleAssignmentRepository;
         this.roleRepository = roleRepository;
         this.departmentRepository = departmentRepository;
         this.userMembershipRepository = userMembershipRepository;
@@ -110,10 +128,9 @@ public class SystemManagementService {
         TenantEntity tenant = TenantEntity.create(request.name().trim(), request.code().trim(), clock.instant());
         tenantRepository.save(tenant);
 
-        // 2. 为该租户初始化基础内置角色（这里只初始化租户管理员即可，其他角色可由平台或后续脚本自动补全）
+        // 2. 为该租户初始化基础内置角色。roles 仍服务成员关系和资源授权，登录入口由 user_role_assignments 控制。
         RoleEntity tenantAdminRole = RoleEntity.create(tenant.getId(), "tenant_admin", "租户管理员", "tenant", "管理租户内配置与人员");
         roleRepository.save(tenantAdminRole);
-
         // 3. 创建默认部门
         DepartmentEntity defaultDept = DepartmentEntity.create(tenant.getId(), null, "默认部门", "default", 0);
         departmentRepository.save(defaultDept);
@@ -124,9 +141,10 @@ public class SystemManagementService {
         UserAccount adminUser = UserAccount.create(request.adminUsername().trim(), encodedPass, request.adminDisplayName().trim(), adminEmail);
         userAccountRepository.save(adminUser);
 
-        // 5. 绑定关系
+        // 5. 绑定成员关系，并同步写入统一登录角色分配表；否则新管理员只能出现在组织关系里，无法通过新认证模型登录。
         UserMembershipEntity membership = UserMembershipEntity.create(tenant.getId(), adminUser.getId(), defaultDept.getId(), tenantAdminRole.getId(), "默认空间");
         userMembershipRepository.save(membership);
+        userRoleAssignmentRepository.save(UserRoleAssignmentEntity.create(adminUser.getId(), "tenant_admin", tenant.getId(), tenant.getName() + " - 租户管理", true));
 
         log.info("系统管理创建租户及初始管理员成功 tenantId={} adminId={} requestId={}", tenant.getId(), adminUser.getId(), RequestIds.current());
         return new SystemManagementApi.TenantRow(tenant.getId(), tenant.getName(), tenant.getCode(), tenant.getStatus());
@@ -158,12 +176,25 @@ public class SystemManagementService {
             .toList();
     }
 
+    @Transactional(readOnly = true)
+    public List<SystemManagementApi.ModelProviderTypeRow> listModelProviderTypes() {
+        return modelProviderTypeRepository.findByStatusOrderByNameAsc(ACTIVE).stream()
+            .map(SystemManagementService::toModelProviderTypeRow)
+            .toList();
+    }
+
     @Transactional
     public SystemManagementApi.ModelProviderRow createModelProvider(SystemManagementApi.CreateModelProviderRequest request) {
+        ModelProviderTypeEntity providerType = modelProviderTypeRepository.findByCodeAndStatus(request.providerType().trim(), ACTIVE)
+            .orElseThrow(() -> {
+                log.warn("系统管理注册模型供应商失败：供应商类型不可用 providerType={} requestId={}", request.providerType(), RequestIds.current());
+                return new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_MODEL_PROVIDER_TYPE_INVALID", "模型供应商类型不存在或已停用");
+            });
+
         ModelProviderEntity entity = ModelProviderEntity.create(
             request.name().trim(),
-            request.providerType().trim(),
-            request.baseUrl() == null ? null : request.baseUrl().trim(),
+            providerType.getCode(),
+            firstNonBlank(request.baseUrl(), providerType.getDefaultBaseUrl()),
             request.defaultModel() == null ? null : request.defaultModel().trim(),
             request.status() == null ? null : request.status().trim(),
             clock.instant()
@@ -189,6 +220,11 @@ public class SystemManagementService {
     @Transactional
     public SystemManagementApi.CapabilityRow createCapability(SystemManagementApi.CreateCapabilityRequest request) {
         String version = request.version() == null ? "v1" : request.version().trim();
+        String capabilityType = request.capabilityType().trim();
+        if (!CAPABILITY_TYPES.contains(capabilityType)) {
+            log.warn("系统管理注册能力失败：能力类型不在全局能力范围 capabilityType={} requestId={}", capabilityType, RequestIds.current());
+            throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_CAPABILITY_TYPE_INVALID", "全局能力类型只能是 MCP、Skill、提示词模板或交付能力");
+        }
         if (systemCapabilityRepository.findByCodeAndVersion(request.code().trim(), version).isPresent()) {
             log.warn(
                 "系统管理注册能力失败：编码与版本已存在 code={} version={} requestId={}",
@@ -200,12 +236,13 @@ public class SystemManagementService {
         }
 
         SystemCapabilityEntity entity = SystemCapabilityEntity.create(
-            request.capabilityType().trim(),
+            capabilityType,
             request.name().trim(),
             request.code().trim(),
             version,
             request.riskLevel() == null ? null : request.riskLevel().trim(),
             request.status() == null ? null : request.status().trim(),
+            sanitizeCapabilityConfig(capabilityType, request.config()),
             clock.instant()
         );
         systemCapabilityRepository.save(entity);
@@ -217,6 +254,34 @@ public class SystemManagementService {
             RequestIds.current()
         );
         return toCapabilityRow(entity);
+    }
+
+    @Transactional(readOnly = true)
+    public SystemManagementApi.CapabilityTestResult testCapability(UUID capabilityId) {
+        SystemCapabilityEntity capability = systemCapabilityRepository.findById(capabilityId)
+            .orElseThrow(() -> {
+                log.warn("系统管理测试能力失败：能力不存在 capabilityId={} requestId={}", capabilityId, RequestIds.current());
+                return new ApiException(HttpStatus.NOT_FOUND, "SYSTEM_CAPABILITY_NOT_FOUND", "系统能力不存在");
+            });
+
+        // 当前阶段尚未接入真实 MCP 网关和 Skill 运行沙箱。这里先做配置形态校验，并返回可展示的接口发现占位；
+        // 后续替换为 MCP initialize + tools/list、Skill manifest 校验和交付适配器健康检查。
+        SystemManagementApi.CapabilityTestResult result = switch (capability.getCapabilityType()) {
+            case "mcp" -> testMcpConfig(capability);
+            case "skill" -> testSourceConfig(capability, "Skill 源配置检查通过，后续接入 Skill manifest 校验与样例运行");
+            case "prompt_template" -> testSourceConfig(capability, "提示词模板配置检查通过，后续接入模板变量解析与渲染测试");
+            case "delivery" -> testDeliveryConfig(capability);
+            default -> new SystemManagementApi.CapabilityTestResult(capability.getId(), "failed", "能力类型不在平台全局能力范围", List.of(), clock.instant());
+        };
+
+        log.info(
+            "系统管理测试全局能力完成 capabilityId={} type={} status={} requestId={}",
+            capability.getId(),
+            capability.getCapabilityType(),
+            result.status(),
+            RequestIds.current()
+        );
+        return result;
     }
 
     @Transactional(readOnly = true)
@@ -242,14 +307,13 @@ public class SystemManagementService {
                 return new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_CAPABILITY_NOT_FOUND", "系统能力不存在");
             });
 
-        if (tenantCapabilityGrantRepository.findByTenantIdAndCapabilityId(tenant.getId(), capability.getId()).isPresent()) {
-            log.warn(
-                "系统管理授权失败：重复授权 tenantId={} capabilityId={} requestId={}",
-                tenant.getId(),
-                capability.getId(),
-                RequestIds.current()
-            );
-            throw new ApiException(HttpStatus.CONFLICT, "SYSTEM_GRANT_DUPLICATE", "该租户已拥有此能力的授权记录");
+        TenantCapabilityGrantEntity existing = tenantCapabilityGrantRepository.findByTenantIdAndCapabilityId(tenant.getId(), capability.getId()).orElse(null);
+        if (existing != null) {
+            // 单租户能力配置是开关型配置。已存在记录时允许从 disabled 重新启用，避免前端取消后无法再次启用。
+            existing.updateStatus(request.status() == null ? "enabled" : request.status().trim());
+            tenantCapabilityGrantRepository.save(existing);
+            log.info("系统管理更新租户能力配置成功 grantId={} tenantId={} capabilityId={} requestId={}", existing.getId(), tenant.getId(), capability.getId(), RequestIds.current());
+            return toGrantRow(existing);
         }
 
         TenantCapabilityGrantEntity entity = TenantCapabilityGrantEntity.create(
@@ -267,6 +331,65 @@ public class SystemManagementService {
             RequestIds.current()
         );
         return toGrantRow(entity);
+    }
+
+    @Transactional
+    public SystemManagementApi.GrantRow updateGrantStatus(UUID grantId, SystemManagementApi.UpdateGrantStatusRequest request) {
+        String status = request.status().trim();
+        if (!"enabled".equals(status) && !"disabled".equals(status)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_GRANT_STATUS_INVALID", "能力配置状态只能是 enabled 或 disabled");
+        }
+
+        TenantCapabilityGrantEntity entity = tenantCapabilityGrantRepository.findById(grantId)
+            .orElseThrow(() -> {
+                log.warn("系统管理更新租户能力配置失败：配置不存在 grantId={} requestId={}", grantId, RequestIds.current());
+                return new ApiException(HttpStatus.NOT_FOUND, "SYSTEM_GRANT_NOT_FOUND", "租户能力配置不存在");
+            });
+        entity.updateStatus(status);
+        tenantCapabilityGrantRepository.save(entity);
+        log.info("系统管理更新租户能力配置状态成功 grantId={} status={} requestId={}", grantId, status, RequestIds.current());
+        return toGrantRow(entity);
+    }
+
+    @Transactional(readOnly = true)
+    public List<SystemManagementApi.TenantModelAssignmentRow> listTenantModelAssignments(UUID tenantId) {
+        ensureTenantExists(tenantId);
+        return tenantModelAssignmentRepository.findByTenantIdOrderByCreatedAtDesc(tenantId).stream()
+            .map(this::toTenantModelAssignmentRow)
+            .toList();
+    }
+
+    @Transactional
+    public SystemManagementApi.TenantModelAssignmentRow createTenantModelAssignment(SystemManagementApi.CreateTenantModelAssignmentRequest request) {
+        TenantEntity tenant = ensureTenantExists(request.tenantId());
+        ModelProviderEntity provider = modelProviderRepository.findById(request.providerId())
+            .orElseThrow(() -> {
+                log.warn("系统管理模型分配失败：供应商不存在 tenantId={} providerId={} requestId={}", request.tenantId(), request.providerId(), RequestIds.current());
+                return new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_MODEL_PROVIDER_NOT_FOUND", "模型供应商不存在");
+            });
+
+        if (tenantModelAssignmentRepository.findByTenantIdAndProviderId(tenant.getId(), provider.getId()).isPresent()) {
+            throw new ApiException(HttpStatus.CONFLICT, "SYSTEM_MODEL_ASSIGNMENT_DUPLICATE", "该租户已分配此模型供应商");
+        }
+
+        TenantModelAssignmentEntity entity = TenantModelAssignmentEntity.create(
+            tenant.getId(),
+            provider.getId(),
+            firstNonBlank(request.defaultModel(), provider.getDefaultModel()),
+            request.status() == null ? null : request.status().trim(),
+            clock.instant()
+        );
+        tenantModelAssignmentRepository.save(entity);
+        log.info("系统管理写入租户模型分配成功 tenantId={} providerId={} assignmentId={} requestId={}", tenant.getId(), provider.getId(), entity.getId(), RequestIds.current());
+        return toTenantModelAssignmentRow(entity);
+    }
+
+    private TenantEntity ensureTenantExists(UUID tenantId) {
+        return tenantRepository.findById(tenantId)
+            .orElseThrow(() -> {
+                log.warn("系统管理查询租户配置失败：租户不存在 tenantId={} requestId={}", tenantId, RequestIds.current());
+                return new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_TENANT_NOT_FOUND", "租户不存在");
+            });
     }
 
     private SystemManagementApi.GrantRow toGrantRow(TenantCapabilityGrantEntity entity) {
@@ -288,6 +411,110 @@ public class SystemManagementService {
         );
     }
 
+    private SystemManagementApi.TenantModelAssignmentRow toTenantModelAssignmentRow(TenantModelAssignmentEntity entity) {
+        ModelProviderEntity provider = modelProviderRepository.findById(entity.getProviderId())
+            .orElseThrow(() -> new IllegalStateException("模型分配记录指向的供应商缺失: " + entity.getProviderId()));
+        return new SystemManagementApi.TenantModelAssignmentRow(
+            entity.getId(),
+            entity.getTenantId(),
+            provider.getId(),
+            provider.getName(),
+            provider.getProviderType(),
+            entity.getDefaultModel(),
+            entity.getStatus()
+        );
+    }
+
+    private SystemManagementApi.CapabilityTestResult testMcpConfig(SystemCapabilityEntity capability) {
+        Map<String, Object> config = capability.getConfig();
+        String transport = stringValue(config.get("transport"));
+        if (transport == null) {
+            transport = "stdio";
+        }
+        if ("sse".equals(transport)) {
+            String sseUrl = stringValue(config.get("sseUrl"));
+            if (sseUrl == null) {
+                return new SystemManagementApi.CapabilityTestResult(capability.getId(), "failed", "SSE 类型 MCP 必须配置 sseUrl", List.of(), clock.instant());
+            }
+        } else {
+            String command = stringValue(config.get("command"));
+            if (command == null) {
+                return new SystemManagementApi.CapabilityTestResult(capability.getId(), "failed", "stdio 类型 MCP 必须配置启动命令", List.of(), clock.instant());
+            }
+        }
+
+        List<SystemManagementApi.CapabilityToolRow> tools = List.of(
+            new SystemManagementApi.CapabilityToolRow(
+                capability.getCode() + ".health_check",
+                "连通性检查占位接口，后续由真实 MCP tools/list 结果替换",
+                Map.of("type", "object", "properties", Map.of())
+            )
+        );
+        return new SystemManagementApi.CapabilityTestResult(
+            capability.getId(),
+            "success",
+            "MCP 配置检查通过；真实工具列表将在接入 MCP 网关后由 initialize 与 tools/list 返回",
+            tools,
+            clock.instant()
+        );
+    }
+
+    private SystemManagementApi.CapabilityTestResult testSourceConfig(SystemCapabilityEntity capability, String successSummary) {
+        Map<String, Object> config = capability.getConfig();
+        if (stringValue(config.get("sourcePath")) == null && stringValue(config.get("manifestPath")) == null) {
+            return new SystemManagementApi.CapabilityTestResult(capability.getId(), "failed", "请配置 sourcePath 或 manifestPath，便于后续发布和测试", List.of(), clock.instant());
+        }
+        return new SystemManagementApi.CapabilityTestResult(capability.getId(), "success", successSummary, List.of(), clock.instant());
+    }
+
+    private SystemManagementApi.CapabilityTestResult testDeliveryConfig(SystemCapabilityEntity capability) {
+        if (stringValue(capability.getConfig().get("deliveryChannel")) == null) {
+            return new SystemManagementApi.CapabilityTestResult(capability.getId(), "failed", "交付能力必须配置 deliveryChannel", List.of(), clock.instant());
+        }
+        return new SystemManagementApi.CapabilityTestResult(capability.getId(), "success", "交付能力配置检查通过，后续接入通道健康检查和脱敏回执", List.of(), clock.instant());
+    }
+
+    private static Map<String, Object> sanitizeCapabilityConfig(String capabilityType, Map<String, Object> rawConfig) {
+        Map<String, Object> config = rawConfig == null ? Map.of() : rawConfig;
+        if ("mcp".equals(capabilityType)) {
+            String transport = stringValue(config.get("transport"));
+            return Map.of(
+                "transport", transport == null ? "stdio" : transport,
+                "command", nullableString(config.get("command")),
+                "args", nullableString(config.get("args")),
+                "workingDir", nullableString(config.get("workingDir")),
+                "sseUrl", nullableString(config.get("sseUrl"))
+            );
+        }
+        if ("delivery".equals(capabilityType)) {
+            return Map.of("deliveryChannel", nullableString(config.get("deliveryChannel")), "target", nullableString(config.get("target")));
+        }
+        return Map.of(
+            "sourcePath", nullableString(config.get("sourcePath")),
+            "manifestPath", nullableString(config.get("manifestPath"))
+        );
+    }
+
+    private static String firstNonBlank(String value, String fallback) {
+        if (value != null && !value.isBlank()) {
+            return value.trim();
+        }
+        return fallback == null || fallback.isBlank() ? null : fallback.trim();
+    }
+
+    private static String nullableString(Object value) {
+        String text = stringValue(value);
+        return text == null ? "" : text;
+    }
+
+    private static String stringValue(Object value) {
+        if (value == null) {
+            return null;
+        }
+        String text = value.toString().trim();
+        return text.isEmpty() ? null : text;
+    }
+
     private static SystemManagementApi.ModelProviderRow toModelRow(ModelProviderEntity entity) {
         return new SystemManagementApi.ModelProviderRow(
             entity.getId(),
@@ -299,6 +526,17 @@ public class SystemManagementService {
         );
     }
 
+    private static SystemManagementApi.ModelProviderTypeRow toModelProviderTypeRow(ModelProviderTypeEntity entity) {
+        return new SystemManagementApi.ModelProviderTypeRow(
+            entity.getCode(),
+            entity.getName(),
+            entity.getDescription(),
+            entity.getAuthScheme(),
+            entity.getDefaultBaseUrl(),
+            entity.getModelListEndpoint()
+        );
+    }
+
     private static SystemManagementApi.CapabilityRow toCapabilityRow(SystemCapabilityEntity entity) {
         return new SystemManagementApi.CapabilityRow(
             entity.getId(),
@@ -307,7 +545,8 @@ public class SystemManagementService {
             entity.getCode(),
             entity.getVersion(),
             entity.getRiskLevel(),
-            entity.getStatus()
+            entity.getStatus(),
+            entity.getConfig()
         );
     }
 }

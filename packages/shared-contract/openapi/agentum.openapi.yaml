@@ -343,6 +343,36 @@ paths:
           description: 未登录或令牌无效
         "403":
           description: 当前账号不是系统管理员
+    post:
+      summary: 创建租户及初始租户管理员
+      tags:
+        - System
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTenantRequest"
+      responses:
+        "200":
+          description: 创建后的租户摘要
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/SystemTenantRow"
+        "401":
+          description: 未登录或令牌无效
+        "403":
+          description: 当前账号不是系统管理员
+        "409":
+          description: 租户编码或管理员账号重复
   /api/system/tenants/{tenantId}/status:
     patch:
       summary: 更新租户可用状态
@@ -384,6 +414,27 @@ paths:
           description: 当前账号不是系统管理员
         "404":
           description: 租户不存在
+  /api/system/model-provider-types:
+    get:
+      summary: 列出模型供应商类型字典
+      tags:
+        - System
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 模型供应商类型列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/ModelProviderTypeRow"
   /api/system/model-providers:
     get:
       summary: 列出模型供应商
@@ -492,9 +543,35 @@ paths:
           description: 当前账号不是系统管理员
         "409":
           description: 能力编码与版本已存在
+  /api/system/capabilities/{capabilityId}/test:
+    post:
+      summary: 测试系统级能力配置
+      tags:
+        - System
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: capabilityId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 能力测试结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/CapabilityTestResult"
   /api/system/tenant-capability-grants:
     get:
-      summary: 列出租户能力授权
+      summary: 列出单租户能力配置
       tags:
         - System
       security:
@@ -508,7 +585,7 @@ paths:
             format: uuid
       responses:
         "200":
-          description: 授权列表
+          description: 单租户能力配置列表
           content:
             application/json:
               schema:
@@ -525,7 +602,7 @@ paths:
         "403":
           description: 当前账号不是系统管理员
     post:
-      summary: 新增租户能力授权
+      summary: 新增单租户能力配置
       tags:
         - System
       security:
@@ -538,7 +615,7 @@ paths:
               $ref: "#/components/schemas/CreateTenantCapabilityGrantRequest"
       responses:
         "200":
-          description: 已创建的授权
+          description: 已创建的能力配置
           content:
             application/json:
               schema:
@@ -556,6 +633,106 @@ paths:
           description: 当前账号不是系统管理员
         "409":
           description: 授权记录已存在
+  /api/system/tenant-capability-grants/{grantId}/status:
+    patch:
+      summary: 更新单租户能力配置状态
+      tags:
+        - System
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: grantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTenantCapabilityGrantStatusRequest"
+      responses:
+        "200":
+          description: 更新后的能力配置
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/TenantCapabilityGrantRow"
+        "400":
+          description: 状态取值非法
+        "401":
+          description: 未登录或令牌无效
+        "403":
+          description: 当前账号不是系统管理员
+        "404":
+          description: 能力配置不存在
+  /api/system/tenant-model-assignments:
+    get:
+      summary: 列出租户模型分配
+      tags:
+        - System
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 租户模型分配列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/TenantModelAssignmentRow"
+    post:
+      summary: 新增租户模型分配
+      tags:
+        - System
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTenantModelAssignmentRequest"
+      responses:
+        "200":
+          description: 已创建的模型分配
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/TenantModelAssignmentRow"
+        "400":
+          description: 租户或模型供应商不存在
+        "401":
+          description: 未登录或令牌无效
+        "403":
+          description: 当前账号不是系统管理员
+        "409":
+          description: 模型供应商已分配给该租户
 components:
   securitySchemes:
     bearerAuth:
@@ -634,11 +811,69 @@ components:
       properties:
         token:
           type: string
+          nullable: true
         user:
           $ref: "#/components/schemas/AuthUser"
+        roles:
+          type: array
+          items:
+            $ref: "#/components/schemas/RoleInfo"
+        activeRole:
+          $ref: "#/components/schemas/RoleInfo"
+        permissions:
+          type: array
+          items:
+            type: string
+        menus:
+          type: array
+          items:
+            $ref: "#/components/schemas/MenuItem"
       required:
-        - token
         - user
+        - roles
+        - activeRole
+        - permissions
+        - menus
+    RoleInfo:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum: [business, tenant_admin, system_admin]
+        tenantId:
+          type: string
+          format: uuid
+          nullable: true
+        tenantName:
+          type: string
+          nullable: true
+        label:
+          type: string
+      required:
+        - id
+        - role
+        - tenantId
+        - tenantName
+        - label
+    MenuItem:
+      type: object
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        icon:
+          type: string
+        description:
+          type: string
+      required:
+        - key
+        - label
+        - icon
+        - description
     AuthUser:
       type: object
       properties:
@@ -655,7 +890,7 @@ components:
           type: string
         role:
           type: string
-          enum: [system_admin, tenant_admin, designer, agent_admin, capability_admin, reviewer, executor, observer]
+          enum: [business, tenant_admin, system_admin]
         tenantId:
           type: string
           format: uuid
@@ -939,6 +1174,34 @@ components:
           description: active 或 suspended
       required:
         - status
+    CreateTenantRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 160
+        code:
+          type: string
+          maxLength: 100
+        adminUsername:
+          type: string
+          maxLength: 50
+        adminDisplayName:
+          type: string
+          maxLength: 50
+        adminPassword:
+          type: string
+          format: password
+          maxLength: 100
+        adminEmail:
+          type: string
+          maxLength: 100
+      required:
+        - name
+        - code
+        - adminUsername
+        - adminDisplayName
+        - adminPassword
     ModelProviderRow:
       type: object
       properties:
@@ -962,6 +1225,28 @@ components:
         - name
         - providerType
         - status
+    ModelProviderTypeRow:
+      type: object
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        authScheme:
+          type: string
+        defaultBaseUrl:
+          type: string
+          nullable: true
+        modelListEndpoint:
+          type: string
+          nullable: true
+      required:
+        - code
+        - name
+        - authScheme
     CreateModelProviderRequest:
       type: object
       properties:
@@ -996,6 +1281,9 @@ components:
           type: string
         status:
           type: string
+        config:
+          type: object
+          additionalProperties: true
       required:
         - id
         - capabilityType
@@ -1019,10 +1307,50 @@ components:
           type: string
         status:
           type: string
+        config:
+          type: object
+          additionalProperties: true
       required:
         - capabilityType
         - name
         - code
+    CapabilityToolRow:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        inputSchema:
+          type: object
+          additionalProperties: true
+      required:
+        - name
+        - description
+        - inputSchema
+    CapabilityTestResult:
+      type: object
+      properties:
+        capabilityId:
+          type: string
+          format: uuid
+        status:
+          type: string
+        summary:
+          type: string
+        tools:
+          type: array
+          items:
+            $ref: "#/components/schemas/CapabilityToolRow"
+        checkedAt:
+          type: string
+          format: date-time
+      required:
+        - capabilityId
+        - status
+        - summary
+        - tools
+        - checkedAt
     TenantCapabilityGrantRow:
       type: object
       properties:
@@ -1071,6 +1399,58 @@ components:
       required:
         - tenantId
         - capabilityId
+    UpdateTenantCapabilityGrantStatusRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [enabled, disabled]
+      required:
+        - status
+    TenantModelAssignmentRow:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+          format: uuid
+        providerId:
+          type: string
+          format: uuid
+        providerName:
+          type: string
+        providerType:
+          type: string
+        defaultModel:
+          type: string
+          nullable: true
+        assignmentStatus:
+          type: string
+      required:
+        - id
+        - tenantId
+        - providerId
+        - providerName
+        - providerType
+        - assignmentStatus
+    CreateTenantModelAssignmentRequest:
+      type: object
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        providerId:
+          type: string
+          format: uuid
+        defaultModel:
+          type: string
+        status:
+          type: string
+      required:
+        - tenantId
+        - providerId
     WorkflowDefinition:
       type: object
       description: 工作流定义草稿或发布版本的前后端共享结构。

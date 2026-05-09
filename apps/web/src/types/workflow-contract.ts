@@ -96,6 +96,6 @@ export type DeliveryCapabilityAsset = {
 export type TenantCapabilityGrant = {
   tenantId: string;
   capabilityId: string;
-  capabilityType: "model" | "skill" | "mcp" | "prompt_template" | "delivery";
+  capabilityType: "skill" | "mcp" | "prompt_template" | "delivery";
   status: "enabled" | "disabled";
 };

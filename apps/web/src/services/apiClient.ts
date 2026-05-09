@@ -7,14 +7,20 @@ import type {
   UpdateMembershipRoleRequest,
 } from "../types/organization";
 import type {
+  CreateTenantRequest,
   CreateModelProviderRequest,
   CreateSystemCapabilityRequest,
   CreateTenantCapabilityGrantRequest,
+  CreateTenantModelAssignmentRequest,
+  CapabilityTestResult,
   ModelProviderRow,
+  ModelProviderTypeRow,
   SystemCapabilityRow,
   SystemSummary,
   SystemTenantRow,
   TenantCapabilityGrantRow,
+  TenantModelAssignmentRow,
+  UpdateTenantCapabilityGrantStatusRequest,
   UpdateTenantStatusRequest,
 } from "../types/system";
 
@@ -126,18 +132,29 @@ export const organizationApi = {
 export const systemApi = {
   summary: (token: string) => apiRequest<SystemSummary>("/api/system/summary", { token }),
   listTenants: (token: string) => apiRequest<SystemTenantRow[]>("/api/system/tenants", { token }),
+  createTenant: (token: string, body: CreateTenantRequest) =>
+    apiRequest<SystemTenantRow>("/api/system/tenants", { method: "POST", token, body }),
   updateTenantStatus: (tenantId: string, token: string, body: UpdateTenantStatusRequest) =>
     apiRequest<SystemTenantRow>(`/api/system/tenants/${tenantId}/status`, { method: "PATCH", token, body }),
+  listModelProviderTypes: (token: string) => apiRequest<ModelProviderTypeRow[]>("/api/system/model-provider-types", { token }),
   listModelProviders: (token: string) => apiRequest<ModelProviderRow[]>("/api/system/model-providers", { token }),
   createModelProvider: (token: string, body: CreateModelProviderRequest) =>
     apiRequest<ModelProviderRow>("/api/system/model-providers", { method: "POST", token, body }),
   listCapabilities: (token: string) => apiRequest<SystemCapabilityRow[]>("/api/system/capabilities", { token }),
   createCapability: (token: string, body: CreateSystemCapabilityRequest) =>
     apiRequest<SystemCapabilityRow>("/api/system/capabilities", { method: "POST", token, body }),
+  testCapability: (token: string, capabilityId: string) =>
+    apiRequest<CapabilityTestResult>(`/api/system/capabilities/${capabilityId}/test`, { method: "POST", token }),
   listGrants: (token: string, tenantId?: string) => {
     const q = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : "";
     return apiRequest<TenantCapabilityGrantRow[]>(`/api/system/tenant-capability-grants${q}`, { token });
   },
   createGrant: (token: string, body: CreateTenantCapabilityGrantRequest) =>
     apiRequest<TenantCapabilityGrantRow>("/api/system/tenant-capability-grants", { method: "POST", token, body }),
+  updateGrantStatus: (token: string, grantId: string, body: UpdateTenantCapabilityGrantStatusRequest) =>
+    apiRequest<TenantCapabilityGrantRow>(`/api/system/tenant-capability-grants/${grantId}/status`, { method: "PATCH", token, body }),
+  listTenantModelAssignments: (token: string, tenantId: string) =>
+    apiRequest<TenantModelAssignmentRow[]>(`/api/system/tenant-model-assignments?tenantId=${encodeURIComponent(tenantId)}`, { token }),
+  createTenantModelAssignment: (token: string, body: CreateTenantModelAssignmentRequest) =>
+    apiRequest<TenantModelAssignmentRow>("/api/system/tenant-model-assignments", { method: "POST", token, body }),
 };

@@ -56,6 +56,7 @@ public class SystemCapabilityEntity {
         String version,
         String riskLevel,
         String status,
+        Map<String, Object> config,
         Instant now
     ) {
         SystemCapabilityEntity entity = new SystemCapabilityEntity();
@@ -66,7 +67,7 @@ public class SystemCapabilityEntity {
         entity.version = version == null ? "v1" : version;
         entity.riskLevel = riskLevel == null ? "low" : riskLevel;
         entity.status = status == null ? "draft" : status;
-        entity.config = new HashMap<>();
+        entity.config = config == null ? new HashMap<>() : new HashMap<>(config);
         entity.createdAt = now;
         entity.updatedAt = now;
         return entity;

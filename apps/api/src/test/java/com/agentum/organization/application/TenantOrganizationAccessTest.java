@@ -20,7 +20,8 @@ class TenantOrganizationAccessTest {
             null,
             "system_admin",
             "system_admin",
-            "system"
+            "system",
+            UUID.fromString("00000000-0000-0000-0000-000000000401")
         );
 
         assertThatCode(() -> access.assertCanManageTenant(principal, UUID.fromString("00000000-0000-0000-0000-000000000101")))
@@ -36,7 +37,8 @@ class TenantOrganizationAccessTest {
             tenantId,
             "tenant_admin",
             "tenant_admin",
-            "默认空间"
+            "默认空间",
+            UUID.fromString("00000000-0000-0000-0000-000000000503")
         );
 
         assertThatCode(() -> access.assertCanManageTenant(principal, tenantId))
@@ -50,9 +52,10 @@ class TenantOrganizationAccessTest {
             UUID.fromString("00000000-0000-0000-0000-000000000002"),
             "operator",
             tenantId,
-            "executor",
             "business",
-            "默认空间"
+            "business",
+            "默认空间",
+            UUID.fromString("00000000-0000-0000-0000-000000000501")
         );
 
         assertThatThrownBy(() -> access.assertCanManageTenant(principal, tenantId))
@@ -69,7 +72,8 @@ class TenantOrganizationAccessTest {
             UUID.fromString("00000000-0000-0000-0000-000000000101"),
             "tenant_admin",
             "tenant_admin",
-            "默认空间"
+            "默认空间",
+            UUID.fromString("00000000-0000-0000-0000-000000000503")
         );
 
         assertThatThrownBy(() -> access.assertCanManageTenant(principal, UUID.fromString("00000000-0000-0000-0000-000000000102")))

@@ -3,6 +3,9 @@ package com.agentum.system.interfaces;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -50,6 +53,16 @@ public final class SystemManagementApi {
     ) {
     }
 
+    public record ModelProviderTypeRow(
+        String code,
+        String name,
+        String description,
+        String authScheme,
+        String defaultBaseUrl,
+        String modelListEndpoint
+    ) {
+    }
+
     public record CreateModelProviderRequest(
         @NotBlank @Size(max = 160) String name,
         @NotBlank @Size(max = 80) String providerType,
@@ -66,7 +79,8 @@ public final class SystemManagementApi {
         String code,
         String version,
         String riskLevel,
-        String status
+        String status,
+        Map<String, Object> config
     ) {
     }
 
@@ -76,7 +90,24 @@ public final class SystemManagementApi {
         @NotBlank @Size(max = 100) String code,
         @Size(max = 40) String version,
         @Size(max = 20) String riskLevel,
-        @Size(max = 30) String status
+        @Size(max = 30) String status,
+        Map<String, Object> config
+    ) {
+    }
+
+    public record CapabilityToolRow(
+        String name,
+        String description,
+        Map<String, Object> inputSchema
+    ) {
+    }
+
+    public record CapabilityTestResult(
+        UUID capabilityId,
+        String status,
+        String summary,
+        List<CapabilityToolRow> tools,
+        Instant checkedAt
     ) {
     }
 
@@ -96,6 +127,30 @@ public final class SystemManagementApi {
     public record CreateGrantRequest(
         @NotNull UUID tenantId,
         @NotNull UUID capabilityId,
+        @Size(max = 30) String status
+    ) {
+    }
+
+    public record UpdateGrantStatusRequest(
+        @NotBlank @Size(max = 30) String status
+    ) {
+    }
+
+    public record TenantModelAssignmentRow(
+        UUID id,
+        UUID tenantId,
+        UUID providerId,
+        String providerName,
+        String providerType,
+        String defaultModel,
+        String assignmentStatus
+    ) {
+    }
+
+    public record CreateTenantModelAssignmentRequest(
+        @NotNull UUID tenantId,
+        @NotNull UUID providerId,
+        @Size(max = 160) String defaultModel,
         @Size(max = 30) String status
     ) {
     }

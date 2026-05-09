@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agentum.local/schemas/tenant-capability-grant.schema.json",
-  "title": "TenantCapabilityGrant",
+  "title": "TenantCapabilityConfig",
   "type": "object",
-  "description": "租户能力授权协议，描述系统管理员把模型、Skill、MCP、提示词模板或交付能力授权给租户。",
+  "description": "单租户能力配置协议，描述系统管理员在租户抽屉中把 Skill、MCP、提示词模板或交付能力启用给租户；模型分配使用独立协议。",
   "properties": {
     "tenantId": {
       "type": "string"
@@ -13,7 +13,7 @@
     },
     "capabilityType": {
       "type": "string",
-      "enum": ["model", "skill", "mcp", "prompt_template", "delivery"]
+      "enum": ["skill", "mcp", "prompt_template", "delivery"]
     },
     "status": {
       "type": "string",

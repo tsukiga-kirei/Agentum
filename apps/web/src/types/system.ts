@@ -17,6 +17,15 @@ export type UpdateTenantStatusRequest = {
   status: string;
 };
 
+export type CreateTenantRequest = {
+  name: string;
+  code: string;
+  adminUsername: string;
+  adminDisplayName: string;
+  adminPassword: string;
+  adminEmail?: string;
+};
+
 export type ModelProviderRow = {
   id: string;
   name: string;
@@ -24,6 +33,15 @@ export type ModelProviderRow = {
   baseUrl: string | null;
   defaultModel: string | null;
   status: string;
+};
+
+export type ModelProviderTypeRow = {
+  code: string;
+  name: string;
+  description: string | null;
+  authScheme: string;
+  defaultBaseUrl: string | null;
+  modelListEndpoint: string | null;
 };
 
 export type CreateModelProviderRequest = {
@@ -42,6 +60,7 @@ export type SystemCapabilityRow = {
   version: string;
   riskLevel: string;
   status: string;
+  config: Record<string, unknown>;
 };
 
 export type CreateSystemCapabilityRequest = {
@@ -51,6 +70,21 @@ export type CreateSystemCapabilityRequest = {
   version?: string;
   riskLevel?: string;
   status?: string;
+  config?: Record<string, unknown>;
+};
+
+export type CapabilityToolRow = {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+};
+
+export type CapabilityTestResult = {
+  capabilityId: string;
+  status: string;
+  summary: string;
+  tools: CapabilityToolRow[];
+  checkedAt: string;
 };
 
 export type TenantCapabilityGrantRow = {
@@ -68,5 +102,26 @@ export type TenantCapabilityGrantRow = {
 export type CreateTenantCapabilityGrantRequest = {
   tenantId: string;
   capabilityId: string;
+  status?: string;
+};
+
+export type UpdateTenantCapabilityGrantStatusRequest = {
+  status: string;
+};
+
+export type TenantModelAssignmentRow = {
+  id: string;
+  tenantId: string;
+  providerId: string;
+  providerName: string;
+  providerType: string;
+  defaultModel: string | null;
+  assignmentStatus: string;
+};
+
+export type CreateTenantModelAssignmentRequest = {
+  tenantId: string;
+  providerId: string;
+  defaultModel?: string;
   status?: string;
 };

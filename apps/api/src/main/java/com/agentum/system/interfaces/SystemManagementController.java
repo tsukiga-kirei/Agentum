@@ -85,6 +85,15 @@ public class SystemManagementController {
         return ApiResponse.success(systemManagementService.listModelProviders(), RequestIds.current(request));
     }
 
+    @GetMapping("/model-provider-types")
+    public ApiResponse<List<SystemManagementApi.ModelProviderTypeRow>> listModelProviderTypes(
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        systemAdminAccess.assertSystemAdmin(principal);
+        return ApiResponse.success(systemManagementService.listModelProviderTypes(), RequestIds.current(request));
+    }
+
     @PostMapping("/model-providers")
     public ApiResponse<SystemManagementApi.ModelProviderRow> createModelProvider(
         @AuthenticationPrincipal CurrentUserPrincipal principal,
@@ -114,6 +123,16 @@ public class SystemManagementController {
         return ApiResponse.success(systemManagementService.createCapability(body), RequestIds.current(request));
     }
 
+    @PostMapping("/capabilities/{capabilityId}/test")
+    public ApiResponse<SystemManagementApi.CapabilityTestResult> testCapability(
+        @PathVariable UUID capabilityId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        systemAdminAccess.assertSystemAdmin(principal);
+        return ApiResponse.success(systemManagementService.testCapability(capabilityId), RequestIds.current(request));
+    }
+
     @GetMapping("/tenant-capability-grants")
     public ApiResponse<List<SystemManagementApi.GrantRow>> listGrants(
         @AuthenticationPrincipal CurrentUserPrincipal principal,
@@ -132,5 +151,36 @@ public class SystemManagementController {
     ) {
         systemAdminAccess.assertSystemAdmin(principal);
         return ApiResponse.success(systemManagementService.createGrant(body), RequestIds.current(request));
+    }
+
+    @PatchMapping("/tenant-capability-grants/{grantId}/status")
+    public ApiResponse<SystemManagementApi.GrantRow> updateGrantStatus(
+        @PathVariable UUID grantId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @Valid @RequestBody SystemManagementApi.UpdateGrantStatusRequest body,
+        HttpServletRequest request
+    ) {
+        systemAdminAccess.assertSystemAdmin(principal);
+        return ApiResponse.success(systemManagementService.updateGrantStatus(grantId, body), RequestIds.current(request));
+    }
+
+    @GetMapping("/tenant-model-assignments")
+    public ApiResponse<List<SystemManagementApi.TenantModelAssignmentRow>> listTenantModelAssignments(
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @RequestParam UUID tenantId,
+        HttpServletRequest request
+    ) {
+        systemAdminAccess.assertSystemAdmin(principal);
+        return ApiResponse.success(systemManagementService.listTenantModelAssignments(tenantId), RequestIds.current(request));
+    }
+
+    @PostMapping("/tenant-model-assignments")
+    public ApiResponse<SystemManagementApi.TenantModelAssignmentRow> createTenantModelAssignment(
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @Valid @RequestBody SystemManagementApi.CreateTenantModelAssignmentRequest body,
+        HttpServletRequest request
+    ) {
+        systemAdminAccess.assertSystemAdmin(principal);
+        return ApiResponse.success(systemManagementService.createTenantModelAssignment(body), RequestIds.current(request));
     }
 }

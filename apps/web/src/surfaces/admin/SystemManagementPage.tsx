@@ -32,12 +32,16 @@ import { useAuthStore } from "../../stores/authStore";
 import type {
   CreateModelProviderRequest,
   CreateSystemCapabilityRequest,
+  CreateTenantRequest,
   CreateTenantCapabilityGrantRequest,
+  CapabilityTestResult,
   ModelProviderRow,
+  ModelProviderTypeRow,
   SystemCapabilityRow,
   SystemSummary,
   SystemTenantRow,
   TenantCapabilityGrantRow,
+  TenantModelAssignmentRow,
 } from "../../types/system";
 
 /** 自定义下拉选择器，替代原生 select，选项面板完全可控 */
@@ -99,7 +103,6 @@ type SystemSection = "overview" | "tenants" | "models" | "capabilities";
 const capabilityTypeOptions = [
   { value: "mcp", label: "MCP" },
   { value: "skill", label: "Skill" },
-  { value: "model", label: "模型" },
   { value: "prompt_template", label: "提示词模板" },
   { value: "delivery", label: "交付" },
 ];
@@ -141,12 +144,16 @@ export function SystemManagementPage() {
   const [summary, setSummary] = useState<SystemSummary | null>(null);
   const [tenants, setTenants] = useState<SystemTenantRow[]>([]);
   const [modelProviders, setModelProviders] = useState<ModelProviderRow[]>([]);
+  const [modelProviderTypes, setModelProviderTypes] = useState<ModelProviderTypeRow[]>([]);
   const [capabilities, setCapabilities] = useState<SystemCapabilityRow[]>([]);
+  const [capabilityTestResults, setCapabilityTestResults] = useState<Record<string, CapabilityTestResult>>({});
 
   // 租户侧边抽屉状态
   const [tenantDrawerOpen, setTenantDrawerOpen] = useState(false);
   const [selectedTenant, setSelectedTenant] = useState<SystemTenantRow | null>(null);
   const [tenantActiveTab, setTenantActiveTab] = useState("default");
+  const [tenantCapabilityGrants, setTenantCapabilityGrants] = useState<TenantCapabilityGrantRow[]>([]);
+  const [tenantModelAssignments, setTenantModelAssignments] = useState<TenantModelAssignmentRow[]>([]);
 
   // 新增租户 Modal（不使用 Ant Form，改用原生 ref）
   const [createTenantModalOpen, setCreateTenantModalOpen] = useState(false);
@@ -156,6 +163,9 @@ export function SystemManagementPage() {
   // 模型与能力 Modal
   const [modelModalOpen, setModelModalOpen] = useState(false);
   const [capModalOpen, setCapModalOpen] = useState(false);
+  const [selectedModelProviderType, setSelectedModelProviderType] = useState("");
+  const [selectedCapabilityType, setSelectedCapabilityType] = useState("mcp");
+  const [selectedMcpTransport, setSelectedMcpTransport] = useState("stdio");
   const modelRef = useRef<Record<string,string>>({});
   const capRef = useRef<Record<string,string>>({});
 
@@ -199,7 +209,12 @@ export function SystemManagementPage() {
     if (!token) return;
     setLoading(true);
     try {
-      setModelProviders(await systemApi.listModelProviders(token));
+      const [providers, types] = await Promise.all([
+        systemApi.listModelProviders(token),
+        systemApi.listModelProviderTypes(token),
+      ]);
+      setModelProviders(providers);
+      setModelProviderTypes(types);
     } catch (e) {
       handleApiError(e, "加载模型供应商失败");
     } finally {
@@ -219,6 +234,24 @@ export function SystemManagementPage() {
     }
   }, [token, handleApiError]);
 
+  const loadTenantCapabilityGrants = useCallback(async (tenantId: string) => {
+    if (!token) return;
+    try {
+      setTenantCapabilityGrants(await systemApi.listGrants(token, tenantId));
+    } catch (e) {
+      handleApiError(e, "加载租户能力配置失败");
+    }
+  }, [token, handleApiError]);
+
+  const loadTenantModelAssignments = useCallback(async (tenantId: string) => {
+    if (!token) return;
+    try {
+      setTenantModelAssignments(await systemApi.listTenantModelAssignments(token, tenantId));
+    } catch (e) {
+      handleApiError(e, "加载租户模型分配失败");
+    }
+  }, [token, handleApiError]);
+
   useEffect(() => {
     if (!token) return;
     if (section === "overview") {
@@ -230,6 +263,18 @@ export function SystemManagementPage() {
     else if (section === "models") void loadModels();
     else if (section === "capabilities") void loadCapabilities();
   }, [section, token, loadSummary, loadTenants, loadModels, loadCapabilities]);
+
+  useEffect(() => {
+    if (!selectedTenant || !tenantDrawerOpen) return;
+    if (tenantActiveTab === "capabilities") {
+      void loadCapabilities();
+      void loadTenantCapabilityGrants(selectedTenant.id);
+    }
+    if (tenantActiveTab === "models") {
+      void loadModels();
+      void loadTenantModelAssignments(selectedTenant.id);
+    }
+  }, [selectedTenant, tenantDrawerOpen, tenantActiveTab, loadCapabilities, loadTenantCapabilityGrants, loadModels, loadTenantModelAssignments]);
 
   const patchTenantStatus = async (tenantId: string, status: string) => {
     if (!token) return;
@@ -252,7 +297,14 @@ export function SystemManagementPage() {
     if (!d.admin_displayName?.trim()) { setCreateTenantTab("admin"); messageApi.warning("请输入管理员姓名"); return; }
     if (!d.admin_password?.trim()) { setCreateTenantTab("admin"); messageApi.warning("请输入初始密码"); return; }
     try {
-      // TODO: 对接后端 systemApi.createTenant
+      await systemApi.createTenant(token, {
+        name: d.name.trim(),
+        code: d.code.trim(),
+        adminUsername: d.admin_username.trim(),
+        adminDisplayName: d.admin_displayName.trim(),
+        adminPassword: d.admin_password,
+        adminEmail: d.admin_email?.trim() || undefined,
+      } as CreateTenantRequest);
       messageApi.success("已创建新租户及管理员");
       setCreateTenantModalOpen(false);
       ctRef.current = {};
@@ -267,7 +319,7 @@ export function SystemManagementPage() {
     if (!token) return;
     const d = modelRef.current;
     if (!d.name?.trim()) { messageApi.warning("请输入名称"); return; }
-    if (!d.providerType?.trim()) { messageApi.warning("请输入供应商类型"); return; }
+    if (!d.providerType?.trim()) { messageApi.warning("请选择供应商类型"); return; }
     try {
       await systemApi.createModelProvider(token, {
         name: d.name, providerType: d.providerType,
@@ -290,11 +342,26 @@ export function SystemManagementPage() {
     if (!d.capabilityType) { messageApi.warning("请选择能力类型"); return; }
     if (!d.name?.trim()) { messageApi.warning("请输入名称"); return; }
     if (!d.code?.trim()) { messageApi.warning("请输入编码"); return; }
+    const config: Record<string, unknown> = {};
+    if (d.capabilityType === "mcp") {
+      config.transport = d.transport || "stdio";
+      config.command = d.command || "";
+      config.args = d.args || "";
+      config.workingDir = d.workingDir || "";
+      config.sseUrl = d.sseUrl || "";
+    } else if (d.capabilityType === "delivery") {
+      config.deliveryChannel = d.deliveryChannel || "";
+      config.target = d.target || "";
+    } else {
+      config.sourcePath = d.sourcePath || "";
+      config.manifestPath = d.manifestPath || "";
+    }
     try {
       await systemApi.createCapability(token, {
         capabilityType: d.capabilityType, name: d.name, code: d.code,
         version: d.version || "v1", riskLevel: d.riskLevel || "low",
         status: d.status || "draft",
+        config,
       } as CreateSystemCapabilityRequest);
       messageApi.success("已注册系统能力");
       setCapModalOpen(false);
@@ -307,11 +374,57 @@ export function SystemManagementPage() {
   };
 
   const testCapabilityConnection = async (capId: string) => {
-    // 模拟后端连通性测试
-    messageApi.loading({ content: "正在测试连通性...", key: "test_conn" });
-    setTimeout(() => {
-      messageApi.success({ content: "连通性测试通过", key: "test_conn" });
-    }, 1000);
+    if (!token) return;
+    messageApi.loading({ content: "正在测试连通性...", key: `test_conn_${capId}` });
+    try {
+      const result = await systemApi.testCapability(token, capId);
+      setCapabilityTestResults((prev) => ({ ...prev, [capId]: result }));
+      const content = result.status === "success" ? result.summary : `测试未通过：${result.summary}`;
+      if (result.status === "success") messageApi.success({ content, key: `test_conn_${capId}` });
+      else messageApi.warning({ content, key: `test_conn_${capId}` });
+    } catch (e) {
+      handleApiError(e, "能力测试失败");
+    }
+  };
+
+  const grantCapabilityToTenant = async (capabilityId: string) => {
+    if (!token || !selectedTenant) return;
+    try {
+      await systemApi.createGrant(token, { tenantId: selectedTenant.id, capabilityId, status: "enabled" } as CreateTenantCapabilityGrantRequest);
+      messageApi.success("已启用租户能力");
+      void loadTenantCapabilityGrants(selectedTenant.id);
+      void loadSummary();
+    } catch (e) {
+      handleApiError(e, "启用租户能力失败");
+    }
+  };
+
+  const updateTenantCapabilityGrant = async (grantId: string, status: "enabled" | "disabled") => {
+    if (!token || !selectedTenant) return;
+    try {
+      await systemApi.updateGrantStatus(token, grantId, { status });
+      messageApi.success(status === "enabled" ? "已启用租户能力" : "已取消启用");
+      void loadTenantCapabilityGrants(selectedTenant.id);
+      void loadSummary();
+    } catch (e) {
+      handleApiError(e, status === "enabled" ? "启用租户能力失败" : "取消启用失败");
+    }
+  };
+
+  const assignModelToTenant = async (provider: ModelProviderRow) => {
+    if (!token || !selectedTenant) return;
+    try {
+      await systemApi.createTenantModelAssignment(token, {
+        tenantId: selectedTenant.id,
+        providerId: provider.id,
+        defaultModel: provider.defaultModel ?? undefined,
+        status: "enabled",
+      });
+      messageApi.success("已完成租户模型分配");
+      void loadTenantModelAssignments(selectedTenant.id);
+    } catch (e) {
+      handleApiError(e, "分配租户模型失败");
+    }
   };
 
   const navItems: { key: SystemSection; label: string; icon: typeof LayoutDashboard; description: string }[] = [
@@ -466,7 +579,7 @@ export function SystemManagementPage() {
               <div className="sys-fade-in">
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
                   <p style={{fontSize:14,color:"var(--color-text-tertiary)",margin:0}}>注册和管理底层算力供应商及默认模型路由</p>
-                  <button className="sys-btn sys-btn--primary" onClick={()=>setModelModalOpen(true)}><PlusCircle size={15}/> 注册供应商</button>
+                  <button className="sys-btn sys-btn--primary" onClick={()=>{modelRef.current={};setSelectedModelProviderType("");void loadModels();setModelModalOpen(true);}}><PlusCircle size={15}/> 注册供应商</button>
                 </div>
                 {modelProviders.length===0?<Empty description="暂无模型供应商" style={{marginTop:48}}/>:(
                   <div className="sys-card-grid">
@@ -493,7 +606,7 @@ export function SystemManagementPage() {
               <div className="sys-fade-in">
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
                   <p style={{fontSize:14,color:"var(--color-text-tertiary)",margin:0}}>管理系统级 MCP、Skill、提示词模板和交付能力</p>
-                  <button className="sys-btn sys-btn--primary" onClick={()=>setCapModalOpen(true)}><PlusCircle size={15}/> 注册能力</button>
+                  <button className="sys-btn sys-btn--primary" onClick={()=>{capRef.current={capabilityType:"mcp",transport:"stdio"};setSelectedCapabilityType("mcp");setSelectedMcpTransport("stdio");setCapModalOpen(true);}}><PlusCircle size={15}/> 注册能力</button>
                 </div>
                 {capabilities.length===0?<Empty description="暂无全局能力" style={{marginTop:48}}/>:(
                   <div className="sys-card-grid">
@@ -515,6 +628,19 @@ export function SystemManagementPage() {
                             <button className="sys-btn sys-btn--default sys-btn--sm" onClick={()=>testCapabilityConnection(c.id)}><PlayCircle size={14}/> 测试连通性</button>
                           </div>
                         </div>
+                        {capabilityTestResults[c.id] && (
+                          <div className="sys-hint" style={{marginTop:12}}>
+                            <Info size={14}/>
+                            <span>{capabilityTestResults[c.id].summary}</span>
+                          </div>
+                        )}
+                        {capabilityTestResults[c.id]?.tools.length ? (
+                          <div className="sys-info-tags" style={{marginTop:8}}>
+                            {capabilityTestResults[c.id].tools.map((tool) => (
+                              <span key={tool.name} className="sys-info-tag sys-info-tag--info">{tool.name}</span>
+                            ))}
+                          </div>
+                        ) : null}
                       </div>
                     ))}
                   </div>
@@ -576,8 +702,27 @@ export function SystemManagementPage() {
           {tenantActiveTab === "capabilities" && (
             <div className="sys-drawer-section">
               <div className="sys-section-header"><Boxes size={18}/> 全局能力配置</div>
-              <div className="sys-hint"><Info size={14}/> 在此处为当前租户分配允许使用的全局 MCP、Skill 及交付通道。（后端接口待完善）</div>
-              <Empty description="能力配置暂未加载" />
+              <div className="sys-hint"><Info size={14}/> 这里配置该租户能使用哪些全局能力；租户管理员后续再按用户、部门和租户自定义角色细分到业务侧模块、页签与动作。</div>
+              {capabilities.length === 0 ? <Empty description="暂无可配置能力" /> : (
+                <div className="sys-config-group">
+                  {capabilities.map((cap) => {
+                    const grant = tenantCapabilityGrants.find((g) => g.capabilityId === cap.id);
+                    const granted = grant?.grantStatus === "enabled";
+                    return (
+                      <div key={cap.id} className="sys-form-row">
+                        <span className="sys-form-label">{cap.name}</span>
+                        <div style={{display:"flex",alignItems:"center",gap:10}}>
+                          <span className="sys-info-tag sys-info-tag--primary">{formatCapabilityType(cap.capabilityType)}</span>
+                          <span className={`sys-status sys-status--${granted ? "active" : "inactive"}`}><span className="sys-status-dot"/>{granted ? "已启用" : "未启用"}</span>
+                          <button className="sys-btn sys-btn--default sys-btn--sm" onClick={()=> grant ? void updateTenantCapabilityGrant(grant.id, granted ? "disabled" : "enabled") : void grantCapabilityToTenant(cap.id)}>
+                            {granted ? "取消启用" : "启用"}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 
@@ -594,14 +739,32 @@ export function SystemManagementPage() {
           {tenantActiveTab === "models" && (
             <div className="sys-drawer-section">
               <div className="sys-section-header"><DatabaseZap size={18}/> 模型分配</div>
-              <div className="sys-hint"><Info size={14}/> 配置该租户的首选模型及备用模型，限额也在此设置。</div>
-              <Empty description="模型配额功能开发中" />
+              <div className="sys-hint"><Info size={14}/> 这里把平台级模型供应商分配给单个租户；默认模型可先沿用供应商配置，后续再扩展额度、成本和备用路由。</div>
+              {modelProviders.length === 0 ? <Empty description="暂无可分配模型供应商" /> : (
+                <div className="sys-config-group">
+                  {modelProviders.map((provider) => {
+                    const assigned = tenantModelAssignments.find((item) => item.providerId === provider.id);
+                    return (
+                      <div key={provider.id} className="sys-form-row">
+                        <span className="sys-form-label">{provider.name}</span>
+                        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                          <span className="sys-info-tag sys-info-tag--info">{provider.providerType}</span>
+                          <span className="sys-form-value">{assigned?.defaultModel || provider.defaultModel || "未配置默认模型"}</span>
+                          <span className={`sys-status sys-status--${assigned ? "active" : "inactive"}`}><span className="sys-status-dot"/>{assigned ? "已分配" : "未分配"}</span>
+                          <button className="sys-btn sys-btn--default sys-btn--sm" disabled={Boolean(assigned)} onClick={()=>void assignModelToTenant(provider)}>
+                            {assigned ? "已分配" : "分配"}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 
           {/* 抽屉底部操作栏 */}
           <div className="sys-drawer-footer">
-            <button className="sys-btn sys-btn--danger" onClick={()=>setTenantDrawerOpen(false)}><X size={14}/> 关闭</button>
             <div className="sys-drawer-footer-right">
               <button className="sys-btn sys-btn--default" onClick={()=>setTenantDrawerOpen(false)}><X size={14}/> 取消</button>
               <button className="sys-btn sys-btn--primary" onClick={()=>{messageApi.success("配置已保存");setTenantDrawerOpen(false);}}><Save size={14}/> 保存配置</button>
@@ -663,8 +826,11 @@ export function SystemManagementPage() {
             </div>
             <div className="sys-modal-body">
               <div className="sys-field"><label className="sys-field-label sys-field-label--required">名称</label><div className="sys-field-input-wrap"><Tag size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如：通义千问" maxLength={160} onChange={e=>{modelRef.current.name=e.target.value;}}/></div></div>
-              <div className="sys-field"><label className="sys-field-label sys-field-label--required">供应商类型</label><div className="sys-field-input-wrap"><ServerCog size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如 openai-compatible" maxLength={80} onChange={e=>{modelRef.current.providerType=e.target.value;}}/></div></div>
-              <div className="sys-field"><label className="sys-field-label">基址 URL</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="https://api.example.com" maxLength={500} onChange={e=>{modelRef.current.baseUrl=e.target.value;}}/></div></div>
+              <div className="sys-field"><label className="sys-field-label sys-field-label--required">供应商类型</label><SysSelect placeholder="请选择数据库字典类型" options={modelProviderTypes.map((type)=>({value:type.code,label:type.name}))} onChange={v=>{modelRef.current.providerType=v;setSelectedModelProviderType(v);}}/></div>
+              {selectedModelProviderType && (
+                <div className="sys-hint"><ServerCog size={14}/> {modelProviderTypes.find((type)=>type.code===selectedModelProviderType)?.description || "平台内置模型供应商类型"}</div>
+              )}
+              <div className="sys-field"><label className="sys-field-label">基址 URL</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder={modelProviderTypes.find((type)=>type.code===selectedModelProviderType)?.defaultBaseUrl || "https://api.example.com"} maxLength={500} onChange={e=>{modelRef.current.baseUrl=e.target.value;}}/></div><div className="sys-field-hint">不填写时沿用供应商类型的默认基址</div></div>
               <div className="sys-field"><label className="sys-field-label">默认模型</label><div className="sys-field-input-wrap"><DatabaseZap size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如 qwen-max" maxLength={160} onChange={e=>{modelRef.current.defaultModel=e.target.value;}}/></div></div>
               <div className="sys-field"><label className="sys-field-label">状态</label><SysSelect defaultValue="draft" options={[{value:"draft",label:"草稿"},{value:"active",label:"可用"}]} onChange={v=>{modelRef.current.status=v;}}/></div>
             </div>
@@ -685,7 +851,7 @@ export function SystemManagementPage() {
               <button className="sys-modal-close" onClick={()=>setCapModalOpen(false)}><X size={18}/></button>
             </div>
             <div className="sys-modal-body">
-              <div className="sys-field"><label className="sys-field-label sys-field-label--required">能力类型</label><SysSelect placeholder="请选择" options={capabilityTypeOptions} onChange={v=>{capRef.current.capabilityType=v;}}/></div>
+              <div className="sys-field"><label className="sys-field-label sys-field-label--required">能力类型</label><SysSelect defaultValue="mcp" options={capabilityTypeOptions} onChange={v=>{capRef.current.capabilityType=v;setSelectedCapabilityType(v);}}/></div>
               <div className="sys-field-row">
                 <div className="sys-field"><label className="sys-field-label sys-field-label--required">名称</label><div className="sys-field-input-wrap"><Tag size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如：文档解析器" maxLength={160} onChange={e=>{capRef.current.name=e.target.value;}}/></div></div>
                 <div className="sys-field"><label className="sys-field-label sys-field-label--required">编码</label><div className="sys-field-input-wrap"><Code2 size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如 doc_parser" maxLength={100} onChange={e=>{capRef.current.code=e.target.value;}}/></div></div>
@@ -695,6 +861,34 @@ export function SystemManagementPage() {
                 <div className="sys-field"><label className="sys-field-label">风险等级</label><SysSelect defaultValue="low" options={[{value:"low",label:"低"},{value:"medium",label:"中"},{value:"high",label:"高"}]} onChange={v=>{capRef.current.riskLevel=v;}}/></div>
               </div>
               <div className="sys-field"><label className="sys-field-label">状态</label><SysSelect defaultValue="draft" options={[{value:"draft",label:"草稿"},{value:"active",label:"启用"}]} onChange={v=>{capRef.current.status=v;}}/></div>
+              {selectedCapabilityType === "mcp" && (
+                <div className="sys-config-group">
+                  <div className="sys-field"><label className="sys-field-label">MCP 传输方式</label><SysSelect defaultValue="stdio" options={[{value:"stdio",label:"stdio 命令"},{value:"sse",label:"SSE 地址"}]} onChange={v=>{capRef.current.transport=v;setSelectedMcpTransport(v);}}/></div>
+                  {selectedMcpTransport === "sse" ? (
+                    <div className="sys-field"><label className="sys-field-label sys-field-label--required">SSE 地址</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="https://mcp.example.com/sse" maxLength={500} onChange={e=>{capRef.current.sseUrl=e.target.value;}}/></div></div>
+                  ) : (
+                    <>
+                      <div className="sys-field"><label className="sys-field-label sys-field-label--required">启动命令</label><div className="sys-field-input-wrap"><ServerCog size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="node /opt/mcp/server.js" maxLength={500} onChange={e=>{capRef.current.command=e.target.value;}}/></div></div>
+                      <div className="sys-field-row">
+                        <div className="sys-field"><label className="sys-field-label">命令参数</label><div className="sys-field-input-wrap"><Code2 size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="--readonly --tenant-safe" maxLength={500} onChange={e=>{capRef.current.args=e.target.value;}}/></div></div>
+                        <div className="sys-field"><label className="sys-field-label">工作目录</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="/opt/agentum/mcp/file-read" maxLength={500} onChange={e=>{capRef.current.workingDir=e.target.value;}}/></div></div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+              {(selectedCapabilityType === "skill" || selectedCapabilityType === "prompt_template") && (
+                <div className="sys-field-row">
+                  <div className="sys-field"><label className="sys-field-label">源码路径</label><div className="sys-field-input-wrap"><Code2 size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder={selectedCapabilityType === "skill" ? "capabilities/skills/..." : "capabilities/prompt-templates/..."} maxLength={500} onChange={e=>{capRef.current.sourcePath=e.target.value;}}/></div></div>
+                  <div className="sys-field"><label className="sys-field-label">Manifest 路径</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="manifest.yaml / skill.yaml" maxLength={500} onChange={e=>{capRef.current.manifestPath=e.target.value;}}/></div></div>
+                </div>
+              )}
+              {selectedCapabilityType === "delivery" && (
+                <div className="sys-field-row">
+                  <div className="sys-field"><label className="sys-field-label">交付通道</label><SysSelect options={[{value:"document",label:"文档生成"},{value:"email",label:"邮件"},{value:"oa",label:"OA 流程"},{value:"webhook",label:"Webhook"}]} onChange={v=>{capRef.current.deliveryChannel=v;}}/></div>
+                  <div className="sys-field"><label className="sys-field-label">目标说明</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="通道标识或模板路径" maxLength={500} onChange={e=>{capRef.current.target=e.target.value;}}/></div></div>
+                </div>
+              )}
             </div>
             <div className="sys-modal-footer">
               <button className="sys-btn sys-btn--default" onClick={()=>setCapModalOpen(false)}><X size={14}/> 取消</button>

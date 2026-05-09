@@ -27,18 +27,20 @@ class AuthTokenServiceTest {
             userId,
             "operator",
             tenantId,
-            "executor",
             "business",
-            "默认空间"
+            "business",
+            "默认空间",
+            UUID.fromString("00000000-0000-0000-0000-000000000501")
         ));
 
         AuthTokenClaims claims = tokenService.parse(token);
 
         assertThat(claims.userId()).isEqualTo(userId);
         assertThat(claims.tenantId()).isEqualTo(tenantId);
-        assertThat(claims.role()).isEqualTo("executor");
+        assertThat(claims.role()).isEqualTo("business");
         assertThat(claims.portal()).isEqualTo("business");
         assertThat(claims.spaceCode()).isEqualTo("默认空间");
+        assertThat(claims.roleAssignmentId()).isEqualTo(UUID.fromString("00000000-0000-0000-0000-000000000501"));
         assertThat(claims.expiresAt()).isEqualTo(NOW.plus(Duration.ofHours(8)));
     }
 
@@ -53,7 +55,8 @@ class AuthTokenServiceTest {
             null,
             "system_admin",
             "system_admin",
-            "system"
+            "system",
+            UUID.fromString("00000000-0000-0000-0000-000000000401")
         ));
 
         assertThatThrownBy(() -> parser.parse(token))
@@ -72,7 +75,8 @@ class AuthTokenServiceTest {
             null,
             "system_admin",
             "system_admin",
-            "system"
+            "system",
+            UUID.fromString("00000000-0000-0000-0000-000000000401")
         ));
 
         String tamperedToken = token.substring(0, token.length() - 2) + "xx";

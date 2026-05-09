@@ -48,6 +48,10 @@ public class TenantCapabilityGrantEntity {
         return entity;
     }
 
+    public void updateStatus(String status) {
+        this.status = status;
+    }
+
     public UUID getId() {
         return id;
     }

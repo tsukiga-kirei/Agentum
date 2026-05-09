@@ -1,7 +1,9 @@
 package com.agentum.organization.application;
 
 import com.agentum.auth.domain.UserAccount;
+import com.agentum.auth.domain.UserRoleAssignmentEntity;
 import com.agentum.auth.infrastructure.UserAccountRepository;
+import com.agentum.auth.infrastructure.UserRoleAssignmentRepository;
 import com.agentum.organization.domain.DepartmentEntity;
 import com.agentum.organization.domain.UserMembershipEntity;
 import com.agentum.organization.infrastructure.DepartmentRepository;
@@ -42,6 +44,7 @@ public class TenantOrganizationService {
 
     private final TenantRepository tenantRepository;
     private final UserAccountRepository userAccountRepository;
+    private final UserRoleAssignmentRepository userRoleAssignmentRepository;
     private final UserMembershipRepository userMembershipRepository;
     private final DepartmentRepository departmentRepository;
     private final RoleRepository roleRepository;
@@ -50,6 +53,7 @@ public class TenantOrganizationService {
     public TenantOrganizationService(
         TenantRepository tenantRepository,
         UserAccountRepository userAccountRepository,
+        UserRoleAssignmentRepository userRoleAssignmentRepository,
         UserMembershipRepository userMembershipRepository,
         DepartmentRepository departmentRepository,
         RoleRepository roleRepository,
@@ -57,6 +61,7 @@ public class TenantOrganizationService {
     ) {
         this.tenantRepository = tenantRepository;
         this.userAccountRepository = userAccountRepository;
+        this.userRoleAssignmentRepository = userRoleAssignmentRepository;
         this.userMembershipRepository = userMembershipRepository;
         this.departmentRepository = departmentRepository;
         this.roleRepository = roleRepository;
@@ -85,7 +90,7 @@ public class TenantOrganizationService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_MEMBER_ROLE_REQUIRED", "请选择成员角色");
         }
 
-        roleRepository.findByIdAndTenantIdAndStatus(roleId, tenantId, ACTIVE_STATUS)
+        RoleEntity role = roleRepository.findByIdAndTenantIdAndStatus(roleId, tenantId, ACTIVE_STATUS)
             .orElseThrow(() -> {
                 log.warn("成员创建失败：角色不可用 tenantId={} operatorUserId={} roleId={} username={} requestId={}", tenantId, operatorUserId, roleId, username, RequestIds.current());
                 return new ApiException(HttpStatus.BAD_REQUEST, "ORG_ROLE_NOT_AVAILABLE", "所选角色不属于当前租户或已停用");
@@ -118,6 +123,7 @@ public class TenantOrganizationService {
             normalizeSpaceCode(request.spaceCode())
         );
         userMembershipRepository.save(membership);
+        ensureLoginAssignment(user.getId(), tenantId, role, membership.isDefaultMembership());
         log.info(
             "成员创建成功 tenantId={} operatorUserId={} userId={} username={} roleId={} departmentId={} requestId={}",
             tenantId,
@@ -196,10 +202,11 @@ public class TenantOrganizationService {
                     RequestIds.current()
                 );
                 return new ApiException(HttpStatus.NOT_FOUND, "ORG_MEMBERSHIP_NOT_FOUND", "成员关系不存在或已停用");
-            });
+        });
 
         UUID roleId = request.roleId();
-        roleRepository.findByIdAndTenantIdAndStatus(roleId, tenantId, ACTIVE_STATUS)
+        RoleEntity oldRole = roleRepository.findByIdAndTenantIdAndStatus(membership.getRoleId(), tenantId, ACTIVE_STATUS).orElse(null);
+        RoleEntity role = roleRepository.findByIdAndTenantIdAndStatus(roleId, tenantId, ACTIVE_STATUS)
             .orElseThrow(() -> {
                 log.warn(
                     "成员角色调整失败：角色不可用 tenantId={} operatorUserId={} membershipId={} roleId={} requestId={}",
@@ -212,8 +219,10 @@ public class TenantOrganizationService {
                 return new ApiException(HttpStatus.BAD_REQUEST, "ORG_ROLE_NOT_AVAILABLE", "所选角色不属于当前租户或已停用");
             });
 
+        removeChangedLoginAssignment(membership.getUserId(), tenantId, oldRole, role);
         membership.assignRole(roleId);
         userMembershipRepository.save(membership);
+        ensureLoginAssignment(membership.getUserId(), tenantId, role, membership.isDefaultMembership());
         log.info(
             "成员角色调整成功 tenantId={} operatorUserId={} membershipId={} roleId={} requestId={}",
             tenantId,
@@ -381,5 +390,33 @@ public class TenantOrganizationService {
     private static String normalizeSpaceCode(String value) {
         String normalized = normalizeOptional(value);
         return normalized.isBlank() ? "默认空间" : normalized;
+    }
+
+    private void ensureLoginAssignment(UUID userId, UUID tenantId, RoleEntity role, boolean defaultAssignment) {
+        String systemRole = resolveLoginRole(role);
+        String label = role.getName() == null || role.getName().isBlank() ? systemRole : role.getName();
+
+        // user_memberships 负责租户内组织关系，user_role_assignments 负责三大登录入口；两边必须同步，避免成员可见但无法登录。
+        userRoleAssignmentRepository.findByUserIdAndRoleAndTenantId(userId, systemRole, tenantId)
+            .orElseGet(() -> userRoleAssignmentRepository.save(
+                UserRoleAssignmentEntity.create(userId, systemRole, tenantId, label, defaultAssignment)
+            ));
+    }
+
+    private void removeChangedLoginAssignment(UUID userId, UUID tenantId, RoleEntity oldRole, RoleEntity newRole) {
+        if (oldRole == null) {
+            return;
+        }
+
+        String oldLoginRole = resolveLoginRole(oldRole);
+        String newLoginRole = resolveLoginRole(newRole);
+
+        if (!oldLoginRole.equals(newLoginRole)) {
+            userRoleAssignmentRepository.deleteByUserIdAndRoleAndTenantId(userId, oldLoginRole, tenantId);
+        }
+    }
+
+    private static String resolveLoginRole(RoleEntity role) {
+        return "tenant_admin".equals(role.getCode()) ? "tenant_admin" : "business";
     }
 }

@@ -13,6 +13,8 @@ public interface UserRoleAssignmentRepository extends JpaRepository<UserRoleAssi
 
     Optional<UserRoleAssignmentEntity> findByUserIdAndRoleAndTenantId(UUID userId, String role, UUID tenantId);
 
+    void deleteByUserIdAndRoleAndTenantId(UUID userId, String role, UUID tenantId);
+
     // 系统管理员的 tenant_id 为 NULL，需要特殊查询
     Optional<UserRoleAssignmentEntity> findByUserIdAndRoleAndTenantIdIsNull(UUID userId, String role);
 
