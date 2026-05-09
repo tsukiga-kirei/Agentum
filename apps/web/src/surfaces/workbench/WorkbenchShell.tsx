@@ -3,7 +3,6 @@ import {
   Activity,
   Archive,
   CheckCircle2,
-  ClipboardList,
   FileText,
   GitBranch,
   LayoutDashboard,
@@ -22,18 +21,20 @@ import { AssetsPage } from "../assets/AssetsPage";
 import { RunAuditPage } from "../audit/RunAuditPage";
 import { WorkflowDraftsPage } from "../designer/WorkflowDraftsPage";
 import { ThemeToggle } from "../../components/ThemeToggle";
+import { RoleSwitcher } from "../../components/RoleSwitcher";
 import { AgentumMark } from "../../components/brand/AgentumMark";
 import { useAuthStore } from "../../stores/authStore";
-import type { UserRole } from "../../types/auth";
 
 type SurfaceKey = "workbench" | "designer" | "assets" | "audit" | "tenant" | "system";
 
-type NavigationItem = {
-  key: SurfaceKey;
-  label: string;
-  description: string;
-  icon: typeof LayoutDashboard;
-  visibleFor?: UserRole[];
+// 图标映射：后端返回菜单 icon 字符串，前端映射为 lucide-react 组件
+const ICON_MAP: Record<string, typeof LayoutDashboard> = {
+  LayoutDashboard,
+  GitBranch,
+  Library,
+  Activity,
+  ShieldCheck,
+  Settings,
 };
 
 type Metric = {
@@ -66,52 +67,6 @@ type RunRecord = {
   node: string;
   duration: string;
 };
-
-// 产品分区先用前端内存态切换，后续接入路由后应映射到 system-overview.md 中的产品区域。
-const navigationItems: NavigationItem[] = [
-  {
-    key: "workbench",
-    label: "业务工作台",
-    description: "待办、发起和结果",
-    icon: LayoutDashboard,
-    visibleFor: ["executor", "reviewer", "designer", "agent_admin", "capability_admin", "tenant_admin"],
-  },
-  {
-    key: "designer",
-    label: "流程设计",
-    description: "画布与节点配置",
-    icon: GitBranch,
-    visibleFor: ["designer", "agent_admin", "capability_admin", "tenant_admin"],
-  },
-  {
-    key: "assets",
-    label: "能力资产",
-    description: "智能体、Skills、MCP",
-    icon: Library,
-    visibleFor: ["designer", "agent_admin", "capability_admin", "tenant_admin"],
-  },
-  {
-    key: "audit",
-    label: "运行审计",
-    description: "只读证据链",
-    icon: Activity,
-    visibleFor: ["reviewer", "tenant_admin"],
-  },
-  {
-    key: "tenant",
-    label: "租户管理",
-    description: "人员、角色、权限",
-    icon: ShieldCheck,
-    visibleFor: ["tenant_admin"],
-  },
-  {
-    key: "system",
-    label: "系统管理",
-    description: "租户、模型、底座",
-    icon: Settings,
-    visibleFor: ["system_admin"],
-  },
-];
 
 // 工作台数据当前用于撑起业务信息层级，后续由待办、运行记录和资产统计 API 替换。
 const metrics: Metric[] = [
@@ -225,21 +180,22 @@ const stateColors: Record<string, string> = {
 };
 
 export function WorkbenchShell() {
-  // 根据用户角色初始化 activeSurface 以防闪烁
-  const [activeSurface, setActiveSurface] = useState<SurfaceKey>(() => {
-    const defaultRole = useAuthStore.getState().user?.role;
-    return defaultRole === "system_admin" ? "system" : "workbench";
-  });
-  // 侧栏折叠属于工作台级偏好，后续接入用户设置 API 后应从服务端恢复并跨设备同步。
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  // 菜单来自后端（通过 authStore.menus），不再前端硬编码 visibleFor。
+  // 切换角色后后端返回新的 menus，前端自动更新导航。
+  const menus = useAuthStore((s) => s.menus);
   const themeMode = useAuthStore((s) => s.themeMode);
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const isDarkMode = themeMode === "dark";
-  const currentRole = user?.role ?? "executor";
-  const canDesignWorkflow = ["designer", "agent_admin", "capability_admin", "tenant_admin", "system_admin"].includes(currentRole);
-  const canOpenSystemManagement = currentRole === "system_admin";
-  const visibleNavigationItems = navigationItems.filter((item) => !item.visibleFor || item.visibleFor.includes(currentRole));
+
+  // 根据菜单列表确定初始页面（第一个菜单项）
+  const [activeSurface, setActiveSurface] = useState<SurfaceKey>(() => {
+    const firstMenu = menus[0];
+    return (firstMenu?.key as SurfaceKey) ?? "workbench";
+  });
+
+  // 侧栏折叠属于工作台级偏好，后续接入用户设置 API 后应从服务端恢复并跨设备同步。
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   return (
     <main className={`min-h-screen bg-[var(--color-bg-page)] text-[var(--color-text-primary)] transition-colors duration-300 ${isDarkMode ? "dark" : ""}`}>
@@ -256,31 +212,31 @@ export function WorkbenchShell() {
             </div>
           </div>
 
-          {/* 导航菜单 */}
+          {/* 导航菜单 —— 由后端 menus 驱动，不再硬编码 visibleFor */}
           <nav className="flex-1 overflow-y-auto min-h-0 space-y-1 px-3 py-3" aria-label="主导航">
             <p className={`px-3 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--color-sidebar-section-title)] ${isSidebarCollapsed ? "sr-only" : ""}`}>
               主工作区
             </p>
-            {visibleNavigationItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeSurface === item.key;
+            {menus.map((menuItem) => {
+              const Icon = ICON_MAP[menuItem.icon] ?? LayoutDashboard;
+              const isActive = activeSurface === menuItem.key;
 
               return (
                 <button
-                  key={item.label}
+                  key={menuItem.key}
                   type="button"
-                  onClick={() => setActiveSurface(item.key)}
+                  onClick={() => setActiveSurface(menuItem.key as SurfaceKey)}
                   className={`relative flex w-full items-center rounded-lg text-left transition-all duration-200 ${isSidebarCollapsed ? "h-11 justify-center px-0" : "gap-3 px-3 py-2.5"} ${
                     isActive
                       ? "bg-[var(--color-bg-sidebar-active)] font-medium text-[var(--color-text-sidebar-active)]"
                       : "text-[var(--color-text-sidebar)] hover:bg-[var(--color-bg-sidebar-hover)] hover:text-[var(--color-text-primary)]"
                   }`}
-                  title={item.description}
+                  title={menuItem.description}
                 >
                   <Icon className={`h-5 w-5 shrink-0 ${isActive ? "text-[var(--color-primary)]" : ""}`} aria-hidden="true" />
                   <span className={`min-w-0 ${isSidebarCollapsed ? "hidden" : ""}`}>
-                    <span className="block text-sm font-medium">{item.label}</span>
-                    <span className="block text-xs text-[var(--color-text-tertiary)]">{item.description}</span>
+                    <span className="block text-sm font-medium">{menuItem.label}</span>
+                    <span className="block text-xs text-[var(--color-text-tertiary)]">{menuItem.description}</span>
                   </span>
                   {isActive ? <span className="absolute right-0 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-l bg-[var(--color-primary)]" /> : null}
                 </button>
@@ -323,7 +279,7 @@ export function WorkbenchShell() {
 
         {/* ===== 主内容区 ===== */}
         <section className="min-w-0 flex-1">
-          {/* 顶部操作栏 —— 去除了与下方工作区的分割线，同色融合 */}
+          {/* 顶部操作栏 —— 右侧替换为角色切换器 + 主题切换 */}
           <header className="bg-[var(--color-bg-page)]">
             <div className="mx-auto flex min-h-[var(--header-height)] max-w-[1400px] items-center justify-between gap-3 px-5 lg:px-6">
               <div className="flex min-w-0 items-center gap-3">
@@ -339,34 +295,8 @@ export function WorkbenchShell() {
               <div className="flex items-center gap-2">
                 {/* 主题切换药丸（与 AuraOA 一致） */}
                 <ThemeToggle />
-                <button
-                  type="button"
-                  onClick={() => setActiveSurface("workbench")}
-                  className="agent-button h-8 px-3 text-[13px]"
-                >
-                  <ClipboardList className="h-3.5 w-3.5" aria-hidden="true" />
-                  我的待办
-                </button>
-                {canDesignWorkflow ? (
-                  <button
-                    type="button"
-                    onClick={() => setActiveSurface("designer")}
-                    className="agent-button agent-button-primary h-8 px-3 text-[13px]"
-                  >
-                    <GitBranch className="h-3.5 w-3.5" aria-hidden="true" />
-                    设计流程
-                  </button>
-                ) : null}
-                {canOpenSystemManagement ? (
-                  <button
-                    type="button"
-                    onClick={() => setActiveSurface("system")}
-                    className="agent-button h-8 px-3 text-[13px]"
-                  >
-                    <Settings className="h-3.5 w-3.5" aria-hidden="true" />
-                    系统管理
-                  </button>
-                ) : null}
+                {/* 角色切换器（参照 AuraOA，替换原来的硬编码操作按钮） */}
+                <RoleSwitcher />
               </div>
             </div>
           </header>

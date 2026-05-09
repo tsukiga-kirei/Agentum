@@ -12,7 +12,6 @@ import {
   PlusCircle,
   PlayCircle,
   ServerCog,
-  Settings,
   ShieldCheck,
   Users,
   X,
@@ -697,5 +696,3 @@ export function SystemManagementPage() {
     </>
   );
 }
-
-// StatCard 已迁移到概览的 sys-overview-stat CSS 样式中，不再需要独立组件

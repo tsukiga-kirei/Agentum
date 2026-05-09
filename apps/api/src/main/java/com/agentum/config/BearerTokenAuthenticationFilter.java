@@ -54,7 +54,8 @@ public class BearerTokenAuthenticationFilter extends OncePerRequestFilter {
                 claims.tenantId(),
                 claims.role(),
                 claims.portal(),
-                claims.spaceCode()
+                claims.spaceCode(),
+                claims.roleAssignmentId()
             );
             // 过滤器只负责把 Bearer Token 还原为 Principal；具体租户、资源和敏感动作权限仍由业务层重新校验。
             log.debug(

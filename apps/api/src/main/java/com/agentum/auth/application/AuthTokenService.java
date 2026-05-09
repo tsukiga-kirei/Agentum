@@ -68,6 +68,7 @@ public class AuthTokenService {
         payload.put("role", principal.role());
         payload.put("portal", principal.portal());
         payload.put("spaceCode", principal.spaceCode());
+        payload.put("raId", principal.roleAssignmentId() == null ? null : principal.roleAssignmentId().toString());
         payload.put("iat", issuedAt.getEpochSecond());
         payload.put("exp", expiresAt.getEpochSecond());
 
@@ -95,6 +96,8 @@ public class AuthTokenService {
             Instant expiresAt = Instant.ofEpochSecond(payload.path("exp").asLong());
             JsonNode tenantIdNode = payload.get("tenantId");
             UUID tenantId = tenantIdNode == null || tenantIdNode.isNull() ? null : UUID.fromString(tenantIdNode.asText());
+            JsonNode raIdNode = payload.get("raId");
+            UUID roleAssignmentId = raIdNode == null || raIdNode.isNull() ? null : UUID.fromString(raIdNode.asText());
 
             if (!expiresAt.isAfter(clock.instant())) {
                 log.warn("Token 已过期 userId={} tenantId={} role={} requestId={}", payload.path("sub").asText(), tenantId, payload.path("role").asText(), RequestIds.current());
@@ -108,6 +111,7 @@ public class AuthTokenService {
                 payload.path("role").asText(),
                 payload.path("portal").asText(),
                 payload.path("spaceCode").asText("default"),
+                roleAssignmentId,
                 issuedAt,
                 expiresAt
             );

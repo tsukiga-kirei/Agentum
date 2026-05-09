@@ -2,21 +2,19 @@ package com.agentum.auth.domain;
 
 import com.agentum.shared.api.ApiException;
 import java.util.Locale;
-import java.util.Set;
 import org.springframework.http.HttpStatus;
 
-// 登录入口决定首屏和允许角色范围；它只是入口约束，不能替代后续资源级权限判断。
+// 登录入口决定首屏和活跃角色；user_role_assignments.role 直接对应入口类型。
+// business 进入业务工作台，tenant_admin 进入租户管理，system_admin 进入系统管理。
 public enum PortalType {
-    BUSINESS("business", Set.of("executor", "reviewer", "workflow_designer", "agent_admin", "capability_admin", "observer")),
-    TENANT_ADMIN("tenant_admin", Set.of("tenant_admin")),
-    SYSTEM_ADMIN("system_admin", Set.of("system_admin"));
+    BUSINESS("business"),
+    TENANT_ADMIN("tenant_admin"),
+    SYSTEM_ADMIN("system_admin");
 
     private final String code;
-    private final Set<String> allowedRoleCodes;
 
-    PortalType(String code, Set<String> allowedRoleCodes) {
+    PortalType(String code) {
         this.code = code;
-        this.allowedRoleCodes = allowedRoleCodes;
     }
 
     public String code() {
@@ -25,10 +23,6 @@ public enum PortalType {
 
     public boolean isTenantScoped() {
         return this != SYSTEM_ADMIN;
-    }
-
-    public boolean allowsRole(String roleCode) {
-        return allowedRoleCodes.contains(roleCode);
     }
 
     public static PortalType fromCode(String code) {

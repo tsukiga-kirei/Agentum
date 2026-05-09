@@ -1,6 +1,6 @@
 # 当前进度与后续计划
 
-更新时间：2026-05-09。
+更新时间：2026-05-09（权限架构升级 - 第一阶段）。
 
 本文档只记录当前施工状态、阶段计划和下一步任务。长期规范、系统说明和架构设计分别维护在：
 
@@ -98,6 +98,23 @@
 - 运行审计页移除恢复 / 审核按钮，改为只读执行链路、节点输入输出快照和审计边界说明。
 - 租户管理页按人员组织、角色权限、资源授权、需求配置、敏感动作、审计可见性组织，中文展示业务权限并弱化动作码。
 - 记录页面抽象原则：当前静态页服务于解释角色任务和信息层级，不作为长期模块边界；执行链路和资产创建入口等抽象后续需按真实数据来源和具体模块能力继续收敛。
+
+### 2.4 权限架构升级（参照 AuraOA）
+
+已完成第一、二阶段：
+
+- 新增 Flyway 迁移 `V202605100002`：创建 `user_role_assignments`（统一角色分配表）和 `tenant_org_roles`（租户内自定义角色表），并从 `system_user_roles` + `user_memberships` 迁移数据。
+- 新增 `UserRoleAssignmentEntity` / `TenantOrgRoleEntity` JPA 实体和仓储。
+- 重写 `AuthService`：登录、/me、角色切换都改为基于 `user_role_assignments`，返回完整角色列表和菜单。
+- 新增 `MenuService`：根据系统角色（system_admin / tenant_admin / business）计算左侧菜单。
+- 菜单分配确认为"每个角色只看自己的菜单"：系统管理员 → 系统管理，租户管理员 → 租户管理，业务用户 → 业务工作台。
+- 新增 `PUT /api/auth/switch-role`：切换角色后重签 token，返回新的活跃角色和菜单。
+- `LoginResponse` 扩展为包含 `roles[]`、`activeRole`、`permissions[]`、`menus[]`。
+- `AuthTokenClaims` / `CurrentUserPrincipal` 新增 `roleAssignmentId`。
+- 前端 `authStore` 新增 `roles`、`activeRole`、`permissions`、`menus` 状态和 `switchRole` 动作。
+- `WorkbenchShell` 菜单改为后端 `menus` 驱动，移除硬编码 `visibleFor`。
+- 新增 `RoleSwitcher` 组件：右上角展示用户所有可用角色并支持一键切换。
+- TypeScript 类型检查通过。
 - 登录页补齐租户下拉占位，并在前端模拟认证状态中保存 `tenantId`、租户名称和租户编码，为后续接入公开租户列表和登录 API 留出契约位置。
 - 参考 AuraOA 的 UI 框架思路，引入 React 版 Ant Design，并将登录页租户下拉替换为组件库 Select；Vite 已配置 vendor 分包，避免组件库进入主入口 chunk。
 - 前端登录链路已接入后端认证 API：租户下拉调用 `/api/public/tenants`，登录调用 `/api/auth/login`，刷新恢复调用 `/api/auth/me`，登出调用 `/api/auth/logout`；本地 mock 登录数据已移除。

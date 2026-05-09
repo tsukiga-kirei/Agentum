@@ -1,4 +1,4 @@
-import type { AuthUser, LoginRequest, LoginResponse, TenantOption } from "../types/auth";
+import type { LoginRequest, LoginResponse, MeResponse, SwitchRoleRequest, SwitchRoleResponse, TenantOption } from "../types/auth";
 import type {
   CreateDepartmentRequest,
   CreateMemberRequest,
@@ -97,7 +97,9 @@ async function apiRequest<T>(path: string, options: RequestOptions = {}): Promis
 export const authApi = {
   listTenants: () => apiRequest<TenantOption[]>("/api/public/tenants"),
   login: (request: LoginRequest) => apiRequest<LoginResponse>("/api/auth/login", { method: "POST", body: request }),
-  me: (token: string) => apiRequest<AuthUser>("/api/auth/me", { token }),
+  me: (token: string) => apiRequest<MeResponse>("/api/auth/me", { token }),
+  switchRole: (token: string, request: SwitchRoleRequest) =>
+    apiRequest<SwitchRoleResponse>("/api/auth/switch-role", { method: "PUT", token, body: request }),
   logout: (token: string) => apiRequest<void>("/api/auth/logout", { method: "POST", token }),
 };
 
