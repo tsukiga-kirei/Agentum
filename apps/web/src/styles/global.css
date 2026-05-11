@@ -1120,9 +1120,11 @@ textarea:focus-visible {
 
 /* 状态胶囊 */
 .sys-status {
-  display: flex; align-items: center; gap: 6px;
+  display: inline-flex; align-items: center; gap: 6px;
   font-size: 12px; font-weight: 500; flex-shrink: 0;
   padding: 4px 10px; border-radius: 9999px;
+  width: max-content;
+  white-space: nowrap;
 }
 .sys-status-dot {
   width: 7px; height: 7px; border-radius: 50%;
@@ -1342,6 +1344,12 @@ textarea:focus-visible {
   border: none; font-size: 13px;
 }
 .sys-btn--link:hover { filter: brightness(1.15); }
+.sys-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
+  filter: none;
+}
 
 /* 抽屉底部操作栏 */
 .sys-drawer-footer {
@@ -1523,4 +1531,311 @@ textarea:focus-visible {
 .sys-modal-tab:hover { color: var(--color-text-primary); }
 .sys-modal-tab--active { background: var(--color-bg-card); color: var(--color-primary); box-shadow: var(--shadow-xs); }
 
+.tenant-permission-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.tenant-permission-option {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 78px;
+  padding: 12px 36px 12px 12px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-card);
+  color: var(--color-text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast), box-shadow var(--transition-fast);
+}
+.tenant-permission-option:hover {
+  border-color: color-mix(in srgb, var(--color-primary) 45%, var(--color-border-light));
+  background: var(--color-bg-hover);
+}
+.tenant-permission-option--checked {
+  border-color: color-mix(in srgb, var(--color-primary) 65%, var(--color-border-light));
+  background: var(--color-primary-bg);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.08);
+}
+.tenant-permission-option-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-hover);
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+.tenant-permission-option-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.tenant-permission-option-text span {
+  font-size: 13px;
+  font-weight: 600;
+}
+.tenant-permission-option-text small {
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.tenant-permission-option-check {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  color: var(--color-primary);
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+.tenant-permission-option--checked .tenant-permission-option-check {
+  opacity: 1;
+}
+.tenant-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0 0;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+.tenant-pagination-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tenant-org-layout {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 16px;
+}
+.tenant-dept-tree,
+.tenant-member-table-card {
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-card);
+  overflow: hidden;
+}
+.tenant-dept-tree-header {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-border-light);
+  background: var(--color-bg-hover);
+}
+.tenant-dept-tree-header h3,
+.tenant-member-toolbar h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+.tenant-dept-tree-header p,
+.tenant-member-toolbar p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+.tenant-dept-tree-list {
+  max-height: 520px;
+  overflow: auto;
+  padding: 8px;
+}
+.tenant-dept-tree-item {
+  width: 100%;
+  min-height: 38px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  text-align: left;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.tenant-dept-tree-item:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+.tenant-dept-tree-item--active {
+  background: var(--color-primary-bg);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+.tenant-dept-tree-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tenant-dept-tree-count {
+  min-width: 24px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--color-bg-hover);
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  text-align: center;
+}
+.tenant-dept-tree-item--active .tenant-dept-tree-count {
+  background: var(--color-bg-card);
+  color: var(--color-primary);
+}
+.tenant-member-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-border-light);
+}
+.tenant-member-search {
+  width: min(320px, 100%);
+  height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-input, var(--color-bg-page));
+  color: var(--color-text-tertiary);
+}
+.tenant-member-search input {
+  width: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: 13px;
+}
+.tenant-member-table-wrap {
+  overflow-x: auto;
+}
+.tenant-member-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 920px;
+}
+.tenant-member-table th {
+  height: 42px;
+  padding: 0 14px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  background: var(--color-bg-hover);
+  border-bottom: 1px solid var(--color-border-light);
+  white-space: nowrap;
+}
+.tenant-member-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--color-border-light);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  vertical-align: middle;
+}
+.tenant-member-table th:nth-child(5),
+.tenant-member-table td:nth-child(5) {
+  min-width: 96px;
+}
+.tenant-member-table th:nth-child(6),
+.tenant-member-table td:nth-child(6) {
+  min-width: 92px;
+  white-space: nowrap;
+}
+.tenant-member-table tr:hover td {
+  background: var(--color-bg-hover);
+}
+.tenant-member-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 180px;
+}
+.tenant-member-avatar {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--color-primary-bg);
+  color: var(--color-primary);
+  font-size: 13px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.tenant-member-cell strong {
+  display: block;
+  color: var(--color-text-primary);
+  font-size: 13px;
+}
+.tenant-member-cell span:last-child {
+  display: block;
+  margin-top: 2px;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+.tenant-member-edit-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  margin-bottom: 14px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-hover);
+}
+.tenant-member-edit-summary strong {
+  display: block;
+  color: var(--color-text-primary);
+  font-size: 14px;
+}
+.tenant-member-edit-summary span:last-child {
+  display: block;
+  margin-top: 2px;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+.sys-readonly-field {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-hover);
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+.tenant-member-empty {
+  height: 120px;
+  text-align: center;
+  color: var(--color-text-tertiary);
+}
 
+@media (max-width: 720px) {
+  .tenant-permission-grid {
+    grid-template-columns: 1fr;
+  }
+  .tenant-pagination {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .tenant-org-layout {
+    grid-template-columns: 1fr;
+  }
+  .tenant-member-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

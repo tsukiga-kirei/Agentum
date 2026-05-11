@@ -2,9 +2,15 @@ import type { LoginRequest, LoginResponse, MeResponse, SwitchRoleRequest, Switch
 import type {
   CreateDepartmentRequest,
   CreateMemberRequest,
+  CreateTenantOrgRoleRequest,
+  PageResponse,
+  TenantOrgRole,
   TenantOrganizationOverview,
+  TenantResourceOption,
   UpdateMembershipDepartmentRequest,
   UpdateMembershipRoleRequest,
+  UpdateMembershipStatusRequest,
+  UpdateTenantOrgRoleRequest,
 } from "../types/organization";
 import type {
   CreateTenantRequest,
@@ -111,10 +117,21 @@ export const authApi = {
 
 export const organizationApi = {
   overview: (tenantId: string, token: string) => apiRequest<TenantOrganizationOverview>(`/api/admin/tenants/${tenantId}/organization/overview`, { token }),
+  listOrgRoles: (tenantId: string, token: string, page = 1, size = 10, sort = "updatedAt,desc") =>
+    apiRequest<PageResponse<TenantOrgRole>>(
+      `/api/admin/tenants/${tenantId}/organization/org-roles?page=${page}&size=${size}&sort=${encodeURIComponent(sort)}`,
+      { token }
+    ),
+  listResourceOptions: (tenantId: string, token: string) =>
+    apiRequest<TenantResourceOption[]>(`/api/admin/tenants/${tenantId}/organization/resource-options`, { token }),
   createMember: (tenantId: string, token: string, request: CreateMemberRequest) =>
     apiRequest<TenantOrganizationOverview>(`/api/admin/tenants/${tenantId}/organization/members`, { method: "POST", token, body: request }),
   createDepartment: (tenantId: string, token: string, request: CreateDepartmentRequest) =>
     apiRequest<TenantOrganizationOverview>(`/api/admin/tenants/${tenantId}/organization/departments`, { method: "POST", token, body: request }),
+  createOrgRole: (tenantId: string, token: string, request: CreateTenantOrgRoleRequest) =>
+    apiRequest<TenantOrgRole>(`/api/admin/tenants/${tenantId}/organization/org-roles`, { method: "POST", token, body: request }),
+  updateOrgRole: (tenantId: string, roleId: string, token: string, request: UpdateTenantOrgRoleRequest) =>
+    apiRequest<TenantOrgRole>(`/api/admin/tenants/${tenantId}/organization/org-roles/${roleId}`, { method: "PATCH", token, body: request }),
   updateMembershipRole: (tenantId: string, membershipId: string, token: string, request: UpdateMembershipRoleRequest) =>
     apiRequest<TenantOrganizationOverview>(`/api/admin/tenants/${tenantId}/organization/memberships/${membershipId}/role`, {
       method: "PATCH",
@@ -123,6 +140,12 @@ export const organizationApi = {
     }),
   updateMembershipDepartment: (tenantId: string, membershipId: string, token: string, request: UpdateMembershipDepartmentRequest) =>
     apiRequest<TenantOrganizationOverview>(`/api/admin/tenants/${tenantId}/organization/memberships/${membershipId}/department`, {
+      method: "PATCH",
+      token,
+      body: request,
+    }),
+  updateMembershipStatus: (tenantId: string, membershipId: string, token: string, request: UpdateMembershipStatusRequest) =>
+    apiRequest<TenantOrganizationOverview>(`/api/admin/tenants/${tenantId}/organization/memberships/${membershipId}/status`, {
       method: "PATCH",
       token,
       body: request,

@@ -12,5 +12,9 @@ public interface UserMembershipRepository extends JpaRepository<UserMembershipEn
 
     List<UserMembershipEntity> findByTenantIdAndStatus(UUID tenantId, String status);
 
+    List<UserMembershipEntity> findByTenantId(UUID tenantId);
+
+    Optional<UserMembershipEntity> findByIdAndTenantId(UUID id, UUID tenantId);
+
     Optional<UserMembershipEntity> findByIdAndTenantIdAndStatus(UUID id, UUID tenantId, String status);
 }

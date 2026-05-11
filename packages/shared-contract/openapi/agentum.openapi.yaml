@@ -246,7 +246,7 @@ paths:
         "403":
           description: 当前账号不能管理该租户
         "404":
-          description: 成员关系不存在或已停用
+          description: 成员关系不存在
   /api/admin/tenants/{tenantId}/organization/memberships/{membershipId}/department:
     patch:
       summary: 调整成员部门
@@ -293,7 +293,206 @@ paths:
         "403":
           description: 当前账号不能管理该租户
         "404":
-          description: 成员关系不存在或已停用
+          description: 成员关系不存在
+  /api/admin/tenants/{tenantId}/organization/memberships/{membershipId}/status:
+    patch:
+      summary: 调整成员状态
+      description: 启用或禁用成员关系。禁用不会删除历史关系，但会影响当前租户入口切换和业务可见性。
+      tags:
+        - Organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: membershipId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMembershipStatusRequest"
+      responses:
+        "200":
+          description: 更新成功并返回最新人员组织概览
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/TenantOrganizationOverview"
+        "400":
+          description: 成员状态非法
+        "401":
+          description: 未登录或令牌无效
+        "403":
+          description: 当前账号不能管理该租户
+        "404":
+          description: 成员关系不存在
+  /api/admin/tenants/{tenantId}/organization/org-roles:
+    get:
+      summary: 分页获取租户内角色权限
+      description: 租户管理页使用的第二层页面权限配置台账。
+      tags:
+        - Organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 10
+        - name: sort
+          in: query
+          schema:
+            type: string
+            default: updatedAt,desc
+      responses:
+        "200":
+          description: 租户内角色分页
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/TenantOrgRolePageResponse"
+        "401":
+          description: 未登录或令牌无效
+        "403":
+          description: 当前账号不能管理该租户
+    post:
+      summary: 新增租户内角色权限
+      tags:
+        - Organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTenantOrgRoleRequest"
+      responses:
+        "200":
+          description: 新增后的角色权限
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/TenantOrgRole"
+        "409":
+          description: 租户内角色名称重复
+  /api/admin/tenants/{tenantId}/organization/resource-options:
+    get:
+      summary: 获取当前租户可授权资源
+      description: 只返回系统管理已启用给当前租户的 MCP、Skill、提示词模板和交付能力，用于租户内资源授权。
+      tags:
+        - Organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 当前租户可授权资源
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/TenantResourceOption"
+        "401":
+          description: 未登录或令牌无效
+        "403":
+          description: 当前账号不能管理该租户
+  /api/admin/tenants/{tenantId}/organization/org-roles/{roleId}:
+    patch:
+      summary: 更新租户内角色权限
+      tags:
+        - Organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: roleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTenantOrgRoleRequest"
+      responses:
+        "200":
+          description: 更新后的角色权限
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/TenantOrgRole"
+        "404":
+          description: 租户内角色不存在
   /api/system/summary:
     get:
       summary: 系统管理概览统计
@@ -1015,6 +1214,193 @@ components:
           type: string
           format: uuid
           nullable: true
+    UpdateMembershipStatusRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - active
+            - disabled
+      required:
+        - status
+    TenantOrgRolePageResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TenantOrgRole"
+        page:
+          type: integer
+        size:
+          type: integer
+        total:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+      required:
+        - items
+        - page
+        - size
+        - total
+        - totalPages
+    TenantOrgRole:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        pagePermissions:
+          type: array
+          items:
+            type: string
+            enum:
+              - workbench
+              - designer
+              - assets
+              - audit
+        resourcePermissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/TenantResourcePermission"
+        systemRole:
+          type: boolean
+        status:
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - name
+        - description
+        - pagePermissions
+        - resourcePermissions
+        - systemRole
+        - status
+        - createdAt
+        - updatedAt
+    TenantResourcePermission:
+      type: object
+      properties:
+        resourceType:
+          type: string
+          enum:
+            - mcp
+            - skill
+            - prompt_template
+            - delivery
+        resourceId:
+          type: string
+          format: uuid
+        resourceName:
+          type: string
+        resourceCode:
+          type: string
+        actions:
+          type: array
+          items:
+            type: string
+      required:
+        - resourceType
+        - resourceId
+        - resourceName
+        - resourceCode
+        - actions
+    TenantResourcePermissionRequest:
+      type: object
+      properties:
+        resourceType:
+          type: string
+          enum:
+            - mcp
+            - skill
+            - prompt_template
+            - delivery
+        resourceId:
+          type: string
+          format: uuid
+        actions:
+          type: array
+          items:
+            type: string
+      required:
+        - resourceType
+        - resourceId
+    TenantResourceOption:
+      type: object
+      properties:
+        resourceType:
+          type: string
+        resourceId:
+          type: string
+          format: uuid
+        resourceName:
+          type: string
+        resourceCode:
+          type: string
+        version:
+          type: string
+        riskLevel:
+          type: string
+      required:
+        - resourceType
+        - resourceId
+        - resourceName
+        - resourceCode
+        - version
+        - riskLevel
+    CreateTenantOrgRoleRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 500
+        pagePermissions:
+          type: array
+          items:
+            type: string
+        resourcePermissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/TenantResourcePermissionRequest"
+      required:
+        - name
+    UpdateTenantOrgRoleRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 500
+        pagePermissions:
+          type: array
+          items:
+            type: string
+        resourcePermissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/TenantResourcePermissionRequest"
+        status:
+          type: string
+          enum:
+            - active
+            - disabled
+      required:
+        - name
+        - status
     OrganizationMember:
       type: object
       properties:

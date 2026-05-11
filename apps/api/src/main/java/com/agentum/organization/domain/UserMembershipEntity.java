@@ -93,4 +93,9 @@ public class UserMembershipEntity {
     public void assignDepartment(UUID departmentId) {
         this.departmentId = departmentId;
     }
+
+    // 成员状态影响该成员在当前租户内的登录入口和业务可见性，禁用不删除历史关系。
+    public void updateStatus(String status) {
+        this.status = status;
+    }
 }

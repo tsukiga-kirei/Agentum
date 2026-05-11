@@ -1,16 +1,42 @@
-import { useEffect, useState } from "react";
-import { Button, Form, Input, InputNumber, Modal, Segmented, Select } from "antd";
-import { Building2, ClipboardList, Database, Eye, FileText, LockKeyhole, ShieldCheck, UserPlus, UserRoundCog, UsersRound } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Empty, Segmented, Select, message } from "antd";
+import {
+  Building2,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardList,
+  Code2,
+  Database,
+  Edit,
+  Eye,
+  Info,
+  LockKeyhole,
+  PlusCircle,
+  Save,
+  Search,
+  ShieldCheck,
+  Tag,
+  Type,
+  UserPlus,
+  UserRoundCog,
+  UsersRound,
+  X,
+} from "lucide-react";
 import { AgentumApiError, organizationApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import type {
   CreateDepartmentRequest,
   CreateMemberRequest,
+  CreateTenantOrgRoleRequest,
   OrganizationMembership,
+  TenantOrgRole,
   TenantOrganizationOverview,
+  TenantResourceOption,
+  UpdateTenantOrgRoleRequest,
 } from "../../types/organization";
 
-type TenantManagementTabKey = "organization" | "roles" | "resources" | "requirements" | "sensitive" | "audit";
+type TenantManagementTabKey = "organization" | "resources";
 
 type TenantManagementTab = {
   key: TenantManagementTabKey;
@@ -19,144 +45,80 @@ type TenantManagementTab = {
   icon: typeof ShieldCheck;
 };
 
-type BusinessAction = {
-  label: string;
-  code: string;
-};
-
-type RolePolicy = {
-  role: string;
-  scope: string;
-  actions: BusinessAction[];
-  sensitiveActions: BusinessAction[];
-};
-
-type ResourceGrant = {
-  resource: string;
-  owner: string;
-  grants: string;
-  rule: string;
-};
-
-type SensitivePolicy = {
-  action: string;
-  owner: string;
-  approval: string;
-  note: string;
-};
-
 const tenantManagementTabs: TenantManagementTab[] = [
   { key: "organization", label: "人员组织", description: "用户、部门和空间成员关系", icon: UsersRound },
-  { key: "roles", label: "角色权限", description: "角色、部门、人员的小权限", icon: UserRoundCog },
-  { key: "resources", label: "资源授权", description: "具体流程、资产和结果给谁看", icon: Database },
-  { key: "requirements", label: "需求配置", description: "表单字段、审核规则和交付目标", icon: ClipboardList },
-  { key: "sensitive", label: "敏感动作", description: "高风险调用、外部交付和凭证审批", icon: LockKeyhole },
-  { key: "audit", label: "审计可见性", description: "谁能看证据链和脱敏字段", icon: Eye },
+  { key: "resources", label: "资源授权", description: "按角色、人员、部门授权可用功能", icon: UserRoundCog },
 ];
 
-const organizationItems = [
-  { title: "人员管理", detail: "成员状态、所属部门、租户角色、最近登录和禁用入口。", icon: UsersRound },
-  { title: "部门管理", detail: "租户内部门树，用于待办分派、审核范围和资源过滤。", icon: Building2 },
-  { title: "角色分配", detail: "一个用户可在不同空间拥有不同角色，角色只授予动作能力。", icon: UserRoundCog },
+const pagePermissionOptions = [
+  { value: "workbench", label: "业务工作台", description: "待办、发起流程和运行摘要", icon: ClipboardList },
+  { value: "designer", label: "流程设计", description: "草稿、画布和节点配置", icon: Code2 },
+  { value: "assets", label: "能力资产", description: "智能体、Skill、MCP 和交付能力", icon: Database },
+  { value: "audit", label: "运行审计", description: "只读证据链、变量快照和交付记录", icon: Eye },
 ];
 
-const rolePolicies: RolePolicy[] = [
-  {
-    role: "系统管理员",
-    scope: "全局租户、模型、系统级能力和凭证策略",
-    actions: [
-      { label: "查看", code: "read" },
-      { label: "新增", code: "create" },
-      { label: "编辑", code: "update" },
-      { label: "删除", code: "delete" },
-    ],
-    sensitiveActions: [
-      { label: "管理凭证策略", code: "manage_credential" },
-      { label: "查看审计日志", code: "view_audit_log" },
-    ],
-  },
-  {
-    role: "租户管理员",
-    scope: "租户内成员、部门、空间、资产授权和发布策略",
-    actions: [
-      { label: "查看", code: "read" },
-      { label: "新增", code: "create" },
-      { label: "编辑", code: "update" },
-      { label: "发布", code: "publish" },
-    ],
-    sensitiveActions: [
-      { label: "分配权限", code: "manage_permission" },
-      { label: "审批高风险 MCP", code: "invoke_sensitive_mcp" },
-    ],
-  },
-  {
-    role: "流程设计者",
-    scope: "工作流定义、节点配置、测试运行和发布申请",
-    actions: [
-      { label: "查看", code: "read" },
-      { label: "新建草稿", code: "create" },
-      { label: "编辑配置", code: "update" },
-      { label: "测试运行", code: "execute" },
-    ],
-    sensitiveActions: [{ label: "提交发布", code: "publish" }],
-  },
-  {
-    role: "审核人",
-    scope: "人工审核节点、高风险审批和待办处理",
-    actions: [
-      { label: "查看", code: "read" },
-      { label: "审核", code: "approve" },
-    ],
-    sensitiveActions: [{ label: "下载敏感文件", code: "download_sensitive_file" }],
-  },
-  {
-    role: "执行人",
-    scope: "发起流程、补充输入、追问确认和查看授权结果",
-    actions: [
-      { label: "查看", code: "read" },
-      { label: "发起流程", code: "execute" },
-    ],
-    sensitiveActions: [],
-  },
-];
+const emptyMemberForm: CreateMemberRequest = {
+  displayName: "",
+  username: "",
+  password: "",
+  email: "",
+  roleId: "",
+  departmentId: undefined,
+  spaceCode: "默认空间",
+};
 
-const resourceGrants: ResourceGrant[] = [
-  { resource: "流程模板", owner: "流程设计者", grants: "按角色、部门或空间授权发起和查看", rule: "只展示已发布且当前用户可发起的模板。" },
-  { resource: "智能体模板", owner: "智能体管理员", grants: "授权给流程、设计者或业务空间", rule: "节点引用模板版本，运行时再次校验可用性。" },
-  { resource: "运行记录", owner: "流程负责人", grants: "发起人、处理人、负责人、审计角色可见", rule: "业务用户看摘要，审计角色看只读证据链。" },
-  { resource: "交付物", owner: "业务负责人", grants: "按用户、部门、角色或外部交付目标授权", rule: "敏感文件下载需要单独动作权限和审计。" },
-];
+const emptyDepartmentForm: CreateDepartmentRequest = {
+  name: "",
+  code: "",
+  parentId: undefined,
+  sortOrder: 0,
+};
 
-const requirementConfigs = [
-  { title: "提单字段", detail: "控制业务用户发起流程时需要填写哪些字段、附件和必填校验。", icon: ClipboardList },
-  { title: "审核规则", detail: "按流程类型、部门、金额或风险等级配置租户内审核路径。", icon: ShieldCheck },
-  { title: "交付目标", detail: "限制文档、邮件、OA、IM、Webhook 等交付能力在本租户内的使用范围。", icon: FileText },
-];
+const emptyOrgRoleForm: CreateTenantOrgRoleRequest & { status: "active" | "disabled" } = {
+  name: "",
+  description: "",
+  pagePermissions: ["workbench"],
+  resourcePermissions: [],
+  status: "active",
+};
 
-const sensitivePolicies: SensitivePolicy[] = [
-  { action: "高风险 MCP 调用", owner: "租户管理员", approval: "需要审批", note: "例如邮件发送、OA 创建、数据库写入；调用前由后端网关复核。" },
-  { action: "外部系统交付", owner: "流程负责人", approval: "需要二次确认", note: "交付到邮件、OA、IM、Webhook 前需要记录目标和交付变量。" },
-  { action: "凭证绑定与更新", owner: "系统管理员", approval: "系统管理处理", note: "租户管理只控制谁能申请或审批，凭证明文永远不进前端。" },
-  { action: "敏感文件下载", owner: "审计 / 租户管理员", approval: "按策略控制", note: "下载动作单独授权，和普通查看运行摘要分开。" },
-];
+type MemberEditDraft = {
+  departmentId?: string;
+  roleId: string;
+  status: "active" | "disabled";
+};
 
 export function TenantManagementPage() {
   // 租户管理页按租户管理员的日常任务组织展示，动作码只作为后端策略标识露出在次级文本中。
   const [activeTab, setActiveTab] = useState<TenantManagementTabKey>("organization");
   const user = useAuthStore((s) => s.user);
   const token = useAuthStore((s) => s.token);
-  const themeMode = useAuthStore((s) => s.themeMode);
-  const darkModalClassName = themeMode === "dark" ? "agent-dark-modal" : undefined;
+  const [messageApi, messageContextHolder] = message.useMessage();
   const [organizationOverview, setOrganizationOverview] = useState<TenantOrganizationOverview | null>(null);
   const [organizationLoading, setOrganizationLoading] = useState(false);
   const [organizationError, setOrganizationError] = useState("");
   const [createMemberOpen, setCreateMemberOpen] = useState(false);
   const [createMemberSubmitting, setCreateMemberSubmitting] = useState(false);
-  const [createMemberForm] = Form.useForm<CreateMemberRequest>();
+  const [memberDraft, setMemberDraft] = useState<CreateMemberRequest>(emptyMemberForm);
   const [createDepartmentOpen, setCreateDepartmentOpen] = useState(false);
   const [createDepartmentSubmitting, setCreateDepartmentSubmitting] = useState(false);
-  const [createDepartmentForm] = Form.useForm<CreateDepartmentRequest>();
+  const [departmentDraft, setDepartmentDraft] = useState<CreateDepartmentRequest>(emptyDepartmentForm);
   const [membershipUpdatingId, setMembershipUpdatingId] = useState<string | null>(null);
+  const [editMemberOpen, setEditMemberOpen] = useState(false);
+  const [editingMembership, setEditingMembership] = useState<OrganizationMembership | null>(null);
+  const [memberEditDraft, setMemberEditDraft] = useState<MemberEditDraft>({ departmentId: undefined, roleId: "", status: "active" });
+  const [memberEditSubmitting, setMemberEditSubmitting] = useState(false);
+  const [orgRoles, setOrgRoles] = useState<TenantOrgRole[]>([]);
+  const [resourceOptions, setResourceOptions] = useState<TenantResourceOption[]>([]);
+  const [orgRolePage, setOrgRolePage] = useState(1);
+  const [orgRoleTotalPages, setOrgRoleTotalPages] = useState(1);
+  const [orgRoleTotal, setOrgRoleTotal] = useState(0);
+  const [orgRoleLoading, setOrgRoleLoading] = useState(false);
+  const [orgRoleError, setOrgRoleError] = useState("");
+  const [orgRoleModalOpen, setOrgRoleModalOpen] = useState(false);
+  const [editingOrgRole, setEditingOrgRole] = useState<TenantOrgRole | null>(null);
+  const [orgRoleSubmitting, setOrgRoleSubmitting] = useState(false);
+  const [orgRoleDraft, setOrgRoleDraft] = useState<CreateTenantOrgRoleRequest & { status: "active" | "disabled" }>(emptyOrgRoleForm);
   const activeTabMeta = tenantManagementTabs.find((tab) => tab.key === activeTab) ?? tenantManagementTabs[0];
   const tabSegmentedOptions = tenantManagementTabs.map((tab) => {
     const Icon = tab.icon;
@@ -171,6 +133,38 @@ export function TenantManagementPage() {
     };
   });
 
+  const loadOrgRoles = useCallback(async (page = 1) => {
+    if (!token || !user?.tenantId) return;
+
+    setOrgRoleLoading(true);
+    setOrgRoleError("");
+
+    try {
+      const result = await organizationApi.listOrgRoles(user.tenantId, token, page, 6);
+      setOrgRoles(result.items);
+      setOrgRolePage(result.page);
+      setOrgRoleTotal(result.total);
+      setOrgRoleTotalPages(Math.max(result.totalPages, 1));
+    } catch (error) {
+      console.warn("[tenant-management] 租户角色列表加载失败", getTenantManagementErrorContext(error, user.tenantId));
+      setOrgRoleError(error instanceof AgentumApiError ? error.message : "无法加载资源授权数据");
+      setOrgRoles([]);
+    } finally {
+      setOrgRoleLoading(false);
+    }
+  }, [token, user?.tenantId]);
+
+  const loadResourceOptions = useCallback(async () => {
+    if (!token || !user?.tenantId) return;
+
+    try {
+      setResourceOptions(await organizationApi.listResourceOptions(user.tenantId, token));
+    } catch (error) {
+      console.warn("[tenant-management] 租户可授权资源加载失败", getTenantManagementErrorContext(error, user.tenantId));
+      setResourceOptions([]);
+    }
+  }, [token, user?.tenantId]);
+
   useEffect(() => {
     if (activeTab !== "organization" || !token || !user?.tenantId) {
       return;
@@ -181,7 +175,7 @@ export function TenantManagementPage() {
     setOrganizationLoading(true);
     setOrganizationError("");
 
-    // 租户管理页只展示租户治理视图；资源归属、角色和敏感动作仍由后端按 token + tenantId 重新判断。
+    // 租户管理页只展示当前阶段要做的治理视图；人员、部门和资源授权仍由后端按 token + tenantId 重新判断。
     organizationApi.overview(tenantId, token)
       .then((overview) => {
         if (active) {
@@ -206,6 +200,12 @@ export function TenantManagementPage() {
     };
   }, [activeTab, token, user?.tenantId]);
 
+  useEffect(() => {
+    if (activeTab !== "resources") return;
+    void loadOrgRoles(1);
+    void loadResourceOptions();
+  }, [activeTab, loadOrgRoles, loadResourceOptions]);
+
   async function handleCreateMember(values: CreateMemberRequest) {
     if (!token || !user?.tenantId) {
       console.warn("[tenant-management] 新增成员失败：缺少租户上下文", { hasToken: Boolean(token), userId: user?.id });
@@ -221,7 +221,7 @@ export function TenantManagementPage() {
       const overview = await organizationApi.createMember(user.tenantId, token, values);
       setOrganizationOverview(overview);
       setCreateMemberOpen(false);
-      createMemberForm.resetFields();
+      setMemberDraft(emptyMemberForm);
     } catch (error) {
       console.warn("[tenant-management] 新增成员失败", getTenantManagementErrorContext(error, user.tenantId, { username: values.username, roleId: values.roleId, departmentId: values.departmentId }));
       setOrganizationError(error instanceof AgentumApiError ? error.message : "新增成员失败，请稍后重试");
@@ -245,7 +245,7 @@ export function TenantManagementPage() {
       const overview = await organizationApi.createDepartment(user.tenantId, token, values);
       setOrganizationOverview(overview);
       setCreateDepartmentOpen(false);
-      createDepartmentForm.resetFields();
+      setDepartmentDraft(emptyDepartmentForm);
     } catch (error) {
       console.warn("[tenant-management] 新增部门失败", getTenantManagementErrorContext(error, user.tenantId, { departmentCode: values.code, parentId: values.parentId }));
       setOrganizationError(error instanceof AgentumApiError ? error.message : "新增部门失败，请稍后重试");
@@ -254,52 +254,194 @@ export function TenantManagementPage() {
     }
   }
 
-  async function handleUpdateMembershipRole(membership: OrganizationMembership, roleId: string) {
-    if (!token || !user?.tenantId) {
-      setOrganizationError("当前账号缺少租户上下文，无法调整成员角色");
+  function openEditMemberModal(membership: OrganizationMembership) {
+    setEditingMembership(membership);
+    setMemberEditDraft({
+      departmentId: membership.departmentId ?? undefined,
+      roleId: membership.roleId,
+      status: membership.status === "disabled" ? "disabled" : "active",
+    });
+    setEditMemberOpen(true);
+  }
+
+  async function handleSubmitMemberEdit() {
+    if (!editingMembership) {
       return;
     }
 
-    setMembershipUpdatingId(membership.id);
+    if (!memberEditDraft.roleId) {
+      messageApi.warning("请选择成员角色");
+      return;
+    }
+
+    if (!token || !user?.tenantId) {
+      setOrganizationError("当前账号缺少租户上下文，无法编辑成员");
+      return;
+    }
+
+    const originalDepartmentId = editingMembership.departmentId ?? undefined;
+    const departmentChanged = originalDepartmentId !== memberEditDraft.departmentId;
+    const roleChanged = editingMembership.roleId !== memberEditDraft.roleId;
+    const statusChanged = editingMembership.status !== memberEditDraft.status;
+
+    if (!departmentChanged && !roleChanged && !statusChanged) {
+      setEditMemberOpen(false);
+      setEditingMembership(null);
+      return;
+    }
+
+    setMemberEditSubmitting(true);
+    setMembershipUpdatingId(editingMembership.id);
     setOrganizationError("");
+
     try {
-      const overview = await organizationApi.updateMembershipRole(user.tenantId, membership.id, token, { roleId });
-      setOrganizationOverview(overview);
+      let nextOverview = organizationOverview;
+
+      // 成员编辑是租户内权限动作；前端拆成部门和角色两个已有接口提交，后端仍按租户重新校验归属。
+      if (departmentChanged) {
+        nextOverview = await organizationApi.updateMembershipDepartment(
+          user.tenantId,
+          editingMembership.id,
+          token,
+          { departmentId: memberEditDraft.departmentId }
+        );
+        setOrganizationOverview(nextOverview);
+      }
+
+      if (roleChanged) {
+        nextOverview = await organizationApi.updateMembershipRole(
+          user.tenantId,
+          editingMembership.id,
+          token,
+          { roleId: memberEditDraft.roleId }
+        );
+        setOrganizationOverview(nextOverview);
+      }
+
+      if (statusChanged) {
+        nextOverview = await organizationApi.updateMembershipStatus(
+          user.tenantId,
+          editingMembership.id,
+          token,
+          { status: memberEditDraft.status }
+        );
+        setOrganizationOverview(nextOverview);
+      }
+
+      messageApi.success("成员信息已更新");
+      setEditMemberOpen(false);
+      setEditingMembership(null);
     } catch (error) {
       console.warn(
-        "[tenant-management] 成员角色调整失败",
-        getTenantManagementErrorContext(error, user.tenantId, { membershipId: membership.id, roleId })
+        "[tenant-management] 成员编辑失败",
+        getTenantManagementErrorContext(error, user.tenantId, {
+          membershipId: editingMembership.id,
+          roleId: memberEditDraft.roleId,
+          departmentId: memberEditDraft.departmentId,
+          status: memberEditDraft.status,
+        })
       );
-      setOrganizationError(error instanceof AgentumApiError ? error.message : "成员角色调整失败，请稍后重试");
+      setOrganizationError(error instanceof AgentumApiError ? error.message : "成员编辑失败，请稍后重试");
     } finally {
+      setMemberEditSubmitting(false);
       setMembershipUpdatingId(null);
     }
   }
 
-  async function handleUpdateMembershipDepartment(membership: OrganizationMembership, departmentId?: string) {
+  function openCreateOrgRoleModal() {
+    setEditingOrgRole(null);
+    setOrgRoleDraft(emptyOrgRoleForm);
+    setOrgRoleModalOpen(true);
+  }
+
+  function openEditOrgRoleModal(role: TenantOrgRole) {
+    setEditingOrgRole(role);
+    setOrgRoleDraft({
+      name: role.name,
+      description: role.description,
+      pagePermissions: role.pagePermissions,
+      resourcePermissions: (role.resourcePermissions ?? []).map((permission) => ({
+        resourceType: permission.resourceType,
+        resourceId: permission.resourceId,
+        actions: permission.actions.length > 0 ? permission.actions : ["use"],
+      })),
+      status: role.status === "disabled" ? "disabled" : "active",
+    });
+    setOrgRoleModalOpen(true);
+  }
+
+  async function handleSubmitOrgRole() {
     if (!token || !user?.tenantId) {
-      setOrganizationError("当前账号缺少租户上下文，无法调整成员部门");
+      setOrgRoleError("当前账号缺少租户上下文，无法保存租户角色");
       return;
     }
 
-    setMembershipUpdatingId(membership.id);
-    setOrganizationError("");
-    try {
-      const overview = await organizationApi.updateMembershipDepartment(user.tenantId, membership.id, token, { departmentId });
-      setOrganizationOverview(overview);
-    } catch (error) {
-      console.warn(
-        "[tenant-management] 成员部门调整失败",
-        getTenantManagementErrorContext(error, user.tenantId, { membershipId: membership.id, departmentId })
-      );
-      setOrganizationError(error instanceof AgentumApiError ? error.message : "成员部门调整失败，请稍后重试");
-    } finally {
-      setMembershipUpdatingId(null);
+    if (!orgRoleDraft.name.trim()) {
+      messageApi.warning("请输入角色名称");
+      return;
     }
+
+    if (orgRoleDraft.pagePermissions.length === 0) {
+      messageApi.warning("请至少选择一个页面权限");
+      return;
+    }
+
+    setOrgRoleSubmitting(true);
+    setOrgRoleError("");
+
+    try {
+      if (editingOrgRole) {
+        await organizationApi.updateOrgRole(user.tenantId, editingOrgRole.id, token, orgRoleDraft as UpdateTenantOrgRoleRequest);
+        messageApi.success("资源授权已更新");
+      } else {
+        await organizationApi.createOrgRole(user.tenantId, token, {
+          name: orgRoleDraft.name,
+          description: orgRoleDraft.description,
+          pagePermissions: orgRoleDraft.pagePermissions,
+          resourcePermissions: orgRoleDraft.resourcePermissions,
+        });
+        messageApi.success("已新增资源授权角色");
+      }
+      setOrgRoleModalOpen(false);
+      setEditingOrgRole(null);
+      await loadOrgRoles(editingOrgRole ? orgRolePage : 1);
+    } catch (error) {
+      console.warn("[tenant-management] 租户角色保存失败", getTenantManagementErrorContext(error, user.tenantId, { roleId: editingOrgRole?.id }));
+      setOrgRoleError(error instanceof AgentumApiError ? error.message : "租户角色保存失败，请稍后重试");
+    } finally {
+      setOrgRoleSubmitting(false);
+    }
+  }
+
+  function toggleOrgRolePermission(permission: string) {
+    setOrgRoleDraft((draft) => {
+      const exists = draft.pagePermissions.includes(permission);
+      return {
+        ...draft,
+        pagePermissions: exists
+          ? draft.pagePermissions.filter((item) => item !== permission)
+          : [...draft.pagePermissions, permission],
+      };
+    });
+  }
+
+  function toggleResourcePermission(option: TenantResourceOption) {
+    setOrgRoleDraft((draft) => {
+      const exists = draft.resourcePermissions.some(
+        (permission) => permission.resourceType === option.resourceType && permission.resourceId === option.resourceId
+      );
+      return {
+        ...draft,
+        resourcePermissions: exists
+          ? draft.resourcePermissions.filter((permission) => permission.resourceType !== option.resourceType || permission.resourceId !== option.resourceId)
+          : [...draft.resourcePermissions, { resourceType: option.resourceType, resourceId: option.resourceId, actions: ["use"] }],
+      };
+    });
   }
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-[var(--color-bg-page)] pb-10 pt-1">
+      {messageContextHolder}
       <div className="mx-auto max-w-[1400px] px-5 lg:px-6">
         <header className="mb-5 flex flex-col gap-4 border-b border-[var(--color-border-light)] pb-5 sm:flex-row sm:items-end sm:justify-between">
           <div className="flex min-w-0 gap-4">
@@ -314,7 +456,7 @@ export function TenantManagementPage() {
                 </span>
               </div>
               <p className="agent-muted mt-1.5 max-w-2xl text-sm leading-relaxed">
-                左侧菜单决定能否进入租户管理；模块内页签进一步区分组织、权限、资源与审计能力，最终权限仍由后端复核。
+                左侧菜单决定能否进入租户管理；当前先聚焦人员组织和资源授权，业务运行日志后续会在运行审计中独立呈现。
               </p>
             </div>
           </div>
@@ -339,12 +481,9 @@ export function TenantManagementPage() {
         <div className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] shadow-[var(--shadow-sm)]">
 
           <div className="p-5">
-            <div className="mb-4 rounded-[var(--radius-md)] border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-100">
-              <div className="flex items-center gap-2 font-semibold">
-                <LockKeyhole className="h-4 w-4" aria-hidden="true" />
-                页面入口不是安全边界
-              </div>
-              <p className="mt-2">发布、凭证、外部交付、敏感 MCP 和审计查看都必须由后端再次校验。</p>
+            <div className="sys-hint mb-4">
+              <LockKeyhole size={14} />
+              页面入口不是安全边界。发布、凭证、外部交付、敏感 MCP 和审计查看都必须由后端再次校验。
             </div>
 
             {activeTab === "organization" ? (
@@ -353,95 +492,289 @@ export function TenantManagementPage() {
                 loading={organizationLoading}
                 error={organizationError}
                 hasTenantContext={Boolean(user?.tenantId)}
-                onCreateMember={() => setCreateMemberOpen(true)}
-                onCreateDepartment={() => setCreateDepartmentOpen(true)}
+                onCreateMember={() => { setMemberDraft(emptyMemberForm); setCreateMemberOpen(true); }}
+                onCreateDepartment={() => { setDepartmentDraft(emptyDepartmentForm); setCreateDepartmentOpen(true); }}
                 membershipUpdatingId={membershipUpdatingId}
-                onUpdateMembershipRole={handleUpdateMembershipRole}
-                onUpdateMembershipDepartment={handleUpdateMembershipDepartment}
+                onEditMembership={openEditMemberModal}
               />
             ) : null}
-            {activeTab === "roles" ? <RolePolicyPanel /> : null}
-            {activeTab === "resources" ? <ResourceGrantPanel /> : null}
-            {activeTab === "requirements" ? <RequirementConfigPanel /> : null}
-            {activeTab === "sensitive" ? <SensitivePolicyPanel /> : null}
-            {activeTab === "audit" ? <AuditVisibilityPanel /> : null}
+            {activeTab === "resources" ? (
+              <ResourceAuthorizationPanel
+                roles={orgRoles}
+                loading={orgRoleLoading}
+                error={orgRoleError}
+                total={orgRoleTotal}
+                page={orgRolePage}
+                totalPages={orgRoleTotalPages}
+                onCreate={openCreateOrgRoleModal}
+                onEdit={openEditOrgRoleModal}
+                onPageChange={(page) => void loadOrgRoles(page)}
+              />
+            ) : null}
           </div>
         </div>
       </div>
 
-      <Modal
-        title="新增成员"
-        rootClassName={darkModalClassName}
-        open={createMemberOpen}
-        okText="创建成员"
-        cancelText="取消"
-        confirmLoading={createMemberSubmitting}
-        onOk={() => void createMemberForm.submit()}
-        onCancel={() => setCreateMemberOpen(false)}
-        destroyOnClose
-      >
-        <Form form={createMemberForm} layout="vertical" onFinish={handleCreateMember} preserve={false}>
-          <Form.Item name="displayName" label="成员姓名" rules={[{ required: true, message: "请输入成员姓名" }]}>
-            <Input placeholder="例如：张三" />
-          </Form.Item>
-          <Form.Item name="username" label="用户名" rules={[{ required: true, message: "请输入用户名" }]}>
-            <Input placeholder="例如：zhangsan" autoComplete="off" />
-          </Form.Item>
-          <Form.Item name="password" label="初始密码" rules={[{ required: true, message: "请输入初始密码" }, { min: 8, message: "初始密码至少 8 位" }]}>
-            <Input.Password placeholder="至少 8 位" autoComplete="new-password" />
-          </Form.Item>
-          <Form.Item name="email" label="邮箱">
-            <Input placeholder="name@example.com" />
-          </Form.Item>
-          <Form.Item name="departmentId" label="部门">
-            <Select
-              allowClear
-              placeholder="可选"
-              options={(organizationOverview?.departments ?? []).map((department) => ({ value: department.id, label: department.name }))}
-            />
-          </Form.Item>
-          <Form.Item name="roleId" label="角色" rules={[{ required: true, message: "请选择角色" }]}>
-            <Select
-              placeholder="请选择角色"
-              options={(organizationOverview?.roles ?? []).map((role) => ({ value: role.id, label: `${role.name} (${role.code})` }))}
-            />
-          </Form.Item>
-          <Form.Item name="spaceCode" label="空间">
-            <Input placeholder="默认空间" />
-          </Form.Item>
-        </Form>
-      </Modal>
+      {createMemberOpen && (
+        <div className="sys-modal-mask" onClick={() => setCreateMemberOpen(false)}>
+          <div className="sys-modal" style={{ maxWidth: 640 }} onClick={(event) => event.stopPropagation()}>
+            <div className="sys-modal-header">
+              <span className="sys-modal-title">新增成员</span>
+              <button className="sys-modal-close" onClick={() => setCreateMemberOpen(false)}><X size={18} /></button>
+            </div>
+            <div className="sys-modal-body">
+              <div className="sys-hint"><Info size={14} /> 初始密码只随本次请求提交，前端不会写入日志、URL 或本地缓存。</div>
+              <div className="sys-field-row">
+                <div className="sys-field">
+                  <label className="sys-field-label sys-field-label--required">成员姓名</label>
+                  <div className="sys-field-input-wrap"><Type size={16} className="sys-field-prefix" /><input className="sys-field-input" value={memberDraft.displayName} placeholder="例如：张三" onChange={(event) => setMemberDraft((draft) => ({ ...draft, displayName: event.target.value }))} /></div>
+                </div>
+                <div className="sys-field">
+                  <label className="sys-field-label sys-field-label--required">用户名</label>
+                  <div className="sys-field-input-wrap"><Tag size={16} className="sys-field-prefix" /><input className="sys-field-input" value={memberDraft.username} placeholder="例如：zhangsan" autoComplete="off" onChange={(event) => setMemberDraft((draft) => ({ ...draft, username: event.target.value }))} /></div>
+                </div>
+              </div>
+              <div className="sys-field-row">
+                <div className="sys-field">
+                  <label className="sys-field-label sys-field-label--required">初始密码</label>
+                  <div className="sys-field-input-wrap"><LockKeyhole size={16} className="sys-field-prefix" /><input className="sys-field-input" type="password" value={memberDraft.password} placeholder="至少 8 位" autoComplete="new-password" onChange={(event) => setMemberDraft((draft) => ({ ...draft, password: event.target.value }))} /></div>
+                </div>
+                <div className="sys-field">
+                  <label className="sys-field-label">邮箱</label>
+                  <div className="sys-field-input-wrap"><UserPlus size={16} className="sys-field-prefix" /><input className="sys-field-input" value={memberDraft.email ?? ""} placeholder="name@example.com" onChange={(event) => setMemberDraft((draft) => ({ ...draft, email: event.target.value }))} /></div>
+                </div>
+              </div>
+              <div className="sys-field-row">
+                <div className="sys-field">
+                  <label className="sys-field-label">部门</label>
+                  <Select
+                    allowClear
+                    className="w-full"
+                    placeholder="可选"
+                    value={memberDraft.departmentId}
+                    options={(organizationOverview?.departments ?? []).map((department) => ({ value: department.id, label: department.name }))}
+                    onChange={(departmentId) => setMemberDraft((draft) => ({ ...draft, departmentId }))}
+                  />
+                </div>
+                <div className="sys-field">
+                  <label className="sys-field-label sys-field-label--required">角色</label>
+                  <Select
+                    className="w-full"
+                    placeholder="请选择角色"
+                    value={memberDraft.roleId || undefined}
+                    options={(organizationOverview?.roles ?? []).map((role) => ({ value: role.id, label: `${role.name} (${role.code})` }))}
+                    onChange={(roleId) => setMemberDraft((draft) => ({ ...draft, roleId }))}
+                  />
+                </div>
+              </div>
+              <div className="sys-field">
+                <label className="sys-field-label">空间</label>
+                <div className="sys-field-input-wrap"><Building2 size={16} className="sys-field-prefix" /><input className="sys-field-input" value={memberDraft.spaceCode ?? ""} placeholder="默认空间" onChange={(event) => setMemberDraft((draft) => ({ ...draft, spaceCode: event.target.value }))} /></div>
+              </div>
+            </div>
+            <div className="sys-modal-footer">
+              <button className="sys-btn sys-btn--default" onClick={() => setCreateMemberOpen(false)}><X size={14} /> 取消</button>
+              <button className="sys-btn sys-btn--primary" disabled={createMemberSubmitting} onClick={() => void handleCreateMember(memberDraft)}><PlusCircle size={14} /> 创建成员</button>
+            </div>
+          </div>
+        </div>
+      )}
 
-      <Modal
-        title="新增部门"
-        rootClassName={darkModalClassName}
-        open={createDepartmentOpen}
-        okText="创建部门"
-        cancelText="取消"
-        confirmLoading={createDepartmentSubmitting}
-        onOk={() => void createDepartmentForm.submit()}
-        onCancel={() => setCreateDepartmentOpen(false)}
-        destroyOnClose
-      >
-        <Form form={createDepartmentForm} layout="vertical" onFinish={handleCreateDepartment} preserve={false}>
-          <Form.Item name="name" label="部门名称" rules={[{ required: true, message: "请输入部门名称" }]}>
-            <Input placeholder="例如：风控部" />
-          </Form.Item>
-          <Form.Item name="code" label="部门编码">
-            <Input placeholder="例如：risk" />
-          </Form.Item>
-          <Form.Item name="parentId" label="上级部门">
-            <Select
-              allowClear
-              placeholder="不选择则为一级部门"
-              options={(organizationOverview?.departments ?? []).map((department) => ({ value: department.id, label: department.name }))}
-            />
-          </Form.Item>
-          <Form.Item name="sortOrder" label="排序">
-            <InputNumber className="w-full" min={0} placeholder="0" />
-          </Form.Item>
-        </Form>
-      </Modal>
+      {editMemberOpen && editingMembership && (
+        <div className="sys-modal-mask" onClick={() => setEditMemberOpen(false)}>
+          <div className="sys-modal" style={{ maxWidth: 560 }} onClick={(event) => event.stopPropagation()}>
+            <div className="sys-modal-header">
+              <span className="sys-modal-title">编辑成员</span>
+              <button className="sys-modal-close" onClick={() => setEditMemberOpen(false)}><X size={18} /></button>
+            </div>
+            <div className="sys-modal-body">
+              <div className="tenant-member-edit-summary">
+                <span className="tenant-member-avatar">{editingMembership.userDisplayName.slice(0, 1)}</span>
+                <div>
+                  <strong>{editingMembership.userDisplayName}</strong>
+                  <span>{organizationOverview?.members.find((member) => member.id === editingMembership.userId)?.username ?? "未找到账号"}</span>
+                </div>
+              </div>
+              <div className="sys-field-row">
+                <div className="sys-field">
+                  <label className="sys-field-label">部门</label>
+                  <Select
+                    allowClear
+                    className="w-full"
+                    placeholder="未分配部门"
+                    value={memberEditDraft.departmentId}
+                    options={(organizationOverview?.departments ?? []).map((department) => ({ value: department.id, label: department.name }))}
+                    onChange={(departmentId) => setMemberEditDraft((draft) => ({ ...draft, departmentId }))}
+                  />
+                </div>
+                <div className="sys-field">
+                  <label className="sys-field-label sys-field-label--required">角色</label>
+                  <Select
+                    className="w-full"
+                    placeholder="请选择角色"
+                    value={memberEditDraft.roleId || undefined}
+                    options={(organizationOverview?.roles ?? []).map((role) => ({ value: role.id, label: `${role.name} (${role.code})` }))}
+                    onChange={(roleId) => setMemberEditDraft((draft) => ({ ...draft, roleId }))}
+                  />
+                </div>
+              </div>
+              <div className="sys-field">
+                <label className="sys-field-label">空间</label>
+                <div className="sys-readonly-field">{editingMembership.spaceCode}</div>
+              </div>
+              <div className="sys-field">
+                <label className="sys-field-label">状态</label>
+                <Select
+                  className="w-full"
+                  value={memberEditDraft.status}
+                  options={[{ value: "active", label: "启用" }, { value: "disabled", label: "禁用" }]}
+                  onChange={(status) => setMemberEditDraft((draft) => ({ ...draft, status }))}
+                />
+              </div>
+            </div>
+            <div className="sys-modal-footer">
+              <button className="sys-btn sys-btn--default" onClick={() => setEditMemberOpen(false)}><X size={14} /> 取消</button>
+              <button className="sys-btn sys-btn--primary" disabled={memberEditSubmitting} onClick={() => void handleSubmitMemberEdit()}><Save size={14} /> 保存成员</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {createDepartmentOpen && (
+        <div className="sys-modal-mask" onClick={() => setCreateDepartmentOpen(false)}>
+          <div className="sys-modal" style={{ maxWidth: 560 }} onClick={(event) => event.stopPropagation()}>
+            <div className="sys-modal-header">
+              <span className="sys-modal-title">新增部门</span>
+              <button className="sys-modal-close" onClick={() => setCreateDepartmentOpen(false)}><X size={18} /></button>
+            </div>
+            <div className="sys-modal-body">
+              <div className="sys-field-row">
+                <div className="sys-field">
+                  <label className="sys-field-label sys-field-label--required">部门名称</label>
+                  <div className="sys-field-input-wrap"><Building2 size={16} className="sys-field-prefix" /><input className="sys-field-input" value={departmentDraft.name} placeholder="例如：风控部" onChange={(event) => setDepartmentDraft((draft) => ({ ...draft, name: event.target.value }))} /></div>
+                </div>
+                <div className="sys-field">
+                  <label className="sys-field-label">部门编码</label>
+                  <div className="sys-field-input-wrap"><Code2 size={16} className="sys-field-prefix" /><input className="sys-field-input" value={departmentDraft.code ?? ""} placeholder="例如：risk" onChange={(event) => setDepartmentDraft((draft) => ({ ...draft, code: event.target.value }))} /></div>
+                </div>
+              </div>
+              <div className="sys-field-row">
+                <div className="sys-field">
+                  <label className="sys-field-label">上级部门</label>
+                  <Select
+                    allowClear
+                    className="w-full"
+                    placeholder="不选择则为一级部门"
+                    value={departmentDraft.parentId}
+                    options={(organizationOverview?.departments ?? []).map((department) => ({ value: department.id, label: department.name }))}
+                    onChange={(parentId) => setDepartmentDraft((draft) => ({ ...draft, parentId }))}
+                  />
+                </div>
+                <div className="sys-field">
+                  <label className="sys-field-label">排序</label>
+                  <div className="sys-field-input-wrap"><Tag size={16} className="sys-field-prefix" /><input className="sys-field-input" type="number" min={0} value={departmentDraft.sortOrder ?? 0} onChange={(event) => setDepartmentDraft((draft) => ({ ...draft, sortOrder: Number(event.target.value) }))} /></div>
+                </div>
+              </div>
+            </div>
+            <div className="sys-modal-footer">
+              <button className="sys-btn sys-btn--default" onClick={() => setCreateDepartmentOpen(false)}><X size={14} /> 取消</button>
+              <button className="sys-btn sys-btn--primary" disabled={createDepartmentSubmitting} onClick={() => void handleCreateDepartment(departmentDraft)}><PlusCircle size={14} /> 创建部门</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {orgRoleModalOpen && (
+        <div className="sys-modal-mask" onClick={() => setOrgRoleModalOpen(false)}>
+          <div className="sys-modal" style={{ maxWidth: 680 }} onClick={(event) => event.stopPropagation()}>
+            <div className="sys-modal-header">
+              <span className="sys-modal-title">{editingOrgRole ? "编辑资源授权" : "新增授权角色"}</span>
+              <button className="sys-modal-close" onClick={() => setOrgRoleModalOpen(false)}><X size={18} /></button>
+            </div>
+            <div className="sys-modal-body">
+              <div className="sys-field-row">
+                <div className="sys-field">
+                  <label className="sys-field-label sys-field-label--required">角色名称</label>
+                  <div className="sys-field-input-wrap"><UserRoundCog size={16} className="sys-field-prefix" /><input className="sys-field-input" value={orgRoleDraft.name} placeholder="例如：流程设计者" onChange={(event) => setOrgRoleDraft((draft) => ({ ...draft, name: event.target.value }))} /></div>
+                </div>
+                <div className="sys-field">
+                  <label className="sys-field-label">状态</label>
+                  <Select
+                    className="w-full"
+                    value={orgRoleDraft.status}
+                    options={[{ value: "active", label: "启用" }, { value: "disabled", label: "停用" }]}
+                    onChange={(status) => setOrgRoleDraft((draft) => ({ ...draft, status }))}
+                  />
+                </div>
+              </div>
+              <div className="sys-field">
+                <label className="sys-field-label">角色说明</label>
+                <textarea className="sys-field-textarea" value={orgRoleDraft.description ?? ""} placeholder="说明这个角色适用的人群和业务边界" onChange={(event) => setOrgRoleDraft((draft) => ({ ...draft, description: event.target.value }))} />
+              </div>
+              <div className="sys-config-group">
+                <div className="sys-config-group-title">页面权限</div>
+                <div className="tenant-permission-grid">
+                  {pagePermissionOptions.map((option) => {
+                    const Icon = option.icon;
+                    const checked = orgRoleDraft.pagePermissions.includes(option.value);
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        className={`tenant-permission-option ${checked ? "tenant-permission-option--checked" : ""}`}
+                        onClick={() => toggleOrgRolePermission(option.value)}
+                      >
+                        <span className="tenant-permission-option-icon"><Icon size={16} /></span>
+                        <span className="tenant-permission-option-text">
+                          <span>{option.label}</span>
+                          <small>{option.description}</small>
+                        </span>
+                        <CheckCircle2 size={16} className="tenant-permission-option-check" />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="sys-config-group">
+                <div className="sys-config-group-title">能力资源</div>
+                {resourceOptions.length === 0 ? (
+                  <div className="sys-hint">
+                    <Info size={14} />
+                    当前租户暂无可分配能力。请先在系统管理的租户配置中启用 MCP、Skill、提示词模板或交付能力。
+                  </div>
+                ) : (
+                  <div className="tenant-permission-grid">
+                    {resourceOptions.map((option) => {
+                      const checked = orgRoleDraft.resourcePermissions.some(
+                        (permission) => permission.resourceType === option.resourceType && permission.resourceId === option.resourceId
+                      );
+                      return (
+                        <button
+                          key={`${option.resourceType}:${option.resourceId}`}
+                          type="button"
+                          className={`tenant-permission-option ${checked ? "tenant-permission-option--checked" : ""}`}
+                          onClick={() => toggleResourcePermission(option)}
+                        >
+                          <span className="tenant-permission-option-icon">{getResourceTypeIcon(option.resourceType)}</span>
+                          <span className="tenant-permission-option-text">
+                            <span>{option.resourceName}</span>
+                            <small>{formatResourceType(option.resourceType)} · {option.version} · {formatRiskLevel(option.riskLevel)}</small>
+                          </span>
+                          <CheckCircle2 size={16} className="tenant-permission-option-check" />
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="sys-modal-footer">
+              <button className="sys-btn sys-btn--default" onClick={() => setOrgRoleModalOpen(false)}><X size={14} /> 取消</button>
+              <button className="sys-btn sys-btn--primary" disabled={orgRoleSubmitting} onClick={() => void handleSubmitOrgRole()}><Save size={14} /> 保存角色</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -454,8 +787,7 @@ function OrganizationPanel({
   onCreateMember,
   onCreateDepartment,
   membershipUpdatingId,
-  onUpdateMembershipRole,
-  onUpdateMembershipDepartment,
+  onEditMembership,
 }: {
   overview: TenantOrganizationOverview | null;
   loading: boolean;
@@ -464,9 +796,58 @@ function OrganizationPanel({
   onCreateMember: () => void;
   onCreateDepartment: () => void;
   membershipUpdatingId: string | null;
-  onUpdateMembershipRole: (membership: OrganizationMembership, roleId: string) => void;
-  onUpdateMembershipDepartment: (membership: OrganizationMembership, departmentId?: string) => void;
+  onEditMembership: (membership: OrganizationMembership) => void;
 }) {
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState<string>("all");
+  const [memberKeyword, setMemberKeyword] = useState("");
+
+  const departmentTree = useMemo(() => {
+    if (!overview) return [];
+    const memberships = overview.memberships;
+    return [
+      {
+        id: "all",
+        name: "全部部门",
+        code: overview.tenantCode,
+        memberCount: memberships.length,
+        level: 0,
+      },
+      ...overview.departments.map((department) => ({
+        id: department.id,
+        name: department.name,
+        code: department.code,
+        memberCount: memberships.filter((membership) => membership.departmentId === department.id).length,
+        level: department.parentId ? 1 : 0,
+      })),
+      {
+        id: "unassigned",
+        name: "未分配部门",
+        code: "",
+        memberCount: memberships.filter((membership) => !membership.departmentId).length,
+        level: 0,
+      },
+    ];
+  }, [overview]);
+
+  const visibleMemberships = useMemo(() => {
+    if (!overview) return [];
+    const keyword = memberKeyword.trim().toLowerCase();
+
+    return overview.memberships.filter((membership) => {
+      const matchDepartment =
+        selectedDepartmentId === "all"
+        || (selectedDepartmentId === "unassigned" && !membership.departmentId)
+        || membership.departmentId === selectedDepartmentId;
+      const matchKeyword =
+        !keyword
+        || membership.userDisplayName.toLowerCase().includes(keyword)
+        || membership.roleName.toLowerCase().includes(keyword)
+        || membership.roleCode.toLowerCase().includes(keyword)
+        || membership.departmentName.toLowerCase().includes(keyword);
+      return matchDepartment && matchKeyword;
+    });
+  }, [memberKeyword, overview, selectedDepartmentId]);
+
   if (!hasTenantContext) {
     return (
       <div className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-4 text-sm text-[var(--color-text-secondary)]">
@@ -477,34 +858,20 @@ function OrganizationPanel({
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 md:grid-cols-3">
-        {organizationItems.map((item) => {
-          const Icon = item.icon;
-
-          return (
-            <article key={item.title} className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-3">
-              <div className="flex items-center gap-2">
-                <Icon className="h-4 w-4 text-[var(--color-primary)]" aria-hidden="true" />
-                <h3 className="text-sm font-semibold">{item.title}</h3>
-              </div>
-              <p className="agent-muted mt-2 text-sm leading-6">{item.detail}</p>
-            </article>
-          );
-        })}
-      </div>
-
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] px-4 py-3">
         <div>
           <h3 className="text-sm font-semibold">人员组织维护</h3>
-          <p className="agent-muted mt-1 text-xs">新增成员和部门都会由后端再次校验租户归属，前端只负责提交治理动作。</p>
+          <p className="agent-muted mt-1 text-xs">左侧按部门筛选，右侧查看成员信息；需要调整时进入单人成员编辑。</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button type="default" icon={<Building2 className="h-4 w-4" aria-hidden="true" />} onClick={onCreateDepartment} disabled={!overview}>
+          <button className="sys-btn sys-btn--default" onClick={onCreateDepartment} disabled={!overview}>
+            <Building2 size={14} />
             新增部门
-          </Button>
-          <Button type="primary" icon={<UserPlus className="h-4 w-4" aria-hidden="true" />} onClick={onCreateMember} disabled={!overview}>
+          </button>
+          <button className="sys-btn sys-btn--primary" onClick={onCreateMember} disabled={!overview}>
+            <UserPlus size={14} />
             新增成员
-          </Button>
+          </button>
         </div>
       </div>
 
@@ -517,60 +884,98 @@ function OrganizationPanel({
       ) : null}
 
       {overview ? (
-        <div className="grid gap-3 xl:grid-cols-[1fr_1fr]">
-          <section className="rounded-[var(--radius-md)] border border-[var(--color-border-light)]">
-            <div className="border-b border-[var(--color-border-light)] px-4 py-3">
-              <h3 className="text-sm font-semibold">{overview.tenantName} 成员</h3>
-              <p className="agent-muted mt-1 text-xs">{overview.members.length} 人，{overview.departments.length} 个部门，{overview.roles.length} 个角色</p>
+        <div className="tenant-org-layout">
+          <aside className="tenant-dept-tree">
+            <div className="tenant-dept-tree-header">
+              <div>
+                <h3>{overview.tenantName}</h3>
+                <p>{overview.departments.length} 个部门 · {overview.memberships.length} 名成员</p>
+              </div>
             </div>
-            <div className="divide-y divide-[var(--color-border-light)]">
-              {overview.members.map((member) => (
-                <div key={member.id} className="flex items-center justify-between gap-3 px-4 py-3">
-                  <div>
-                    <p className="text-sm font-medium">{member.displayName}</p>
-                    <p className="agent-muted mt-1 text-xs">{member.username} · {member.email || "未填写邮箱"}</p>
-                  </div>
-                  <span className="rounded bg-[var(--color-bg-hover)] px-2 py-1 text-xs text-[var(--color-text-secondary)] ring-1 ring-[var(--color-border-light)]">{member.status}</span>
-                </div>
+            <div className="tenant-dept-tree-list">
+              {departmentTree.map((department) => (
+                <button
+                  key={department.id}
+                  type="button"
+                  className={`tenant-dept-tree-item ${selectedDepartmentId === department.id ? "tenant-dept-tree-item--active" : ""}`}
+                  style={{ paddingLeft: 12 + department.level * 18 }}
+                  onClick={() => setSelectedDepartmentId(department.id)}
+                >
+                  <Building2 size={15} />
+                  <span className="tenant-dept-tree-name">{department.name}</span>
+                  <span className="tenant-dept-tree-count">{department.memberCount}</span>
+                </button>
               ))}
             </div>
-          </section>
+          </aside>
 
-          <section className="rounded-[var(--radius-md)] border border-[var(--color-border-light)]">
-            <div className="border-b border-[var(--color-border-light)] px-4 py-3">
-              <h3 className="text-sm font-semibold">成员关系</h3>
-              <p className="agent-muted mt-1 text-xs">后端按租户、部门、空间和角色返回真实关系</p>
+          <section className="tenant-member-table-card">
+            <div className="tenant-member-toolbar">
+              <div>
+                <h3>成员列表</h3>
+                <p>当前筛选 {visibleMemberships.length} 人</p>
+              </div>
+              <div className="tenant-member-search">
+                <Search size={15} />
+                <input
+                  value={memberKeyword}
+                  placeholder="搜索成员、部门或角色"
+                  onChange={(event) => setMemberKeyword(event.target.value)}
+                />
+              </div>
             </div>
-            <div className="divide-y divide-[var(--color-border-light)]">
-              {overview.memberships.map((membership) => (
-                <div key={membership.id} className="px-4 py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-medium">{membership.userDisplayName}</p>
-                    <span className="rounded bg-indigo-50 px-2 py-1 text-xs text-indigo-700 ring-1 ring-indigo-100 dark:bg-indigo-950/40 dark:text-indigo-200 dark:ring-indigo-900/70">
-                      {membership.roleName || membership.roleCode}
-                    </span>
-                  </div>
-                  <p className="agent-muted mt-1 text-xs">{membership.departmentName || "未分配部门"} · {membership.spaceCode}</p>
-                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                    <Select
-                      size="small"
-                      value={membership.roleId}
-                      disabled={membershipUpdatingId === membership.id}
-                      options={overview.roles.map((role) => ({ value: role.id, label: `${role.name} (${role.code})` }))}
-                      onChange={(roleId) => onUpdateMembershipRole(membership, roleId)}
-                    />
-                    <Select
-                      size="small"
-                      value={membership.departmentId ?? undefined}
-                      allowClear
-                      disabled={membershipUpdatingId === membership.id}
-                      placeholder="未分配部门"
-                      options={overview.departments.map((department) => ({ value: department.id, label: department.name }))}
-                      onChange={(departmentId) => onUpdateMembershipDepartment(membership, departmentId)}
-                    />
-                  </div>
-                </div>
-              ))}
+            <div className="tenant-member-table-wrap">
+              <table className="tenant-member-table">
+                <thead>
+                  <tr>
+                    <th>成员</th>
+                    <th>部门</th>
+                    <th>角色</th>
+                    <th>空间</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleMemberships.map((membership) => (
+                    <tr key={membership.id}>
+                      <td>
+                        <div className="tenant-member-cell">
+                          <span className="tenant-member-avatar">{membership.userDisplayName.slice(0, 1)}</span>
+                          <div>
+                            <strong>{membership.userDisplayName}</strong>
+                            <span>{overview.members.find((member) => member.id === membership.userId)?.username ?? "未找到账号"}</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td>{membership.departmentName || "未分配部门"}</td>
+                      <td>{membership.roleName}（{membership.roleCode}）</td>
+                      <td>{membership.spaceCode}</td>
+                      <td>
+                        <span className={`sys-status sys-status--${membership.status === "active" ? "active" : "inactive"}`}>
+                          <span className="sys-status-dot" />{membership.status === "active" ? "启用" : "停用"}
+                        </span>
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="sys-btn sys-btn--text sys-btn--sm"
+                          disabled={membershipUpdatingId === membership.id}
+                          onClick={() => onEditMembership(membership)}
+                        >
+                          <Edit size={14} />
+                          编辑
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {visibleMemberships.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="tenant-member-empty">暂无符合条件的成员</td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
             </div>
           </section>
         </div>
@@ -587,119 +992,151 @@ function getTenantManagementErrorContext(error: unknown, tenantId: string, extra
   return { tenantId, message: error instanceof Error ? error.message : "unknown", ...extra };
 }
 
-function RolePolicyPanel() {
+function ResourceAuthorizationPanel({
+  roles,
+  loading,
+  error,
+  total,
+  page,
+  totalPages,
+  onCreate,
+  onEdit,
+  onPageChange,
+}: {
+  roles: TenantOrgRole[];
+  loading: boolean;
+  error: string;
+  total: number;
+  page: number;
+  totalPages: number;
+  onCreate: () => void;
+  onEdit: (role: TenantOrgRole) => void;
+  onPageChange: (page: number) => void;
+}) {
   return (
-    <div className="divide-y divide-[var(--color-border-light)] rounded-[var(--radius-md)] border border-[var(--color-border-light)]">
-      {rolePolicies.map((policy) => (
-        <article key={policy.role} className="px-4 py-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-semibold">{policy.role}</h3>
-              <p className="agent-muted mt-1 text-xs">{policy.scope}</p>
-            </div>
-            <span className="rounded bg-[var(--color-bg-hover)] px-2 py-1 text-xs text-[var(--color-text-secondary)] ring-1 ring-[var(--color-border-light)]">
-              {policy.actions.length + policy.sensitiveActions.length} 项权限
-            </span>
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {policy.actions.map((action) => (
-              <ActionTag key={action.code} action={action} />
-            ))}
-            {policy.sensitiveActions.map((action) => (
-              <ActionTag key={action.code} action={action} sensitive />
-            ))}
-          </div>
-        </article>
-      ))}
-    </div>
-  );
-}
-
-function ResourceGrantPanel() {
-  return (
-    <div className="grid gap-3 md:grid-cols-2">
-      {resourceGrants.map((resource) => (
-        <article key={resource.resource} className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-3">
-          <div className="flex items-center gap-2">
-            <Database className="h-4 w-4 text-[var(--color-primary)]" aria-hidden="true" />
-            <h3 className="text-sm font-semibold">{resource.resource}</h3>
-          </div>
-          <p className="agent-muted mt-2 text-sm leading-6">{resource.grants}</p>
-          <p className="mt-2 text-xs text-[var(--color-text-tertiary)]">{resource.rule}</p>
-          <p className="mt-3 text-xs text-[var(--color-text-tertiary)]">责任角色：{resource.owner}</p>
-        </article>
-      ))}
-    </div>
-  );
-}
-
-function RequirementConfigPanel() {
-  return (
-    <div className="grid gap-3 md:grid-cols-3">
-      {requirementConfigs.map((config) => {
-        const Icon = config.icon;
-
-        return (
-          <article key={config.title} className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-3">
-            <div className="flex items-center gap-2">
-              <Icon className="h-4 w-4 text-[var(--color-primary)]" aria-hidden="true" />
-              <h3 className="text-sm font-semibold">{config.title}</h3>
-            </div>
-            <p className="agent-muted mt-2 text-sm leading-6">{config.detail}</p>
-          </article>
-        );
-      })}
-    </div>
-  );
-}
-
-function SensitivePolicyPanel() {
-  return (
-    <div className="grid gap-3 md:grid-cols-2">
-      {sensitivePolicies.map((policy) => (
-        <article key={policy.action} className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-3">
-          <div className="flex items-center gap-2">
-            <LockKeyhole className="h-4 w-4 text-amber-600" aria-hidden="true" />
-            <h3 className="text-sm font-semibold">{policy.action}</h3>
-          </div>
-          <p className="agent-muted mt-2 text-sm leading-6">{policy.note}</p>
-          <div className="mt-3 flex flex-wrap gap-2 text-xs">
-            <span className="rounded bg-[var(--color-bg-card)] px-2 py-1 text-[var(--color-text-secondary)] ring-1 ring-[var(--color-border-light)]">责任：{policy.owner}</span>
-            <span className="rounded bg-amber-100 px-2 py-1 font-medium text-amber-800">{policy.approval}</span>
-          </div>
-        </article>
-      ))}
-    </div>
-  );
-}
-
-function AuditVisibilityPanel() {
-  return (
-    <div className="grid gap-3 md:grid-cols-2">
-      <article className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-3">
-        <div className="flex items-center gap-2">
-          <Eye className="h-4 w-4 text-[var(--color-primary)]" aria-hidden="true" />
-          <h3 className="text-sm font-semibold">业务用户</h3>
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] px-4 py-3">
+        <div>
+          <h3 className="text-sm font-semibold">资源授权</h3>
+          <p className="agent-muted mt-1 text-xs">
+            这里决定业务功能、流程模板、MCP、Skill、提示词模板和交付能力能授权给哪些角色、部门或人员；业务页面只消费授权结果。
+          </p>
         </div>
-        <p className="agent-muted mt-2 text-sm leading-6">只查看与自己相关的运行摘要、待办状态和被授权交付物。</p>
-      </article>
-      <article className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-3">
-        <div className="flex items-center gap-2">
-          <FileText className="h-4 w-4 text-[var(--color-primary)]" aria-hidden="true" />
-          <h3 className="text-sm font-semibold">审计人员</h3>
+        <button className="sys-btn sys-btn--primary" onClick={onCreate}><PlusCircle size={14} /> 新增授权</button>
+      </div>
+
+      {error ? (
+        <div className="rounded-[var(--radius-md)] border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-100">{error}</div>
+      ) : null}
+
+      {loading ? (
+        <div className="sys-preview-card"><div className="sys-preview-card-title"><UserRoundCog size={16} /> 正在加载资源授权</div></div>
+      ) : null}
+
+      {!loading && roles.length === 0 ? (
+        <div className="sys-preview-card">
+          <Empty description="暂无资源授权规则" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          <div className="mt-3 flex justify-center">
+            <button className="sys-btn sys-btn--default" onClick={onCreate}><PlusCircle size={14} /> 创建第一条授权</button>
+          </div>
         </div>
-        <p className="agent-muted mt-2 text-sm leading-6">查看只读证据链、节点快照、MCP 调用摘要和交付记录，敏感字段默认脱敏。</p>
-      </article>
+      ) : null}
+
+      {roles.length > 0 ? (
+        <div className="sys-card-grid">
+          {roles.map((role) => (
+            <article key={role.id} className="sys-card sys-card--static">
+              <div className="sys-card-header">
+                <div className="sys-card-avatar sys-card-avatar--tenant"><UserRoundCog size={22} /></div>
+                <div className="sys-card-info">
+                  <div className="sys-card-name">{role.name}</div>
+                  <div className="sys-card-code">{role.description || "未填写说明"}</div>
+                </div>
+                <span className={`sys-status sys-status--${role.status === "active" ? "active" : "inactive"}`}>
+                  <span className="sys-status-dot" />{role.status === "active" ? "启用" : "停用"}
+                </span>
+              </div>
+              <div className="sys-info-tags">
+                {role.pagePermissions.map((permission) => (
+                  <span key={permission} className="sys-info-tag sys-info-tag--primary">{formatPagePermission(permission)}</span>
+                ))}
+                {role.pagePermissions.length === 0 ? <span className="sys-info-tag sys-info-tag--warn">未配置页面</span> : null}
+              </div>
+              <div className="sys-info-tags">
+                {(role.resourcePermissions ?? []).map((permission) => (
+                  <span key={`${permission.resourceType}:${permission.resourceId}`} className="sys-info-tag">
+                    {formatResourceType(permission.resourceType)} · {permission.resourceName}
+                  </span>
+                ))}
+                {(role.resourcePermissions ?? []).length === 0 ? <span className="sys-info-tag sys-info-tag--warn">未配置能力资源</span> : null}
+              </div>
+              <div className="sys-card-footer">
+                <span className="sys-card-footer-time">角色维度 · 更新于 {formatDateTime(role.updatedAt)}</span>
+                <div className="sys-card-footer-actions">
+                  <button className="sys-btn sys-btn--text sys-btn--sm" onClick={() => onEdit(role)}><Edit size={14} /> 编辑</button>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="tenant-pagination">
+        <span>共 {total} 条授权，第 {page} / {totalPages} 页</span>
+        <div className="tenant-pagination-actions">
+          <button className="sys-btn sys-btn--default sys-btn--sm" disabled={page <= 1} onClick={() => onPageChange(page - 1)}><ChevronLeft size={14} /> 上一页</button>
+          <button className="sys-btn sys-btn--default sys-btn--sm" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}>下一页 <ChevronRight size={14} /></button>
+        </div>
+      </div>
     </div>
   );
 }
 
-function ActionTag({ action, sensitive = false }: { action: BusinessAction; sensitive?: boolean }) {
-  const className = sensitive ? "bg-amber-100 text-amber-800" : "bg-indigo-100 text-indigo-800";
+function formatPagePermission(permission: string): string {
+  return pagePermissionOptions.find((option) => option.value === permission)?.label ?? permission;
+}
 
-  return (
-    <span className={`rounded px-2 py-1 text-xs font-medium ${className}`} title={action.code}>
-      {action.label}
-    </span>
-  );
+function formatResourceType(type: string): string {
+  switch (type) {
+    case "mcp":
+      return "MCP";
+    case "skill":
+      return "Skill";
+    case "prompt_template":
+      return "提示词模板";
+    case "delivery":
+      return "交付能力";
+    default:
+      return type;
+  }
+}
+
+function formatRiskLevel(riskLevel: string): string {
+  switch (riskLevel) {
+    case "high":
+      return "高风险";
+    case "medium":
+      return "中风险";
+    case "low":
+      return "低风险";
+    default:
+      return riskLevel || "未标记风险";
+  }
+}
+
+function getResourceTypeIcon(type: string) {
+  if (type === "mcp") return <Database size={16} />;
+  if (type === "skill") return <ShieldCheck size={16} />;
+  if (type === "prompt_template") return <ClipboardList size={16} />;
+  return <UserRoundCog size={16} />;
+}
+
+function formatDateTime(value: string): string {
+  if (!value) return "暂无记录";
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
 }

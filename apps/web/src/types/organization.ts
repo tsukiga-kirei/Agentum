@@ -50,6 +50,64 @@ export type TenantOrganizationOverview = {
   memberships: OrganizationMembership[];
 };
 
+export type PageResponse<T> = {
+  items: T[];
+  page: number;
+  size: number;
+  total: number;
+  totalPages: number;
+};
+
+export type TenantOrgRole = {
+  id: string;
+  name: string;
+  description: string;
+  pagePermissions: string[];
+  resourcePermissions: TenantResourcePermission[];
+  systemRole: boolean;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TenantResourcePermission = {
+  resourceType: string;
+  resourceId: string;
+  resourceName: string;
+  resourceCode: string;
+  actions: string[];
+};
+
+export type TenantResourcePermissionRequest = {
+  resourceType: string;
+  resourceId: string;
+  actions: string[];
+};
+
+export type TenantResourceOption = {
+  resourceType: string;
+  resourceId: string;
+  resourceName: string;
+  resourceCode: string;
+  version: string;
+  riskLevel: string;
+};
+
+export type CreateTenantOrgRoleRequest = {
+  name: string;
+  description?: string;
+  pagePermissions: string[];
+  resourcePermissions: TenantResourcePermissionRequest[];
+};
+
+export type UpdateTenantOrgRoleRequest = {
+  name: string;
+  description?: string;
+  pagePermissions: string[];
+  resourcePermissions: TenantResourcePermissionRequest[];
+  status: "active" | "disabled";
+};
+
 // 新增成员会携带初始密码，调用方必须避免写入日志、URL、localStorage 或错误详情。
 export type CreateMemberRequest = {
   username: string;
@@ -75,4 +133,8 @@ export type UpdateMembershipRoleRequest = {
 
 export type UpdateMembershipDepartmentRequest = {
   departmentId?: string;
+};
+
+export type UpdateMembershipStatusRequest = {
+  status: "active" | "disabled";
 };
