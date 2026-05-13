@@ -11,4 +11,8 @@ public interface DepartmentRepository extends JpaRepository<DepartmentEntity, UU
     List<DepartmentEntity> findByTenantIdAndStatusOrderBySortOrderAscNameAsc(UUID tenantId, String status);
 
     Optional<DepartmentEntity> findByIdAndTenantIdAndStatus(UUID id, UUID tenantId, String status);
+
+    Optional<DepartmentEntity> findByIdAndTenantId(UUID id, UUID tenantId);
+
+    long countByTenantIdAndCode(UUID tenantId, String code);
 }

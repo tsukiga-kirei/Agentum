@@ -1611,6 +1611,36 @@ textarea:focus-visible {
   align-items: center;
   gap: 8px;
 }
+.tenant-auth-section {
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-card);
+  padding: 16px;
+}
+.tenant-auth-section + .tenant-auth-section {
+  margin-top: 16px;
+}
+.tenant-auth-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 14px;
+}
+.tenant-auth-section-head h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+.tenant-auth-section-head p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+.tenant-auth-card .sys-info-tags {
+  min-height: 34px;
+}
 .tenant-org-layout {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
@@ -1833,6 +1863,9 @@ textarea:focus-visible {
   }
   .tenant-org-layout {
     grid-template-columns: 1fr;
+  }
+  .tenant-auth-section-head {
+    flex-direction: column;
   }
   .tenant-member-toolbar {
     align-items: flex-start;

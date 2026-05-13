@@ -74,9 +74,38 @@ paths:
                   - type: object
                     properties:
                       data:
-                        $ref: "#/components/schemas/AuthUser"
+                        $ref: "#/components/schemas/LoginResponse"
         "401":
           description: 未登录或令牌无效
+  /api/auth/switch-role:
+    put:
+      summary: 切换当前活跃角色
+      tags:
+        - Auth
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SwitchRoleRequest"
+      responses:
+        "200":
+          description: 切换成功，返回新 token、用户上下文、活跃角色和菜单
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/SwitchRoleResponse"
+        "401":
+          description: 未登录或令牌无效
+        "403":
+          description: 目标角色不属于当前用户
   /api/auth/logout:
     post:
       summary: 退出登录
@@ -87,6 +116,153 @@ paths:
       responses:
         "200":
           description: 已退出
+  /api/tenants/{tenantId}/workflows/drafts:
+    get:
+      summary: 查询工作流草稿列表
+      description: 流程设计页使用的租户内工作流定义草稿列表，后端按租户上下文和流程设计权限复核。
+      tags:
+        - Workflow
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: keyword
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 10
+        - name: sort
+          in: query
+          schema:
+            type: string
+            default: updatedAt,desc
+      responses:
+        "200":
+          description: 工作流草稿分页列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/WorkflowDraftPageResponse"
+    post:
+      summary: 新建工作流草稿
+      tags:
+        - Workflow
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWorkflowDraftRequest"
+      responses:
+        "200":
+          description: 新建成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/WorkflowDraftRow"
+  /api/tenants/{tenantId}/workflows/drafts/{workflowId}:
+    get:
+      summary: 获取工作流草稿详情
+      tags:
+        - Workflow
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 草稿详情
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/WorkflowDraftDetail"
+  /api/tenants/{tenantId}/workflows/drafts/{workflowId}/graph:
+    put:
+      summary: 保存工作流草稿节点与边
+      tags:
+        - Workflow
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveWorkflowDraftGraphRequest"
+      responses:
+        "200":
+          description: 保存成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/WorkflowDraftDetail"
   /api/admin/tenants/{tenantId}/organization/overview:
     get:
       summary: 获取租户人员组织概览
@@ -164,7 +340,7 @@ paths:
   /api/admin/tenants/{tenantId}/organization/departments:
     post:
       summary: 新增租户部门
-      description: 创建当前租户内部门，可选上级部门。后端会校验上级部门归属。
+      description: 创建当前租户内部门，可选上级部门。部门编码由后端自动生成，后端会校验上级部门归属。
       tags:
         - Organization
       security:
@@ -200,6 +376,176 @@ paths:
           description: 未登录或令牌无效
         "403":
           description: 当前账号不能管理该租户
+  /api/admin/tenants/{tenantId}/organization/departments/{departmentId}:
+    patch:
+      summary: 更新租户部门
+      description: 更新当前租户内部门名称、上级部门和排序，部门编码不可由前端修改。
+      tags:
+        - Organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: departmentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDepartmentRequest"
+      responses:
+        "200":
+          description: 更新成功并返回最新人员组织概览
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/TenantOrganizationOverview"
+        "400":
+          description: 上级部门不可用或循环引用
+        "404":
+          description: 部门不存在
+    delete:
+      summary: 停用租户部门
+      description: 仅当部门下没有启用成员时允许停用。
+      tags:
+        - Organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: departmentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: 停用成功
+        "400":
+          description: 部门下仍有启用成员
+        "404":
+          description: 部门不存在
+  /api/admin/tenants/{tenantId}/organization/roles:
+    post:
+      summary: 新增租户业务角色
+      description: 创建可分配给成员和资源授权的租户内角色，角色编码由后端自动生成。
+      tags:
+        - Organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTenantRoleRequest"
+      responses:
+        "200":
+          description: 新增成功并返回最新人员组织概览
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/TenantOrganizationOverview"
+  /api/admin/tenants/{tenantId}/organization/roles/{roleId}:
+    patch:
+      summary: 更新租户业务角色
+      tags:
+        - Organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: roleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTenantRoleRequest"
+      responses:
+        "200":
+          description: 更新成功并返回最新人员组织概览
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/TenantOrganizationOverview"
+        "404":
+          description: 角色不存在
+    delete:
+      summary: 停用租户业务角色
+      description: 仅当没有启用成员使用该角色时允许停用。
+      tags:
+        - Organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: roleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: 停用成功
+        "400":
+          description: 角色下仍有启用成员
+        "404":
+          description: 角色不存在
   /api/admin/tenants/{tenantId}/organization/memberships/{membershipId}/role:
     patch:
       summary: 调整成员角色
@@ -453,6 +799,186 @@ paths:
           description: 未登录或令牌无效
         "403":
           description: 当前账号不能管理该租户
+  /api/admin/tenants/{tenantId}/organization/page-grants:
+    get:
+      summary: 获取租户页签授权规则
+      description: 返回按角色、部门或人员授权的业务侧页签入口规则。
+      tags:
+        - Organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 页签授权规则列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/PageGrant"
+    post:
+      summary: 新增租户页签授权
+      description: 授权主体支持 role、department、user；页签范围仅限业务工作台、流程设计、能力资产和运行审计。
+      tags:
+        - Organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePageGrantRequest"
+      responses:
+        "200":
+          description: 新增后的页签授权规则
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/PageGrant"
+        "400":
+          description: 授权主体或页签不可用
+        "409":
+          description: 授权规则已存在
+  /api/admin/tenants/{tenantId}/organization/page-grants/{grantId}:
+    delete:
+      summary: 删除租户页签授权
+      tags:
+        - Organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: grantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: 删除成功
+        "404":
+          description: 授权规则不存在
+  /api/admin/tenants/{tenantId}/organization/resource-grants:
+    get:
+      summary: 获取租户能力授权规则
+      description: 返回按角色、部门或人员直接授权的能力资源规则。
+      tags:
+        - Organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 能力授权规则列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/ResourceGrant"
+    post:
+      summary: 新增租户能力授权
+      description: 授权主体支持 role、department、user；资源必须是系统管理已启用给当前租户的能力。
+      tags:
+        - Organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateResourceGrantRequest"
+      responses:
+        "200":
+          description: 新增后的能力授权规则
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/ResourceGrant"
+        "400":
+          description: 授权主体或资源不可用
+        "409":
+          description: 授权规则已存在
+  /api/admin/tenants/{tenantId}/organization/resource-grants/{grantId}:
+    delete:
+      summary: 删除租户能力授权
+      tags:
+        - Organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: grantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: 删除成功
+        "404":
+          description: 授权规则不存在
   /api/admin/tenants/{tenantId}/organization/org-roles/{roleId}:
     patch:
       summary: 更新租户内角色权限
@@ -1033,6 +1559,37 @@ components:
         - activeRole
         - permissions
         - menus
+    SwitchRoleRequest:
+      type: object
+      properties:
+        roleId:
+          type: string
+          format: uuid
+      required:
+        - roleId
+    SwitchRoleResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        user:
+          $ref: "#/components/schemas/AuthUser"
+        activeRole:
+          $ref: "#/components/schemas/RoleInfo"
+        permissions:
+          type: array
+          items:
+            type: string
+        menus:
+          type: array
+          items:
+            $ref: "#/components/schemas/MenuItem"
+      required:
+        - token
+        - user
+        - activeRole
+        - permissions
+        - menus
     RoleInfo:
       type: object
       properties:
@@ -1188,9 +1745,6 @@ components:
         name:
           type: string
           maxLength: 160
-        code:
-          type: string
-          maxLength: 80
         parentId:
           type: string
           format: uuid
@@ -1199,6 +1753,48 @@ components:
           type: integer
       required:
         - name
+    UpdateDepartmentRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 160
+        parentId:
+          type: string
+          format: uuid
+          nullable: true
+        sortOrder:
+          type: integer
+      required:
+        - name
+    CreateTenantRoleRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 500
+      required:
+        - name
+    UpdateTenantRoleRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 500
+        status:
+          type: string
+          enum:
+            - active
+            - disabled
+      required:
+        - name
+        - status
     UpdateMembershipRoleRequest:
       type: object
       properties:
@@ -1357,6 +1953,144 @@ components:
         - resourceCode
         - version
         - riskLevel
+    ResourceGrant:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        principalType:
+          type: string
+          enum:
+            - role
+            - department
+            - user
+        principalId:
+          type: string
+          format: uuid
+        principalName:
+          type: string
+        resourceType:
+          type: string
+          enum:
+            - mcp
+            - skill
+            - prompt_template
+            - delivery
+        resourceId:
+          type: string
+          format: uuid
+        resourceName:
+          type: string
+        resourceCode:
+          type: string
+        actions:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+      required:
+        - id
+        - principalType
+        - principalId
+        - principalName
+        - resourceType
+        - resourceId
+        - resourceName
+        - resourceCode
+        - actions
+        - createdAt
+    PageGrant:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        principalType:
+          type: string
+          enum:
+            - role
+            - department
+            - user
+        principalId:
+          type: string
+          format: uuid
+        principalName:
+          type: string
+        pageKey:
+          type: string
+          enum:
+            - workbench
+            - designer
+            - assets
+            - audit
+        pageName:
+          type: string
+        createdAt:
+          type: string
+      required:
+        - id
+        - principalType
+        - principalId
+        - principalName
+        - pageKey
+        - pageName
+        - createdAt
+    CreateResourceGrantRequest:
+      type: object
+      properties:
+        principalType:
+          type: string
+          enum:
+            - role
+            - department
+            - user
+        principalId:
+          type: string
+          format: uuid
+        resourceType:
+          type: string
+          enum:
+            - mcp
+            - skill
+            - prompt_template
+            - delivery
+        resourceId:
+          type: string
+          format: uuid
+        actions:
+          type: array
+          items:
+            type: string
+      required:
+        - principalType
+        - principalId
+        - resourceType
+        - resourceId
+    CreatePageGrantRequest:
+      type: object
+      properties:
+        principalType:
+          type: string
+          enum:
+            - role
+            - department
+            - user
+        principalId:
+          type: string
+          format: uuid
+        pageKey:
+          type: string
+          enum:
+            - workbench
+            - designer
+            - assets
+            - audit
+      required:
+        - principalType
+        - principalId
+        - pageKey
     CreateTenantOrgRoleRequest:
       type: object
       properties:
@@ -1837,6 +2571,155 @@ components:
       required:
         - tenantId
         - providerId
+    WorkflowDraftPageResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowDraftRow"
+        page:
+          type: integer
+        size:
+          type: integer
+        total:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+      required:
+        - items
+        - page
+        - size
+        - total
+        - totalPages
+    WorkflowDraftRow:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum: [draft, review, published]
+        nodeCount:
+          type: integer
+        pausePointCount:
+          type: integer
+        ownerName:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - tenantId
+        - name
+        - description
+        - status
+        - nodeCount
+        - pausePointCount
+        - ownerName
+        - updatedAt
+    CreateWorkflowDraftRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 180
+        description:
+          type: string
+          maxLength: 1000
+      required:
+        - name
+    WorkflowDraftDetail:
+      type: object
+      properties:
+        draft:
+          $ref: "#/components/schemas/WorkflowDraftRow"
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowNodeDraft"
+        edges:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowEdgeDraft"
+      required:
+        - draft
+        - nodes
+        - edges
+    SaveWorkflowDraftGraphRequest:
+      type: object
+      properties:
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowNodeDraft"
+        edges:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowEdgeDraft"
+      required:
+        - nodes
+        - edges
+    WorkflowNodeDraft:
+      type: object
+      properties:
+        nodeId:
+          type: string
+        nodeType:
+          type: string
+          enum: [trigger, user_input, agent, parallel_group, merge, condition, human_review, delivery]
+        name:
+          type: string
+        positionX:
+          type: number
+        positionY:
+          type: number
+        inputVariables:
+          type: array
+          items:
+            type: string
+        outputVariables:
+          type: array
+          items:
+            type: string
+        config:
+          type: object
+      required:
+        - nodeId
+        - nodeType
+        - name
+        - positionX
+        - positionY
+        - inputVariables
+        - outputVariables
+        - config
+    WorkflowEdgeDraft:
+      type: object
+      properties:
+        edgeId:
+          type: string
+        sourceNodeId:
+          type: string
+        targetNodeId:
+          type: string
+        label:
+          type: string
+        conditionExpression:
+          type: string
+      required:
+        - edgeId
+        - sourceNodeId
+        - targetNodeId
     WorkflowDefinition:
       type: object
       description: 工作流定义草稿或发布版本的前后端共享结构。

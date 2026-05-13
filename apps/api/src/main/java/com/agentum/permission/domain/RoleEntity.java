@@ -4,6 +4,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.time.Instant;
 import java.util.UUID;
 
 // 角色是动作能力集合；tenantId 为空表示平台级角色，非空表示租户内角色。
@@ -29,6 +30,14 @@ public class RoleEntity {
     @Column(nullable = false, length = 30)
     private String status;
 
+    private String description;
+
+    @Column(name = "built_in", nullable = false)
+    private boolean builtIn;
+
+    @Column(name = "updated_at", nullable = false)
+    private Instant updatedAt;
+
     protected RoleEntity() {
     }
 
@@ -39,8 +48,18 @@ public class RoleEntity {
         role.code = code;
         role.name = name;
         role.scope = scope;
+        role.description = description;
         role.status = "active";
+        role.builtIn = false;
+        role.updatedAt = Instant.now();
         return role;
+    }
+
+    public void update(String name, String description, String status) {
+        this.name = name;
+        this.description = description;
+        this.status = status;
+        this.updatedAt = Instant.now();
     }
 
     public UUID getId() {
@@ -65,5 +84,13 @@ public class RoleEntity {
 
     public String getStatus() {
         return status;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public boolean isBuiltIn() {
+        return builtIn;
     }
 }

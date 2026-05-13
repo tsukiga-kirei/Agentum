@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
@@ -10,55 +10,13 @@ import {
   Search,
   Sparkles,
 } from "lucide-react";
+import { AgentumApiError, workflowApi } from "../../services/apiClient";
+import { useAuthStore } from "../../stores/authStore";
+import type { WorkflowDraftRow, WorkflowStatus } from "../../types/workflow-contract";
 import { WorkflowEditorPage } from "./WorkflowEditorPage";
 
-type WorkflowStatus = "draft" | "published" | "review";
-
 // 工作流草稿列表是设计态入口，不等同于运行实例；发布后需要生成不可变 WorkflowVersion。
-export type WorkflowDraft = {
-  id: string;
-  name: string;
-  description: string;
-  owner: string;
-  status: WorkflowStatus;
-  nodeCount: number;
-  pausePoints: number;
-  updatedAt: string;
-};
-
-// 列表数据先模拟工作流定义 API 的返回结构，后续应替换为草稿查询接口和契约生成类型。
-const initialWorkflows: WorkflowDraft[] = [
-  {
-    id: "wf_requirement_review",
-    name: "需求分析与评审流程",
-    description: "收集需求材料，智能体拆解范围和风险，人工确认后生成评审结论。",
-    owner: "产品运营组",
-    status: "draft",
-    nodeCount: 7,
-    pausePoints: 2,
-    updatedAt: "今天 15:20",
-  },
-  {
-    id: "wf_contract_delivery",
-    name: "合同审查交付流程",
-    description: "识别合同风险条款，输出修改建议，审核通过后生成交付记录。",
-    owner: "法务组",
-    status: "review",
-    nodeCount: 8,
-    pausePoints: 2,
-    updatedAt: "昨天 18:05",
-  },
-  {
-    id: "wf_monthly_report",
-    name: "经营月报汇总流程",
-    description: "并行获取经营数据摘要，组装月报草稿，人工复核后发送邮件。",
-    owner: "经营分析组",
-    status: "published",
-    nodeCount: 9,
-    pausePoints: 1,
-    updatedAt: "4 月 28 日",
-  },
-];
+export type WorkflowDraft = WorkflowDraftRow;
 
 // 前端状态文案先服务设计页可读性，真实状态流转后续以发布校验和版本状态机为准。
 const statusMeta: Record<WorkflowStatus, { label: string; className: string }> = {
@@ -77,38 +35,66 @@ const statusMeta: Record<WorkflowStatus, { label: string; className: string }> =
 };
 
 export function WorkflowDraftsPage() {
-  // 当前阶段先让草稿创建和搜索在前端可操作，后续接入后端后只保留表单状态。
-  const [workflows, setWorkflows] = useState(initialWorkflows);
+  // 草稿列表已接入后端 WorkflowDefinition API；画布节点编辑仍保留本地交互，后续顺着 graph 保存接口收敛。
+  const token = useAuthStore((s) => s.token);
+  const user = useAuthStore((s) => s.user);
+  const [workflows, setWorkflows] = useState<WorkflowDraft[]>([]);
   const [searchValue, setSearchValue] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [draftName, setDraftName] = useState("");
   const [draftDescription, setDraftDescription] = useState("");
   const [formError, setFormError] = useState("");
   const [editingWorkflow, setEditingWorkflow] = useState<WorkflowDraft | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
-  const filteredWorkflows = useMemo(() => {
-    const keyword = searchValue.trim().toLowerCase();
-
-    if (!keyword) {
-      return workflows;
+  const loadDrafts = useCallback(async (nextPage = 1, keyword = searchValue) => {
+    if (!token || !user?.tenantId) {
+      setLoadError("当前账号缺少租户上下文，无法加载工作流草稿");
+      setWorkflows([]);
+      return;
     }
 
-    return workflows.filter((workflow) => {
-      // 搜索只在本地样例数据上过滤，接入后端后应由草稿查询 API 处理分页、权限和关键字匹配。
-      return (
-        workflow.name.toLowerCase().includes(keyword) ||
-        workflow.description.toLowerCase().includes(keyword) ||
-        workflow.owner.toLowerCase().includes(keyword)
-      );
-    });
-  }, [searchValue, workflows]);
+    setLoading(true);
+    setLoadError("");
+
+    try {
+      const result = await workflowApi.listDrafts(user.tenantId, token, nextPage, 8, keyword);
+      setWorkflows(result.items);
+      setPage(result.page);
+      setTotal(result.total);
+      setTotalPages(Math.max(result.totalPages, 1));
+    } catch (error) {
+      console.warn("[workflow] 工作流草稿加载失败", getWorkflowErrorContext(error, user.tenantId));
+      setLoadError(error instanceof AgentumApiError ? error.message : "无法加载工作流草稿");
+      setWorkflows([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [searchValue, token, user?.tenantId]);
+
+  useEffect(() => {
+    void loadDrafts(1);
+  }, [loadDrafts]);
+
+  const filteredWorkflows = useMemo(() => {
+    return workflows;
+  }, [workflows]);
 
   const draftCount = workflows.filter((workflow) => workflow.status === "draft").length;
   const publishedCount = workflows.filter((workflow) => workflow.status === "published").length;
   const reviewCount = workflows.filter((workflow) => workflow.status === "review").length;
 
-  function handleCreateDraft(event: FormEvent<HTMLFormElement>) {
+  async function handleCreateDraft(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!token || !user?.tenantId) {
+      setFormError("当前账号缺少租户上下文，无法保存草稿");
+      return;
+    }
 
     const name = draftName.trim();
     const description = draftDescription.trim();
@@ -118,24 +104,21 @@ export function WorkflowDraftsPage() {
       return;
     }
 
-    // 新建草稿会先落到内存列表，后续应改成调用“创建工作流草稿”API 后再刷新列表。
-    setWorkflows((currentWorkflows) => [
-      {
-        id: `wf_${Date.now()}`,
-        name,
-        description: description || "新建工作流草稿，等待补充节点、变量和交付配置。",
-        owner: "当前用户",
-        status: "draft",
-        nodeCount: 1,
-        pausePoints: 0,
-        updatedAt: "刚刚",
-      },
-      ...currentWorkflows,
-    ]);
-    setDraftName("");
-    setDraftDescription("");
+    setSubmitting(true);
     setFormError("");
-    setIsCreating(false);
+
+    try {
+      await workflowApi.createDraft(user.tenantId, token, { name, description });
+      setDraftName("");
+      setDraftDescription("");
+      setIsCreating(false);
+      await loadDrafts(1, searchValue);
+    } catch (error) {
+      console.warn("[workflow] 工作流草稿创建失败", getWorkflowErrorContext(error, user.tenantId, { name }));
+      setFormError(error instanceof AgentumApiError ? error.message : "保存草稿失败，请稍后重试");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   if (editingWorkflow) {
@@ -150,7 +133,7 @@ export function WorkflowDraftsPage() {
             <p className="text-sm font-medium text-[var(--color-primary)]">流程定义管理</p>
             <h2 className="mt-2 text-xl font-semibold text-[var(--color-text-primary)]">先把草稿、校验和画布入口做成稳定工作台</h2>
             <p className="agent-muted mt-3 max-w-3xl text-sm leading-6">
-              列表页承接业务模板和画布编辑器，后续会与 WorkflowDefinition API 保持同一份数据。
+              列表页已接入后端草稿 API，画布配置会围绕固定节点、变量引用和发布校验继续收敛。
             </p>
           </div>
           <button
@@ -165,9 +148,9 @@ export function WorkflowDraftsPage() {
       </section>
 
       <section className="grid gap-4 md:grid-cols-3" aria-label="工作流概览">
-        <SummaryCard icon={GitBranch} label="全部工作流" value={String(workflows.length)} detail="草稿、待校验和已发布" />
-        <SummaryCard icon={Clock3} label="草稿" value={String(draftCount)} detail="可继续编辑节点配置" />
-        <SummaryCard icon={CheckCircle2} label="已发布" value={String(publishedCount)} detail={`${reviewCount} 个流程等待校验`} />
+        <SummaryCard icon={GitBranch} label="全部工作流" value={String(total)} detail="按当前租户与设计权限查询" />
+        <SummaryCard icon={Clock3} label="当前页草稿" value={String(draftCount)} detail="可继续编辑节点配置" />
+        <SummaryCard icon={CheckCircle2} label="当前页已发布" value={String(publishedCount)} detail={`${reviewCount} 个流程等待校验`} />
       </section>
 
       <section className="agent-card overflow-hidden" aria-labelledby="workflow-list-title">
@@ -185,9 +168,12 @@ export function WorkflowDraftsPage() {
               <span className="sr-only">搜索工作流</span>
               <input
                 value={searchValue}
-                onChange={(event) => setSearchValue(event.target.value)}
+                onChange={(event) => {
+                  setSearchValue(event.target.value);
+                  setPage(1);
+                }}
                 className="agent-input h-10 w-full pl-9 pr-3 text-sm outline-none"
-                placeholder="搜索名称、说明或负责人"
+                placeholder="搜索名称或说明"
               />
             </label>
             <button
@@ -200,6 +186,12 @@ export function WorkflowDraftsPage() {
             </button>
           </div>
         </div>
+
+        {loadError ? (
+          <div className="mx-5 mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+            {loadError}
+          </div>
+        ) : null}
 
         <div className="divide-y divide-[var(--color-border-light)]">
           {filteredWorkflows.map((workflow) => {
@@ -214,10 +206,10 @@ export function WorkflowDraftsPage() {
                   </div>
                   <p className="agent-muted mt-2 max-w-3xl text-sm leading-6">{workflow.description}</p>
                   <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-[var(--color-text-tertiary)]">
-                    <span>负责人：{workflow.owner}</span>
+                    <span>负责人：{workflow.ownerName}</span>
                     <span>节点：{workflow.nodeCount}</span>
-                    <span>暂停点：{workflow.pausePoints}</span>
-                    <span>更新：{workflow.updatedAt}</span>
+                    <span>暂停点：{workflow.pausePointCount}</span>
+                    <span>更新：{formatDateTime(workflow.updatedAt)}</span>
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2 xl:justify-end">
@@ -242,11 +234,32 @@ export function WorkflowDraftsPage() {
           })}
         </div>
 
-        {filteredWorkflows.length === 0 ? (
+        {loading ? (
+          <div className="px-5 py-12 text-center">
+            <Clock3 className="mx-auto h-8 w-8 text-slate-400" aria-hidden="true" />
+            <p className="mt-3 text-sm font-medium text-slate-700 dark:text-slate-200">正在加载工作流草稿</p>
+          </div>
+        ) : null}
+
+        {!loading && filteredWorkflows.length === 0 ? (
           <div className="px-5 py-12 text-center">
             <AlertCircle className="mx-auto h-8 w-8 text-slate-400" aria-hidden="true" />
             <p className="mt-3 text-sm font-medium text-slate-700">没有找到匹配的工作流</p>
             <p className="mt-1 text-sm text-slate-500">可以调整搜索词，或创建一个新的工作流草稿。</p>
+          </div>
+        ) : null}
+
+        {totalPages > 1 ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 text-sm text-[var(--color-text-secondary)]">
+            <span>第 {page} / {totalPages} 页，共 {total} 条</span>
+            <div className="flex gap-2">
+              <button type="button" className="agent-button h-9 px-3 text-sm" disabled={page <= 1 || loading} onClick={() => void loadDrafts(page - 1)}>
+                上一页
+              </button>
+              <button type="button" className="agent-button h-9 px-3 text-sm" disabled={page >= totalPages || loading} onClick={() => void loadDrafts(page + 1)}>
+                下一页
+              </button>
+            </div>
           </div>
         ) : null}
       </section>
@@ -258,7 +271,7 @@ export function WorkflowDraftsPage() {
               下一步建设重点
             </h2>
             <p className="mt-2 text-sm leading-6 text-indigo-800 dark:text-indigo-100">
-              工作流列表完成后，后续会接入后端草稿 API，并把“打开画布”连接到固定节点类型的编辑器。
+              工作流列表和新建草稿已经进入真实 API，下一步把画布节点、边和变量保存接到草稿图接口。
             </p>
           </div>
           <div className="flex items-center gap-2 rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm font-medium text-indigo-800 dark:border-indigo-900 dark:bg-indigo-950/50 dark:text-indigo-100">
@@ -315,10 +328,11 @@ export function WorkflowDraftsPage() {
                 </button>
                 <button
                   type="submit"
+                  disabled={submitting}
                   className="agent-button agent-button-primary h-10 px-3 text-sm"
                 >
                   <FilePlus2 className="h-4 w-4" aria-hidden="true" />
-                  保存草稿
+                  {submitting ? "保存中" : "保存草稿"}
                 </button>
               </div>
             </form>
@@ -350,4 +364,30 @@ function SummaryCard({
       <p className="agent-muted mt-2 text-sm">{detail}</p>
     </article>
   );
+}
+
+function formatDateTime(value: string) {
+  if (!value) {
+    return "-";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function getWorkflowErrorContext(error: unknown, tenantId?: string, extra?: Record<string, unknown>) {
+  if (error instanceof AgentumApiError) {
+    return { code: error.code, requestId: error.requestId, tenantId, ...extra };
+  }
+
+  return { message: error instanceof Error ? error.message : "unknown", tenantId, ...extra };
 }

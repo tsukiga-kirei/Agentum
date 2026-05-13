@@ -13,6 +13,48 @@ export type ApiResponse<TData> = {
 
 export type WorkflowStatus = "draft" | "published" | "review";
 
+export type WorkflowDraftRow = {
+  id: string;
+  tenantId: string;
+  name: string;
+  description: string;
+  status: WorkflowStatus;
+  nodeCount: number;
+  pausePointCount: number;
+  ownerName: string;
+  updatedAt: string;
+};
+
+export type CreateWorkflowDraftRequest = {
+  name: string;
+  description?: string;
+};
+
+export type WorkflowNodeDraft = {
+  nodeId: string;
+  nodeType: WorkflowNodeType;
+  name: string;
+  positionX: number;
+  positionY: number;
+  inputVariables: string[];
+  outputVariables: string[];
+  config: Record<string, unknown>;
+};
+
+export type WorkflowEdgeDraft = {
+  edgeId: string;
+  sourceNodeId: string;
+  targetNodeId: string;
+  label?: string;
+  conditionExpression?: string;
+};
+
+export type WorkflowDraftDetail = {
+  draft: WorkflowDraftRow;
+  nodes: WorkflowNodeDraft[];
+  edges: WorkflowEdgeDraft[];
+};
+
 export type WorkflowNodeType =
   | "trigger"
   | "user_input"

@@ -2,15 +2,22 @@ import type { LoginRequest, LoginResponse, MeResponse, SwitchRoleRequest, Switch
 import type {
   CreateDepartmentRequest,
   CreateMemberRequest,
+  CreatePageGrantRequest,
+  CreateResourceGrantRequest,
+  CreateTenantRoleRequest,
   CreateTenantOrgRoleRequest,
   PageResponse,
+  PageGrant,
+  ResourceGrant,
   TenantOrgRole,
   TenantOrganizationOverview,
   TenantResourceOption,
   UpdateMembershipDepartmentRequest,
   UpdateMembershipRoleRequest,
   UpdateMembershipStatusRequest,
+  UpdateDepartmentRequest,
   UpdateTenantOrgRoleRequest,
+  UpdateTenantRoleRequest,
 } from "../types/organization";
 import type {
   CreateTenantRequest,
@@ -29,6 +36,13 @@ import type {
   UpdateTenantCapabilityGrantStatusRequest,
   UpdateTenantStatusRequest,
 } from "../types/system";
+import type {
+  CreateWorkflowDraftRequest,
+  WorkflowDraftDetail,
+  WorkflowEdgeDraft,
+  WorkflowNodeDraft,
+  WorkflowDraftRow,
+} from "../types/workflow-contract";
 
 type ApiEnvelope<T> = {
   success: boolean;
@@ -124,10 +138,32 @@ export const organizationApi = {
     ),
   listResourceOptions: (tenantId: string, token: string) =>
     apiRequest<TenantResourceOption[]>(`/api/admin/tenants/${tenantId}/organization/resource-options`, { token }),
+  listPageGrants: (tenantId: string, token: string) =>
+    apiRequest<PageGrant[]>(`/api/admin/tenants/${tenantId}/organization/page-grants`, { token }),
+  createPageGrant: (tenantId: string, token: string, request: CreatePageGrantRequest) =>
+    apiRequest<PageGrant>(`/api/admin/tenants/${tenantId}/organization/page-grants`, { method: "POST", token, body: request }),
+  deletePageGrant: (tenantId: string, grantId: string, token: string) =>
+    apiRequest<void>(`/api/admin/tenants/${tenantId}/organization/page-grants/${grantId}`, { method: "DELETE", token }),
   createMember: (tenantId: string, token: string, request: CreateMemberRequest) =>
     apiRequest<TenantOrganizationOverview>(`/api/admin/tenants/${tenantId}/organization/members`, { method: "POST", token, body: request }),
   createDepartment: (tenantId: string, token: string, request: CreateDepartmentRequest) =>
     apiRequest<TenantOrganizationOverview>(`/api/admin/tenants/${tenantId}/organization/departments`, { method: "POST", token, body: request }),
+  updateDepartment: (tenantId: string, departmentId: string, token: string, request: UpdateDepartmentRequest) =>
+    apiRequest<TenantOrganizationOverview>(`/api/admin/tenants/${tenantId}/organization/departments/${departmentId}`, { method: "PATCH", token, body: request }),
+  deleteDepartment: (tenantId: string, departmentId: string, token: string) =>
+    apiRequest<void>(`/api/admin/tenants/${tenantId}/organization/departments/${departmentId}`, { method: "DELETE", token }),
+  createRole: (tenantId: string, token: string, request: CreateTenantRoleRequest) =>
+    apiRequest<TenantOrganizationOverview>(`/api/admin/tenants/${tenantId}/organization/roles`, { method: "POST", token, body: request }),
+  updateRole: (tenantId: string, roleId: string, token: string, request: UpdateTenantRoleRequest) =>
+    apiRequest<TenantOrganizationOverview>(`/api/admin/tenants/${tenantId}/organization/roles/${roleId}`, { method: "PATCH", token, body: request }),
+  deleteRole: (tenantId: string, roleId: string, token: string) =>
+    apiRequest<void>(`/api/admin/tenants/${tenantId}/organization/roles/${roleId}`, { method: "DELETE", token }),
+  listResourceGrants: (tenantId: string, token: string) =>
+    apiRequest<ResourceGrant[]>(`/api/admin/tenants/${tenantId}/organization/resource-grants`, { token }),
+  createResourceGrant: (tenantId: string, token: string, request: CreateResourceGrantRequest) =>
+    apiRequest<ResourceGrant>(`/api/admin/tenants/${tenantId}/organization/resource-grants`, { method: "POST", token, body: request }),
+  deleteResourceGrant: (tenantId: string, grantId: string, token: string) =>
+    apiRequest<void>(`/api/admin/tenants/${tenantId}/organization/resource-grants/${grantId}`, { method: "DELETE", token }),
   createOrgRole: (tenantId: string, token: string, request: CreateTenantOrgRoleRequest) =>
     apiRequest<TenantOrgRole>(`/api/admin/tenants/${tenantId}/organization/org-roles`, { method: "POST", token, body: request }),
   updateOrgRole: (tenantId: string, roleId: string, token: string, request: UpdateTenantOrgRoleRequest) =>
@@ -180,4 +216,26 @@ export const systemApi = {
     apiRequest<TenantModelAssignmentRow[]>(`/api/system/tenant-model-assignments?tenantId=${encodeURIComponent(tenantId)}`, { token }),
   createTenantModelAssignment: (token: string, body: CreateTenantModelAssignmentRequest) =>
     apiRequest<TenantModelAssignmentRow>("/api/system/tenant-model-assignments", { method: "POST", token, body }),
+};
+
+export const workflowApi = {
+  listDrafts: (tenantId: string, token: string, page = 1, size = 10, keyword = "", sort = "updatedAt,desc") => {
+    const params = new URLSearchParams({
+      page: String(page),
+      size: String(size),
+      keyword,
+      sort,
+    });
+    return apiRequest<PageResponse<WorkflowDraftRow>>(`/api/tenants/${tenantId}/workflows/drafts?${params.toString()}`, { token });
+  },
+  createDraft: (tenantId: string, token: string, request: CreateWorkflowDraftRequest) =>
+    apiRequest<WorkflowDraftRow>(`/api/tenants/${tenantId}/workflows/drafts`, { method: "POST", token, body: request }),
+  getDraft: (tenantId: string, workflowId: string, token: string) =>
+    apiRequest<WorkflowDraftDetail>(`/api/tenants/${tenantId}/workflows/drafts/${workflowId}`, { token }),
+  saveGraph: (tenantId: string, workflowId: string, token: string, nodes: WorkflowNodeDraft[], edges: WorkflowEdgeDraft[]) =>
+    apiRequest<WorkflowDraftDetail>(`/api/tenants/${tenantId}/workflows/drafts/${workflowId}/graph`, {
+      method: "PUT",
+      token,
+      body: { nodes, edges },
+    }),
 };

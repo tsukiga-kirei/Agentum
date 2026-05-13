@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.UUID;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -66,6 +67,65 @@ public class TenantOrganizationController {
         return ApiResponse.success(tenantOrganizationService.createDepartment(tenantId, principal.userId(), createDepartmentRequest), RequestIds.current(request));
     }
 
+    @PatchMapping("/departments/{departmentId}")
+    public ApiResponse<TenantOrganizationOverviewResponse> updateDepartment(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID departmentId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @Valid @RequestBody UpdateDepartmentRequest updateDepartmentRequest,
+        HttpServletRequest request
+    ) {
+        tenantOrganizationAccess.assertCanManageTenant(principal, tenantId);
+        return ApiResponse.success(tenantOrganizationService.updateDepartment(tenantId, principal.userId(), departmentId, updateDepartmentRequest), RequestIds.current(request));
+    }
+
+    @DeleteMapping("/departments/{departmentId}")
+    public ApiResponse<Void> deleteDepartment(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID departmentId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        tenantOrganizationAccess.assertCanManageTenant(principal, tenantId);
+        tenantOrganizationService.disableDepartment(tenantId, principal.userId(), departmentId);
+        return ApiResponse.success(null, RequestIds.current(request));
+    }
+
+    @PostMapping("/roles")
+    public ApiResponse<TenantOrganizationOverviewResponse> createRole(
+        @PathVariable UUID tenantId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @Valid @RequestBody CreateTenantRoleRequest createTenantRoleRequest,
+        HttpServletRequest request
+    ) {
+        tenantOrganizationAccess.assertCanManageTenant(principal, tenantId);
+        return ApiResponse.success(tenantOrganizationService.createTenantRole(tenantId, principal.userId(), createTenantRoleRequest), RequestIds.current(request));
+    }
+
+    @PatchMapping("/roles/{roleId}")
+    public ApiResponse<TenantOrganizationOverviewResponse> updateRole(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID roleId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @Valid @RequestBody UpdateTenantRoleRequest updateTenantRoleRequest,
+        HttpServletRequest request
+    ) {
+        tenantOrganizationAccess.assertCanManageTenant(principal, tenantId);
+        return ApiResponse.success(tenantOrganizationService.updateTenantRole(tenantId, principal.userId(), roleId, updateTenantRoleRequest), RequestIds.current(request));
+    }
+
+    @DeleteMapping("/roles/{roleId}")
+    public ApiResponse<Void> deleteRole(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID roleId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        tenantOrganizationAccess.assertCanManageTenant(principal, tenantId);
+        tenantOrganizationService.disableTenantRole(tenantId, principal.userId(), roleId);
+        return ApiResponse.success(null, RequestIds.current(request));
+    }
+
     @GetMapping("/org-roles")
     public ApiResponse<PageResponse<TenantOrgRoleResponse>> listOrgRoles(
         @PathVariable UUID tenantId,
@@ -88,6 +148,73 @@ public class TenantOrganizationController {
         tenantOrganizationAccess.assertCanManageTenant(principal, tenantId);
         // 资源选项只返回系统管理已启用给当前租户的能力，租户管理不能越权授权全局未启用能力。
         return ApiResponse.success(tenantOrganizationService.listTenantResourceOptions(tenantId), RequestIds.current(request));
+    }
+
+    @GetMapping("/resource-grants")
+    public ApiResponse<List<ResourceGrantResponse>> listResourceGrants(
+        @PathVariable UUID tenantId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        tenantOrganizationAccess.assertCanManageTenant(principal, tenantId);
+        return ApiResponse.success(tenantOrganizationService.listResourceGrants(tenantId), RequestIds.current(request));
+    }
+
+    @GetMapping("/page-grants")
+    public ApiResponse<List<PageGrantResponse>> listPageGrants(
+        @PathVariable UUID tenantId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        tenantOrganizationAccess.assertCanManageTenant(principal, tenantId);
+        return ApiResponse.success(tenantOrganizationService.listPageGrants(tenantId), RequestIds.current(request));
+    }
+
+    @PostMapping("/page-grants")
+    public ApiResponse<PageGrantResponse> createPageGrant(
+        @PathVariable UUID tenantId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @Valid @RequestBody CreatePageGrantRequest createPageGrantRequest,
+        HttpServletRequest request
+    ) {
+        tenantOrganizationAccess.assertCanManageTenant(principal, tenantId);
+        // 页签授权是租户内第二层菜单权限，主体和页签范围都必须由后端按租户重新校验。
+        return ApiResponse.success(tenantOrganizationService.createPageGrant(tenantId, principal.userId(), createPageGrantRequest), RequestIds.current(request));
+    }
+
+    @DeleteMapping("/page-grants/{grantId}")
+    public ApiResponse<Void> deletePageGrant(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID grantId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        tenantOrganizationAccess.assertCanManageTenant(principal, tenantId);
+        tenantOrganizationService.deletePageGrant(tenantId, principal.userId(), grantId);
+        return ApiResponse.success(null, RequestIds.current(request));
+    }
+
+    @PostMapping("/resource-grants")
+    public ApiResponse<ResourceGrantResponse> createResourceGrant(
+        @PathVariable UUID tenantId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @Valid @RequestBody CreateResourceGrantRequest createResourceGrantRequest,
+        HttpServletRequest request
+    ) {
+        tenantOrganizationAccess.assertCanManageTenant(principal, tenantId);
+        return ApiResponse.success(tenantOrganizationService.createResourceGrant(tenantId, principal.userId(), createResourceGrantRequest), RequestIds.current(request));
+    }
+
+    @DeleteMapping("/resource-grants/{grantId}")
+    public ApiResponse<Void> deleteResourceGrant(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID grantId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        tenantOrganizationAccess.assertCanManageTenant(principal, tenantId);
+        tenantOrganizationService.deleteResourceGrant(tenantId, principal.userId(), grantId);
+        return ApiResponse.success(null, RequestIds.current(request));
     }
 
     @PostMapping("/org-roles")

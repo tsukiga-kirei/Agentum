@@ -17,4 +17,8 @@ public interface UserMembershipRepository extends JpaRepository<UserMembershipEn
     Optional<UserMembershipEntity> findByIdAndTenantId(UUID id, UUID tenantId);
 
     Optional<UserMembershipEntity> findByIdAndTenantIdAndStatus(UUID id, UUID tenantId, String status);
+
+    long countByTenantIdAndDepartmentIdAndStatus(UUID tenantId, UUID departmentId, String status);
+
+    long countByTenantIdAndRoleIdAndStatus(UUID tenantId, UUID roleId, String status);
 }

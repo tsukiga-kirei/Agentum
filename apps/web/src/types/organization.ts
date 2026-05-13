@@ -122,9 +122,25 @@ export type CreateMemberRequest = {
 // 部门新增只表达层级和排序意图；上级部门归属必须由后端按租户再次校验。
 export type CreateDepartmentRequest = {
   name: string;
-  code?: string;
   parentId?: string;
   sortOrder?: number;
+};
+
+export type UpdateDepartmentRequest = {
+  name: string;
+  parentId?: string;
+  sortOrder?: number;
+};
+
+export type CreateTenantRoleRequest = {
+  name: string;
+  description?: string;
+};
+
+export type UpdateTenantRoleRequest = {
+  name: string;
+  description?: string;
+  status: "active" | "disabled";
 };
 
 export type UpdateMembershipRoleRequest = {
@@ -137,4 +153,43 @@ export type UpdateMembershipDepartmentRequest = {
 
 export type UpdateMembershipStatusRequest = {
   status: "active" | "disabled";
+};
+
+export type PrincipalType = "role" | "department" | "user";
+
+export type ResourceGrant = {
+  id: string;
+  principalType: PrincipalType;
+  principalId: string;
+  principalName: string;
+  resourceType: string;
+  resourceId: string;
+  resourceName: string;
+  resourceCode: string;
+  actions: string[];
+  createdAt: string;
+};
+
+export type PageGrant = {
+  id: string;
+  principalType: PrincipalType;
+  principalId: string;
+  principalName: string;
+  pageKey: string;
+  pageName: string;
+  createdAt: string;
+};
+
+export type CreateResourceGrantRequest = {
+  principalType: PrincipalType;
+  principalId: string;
+  resourceType: string;
+  resourceId: string;
+  actions: string[];
+};
+
+export type CreatePageGrantRequest = {
+  principalType: PrincipalType;
+  principalId: string;
+  pageKey: string;
 };

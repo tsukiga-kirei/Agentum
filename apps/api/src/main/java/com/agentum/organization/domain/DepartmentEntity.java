@@ -4,6 +4,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.time.Instant;
 import java.util.UUID;
 
 // 部门树用于待办分派、审核范围和资源过滤；排序与移动策略后续会进入组织管理 API。
@@ -32,6 +33,9 @@ public class DepartmentEntity {
     @Column(nullable = false, length = 30)
     private String status;
 
+    @Column(name = "updated_at", nullable = false)
+    private Instant updatedAt;
+
     protected DepartmentEntity() {
     }
 
@@ -45,7 +49,21 @@ public class DepartmentEntity {
         department.code = code;
         department.sortOrder = sortOrder;
         department.status = "active";
+        department.updatedAt = Instant.now();
         return department;
+    }
+
+    public void update(String name, UUID parentId, int sortOrder) {
+        this.name = name;
+        this.parentId = parentId;
+        this.sortOrder = sortOrder;
+        this.updatedAt = Instant.now();
+    }
+
+    // 部门删除采用停用，避免历史成员、待办和审计记录失去组织上下文。
+    public void disable() {
+        this.status = "disabled";
+        this.updatedAt = Instant.now();
     }
 
     public UUID getId() {
