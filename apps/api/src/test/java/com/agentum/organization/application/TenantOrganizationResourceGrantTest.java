@@ -176,7 +176,7 @@ class TenantOrganizationResourceGrantTest {
         UserMembershipEntity currentReviewer = UserMembershipEntity.create(TENANT_ID, USER_ID, null, "默认空间");
         UserMembershipEntity currentExecutor = UserMembershipEntity.create(TENANT_ID, UUID.randomUUID(), null, "默认空间");
         UserMembershipRoleEntity reviewerLink = UserMembershipRoleEntity.create(currentReviewer.getId(), reviewerRole.getId());
-        AtomicReference<UserMembershipRoleEntity> savedLink = new AtomicReference<>();
+        AtomicReference<UserMembershipRoleEntity> addedLink = new AtomicReference<>();
 
         when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", Instant.now())));
         when(roleRepository.findByIdAndTenantId(reviewerRole.getId(), TENANT_ID)).thenReturn(Optional.of(reviewerRole));
@@ -184,7 +184,9 @@ class TenantOrganizationResourceGrantTest {
         when(userMembershipRoleRepository.findByMembershipIdInAndStatus(any(), any())).thenReturn(List.of(reviewerLink));
         when(userMembershipRoleRepository.save(any(UserMembershipRoleEntity.class))).thenAnswer(invocation -> {
             UserMembershipRoleEntity link = invocation.getArgument(0);
-            savedLink.set(link);
+            if (currentExecutor.getId().equals(link.getMembershipId())) {
+                addedLink.set(link);
+            }
             return link;
         });
         when(userRoleAssignmentRepository.findByUserIdAndRoleAndTenantId(any(), any(), any()))
@@ -202,9 +204,9 @@ class TenantOrganizationResourceGrantTest {
 
         assertThat(currentExecutor.getStatus()).isEqualTo("active");
         assertThat(reviewerLink.getStatus()).isEqualTo("disabled");
-        assertThat(savedLink.get()).isNotNull();
-        assertThat(savedLink.get().getMembershipId()).isEqualTo(currentExecutor.getId());
-        assertThat(savedLink.get().getRoleId()).isEqualTo(reviewerRole.getId());
+        assertThat(addedLink.get()).isNotNull();
+        assertThat(addedLink.get().getMembershipId()).isEqualTo(currentExecutor.getId());
+        assertThat(addedLink.get().getRoleId()).isEqualTo(reviewerRole.getId());
     }
 
     @Test

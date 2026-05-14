@@ -1,3 +1,5 @@
+import type { PageResponse } from "./organization";
+
 export type SystemSummary = {
   tenantTotal: number;
   tenantActive: number;
@@ -125,3 +127,7 @@ export type CreateTenantModelAssignmentRequest = {
   defaultModel?: string;
   status?: string;
 };
+
+export type SystemTenantPage = PageResponse<SystemTenantRow>;
+export type ModelProviderPage = PageResponse<ModelProviderRow>;
+export type SystemCapabilityPage = PageResponse<SystemCapabilityRow>;

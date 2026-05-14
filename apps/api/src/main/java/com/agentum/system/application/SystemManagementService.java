@@ -2,6 +2,10 @@ package com.agentum.system.application;
 
 import com.agentum.shared.api.ApiException;
 import com.agentum.shared.api.RequestIds;
+import com.agentum.shared.pagination.PageQuery;
+import com.agentum.shared.pagination.PageResponse;
+import com.agentum.shared.pagination.PageableFactory;
+import com.agentum.shared.pagination.SortWhitelist;
 import com.agentum.system.domain.ModelProviderEntity;
 import com.agentum.system.domain.ModelProviderTypeEntity;
 import com.agentum.system.domain.SystemCapabilityEntity;
@@ -46,6 +50,19 @@ public class SystemManagementService {
     private static final String ACTIVE = "active";
     private static final String SUSPENDED = "suspended";
     private static final Set<String> CAPABILITY_TYPES = Set.of("mcp", "skill", "prompt_template", "delivery");
+    private static final SortWhitelist TENANT_SORT = SortWhitelist.of("createdAt", "name", "code", "status", "createdAt", "updatedAt");
+    private static final SortWhitelist MODEL_PROVIDER_SORT = SortWhitelist.of("createdAt", "name", "providerType", "status", "createdAt", "updatedAt");
+    private static final SortWhitelist CAPABILITY_SORT = SortWhitelist.of(
+        "createdAt",
+        "name",
+        "capabilityType",
+        "code",
+        "version",
+        "riskLevel",
+        "status",
+        "createdAt",
+        "updatedAt"
+    );
 
     private final TenantRepository tenantRepository;
     private final ModelProviderRepository modelProviderRepository;
@@ -114,10 +131,9 @@ public class SystemManagementService {
     }
 
     @Transactional(readOnly = true)
-    public List<SystemManagementApi.TenantRow> listTenants() {
-        return tenantRepository.findAllByOrderByNameAsc().stream()
-            .map(tenant -> new SystemManagementApi.TenantRow(tenant.getId(), tenant.getName(), tenant.getCode(), tenant.getStatus()))
-            .toList();
+    public PageResponse<SystemManagementApi.TenantRow> listTenants(int page, int size, String sort) {
+        return PageResponse.from(tenantRepository.findAll(PageableFactory.from(PageQuery.of(page, size, sort), TENANT_SORT))
+            .map(tenant -> new SystemManagementApi.TenantRow(tenant.getId(), tenant.getName(), tenant.getCode(), tenant.getStatus())));
     }
 
     @Transactional
@@ -176,10 +192,9 @@ public class SystemManagementService {
     }
 
     @Transactional(readOnly = true)
-    public List<SystemManagementApi.ModelProviderRow> listModelProviders() {
-        return modelProviderRepository.findAllByOrderByNameAsc().stream()
-            .map(SystemManagementService::toModelRow)
-            .toList();
+    public PageResponse<SystemManagementApi.ModelProviderRow> listModelProviders(int page, int size, String sort) {
+        return PageResponse.from(modelProviderRepository.findAll(PageableFactory.from(PageQuery.of(page, size, sort), MODEL_PROVIDER_SORT))
+            .map(SystemManagementService::toModelRow));
     }
 
     @Transactional(readOnly = true)
@@ -217,10 +232,9 @@ public class SystemManagementService {
     }
 
     @Transactional(readOnly = true)
-    public List<SystemManagementApi.CapabilityRow> listCapabilities() {
-        return systemCapabilityRepository.findAllByOrderByNameAsc().stream()
-            .map(SystemManagementService::toCapabilityRow)
-            .toList();
+    public PageResponse<SystemManagementApi.CapabilityRow> listCapabilities(int page, int size, String sort) {
+        return PageResponse.from(systemCapabilityRepository.findAll(PageableFactory.from(PageQuery.of(page, size, sort), CAPABILITY_SORT))
+            .map(SystemManagementService::toCapabilityRow));
     }
 
     @Transactional

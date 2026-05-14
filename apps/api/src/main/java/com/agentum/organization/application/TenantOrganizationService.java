@@ -44,7 +44,10 @@ import com.agentum.permission.infrastructure.ResourceGrantRepository;
 import com.agentum.permission.infrastructure.RoleRepository;
 import com.agentum.shared.api.ApiException;
 import com.agentum.shared.api.RequestIds;
+import com.agentum.shared.pagination.PageQuery;
 import com.agentum.shared.pagination.PageResponse;
+import com.agentum.shared.pagination.PageableFactory;
+import com.agentum.shared.pagination.SortWhitelist;
 import com.agentum.system.domain.SystemCapabilityEntity;
 import com.agentum.system.domain.TenantCapabilityGrantEntity;
 import com.agentum.system.infrastructure.SystemCapabilityRepository;
@@ -63,9 +66,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -78,6 +79,7 @@ public class TenantOrganizationService {
 
     private static final Logger log = LoggerFactory.getLogger(TenantOrganizationService.class);
     private static final String ACTIVE_STATUS = "active";
+    private static final SortWhitelist TENANT_ORG_ROLE_SORT = SortWhitelist.of("updatedAt", "name", "status", "createdAt", "updatedAt");
     private static final Set<String> ALLOWED_ORG_ROLE_STATUS = Set.of("active", "disabled");
     private static final Set<String> ALLOWED_MEMBERSHIP_STATUS = Set.of("active", "disabled");
     private static final Set<String> ALLOWED_PAGE_PERMISSIONS = Set.of("workbench", "designer", "assets", "audit");
@@ -630,11 +632,7 @@ public class TenantOrganizationService {
                 return new ApiException(HttpStatus.NOT_FOUND, "TENANT_NOT_FOUND", "租户不存在或已停用");
             });
 
-        Pageable pageable = PageRequest.of(
-            Math.max(page, 1) - 1,
-            Math.min(Math.max(size, 1), 100),
-            parseRoleSort(sort)
-        );
+        Pageable pageable = PageableFactory.from(PageQuery.of(page, size, sort), TENANT_ORG_ROLE_SORT);
 
         return PageResponse.from(tenantOrgRoleRepository.findByTenantId(tenantId, pageable).map(this::toTenantOrgRoleResponse));
     }
@@ -977,22 +975,6 @@ public class TenantOrganizationService {
     private static String normalizeSpaceCode(String value) {
         String normalized = normalizeOptional(value);
         return normalized.isBlank() ? "默认空间" : normalized;
-    }
-
-    private Sort parseRoleSort(String sort) {
-        if (sort == null || sort.isBlank()) {
-            return Sort.by(Sort.Direction.DESC, "updatedAt");
-        }
-
-        String[] parts = sort.split(",", 2);
-        String field = switch (parts[0]) {
-            case "name", "status", "createdAt", "updatedAt" -> parts[0];
-            default -> "updatedAt";
-        };
-        Sort.Direction direction = parts.length > 1 && "asc".equalsIgnoreCase(parts[1])
-            ? Sort.Direction.ASC
-            : Sort.Direction.DESC;
-        return Sort.by(direction, field);
     }
 
     private TenantOrgRoleResponse toTenantOrgRoleResponse(TenantOrgRoleEntity role) {

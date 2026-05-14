@@ -10,6 +10,7 @@ import {
   Search,
   Sparkles,
 } from "lucide-react";
+import { Pagination } from "antd";
 import { AgentumApiError, workflowApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import type { WorkflowDraftRow, WorkflowStatus } from "../../types/workflow-contract";
@@ -34,6 +35,24 @@ const statusMeta: Record<WorkflowStatus, { label: string; className: string }> =
   },
 };
 
+const workflowPaginationLocale = {
+  items_per_page: "条/页",
+  jump_to: "跳至",
+  jump_to_confirm: "确定",
+  page: "页",
+  prev_page: "上一页",
+  next_page: "下一页",
+  prev_5: "向前 5 页",
+  next_5: "向后 5 页",
+  prev_3: "向前 3 页",
+  next_3: "向后 3 页",
+  page_size: "每页条数",
+};
+
+function formatPaginationTotal(count: number, range: [number, number], pageSize: number): string {
+  return count <= pageSize ? `共 ${count} 条` : `当前 ${range[0]}-${range[1]} 条，共 ${count} 条`;
+}
+
 export function WorkflowDraftsPage() {
   // 草稿列表已接入后端 WorkflowDefinition API；画布节点编辑仍保留本地交互，后续顺着 graph 保存接口收敛。
   const token = useAuthStore((s) => s.token);
@@ -47,12 +66,12 @@ export function WorkflowDraftsPage() {
   const [editingWorkflow, setEditingWorkflow] = useState<WorkflowDraft | null>(null);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
+  const [pageSize, setPageSize] = useState(8);
   const [total, setTotal] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [loadError, setLoadError] = useState("");
 
-  const loadDrafts = useCallback(async (nextPage = 1, keyword = searchValue) => {
+  const loadDrafts = useCallback(async (nextPage = 1, keyword = searchValue, nextPageSize = pageSize) => {
     if (!token || !user?.tenantId) {
       setLoadError("当前账号缺少租户上下文，无法加载工作流草稿");
       setWorkflows([]);
@@ -63,11 +82,11 @@ export function WorkflowDraftsPage() {
     setLoadError("");
 
     try {
-      const result = await workflowApi.listDrafts(user.tenantId, token, nextPage, 8, keyword);
+      const result = await workflowApi.listDrafts(user.tenantId, token, nextPage, nextPageSize, keyword);
       setWorkflows(result.items);
       setPage(result.page);
+      setPageSize(result.size);
       setTotal(result.total);
-      setTotalPages(Math.max(result.totalPages, 1));
     } catch (error) {
       console.warn("[workflow] 工作流草稿加载失败", getWorkflowErrorContext(error, user.tenantId));
       setLoadError(error instanceof AgentumApiError ? error.message : "无法加载工作流草稿");
@@ -75,7 +94,7 @@ export function WorkflowDraftsPage() {
     } finally {
       setLoading(false);
     }
-  }, [searchValue, token, user?.tenantId]);
+  }, [pageSize, searchValue, token, user?.tenantId]);
 
   useEffect(() => {
     void loadDrafts(1);
@@ -249,17 +268,21 @@ export function WorkflowDraftsPage() {
           </div>
         ) : null}
 
-        {totalPages > 1 ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 text-sm text-[var(--color-text-secondary)]">
-            <span>第 {page} / {totalPages} 页，共 {total} 条</span>
-            <div className="flex gap-2">
-              <button type="button" className="agent-button h-9 px-3 text-sm" disabled={page <= 1 || loading} onClick={() => void loadDrafts(page - 1)}>
-                上一页
-              </button>
-              <button type="button" className="agent-button h-9 px-3 text-sm" disabled={page >= totalPages || loading} onClick={() => void loadDrafts(page + 1)}>
-                下一页
-              </button>
-            </div>
+        {total > 0 ? (
+          <div className="agent-admin-pagination-wrap px-5 py-4">
+            <Pagination
+              className="agent-admin-pagination"
+              current={page}
+              pageSize={pageSize}
+              total={total}
+              locale={workflowPaginationLocale}
+              showSizeChanger={{ className: "agent-admin-select", popupClassName: "agent-select-dropdown agent-admin-select-dropdown" }}
+              pageSizeOptions={["8", "16", "32"]}
+              showTotal={(count, range) => formatPaginationTotal(count, range, pageSize)}
+              disabled={loading}
+              onChange={(nextPage, nextPageSize) => void loadDrafts(nextPage, searchValue, nextPageSize)}
+              onShowSizeChange={(nextPage, nextPageSize) => void loadDrafts(nextPage, searchValue, nextPageSize)}
+            />
           </div>
         ) : null}
       </section>

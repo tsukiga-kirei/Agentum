@@ -27,9 +27,12 @@ import type {
   CreateTenantModelAssignmentRequest,
   CapabilityTestResult,
   ModelProviderRow,
+  ModelProviderPage,
   ModelProviderTypeRow,
+  SystemCapabilityPage,
   SystemCapabilityRow,
   SystemSummary,
+  SystemTenantPage,
   SystemTenantRow,
   TenantCapabilityGrantRow,
   TenantModelAssignmentRow,
@@ -190,16 +193,19 @@ export const organizationApi = {
 
 export const systemApi = {
   summary: (token: string) => apiRequest<SystemSummary>("/api/system/summary", { token }),
-  listTenants: (token: string) => apiRequest<SystemTenantRow[]>("/api/system/tenants", { token }),
+  listTenants: (token: string, page = 1, size = 10, sort = "createdAt,desc") =>
+    apiRequest<SystemTenantPage>(`/api/system/tenants?page=${page}&size=${size}&sort=${encodeURIComponent(sort)}`, { token }),
   createTenant: (token: string, body: CreateTenantRequest) =>
     apiRequest<SystemTenantRow>("/api/system/tenants", { method: "POST", token, body }),
   updateTenantStatus: (tenantId: string, token: string, body: UpdateTenantStatusRequest) =>
     apiRequest<SystemTenantRow>(`/api/system/tenants/${tenantId}/status`, { method: "PATCH", token, body }),
   listModelProviderTypes: (token: string) => apiRequest<ModelProviderTypeRow[]>("/api/system/model-provider-types", { token }),
-  listModelProviders: (token: string) => apiRequest<ModelProviderRow[]>("/api/system/model-providers", { token }),
+  listModelProviders: (token: string, page = 1, size = 10, sort = "createdAt,desc") =>
+    apiRequest<ModelProviderPage>(`/api/system/model-providers?page=${page}&size=${size}&sort=${encodeURIComponent(sort)}`, { token }),
   createModelProvider: (token: string, body: CreateModelProviderRequest) =>
     apiRequest<ModelProviderRow>("/api/system/model-providers", { method: "POST", token, body }),
-  listCapabilities: (token: string) => apiRequest<SystemCapabilityRow[]>("/api/system/capabilities", { token }),
+  listCapabilities: (token: string, page = 1, size = 10, sort = "createdAt,desc") =>
+    apiRequest<SystemCapabilityPage>(`/api/system/capabilities?page=${page}&size=${size}&sort=${encodeURIComponent(sort)}`, { token }),
   createCapability: (token: string, body: CreateSystemCapabilityRequest) =>
     apiRequest<SystemCapabilityRow>("/api/system/capabilities", { method: "POST", token, body }),
   testCapability: (token: string, capabilityId: string) =>

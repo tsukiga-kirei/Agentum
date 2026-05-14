@@ -4,7 +4,10 @@ import com.agentum.auth.domain.UserAccount;
 import com.agentum.auth.infrastructure.UserAccountRepository;
 import com.agentum.shared.api.ApiException;
 import com.agentum.shared.api.RequestIds;
+import com.agentum.shared.pagination.PageQuery;
 import com.agentum.shared.pagination.PageResponse;
+import com.agentum.shared.pagination.PageableFactory;
+import com.agentum.shared.pagination.SortWhitelist;
 import com.agentum.tenant.infrastructure.TenantRepository;
 import com.agentum.workflow.domain.WorkflowDefinitionEntity;
 import com.agentum.workflow.domain.WorkflowEdgeDefinitionEntity;
@@ -29,9 +32,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,6 +42,7 @@ public class WorkflowDraftService {
 
     private static final Logger log = LoggerFactory.getLogger(WorkflowDraftService.class);
     private static final String ACTIVE_STATUS = "active";
+    private static final SortWhitelist DRAFT_SORT = SortWhitelist.of("updatedAt", "name", "status", "createdAt", "updatedAt", "nodeCount");
     private static final Set<String> ALLOWED_NODE_TYPES = Set.of(
         "trigger",
         "user_input",
@@ -82,11 +84,7 @@ public class WorkflowDraftService {
     @Transactional(readOnly = true)
     public PageResponse<WorkflowDraftApi.WorkflowDraftRow> listDrafts(UUID tenantId, String keyword, int page, int size, String sort) {
         ensureActiveTenant(tenantId);
-        Pageable pageable = PageRequest.of(
-            Math.max(page, 1) - 1,
-            Math.min(Math.max(size, 1), 100),
-            parseDraftSort(sort)
-        );
+        Pageable pageable = PageableFactory.from(PageQuery.of(page, size, sort), DRAFT_SORT);
         String normalizedKeyword = keyword == null ? "" : keyword.trim();
         Map<UUID, UserAccount> usersById = loadUsersById();
         return PageResponse.from(workflowDefinitionRepository.searchDrafts(tenantId, normalizedKeyword, pageable)
@@ -297,22 +295,6 @@ public class WorkflowDraftService {
 
     private int countPausePoints(List<WorkflowDraftApi.WorkflowNodeDraft> nodes) {
         return (int) nodes.stream().filter(node -> PAUSE_NODE_TYPES.contains(normalizeRequired(node.nodeType()))).count();
-    }
-
-    private Sort parseDraftSort(String sort) {
-        if (sort == null || sort.isBlank()) {
-            return Sort.by(Sort.Direction.DESC, "updatedAt");
-        }
-
-        String[] parts = sort.split(",", 2);
-        String field = switch (parts[0]) {
-            case "name", "status", "createdAt", "updatedAt", "nodeCount" -> parts[0];
-            default -> "updatedAt";
-        };
-        Sort.Direction direction = parts.length > 1 && "asc".equalsIgnoreCase(parts[1])
-            ? Sort.Direction.ASC
-            : Sort.Direction.DESC;
-        return Sort.by(direction, field);
     }
 
     private String writeJsonArray(List<String> values) {

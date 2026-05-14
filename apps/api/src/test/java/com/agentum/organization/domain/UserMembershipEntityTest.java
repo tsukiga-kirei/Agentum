@@ -12,15 +12,13 @@ class UserMembershipEntityTest {
         UUID tenantId = UUID.fromString("00000000-0000-0000-0000-000000000101");
         UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000201");
         UUID departmentId = UUID.fromString("00000000-0000-0000-0000-000000000301");
-        UUID roleId = UUID.fromString("00000000-0000-0000-0000-000000000401");
 
-        UserMembershipEntity membership = UserMembershipEntity.create(tenantId, userId, departmentId, roleId, "默认空间");
+        UserMembershipEntity membership = UserMembershipEntity.create(tenantId, userId, departmentId, "默认空间");
 
         assertThat(membership.getId()).isNotNull();
         assertThat(membership.getTenantId()).isEqualTo(tenantId);
         assertThat(membership.getUserId()).isEqualTo(userId);
         assertThat(membership.getDepartmentId()).isEqualTo(departmentId);
-        assertThat(membership.getRoleId()).isEqualTo(roleId);
         assertThat(membership.getSpaceCode()).isEqualTo("默认空间");
         assertThat(membership.isDefaultMembership()).isTrue();
         assertThat(membership.getStatus()).isEqualTo("active");

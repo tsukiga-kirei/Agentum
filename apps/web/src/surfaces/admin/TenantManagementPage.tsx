@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Empty, Segmented, Select, message } from "antd";
+import { Empty, Segmented, Select, message, Pagination } from "antd";
 import {
   Building2,
   CheckCircle2,
@@ -115,6 +115,79 @@ type MemberEditDraft = {
 };
 
 type PrincipalSelectionKey = `${PrincipalType}:${string}`;
+
+const adminPaginationLocale = {
+  items_per_page: "条/页",
+  jump_to: "跳至",
+  jump_to_confirm: "确定",
+  page: "页",
+  prev_page: "上一页",
+  next_page: "下一页",
+  prev_5: "向前 5 页",
+  next_5: "向后 5 页",
+  prev_3: "向前 3 页",
+  next_3: "向后 3 页",
+  page_size: "每页条数",
+};
+
+function formatPaginationTotal(count: number, range: [number, number], pageSize: number): string {
+  return count <= pageSize ? `共 ${count} 条` : `当前 ${range[0]}-${range[1]} 条，共 ${count} 条`;
+}
+
+function useClientPagination<T>(items: T[], defaultPageSize = 10) {
+  const [current, setCurrent] = useState(1);
+  const [pageSize, setPageSize] = useState(defaultPageSize);
+  const totalPages = Math.max(Math.ceil(items.length / pageSize), 1);
+
+  useEffect(() => {
+    if (current > totalPages) {
+      setCurrent(totalPages);
+    }
+  }, [current, totalPages]);
+
+  const pagedItems = useMemo(() => {
+    const start = (current - 1) * pageSize;
+    return items.slice(start, start + pageSize);
+  }, [current, items, pageSize]);
+
+  const onChange = useCallback((page: number, size: number) => {
+    setCurrent(page);
+    setPageSize(size);
+  }, []);
+
+  return { current, pageSize, total: items.length, pagedItems, onChange };
+}
+
+function AdminPagination({
+  current,
+  pageSize,
+  total,
+  onChange,
+}: {
+  current: number;
+  pageSize: number;
+  total: number;
+  onChange: (page: number, size: number) => void;
+}) {
+  if (total <= 0) return null;
+
+  return (
+    <div className="agent-admin-pagination-wrap">
+      <Pagination
+        className="agent-admin-pagination"
+        current={current}
+        pageSize={pageSize}
+        total={total}
+        locale={adminPaginationLocale}
+        showSizeChanger={{ className: "agent-admin-select", popupClassName: "agent-select-dropdown agent-admin-select-dropdown" }}
+        pageSizeOptions={["10", "20", "50"]}
+        showTotal={(count, range) => formatPaginationTotal(count, range, pageSize)}
+        onChange={onChange}
+        onShowSizeChange={onChange}
+      />
+    </div>
+  );
+}
 
 export function TenantManagementPage() {
   // 租户管理页按租户管理员的日常任务组织展示，动作码只作为后端策略标识露出在次级文本中。
@@ -1130,6 +1203,7 @@ function OrganizationPanel({
       return matchDepartment && matchKeyword;
     });
   }, [memberKeyword, overview, selectedDepartmentId]);
+  const membershipPagination = useClientPagination(visibleMemberships, 10);
 
   const selectedDepartment = overview?.departments.find((department) => department.id === selectedDepartmentId) ?? null;
 
@@ -1228,7 +1302,7 @@ function OrganizationPanel({
                   </tr>
                 </thead>
                 <tbody>
-                  {visibleMemberships.map((membership) => (
+                  {membershipPagination.pagedItems.map((membership) => (
                     <tr key={membership.id}>
                       <td>
                         <div className="tenant-member-cell">
@@ -1276,6 +1350,12 @@ function OrganizationPanel({
                 </tbody>
               </table>
             </div>
+            <AdminPagination
+              current={membershipPagination.current}
+              pageSize={membershipPagination.pageSize}
+              total={membershipPagination.total}
+              onChange={membershipPagination.onChange}
+            />
           </section>
         </div>
       ) : null}
@@ -1306,6 +1386,9 @@ function RoleManagementPanel({
   onCreateRole: () => void;
   onEditRole: (role: OrganizationRole) => void;
 }) {
+  const roles = overview?.roles ?? [];
+  const rolePagination = useClientPagination(roles, 10);
+
   if (!hasTenantContext) {
     return (
       <div className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-4 text-sm text-[var(--color-text-secondary)]">
@@ -1338,9 +1421,10 @@ function RoleManagementPanel({
       ) : null}
 
       {overview ? (
-        <div className="sys-card-grid">
-          {overview.roles.map((role) => (
-            <article key={role.id} className="sys-card sys-card--static">
+        <>
+          <div className="sys-card-grid">
+            {rolePagination.pagedItems.map((role) => (
+              <article key={role.id} className="sys-card sys-card--static">
               <div className="sys-card-header">
                 <div className="sys-card-avatar sys-card-avatar--tenant"><ShieldCheck size={22} /></div>
                 <div className="sys-card-info">
@@ -1358,9 +1442,16 @@ function RoleManagementPanel({
                   <button className="sys-btn sys-btn--text sys-btn--sm" onClick={() => onEditRole(role)}><Edit size={14} /> 编辑</button>
                 </div>
               </div>
-            </article>
-          ))}
-        </div>
+              </article>
+            ))}
+          </div>
+          <AdminPagination
+            current={rolePagination.current}
+            pageSize={rolePagination.pageSize}
+            total={rolePagination.total}
+            onChange={rolePagination.onChange}
+          />
+        </>
       ) : null}
     </div>
   );
@@ -1385,6 +1476,9 @@ function ResourceAuthorizationPanel({
   onDeletePageGrant: (grant: PageGrant) => void;
   onDeleteGrant: (grant: ResourceGrant) => void;
 }) {
+  const pageGrantPagination = useClientPagination(pageGrants, 10);
+  const grantPagination = useClientPagination(grants, 10);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] px-4 py-3">
@@ -1418,7 +1512,7 @@ function ResourceAuthorizationPanel({
           </div>
         ) : (
           <div className="sys-card-grid">
-            {pageGrants.map((grant) => (
+            {pageGrantPagination.pagedItems.map((grant) => (
               <article key={grant.id} className="sys-card sys-card--static tenant-auth-card">
                 <div className="sys-card-header">
                   <div className="sys-card-avatar sys-card-avatar--tenant"><ShieldCheck size={22} /></div>
@@ -1441,6 +1535,12 @@ function ResourceAuthorizationPanel({
             ))}
           </div>
         )}
+        <AdminPagination
+          current={pageGrantPagination.current}
+          pageSize={pageGrantPagination.pageSize}
+          total={pageGrantPagination.total}
+          onChange={pageGrantPagination.onChange}
+        />
       </section>
 
       <section className="tenant-auth-section">
@@ -1460,7 +1560,7 @@ function ResourceAuthorizationPanel({
 
         {grants.length > 0 ? (
           <div className="sys-card-grid">
-            {grants.map((grant) => (
+            {grantPagination.pagedItems.map((grant) => (
               <article key={grant.id} className="sys-card sys-card--static tenant-auth-card">
                 <div className="sys-card-header">
                   <div className="sys-card-avatar sys-card-avatar--tenant"><UserRoundCog size={22} /></div>
@@ -1483,6 +1583,12 @@ function ResourceAuthorizationPanel({
             ))}
           </div>
         ) : null}
+        <AdminPagination
+          current={grantPagination.current}
+          pageSize={grantPagination.pageSize}
+          total={grantPagination.total}
+          onChange={grantPagination.onChange}
+        />
       </section>
     </div>
   );

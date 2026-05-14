@@ -1754,6 +1754,65 @@ textarea:focus-visible {
   align-items: center;
   gap: 8px;
 }
+.agent-admin-pagination-wrap {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 16px;
+}
+.agent-admin-pagination {
+  color: var(--color-text-secondary);
+}
+.agent-admin-pagination .ant-pagination-total-text {
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+.agent-admin-pagination .ant-pagination-item,
+.agent-admin-pagination .ant-pagination-prev .ant-pagination-item-link,
+.agent-admin-pagination .ant-pagination-next .ant-pagination-item-link {
+  border-color: var(--color-border-light);
+  background: var(--color-bg-card);
+  color: var(--color-text-secondary);
+}
+.agent-admin-pagination .ant-pagination-item a,
+.agent-admin-pagination .ant-pagination-prev button,
+.agent-admin-pagination .ant-pagination-next button {
+  color: var(--color-text-secondary);
+}
+.agent-admin-pagination .ant-pagination-item:hover,
+.agent-admin-pagination .ant-pagination-prev:hover .ant-pagination-item-link,
+.agent-admin-pagination .ant-pagination-next:hover .ant-pagination-item-link {
+  border-color: var(--color-primary);
+}
+.agent-admin-pagination .ant-pagination-item:hover a,
+.agent-admin-pagination .ant-pagination-prev:hover button,
+.agent-admin-pagination .ant-pagination-next:hover button {
+  color: var(--color-primary);
+}
+.agent-admin-pagination .ant-pagination-item-active {
+  border-color: var(--color-primary);
+  background: var(--color-primary-bg);
+}
+.agent-admin-pagination .ant-pagination-item-active a {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+.agent-admin-pagination .ant-select-selector {
+  border-color: var(--color-border-light) !important;
+  background: var(--color-bg-card) !important;
+  color: var(--color-text-primary) !important;
+}
+.agent-admin-pagination .ant-select-selection-item,
+.agent-admin-pagination .ant-select-arrow {
+  color: var(--color-text-secondary) !important;
+}
+.dark .agent-admin-pagination .ant-pagination-disabled .ant-pagination-item-link,
+.dark .agent-admin-pagination .ant-pagination-disabled button {
+  color: var(--color-text-tertiary) !important;
+  background: var(--color-bg-hover);
+}
+.dark .agent-admin-pagination .ant-pagination-options .ant-select-dropdown {
+  background: var(--color-bg-card);
+}
 .tenant-auth-section {
   border: 1px solid var(--color-border-light);
   border-radius: var(--radius-lg);
@@ -1892,6 +1951,9 @@ textarea:focus-visible {
 }
 .tenant-member-table-wrap {
   overflow-x: auto;
+}
+.tenant-member-table-card .agent-admin-pagination-wrap {
+  padding: 18px 16px 16px;
 }
 .tenant-member-table {
   width: 100%;

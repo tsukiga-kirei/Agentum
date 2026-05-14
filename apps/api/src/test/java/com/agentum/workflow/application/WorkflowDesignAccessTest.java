@@ -3,11 +3,14 @@ package com.agentum.workflow.application;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 import com.agentum.auth.application.CurrentUserPrincipal;
 import com.agentum.organization.domain.UserMembershipEntity;
+import com.agentum.organization.domain.UserMembershipRoleEntity;
 import com.agentum.organization.infrastructure.UserMembershipRepository;
+import com.agentum.organization.infrastructure.UserMembershipRoleRepository;
 import com.agentum.permission.domain.RoleEntity;
 import com.agentum.permission.infrastructure.RoleRepository;
 import com.agentum.shared.api.ApiException;
@@ -29,11 +32,14 @@ class WorkflowDesignAccessTest {
     private UserMembershipRepository userMembershipRepository;
 
     @Mock
+    private UserMembershipRoleRepository userMembershipRoleRepository;
+
+    @Mock
     private RoleRepository roleRepository;
 
     @Test
     void shouldAllowTenantAdminInsideOwnTenant() {
-        WorkflowDesignAccess access = new WorkflowDesignAccess(userMembershipRepository, roleRepository);
+        WorkflowDesignAccess access = new WorkflowDesignAccess(userMembershipRepository, userMembershipRoleRepository, roleRepository);
 
         assertThatCode(() -> access.assertCanDesign(newPrincipal("tenant_admin", TENANT_ID), TENANT_ID))
             .doesNotThrowAnyException();
@@ -41,12 +47,14 @@ class WorkflowDesignAccessTest {
 
     @Test
     void shouldAllowBusinessUserWithWorkflowDesignerMembership() {
-        WorkflowDesignAccess access = new WorkflowDesignAccess(userMembershipRepository, roleRepository);
+        WorkflowDesignAccess access = new WorkflowDesignAccess(userMembershipRepository, userMembershipRoleRepository, roleRepository);
         RoleEntity role = RoleEntity.create(TENANT_ID, "workflow_designer", "流程设计者", "business", "维护工作流草稿");
         UUID roleId = role.getId();
-        UserMembershipEntity membership = UserMembershipEntity.create(TENANT_ID, USER_ID, null, roleId, "默认空间");
+        UserMembershipEntity membership = UserMembershipEntity.create(TENANT_ID, USER_ID, null, "默认空间");
+        UserMembershipRoleEntity membershipRole = UserMembershipRoleEntity.create(membership.getId(), roleId);
 
         when(userMembershipRepository.findByUserIdAndTenantIdAndStatus(USER_ID, TENANT_ID, "active")).thenReturn(List.of(membership));
+        when(userMembershipRoleRepository.findByMembershipIdInAndStatus(any(), eq("active"))).thenReturn(List.of(membershipRole));
         when(roleRepository.findAllById(any())).thenReturn(List.of(role));
 
         assertThatCode(() -> access.assertCanDesign(newPrincipal("business", TENANT_ID), TENANT_ID))
@@ -55,12 +63,14 @@ class WorkflowDesignAccessTest {
 
     @Test
     void shouldRejectBusinessUserWithoutDesignerMembership() {
-        WorkflowDesignAccess access = new WorkflowDesignAccess(userMembershipRepository, roleRepository);
+        WorkflowDesignAccess access = new WorkflowDesignAccess(userMembershipRepository, userMembershipRoleRepository, roleRepository);
         RoleEntity role = RoleEntity.create(TENANT_ID, "executor", "执行人", "business", "发起流程");
         UUID roleId = role.getId();
-        UserMembershipEntity membership = UserMembershipEntity.create(TENANT_ID, USER_ID, null, roleId, "默认空间");
+        UserMembershipEntity membership = UserMembershipEntity.create(TENANT_ID, USER_ID, null, "默认空间");
+        UserMembershipRoleEntity membershipRole = UserMembershipRoleEntity.create(membership.getId(), roleId);
 
         when(userMembershipRepository.findByUserIdAndTenantIdAndStatus(USER_ID, TENANT_ID, "active")).thenReturn(List.of(membership));
+        when(userMembershipRoleRepository.findByMembershipIdInAndStatus(any(), eq("active"))).thenReturn(List.of(membershipRole));
         when(roleRepository.findAllById(any())).thenReturn(List.of(role));
 
         assertThatThrownBy(() -> access.assertCanDesign(newPrincipal("business", TENANT_ID), TENANT_ID))
@@ -71,7 +81,7 @@ class WorkflowDesignAccessTest {
 
     @Test
     void shouldRejectCrossTenantAccess() {
-        WorkflowDesignAccess access = new WorkflowDesignAccess(userMembershipRepository, roleRepository);
+        WorkflowDesignAccess access = new WorkflowDesignAccess(userMembershipRepository, userMembershipRoleRepository, roleRepository);
 
         assertThatThrownBy(() -> access.assertCanDesign(newPrincipal("business", TENANT_ID), UUID.fromString("00000000-0000-0000-0000-000000000102")))
             .isInstanceOf(ApiException.class)

@@ -1050,9 +1050,25 @@ paths:
         - System
       security:
         - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 10
+        - name: sort
+          in: query
+          schema:
+            type: string
+            default: createdAt,desc
       responses:
         "200":
-          description: 租户列表
+          description: 租户分页列表
           content:
             application/json:
               schema:
@@ -1061,9 +1077,7 @@ paths:
                   - type: object
                     properties:
                       data:
-                        type: array
-                        items:
-                          $ref: "#/components/schemas/SystemTenantRow"
+                        $ref: "#/components/schemas/SystemTenantPageResponse"
         "401":
           description: 未登录或令牌无效
         "403":
@@ -1167,9 +1181,25 @@ paths:
         - System
       security:
         - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 10
+        - name: sort
+          in: query
+          schema:
+            type: string
+            default: createdAt,desc
       responses:
         "200":
-          description: 模型供应商列表
+          description: 模型供应商分页列表
           content:
             application/json:
               schema:
@@ -1178,9 +1208,7 @@ paths:
                   - type: object
                     properties:
                       data:
-                        type: array
-                        items:
-                          $ref: "#/components/schemas/ModelProviderRow"
+                        $ref: "#/components/schemas/ModelProviderPageResponse"
         "401":
           description: 未登录或令牌无效
         "403":
@@ -1220,9 +1248,25 @@ paths:
         - System
       security:
         - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 10
+        - name: sort
+          in: query
+          schema:
+            type: string
+            default: createdAt,desc
       responses:
         "200":
-          description: 能力列表
+          description: 能力分页列表
           content:
             application/json:
               schema:
@@ -1231,9 +1275,7 @@ paths:
                   - type: object
                     properties:
                       data:
-                        type: array
-                        items:
-                          $ref: "#/components/schemas/SystemCapabilityRow"
+                        $ref: "#/components/schemas/SystemCapabilityPageResponse"
         "401":
           description: 未登录或令牌无效
         "403":
@@ -2303,6 +2345,28 @@ components:
         - name
         - code
         - status
+    SystemTenantPageResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SystemTenantRow"
+        page:
+          type: integer
+        size:
+          type: integer
+        total:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+      required:
+        - items
+        - page
+        - size
+        - total
+        - totalPages
     UpdateTenantStatusRequest:
       type: object
       properties:
@@ -2362,6 +2426,28 @@ components:
         - name
         - providerType
         - status
+    ModelProviderPageResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelProviderRow"
+        page:
+          type: integer
+        size:
+          type: integer
+        total:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+      required:
+        - items
+        - page
+        - size
+        - total
+        - totalPages
     ModelProviderTypeRow:
       type: object
       properties:
@@ -2429,6 +2515,28 @@ components:
         - version
         - riskLevel
         - status
+    SystemCapabilityPageResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SystemCapabilityRow"
+        page:
+          type: integer
+        size:
+          type: integer
+        total:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+      required:
+        - items
+        - page
+        - size
+        - total
+        - totalPages
     CreateSystemCapabilityRequest:
       type: object
       properties:

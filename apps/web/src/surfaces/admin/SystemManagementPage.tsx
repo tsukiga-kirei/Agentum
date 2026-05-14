@@ -27,7 +27,7 @@ import {
   X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { Empty, Segmented, Spin, message, Drawer } from "antd";
+import { Empty, Segmented, Spin, message, Drawer, Pagination } from "antd";
 import { AgentumApiError, organizationApi, systemApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import type { TenantOrganizationOverview } from "../../types/organization";
@@ -104,6 +104,38 @@ function SysSelect({ options, value, defaultValue, placeholder, icon: Icon, onCh
 
 type SystemSection = "overview" | "tenants" | "models" | "capabilities";
 
+type AdminPageState = {
+  page: number;
+  size: number;
+  total: number;
+  totalPages: number;
+};
+
+const defaultPageState: AdminPageState = {
+  page: 1,
+  size: 10,
+  total: 0,
+  totalPages: 0,
+};
+
+const adminPaginationLocale = {
+  items_per_page: "条/页",
+  jump_to: "跳至",
+  jump_to_confirm: "确定",
+  page: "页",
+  prev_page: "上一页",
+  next_page: "下一页",
+  prev_5: "向前 5 页",
+  next_5: "向后 5 页",
+  prev_3: "向前 3 页",
+  next_3: "向后 3 页",
+  page_size: "每页条数",
+};
+
+function formatPaginationTotal(count: number, range: [number, number], pageSize: number): string {
+  return count <= pageSize ? `共 ${count} 条` : `当前 ${range[0]}-${range[1]} 条，共 ${count} 条`;
+}
+
 const capabilityTypeOptions = [
   { value: "mcp", label: "MCP" },
   { value: "skill", label: "Skill" },
@@ -135,6 +167,37 @@ function RiskTag({ level }: { level: string }) {
   return <span className={`sys-info-tag ${cls}`}>{label}</span>;
 }
 
+function AdminPagination({
+  current,
+  pageSize,
+  total,
+  onChange,
+}: {
+  current: number;
+  pageSize: number;
+  total: number;
+  onChange: (page: number, size: number) => void;
+}) {
+  if (total <= 0) return null;
+
+  return (
+    <div className="agent-admin-pagination-wrap">
+      <Pagination
+        className="agent-admin-pagination"
+        current={current}
+        pageSize={pageSize}
+        total={total}
+        locale={adminPaginationLocale}
+        showSizeChanger={{ className: "agent-admin-select", popupClassName: "agent-select-dropdown agent-admin-select-dropdown" }}
+        pageSizeOptions={["10", "20", "50"]}
+        showTotal={(count, range) => formatPaginationTotal(count, range, pageSize)}
+        onChange={onChange}
+        onShowSizeChange={onChange}
+      />
+    </div>
+  );
+}
+
 // 系统管理：系统管理员默认入口
 export function SystemManagementPage() {
   const token = useAuthStore((s) => s.token);
@@ -146,10 +209,16 @@ export function SystemManagementPage() {
   const [loading, setLoading] = useState(false);
 
   const [summary, setSummary] = useState<SystemSummary | null>(null);
+  const [previewTenants, setPreviewTenants] = useState<SystemTenantRow[]>([]);
+  const [previewCapabilities, setPreviewCapabilities] = useState<SystemCapabilityRow[]>([]);
   const [tenants, setTenants] = useState<SystemTenantRow[]>([]);
+  const [tenantPage, setTenantPage] = useState<AdminPageState>(defaultPageState);
   const [modelProviders, setModelProviders] = useState<ModelProviderRow[]>([]);
+  const [modelProviderPage, setModelProviderPage] = useState<AdminPageState>(defaultPageState);
   const [modelProviderTypes, setModelProviderTypes] = useState<ModelProviderTypeRow[]>([]);
   const [capabilities, setCapabilities] = useState<SystemCapabilityRow[]>([]);
+  const [capabilityPage, setCapabilityPage] = useState<AdminPageState>(defaultPageState);
+  const [configCapabilities, setConfigCapabilities] = useState<SystemCapabilityRow[]>([]);
   const [capabilityTestResults, setCapabilityTestResults] = useState<Record<string, CapabilityTestResult>>({});
 
   // 租户侧边抽屉状态
@@ -193,6 +262,12 @@ export function SystemManagementPage() {
     try {
       const data = await systemApi.summary(token);
       setSummary(data);
+      const [tenantPreview, capabilityPreview] = await Promise.all([
+        systemApi.listTenants(token, 1, 4),
+        systemApi.listCapabilities(token, 1, 4),
+      ]);
+      setPreviewTenants(tenantPreview.items);
+      setPreviewCapabilities(capabilityPreview.items);
     } catch (e) {
       handleApiError(e, "加载系统概览失败");
     } finally {
@@ -200,44 +275,60 @@ export function SystemManagementPage() {
     }
   }, [token, handleApiError]);
 
-  const loadTenants = useCallback(async () => {
+  const loadTenants = useCallback(async (page = tenantPage.page, size = tenantPage.size) => {
     if (!token) return;
     setLoading(true);
     try {
-      setTenants(await systemApi.listTenants(token));
+      const data = await systemApi.listTenants(token, page, size);
+      setTenants(data.items);
+      setTenantPage({ page: data.page, size: data.size, total: data.total, totalPages: data.totalPages });
     } catch (e) {
       handleApiError(e, "加载租户列表失败");
     } finally {
       setLoading(false);
     }
-  }, [token, handleApiError]);
+  }, [token, handleApiError, tenantPage.page, tenantPage.size]);
 
-  const loadModels = useCallback(async () => {
+  const loadModels = useCallback(async (page = modelProviderPage.page, size = modelProviderPage.size) => {
     if (!token) return;
     setLoading(true);
     try {
-      const [providers, types] = await Promise.all([
-        systemApi.listModelProviders(token),
+      const [providersPage, types] = await Promise.all([
+        systemApi.listModelProviders(token, page, size),
         systemApi.listModelProviderTypes(token),
       ]);
-      setModelProviders(providers);
+      setModelProviders(providersPage.items);
+      setModelProviderPage({ page: providersPage.page, size: providersPage.size, total: providersPage.total, totalPages: providersPage.totalPages });
       setModelProviderTypes(types);
     } catch (e) {
       handleApiError(e, "加载模型供应商失败");
     } finally {
       setLoading(false);
     }
-  }, [token, handleApiError]);
+  }, [token, handleApiError, modelProviderPage.page, modelProviderPage.size]);
 
-  const loadCapabilities = useCallback(async () => {
+  const loadCapabilities = useCallback(async (page = capabilityPage.page, size = capabilityPage.size) => {
     if (!token) return;
     setLoading(true);
     try {
-      setCapabilities(await systemApi.listCapabilities(token));
+      const data = await systemApi.listCapabilities(token, page, size);
+      setCapabilities(data.items);
+      setCapabilityPage({ page: data.page, size: data.size, total: data.total, totalPages: data.totalPages });
     } catch (e) {
       handleApiError(e, "加载系统能力失败");
     } finally {
       setLoading(false);
+    }
+  }, [token, handleApiError, capabilityPage.page, capabilityPage.size]);
+
+  const loadConfigCapabilities = useCallback(async () => {
+    if (!token) return;
+    try {
+      // 租户抽屉用于配置可用能力，需要尽量拿到当前阶段的完整能力集合；size 仍受后端统一上限保护。
+      const data = await systemApi.listCapabilities(token, 1, 100, "name,asc");
+      setConfigCapabilities(data.items);
+    } catch (e) {
+      handleApiError(e, "加载租户能力配置项失败");
     }
   }, [token, handleApiError]);
 
@@ -281,8 +372,6 @@ export function SystemManagementPage() {
     if (!token) return;
     if (section === "overview") {
       void loadSummary();
-      void loadTenants();
-      void loadCapabilities();
     }
     else if (section === "tenants") void loadTenants();
     else if (section === "models") void loadModels();
@@ -292,7 +381,7 @@ export function SystemManagementPage() {
   useEffect(() => {
     if (!selectedTenant || !tenantDrawerOpen) return;
     if (tenantActiveTab === "capabilities") {
-      void loadCapabilities();
+      void loadConfigCapabilities();
       void loadTenantCapabilityGrants(selectedTenant.id);
     }
     if (tenantActiveTab === "models") {
@@ -303,7 +392,7 @@ export function SystemManagementPage() {
       // 系统管理抽屉只做跨租户诊断视图，实际成员维护仍回到租户管理页并由后端复核租户上下文。
       void loadTenantOrganizationOverview(selectedTenant.id);
     }
-  }, [selectedTenant, tenantDrawerOpen, tenantActiveTab, loadCapabilities, loadTenantCapabilityGrants, loadModels, loadTenantModelAssignments, loadTenantOrganizationOverview]);
+  }, [selectedTenant, tenantDrawerOpen, tenantActiveTab, loadConfigCapabilities, loadTenantCapabilityGrants, loadModels, loadTenantModelAssignments, loadTenantOrganizationOverview]);
 
   const patchTenantStatus = async (tenantId: string, status: string) => {
     if (!token) return;
@@ -539,8 +628,8 @@ export function SystemManagementPage() {
                 <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:20}}>
                   <div className="sys-preview-card">
                     <div className="sys-preview-card-title"><Building2 size={16}/> 最近入驻租户</div>
-                    {tenants.length === 0 ? <Empty description="暂无租户" image={Empty.PRESENTED_IMAGE_SIMPLE}/> : <>
-                      {tenants.slice(0,4).map(t=>(
+                    {previewTenants.length === 0 ? <Empty description="暂无租户" image={Empty.PRESENTED_IMAGE_SIMPLE}/> : <>
+                      {previewTenants.map(t=>(
                         <div key={t.id} className="sys-preview-item" style={{cursor:"pointer"}} onClick={()=>{setSection("tenants");setSelectedTenant(t);setTenantDrawerOpen(true);}}>
                           <div className="sys-preview-item-left">
                             <div className="sys-preview-item-icon sys-card-avatar--tenant"><Building2 size={16}/></div>
@@ -549,13 +638,13 @@ export function SystemManagementPage() {
                           <div className={`sys-status sys-status--${t.status==='active'?'active':'inactive'}`}><span className="sys-status-dot"/>{t.status==='active'?'运行中':'已停用'}</div>
                         </div>
                       ))}
-                      {tenants.length>4&&<button className="sys-btn sys-btn--link" onClick={()=>setSection("tenants")} style={{marginTop:8}}>查看全部 {tenants.length} 个租户 →</button>}
+                      {(summary?.tenantTotal ?? 0)>4&&<button className="sys-btn sys-btn--link" onClick={()=>setSection("tenants")} style={{marginTop:8}}>查看全部 {summary?.tenantTotal ?? 0} 个租户 →</button>}
                     </>}
                   </div>
                   <div className="sys-preview-card">
                     <div className="sys-preview-card-title"><Boxes size={16}/> 核心能力一览</div>
-                    {capabilities.length === 0 ? <Empty description="暂无能力" image={Empty.PRESENTED_IMAGE_SIMPLE}/> : <>
-                      {capabilities.slice(0,4).map(c=>(
+                    {previewCapabilities.length === 0 ? <Empty description="暂无能力" image={Empty.PRESENTED_IMAGE_SIMPLE}/> : <>
+                      {previewCapabilities.map(c=>(
                         <div key={c.id} className="sys-preview-item">
                           <div className="sys-preview-item-left">
                             <div className="sys-preview-item-icon sys-card-avatar--cap"><Boxes size={16}/></div>
@@ -564,7 +653,7 @@ export function SystemManagementPage() {
                           <RiskTag level={c.riskLevel}/>
                         </div>
                       ))}
-                      {capabilities.length>4&&<button className="sys-btn sys-btn--link" onClick={()=>setSection("capabilities")} style={{marginTop:8}}>查看全部 {capabilities.length} 项能力 →</button>}
+                      {(summary?.systemCapabilityTotal ?? 0)>4&&<button className="sys-btn sys-btn--link" onClick={()=>setSection("capabilities")} style={{marginTop:8}}>查看全部 {summary?.systemCapabilityTotal ?? 0} 项能力 →</button>}
                     </>}
                   </div>
                 </div>
@@ -579,9 +668,10 @@ export function SystemManagementPage() {
                   <button className="sys-btn sys-btn--primary" onClick={()=>setCreateTenantModalOpen(true)}><PlusCircle size={15}/> 新增租户</button>
                 </div>
                 {tenants.length===0?<Empty description="暂无租户记录" style={{marginTop:48}}/>:(
-                  <div className="sys-card-grid">
-                    {tenants.map(t=>(
-                      <div key={t.id} className="sys-card" onClick={()=>{setSelectedTenant(t);setTenantActiveTab("default");setTenantDrawerOpen(true);}}>
+                  <>
+                    <div className="sys-card-grid">
+                      {tenants.map(t=>(
+                        <div key={t.id} className="sys-card" onClick={()=>{setSelectedTenant(t);setTenantActiveTab("default");setTenantDrawerOpen(true);}}>
                         <div className="sys-card-header">
                           <div className="sys-card-avatar sys-card-avatar--tenant"><Building2 size={22}/></div>
                           <div className="sys-card-info"><div className="sys-card-name">{t.name}</div><div className="sys-card-code">{t.code}</div></div>
@@ -596,9 +686,16 @@ export function SystemManagementPage() {
                             <button className="sys-btn sys-btn--text sys-btn--sm" onClick={()=>{setSelectedTenant(t);setTenantActiveTab("default");setTenantDrawerOpen(true);}}><Edit size={14}/> 配置</button>
                           </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
+                        </div>
+                      ))}
+                    </div>
+                    <AdminPagination
+                      current={tenantPage.page}
+                      pageSize={tenantPage.size}
+                      total={tenantPage.total}
+                      onChange={(page, size) => void loadTenants(page, size)}
+                    />
+                  </>
                 )}
               </div>
             )}
@@ -611,8 +708,9 @@ export function SystemManagementPage() {
                   <button className="sys-btn sys-btn--primary" onClick={()=>{modelRef.current={};setSelectedModelProviderType("");void loadModels();setModelModalOpen(true);}}><PlusCircle size={15}/> 注册供应商</button>
                 </div>
                 {modelProviders.length===0?<Empty description="暂无模型供应商" style={{marginTop:48}}/>:(
-                  <div className="sys-card-grid">
-                    {modelProviders.map(m=>(
+                  <>
+                    <div className="sys-card-grid">
+                      {modelProviders.map(m=>(
                       <div key={m.id} className="sys-card sys-card--static">
                         <div className="sys-card-header">
                           <div className="sys-card-avatar sys-card-avatar--model"><DatabaseZap size={22}/></div>
@@ -624,8 +722,15 @@ export function SystemManagementPage() {
                           <div className="sys-meta-item"><span className="sys-meta-label">默认模型</span><span className="sys-meta-value">{m.defaultModel||"未配置"}</span></div>
                         </div>
                       </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                    <AdminPagination
+                      current={modelProviderPage.page}
+                      pageSize={modelProviderPage.size}
+                      total={modelProviderPage.total}
+                      onChange={(page, size) => void loadModels(page, size)}
+                    />
+                  </>
                 )}
               </div>
             )}
@@ -638,8 +743,9 @@ export function SystemManagementPage() {
                   <button className="sys-btn sys-btn--primary" onClick={()=>{capRef.current={capabilityType:"mcp",transport:"stdio"};setSelectedCapabilityType("mcp");setSelectedMcpTransport("stdio");setCapModalOpen(true);}}><PlusCircle size={15}/> 注册能力</button>
                 </div>
                 {capabilities.length===0?<Empty description="暂无全局能力" style={{marginTop:48}}/>:(
-                  <div className="sys-card-grid">
-                    {capabilities.map(c=>(
+                  <>
+                    <div className="sys-card-grid">
+                      {capabilities.map(c=>(
                       <div key={c.id} className="sys-card sys-card--static">
                         <div className="sys-card-header">
                           <div className="sys-card-avatar sys-card-avatar--cap"><Boxes size={22}/></div>
@@ -671,8 +777,15 @@ export function SystemManagementPage() {
                           </div>
                         ) : null}
                       </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                    <AdminPagination
+                      current={capabilityPage.page}
+                      pageSize={capabilityPage.size}
+                      total={capabilityPage.total}
+                      onChange={(page, size) => void loadCapabilities(page, size)}
+                    />
+                  </>
                 )}
               </div>
             )}
@@ -732,9 +845,9 @@ export function SystemManagementPage() {
             <div className="sys-drawer-section">
               <div className="sys-section-header"><Boxes size={18}/> 全局能力配置</div>
               <div className="sys-hint"><Info size={14}/> 这里配置该租户能使用哪些全局能力；租户管理员后续再按用户、部门和租户自定义角色细分到业务侧模块、页签与动作。</div>
-              {capabilities.length === 0 ? <Empty description="暂无可配置能力" /> : (
+              {configCapabilities.length === 0 ? <Empty description="暂无可配置能力" /> : (
                 <div className="sys-config-group">
-                  {capabilities.map((cap) => {
+                  {configCapabilities.map((cap) => {
                     const grant = tenantCapabilityGrants.find((g) => g.capabilityId === cap.id);
                     const granted = grant?.grantStatus === "enabled";
                     return (

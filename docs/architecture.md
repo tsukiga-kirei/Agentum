@@ -429,7 +429,7 @@ pending -> running -> paused -> resumed -> running -> completed
 建议在 `com.agentum.shared` 下提供：
 
 - `pagination/PageQuery`：承载 `page`、`size`、`sort` 并做边界校验（例如 page>=1、size 上限）。
-- `pagination/PageResult<T>`：统一返回 `items`、`page`、`size`、`total`、`totalPages`。
+- `pagination/PageResponse<T>`：统一返回 `items`、`page`、`size`、`total`、`totalPages`。
 - `pagination/PageableFactory`：把 `PageQuery` 转为 Spring `Pageable`，同时做排序字段白名单映射。
 - `pagination/SortWhitelist`（可选）：按模块声明允许排序字段，防止前端任意字段排序导致 SQL 风险或性能抖动。
 

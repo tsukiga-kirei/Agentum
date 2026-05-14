@@ -3,6 +3,7 @@ package com.agentum.system.interfaces;
 import com.agentum.auth.application.CurrentUserPrincipal;
 import com.agentum.shared.api.ApiResponse;
 import com.agentum.shared.api.RequestIds;
+import com.agentum.shared.pagination.PageResponse;
 import com.agentum.system.application.SystemAdminAccess;
 import com.agentum.system.application.SystemManagementService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -47,12 +48,15 @@ public class SystemManagementController {
     }
 
     @GetMapping("/tenants")
-    public ApiResponse<List<SystemManagementApi.TenantRow>> listTenants(
+    public ApiResponse<PageResponse<SystemManagementApi.TenantRow>> listTenants(
         @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @RequestParam(defaultValue = "1") int page,
+        @RequestParam(defaultValue = "10") int size,
+        @RequestParam(defaultValue = "createdAt,desc") String sort,
         HttpServletRequest request
     ) {
         systemAdminAccess.assertSystemAdmin(principal);
-        return ApiResponse.success(systemManagementService.listTenants(), RequestIds.current(request));
+        return ApiResponse.success(systemManagementService.listTenants(page, size, sort), RequestIds.current(request));
     }
 
     @PostMapping("/tenants")
@@ -77,12 +81,15 @@ public class SystemManagementController {
     }
 
     @GetMapping("/model-providers")
-    public ApiResponse<List<SystemManagementApi.ModelProviderRow>> listModelProviders(
+    public ApiResponse<PageResponse<SystemManagementApi.ModelProviderRow>> listModelProviders(
         @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @RequestParam(defaultValue = "1") int page,
+        @RequestParam(defaultValue = "10") int size,
+        @RequestParam(defaultValue = "createdAt,desc") String sort,
         HttpServletRequest request
     ) {
         systemAdminAccess.assertSystemAdmin(principal);
-        return ApiResponse.success(systemManagementService.listModelProviders(), RequestIds.current(request));
+        return ApiResponse.success(systemManagementService.listModelProviders(page, size, sort), RequestIds.current(request));
     }
 
     @GetMapping("/model-provider-types")
@@ -105,12 +112,15 @@ public class SystemManagementController {
     }
 
     @GetMapping("/capabilities")
-    public ApiResponse<List<SystemManagementApi.CapabilityRow>> listCapabilities(
+    public ApiResponse<PageResponse<SystemManagementApi.CapabilityRow>> listCapabilities(
         @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @RequestParam(defaultValue = "1") int page,
+        @RequestParam(defaultValue = "10") int size,
+        @RequestParam(defaultValue = "createdAt,desc") String sort,
         HttpServletRequest request
     ) {
         systemAdminAccess.assertSystemAdmin(principal);
-        return ApiResponse.success(systemManagementService.listCapabilities(), RequestIds.current(request));
+        return ApiResponse.success(systemManagementService.listCapabilities(page, size, sort), RequestIds.current(request));
     }
 
     @PostMapping("/capabilities")
