@@ -3,6 +3,7 @@ import { Empty, Segmented, Select, message } from "antd";
 import {
   Building2,
   CheckCircle2,
+  ChevronDown,
   ClipboardList,
   Code2,
   Database,
@@ -97,6 +98,9 @@ const emptyPageGrantForm: CreatePageGrantRequest = {
   principalId: "",
   pageKey: "",
 };
+
+const adminSelectClassNames = { popup: { root: "agent-select-dropdown agent-admin-select-dropdown" } };
+const adminSelectSuffixIcon = <ChevronDown className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />;
 
 type MemberEditDraft = {
   departmentId?: string;
@@ -682,7 +686,10 @@ export function TenantManagementPage() {
                   <label className="sys-field-label">部门</label>
                   <Select
                     allowClear
-                    className="w-full"
+                    className="agent-admin-select w-full"
+                    classNames={adminSelectClassNames}
+                    prefix={<Building2 className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+                    suffixIcon={adminSelectSuffixIcon}
                     placeholder="可选"
                     value={memberDraft.departmentId}
                     options={(organizationOverview?.departments ?? []).map((department) => ({ value: department.id, label: department.name }))}
@@ -692,7 +699,10 @@ export function TenantManagementPage() {
                 <div className="sys-field">
                   <label className="sys-field-label sys-field-label--required">角色</label>
                   <Select
-                    className="w-full"
+                    className="agent-admin-select w-full"
+                    classNames={adminSelectClassNames}
+                    prefix={<ShieldCheck className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+                    suffixIcon={adminSelectSuffixIcon}
                     placeholder="请选择角色"
                     value={memberDraft.roleId || undefined}
                     options={(organizationOverview?.roles ?? []).map((role) => ({ value: role.id, label: `${role.name} (${role.code})` }))}
@@ -733,7 +743,10 @@ export function TenantManagementPage() {
                   <label className="sys-field-label">部门</label>
                   <Select
                     allowClear
-                    className="w-full"
+                    className="agent-admin-select w-full"
+                    classNames={adminSelectClassNames}
+                    prefix={<Building2 className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+                    suffixIcon={adminSelectSuffixIcon}
                     placeholder="未分配部门"
                     value={memberEditDraft.departmentId}
                     options={(organizationOverview?.departments ?? []).map((department) => ({ value: department.id, label: department.name }))}
@@ -743,7 +756,10 @@ export function TenantManagementPage() {
                 <div className="sys-field">
                   <label className="sys-field-label sys-field-label--required">角色</label>
                   <Select
-                    className="w-full"
+                    className="agent-admin-select w-full"
+                    classNames={adminSelectClassNames}
+                    prefix={<ShieldCheck className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+                    suffixIcon={adminSelectSuffixIcon}
                     placeholder="请选择角色"
                     value={memberEditDraft.roleId || undefined}
                     options={(organizationOverview?.roles ?? []).map((role) => ({ value: role.id, label: `${role.name} (${role.code})` }))}
@@ -758,7 +774,10 @@ export function TenantManagementPage() {
               <div className="sys-field">
                 <label className="sys-field-label">状态</label>
                 <Select
-                  className="w-full"
+                  className="agent-admin-select w-full"
+                  classNames={adminSelectClassNames}
+                  prefix={<CheckCircle2 className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+                  suffixIcon={adminSelectSuffixIcon}
                   value={memberEditDraft.status}
                   options={[{ value: "active", label: "启用" }, { value: "disabled", label: "禁用" }]}
                   onChange={(status) => setMemberEditDraft((draft) => ({ ...draft, status }))}
@@ -791,7 +810,10 @@ export function TenantManagementPage() {
                   <label className="sys-field-label">上级部门</label>
                   <Select
                     allowClear
-                    className="w-full"
+                    className="agent-admin-select w-full"
+                    classNames={adminSelectClassNames}
+                    prefix={<Building2 className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+                    suffixIcon={adminSelectSuffixIcon}
                     placeholder="不选择则为一级部门"
                     value={departmentDraft.parentId}
                     options={(organizationOverview?.departments ?? []).map((department) => ({ value: department.id, label: department.name }))}
@@ -835,7 +857,7 @@ export function TenantManagementPage() {
               {editingRole ? (
                 <div className="sys-field">
                   <label className="sys-field-label">状态</label>
-                  <Select className="w-full" value={roleDraft.status} options={[{ value: "active", label: "启用" }, { value: "disabled", label: "停用" }]} onChange={(status) => setRoleDraft((draft) => ({ ...draft, status }))} />
+                  <Select className="agent-admin-select w-full" classNames={adminSelectClassNames} prefix={<CheckCircle2 className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />} suffixIcon={adminSelectSuffixIcon} value={roleDraft.status} options={[{ value: "active", label: "启用" }, { value: "disabled", label: "停用" }]} onChange={(status) => setRoleDraft((draft) => ({ ...draft, status }))} />
                 </div>
               ) : null}
             </div>
@@ -863,8 +885,11 @@ export function TenantManagementPage() {
                 <label className="sys-field-label sys-field-label--required">授权主体</label>
                 <Select
                   mode="multiple"
-                  className="w-full"
+                  className="agent-admin-select w-full"
+                  classNames={adminSelectClassNames}
                   showSearch
+                  prefix={<UserRoundCog className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+                  suffixIcon={adminSelectSuffixIcon}
                   placeholder="可混选角色、部门和人员"
                   value={pageGrantPrincipalKeys}
                   options={getPrincipalOptions(organizationOverview)}
@@ -917,8 +942,11 @@ export function TenantManagementPage() {
                 <label className="sys-field-label sys-field-label--required">授权主体</label>
                 <Select
                   mode="multiple"
-                  className="w-full"
+                  className="agent-admin-select w-full"
+                  classNames={adminSelectClassNames}
                   showSearch
+                  prefix={<UserRoundCog className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+                  suffixIcon={adminSelectSuffixIcon}
                   placeholder="可混选角色、部门和人员"
                   value={grantPrincipalKeys}
                   options={getPrincipalOptions(organizationOverview)}
@@ -959,7 +987,10 @@ export function TenantManagementPage() {
                 <label className="sys-field-label">动作</label>
                 <Select
                   mode="multiple"
-                  className="w-full"
+                  className="agent-admin-select w-full"
+                  classNames={adminSelectClassNames}
+                  prefix={<ClipboardList className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+                  suffixIcon={adminSelectSuffixIcon}
                   value={grantDraft.actions}
                   options={["use", "view", "execute", "manage"].map((action) => ({ value: action, label: formatGrantAction(action) }))}
                   onChange={(actions) => setGrantDraft((draft) => ({ ...draft, actions }))}

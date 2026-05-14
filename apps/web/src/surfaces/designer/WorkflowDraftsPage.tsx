@@ -22,15 +22,15 @@ export type WorkflowDraft = WorkflowDraftRow;
 const statusMeta: Record<WorkflowStatus, { label: string; className: string }> = {
   draft: {
     label: "草稿",
-    className: "bg-amber-100 text-amber-800 ring-amber-200",
+    className: "bg-amber-100 text-amber-800 ring-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:ring-amber-800/60",
   },
   published: {
     label: "已发布",
-    className: "bg-emerald-100 text-emerald-800 ring-emerald-200",
+    className: "bg-emerald-100 text-emerald-800 ring-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:ring-emerald-800/60",
   },
   review: {
     label: "待校验",
-    className: "bg-sky-100 text-sky-800 ring-sky-200",
+    className: "bg-sky-100 text-sky-800 ring-sky-200 dark:bg-sky-900/40 dark:text-sky-300 dark:ring-sky-800/60",
   },
 };
 
@@ -244,8 +244,8 @@ export function WorkflowDraftsPage() {
         {!loading && filteredWorkflows.length === 0 ? (
           <div className="px-5 py-12 text-center">
             <AlertCircle className="mx-auto h-8 w-8 text-slate-400" aria-hidden="true" />
-            <p className="mt-3 text-sm font-medium text-slate-700">没有找到匹配的工作流</p>
-            <p className="mt-1 text-sm text-slate-500">可以调整搜索词，或创建一个新的工作流草稿。</p>
+            <p className="mt-3 text-sm font-medium text-slate-700 dark:text-slate-200">没有找到匹配的工作流</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">可以调整搜索词，或创建一个新的工作流草稿。</p>
           </div>
         ) : null}
 
@@ -313,7 +313,7 @@ export function WorkflowDraftsPage() {
                 />
               </label>
               {formError ? (
-                <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{formError}</p>
+                <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">{formError}</p>
               ) : null}
               <div className="flex justify-end gap-2 pt-2">
                 <button

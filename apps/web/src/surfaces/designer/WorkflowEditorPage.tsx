@@ -594,8 +594,8 @@ function WorkflowCanvasNode({ data, selected }: NodeProps<EditorNodeData>) {
           <span className="rounded bg-[var(--color-bg-hover)] px-2 py-1 text-[11px] font-medium text-[var(--color-text-secondary)]">
             工具 {data.toolCount}
           </span>
-          {data.pausePoint ? <span className="rounded bg-amber-100 px-2 py-1 text-[11px] font-medium text-amber-800">暂停</span> : null}
-          {data.allowQuestion ? <span className="rounded bg-sky-100 px-2 py-1 text-[11px] font-medium text-sky-800">可追问</span> : null}
+          {data.pausePoint ? <span className="rounded bg-amber-100 px-2 py-1 text-[11px] font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">暂停</span> : null}
+          {data.allowQuestion ? <span className="rounded bg-sky-100 px-2 py-1 text-[11px] font-medium text-sky-800 dark:bg-sky-900/40 dark:text-sky-300">可追问</span> : null}
         </div>
         <StatusBadge complete={data.configStatus === "complete"} compact />
       </div>
@@ -641,7 +641,7 @@ function NodeConfigPanel({
           <p className="agent-muted text-sm leading-6">{node.data.summary}</p>
           <div className="mt-3 flex flex-wrap gap-2">
             <StatusBadge complete={node.data.configStatus === "complete"} />
-            {node.data.pausePoint ? <span className="rounded bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800">暂停点</span> : null}
+            {node.data.pausePoint ? <span className="rounded bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">暂停点</span> : null}
           </div>
         </PanelGroup>
 
@@ -656,7 +656,7 @@ function NodeConfigPanel({
             onInsertVariable={onInsertVariable}
           />
           {insertedVariableName ? (
-            <p className="mt-3 rounded bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-800">
+            <p className="mt-3 rounded bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-200">
               已插入变量占位：{"{{"}{insertedVariableName}{"}}"}
             </p>
           ) : null}
@@ -816,7 +816,7 @@ function ParallelTaskList({ tasks }: { tasks: ParallelTask[] }) {
         <article key={task.name} className="rounded bg-[var(--color-bg-card)] px-2 py-2 ring-1 ring-[var(--color-border-light)]">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h5 className="text-xs font-semibold text-[var(--color-text-primary)]">{task.name}</h5>
-            <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800">{task.output}</span>
+            <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">{task.output}</span>
           </div>
           <p className="mt-1 text-xs text-[var(--color-text-secondary)]">{task.purpose}</p>
           <p className="mt-1 text-[11px] text-[var(--color-text-tertiary)]">执行能力：{task.assignee}</p>
@@ -897,14 +897,14 @@ function VariableList({
 function StatusBadge({ complete, compact = false }: { complete: boolean; compact?: boolean }) {
   if (complete) {
     return (
-      <span className={`inline-flex items-center gap-1 rounded bg-emerald-100 px-2 py-1 font-medium text-emerald-800 ${compact ? "text-[11px]" : "text-xs"}`}>
+      <span className={`inline-flex items-center gap-1 rounded bg-emerald-100 px-2 py-1 font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 ${compact ? "text-[11px]" : "text-xs"}`}>
         <CheckCircle2 className={compact ? "h-3 w-3" : "h-3.5 w-3.5"} aria-hidden="true" />
         配置完整
       </span>
     );
   }
 
-  return <span className={`rounded bg-red-100 px-2 py-1 font-medium text-red-700 ${compact ? "text-[11px]" : "text-xs"}`}>待补配置</span>;
+  return <span className={`rounded bg-red-100 px-2 py-1 font-medium text-red-700 dark:bg-red-950/40 dark:text-red-300 ${compact ? "text-[11px]" : "text-xs"}`}>待补配置</span>;
 }
 
 function VariableRegistry({ variables }: { variables: WorkflowVariable[] }) {
@@ -925,7 +925,7 @@ function VariableRegistry({ variables }: { variables: WorkflowVariable[] }) {
             </div>
             <p className="mt-2 text-xs text-[var(--color-text-tertiary)]">来源：{variable.sourceNode}</p>
             {variable.sensitive ? (
-              <p className="mt-2 rounded bg-red-50 px-2 py-1 text-xs font-medium text-red-700">敏感变量，交付前需校验权限</p>
+              <p className="mt-2 rounded bg-red-50 px-2 py-1 text-xs font-medium text-red-700 dark:bg-red-950/40 dark:text-red-300">敏感变量，交付前需校验权限</p>
             ) : null}
           </article>
         ))}
@@ -945,19 +945,19 @@ function PublishCheckSummary({ incompleteNodes }: { incompleteNodes: Node<Editor
       </div>
       <div className="space-y-3 p-4">
         {incompleteNodes.length > 0 ? (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-            <div className="flex items-center gap-2 text-sm font-medium text-amber-800">
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900/60 dark:bg-amber-950/30">
+            <div className="flex items-center gap-2 text-sm font-medium text-amber-800 dark:text-amber-300">
               <AlertTriangle className="h-4 w-4" aria-hidden="true" />
               {incompleteNodes.length} 个节点需要补齐配置
             </div>
-            <ul className="mt-3 space-y-2 text-sm text-amber-800">
+            <ul className="mt-3 space-y-2 text-sm text-amber-800 dark:text-amber-300">
               {incompleteNodes.map((node) => (
                 <li key={node.id}>- {node.data.label}</li>
               ))}
             </ul>
           </div>
         ) : (
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-800">
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300">
             所有节点已满足当前阶段发布校验。
           </div>
         )}

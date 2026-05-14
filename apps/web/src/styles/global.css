@@ -332,6 +332,49 @@ textarea:focus-visible {
   color: #94a3b8;
 }
 
+.agent-admin-drawer .ant-drawer-content {
+  background: var(--color-bg-page);
+  color: var(--color-text-primary);
+}
+
+.agent-admin-drawer .ant-drawer-header {
+  background: var(--color-bg-card);
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.agent-admin-drawer .ant-drawer-title {
+  color: var(--color-text-primary);
+  font-weight: 700;
+}
+
+.agent-admin-drawer .ant-drawer-close {
+  color: var(--color-text-tertiary);
+}
+
+.agent-admin-drawer .ant-drawer-close:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.agent-admin-drawer .ant-drawer-body {
+  background: var(--color-bg-page);
+  color: var(--color-text-primary);
+}
+
+.agent-admin-drawer .ant-drawer-mask {
+  background: rgb(2 6 23 / 0.48);
+}
+
+.agent-admin-drawer--dark .ant-drawer-content,
+.agent-admin-drawer--dark .ant-drawer-header,
+.agent-admin-drawer--dark .ant-drawer-body {
+  --ant-color-bg-elevated: var(--color-bg-card);
+  --ant-color-bg-container: var(--color-bg-card);
+  --ant-color-text: var(--color-text-primary);
+  --ant-color-text-secondary: var(--color-text-secondary);
+  --ant-color-border-secondary: var(--color-border-light);
+}
+
 /* 租户管理与系统管理统一页签风格 */
 .agent-admin-tabs .ant-tabs-nav {
   margin-bottom: 6px !important;
@@ -409,12 +452,99 @@ textarea:focus-visible {
 
 .agent-select-dropdown {
   border: 1px solid var(--color-border-light);
+  background: var(--color-bg-card);
   box-shadow: var(--shadow-md);
 }
 
 .agent-select-dropdown .ant-select-item {
   border-radius: var(--radius-md);
   min-height: 38px;
+  color: var(--color-text-primary);
+}
+
+.agent-select-dropdown .ant-select-item-option-active:not(.ant-select-item-option-disabled) {
+  background: var(--color-bg-hover);
+}
+
+.agent-select-dropdown .ant-select-item-option-selected:not(.ant-select-item-option-disabled) {
+  background: var(--color-primary-bg);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.agent-select-dropdown .ant-select-item-group {
+  color: var(--color-text-tertiary);
+}
+
+.agent-admin-select .ant-select-selector {
+  min-height: 44px !important;
+  border-color: var(--color-border-light) !important;
+  border-radius: var(--radius-md) !important;
+  background: var(--color-bg-input, var(--color-bg-page)) !important;
+  background-color: var(--color-bg-input, var(--color-bg-page)) !important;
+  color: var(--color-text-primary) !important;
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast) !important;
+}
+
+.agent-admin-select.ant-select {
+  --ant-color-bg-container: var(--color-bg-input, var(--color-bg-page));
+  --ant-color-bg-elevated: var(--color-bg-card);
+  --ant-color-border: var(--color-border-light);
+  --ant-color-text: var(--color-text-primary);
+  --ant-color-text-placeholder: var(--color-text-tertiary);
+  background: transparent !important;
+}
+
+.agent-admin-select.ant-select-outlined:not(.ant-select-customize-input) .ant-select-selector,
+.agent-admin-select .ant-select-selection-wrap,
+.agent-admin-select .ant-select-selection-search-input {
+  background: var(--color-bg-input, var(--color-bg-page)) !important;
+  background-color: var(--color-bg-input, var(--color-bg-page)) !important;
+  color: var(--color-text-primary) !important;
+}
+
+.agent-admin-select.ant-select-single .ant-select-selector {
+  height: 44px !important;
+  align-items: center;
+}
+
+.agent-admin-select.ant-select-multiple .ant-select-selector {
+  padding-block: 4px !important;
+}
+
+.agent-admin-select .ant-select-selection-item,
+.agent-admin-select .ant-select-selection-placeholder {
+  color: var(--color-text-primary) !important;
+}
+
+.agent-admin-select .ant-select-selection-placeholder {
+  color: var(--color-text-tertiary) !important;
+}
+
+.agent-admin-select .ant-select-arrow,
+.agent-admin-select .ant-select-clear,
+.agent-admin-select .ant-select-prefix {
+  color: var(--color-text-tertiary) !important;
+}
+
+.agent-admin-select.ant-select-focused .ant-select-selector,
+.agent-admin-select:hover .ant-select-selector {
+  border-color: color-mix(in srgb, var(--color-primary) 55%, var(--color-border-light)) !important;
+}
+
+.agent-admin-select.ant-select-focused .ant-select-selector {
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1) !important;
+}
+
+.dark .ant-empty-description,
+.sys-preview-card .ant-empty-description {
+  color: var(--color-text-secondary);
+}
+
+.dark .ant-empty-image svg {
+  opacity: 0.72;
 }
 
 /* ==================== React Flow 画布样式 ==================== */
@@ -1467,13 +1597,26 @@ textarea:focus-visible {
 /* 自定义下拉选择器（替代原生 select，完全控制选项列表渲染） */
 .sys-select { position: relative; }
 .sys-select-trigger {
-  width: 100%; height: 48px; padding: 0 36px 0 14px; font-size: 15px;
+  width: 100%; height: 44px; padding: 0 36px 0 14px; font-size: 14px;
   border: 1px solid var(--color-border-light); border-radius: var(--radius-md);
   background: var(--color-bg-input, var(--color-bg-page));
   color: var(--color-text-primary); cursor: pointer;
   display: flex; align-items: center;
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
   user-select: none; position: relative;
+}
+.sys-select-trigger--with-icon { padding-left: 40px; }
+.sys-select-prefix {
+  position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+  color: var(--color-text-tertiary); pointer-events: none;
+  transition: color var(--transition-fast);
+}
+.sys-select-trigger--open .sys-select-prefix,
+.sys-select-trigger:hover .sys-select-prefix {
+  color: var(--color-primary);
+}
+.sys-select-value {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .sys-select-trigger:hover { border-color: color-mix(in srgb, var(--color-primary) 50%, var(--color-border-light)); }
 .sys-select-trigger--open {
