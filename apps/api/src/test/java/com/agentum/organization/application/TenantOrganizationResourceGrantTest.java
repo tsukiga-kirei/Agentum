@@ -8,13 +8,16 @@ import static org.mockito.Mockito.when;
 import com.agentum.auth.infrastructure.UserAccountRepository;
 import com.agentum.auth.infrastructure.UserRoleAssignmentRepository;
 import com.agentum.organization.domain.UserMembershipEntity;
+import com.agentum.organization.domain.UserMembershipRoleEntity;
 import com.agentum.organization.infrastructure.DepartmentRepository;
 import com.agentum.organization.infrastructure.TenantOrgRoleRepository;
 import com.agentum.organization.infrastructure.UserMembershipRepository;
+import com.agentum.organization.infrastructure.UserMembershipRoleRepository;
 import com.agentum.organization.interfaces.CreateResourceGrantRequest;
 import com.agentum.organization.interfaces.CreatePageGrantRequest;
 import com.agentum.organization.interfaces.PageGrantResponse;
 import com.agentum.organization.interfaces.ResourceGrantResponse;
+import com.agentum.organization.interfaces.UpdateTenantRoleRequest;
 import com.agentum.permission.domain.PageGrantEntity;
 import com.agentum.permission.domain.ResourceGrantEntity;
 import com.agentum.permission.domain.RoleEntity;
@@ -56,6 +59,8 @@ class TenantOrganizationResourceGrantTest {
     private UserRoleAssignmentRepository userRoleAssignmentRepository;
     @Mock
     private UserMembershipRepository userMembershipRepository;
+    @Mock
+    private UserMembershipRoleRepository userMembershipRoleRepository;
     @Mock
     private DepartmentRepository departmentRepository;
     @Mock
@@ -163,12 +168,72 @@ class TenantOrganizationResourceGrantTest {
         assertThat(response.pageName()).isEqualTo("流程设计");
     }
 
+    @Test
+    void shouldSyncRoleMembersWhenUpdatingTenantRole() {
+        TenantOrganizationService service = newService();
+        RoleEntity reviewerRole = RoleEntity.create(TENANT_ID, "reviewer", "合同审核员", "business", "审核合同");
+        RoleEntity executorRole = RoleEntity.create(TENANT_ID, "executor", "执行人", "business", "执行流程");
+        UserMembershipEntity currentReviewer = UserMembershipEntity.create(TENANT_ID, USER_ID, null, "默认空间");
+        UserMembershipEntity currentExecutor = UserMembershipEntity.create(TENANT_ID, UUID.randomUUID(), null, "默认空间");
+        UserMembershipRoleEntity reviewerLink = UserMembershipRoleEntity.create(currentReviewer.getId(), reviewerRole.getId());
+        AtomicReference<UserMembershipRoleEntity> savedLink = new AtomicReference<>();
+
+        when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", Instant.now())));
+        when(roleRepository.findByIdAndTenantId(reviewerRole.getId(), TENANT_ID)).thenReturn(Optional.of(reviewerRole));
+        when(userMembershipRepository.findByTenantId(TENANT_ID)).thenReturn(List.of(currentReviewer, currentExecutor));
+        when(userMembershipRoleRepository.findByMembershipIdInAndStatus(any(), any())).thenReturn(List.of(reviewerLink));
+        when(userMembershipRoleRepository.save(any(UserMembershipRoleEntity.class))).thenAnswer(invocation -> {
+            UserMembershipRoleEntity link = invocation.getArgument(0);
+            savedLink.set(link);
+            return link;
+        });
+        when(userRoleAssignmentRepository.findByUserIdAndRoleAndTenantId(any(), any(), any()))
+            .thenReturn(Optional.of(com.agentum.auth.domain.UserRoleAssignmentEntity.create(USER_ID, "business", TENANT_ID, "业务用户", true)));
+        when(userAccountRepository.findAllById(any())).thenReturn(List.of());
+        when(departmentRepository.findByTenantIdAndStatusOrderBySortOrderAscNameAsc(TENANT_ID, "active")).thenReturn(List.of());
+        when(roleRepository.findByTenantIdAndStatusOrderByNameAsc(TENANT_ID, "active")).thenReturn(List.of(reviewerRole, executorRole));
+
+        service.updateTenantRole(
+            TENANT_ID,
+            OPERATOR_USER_ID,
+            reviewerRole.getId(),
+            new UpdateTenantRoleRequest("合同审核员", "审核合同", "active", List.of(currentExecutor.getId()))
+        );
+
+        assertThat(currentExecutor.getStatus()).isEqualTo("active");
+        assertThat(reviewerLink.getStatus()).isEqualTo("disabled");
+        assertThat(savedLink.get()).isNotNull();
+        assertThat(savedLink.get().getMembershipId()).isEqualTo(currentExecutor.getId());
+        assertThat(savedLink.get().getRoleId()).isEqualTo(reviewerRole.getId());
+    }
+
+    @Test
+    void shouldRejectDisablingRoleWithSelectedMembers() {
+        TenantOrganizationService service = newService();
+        RoleEntity reviewerRole = RoleEntity.create(TENANT_ID, "reviewer", "合同审核员", "business", "审核合同");
+        UserMembershipEntity currentReviewer = UserMembershipEntity.create(TENANT_ID, USER_ID, null, "默认空间");
+
+        when(roleRepository.findByIdAndTenantId(reviewerRole.getId(), TENANT_ID)).thenReturn(Optional.of(reviewerRole));
+        when(userMembershipRepository.findByTenantId(TENANT_ID)).thenReturn(List.of(currentReviewer));
+
+        assertThatThrownBy(() -> service.updateTenantRole(
+            TENANT_ID,
+            OPERATOR_USER_ID,
+            reviewerRole.getId(),
+            new UpdateTenantRoleRequest("合同审核员", "审核合同", "disabled", List.of(currentReviewer.getId()))
+        ))
+            .isInstanceOf(ApiException.class)
+            .extracting("code")
+            .isEqualTo("ORG_ROLE_DISABLE_WITH_MEMBERS");
+    }
+
     private TenantOrganizationService newService() {
         return new TenantOrganizationService(
             tenantRepository,
             userAccountRepository,
             userRoleAssignmentRepository,
             userMembershipRepository,
+            userMembershipRoleRepository,
             departmentRepository,
             roleRepository,
             pageGrantRepository,

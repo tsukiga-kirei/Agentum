@@ -28,8 +28,9 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Empty, Segmented, Spin, message, Drawer } from "antd";
-import { AgentumApiError, systemApi } from "../../services/apiClient";
+import { AgentumApiError, organizationApi, systemApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
+import type { TenantOrganizationOverview } from "../../types/organization";
 import type {
   CreateModelProviderRequest,
   CreateSystemCapabilityRequest,
@@ -157,6 +158,9 @@ export function SystemManagementPage() {
   const [tenantActiveTab, setTenantActiveTab] = useState("default");
   const [tenantCapabilityGrants, setTenantCapabilityGrants] = useState<TenantCapabilityGrantRow[]>([]);
   const [tenantModelAssignments, setTenantModelAssignments] = useState<TenantModelAssignmentRow[]>([]);
+  const [tenantOrganizationOverview, setTenantOrganizationOverview] = useState<TenantOrganizationOverview | null>(null);
+  const [tenantOrganizationLoading, setTenantOrganizationLoading] = useState(false);
+  const [tenantOrganizationError, setTenantOrganizationError] = useState("");
 
   // 新增租户 Modal（不使用 Ant Form，改用原生 ref）
   const [createTenantModalOpen, setCreateTenantModalOpen] = useState(false);
@@ -255,6 +259,24 @@ export function SystemManagementPage() {
     }
   }, [token, handleApiError]);
 
+  const loadTenantOrganizationOverview = useCallback(async (tenantId: string) => {
+    if (!token) return;
+    setTenantOrganizationLoading(true);
+    setTenantOrganizationError("");
+    try {
+      setTenantOrganizationOverview(await organizationApi.overview(tenantId, token));
+    } catch (e) {
+      if (e instanceof AgentumApiError) {
+        setTenantOrganizationError(e.message);
+      } else {
+        setTenantOrganizationError("加载租户成员与角色失败");
+      }
+      setTenantOrganizationOverview(null);
+    } finally {
+      setTenantOrganizationLoading(false);
+    }
+  }, [token]);
+
   useEffect(() => {
     if (!token) return;
     if (section === "overview") {
@@ -277,7 +299,11 @@ export function SystemManagementPage() {
       void loadModels();
       void loadTenantModelAssignments(selectedTenant.id);
     }
-  }, [selectedTenant, tenantDrawerOpen, tenantActiveTab, loadCapabilities, loadTenantCapabilityGrants, loadModels, loadTenantModelAssignments]);
+    if (tenantActiveTab === "members") {
+      // 系统管理抽屉只做跨租户诊断视图，实际成员维护仍回到租户管理页并由后端复核租户上下文。
+      void loadTenantOrganizationOverview(selectedTenant.id);
+    }
+  }, [selectedTenant, tenantDrawerOpen, tenantActiveTab, loadCapabilities, loadTenantCapabilityGrants, loadModels, loadTenantModelAssignments, loadTenantOrganizationOverview]);
 
   const patchTenantStatus = async (tenantId: string, status: string) => {
     if (!token) return;
@@ -734,7 +760,44 @@ export function SystemManagementPage() {
             <div className="sys-drawer-section">
               <div className="sys-section-header"><Users size={18}/> 成员与角色</div>
               <div className="sys-hint"><Info size={14}/> 租户内的组织与人员，系统管理员可在此协助诊断越权问题。</div>
-              <Empty description="暂无成员数据" />
+              <Spin spinning={tenantOrganizationLoading}>
+                {tenantOrganizationError ? (
+                  <div className="rounded-[var(--radius-md)] border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-100">
+                    {tenantOrganizationError}
+                  </div>
+                ) : null}
+                {tenantOrganizationOverview ? (
+                  <div className="sys-config-group">
+                    <div className="sys-info-tags" style={{ marginBottom: 12 }}>
+                      <span className="sys-info-tag sys-info-tag--primary">{tenantOrganizationOverview.memberships.length} 名成员</span>
+                      <span className="sys-info-tag">{tenantOrganizationOverview.departments.length} 个部门</span>
+                      <span className="sys-info-tag">{tenantOrganizationOverview.roles.length} 个角色</span>
+                    </div>
+                    {tenantOrganizationOverview.memberships.length === 0 ? (
+                      <Empty description="暂无成员数据" />
+                    ) : (
+                      tenantOrganizationOverview.memberships.map((membership) => (
+                        <div key={membership.id} className="sys-form-row">
+                          <span className="sys-form-label">{membership.userDisplayName || "未找到账号"}</span>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                            <span className="sys-info-tag">{membership.departmentName || "未分配部门"}</span>
+                            {membership.roles.length === 0 ? (
+                              <span className="sys-info-tag sys-info-tag--info">未分配角色</span>
+                            ) : membership.roles.map((role) => (
+                              <span key={role.id} className="sys-info-tag sys-info-tag--info">{role.name}</span>
+                            ))}
+                            <span className={`sys-status sys-status--${membership.status === "active" ? "active" : "inactive"}`}>
+                              <span className="sys-status-dot" />{membership.status === "active" ? "启用" : "停用"}
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                ) : !tenantOrganizationLoading && !tenantOrganizationError ? (
+                  <Empty description="暂无成员数据" />
+                ) : null}
+              </Spin>
             </div>
           )}
 

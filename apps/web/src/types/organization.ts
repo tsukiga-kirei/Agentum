@@ -32,9 +32,11 @@ export type OrganizationMembership = {
   userDisplayName: string;
   departmentId: string | null;
   departmentName: string;
-  roleId: string;
-  roleName: string;
-  roleCode: string;
+  roles: Array<{
+    id: string;
+    code: string;
+    name: string;
+  }>;
   spaceCode: string;
   defaultMembership: boolean;
   status: string;
@@ -141,10 +143,11 @@ export type UpdateTenantRoleRequest = {
   name: string;
   description?: string;
   status: "active" | "disabled";
+  membershipIds?: string[];
 };
 
 export type UpdateMembershipRoleRequest = {
-  roleId: string;
+  roleIds: string[];
 };
 
 export type UpdateMembershipDepartmentRequest = {

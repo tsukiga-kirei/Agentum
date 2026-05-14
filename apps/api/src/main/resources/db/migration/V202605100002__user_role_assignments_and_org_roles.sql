@@ -48,7 +48,7 @@ SELECT sur.user_id, 'system_admin', NULL, '系统管理员', TRUE
 FROM system_user_roles sur
 JOIN users u ON u.id = sur.user_id AND u.status = 'active';
 
--- 3b. 租户内角色：从 user_memberships + roles 推导系统角色
+-- 3b. 租户内角色：从 user_memberships + user_membership_roles + roles 推导系统角色
 INSERT INTO user_role_assignments (user_id, role, tenant_id, label, is_default)
 SELECT DISTINCT um.user_id,
     CASE WHEN r.code = 'tenant_admin' THEN 'tenant_admin' ELSE 'business' END,
@@ -56,7 +56,8 @@ SELECT DISTINCT um.user_id,
     t.name || ' - ' || r.name,
     um.is_default
 FROM user_memberships um
-JOIN roles r ON r.id = um.role_id AND r.status = 'active'
+JOIN user_membership_roles umr ON umr.membership_id = um.id AND umr.status = 'active'
+JOIN roles r ON r.id = umr.role_id AND r.status = 'active'
 JOIN tenants t ON t.id = um.tenant_id AND t.status = 'active'
 WHERE um.status = 'active';
 

@@ -20,5 +20,4 @@ public interface UserMembershipRepository extends JpaRepository<UserMembershipEn
 
     long countByTenantIdAndDepartmentIdAndStatus(UUID tenantId, UUID departmentId, String status);
 
-    long countByTenantIdAndRoleIdAndStatus(UUID tenantId, UUID roleId, String status);
 }

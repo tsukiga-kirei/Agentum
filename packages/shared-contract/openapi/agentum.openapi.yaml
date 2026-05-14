@@ -1792,17 +1792,25 @@ components:
           enum:
             - active
             - disabled
+        membershipIds:
+          type: array
+          description: 角色编辑页提交的目标启用人员关系 ID 列表；勾选会追加该角色，取消只停用该角色关系，不影响人员已有其他角色。
+          items:
+            type: string
+            format: uuid
       required:
         - name
         - status
     UpdateMembershipRoleRequest:
       type: object
       properties:
-        roleId:
-          type: string
-          format: uuid
+        roleIds:
+          type: array
+          items:
+            type: string
+            format: uuid
       required:
-        - roleId
+        - roleIds
     UpdateMembershipDepartmentRequest:
       type: object
       properties:
@@ -2220,13 +2228,10 @@ components:
           nullable: true
         departmentName:
           type: string
-        roleId:
-          type: string
-          format: uuid
-        roleName:
-          type: string
-        roleCode:
-          type: string
+        roles:
+          type: array
+          items:
+            $ref: "#/components/schemas/MembershipRole"
         spaceCode:
           type: string
         defaultMembership:
@@ -2239,12 +2244,24 @@ components:
         - userDisplayName
         - departmentId
         - departmentName
-        - roleId
-        - roleName
-        - roleCode
+        - roles
         - spaceCode
         - defaultMembership
         - status
+    MembershipRole:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+        name:
+          type: string
+      required:
+        - id
+        - code
+        - name
     SystemSummary:
       type: object
       properties:

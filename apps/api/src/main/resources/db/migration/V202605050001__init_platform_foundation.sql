@@ -70,7 +70,6 @@ CREATE TABLE user_memberships (
     tenant_id UUID NOT NULL REFERENCES tenants (id) ON DELETE CASCADE,
     user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     department_id UUID REFERENCES departments (id) ON DELETE SET NULL,
-    role_id UUID NOT NULL REFERENCES roles (id) ON DELETE RESTRICT,
     space_code VARCHAR(80) NOT NULL DEFAULT 'default',
     is_default BOOLEAN NOT NULL DEFAULT false,
     status VARCHAR(30) NOT NULL DEFAULT 'active',
@@ -79,7 +78,19 @@ CREATE TABLE user_memberships (
 
 CREATE INDEX idx_user_memberships_tenant_id ON user_memberships (tenant_id);
 CREATE INDEX idx_user_memberships_user_id ON user_memberships (user_id);
-CREATE INDEX idx_user_memberships_role_id ON user_memberships (role_id);
+
+CREATE TABLE user_membership_roles (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    membership_id UUID NOT NULL REFERENCES user_memberships (id) ON DELETE CASCADE,
+    role_id UUID NOT NULL REFERENCES roles (id) ON DELETE RESTRICT,
+    status VARCHAR(30) NOT NULL DEFAULT 'active',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_user_membership_roles_membership_id ON user_membership_roles (membership_id);
+CREATE INDEX idx_user_membership_roles_role_id ON user_membership_roles (role_id);
+CREATE UNIQUE INDEX uk_user_membership_roles_active ON user_membership_roles (membership_id, role_id) WHERE status = 'active';
 
 CREATE TABLE permission_policies (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -192,7 +203,8 @@ COMMENT ON TABLE tenants IS '租户表，平台最高业务隔离边界';
 COMMENT ON TABLE users IS '用户账号表';
 COMMENT ON TABLE departments IS '租户部门表，用于人员组织、待办分派和审核范围';
 COMMENT ON TABLE roles IS '角色表，系统级或租户级角色';
-COMMENT ON TABLE user_memberships IS '用户租户成员关系表，记录用户在租户、部门、空间中的角色';
+COMMENT ON TABLE user_memberships IS '用户租户成员关系表，记录用户在租户、部门、空间中的身份';
+COMMENT ON TABLE user_membership_roles IS '用户成员关系与租户角色的多对多关系表';
 COMMENT ON TABLE permission_policies IS '角色权限策略表';
 COMMENT ON TABLE resource_grants IS '资源级授权表';
 COMMENT ON TABLE sensitive_action_policies IS '敏感动作策略表';

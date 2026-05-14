@@ -79,10 +79,16 @@ const emptyDepartmentForm: CreateDepartmentRequest = {
   sortOrder: 0,
 };
 
-const emptyRoleForm: CreateTenantRoleRequest & { status: "active" | "disabled" } = {
+type RoleDraft = CreateTenantRoleRequest & {
+  status: "active" | "disabled";
+  membershipIds: string[];
+};
+
+const emptyRoleForm: RoleDraft = {
   name: "",
   description: "",
   status: "active",
+  membershipIds: [],
 };
 
 const emptyGrantForm: CreateResourceGrantRequest = {
@@ -104,7 +110,7 @@ const adminSelectSuffixIcon = <ChevronDown className="h-4 w-4 text-[var(--color-
 
 type MemberEditDraft = {
   departmentId?: string;
-  roleId: string;
+  roleIds: string[];
   status: "active" | "disabled";
 };
 
@@ -128,12 +134,12 @@ export function TenantManagementPage() {
   const [departmentSubmitting, setDepartmentSubmitting] = useState(false);
   const [roleModalOpen, setRoleModalOpen] = useState(false);
   const [editingRole, setEditingRole] = useState<OrganizationRole | null>(null);
-  const [roleDraft, setRoleDraft] = useState<CreateTenantRoleRequest & { status: "active" | "disabled" }>(emptyRoleForm);
+  const [roleDraft, setRoleDraft] = useState<RoleDraft>(emptyRoleForm);
   const [roleSubmitting, setRoleSubmitting] = useState(false);
   const [membershipUpdatingId, setMembershipUpdatingId] = useState<string | null>(null);
   const [editMemberOpen, setEditMemberOpen] = useState(false);
   const [editingMembership, setEditingMembership] = useState<OrganizationMembership | null>(null);
-  const [memberEditDraft, setMemberEditDraft] = useState<MemberEditDraft>({ departmentId: undefined, roleId: "", status: "active" });
+  const [memberEditDraft, setMemberEditDraft] = useState<MemberEditDraft>({ departmentId: undefined, roleIds: [], status: "active" });
   const [memberEditSubmitting, setMemberEditSubmitting] = useState(false);
   const [resourceOptions, setResourceOptions] = useState<TenantResourceOption[]>([]);
   const [authorizationLoading, setAuthorizationLoading] = useState(false);
@@ -151,6 +157,15 @@ export function TenantManagementPage() {
   const [grantResourceIds, setGrantResourceIds] = useState<string[]>([]);
   const [grantSubmitting, setGrantSubmitting] = useState(false);
   const activeTabMeta = tenantManagementTabs.find((tab) => tab.key === activeTab) ?? tenantManagementTabs[0];
+  const roleMemberOptions = useMemo(
+    () => (organizationOverview?.memberships ?? [])
+      .filter((membership) => membership.status === "active")
+      .map((membership) => ({
+        value: membership.id,
+        label: `${membership.userDisplayName || "未找到账号"} · ${membership.departmentName || "未分配部门"}`,
+      })),
+    [organizationOverview?.memberships]
+  );
   const tabSegmentedOptions = tenantManagementTabs.map((tab) => {
     const Icon = tab.icon;
     return {
@@ -328,16 +343,28 @@ export function TenantManagementPage() {
 
   function openEditRoleModal(role: OrganizationRole) {
     setEditingRole(role);
-    setRoleDraft({ name: role.name, description: "", status: role.status === "disabled" ? "disabled" : "active" });
+    const membershipIds = (organizationOverview?.memberships ?? [])
+      .filter((membership) => membership.roles.some((item) => item.id === role.id) && membership.status === "active")
+      .map((membership) => membership.id);
+    setRoleDraft({ name: role.name, description: "", status: role.status === "disabled" ? "disabled" : "active", membershipIds });
     setRoleModalOpen(true);
   }
 
   async function handleSubmitRole() {
     if (!token || !user?.tenantId) return;
+    if (editingRole && roleDraft.status === "disabled" && roleDraft.membershipIds.length > 0) {
+      messageApi.warning("停用角色前请先移出所有启用成员");
+      return;
+    }
     setRoleSubmitting(true);
     try {
       const overview = editingRole
-        ? await organizationApi.updateRole(user.tenantId, editingRole.id, token, roleDraft as UpdateTenantRoleRequest)
+        ? await organizationApi.updateRole(user.tenantId, editingRole.id, token, {
+          name: roleDraft.name,
+          description: roleDraft.description,
+          status: roleDraft.status,
+          membershipIds: roleDraft.membershipIds,
+        } as UpdateTenantRoleRequest)
         : await organizationApi.createRole(user.tenantId, token, { name: roleDraft.name, description: roleDraft.description });
       setOrganizationOverview(overview);
       setRoleModalOpen(false);
@@ -369,7 +396,7 @@ export function TenantManagementPage() {
     setEditingMembership(membership);
     setMemberEditDraft({
       departmentId: membership.departmentId ?? undefined,
-      roleId: membership.roleId,
+      roleIds: membership.roles.map((role) => role.id),
       status: membership.status === "disabled" ? "disabled" : "active",
     });
     setEditMemberOpen(true);
@@ -380,7 +407,7 @@ export function TenantManagementPage() {
       return;
     }
 
-    if (!memberEditDraft.roleId) {
+    if (memberEditDraft.roleIds.length === 0) {
       messageApi.warning("请选择成员角色");
       return;
     }
@@ -392,7 +419,9 @@ export function TenantManagementPage() {
 
     const originalDepartmentId = editingMembership.departmentId ?? undefined;
     const departmentChanged = originalDepartmentId !== memberEditDraft.departmentId;
-    const roleChanged = editingMembership.roleId !== memberEditDraft.roleId;
+    const originalRoleIds = editingMembership.roles.map((role) => role.id).sort().join(",");
+    const nextRoleIds = [...memberEditDraft.roleIds].sort().join(",");
+    const roleChanged = originalRoleIds !== nextRoleIds;
     const statusChanged = editingMembership.status !== memberEditDraft.status;
 
     if (!departmentChanged && !roleChanged && !statusChanged) {
@@ -424,7 +453,7 @@ export function TenantManagementPage() {
           user.tenantId,
           editingMembership.id,
           token,
-          { roleId: memberEditDraft.roleId }
+          { roleIds: memberEditDraft.roleIds }
         );
         setOrganizationOverview(nextOverview);
       }
@@ -447,7 +476,7 @@ export function TenantManagementPage() {
         "[tenant-management] 成员编辑失败",
         getTenantManagementErrorContext(error, user.tenantId, {
           membershipId: editingMembership.id,
-          roleId: memberEditDraft.roleId,
+          roleIds: memberEditDraft.roleIds.join(","),
           departmentId: memberEditDraft.departmentId,
           status: memberEditDraft.status,
         })
@@ -756,14 +785,15 @@ export function TenantManagementPage() {
                 <div className="sys-field">
                   <label className="sys-field-label sys-field-label--required">角色</label>
                   <Select
+                    mode="multiple"
                     className="agent-admin-select w-full"
                     classNames={adminSelectClassNames}
                     prefix={<ShieldCheck className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
                     suffixIcon={adminSelectSuffixIcon}
-                    placeholder="请选择角色"
-                    value={memberEditDraft.roleId || undefined}
+                    placeholder="请选择一个或多个角色"
+                    value={memberEditDraft.roleIds}
                     options={(organizationOverview?.roles ?? []).map((role) => ({ value: role.id, label: `${role.name} (${role.code})` }))}
-                    onChange={(roleId) => setMemberEditDraft((draft) => ({ ...draft, roleId }))}
+                    onChange={(roleIds) => setMemberEditDraft((draft) => ({ ...draft, roleIds }))}
                   />
                 </div>
               </div>
@@ -845,7 +875,7 @@ export function TenantManagementPage() {
               <button className="sys-modal-close" onClick={() => setRoleModalOpen(false)}><X size={18} /></button>
             </div>
             <div className="sys-modal-body">
-              <div className="sys-hint"><Info size={14} /> 角色编码由后端自动生成；成员可在成员编辑中分配到角色。</div>
+              <div className="sys-hint"><Info size={14} /> 角色编码由后端自动生成；编辑角色时可同步维护该角色下的启用成员。</div>
               <div className="sys-field">
                 <label className="sys-field-label sys-field-label--required">角色名称</label>
                 <div className="sys-field-input-wrap"><ShieldCheck size={16} className="sys-field-prefix" /><input className="sys-field-input" value={roleDraft.name} placeholder="例如：合同审核员" onChange={(event) => setRoleDraft((draft) => ({ ...draft, name: event.target.value }))} /></div>
@@ -858,6 +888,29 @@ export function TenantManagementPage() {
                 <div className="sys-field">
                   <label className="sys-field-label">状态</label>
                   <Select className="agent-admin-select w-full" classNames={adminSelectClassNames} prefix={<CheckCircle2 className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />} suffixIcon={adminSelectSuffixIcon} value={roleDraft.status} options={[{ value: "active", label: "启用" }, { value: "disabled", label: "停用" }]} onChange={(status) => setRoleDraft((draft) => ({ ...draft, status }))} />
+                </div>
+              ) : null}
+              {editingRole ? (
+                <div className="sys-config-group">
+                  <div className="sys-config-group-title">角色成员</div>
+                  <div className="sys-field">
+                    <label className="sys-field-label">包含成员</label>
+                    <Select
+                      mode="multiple"
+                      allowClear
+                      className="agent-admin-select w-full"
+                      classNames={adminSelectClassNames}
+                      showSearch
+                      prefix={<UsersRound className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+                      suffixIcon={adminSelectSuffixIcon}
+                      placeholder="选择该角色下的启用成员"
+                      value={roleDraft.membershipIds}
+                      options={roleMemberOptions}
+                      optionFilterProp="label"
+                      onChange={(membershipIds) => setRoleDraft((draft) => ({ ...draft, membershipIds }))}
+                    />
+                    <div className="sys-field-hint">勾选表示给人员增加当前角色；取消勾选只取消当前角色，不影响该人员已有的其他角色。</div>
+                  </div>
                 </div>
               ) : null}
             </div>
@@ -1072,8 +1125,7 @@ function OrganizationPanel({
       const matchKeyword =
         !keyword
         || membership.userDisplayName.toLowerCase().includes(keyword)
-        || membership.roleName.toLowerCase().includes(keyword)
-        || membership.roleCode.toLowerCase().includes(keyword)
+        || membership.roles.some((role) => role.name.toLowerCase().includes(keyword) || role.code.toLowerCase().includes(keyword))
         || membership.departmentName.toLowerCase().includes(keyword);
       return matchDepartment && matchKeyword;
     });
@@ -1188,7 +1240,15 @@ function OrganizationPanel({
                         </div>
                       </td>
                       <td>{membership.departmentName || "未分配部门"}</td>
-                      <td>{membership.roleName}（{membership.roleCode}）</td>
+                      <td>
+                        <div className="sys-info-tags">
+                          {membership.roles.length === 0 ? (
+                            <span className="sys-info-tag">未分配角色</span>
+                          ) : membership.roles.map((role) => (
+                            <span key={role.id} className="sys-info-tag sys-info-tag--info">{role.name}（{role.code}）</span>
+                          ))}
+                        </div>
+                      </td>
                       <td>{membership.spaceCode}</td>
                       <td>
                         <span className={`sys-status sys-status--${membership.status === "active" ? "active" : "inactive"}`}>
@@ -1254,7 +1314,7 @@ function RoleManagementPanel({
     );
   }
 
-  const roleMemberCount = (roleId: string) => overview?.memberships.filter((membership) => membership.roleId === roleId).length ?? 0;
+  const roleMemberCount = (roleId: string) => overview?.memberships.filter((membership) => membership.roles.some((role) => role.id === roleId)).length ?? 0;
 
   return (
     <div className="space-y-4">

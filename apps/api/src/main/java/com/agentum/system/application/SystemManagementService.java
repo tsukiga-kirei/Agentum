@@ -19,8 +19,10 @@ import com.agentum.auth.infrastructure.UserAccountRepository;
 import com.agentum.auth.infrastructure.UserRoleAssignmentRepository;
 import com.agentum.organization.domain.DepartmentEntity;
 import com.agentum.organization.domain.UserMembershipEntity;
+import com.agentum.organization.domain.UserMembershipRoleEntity;
 import com.agentum.organization.infrastructure.DepartmentRepository;
 import com.agentum.organization.infrastructure.UserMembershipRepository;
+import com.agentum.organization.infrastructure.UserMembershipRoleRepository;
 import com.agentum.permission.domain.RoleEntity;
 import com.agentum.permission.infrastructure.RoleRepository;
 import com.agentum.tenant.domain.TenantEntity;
@@ -56,6 +58,7 @@ public class SystemManagementService {
     private final RoleRepository roleRepository;
     private final DepartmentRepository departmentRepository;
     private final UserMembershipRepository userMembershipRepository;
+    private final UserMembershipRoleRepository userMembershipRoleRepository;
     private final PasswordEncoder passwordEncoder;
     private final Clock clock;
 
@@ -71,6 +74,7 @@ public class SystemManagementService {
         RoleRepository roleRepository,
         DepartmentRepository departmentRepository,
         UserMembershipRepository userMembershipRepository,
+        UserMembershipRoleRepository userMembershipRoleRepository,
         PasswordEncoder passwordEncoder,
         Clock clock
     ) {
@@ -85,6 +89,7 @@ public class SystemManagementService {
         this.roleRepository = roleRepository;
         this.departmentRepository = departmentRepository;
         this.userMembershipRepository = userMembershipRepository;
+        this.userMembershipRoleRepository = userMembershipRoleRepository;
         this.passwordEncoder = passwordEncoder;
         this.clock = clock;
     }
@@ -142,8 +147,9 @@ public class SystemManagementService {
         userAccountRepository.save(adminUser);
 
         // 5. 绑定成员关系，并同步写入统一登录角色分配表；否则新管理员只能出现在组织关系里，无法通过新认证模型登录。
-        UserMembershipEntity membership = UserMembershipEntity.create(tenant.getId(), adminUser.getId(), defaultDept.getId(), tenantAdminRole.getId(), "默认空间");
+        UserMembershipEntity membership = UserMembershipEntity.create(tenant.getId(), adminUser.getId(), defaultDept.getId(), "默认空间");
         userMembershipRepository.save(membership);
+        userMembershipRoleRepository.save(UserMembershipRoleEntity.create(membership.getId(), tenantAdminRole.getId()));
         userRoleAssignmentRepository.save(UserRoleAssignmentEntity.create(adminUser.getId(), "tenant_admin", tenant.getId(), tenant.getName() + " - 租户管理", true));
 
         log.info("系统管理创建租户及初始管理员成功 tenantId={} adminId={} requestId={}", tenant.getId(), adminUser.getId(), RequestIds.current());

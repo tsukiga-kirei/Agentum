@@ -6,7 +6,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.util.UUID;
 
-// 用户租户成员关系负责把用户、租户、部门、空间和角色绑定起来，是业务权限判断的基础。
+// 用户租户成员关系负责把用户、租户、部门和空间绑定起来；多角色关系由 user_membership_roles 单独维护。
 @Entity
 @Table(name = "user_memberships")
 public class UserMembershipEntity {
@@ -23,9 +23,6 @@ public class UserMembershipEntity {
     @Column(name = "department_id")
     private UUID departmentId;
 
-    @Column(name = "role_id", nullable = false)
-    private UUID roleId;
-
     @Column(name = "space_code", nullable = false, length = 80)
     private String spaceCode;
 
@@ -38,16 +35,19 @@ public class UserMembershipEntity {
     protected UserMembershipEntity() {
     }
 
-    // 当前新增成员默认成为该空间的默认成员；后续多空间、多角色和默认切换需要单独建模。
-    public static UserMembershipEntity create(UUID tenantId, UUID userId, UUID departmentId, UUID roleId, String spaceCode) {
+    // 当前新增成员默认成为该空间的默认成员；角色绑定由中间表维护，避免一个人多个角色时被展示成多个人。
+    public static UserMembershipEntity create(UUID tenantId, UUID userId, UUID departmentId, String spaceCode) {
+        return create(tenantId, userId, departmentId, spaceCode, true);
+    }
+
+    private static UserMembershipEntity create(UUID tenantId, UUID userId, UUID departmentId, String spaceCode, boolean defaultMembership) {
         UserMembershipEntity membership = new UserMembershipEntity();
         membership.id = UUID.randomUUID();
         membership.tenantId = tenantId;
         membership.userId = userId;
         membership.departmentId = departmentId;
-        membership.roleId = roleId;
         membership.spaceCode = spaceCode;
-        membership.defaultMembership = true;
+        membership.defaultMembership = defaultMembership;
         membership.status = "active";
         return membership;
     }
@@ -64,10 +64,6 @@ public class UserMembershipEntity {
         return userId;
     }
 
-    public UUID getRoleId() {
-        return roleId;
-    }
-
     public UUID getDepartmentId() {
         return departmentId;
     }
@@ -82,11 +78,6 @@ public class UserMembershipEntity {
 
     public String getStatus() {
         return status;
-    }
-
-    // 角色调整用于租户内权限治理，必须由后端校验目标角色归属当前租户。
-    public void assignRole(UUID roleId) {
-        this.roleId = roleId;
     }
 
     // 部门调整会影响待办分派与可见范围，允许清空部门以表示未归属。

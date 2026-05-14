@@ -2,7 +2,9 @@ package com.agentum.workflow.application;
 
 import com.agentum.auth.application.CurrentUserPrincipal;
 import com.agentum.organization.domain.UserMembershipEntity;
+import com.agentum.organization.domain.UserMembershipRoleEntity;
 import com.agentum.organization.infrastructure.UserMembershipRepository;
+import com.agentum.organization.infrastructure.UserMembershipRoleRepository;
 import com.agentum.permission.domain.RoleEntity;
 import com.agentum.permission.infrastructure.RoleRepository;
 import com.agentum.shared.api.ApiException;
@@ -26,10 +28,12 @@ public class WorkflowDesignAccess {
     private static final Set<String> DESIGN_ROLE_CODES = Set.of("workflow_designer", "tenant_admin");
 
     private final UserMembershipRepository userMembershipRepository;
+    private final UserMembershipRoleRepository userMembershipRoleRepository;
     private final RoleRepository roleRepository;
 
-    public WorkflowDesignAccess(UserMembershipRepository userMembershipRepository, RoleRepository roleRepository) {
+    public WorkflowDesignAccess(UserMembershipRepository userMembershipRepository, UserMembershipRoleRepository userMembershipRoleRepository, RoleRepository roleRepository) {
         this.userMembershipRepository = userMembershipRepository;
+        this.userMembershipRoleRepository = userMembershipRoleRepository;
         this.roleRepository = roleRepository;
     }
 
@@ -62,11 +66,15 @@ public class WorkflowDesignAccess {
 
         // 第一阶段尚未把 tenant_org_roles 绑定到成员关系，这里先用租户内内置角色 workflow_designer 控制流程设计入口。
         List<UserMembershipEntity> memberships = userMembershipRepository.findByUserIdAndTenantIdAndStatus(principal.userId(), tenantId, ACTIVE_STATUS);
-        Map<UUID, RoleEntity> rolesById = roleRepository.findAllById(memberships.stream().map(UserMembershipEntity::getRoleId).collect(Collectors.toSet()))
+        List<UserMembershipRoleEntity> membershipRoles = userMembershipRoleRepository.findByMembershipIdInAndStatus(
+            memberships.stream().map(UserMembershipEntity::getId).collect(Collectors.toSet()),
+            ACTIVE_STATUS
+        );
+        Map<UUID, RoleEntity> rolesById = roleRepository.findAllById(membershipRoles.stream().map(UserMembershipRoleEntity::getRoleId).collect(Collectors.toSet()))
             .stream()
             .collect(Collectors.toMap(RoleEntity::getId, Function.identity()));
-        boolean allowed = memberships.stream()
-            .map(membership -> rolesById.get(membership.getRoleId()))
+        boolean allowed = membershipRoles.stream()
+            .map(link -> rolesById.get(link.getRoleId()))
             .anyMatch(role -> role != null && DESIGN_ROLE_CODES.contains(role.getCode()));
 
         if (!allowed) {
