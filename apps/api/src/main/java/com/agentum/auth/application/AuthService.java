@@ -151,8 +151,21 @@ public class AuthService {
         // 从 token 中的 roleAssignmentId 定位当前活跃角色
         UserRoleAssignmentEntity activeAssignment = findAssignmentById(allAssignments, principal.roleAssignmentId(), user.getId());
 
-        TenantEntity tenant = activeAssignment.getTenantId() == null ? null
-            : tenantRepository.findByIdAndStatus(activeAssignment.getTenantId(), ACTIVE_STATUS).orElse(null);
+        TenantEntity tenant = null;
+        if (activeAssignment.getTenantId() != null) {
+            // /me 用于刷新恢复会话，不能把已停用租户当作有效上下文返回，否则旧 token 会继续暴露菜单入口。
+            tenant = tenantRepository.findByIdAndStatus(activeAssignment.getTenantId(), ACTIVE_STATUS)
+                .orElseThrow(() -> {
+                    log.warn(
+                        "当前用户查询失败：租户不可用 userId={} tenantId={} roleAssignmentId={} requestId={}",
+                        user.getId(),
+                        activeAssignment.getTenantId(),
+                        activeAssignment.getId(),
+                        RequestIds.current()
+                    );
+                    return new ApiException(HttpStatus.BAD_REQUEST, "TENANT_NOT_AVAILABLE", "当前租户不可用或已停用");
+                });
+        }
 
         List<RoleInfoResponse> roles = buildRoleInfoList(allAssignments);
         RoleInfoResponse activeRole = buildRoleInfo(activeAssignment, tenant);

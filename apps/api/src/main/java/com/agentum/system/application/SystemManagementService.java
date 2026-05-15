@@ -167,6 +167,8 @@ public class SystemManagementService {
         userMembershipRepository.save(membership);
         userMembershipRoleRepository.save(UserMembershipRoleEntity.create(membership.getId(), tenantAdminRole.getId()));
         userRoleAssignmentRepository.save(UserRoleAssignmentEntity.create(adminUser.getId(), "tenant_admin", tenant.getId(), tenant.getName() + " - 租户管理", true));
+        // 租户管理员也应能切换到业务视图；历史迁移已补 business 入口，新建租户必须保持同一角色切换语义。
+        userRoleAssignmentRepository.save(UserRoleAssignmentEntity.create(adminUser.getId(), "business", tenant.getId(), tenant.getName() + " - 业务用户", false));
 
         log.info("系统管理创建租户及初始管理员成功 tenantId={} adminId={} requestId={}", tenant.getId(), adminUser.getId(), RequestIds.current());
         return new SystemManagementApi.TenantRow(tenant.getId(), tenant.getName(), tenant.getCode(), tenant.getStatus());
