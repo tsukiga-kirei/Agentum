@@ -1,5 +1,5 @@
-import type { MouseEvent, ReactNode } from "react";
-import { useMemo, useState } from "react";
+import type { Dispatch, MouseEvent, ReactNode, SetStateAction } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import ReactFlow, {
   Background,
   Controls,
@@ -16,6 +16,7 @@ import {
   Bot,
   CheckCircle2,
   ChevronLeft,
+  Clock3,
   GitMerge,
   Milestone,
   PanelLeftClose,
@@ -30,17 +31,15 @@ import {
   TextCursorInput,
   Zap,
 } from "lucide-react";
+import { AgentumApiError, workflowApi } from "../../services/apiClient";
+import { useAuthStore } from "../../stores/authStore";
+import type {
+  WorkflowDraftDetail,
+  WorkflowEdgeDraft,
+  WorkflowNodeDraft,
+  WorkflowNodeType,
+} from "../../types/workflow-contract";
 import { WorkflowDraft } from "./WorkflowDraftsPage";
-
-type WorkflowNodeType =
-  | "trigger"
-  | "user_input"
-  | "agent"
-  | "parallel_group"
-  | "merge"
-  | "condition"
-  | "human_review"
-  | "delivery";
 
 type EditorNodeData = {
   label: string;
@@ -55,6 +54,7 @@ type EditorNodeData = {
   outputMode: "一次性输出" | "追问确认" | "分析后暂停";
   toolCount: number;
   allowQuestion: boolean;
+  rawConfig?: Record<string, unknown>;
 };
 
 type WorkflowVariable = {
@@ -80,6 +80,7 @@ type MergeMapping = {
 type WorkflowEditorPageProps = {
   workflow: WorkflowDraft;
   onBack: () => void;
+  onDraftSaved: (draft: WorkflowDraft) => void;
 };
 
 const nodeTypeMeta: Record<WorkflowNodeType, { color: string; icon: typeof Zap }> = {
@@ -121,8 +122,19 @@ const nodeTypes = {
   workflow: WorkflowCanvasNode,
 };
 
-// 画布先使用固定节点样例验证交互结构，后续保存时应替换为 WorkflowDefinition.nodes。
-const initialNodes: Node<EditorNodeData>[] = [
+const nodeTypeLabels: Record<WorkflowNodeType, string> = {
+  trigger: "触发节点",
+  user_input: "用户输入节点",
+  agent: "智能体节点",
+  parallel_group: "并行节点组",
+  merge: "合并节点",
+  condition: "条件分支节点",
+  human_review: "人工审核节点",
+  delivery: "交付节点",
+};
+
+// 空草稿首次进入画布时先装载一份起步模板，用户保存后才会真正写入 workflow_node_definitions / workflow_edge_definitions。
+const starterNodes: Node<EditorNodeData>[] = [
   {
     id: "trigger_manual",
     type: "workflow",
@@ -278,7 +290,7 @@ const initialNodes: Node<EditorNodeData>[] = [
 ];
 
 // 边关系对应工作流 MVP 主链路，后续应由 WorkflowDefinition.edges 持久化。
-const initialEdges: Edge[] = [
+const starterEdges: Edge[] = [
   { id: "e_trigger_input", source: "trigger_manual", target: "input_materials", type: "smoothstep" },
   { id: "e_input_agent", source: "input_materials", target: "agent_analysis", type: "smoothstep" },
   { id: "e_agent_parallel", source: "agent_analysis", target: "parallel_collect", type: "smoothstep" },
@@ -289,20 +301,20 @@ const initialEdges: Edge[] = [
   { id: "e_condition_delivery", source: "condition_risk", target: "delivery_email", label: "低风险", type: "smoothstep" },
 ];
 
-// 变量清单由节点输出推导而来，后续应改为读取后端 VariableSnapshot 和契约校验结果。
-const workflowVariables: WorkflowVariable[] = [
-  { name: "starter", sourceNode: "手动触发", type: "string", sensitive: false },
-  { name: "started_at", sourceNode: "手动触发", type: "string", sensitive: false },
-  { name: "project_info", sourceNode: "补充业务材料", type: "object", sensitive: false },
-  { name: "attachments", sourceNode: "补充业务材料", type: "file", sensitive: true },
-  { name: "analysis_result", sourceNode: "智能体分析", type: "object", sensitive: false },
-  { name: "risk_level", sourceNode: "智能体分析", type: "decision", sensitive: false },
-  { name: "research_pack", sourceNode: "并行获取数据", type: "object", sensitive: false },
-  { name: "report_draft", sourceNode: "合并组装报告", type: "object", sensitive: false },
-  { name: "review_required", sourceNode: "风险判断", type: "boolean", sensitive: false },
-  { name: "review_decision", sourceNode: "人工审核", type: "decision", sensitive: false },
-  { name: "delivery_record", sourceNode: "邮件交付", type: "object", sensitive: false },
-];
+// 第一阶段变量元数据仍由前端模板补充；变量名称与来源已改为从当前图实时推导，后续会由变量声明和发布校验契约接管。
+const starterVariableMetadata: Record<string, Pick<WorkflowVariable, "type" | "sensitive">> = {
+  starter: { type: "string", sensitive: false },
+  started_at: { type: "string", sensitive: false },
+  project_info: { type: "object", sensitive: false },
+  attachments: { type: "file", sensitive: true },
+  analysis_result: { type: "object", sensitive: false },
+  risk_level: { type: "decision", sensitive: false },
+  research_pack: { type: "object", sensitive: false },
+  report_draft: { type: "object", sensitive: false },
+  review_required: { type: "boolean", sensitive: false },
+  review_decision: { type: "decision", sensitive: false },
+  delivery_record: { type: "object", sensitive: false },
+};
 
 // 并行与合并先用静态配置解释设计意图，后续会落到 parallel_group.config.tasks 和 merge.config.mappings。
 const parallelTasks: ParallelTask[] = [
@@ -332,14 +344,70 @@ const mergeMappings: MergeMapping[] = [
   { source: "risk_findings", target: "report_draft.risks", rule: "按风险等级排序，并生成审核关注点" },
 ];
 
-export function WorkflowEditorPage({ workflow, onBack }: WorkflowEditorPageProps) {
-  // 节点列表先保存在组件状态中，方便验证本地配置保存；后续会改为调用工作流草稿保存 API。
-  const [nodes, setNodes] = useState(initialNodes);
-  const [selectedNodeId, setSelectedNodeId] = useState(initialNodes[0].id);
+export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowEditorPageProps) {
+  const token = useAuthStore((s) => s.token);
+  const user = useAuthStore((s) => s.user);
+  const [nodes, setNodes] = useState<Node<EditorNodeData>[]>([]);
+  const [edges, setEdges] = useState<Edge[]>([]);
+  const [selectedNodeId, setSelectedNodeId] = useState("");
   const [isOutlineCollapsed, setIsOutlineCollapsed] = useState(false);
   const [isConfigCollapsed, setIsConfigCollapsed] = useState(false);
   const [nodeSearchValue, setNodeSearchValue] = useState("");
   const [insertedVariableName, setInsertedVariableName] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [saveFeedback, setSaveFeedback] = useState<{ tone: "success" | "error" | "info"; message: string } | null>(null);
+  const [usingStarterTemplate, setUsingStarterTemplate] = useState(false);
+
+  useEffect(() => {
+    if (!token || !user?.tenantId) {
+      setLoading(false);
+      setLoadError("当前账号缺少租户上下文，无法加载工作流草稿图");
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+    setLoadError("");
+    setSaveFeedback(null);
+
+    // 画布详情必须以后端事实为准；只有新草稿尚未保存节点时，才载入前端起步模板等待首次落库。
+    void workflowApi.getDraft(user.tenantId, workflow.id, token)
+      .then((detail) => {
+        if (cancelled) {
+          return;
+        }
+        const hasPersistedGraph = detail.nodes.length > 0;
+        const nextNodes = hasPersistedGraph ? detail.nodes.map(toEditorNode) : cloneStarterNodes();
+        const nextEdges = hasPersistedGraph ? detail.edges.map(toEditorEdge) : cloneStarterEdges();
+        setNodes(nextNodes);
+        setEdges(nextEdges);
+        setSelectedNodeId(nextNodes[0]?.id ?? "");
+        setUsingStarterTemplate(!hasPersistedGraph);
+        if (!hasPersistedGraph) {
+          setSaveFeedback({ tone: "info", message: "当前草稿还没有节点，已载入起步模板；首次保存后会写入草稿图。" });
+        }
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+        console.warn("[workflow] 工作流草稿图加载失败", getWorkflowEditorErrorContext(error, user.tenantId ?? undefined, workflow.id));
+        setLoadError(error instanceof AgentumApiError ? error.message : "无法加载工作流草稿图");
+        setNodes([]);
+        setEdges([]);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token, user?.tenantId, workflow.id]);
 
   const decoratedNodes = useMemo(() => {
     return nodes.map((node) => {
@@ -360,7 +428,8 @@ export function WorkflowEditorPage({ workflow, onBack }: WorkflowEditorPageProps
 
   const selectedNode = decoratedNodes.find((node) => node.id === selectedNodeId) ?? decoratedNodes[0];
   const incompleteNodes = decoratedNodes.filter((node) => node.data.configStatus === "incomplete");
-  const selectedNodeIndex = decoratedNodes.findIndex((node) => node.id === selectedNode.id);
+  const selectedNodeIndex = selectedNode ? decoratedNodes.findIndex((node) => node.id === selectedNode.id) : -1;
+  const workflowVariables = useMemo(() => buildWorkflowVariables(decoratedNodes), [decoratedNodes]);
   // 变量只能引用上游节点输出，避免设计态形成循环依赖；后续由后端发布校验做最终判断。
   const availableVariables = workflowVariables.filter((variable) => {
     const sourceIndex = decoratedNodes.findIndex((node) => node.data.label === variable.sourceNode);
@@ -370,23 +439,56 @@ export function WorkflowEditorPage({ workflow, onBack }: WorkflowEditorPageProps
   // 搜索匹配保持轻量本地状态，真实画布较大时应交给节点索引或后端草稿查询辅助定位。
   const matchedNodes = decoratedNodes.filter((node) => node.data.label.includes(nodeSearchValue.trim()));
 
-  function handleSaveSelectedNode() {
-    // 当前保存只更新前端配置状态，后续应提交 NodeDefinition.config 并接入 Zod 表单校验。
-    setNodes((currentNodes) =>
-      currentNodes.map((node) => {
-        if (node.id !== selectedNode.id) {
-          return node;
-        }
+  const persistGraph = useCallback(async (nextNodes: Node<EditorNodeData>[], nextEdges: Edge[]) => {
+    if (!token || !user?.tenantId) {
+      setSaveFeedback({ tone: "error", message: "当前账号缺少租户上下文，无法保存工作流草稿图" });
+      return;
+    }
 
-        return {
-          ...node,
-          data: {
-            ...node.data,
-            configStatus: "complete",
-          },
-        };
-      }),
-    );
+    setSaving(true);
+    setSaveFeedback(null);
+
+    try {
+      const detail = await workflowApi.saveGraph(
+        user.tenantId,
+        workflow.id,
+        token,
+        nextNodes.map(toWorkflowNodeDraft),
+        nextEdges.map(toWorkflowEdgeDraft),
+      );
+      applyPersistedDetail(detail, setNodes, setEdges, setSelectedNodeId);
+      setUsingStarterTemplate(false);
+      setSaveFeedback({ tone: "success", message: "草稿图已保存" });
+      onDraftSaved(detail.draft);
+    } catch (error) {
+      console.warn("[workflow] 工作流草稿图保存失败", getWorkflowEditorErrorContext(error, user.tenantId, workflow.id));
+      setSaveFeedback({ tone: "error", message: error instanceof AgentumApiError ? error.message : "保存工作流草稿图失败" });
+    } finally {
+      setSaving(false);
+    }
+  }, [onDraftSaved, token, user?.tenantId, workflow.id]);
+
+  async function handleSaveSelectedNode() {
+    if (!selectedNode) {
+      return;
+    }
+
+    // 节点配置在第一阶段仍是轻量示意，但保存动作已经改为整图提交，确保节点、边和摘要计数一起落库。
+    const nextNodes: Node<EditorNodeData>[] = nodes.map((node) => {
+      if (node.id !== selectedNode.id) {
+        return node;
+      }
+
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          configStatus: "complete" as const,
+        },
+      };
+    });
+    setNodes(nextNodes);
+    await persistGraph(nextNodes, edges);
   }
 
   const handleNodeClick = (_event: MouseEvent, node: Node<EditorNodeData>) => {
@@ -412,6 +514,21 @@ export function WorkflowEditorPage({ workflow, onBack }: WorkflowEditorPageProps
           ? "xl:grid-cols-[200px_minmax(0,1fr)]"
           : "xl:grid-cols-[200px_minmax(0,1fr)_300px]";
 
+  if (loading) {
+    return <EditorStateShell workflowName={workflow.name} onBack={onBack} icon={<Clock3 className="h-5 w-5" aria-hidden="true" />} message="正在加载工作流草稿图" />;
+  }
+
+  if (loadError || !selectedNode) {
+    return (
+      <EditorStateShell
+        workflowName={workflow.name}
+        onBack={onBack}
+        icon={<AlertTriangle className="h-5 w-5" aria-hidden="true" />}
+        message={loadError || "当前草稿没有可编辑节点"}
+      />
+    );
+  }
+
   return (
     <div className="flex h-[calc(100vh-var(--header-height))] flex-col">
       {/* 紧凑内联工具栏 —— 返回、标题、搜索、面板开关并排展示 */}
@@ -432,6 +549,19 @@ export function WorkflowEditorPage({ workflow, onBack }: WorkflowEditorPageProps
           <span className="rounded bg-[var(--color-bg-hover)] px-1.5 py-0.5">暂停 {nodes.filter((n) => n.data.pausePoint).length}</span>
           <span className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">待配 {incompleteNodes.length}</span>
         </div>
+        {saveFeedback ? (
+          <span
+            className={`rounded px-2 py-1 text-xs font-medium ${
+              saveFeedback.tone === "success"
+                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
+                : saveFeedback.tone === "error"
+                  ? "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300"
+                  : "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300"
+            }`}
+          >
+            {saveFeedback.message}
+          </span>
+        ) : null}
         <label className="relative block w-48">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--color-text-tertiary)]" aria-hidden="true" />
           <span className="sr-only">搜索节点</span>
@@ -517,7 +647,7 @@ export function WorkflowEditorPage({ workflow, onBack }: WorkflowEditorPageProps
         <section className="relative min-h-0 overflow-hidden bg-[var(--color-canvas-bg)]" aria-label="工作流画布">
           <ReactFlow
             nodes={decoratedNodes}
-            edges={initialEdges}
+            edges={edges}
             nodeTypes={nodeTypes}
             onNodeClick={handleNodeClick}
             defaultViewport={{ x: 40, y: 120, zoom: 0.82 }}
@@ -543,6 +673,8 @@ export function WorkflowEditorPage({ workflow, onBack }: WorkflowEditorPageProps
               insertedVariableName={insertedVariableName}
               onInsertVariable={setInsertedVariableName}
               onSave={handleSaveSelectedNode}
+              saving={saving}
+              usingStarterTemplate={usingStarterTemplate}
             />
           </div>
         ) : null}
@@ -610,12 +742,16 @@ function NodeConfigPanel({
   insertedVariableName,
   onInsertVariable,
   onSave,
+  saving,
+  usingStarterTemplate,
 }: {
   node: Node<EditorNodeData>;
   availableVariables: WorkflowVariable[];
   insertedVariableName: string;
   onInsertVariable: (variableName: string) => void;
-  onSave: () => void;
+  onSave: () => Promise<void>;
+  saving: boolean;
+  usingStarterTemplate: boolean;
 }) {
   const meta = nodeTypeMeta[node.data.nodeType];
   const Icon = meta.icon;
@@ -643,6 +779,11 @@ function NodeConfigPanel({
             <StatusBadge complete={node.data.configStatus === "complete"} />
             {node.data.pausePoint ? <span className="rounded bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">暂停点</span> : null}
           </div>
+          {usingStarterTemplate ? (
+            <p className="mt-3 rounded bg-sky-50 px-2 py-1 text-xs font-medium text-sky-800 dark:bg-sky-950/40 dark:text-sky-200">
+              当前使用起步模板，保存后会写入该草稿的真实节点和边。
+            </p>
+          ) : null}
         </PanelGroup>
 
         <PanelGroup title="输入变量">
@@ -713,11 +854,12 @@ function NodeConfigPanel({
 
         <button
           type="button"
-          onClick={onSave}
+          onClick={() => void onSave()}
+          disabled={saving}
           className="agent-button agent-button-primary h-10 w-full px-3 text-sm"
         >
           <Milestone className="h-4 w-4" aria-hidden="true" />
-          保存节点配置
+          {saving ? "保存中" : "保存节点配置"}
         </button>
       </div>
     </aside>
@@ -907,6 +1049,36 @@ function StatusBadge({ complete, compact = false }: { complete: boolean; compact
   return <span className={`rounded bg-red-100 px-2 py-1 font-medium text-red-700 dark:bg-red-950/40 dark:text-red-300 ${compact ? "text-[11px]" : "text-xs"}`}>待补配置</span>;
 }
 
+function EditorStateShell({
+  workflowName,
+  onBack,
+  icon,
+  message,
+}: {
+  workflowName: string;
+  onBack: () => void;
+  icon: ReactNode;
+  message: string;
+}) {
+  return (
+    <div className="flex h-[calc(100vh-var(--header-height))] flex-col">
+      <div className="flex items-center gap-3 border-b border-[var(--color-border-light)] bg-[var(--color-bg-card)] px-4 py-2">
+        <button type="button" onClick={onBack} className="agent-button h-7 px-2 text-xs">
+          <ChevronLeft className="h-3.5 w-3.5" aria-hidden="true" />
+          返回
+        </button>
+        <h2 className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{workflowName}</h2>
+      </div>
+      <div className="flex flex-1 items-center justify-center bg-[var(--color-canvas-bg)] px-4">
+        <div className="agent-card flex min-w-[280px] items-center gap-3 p-4 text-sm text-[var(--color-text-primary)]">
+          <span className="text-[var(--color-primary)]">{icon}</span>
+          <span>{message}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function VariableRegistry({ variables }: { variables: WorkflowVariable[] }) {
   return (
     <section className="agent-card" aria-labelledby="variable-title">
@@ -967,4 +1139,162 @@ function PublishCheckSummary({ incompleteNodes }: { incompleteNodes: Node<Editor
       </div>
     </section>
   );
+}
+
+function cloneStarterNodes(): Node<EditorNodeData>[] {
+  return starterNodes.map((node) => ({
+    ...node,
+    position: { ...node.position },
+    data: {
+      ...node.data,
+      inputVariables: [...node.data.inputVariables],
+      outputVariables: [...node.data.outputVariables],
+      rawConfig: { ...(node.data.rawConfig ?? {}) },
+    },
+  }));
+}
+
+function cloneStarterEdges(): Edge[] {
+  return starterEdges.map((edge) => ({ ...edge }));
+}
+
+function toEditorNode(node: WorkflowNodeDraft): Node<EditorNodeData> {
+  const preset = starterNodes.find((starter) => starter.data.nodeType === node.nodeType)?.data ?? buildFallbackNodeData(node.nodeType);
+  const config = node.config ?? {};
+
+  return {
+    id: node.nodeId,
+    type: "workflow",
+    position: { x: node.positionX, y: node.positionY },
+    data: {
+      label: node.name,
+      typeLabel: readString(config.typeLabel, preset.typeLabel),
+      nodeType: node.nodeType,
+      summary: readString(config.summary, preset.summary),
+      inputVariables: [...(node.inputVariables ?? [])],
+      outputVariables: [...(node.outputVariables ?? [])],
+      pausePoint: readBoolean(config.pausePoint, preset.pausePoint),
+      configStatus: readLiteral(config.configStatus, ["complete", "incomplete"], preset.configStatus),
+      runState: readLiteral(config.runState, ["未开始", "等待输入", "执行中", "等待审核", "已完成", "待配置"], preset.runState),
+      outputMode: readLiteral(config.outputMode, ["一次性输出", "追问确认", "分析后暂停"], preset.outputMode),
+      toolCount: readNumber(config.toolCount, preset.toolCount),
+      allowQuestion: readBoolean(config.allowQuestion, preset.allowQuestion),
+      rawConfig: { ...config },
+    },
+  };
+}
+
+function toEditorEdge(edge: WorkflowEdgeDraft): Edge {
+  return {
+    id: edge.edgeId,
+    source: edge.sourceNodeId,
+    target: edge.targetNodeId,
+    label: edge.label || undefined,
+    data: edge.conditionExpression ? { conditionExpression: edge.conditionExpression } : undefined,
+    type: "smoothstep",
+  };
+}
+
+function toWorkflowNodeDraft(node: Node<EditorNodeData>): WorkflowNodeDraft {
+  return {
+    nodeId: node.id,
+    nodeType: node.data.nodeType,
+    name: node.data.label,
+    positionX: node.position.x,
+    positionY: node.position.y,
+    inputVariables: node.data.inputVariables,
+    outputVariables: node.data.outputVariables,
+    config: {
+      ...(node.data.rawConfig ?? {}),
+      typeLabel: node.data.typeLabel,
+      summary: node.data.summary,
+      pausePoint: node.data.pausePoint,
+      configStatus: node.data.configStatus,
+      runState: node.data.runState,
+      outputMode: node.data.outputMode,
+      toolCount: node.data.toolCount,
+      allowQuestion: node.data.allowQuestion,
+    },
+  };
+}
+
+function toWorkflowEdgeDraft(edge: Edge): WorkflowEdgeDraft {
+  return {
+    edgeId: edge.id,
+    sourceNodeId: edge.source,
+    targetNodeId: edge.target,
+    label: typeof edge.label === "string" ? edge.label : undefined,
+    conditionExpression:
+      typeof edge.data?.conditionExpression === "string"
+        ? edge.data.conditionExpression
+        : undefined,
+  };
+}
+
+function applyPersistedDetail(
+  detail: WorkflowDraftDetail,
+  setNodes: (nodes: Node<EditorNodeData>[]) => void,
+  setEdges: (edges: Edge[]) => void,
+  setSelectedNodeId: Dispatch<SetStateAction<string>>,
+) {
+  const nextNodes = detail.nodes.map(toEditorNode);
+  const nextEdges = detail.edges.map(toEditorEdge);
+  setNodes(nextNodes);
+  setEdges(nextEdges);
+  setSelectedNodeId((currentSelection) => nextNodes.some((node) => node.id === currentSelection) ? currentSelection : nextNodes[0]?.id ?? "");
+}
+
+function buildWorkflowVariables(nodes: Node<EditorNodeData>[]): WorkflowVariable[] {
+  return nodes.flatMap((node) =>
+    node.data.outputVariables.map((name) => {
+      const metadata = starterVariableMetadata[name] ?? { type: "string" as const, sensitive: false };
+      return {
+        name,
+        sourceNode: node.data.label,
+        type: metadata.type,
+        sensitive: metadata.sensitive,
+      };
+    }),
+  );
+}
+
+function buildFallbackNodeData(nodeType: WorkflowNodeType): EditorNodeData {
+  return {
+    label: "未命名节点",
+    typeLabel: nodeTypeLabels[nodeType],
+    nodeType,
+    summary: "节点配置尚未补充说明。",
+    inputVariables: [],
+    outputVariables: [],
+    pausePoint: ["user_input", "agent", "human_review"].includes(nodeType),
+    configStatus: "incomplete",
+    runState: "待配置",
+    outputMode: "一次性输出",
+    toolCount: 0,
+    allowQuestion: false,
+  };
+}
+
+function readString(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.trim() ? value : fallback;
+}
+
+function readBoolean(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function readNumber(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function readLiteral<T extends string>(value: unknown, values: readonly T[], fallback: T): T {
+  return typeof value === "string" && values.includes(value as T) ? value as T : fallback;
+}
+
+function getWorkflowEditorErrorContext(error: unknown, tenantId?: string, workflowId?: string) {
+  if (error instanceof AgentumApiError) {
+    return { code: error.code, requestId: error.requestId, tenantId, workflowId };
+  }
+
+  return { message: error instanceof Error ? error.message : "unknown", tenantId, workflowId };
 }

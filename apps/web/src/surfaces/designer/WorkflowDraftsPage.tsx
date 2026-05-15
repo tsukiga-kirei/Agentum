@@ -54,7 +54,7 @@ function formatPaginationTotal(count: number, range: [number, number], pageSize:
 }
 
 export function WorkflowDraftsPage() {
-  // 草稿列表已接入后端 WorkflowDefinition API；画布节点编辑仍保留本地交互，后续顺着 graph 保存接口收敛。
+  // 草稿列表和画布图都已接入工作流草稿 API；列表仍只承接设计态入口，运行实例会在后续独立建模。
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
   const [workflows, setWorkflows] = useState<WorkflowDraft[]>([]);
@@ -141,7 +141,16 @@ export function WorkflowDraftsPage() {
   }
 
   if (editingWorkflow) {
-    return <WorkflowEditorPage workflow={editingWorkflow} onBack={() => setEditingWorkflow(null)} />;
+    return (
+      <WorkflowEditorPage
+        workflow={editingWorkflow}
+        onBack={() => setEditingWorkflow(null)}
+        onDraftSaved={(draft) => {
+          setEditingWorkflow(draft);
+          setWorkflows((currentWorkflows) => currentWorkflows.map((item) => item.id === draft.id ? draft : item));
+        }}
+      />
+    );
   }
 
   return (
@@ -294,7 +303,7 @@ export function WorkflowDraftsPage() {
               下一步建设重点
             </h2>
             <p className="mt-2 text-sm leading-6 text-indigo-800 dark:text-indigo-100">
-              工作流列表和新建草稿已经进入真实 API，下一步把画布节点、边和变量保存接到草稿图接口。
+              工作流列表、画布读取和草稿图保存已经进入真实 API，下一步补发布校验和变量声明规则。
             </p>
           </div>
           <div className="flex items-center gap-2 rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm font-medium text-indigo-800 dark:border-indigo-900 dark:bg-indigo-950/50 dark:text-indigo-100">
