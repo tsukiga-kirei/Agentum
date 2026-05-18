@@ -14,7 +14,6 @@
 
 涉及前端、页面、组件、交互或样式时，还必须阅读：
 
-- `.codex/skills/ui-ux-pro-max/SKILL.md`
 - `docs/system-overview.md`
 
 涉及工作流、节点、变量、运行态或 AI 交互时，还必须阅读：

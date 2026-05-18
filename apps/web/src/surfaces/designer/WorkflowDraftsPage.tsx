@@ -9,9 +9,8 @@ import {
   X,
   PanelRightOpen,
   Search,
-  Sparkles,
 } from "lucide-react";
-import { Pagination } from "antd";
+import { Pagination, Segmented } from "antd";
 import { AgentumApiError, workflowApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import type {
@@ -24,19 +23,18 @@ import { WorkflowEditorPage } from "./WorkflowEditorPage";
 // 工作流草稿列表是设计态入口，不等同于运行实例；发布后需要生成不可变 WorkflowVersion。
 export type WorkflowDraft = WorkflowDraftRow;
 
-// 前端状态文案先服务设计页可读性，真实状态流转后续以发布校验和版本状态机为准。
 const statusMeta: Record<WorkflowStatus, { label: string; className: string }> = {
   draft: {
     label: "草稿",
-    className: "bg-amber-100 text-amber-800 ring-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:ring-amber-800/60",
+    className: "sys-info-tag--warn",
   },
   published: {
     label: "已发布",
-    className: "bg-emerald-100 text-emerald-800 ring-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:ring-emerald-800/60",
+    className: "sys-info-tag--success",
   },
   review: {
     label: "待校验",
-    className: "bg-sky-100 text-sky-800 ring-sky-200 dark:bg-sky-900/40 dark:text-sky-300 dark:ring-sky-800/60",
+    className: "sys-info-tag--info",
   },
 };
 
@@ -120,6 +118,15 @@ export function WorkflowDraftsPage() {
   const draftCount = workflows.filter((workflow) => workflow.status === "draft").length;
   const publishedCount = workflows.filter((workflow) => workflow.status === "published").length;
   const reviewCount = workflows.filter((workflow) => workflow.status === "review").length;
+  const moduleOptions = [{
+    value: "definitions",
+    label: (
+      <span className="login-portal-option">
+        <GitBranch className="login-portal-option-icon" aria-hidden="true" />
+        <span>工作流定义</span>
+      </span>
+    ),
+  }];
 
   async function handleCreateDraft(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -210,230 +217,199 @@ export function WorkflowDraftsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-[1400px] space-y-5 px-5 py-6 lg:px-6">
-      <section className="agent-card p-5" aria-label="流程设计总览">
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-end">
-          <div>
-            <p className="text-sm font-medium text-[var(--color-primary)]">流程定义管理</p>
-            <h2 className="mt-2 text-xl font-semibold text-[var(--color-text-primary)]">先把草稿、校验和画布入口做成稳定工作台</h2>
-            <p className="agent-muted mt-3 max-w-3xl text-sm leading-6">
-              列表页已接入后端草稿 API，画布配置会围绕固定节点、变量引用和发布校验继续收敛。
-            </p>
+    <div className="min-h-[calc(100vh-4rem)] bg-[var(--color-bg-page)] pb-10 pt-1">
+      <div className="mx-auto max-w-[1400px] px-5 lg:px-6">
+        <header className="mb-5 flex flex-col gap-4 border-b border-[var(--color-border-light)] pb-5 sm:flex-row sm:items-end sm:justify-between">
+          <div className="flex min-w-0 gap-4">
+            <div className="workflow-design-page-mark flex h-12 w-12 shrink-0 items-center justify-center rounded-[var(--radius-lg)]">
+              <GitBranch className="h-6 w-6" aria-hidden="true" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-lg font-semibold tracking-tight text-[var(--color-text-primary)] sm:text-xl">流程设计</h1>
+                <span className="rounded-full bg-[var(--color-bg-hover)] px-2.5 py-0.5 text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-[var(--color-border-light)]">
+                  流程治理
+                </span>
+              </div>
+              <p className="agent-muted mt-1.5 max-w-2xl text-sm leading-relaxed">
+                管理工作流定义、发布状态和画布配置；已发布版本会冻结为不可变快照，后续修改在草稿中继续演进。
+              </p>
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setIsCreating(true)}
-            className="agent-button agent-button-primary h-11 px-4 text-sm"
-          >
-            <FilePlus2 className="h-4 w-4" aria-hidden="true" />
-            新建工作流草稿
+          <button type="button" onClick={() => setIsCreating(true)} className="sys-btn sys-btn--primary">
+            <FilePlus2 size={15} aria-hidden="true" />
+            新建工作流
           </button>
-        </div>
-      </section>
+        </header>
 
-      <section className="grid gap-4 md:grid-cols-3" aria-label="工作流概览">
-        <SummaryCard icon={GitBranch} label="全部工作流" value={String(total)} detail="按当前租户与设计权限查询" />
-        <SummaryCard icon={Clock3} label="当前页草稿" value={String(draftCount)} detail="可继续编辑节点配置" />
-        <SummaryCard icon={CheckCircle2} label="当前页已发布" value={String(publishedCount)} detail={`${reviewCount} 个流程等待校验`} />
-      </section>
-
-      <section className="agent-card overflow-hidden" aria-labelledby="workflow-list-title">
-        <div className="agent-card-header flex flex-col gap-4 bg-[var(--color-bg-hover)] xl:flex-row xl:items-center xl:justify-between">
-          <div>
-            <h2 id="workflow-list-title" className="text-base font-semibold text-[var(--color-text-primary)]">
-              工作流列表
-            </h2>
-            <p className="agent-muted mt-1 text-sm">管理草稿、发布版本和后续画布配置入口</p>
-          </div>
-
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <label className="relative block sm:w-72">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-tertiary)]" aria-hidden="true" />
-              <span className="sr-only">搜索工作流</span>
-              <input
-                value={searchValue}
-                onChange={(event) => {
-                  setSearchValue(event.target.value);
-                  setPage(1);
-                }}
-                className="agent-input h-10 w-full pl-9 pr-3 text-sm outline-none"
-                placeholder="搜索名称或说明"
-              />
-            </label>
-            <button
-              type="button"
-              onClick={() => setIsCreating(true)}
-              className="agent-button agent-button-primary h-10 px-3 text-sm"
-            >
-              <FilePlus2 className="h-4 w-4" aria-hidden="true" />
-              新建草稿
-            </button>
-          </div>
-        </div>
-
-        {loadError ? (
-          <div className="mx-5 mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
-            {loadError}
-          </div>
-        ) : null}
-
-        {validationError ? (
-          <div className="mx-5 mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
-            {validationError}
-          </div>
-        ) : null}
-
-        {publishSuccess ? (
-          <div className="mx-5 mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200">
-            {publishSuccess}
-          </div>
-        ) : null}
-
-        <div className="divide-y divide-[var(--color-border-light)]">
-          {filteredWorkflows.map((workflow) => {
-            const status = statusMeta[workflow.status];
-
-            return (
-              <article key={workflow.id} className="grid gap-4 px-5 py-5 transition-colors duration-200 hover:bg-[var(--color-bg-hover)] xl:grid-cols-[minmax(0,1fr)_220px] xl:items-center">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">{workflow.name}</h3>
-                    <span className={`rounded px-2 py-1 text-xs font-medium ring-1 ${status.className}`}>{status.label}</span>
-                  </div>
-                  <p className="agent-muted mt-2 max-w-3xl text-sm leading-6">{workflow.description}</p>
-                  <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-[var(--color-text-tertiary)]">
-                    <span>负责人：{workflow.ownerName}</span>
-                    <span>节点：{workflow.nodeCount}</span>
-                    <span>暂停点：{workflow.pausePointCount}</span>
-                    <span>更新：{formatDateTime(workflow.updatedAt)}</span>
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2 xl:justify-end">
-                  <button
-                    type="button"
-                    disabled={validatingWorkflowId === workflow.id}
-                    onClick={() => void handleValidateForPublish(workflow)}
-                    className="agent-button h-9 px-3 text-sm"
-                  >
-                    <ListChecks className="h-4 w-4" aria-hidden="true" />
-                    {validatingWorkflowId === workflow.id ? "校验中" : "发布校验"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setEditingWorkflow(workflow)}
-                    className="agent-button agent-button-primary h-9 px-3 text-sm"
-                  >
-                    <PanelRightOpen className="h-4 w-4" aria-hidden="true" />
-                    打开画布
-                  </button>
-                </div>
-              </article>
-            );
-          })}
-        </div>
-
-        {loading ? (
-          <div className="px-5 py-12 text-center">
-            <Clock3 className="mx-auto h-8 w-8 text-slate-400" aria-hidden="true" />
-            <p className="mt-3 text-sm font-medium text-slate-700 dark:text-slate-200">正在加载工作流草稿</p>
-          </div>
-        ) : null}
-
-        {!loading && filteredWorkflows.length === 0 ? (
-          <div className="px-5 py-12 text-center">
-            <AlertCircle className="mx-auto h-8 w-8 text-slate-400" aria-hidden="true" />
-            <p className="mt-3 text-sm font-medium text-slate-700 dark:text-slate-200">没有找到匹配的工作流</p>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">可以调整搜索词，或创建一个新的工作流草稿。</p>
-          </div>
-        ) : null}
-
-        {total > 0 ? (
-          <div className="agent-admin-pagination-wrap px-5 py-4">
-            <Pagination
-              className="agent-admin-pagination"
-              current={page}
-              pageSize={pageSize}
-              total={total}
-              locale={workflowPaginationLocale}
-              showSizeChanger={{ className: "agent-admin-select", popupClassName: "agent-select-dropdown agent-admin-select-dropdown" }}
-              pageSizeOptions={["8", "16", "32"]}
-              showTotal={(count, range) => formatPaginationTotal(count, range, pageSize)}
-              disabled={loading}
-              onChange={(nextPage, nextPageSize) => void loadDrafts(nextPage, searchValue, nextPageSize)}
-              onShowSizeChange={(nextPage, nextPageSize) => void loadDrafts(nextPage, searchValue, nextPageSize)}
+        <div className="system-mgmt-module-switch mb-5">
+          <div className="system-mgmt-segmented-scroll">
+            <Segmented
+              aria-label="流程设计模块"
+              value="definitions"
+              options={moduleOptions}
+              className="login-portal-segmented login-portal-segmented--business system-mgmt-segmented"
             />
           </div>
-        ) : null}
-      </section>
-
-      <section className="rounded-[var(--radius-lg)] border border-indigo-200 bg-indigo-50 p-5 shadow-[var(--shadow-xs)] dark:border-indigo-900/60 dark:bg-indigo-950/30" aria-labelledby="next-step-title">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h2 id="next-step-title" className="text-base font-semibold text-indigo-950 dark:text-indigo-100">
-              下一步建设重点
-            </h2>
-            <p className="mt-2 text-sm leading-6 text-indigo-800 dark:text-indigo-100">
-              工作流列表、画布读取和草稿图保存已经进入真实 API，下一步补发布校验和变量声明规则。
-            </p>
-          </div>
-          <div className="flex items-center gap-2 rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm font-medium text-indigo-800 dark:border-indigo-900 dark:bg-indigo-950/50 dark:text-indigo-100">
-            <Sparkles className="h-4 w-4" aria-hidden="true" />
-            阶段一：工作流定义管理
+          <div className="login-portal-description login-portal-description--business">
+            <span className="login-portal-description-dot" />
+            草稿、发布状态与画布入口
           </div>
         </div>
-      </section>
+
+        <section className="sys-overview-stats mb-5" aria-label="工作流概览">
+          <OverviewStat icon={GitBranch} label="全部工作流" value={String(total)} tone="primary" />
+          <OverviewStat icon={Clock3} label="当前页草稿" value={String(draftCount)} tone="info" />
+          <OverviewStat icon={CheckCircle2} label="当前页已发布" value={String(publishedCount)} tone="success" />
+          <OverviewStat icon={ListChecks} label="当前页待校验" value={String(reviewCount)} tone="cap" />
+        </section>
+
+        <section className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] shadow-[var(--shadow-sm)]" aria-labelledby="workflow-list-title">
+          <div className="p-5">
+            <div className="sys-hint mb-4">
+              <ListChecks size={14} />
+              发布前会重新校验节点、连线和变量声明；正式发布后，当前版本只读保留，避免运行中的流程被草稿改动影响。
+            </div>
+
+            <div className="workflow-definition-table-card">
+              <div className="workflow-definition-toolbar">
+                <div>
+                  <h2 id="workflow-list-title">工作流列表</h2>
+                  <p>查看定义状态、继续编辑画布或执行发布校验</p>
+                </div>
+                <div className="workflow-definition-toolbar-actions">
+                  <label className="workflow-definition-search">
+                    <Search className="h-4 w-4" aria-hidden="true" />
+                    <span className="sr-only">搜索工作流</span>
+                    <input
+                      value={searchValue}
+                      onChange={(event) => {
+                        setSearchValue(event.target.value);
+                        setPage(1);
+                      }}
+                      placeholder="搜索名称或说明"
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {loadError ? <div className="workflow-feedback workflow-feedback--danger">{loadError}</div> : null}
+              {validationError ? <div className="workflow-feedback workflow-feedback--danger">{validationError}</div> : null}
+              {publishSuccess ? <div className="workflow-feedback workflow-feedback--success">{publishSuccess}</div> : null}
+
+              <div className="workflow-definition-table-wrap">
+                <table className="workflow-definition-table">
+                  <thead>
+                    <tr>
+                      <th>工作流</th>
+                      <th>状态</th>
+                      <th>负责人</th>
+                      <th>结构</th>
+                      <th>更新时间</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredWorkflows.map((workflow) => {
+                      const status = statusMeta[workflow.status];
+                      return (
+                        <tr key={workflow.id}>
+                          <td>
+                            <div className="workflow-definition-name">{workflow.name}</div>
+                            <div className="workflow-definition-description">{workflow.description || "未填写说明"}</div>
+                          </td>
+                          <td><span className={`sys-info-tag ${status.className}`}>{status.label}</span></td>
+                          <td>{workflow.ownerName}</td>
+                          <td>
+                            <div className="workflow-definition-metrics">
+                              <span>{workflow.nodeCount} 个节点</span>
+                              <span>{workflow.pausePointCount} 个暂停点</span>
+                            </div>
+                          </td>
+                          <td>{formatDateTime(workflow.updatedAt)}</td>
+                          <td>
+                            <div className="workflow-definition-actions">
+                              <button type="button" disabled={validatingWorkflowId === workflow.id} onClick={() => void handleValidateForPublish(workflow)} className="sys-btn sys-btn--default sys-btn--sm">
+                                <ListChecks size={14} aria-hidden="true" />
+                                {validatingWorkflowId === workflow.id ? "校验中" : "发布校验"}
+                              </button>
+                              <button type="button" onClick={() => setEditingWorkflow(workflow)} className="sys-btn sys-btn--primary sys-btn--sm">
+                                <PanelRightOpen size={14} aria-hidden="true" />
+                                打开画布
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {loading ? (
+                <div className="workflow-definition-empty-state">
+                  <Clock3 className="h-8 w-8" aria-hidden="true" />
+                  <p>正在加载工作流</p>
+                </div>
+              ) : null}
+
+              {!loading && filteredWorkflows.length === 0 ? (
+                <div className="workflow-definition-empty-state">
+                  <AlertCircle className="h-8 w-8" aria-hidden="true" />
+                  <p>没有找到匹配的工作流</p>
+                  <span>可以调整搜索词，或创建一个新的工作流。</span>
+                </div>
+              ) : null}
+
+              {total > 0 ? (
+                <div className="agent-admin-pagination-wrap px-4 py-4">
+                  <Pagination
+                    className="agent-admin-pagination"
+                    current={page}
+                    pageSize={pageSize}
+                    total={total}
+                    locale={workflowPaginationLocale}
+                    showSizeChanger={{ className: "agent-admin-select", popupClassName: "agent-select-dropdown agent-admin-select-dropdown" }}
+                    pageSizeOptions={["8", "16", "32"]}
+                    showTotal={(count, range) => formatPaginationTotal(count, range, pageSize)}
+                    disabled={loading}
+                    onChange={(nextPage, nextPageSize) => void loadDrafts(nextPage, searchValue, nextPageSize)}
+                    onShowSizeChange={(nextPage, nextPageSize) => void loadDrafts(nextPage, searchValue, nextPageSize)}
+                  />
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </section>
+      </div>
 
       {isCreating ? (
-        <div className="fixed inset-0 z-20 flex items-center justify-center bg-slate-950/40 px-4 py-6 backdrop-blur-sm">
-          <section className="agent-card w-full max-w-lg shadow-[var(--shadow-lg)]" aria-labelledby="create-draft-title">
-            <div className="agent-card-header">
-              <h2 id="create-draft-title" className="text-base font-semibold text-[var(--color-text-primary)]">
-                新建工作流草稿
-              </h2>
-              <p className="agent-muted mt-1 text-sm">先保存基础信息，之后进入画布补充节点和变量。</p>
+        <div className="sys-modal-mask" onClick={() => setIsCreating(false)}>
+          <section className="sys-modal" style={{ maxWidth: 560 }} aria-labelledby="create-draft-title" onClick={(event) => event.stopPropagation()}>
+            <div className="sys-modal-header">
+              <span id="create-draft-title" className="sys-modal-title">新建工作流</span>
+              <button className="sys-modal-close" onClick={() => setIsCreating(false)} aria-label="关闭新建工作流弹窗"><X size={18} /></button>
             </div>
-            <form onSubmit={handleCreateDraft} className="space-y-4 px-5 py-5">
-              <label className="block">
-                <span className="text-sm font-medium text-[var(--color-text-primary)]">工作流名称</span>
-                <input
-                  value={draftName}
-                  onChange={(event) => {
-                    setDraftName(event.target.value);
-                    setFormError("");
-                  }}
-                  className="agent-input mt-2 h-10 w-full px-3 text-sm outline-none"
-                  placeholder="例如：客户续约风险评估流程"
-                />
-              </label>
-              <label className="block">
-                <span className="text-sm font-medium text-[var(--color-text-primary)]">说明</span>
-                <textarea
-                  value={draftDescription}
-                  onChange={(event) => setDraftDescription(event.target.value)}
-                  className="agent-input mt-2 min-h-28 w-full resize-y px-3 py-2 text-sm leading-6 outline-none"
-                  placeholder="描述流程适用场景、输入材料和最终交付物"
-                />
-              </label>
-              {formError ? (
-                <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">{formError}</p>
-              ) : null}
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsCreating(false);
-                    setFormError("");
-                  }}
-                  className="agent-button h-10 px-3 text-sm"
-                >
-                  取消
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="agent-button agent-button-primary h-10 px-3 text-sm"
-                >
-                  <FilePlus2 className="h-4 w-4" aria-hidden="true" />
+            <form onSubmit={handleCreateDraft}>
+              <div className="sys-modal-body">
+                <div className="sys-hint mb-4">先保存基础信息，再进入画布配置节点、变量和发布规则。</div>
+                <label className="sys-field">
+                  <span className="sys-field-label sys-field-label--required">工作流名称</span>
+                  <div className="sys-field-input-wrap">
+                    <GitBranch size={16} className="sys-field-prefix" aria-hidden="true" />
+                    <input value={draftName} onChange={(event) => { setDraftName(event.target.value); setFormError(""); }} className="sys-field-input" placeholder="例如：客户续约风险评估流程" />
+                  </div>
+                </label>
+                <label className="sys-field">
+                  <span className="sys-field-label">说明</span>
+                  <textarea value={draftDescription} onChange={(event) => setDraftDescription(event.target.value)} className="sys-field-textarea" placeholder="描述流程适用场景、输入材料和最终交付物" />
+                </label>
+                {formError ? <p className="workflow-feedback workflow-feedback--danger">{formError}</p> : null}
+              </div>
+              <div className="sys-modal-footer">
+                <button type="button" onClick={() => { setIsCreating(false); setFormError(""); }} className="sys-btn sys-btn--default">取消</button>
+                <button type="submit" disabled={submitting} className="sys-btn sys-btn--primary">
+                  <FilePlus2 size={14} aria-hidden="true" />
                   {submitting ? "保存中" : "保存草稿"}
                 </button>
               </div>
@@ -443,83 +419,45 @@ export function WorkflowDraftsPage() {
       ) : null}
 
       {validationModal ? (
-        <div className="fixed inset-0 z-20 flex items-center justify-center bg-slate-950/40 px-4 py-6 backdrop-blur-sm">
-          <section className="agent-card w-full max-w-2xl shadow-[var(--shadow-lg)]" aria-labelledby="publish-validation-title">
-            <div className="agent-card-header flex items-start justify-between gap-4">
+        <div className="sys-modal-mask" onClick={() => setValidationModal(null)}>
+          <section className="sys-modal" style={{ maxWidth: 720 }} aria-labelledby="publish-validation-title" onClick={(event) => event.stopPropagation()}>
+            <div className="sys-modal-header">
               <div>
-                <p className="text-sm font-medium text-[var(--color-primary)]">发布校验</p>
-                <h2 id="publish-validation-title" className="mt-1 text-base font-semibold text-[var(--color-text-primary)]">
-                  {validationModal.workflow.name}
-                </h2>
+                <div className="sys-field-label" style={{ marginBottom: 4 }}>发布校验</div>
+                <span id="publish-validation-title" className="sys-modal-title">{validationModal.workflow.name}</span>
               </div>
-              <button
-                type="button"
-                onClick={() => setValidationModal(null)}
-                className="agent-button h-8 w-8 p-0"
-                aria-label="关闭发布校验结果"
-              >
-                <X className="h-4 w-4" aria-hidden="true" />
-              </button>
+              <button className="sys-modal-close" onClick={() => setValidationModal(null)} aria-label="关闭发布校验结果"><X size={18} /></button>
             </div>
-
-            <div className="space-y-4 px-5 py-5">
-              <div
-                className={`rounded-lg border px-4 py-3 ${
-                  validationModal.result.valid
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200"
-                    : "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200"
-                }`}
-              >
-                <p className="text-sm font-semibold">
-                  {validationModal.result.valid ? "当前草稿已通过最小发布校验" : "当前草稿还不能进入发布流程"}
-                </p>
-                <p className="mt-1 text-sm">
+            <div className="sys-modal-body">
+              <div className={`workflow-validation-summary ${validationModal.result.valid ? "workflow-validation-summary--success" : "workflow-validation-summary--warning"}`}>
+                <p>{validationModal.result.valid ? "当前草稿已通过发布校验" : "当前草稿还不能进入发布流程"}</p>
+                <span>
                   节点 {validationModal.result.nodeCount} 个，连线 {validationModal.result.edgeCount} 条，
                   {validationModal.result.issues.length === 0 ? "未发现阻塞项。" : `发现 ${validationModal.result.issues.length} 个阻塞项。`}
-                </p>
+                </span>
               </div>
-
               {validationModal.result.issues.length > 0 ? (
-                <div className="divide-y divide-[var(--color-border-light)] overflow-hidden rounded-lg border border-[var(--color-border-light)]">
+                <div className="workflow-validation-issues">
                   {validationModal.result.issues.map((issue) => (
-                    <article key={`${issue.code}-${issue.nodeId}-${issue.message}`} className="px-4 py-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded bg-red-100 px-2 py-1 text-xs font-medium text-red-700 dark:bg-red-950/40 dark:text-red-300">
-                          阻塞
-                        </span>
-                        <span className="text-xs text-[var(--color-text-tertiary)]">{issue.code}</span>
-                      </div>
-                      <p className="mt-2 text-sm font-medium text-[var(--color-text-primary)]">{issue.message}</p>
-                      {issue.nodeName ? (
-                        <p className="agent-muted mt-1 text-sm">关联节点：{issue.nodeName}</p>
-                      ) : null}
+                    <article key={`${issue.code}-${issue.nodeId}-${issue.message}`}>
+                      <div><span className="sys-info-tag sys-info-tag--danger">阻塞</span><span>{issue.code}</span></div>
+                      <p>{issue.message}</p>
+                      {issue.nodeName ? <small>关联节点：{issue.nodeName}</small> : null}
                     </article>
                   ))}
                 </div>
               ) : (
-                <p className="agent-muted text-sm">正式发布会再次执行后端校验，并冻结当前节点、连线和变量声明为不可变版本。</p>
+                <div className="sys-hint">正式发布会再次执行后端校验，并冻结当前节点、连线和变量声明为不可变版本。</div>
               )}
-
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setValidationModal(null)}
-                  className="agent-button h-10 px-3 text-sm"
-                >
-                  关闭
+            </div>
+            <div className="sys-modal-footer">
+              <button type="button" onClick={() => setValidationModal(null)} className="sys-btn sys-btn--default">关闭</button>
+              {validationModal.result.valid ? (
+                <button type="button" disabled={publishingWorkflowId === validationModal.workflow.id} onClick={() => void handlePublish(validationModal.workflow)} className="sys-btn sys-btn--primary">
+                  <CheckCircle2 size={14} aria-hidden="true" />
+                  {publishingWorkflowId === validationModal.workflow.id ? "发布中" : "正式发布"}
                 </button>
-                {validationModal.result.valid ? (
-                  <button
-                    type="button"
-                    disabled={publishingWorkflowId === validationModal.workflow.id}
-                    onClick={() => void handlePublish(validationModal.workflow)}
-                    className="agent-button agent-button-primary h-10 px-3 text-sm"
-                  >
-                    <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-                    {publishingWorkflowId === validationModal.workflow.id ? "发布中" : "正式发布"}
-                  </button>
-                ) : null}
-              </div>
+              ) : null}
             </div>
           </section>
         </div>
@@ -528,28 +466,18 @@ export function WorkflowDraftsPage() {
   );
 }
 
-function SummaryCard({
-  icon: Icon,
-  label,
-  value,
-  detail,
-}: {
-  icon: typeof GitBranch;
-  label: string;
-  value: string;
-  detail: string;
-}) {
+function OverviewStat({ icon: Icon, label, value, tone }: { icon: typeof GitBranch; label: string; value: string; tone: "primary" | "success" | "info" | "cap" }) {
   return (
-    <article className="agent-card p-4">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-[var(--color-text-secondary)]">{label}</p>
-        <Icon className="h-5 w-5 text-[var(--color-primary)]" aria-hidden="true" />
+    <div className="sys-overview-stat">
+      <div className={`sys-overview-stat-icon sys-overview-stat-icon--${tone}`}><Icon size={20} aria-hidden="true" /></div>
+      <div>
+        <div className="sys-overview-stat-value">{value}</div>
+        <div className="sys-overview-stat-label">{label}</div>
       </div>
-      <p className="mt-3 text-3xl font-semibold text-[var(--color-text-primary)]">{value}</p>
-      <p className="agent-muted mt-2 text-sm">{detail}</p>
-    </article>
+    </div>
   );
 }
+
 
 function formatDateTime(value: string) {
   if (!value) {
