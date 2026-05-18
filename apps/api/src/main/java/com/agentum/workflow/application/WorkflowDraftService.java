@@ -12,9 +12,13 @@ import com.agentum.tenant.infrastructure.TenantRepository;
 import com.agentum.workflow.domain.WorkflowDefinitionEntity;
 import com.agentum.workflow.domain.WorkflowEdgeDefinitionEntity;
 import com.agentum.workflow.domain.WorkflowNodeDefinitionEntity;
+import com.agentum.workflow.domain.WorkflowVariableDefinitionEntity;
+import com.agentum.workflow.domain.WorkflowVersionEntity;
 import com.agentum.workflow.infrastructure.WorkflowDefinitionRepository;
 import com.agentum.workflow.infrastructure.WorkflowEdgeDefinitionRepository;
 import com.agentum.workflow.infrastructure.WorkflowNodeDefinitionRepository;
+import com.agentum.workflow.infrastructure.WorkflowVariableDefinitionRepository;
+import com.agentum.workflow.infrastructure.WorkflowVersionRepository;
 import com.agentum.workflow.interfaces.WorkflowDraftApi;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -60,6 +64,10 @@ public class WorkflowDraftService {
     private final WorkflowDefinitionRepository workflowDefinitionRepository;
     private final WorkflowNodeDefinitionRepository workflowNodeDefinitionRepository;
     private final WorkflowEdgeDefinitionRepository workflowEdgeDefinitionRepository;
+    private final WorkflowVariableDefinitionRepository workflowVariableDefinitionRepository;
+    private final WorkflowVersionRepository workflowVersionRepository;
+    private final WorkflowVariableDeclarationValidator workflowVariableDeclarationValidator;
+    private final WorkflowPublishValidator workflowPublishValidator;
     private final ObjectMapper objectMapper;
     private final Clock clock;
 
@@ -69,6 +77,10 @@ public class WorkflowDraftService {
         WorkflowDefinitionRepository workflowDefinitionRepository,
         WorkflowNodeDefinitionRepository workflowNodeDefinitionRepository,
         WorkflowEdgeDefinitionRepository workflowEdgeDefinitionRepository,
+        WorkflowVariableDefinitionRepository workflowVariableDefinitionRepository,
+        WorkflowVersionRepository workflowVersionRepository,
+        WorkflowVariableDeclarationValidator workflowVariableDeclarationValidator,
+        WorkflowPublishValidator workflowPublishValidator,
         ObjectMapper objectMapper,
         Clock clock
     ) {
@@ -77,6 +89,10 @@ public class WorkflowDraftService {
         this.workflowDefinitionRepository = workflowDefinitionRepository;
         this.workflowNodeDefinitionRepository = workflowNodeDefinitionRepository;
         this.workflowEdgeDefinitionRepository = workflowEdgeDefinitionRepository;
+        this.workflowVariableDefinitionRepository = workflowVariableDefinitionRepository;
+        this.workflowVersionRepository = workflowVersionRepository;
+        this.workflowVariableDeclarationValidator = workflowVariableDeclarationValidator;
+        this.workflowPublishValidator = workflowPublishValidator;
         this.objectMapper = objectMapper;
         this.clock = clock;
     }
@@ -119,6 +135,84 @@ public class WorkflowDraftService {
         return toDetail(definition);
     }
 
+    @Transactional(readOnly = true)
+    public WorkflowDraftApi.WorkflowPublishValidationResult validateForPublish(UUID tenantId, UUID workflowId) {
+        WorkflowDefinitionEntity definition = findDefinition(tenantId, workflowId);
+        WorkflowDraftApi.WorkflowDraftDetail detail = toDetail(definition);
+        WorkflowDraftApi.WorkflowPublishValidationResult result = workflowPublishValidator.validate(detail.nodes(), detail.edges());
+        log.info(
+            "工作流发布校验完成 tenantId={} workflowId={} valid={} issueCount={} requestId={}",
+            tenantId,
+            workflowId,
+            result.valid(),
+            result.issues().size(),
+            RequestIds.current()
+        );
+        return result;
+    }
+
+    @Transactional
+    public WorkflowDraftApi.WorkflowPublishResult publish(UUID tenantId, UUID operatorUserId, UUID workflowId) {
+        WorkflowDefinitionEntity definition = findDefinition(tenantId, workflowId);
+        if ("published".equals(definition.getStatus())) {
+            log.warn(
+                "工作流发布被拒绝：当前草稿没有待发布变更 tenantId={} operatorUserId={} workflowId={} requestId={}",
+                tenantId,
+                operatorUserId,
+                workflowId,
+                RequestIds.current()
+            );
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKFLOW_ALREADY_PUBLISHED", "当前草稿没有待发布变更");
+        }
+
+        WorkflowDraftApi.WorkflowDraftDetail detail = toDetail(definition);
+        WorkflowDraftApi.WorkflowPublishValidationResult validation = workflowPublishValidator.validate(detail.nodes(), detail.edges());
+        if (!validation.valid()) {
+            log.warn(
+                "工作流发布被拒绝：校验未通过 tenantId={} operatorUserId={} workflowId={} issueCount={} requestId={}",
+                tenantId,
+                operatorUserId,
+                workflowId,
+                validation.issues().size(),
+                RequestIds.current()
+            );
+            throw new ApiException(
+                HttpStatus.BAD_REQUEST,
+                "WORKFLOW_PUBLISH_VALIDATION_FAILED",
+                "工作流尚未通过发布校验",
+                Map.of("issueCount", validation.issues().size())
+            );
+        }
+
+        Instant now = clock.instant();
+        int nextVersionNumber = workflowVersionRepository.findTopByWorkflowIdOrderByVersionNumberDesc(workflowId)
+            .map(version -> version.getVersionNumber() + 1)
+            .orElse(1);
+        WorkflowVersionEntity version = WorkflowVersionEntity.create(
+            workflowId,
+            tenantId,
+            nextVersionNumber,
+            writeVersionSnapshot(definition, detail),
+            definition.getNodeCount(),
+            definition.getPausePointCount(),
+            operatorUserId,
+            now
+        );
+        workflowVersionRepository.save(version);
+        definition.markPublished(operatorUserId, now);
+        workflowDefinitionRepository.save(definition);
+
+        log.info(
+            "工作流发布成功 tenantId={} operatorUserId={} workflowId={} version={} requestId={}",
+            tenantId,
+            operatorUserId,
+            workflowId,
+            nextVersionNumber,
+            RequestIds.current()
+        );
+        return new WorkflowDraftApi.WorkflowPublishResult(toDraftRow(definition, loadUsersById()), nextVersionNumber, now);
+    }
+
     @Transactional
     public WorkflowDraftApi.WorkflowDraftDetail saveGraph(
         UUID tenantId,
@@ -129,11 +223,14 @@ public class WorkflowDraftService {
         WorkflowDefinitionEntity definition = findDefinition(tenantId, workflowId);
         List<WorkflowDraftApi.WorkflowNodeDraft> nodes = request.nodes() == null ? List.of() : request.nodes();
         List<WorkflowDraftApi.WorkflowEdgeDraft> edges = request.edges() == null ? List.of() : request.edges();
+        List<WorkflowDraftApi.WorkflowVariableDraft> variables = request.variables() == null ? List.of() : request.variables();
         validateGraph(tenantId, workflowId, nodes, edges);
+        workflowVariableDeclarationValidator.validate(nodes, variables);
 
         Instant now = clock.instant();
         workflowNodeDefinitionRepository.deleteByWorkflowId(workflowId);
         workflowEdgeDefinitionRepository.deleteByWorkflowId(workflowId);
+        workflowVariableDefinitionRepository.deleteByWorkflowId(workflowId);
 
         List<WorkflowNodeDefinitionEntity> nodeEntities = new ArrayList<>();
         for (int index = 0; index < nodes.size(); index++) {
@@ -170,15 +267,34 @@ public class WorkflowDraftService {
         }
         workflowEdgeDefinitionRepository.saveAll(edgeEntities);
 
+        List<WorkflowVariableDefinitionEntity> variableEntities = new ArrayList<>();
+        for (int index = 0; index < variables.size(); index++) {
+            WorkflowDraftApi.WorkflowVariableDraft variable = variables.get(index);
+            variableEntities.add(WorkflowVariableDefinitionEntity.create(
+                workflowId,
+                normalizeRequired(variable.name()),
+                normalizeRequired(variable.type()),
+                normalizeRequired(variable.sourceNode()),
+                normalizeOptional(variable.description()),
+                writeJsonObject(variable.jsonSchema()),
+                variable.sensitive(),
+                variable.deliverable(),
+                index,
+                now
+            ));
+        }
+        workflowVariableDefinitionRepository.saveAll(variableEntities);
+
         definition.updateGraphSummary(nodes.size(), countPausePoints(nodes), operatorUserId, now);
         workflowDefinitionRepository.save(definition);
         log.info(
-            "工作流草稿图保存成功 tenantId={} operatorUserId={} workflowId={} nodeCount={} edgeCount={} requestId={}",
+            "工作流草稿图保存成功 tenantId={} operatorUserId={} workflowId={} nodeCount={} edgeCount={} variableCount={} requestId={}",
             tenantId,
             operatorUserId,
             workflowId,
             nodes.size(),
             edges.size(),
+            variables.size(),
             RequestIds.current()
         );
         return toDetail(definition);
@@ -247,7 +363,8 @@ public class WorkflowDraftService {
         return new WorkflowDraftApi.WorkflowDraftDetail(
             toDraftRow(definition, loadUsersById()),
             workflowNodeDefinitionRepository.findByWorkflowIdOrderBySortOrderAsc(definition.getId()).stream().map(this::toNodeRow).toList(),
-            workflowEdgeDefinitionRepository.findByWorkflowIdOrderBySortOrderAsc(definition.getId()).stream().map(this::toEdgeRow).toList()
+            workflowEdgeDefinitionRepository.findByWorkflowIdOrderBySortOrderAsc(definition.getId()).stream().map(this::toEdgeRow).toList(),
+            workflowVariableDefinitionRepository.findByWorkflowIdOrderBySortOrderAsc(definition.getId()).stream().map(this::toVariableRow).toList()
         );
     }
 
@@ -289,6 +406,18 @@ public class WorkflowDraftService {
         );
     }
 
+    private WorkflowDraftApi.WorkflowVariableRow toVariableRow(WorkflowVariableDefinitionEntity variable) {
+        return new WorkflowDraftApi.WorkflowVariableRow(
+            variable.getVariableKey(),
+            variable.getVariableType(),
+            variable.getSourceNodeKey(),
+            variable.getDescription() == null ? "" : variable.getDescription(),
+            readJsonObject(variable.getJsonSchema()),
+            variable.isSensitive(),
+            variable.isDeliverable()
+        );
+    }
+
     private Map<UUID, UserAccount> loadUsersById() {
         return userAccountRepository.findAll().stream().collect(Collectors.toMap(UserAccount::getId, Function.identity()));
     }
@@ -312,6 +441,22 @@ public class WorkflowDraftService {
         } catch (JsonProcessingException exception) {
             log.error("工作流节点配置序列化失败 requestId={}", RequestIds.current(), exception);
             throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "SYSTEM_JSON_SERIALIZE_FAILED", "系统暂时无法保存节点配置");
+        }
+    }
+
+    private String writeVersionSnapshot(WorkflowDefinitionEntity definition, WorkflowDraftApi.WorkflowDraftDetail detail) {
+        try {
+            // 发布快照只保留执行协议需要的内容；页面展示字段可继续演进，不应反向污染历史版本。
+            return objectMapper.writeValueAsString(new WorkflowVersionSnapshot(
+                definition.getName(),
+                definition.getDescription() == null ? "" : definition.getDescription(),
+                detail.nodes(),
+                detail.edges(),
+                detail.variables()
+            ));
+        } catch (JsonProcessingException exception) {
+            log.error("工作流发布快照序列化失败 workflowId={} requestId={}", definition.getId(), RequestIds.current(), exception);
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "SYSTEM_JSON_SERIALIZE_FAILED", "系统暂时无法生成工作流发布版本");
         }
     }
 
@@ -340,5 +485,14 @@ public class WorkflowDraftService {
     private static String normalizeOptional(String value) {
         String normalized = value == null ? "" : value.trim();
         return normalized.isBlank() ? null : normalized;
+    }
+
+    private record WorkflowVersionSnapshot(
+        String name,
+        String description,
+        List<WorkflowDraftApi.WorkflowNodeRow> nodes,
+        List<WorkflowDraftApi.WorkflowEdgeRow> edges,
+        List<WorkflowDraftApi.WorkflowVariableRow> variables
+    ) {
     }
 }

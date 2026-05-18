@@ -30,7 +30,32 @@ public final class WorkflowDraftApi {
     public record WorkflowDraftDetail(
         WorkflowDraftRow draft,
         List<WorkflowNodeRow> nodes,
-        List<WorkflowEdgeRow> edges
+        List<WorkflowEdgeRow> edges,
+        List<WorkflowVariableRow> variables
+    ) {
+    }
+
+    public record WorkflowPublishValidationResult(
+        boolean valid,
+        int nodeCount,
+        int edgeCount,
+        List<WorkflowValidationIssue> issues
+    ) {
+    }
+
+    public record WorkflowPublishResult(
+        WorkflowDraftRow draft,
+        int versionNumber,
+        Instant publishedAt
+    ) {
+    }
+
+    public record WorkflowValidationIssue(
+        String code,
+        String level,
+        String message,
+        String nodeId,
+        String nodeName
     ) {
     }
 
@@ -55,6 +80,17 @@ public final class WorkflowDraftApi {
     ) {
     }
 
+    public record WorkflowVariableRow(
+        String name,
+        String type,
+        String sourceNode,
+        String description,
+        Map<String, Object> jsonSchema,
+        boolean sensitive,
+        boolean deliverable
+    ) {
+    }
+
     public record CreateWorkflowDraftRequest(
         @NotBlank @Size(max = 180) String name,
         @Size(max = 1000) String description
@@ -63,7 +99,8 @@ public final class WorkflowDraftApi {
 
     public record SaveWorkflowDraftGraphRequest(
         @Valid @NotNull List<WorkflowNodeDraft> nodes,
-        @Valid @NotNull List<WorkflowEdgeDraft> edges
+        @Valid @NotNull List<WorkflowEdgeDraft> edges,
+        @Valid @NotNull List<WorkflowVariableDraft> variables
     ) {
     }
 
@@ -85,6 +122,17 @@ public final class WorkflowDraftApi {
         @NotBlank @Size(max = 120) String targetNodeId,
         @Size(max = 120) String label,
         @Size(max = 1000) String conditionExpression
+    ) {
+    }
+
+    public record WorkflowVariableDraft(
+        @NotBlank @Size(max = 120) String name,
+        @NotBlank @Size(max = 40) String type,
+        @NotBlank @Size(max = 120) String sourceNode,
+        @Size(max = 1000) String description,
+        Map<String, Object> jsonSchema,
+        boolean sensitive,
+        boolean deliverable
     ) {
     }
 }

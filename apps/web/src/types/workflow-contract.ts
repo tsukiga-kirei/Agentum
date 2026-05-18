@@ -53,6 +53,38 @@ export type WorkflowDraftDetail = {
   draft: WorkflowDraftRow;
   nodes: WorkflowNodeDraft[];
   edges: WorkflowEdgeDraft[];
+  variables: WorkflowVariableDraft[];
+};
+
+export type WorkflowPublishValidationIssue = {
+  code: string;
+  level: "error" | "warning";
+  message: string;
+  nodeId: string;
+  nodeName: string;
+};
+
+export type WorkflowPublishValidationResult = {
+  valid: boolean;
+  nodeCount: number;
+  edgeCount: number;
+  issues: WorkflowPublishValidationIssue[];
+};
+
+export type WorkflowPublishResult = {
+  draft: WorkflowDraftRow;
+  versionNumber: number;
+  publishedAt: string;
+};
+
+export type WorkflowVariableDraft = {
+  name: string;
+  type: VariableType;
+  sourceNode: string;
+  description: string;
+  jsonSchema: Record<string, unknown>;
+  sensitive: boolean;
+  deliverable: boolean;
 };
 
 export type WorkflowNodeType =

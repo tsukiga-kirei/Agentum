@@ -38,6 +38,7 @@ import type {
   WorkflowEdgeDraft,
   WorkflowNodeDraft,
   WorkflowNodeType,
+  WorkflowVariableDraft,
 } from "../../types/workflow-contract";
 import { WorkflowDraft } from "./WorkflowDraftsPage";
 
@@ -59,9 +60,12 @@ type EditorNodeData = {
 
 type WorkflowVariable = {
   name: string;
-  sourceNode: string;
-  type: "string" | "object" | "array" | "boolean" | "decision" | "file";
+  sourceNodeId: string;
+  sourceNodeName: string;
+  type: "string" | "number" | "object" | "array" | "boolean" | "decision" | "file";
   sensitive: boolean;
+  deliverable: boolean;
+  description: string;
 };
 
 type ParallelTask = {
@@ -302,18 +306,18 @@ const starterEdges: Edge[] = [
 ];
 
 // 第一阶段变量元数据仍由前端模板补充；变量名称与来源已改为从当前图实时推导，后续会由变量声明和发布校验契约接管。
-const starterVariableMetadata: Record<string, Pick<WorkflowVariable, "type" | "sensitive">> = {
-  starter: { type: "string", sensitive: false },
-  started_at: { type: "string", sensitive: false },
-  project_info: { type: "object", sensitive: false },
-  attachments: { type: "file", sensitive: true },
-  analysis_result: { type: "object", sensitive: false },
-  risk_level: { type: "decision", sensitive: false },
-  research_pack: { type: "object", sensitive: false },
-  report_draft: { type: "object", sensitive: false },
-  review_required: { type: "boolean", sensitive: false },
-  review_decision: { type: "decision", sensitive: false },
-  delivery_record: { type: "object", sensitive: false },
+const starterVariableMetadata: Record<string, Pick<WorkflowVariable, "type" | "sensitive" | "deliverable" | "description">> = {
+  starter: { type: "string", sensitive: false, deliverable: false, description: "流程发起人标识" },
+  started_at: { type: "string", sensitive: false, deliverable: false, description: "流程发起时间" },
+  project_info: { type: "object", sensitive: false, deliverable: false, description: "业务资料摘要" },
+  attachments: { type: "file", sensitive: true, deliverable: false, description: "用户上传附件" },
+  analysis_result: { type: "object", sensitive: false, deliverable: false, description: "智能体分析结果" },
+  risk_level: { type: "decision", sensitive: false, deliverable: false, description: "风险等级判断" },
+  research_pack: { type: "object", sensitive: false, deliverable: false, description: "并行收集结果" },
+  report_draft: { type: "object", sensitive: false, deliverable: true, description: "待交付报告草稿" },
+  review_required: { type: "boolean", sensitive: false, deliverable: false, description: "是否需要人工审核" },
+  review_decision: { type: "decision", sensitive: false, deliverable: false, description: "人工审核结论" },
+  delivery_record: { type: "object", sensitive: false, deliverable: true, description: "交付结果记录" },
 };
 
 // 并行与合并先用静态配置解释设计意图，后续会落到 parallel_group.config.tasks 和 merge.config.mappings。
@@ -359,6 +363,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
   const [loadError, setLoadError] = useState("");
   const [saveFeedback, setSaveFeedback] = useState<{ tone: "success" | "error" | "info"; message: string } | null>(null);
   const [usingStarterTemplate, setUsingStarterTemplate] = useState(false);
+  const [declaredVariables, setDeclaredVariables] = useState<WorkflowVariable[]>([]);
 
   useEffect(() => {
     if (!token || !user?.tenantId) {
@@ -381,8 +386,10 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
         const hasPersistedGraph = detail.nodes.length > 0;
         const nextNodes = hasPersistedGraph ? detail.nodes.map(toEditorNode) : cloneStarterNodes();
         const nextEdges = hasPersistedGraph ? detail.edges.map(toEditorEdge) : cloneStarterEdges();
+        const nextVariables = detail.variables.length > 0 ? toWorkflowVariables(detail.variables, nextNodes) : buildWorkflowVariables(nextNodes);
         setNodes(nextNodes);
         setEdges(nextEdges);
+        setDeclaredVariables(nextVariables);
         setSelectedNodeId(nextNodes[0]?.id ?? "");
         setUsingStarterTemplate(!hasPersistedGraph);
         if (!hasPersistedGraph) {
@@ -429,10 +436,13 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
   const selectedNode = decoratedNodes.find((node) => node.id === selectedNodeId) ?? decoratedNodes[0];
   const incompleteNodes = decoratedNodes.filter((node) => node.data.configStatus === "incomplete");
   const selectedNodeIndex = selectedNode ? decoratedNodes.findIndex((node) => node.id === selectedNode.id) : -1;
-  const workflowVariables = useMemo(() => buildWorkflowVariables(decoratedNodes), [decoratedNodes]);
+  const workflowVariables = useMemo(
+    () => declaredVariables.length > 0 ? declaredVariables : buildWorkflowVariables(decoratedNodes),
+    [declaredVariables, decoratedNodes],
+  );
   // 变量只能引用上游节点输出，避免设计态形成循环依赖；后续由后端发布校验做最终判断。
   const availableVariables = workflowVariables.filter((variable) => {
-    const sourceIndex = decoratedNodes.findIndex((node) => node.data.label === variable.sourceNode);
+    const sourceIndex = decoratedNodes.findIndex((node) => node.id === variable.sourceNodeId);
 
     return sourceIndex >= 0 && sourceIndex < selectedNodeIndex;
   });
@@ -455,8 +465,10 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
         token,
         nextNodes.map(toWorkflowNodeDraft),
         nextEdges.map(toWorkflowEdgeDraft),
+        workflowVariables.map(toWorkflowVariableDraft),
       );
       applyPersistedDetail(detail, setNodes, setEdges, setSelectedNodeId);
+      setDeclaredVariables(toWorkflowVariables(detail.variables, detail.nodes.map(toEditorNode)));
       setUsingStarterTemplate(false);
       setSaveFeedback({ tone: "success", message: "草稿图已保存" });
       onDraftSaved(detail.draft);
@@ -466,7 +478,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
     } finally {
       setSaving(false);
     }
-  }, [onDraftSaved, token, user?.tenantId, workflow.id]);
+  }, [onDraftSaved, token, user?.tenantId, workflow.id, workflowVariables]);
 
   async function handleSaveSelectedNode() {
     if (!selectedNode) {
@@ -1095,7 +1107,7 @@ function VariableRegistry({ variables }: { variables: WorkflowVariable[] }) {
               <p className="text-sm font-semibold text-[var(--color-text-primary)]">{variable.name}</p>
               <span className="rounded bg-[var(--color-bg-card)] px-2 py-1 text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-[var(--color-border-light)]">{variable.type}</span>
             </div>
-            <p className="mt-2 text-xs text-[var(--color-text-tertiary)]">来源：{variable.sourceNode}</p>
+            <p className="mt-2 text-xs text-[var(--color-text-tertiary)]">来源：{variable.sourceNodeName}</p>
             {variable.sensitive ? (
               <p className="mt-2 rounded bg-red-50 px-2 py-1 text-xs font-medium text-red-700 dark:bg-red-950/40 dark:text-red-300">敏感变量，交付前需校验权限</p>
             ) : null}
@@ -1113,7 +1125,7 @@ function PublishCheckSummary({ incompleteNodes }: { incompleteNodes: Node<Editor
         <h3 id="publish-check-title" className="text-sm font-semibold text-[var(--color-text-primary)]">
           发布校验摘要
         </h3>
-        <p className="agent-muted mt-1 text-xs">先做前端提示，后续接入后端发布校验 API</p>
+        <p className="agent-muted mt-1 text-xs">这里展示画布内即时提示，正式发布仍以后端校验和版本快照为准</p>
       </div>
       <div className="space-y-3 p-4">
         {incompleteNodes.length > 0 ? (
@@ -1134,7 +1146,7 @@ function PublishCheckSummary({ incompleteNodes }: { incompleteNodes: Node<Editor
           </div>
         )}
         <p className="agent-muted text-sm leading-6">
-          当前摘要覆盖节点必填配置和敏感变量提示，下一步会补变量可见性规则和节点保存校验。
+          当前摘要覆盖节点必填配置和敏感变量提示；保存后可回到列表页执行后端发布校验并冻结正式版本。
         </p>
       </div>
     </section>
@@ -1247,15 +1259,49 @@ function applyPersistedDetail(
 function buildWorkflowVariables(nodes: Node<EditorNodeData>[]): WorkflowVariable[] {
   return nodes.flatMap((node) =>
     node.data.outputVariables.map((name) => {
-      const metadata = starterVariableMetadata[name] ?? { type: "string" as const, sensitive: false };
+      const metadata = starterVariableMetadata[name] ?? {
+        type: "string" as const,
+        sensitive: false,
+        deliverable: false,
+        description: "",
+      };
       return {
         name,
-        sourceNode: node.data.label,
+        sourceNodeId: node.id,
+        sourceNodeName: node.data.label,
         type: metadata.type,
         sensitive: metadata.sensitive,
+        deliverable: metadata.deliverable,
+        description: metadata.description,
       };
     }),
   );
+}
+
+function toWorkflowVariables(variables: WorkflowVariableDraft[], nodes: Node<EditorNodeData>[]): WorkflowVariable[] {
+  const nodesById = new Map(nodes.map((node) => [node.id, node]));
+
+  return variables.map((variable) => ({
+    name: variable.name,
+    sourceNodeId: variable.sourceNode,
+    sourceNodeName: nodesById.get(variable.sourceNode)?.data.label ?? variable.sourceNode,
+    type: variable.type,
+    sensitive: variable.sensitive,
+    deliverable: variable.deliverable,
+    description: variable.description,
+  }));
+}
+
+function toWorkflowVariableDraft(variable: WorkflowVariable): WorkflowVariableDraft {
+  return {
+    name: variable.name,
+    type: variable.type,
+    sourceNode: variable.sourceNodeId,
+    description: variable.description,
+    jsonSchema: {},
+    sensitive: variable.sensitive,
+    deliverable: variable.deliverable,
+  };
 }
 
 function buildFallbackNodeData(nodeType: WorkflowNodeType): EditorNodeData {

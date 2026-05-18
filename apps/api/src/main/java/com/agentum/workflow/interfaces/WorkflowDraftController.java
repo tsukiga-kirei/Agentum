@@ -67,6 +67,30 @@ public class WorkflowDraftController {
         return ApiResponse.success(workflowDraftService.getDraft(tenantId, workflowId), RequestIds.current(request));
     }
 
+    @PostMapping("/{workflowId}/publish-validation")
+    public ApiResponse<WorkflowDraftApi.WorkflowPublishValidationResult> validateForPublish(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID workflowId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        workflowDesignAccess.assertCanDesign(principal, tenantId);
+        // 发布前先返回结构化问题列表，便于设计者在画布中修复；真正发布时仍需再次执行同一组规则。
+        return ApiResponse.success(workflowDraftService.validateForPublish(tenantId, workflowId), RequestIds.current(request));
+    }
+
+    @PostMapping("/{workflowId}/publish")
+    public ApiResponse<WorkflowDraftApi.WorkflowPublishResult> publish(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID workflowId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        workflowDesignAccess.assertCanDesign(principal, tenantId);
+        // 正式发布会重新执行后端校验并冻结版本快照，不能依赖前端刚刚展示过的校验结果。
+        return ApiResponse.success(workflowDraftService.publish(tenantId, principal.userId(), workflowId), RequestIds.current(request));
+    }
+
     @PutMapping("/{workflowId}/graph")
     public ApiResponse<WorkflowDraftApi.WorkflowDraftDetail> saveGraph(
         @PathVariable UUID tenantId,

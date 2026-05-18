@@ -64,8 +64,17 @@ public class WorkflowDefinitionEntity {
     }
 
     public void updateGraphSummary(int nodeCount, int pausePointCount, UUID operatorUserId, Instant now) {
+        // 已发布定义再次编辑后必须回到草稿态，否则列表会把“存在未发布改动”的流程误展示成当前版本仍然有效。
+        this.status = "draft";
         this.nodeCount = nodeCount;
         this.pausePointCount = pausePointCount;
+        this.updatedBy = operatorUserId;
+        this.updatedAt = now;
+    }
+
+    public void markPublished(UUID operatorUserId, Instant now) {
+        // 发布只改变设计态摘要；真正可回放的执行协议会冻结到 workflow_versions，避免后续草稿编辑污染历史版本。
+        this.status = "published";
         this.updatedBy = operatorUserId;
         this.updatedAt = now;
     }

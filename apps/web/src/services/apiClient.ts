@@ -45,6 +45,9 @@ import type {
   WorkflowEdgeDraft,
   WorkflowNodeDraft,
   WorkflowDraftRow,
+  WorkflowPublishResult,
+  WorkflowPublishValidationResult,
+  WorkflowVariableDraft,
 } from "../types/workflow-contract";
 
 type ApiEnvelope<T> = {
@@ -238,10 +241,27 @@ export const workflowApi = {
     apiRequest<WorkflowDraftRow>(`/api/tenants/${tenantId}/workflows/drafts`, { method: "POST", token, body: request }),
   getDraft: (tenantId: string, workflowId: string, token: string) =>
     apiRequest<WorkflowDraftDetail>(`/api/tenants/${tenantId}/workflows/drafts/${workflowId}`, { token }),
-  saveGraph: (tenantId: string, workflowId: string, token: string, nodes: WorkflowNodeDraft[], edges: WorkflowEdgeDraft[]) =>
+  validateForPublish: (tenantId: string, workflowId: string, token: string) =>
+    apiRequest<WorkflowPublishValidationResult>(`/api/tenants/${tenantId}/workflows/drafts/${workflowId}/publish-validation`, {
+      method: "POST",
+      token,
+    }),
+  publish: (tenantId: string, workflowId: string, token: string) =>
+    apiRequest<WorkflowPublishResult>(`/api/tenants/${tenantId}/workflows/drafts/${workflowId}/publish`, {
+      method: "POST",
+      token,
+    }),
+  saveGraph: (
+    tenantId: string,
+    workflowId: string,
+    token: string,
+    nodes: WorkflowNodeDraft[],
+    edges: WorkflowEdgeDraft[],
+    variables: WorkflowVariableDraft[],
+  ) =>
     apiRequest<WorkflowDraftDetail>(`/api/tenants/${tenantId}/workflows/drafts/${workflowId}/graph`, {
       method: "PUT",
       token,
-      body: { nodes, edges },
+      body: { nodes, edges, variables },
     }),
 };

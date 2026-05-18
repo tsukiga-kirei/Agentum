@@ -6,6 +6,7 @@ import {
   FilePlus2,
   GitBranch,
   ListChecks,
+  X,
   PanelRightOpen,
   Search,
   Sparkles,
@@ -13,7 +14,11 @@ import {
 import { Pagination } from "antd";
 import { AgentumApiError, workflowApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
-import type { WorkflowDraftRow, WorkflowStatus } from "../../types/workflow-contract";
+import type {
+  WorkflowDraftRow,
+  WorkflowPublishValidationResult,
+  WorkflowStatus,
+} from "../../types/workflow-contract";
 import { WorkflowEditorPage } from "./WorkflowEditorPage";
 
 // 工作流草稿列表是设计态入口，不等同于运行实例；发布后需要生成不可变 WorkflowVersion。
@@ -70,6 +75,14 @@ export function WorkflowDraftsPage() {
   const [total, setTotal] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [loadError, setLoadError] = useState("");
+  const [validatingWorkflowId, setValidatingWorkflowId] = useState("");
+  const [validationModal, setValidationModal] = useState<{
+    workflow: WorkflowDraft;
+    result: WorkflowPublishValidationResult;
+  } | null>(null);
+  const [validationError, setValidationError] = useState("");
+  const [publishingWorkflowId, setPublishingWorkflowId] = useState("");
+  const [publishSuccess, setPublishSuccess] = useState("");
 
   const loadDrafts = useCallback(async (nextPage = 1, keyword = searchValue, nextPageSize = pageSize) => {
     if (!token || !user?.tenantId) {
@@ -137,6 +150,49 @@ export function WorkflowDraftsPage() {
       setFormError(error instanceof AgentumApiError ? error.message : "保存草稿失败，请稍后重试");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleValidateForPublish(workflow: WorkflowDraft) {
+    if (!token || !user?.tenantId) {
+      setValidationError("当前账号缺少租户上下文，无法执行发布校验");
+      return;
+    }
+
+    setValidatingWorkflowId(workflow.id);
+    setValidationError("");
+    setPublishSuccess("");
+
+    try {
+      const result = await workflowApi.validateForPublish(user.tenantId, workflow.id, token);
+      setValidationModal({ workflow, result });
+    } catch (error) {
+      console.warn("[workflow] 工作流发布校验失败", getWorkflowErrorContext(error, user.tenantId, { workflowId: workflow.id }));
+      setValidationError(error instanceof AgentumApiError ? error.message : "发布校验失败，请稍后重试");
+    } finally {
+      setValidatingWorkflowId("");
+    }
+  }
+
+  async function handlePublish(workflow: WorkflowDraft) {
+    if (!token || !user?.tenantId) {
+      setValidationError("当前账号缺少租户上下文，无法正式发布");
+      return;
+    }
+
+    setPublishingWorkflowId(workflow.id);
+    setValidationError("");
+
+    try {
+      const result = await workflowApi.publish(user.tenantId, workflow.id, token);
+      setWorkflows((currentWorkflows) => currentWorkflows.map((item) => item.id === workflow.id ? result.draft : item));
+      setValidationModal(null);
+      setPublishSuccess(`“${result.draft.name}”已发布为 v${result.versionNumber}`);
+    } catch (error) {
+      console.warn("[workflow] 工作流正式发布失败", getWorkflowErrorContext(error, user.tenantId, { workflowId: workflow.id }));
+      setValidationError(error instanceof AgentumApiError ? error.message : "正式发布失败，请稍后重试");
+    } finally {
+      setPublishingWorkflowId("");
     }
   }
 
@@ -221,6 +277,18 @@ export function WorkflowDraftsPage() {
           </div>
         ) : null}
 
+        {validationError ? (
+          <div className="mx-5 mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+            {validationError}
+          </div>
+        ) : null}
+
+        {publishSuccess ? (
+          <div className="mx-5 mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200">
+            {publishSuccess}
+          </div>
+        ) : null}
+
         <div className="divide-y divide-[var(--color-border-light)]">
           {filteredWorkflows.map((workflow) => {
             const status = statusMeta[workflow.status];
@@ -243,10 +311,12 @@ export function WorkflowDraftsPage() {
                 <div className="flex flex-wrap gap-2 xl:justify-end">
                   <button
                     type="button"
+                    disabled={validatingWorkflowId === workflow.id}
+                    onClick={() => void handleValidateForPublish(workflow)}
                     className="agent-button h-9 px-3 text-sm"
                   >
                     <ListChecks className="h-4 w-4" aria-hidden="true" />
-                    发布校验
+                    {validatingWorkflowId === workflow.id ? "校验中" : "发布校验"}
                   </button>
                   <button
                     type="button"
@@ -368,6 +438,89 @@ export function WorkflowDraftsPage() {
                 </button>
               </div>
             </form>
+          </section>
+        </div>
+      ) : null}
+
+      {validationModal ? (
+        <div className="fixed inset-0 z-20 flex items-center justify-center bg-slate-950/40 px-4 py-6 backdrop-blur-sm">
+          <section className="agent-card w-full max-w-2xl shadow-[var(--shadow-lg)]" aria-labelledby="publish-validation-title">
+            <div className="agent-card-header flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium text-[var(--color-primary)]">发布校验</p>
+                <h2 id="publish-validation-title" className="mt-1 text-base font-semibold text-[var(--color-text-primary)]">
+                  {validationModal.workflow.name}
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setValidationModal(null)}
+                className="agent-button h-8 w-8 p-0"
+                aria-label="关闭发布校验结果"
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </div>
+
+            <div className="space-y-4 px-5 py-5">
+              <div
+                className={`rounded-lg border px-4 py-3 ${
+                  validationModal.result.valid
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200"
+                    : "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200"
+                }`}
+              >
+                <p className="text-sm font-semibold">
+                  {validationModal.result.valid ? "当前草稿已通过最小发布校验" : "当前草稿还不能进入发布流程"}
+                </p>
+                <p className="mt-1 text-sm">
+                  节点 {validationModal.result.nodeCount} 个，连线 {validationModal.result.edgeCount} 条，
+                  {validationModal.result.issues.length === 0 ? "未发现阻塞项。" : `发现 ${validationModal.result.issues.length} 个阻塞项。`}
+                </p>
+              </div>
+
+              {validationModal.result.issues.length > 0 ? (
+                <div className="divide-y divide-[var(--color-border-light)] overflow-hidden rounded-lg border border-[var(--color-border-light)]">
+                  {validationModal.result.issues.map((issue) => (
+                    <article key={`${issue.code}-${issue.nodeId}-${issue.message}`} className="px-4 py-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded bg-red-100 px-2 py-1 text-xs font-medium text-red-700 dark:bg-red-950/40 dark:text-red-300">
+                          阻塞
+                        </span>
+                        <span className="text-xs text-[var(--color-text-tertiary)]">{issue.code}</span>
+                      </div>
+                      <p className="mt-2 text-sm font-medium text-[var(--color-text-primary)]">{issue.message}</p>
+                      {issue.nodeName ? (
+                        <p className="agent-muted mt-1 text-sm">关联节点：{issue.nodeName}</p>
+                      ) : null}
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <p className="agent-muted text-sm">正式发布会再次执行后端校验，并冻结当前节点、连线和变量声明为不可变版本。</p>
+              )}
+
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setValidationModal(null)}
+                  className="agent-button h-10 px-3 text-sm"
+                >
+                  关闭
+                </button>
+                {validationModal.result.valid ? (
+                  <button
+                    type="button"
+                    disabled={publishingWorkflowId === validationModal.workflow.id}
+                    onClick={() => void handlePublish(validationModal.workflow)}
+                    className="agent-button agent-button-primary h-10 px-3 text-sm"
+                  >
+                    <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+                    {publishingWorkflowId === validationModal.workflow.id ? "发布中" : "正式发布"}
+                  </button>
+                ) : null}
+              </div>
+            </div>
           </section>
         </div>
       ) : null}

@@ -263,6 +263,72 @@ paths:
                     properties:
                       data:
                         $ref: "#/components/schemas/WorkflowDraftDetail"
+  /api/tenants/{tenantId}/workflows/drafts/{workflowId}/publish-validation:
+    post:
+      summary: 校验工作流草稿是否满足最小发布条件
+      description: 当前阶段只校验图结构、起止节点、连通性和变量引用；真正发布时仍需再次复核能力授权与版本快照。
+      tags:
+        - Workflow
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 发布校验结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/WorkflowPublishValidationResult"
+  /api/tenants/{tenantId}/workflows/drafts/{workflowId}/publish:
+    post:
+      summary: 正式发布工作流草稿
+      description: 发布时重新执行后端校验，并把节点、边和变量声明冻结为不可变版本快照。
+      tags:
+        - Workflow
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 发布成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/WorkflowPublishResult"
   /api/admin/tenants/{tenantId}/organization/overview:
     get:
       summary: 获取租户人员组织概览
@@ -2777,10 +2843,67 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/WorkflowEdgeDraft"
+        variables:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowVariable"
       required:
         - draft
         - nodes
         - edges
+        - variables
+    WorkflowPublishValidationResult:
+      type: object
+      properties:
+        valid:
+          type: boolean
+        nodeCount:
+          type: integer
+        edgeCount:
+          type: integer
+        issues:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowValidationIssue"
+      required:
+        - valid
+        - nodeCount
+        - edgeCount
+        - issues
+    WorkflowPublishResult:
+      type: object
+      properties:
+        draft:
+          $ref: "#/components/schemas/WorkflowDraftRow"
+        versionNumber:
+          type: integer
+        publishedAt:
+          type: string
+          format: date-time
+      required:
+        - draft
+        - versionNumber
+        - publishedAt
+    WorkflowValidationIssue:
+      type: object
+      properties:
+        code:
+          type: string
+        level:
+          type: string
+          enum: [error, warning]
+        message:
+          type: string
+        nodeId:
+          type: string
+        nodeName:
+          type: string
+      required:
+        - code
+        - level
+        - message
+        - nodeId
+        - nodeName
     SaveWorkflowDraftGraphRequest:
       type: object
       properties:
@@ -2792,9 +2915,14 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/WorkflowEdgeDraft"
+        variables:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowVariable"
       required:
         - nodes
         - edges
+        - variables
     WorkflowNodeDraft:
       type: object
       properties:
@@ -2912,6 +3040,8 @@ components:
           type: string
         description:
           type: string
+        jsonSchema:
+          type: object
         sensitive:
           type: boolean
         deliverable:
