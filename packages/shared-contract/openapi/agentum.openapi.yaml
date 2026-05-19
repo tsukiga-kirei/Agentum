@@ -116,6 +116,152 @@ paths:
       responses:
         "200":
           description: 已退出
+  /api/tenants/{tenantId}/assets/summary:
+    get:
+      summary: 获取能力资产总览
+      description: 业务侧能力资产页使用，聚合系统管理开放给租户的能力、租户管理已分配给当前主体的能力和当前用户自建能力数量。
+      tags:
+        - Asset
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 能力资产总览
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/AssetSummary"
+  /api/tenants/{tenantId}/assets/system-capabilities:
+    get:
+      summary: 查询对当前主体开放的系统通用能力
+      description: 返回系统管理已放入当前租户可用能力池、且租户管理已分配给当前用户、部门或角色的能力。租户管理员和系统管理员可查看当前租户能力池。
+      tags:
+        - Asset
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 10
+        - name: sort
+          in: query
+          schema:
+            type: string
+            default: openedAt,desc
+      responses:
+        "200":
+          description: 对当前主体开放的系统能力分页列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/SystemCapabilityAssetPageResponse"
+  /api/tenants/{tenantId}/assets/mine:
+    get:
+      summary: 查询当前用户自建能力
+      tags:
+        - Asset
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: keyword
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 10
+        - name: sort
+          in: query
+          schema:
+            type: string
+            default: updatedAt,desc
+      responses:
+        "200":
+          description: 当前用户自建能力分页列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/MyAssetPageResponse"
+    post:
+      summary: 新建当前用户能力资产
+      description: 创建租户内自建能力，默认草稿状态；发布、分配和运行安全策略后续继续在资产治理链路中补齐。
+      tags:
+        - Asset
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMyAssetRequest"
+      responses:
+        "200":
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/MyAssetRow"
   /api/tenants/{tenantId}/workflows/drafts:
     get:
       summary: 查询工作流草稿列表
@@ -2801,6 +2947,181 @@ components:
     UpdateModelProviderRequest:
       allOf:
         - $ref: "#/components/schemas/CreateModelProviderRequest"
+    AssetSummary:
+      type: object
+      properties:
+        openedToMeSystemTotal:
+          type: integer
+          format: int64
+        tenantSystemPoolTotal:
+          type: integer
+          format: int64
+        myAssetTotal:
+          type: integer
+          format: int64
+      required:
+        - openedToMeSystemTotal
+        - tenantSystemPoolTotal
+        - myAssetTotal
+    SystemCapabilityAssetRow:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        assetType:
+          type: string
+          enum: [skill, mcp, prompt_template, delivery]
+        name:
+          type: string
+        code:
+          type: string
+        version:
+          type: string
+        riskLevel:
+          type: string
+        status:
+          type: string
+        assignedToMe:
+          type: boolean
+        assignmentScope:
+          type: string
+        openedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - assetType
+        - name
+        - code
+        - version
+        - riskLevel
+        - status
+        - assignedToMe
+        - assignmentScope
+        - openedAt
+    SystemCapabilityAssetPageResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SystemCapabilityAssetRow"
+        page:
+          type: integer
+        size:
+          type: integer
+        total:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+      required:
+        - items
+        - page
+        - size
+        - total
+        - totalPages
+    MyAssetRow:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        assetType:
+          type: string
+          enum: [agent_template, skill, mcp, prompt_template, delivery]
+        name:
+          type: string
+        code:
+          type: string
+        version:
+          type: string
+        description:
+          type: string
+        riskLevel:
+          type: string
+        status:
+          type: string
+        visibility:
+          type: string
+          enum: [private, tenant]
+        sourceType:
+          type: string
+        baseSystemCapabilityId:
+          type: string
+          format: uuid
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - assetType
+        - name
+        - code
+        - version
+        - riskLevel
+        - status
+        - visibility
+        - sourceType
+        - createdAt
+        - updatedAt
+    MyAssetPageResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/MyAssetRow"
+        page:
+          type: integer
+        size:
+          type: integer
+        total:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+      required:
+        - items
+        - page
+        - size
+        - total
+        - totalPages
+    CreateMyAssetRequest:
+      type: object
+      properties:
+        assetType:
+          type: string
+          enum: [agent_template, skill, mcp, prompt_template, delivery]
+        name:
+          type: string
+        code:
+          type: string
+        version:
+          type: string
+        description:
+          type: string
+        riskLevel:
+          type: string
+          enum: [low, medium, high]
+        visibility:
+          type: string
+          enum: [private, tenant]
+        baseSystemCapabilityId:
+          type: string
+          format: uuid
+        config:
+          type: object
+          additionalProperties: true
+      required:
+        - assetType
+        - name
+        - code
     SystemCapabilityRow:
       type: object
       properties:

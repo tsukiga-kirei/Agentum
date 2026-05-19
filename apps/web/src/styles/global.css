@@ -477,7 +477,7 @@ textarea:focus-visible {
 }
 
 .agent-admin-select .ant-select-selector {
-  min-height: 44px !important;
+  min-height: var(--agent-field-height, 44px) !important;
   border-color: var(--color-border-light) !important;
   border-radius: var(--radius-md) !important;
   background: var(--color-bg-input, var(--color-bg-page)) !important;
@@ -489,12 +489,15 @@ textarea:focus-visible {
 }
 
 .agent-admin-select.ant-select {
+  --agent-field-height: 44px;
   --ant-color-bg-container: var(--color-bg-input, var(--color-bg-page));
   --ant-color-bg-elevated: var(--color-bg-card);
   --ant-color-border: var(--color-border-light);
   --ant-color-text: var(--color-text-primary);
   --ant-color-text-placeholder: var(--color-text-tertiary);
   background: transparent !important;
+  height: var(--agent-field-height, 44px) !important;
+  min-height: var(--agent-field-height, 44px) !important;
 }
 
 .agent-admin-select.ant-select-outlined:not(.ant-select-customize-input) .ant-select-selector,
@@ -506,8 +509,11 @@ textarea:focus-visible {
 }
 
 .agent-admin-select.ant-select-single .ant-select-selector {
-  height: 44px !important;
+  height: var(--agent-field-height, 44px) !important;
+  min-height: var(--agent-field-height, 44px) !important;
   align-items: center;
+  box-sizing: border-box;
+  padding: 0 14px !important;
 }
 
 .agent-admin-select.ant-select-multiple .ant-select-selector {
@@ -517,6 +523,10 @@ textarea:focus-visible {
 .agent-admin-select .ant-select-selection-item,
 .agent-admin-select .ant-select-selection-placeholder {
   color: var(--color-text-primary) !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  min-height: calc(var(--agent-field-height, 44px) - 2px) !important;
+  line-height: 1.4 !important;
 }
 
 .agent-admin-select .ant-select-selection-placeholder {
@@ -527,6 +537,12 @@ textarea:focus-visible {
 .agent-admin-select .ant-select-clear,
 .agent-admin-select .ant-select-prefix {
   color: var(--color-text-tertiary) !important;
+}
+
+.agent-admin-select .ant-select-prefix {
+  display: inline-flex !important;
+  align-items: center !important;
+  margin-inline-end: 10px !important;
 }
 
 .agent-admin-select.ant-select-focused .ant-select-selector,
@@ -1025,6 +1041,52 @@ textarea:focus-visible {
   border-color: color-mix(in srgb, #f59e0b 38%, var(--color-border));
   background: color-mix(in srgb, #f59e0b 16%, var(--color-bg-card));
   color: color-mix(in srgb, #fbbf24 88%, #ffffff);
+}
+
+.asset-mgmt-page-mark {
+  border: 1px solid color-mix(in srgb, #0d9488 24%, var(--color-border));
+  background: color-mix(in srgb, #0d9488 10%, var(--color-bg-card));
+  color: #0d9488;
+  box-shadow: var(--shadow-xs);
+}
+
+.dark .asset-mgmt-page-mark {
+  border-color: color-mix(in srgb, #14b8a6 38%, var(--color-border));
+  background: color-mix(in srgb, #14b8a6 16%, var(--color-bg-card));
+  color: color-mix(in srgb, #5eead4 88%, #ffffff);
+}
+
+.asset-path-step {
+  transition:
+    border-color var(--transition-fast),
+    background-color var(--transition-fast);
+}
+
+.asset-path-step-title {
+  color: var(--color-text-primary);
+}
+
+.asset-path-step-detail {
+  color: var(--color-text-secondary);
+}
+
+.dark .asset-path-step {
+  border-color: color-mix(in srgb, #14b8a6 18%, var(--color-border));
+  background: color-mix(in srgb, #14b8a6 7%, var(--color-bg-card));
+}
+
+.dark .asset-path-step-title {
+  color: color-mix(in srgb, #f8fafc 94%, #5eead4);
+}
+
+.dark .asset-path-step-detail {
+  color: #cbd5e1;
+}
+
+.dark .asset-path-step-icon.sys-card-avatar--cap {
+  border: 1px solid color-mix(in srgb, #5eead4 28%, var(--color-border));
+  background: color-mix(in srgb, #14b8a6 18%, var(--color-bg-card));
+  color: #5eead4;
 }
 
 .workflow-design-page-mark {
@@ -1561,6 +1623,7 @@ textarea:focus-visible {
 /* 输入框包装器（支持前缀图标） */
 .sys-field-input-wrap {
   position: relative; display: flex; align-items: center;
+  min-height: var(--agent-field-height, 44px);
 }
 .sys-field-input-wrap .sys-field-prefix {
   position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
@@ -1576,10 +1639,12 @@ textarea:focus-visible {
 }
 
 .sys-field-input {
-  width: 100%; height: 44px; padding: 0 14px; font-size: 14px;
+  width: 100%; height: var(--agent-field-height, 44px); min-height: var(--agent-field-height, 44px); padding: 0 14px; font-size: 14px;
   border: 1px solid var(--color-border-light); border-radius: var(--radius-md);
   background: var(--color-bg-input, var(--color-bg-page));
   color: var(--color-text-primary); outline: none;
+  box-sizing: border-box;
+  line-height: 1.4;
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 .sys-field-input:focus {

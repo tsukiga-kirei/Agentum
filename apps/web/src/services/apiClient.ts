@@ -1,4 +1,5 @@
 import type { LoginRequest, LoginResponse, MeResponse, SwitchRoleRequest, SwitchRoleResponse, TenantOption } from "../types/auth";
+import type { AssetSummary, CreateMyAssetRequest, MyAssetPage, MyAssetRow, SystemCapabilityAssetPage } from "../types/asset";
 import type {
   CreateDepartmentRequest,
   CreateMemberRequest,
@@ -238,6 +239,21 @@ export const systemApi = {
     apiRequest<TenantModelAssignmentRow>("/api/system/tenant-model-assignments", { method: "POST", token, body }),
   updateTenantModelAssignmentStatus: (token: string, assignmentId: string, body: UpdateTenantModelAssignmentStatusRequest) =>
     apiRequest<TenantModelAssignmentRow>(`/api/system/tenant-model-assignments/${assignmentId}/status`, { method: "PATCH", token, body }),
+};
+
+export const assetApi = {
+  summary: (tenantId: string, token: string) => apiRequest<AssetSummary>(`/api/tenants/${tenantId}/assets/summary`, { token }),
+  listSystemCapabilities: (tenantId: string, token: string, page = 1, size = 10, sort = "openedAt,desc") =>
+    apiRequest<SystemCapabilityAssetPage>(
+      `/api/tenants/${tenantId}/assets/system-capabilities?page=${page}&size=${size}&sort=${encodeURIComponent(sort)}`,
+      { token }
+    ),
+  listMine: (tenantId: string, token: string, keyword = "", page = 1, size = 10, sort = "updatedAt,desc") => {
+    const params = new URLSearchParams({ keyword, page: String(page), size: String(size), sort });
+    return apiRequest<MyAssetPage>(`/api/tenants/${tenantId}/assets/mine?${params.toString()}`, { token });
+  },
+  createMine: (tenantId: string, token: string, body: CreateMyAssetRequest) =>
+    apiRequest<MyAssetRow>(`/api/tenants/${tenantId}/assets/mine`, { method: "POST", token, body }),
 };
 
 export const workflowApi = {
