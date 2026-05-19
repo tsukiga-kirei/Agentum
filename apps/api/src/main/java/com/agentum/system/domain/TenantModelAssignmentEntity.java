@@ -56,6 +56,16 @@ public class TenantModelAssignmentEntity {
         return entity;
     }
 
+    public void updateStatus(String status, Instant now) {
+        this.status = status == null ? "enabled" : status;
+        this.updatedAt = now;
+    }
+
+    public void updateDefaultModel(String defaultModel, Instant now) {
+        this.defaultModel = defaultModel;
+        this.updatedAt = now;
+    }
+
     public UUID getId() {
         return id;
     }

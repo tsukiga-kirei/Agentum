@@ -34,6 +34,7 @@ export type ModelProviderRow = {
   providerType: string;
   baseUrl: string | null;
   defaultModel: string | null;
+  apiKeyConfigured: boolean;
   status: string;
 };
 
@@ -50,9 +51,12 @@ export type CreateModelProviderRequest = {
   name: string;
   providerType: string;
   baseUrl?: string;
-  defaultModel?: string;
+  defaultModel: string;
+  apiKey?: string;
   status?: string;
 };
+
+export type UpdateModelProviderRequest = CreateModelProviderRequest;
 
 export type SystemCapabilityRow = {
   id: string;
@@ -74,6 +78,8 @@ export type CreateSystemCapabilityRequest = {
   status?: string;
   config?: Record<string, unknown>;
 };
+
+export type UpdateSystemCapabilityRequest = CreateSystemCapabilityRequest;
 
 export type CapabilityToolRow = {
   name: string;
@@ -126,6 +132,10 @@ export type CreateTenantModelAssignmentRequest = {
   providerId: string;
   defaultModel?: string;
   status?: string;
+};
+
+export type UpdateTenantModelAssignmentStatusRequest = {
+  status: string;
 };
 
 export type SystemTenantPage = PageResponse<SystemTenantRow>;

@@ -73,6 +73,26 @@ public class SystemCapabilityEntity {
         return entity;
     }
 
+    public void updateProfile(
+        String capabilityType,
+        String name,
+        String code,
+        String version,
+        String riskLevel,
+        String status,
+        Map<String, Object> config,
+        Instant now
+    ) {
+        this.capabilityType = capabilityType;
+        this.name = name;
+        this.code = code;
+        this.version = version == null ? "v1" : version;
+        this.riskLevel = riskLevel == null ? "low" : riskLevel;
+        this.status = status == null ? "draft" : status;
+        this.config = config == null ? new HashMap<>() : new HashMap<>(config);
+        this.updatedAt = now;
+    }
+
     public UUID getId() {
         return id;
     }

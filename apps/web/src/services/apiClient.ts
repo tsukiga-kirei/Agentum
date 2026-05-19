@@ -37,6 +37,9 @@ import type {
   TenantCapabilityGrantRow,
   TenantModelAssignmentRow,
   UpdateTenantCapabilityGrantStatusRequest,
+  UpdateModelProviderRequest,
+  UpdateSystemCapabilityRequest,
+  UpdateTenantModelAssignmentStatusRequest,
   UpdateTenantStatusRequest,
 } from "../types/system";
 import type {
@@ -207,10 +210,14 @@ export const systemApi = {
     apiRequest<ModelProviderPage>(`/api/system/model-providers?page=${page}&size=${size}&sort=${encodeURIComponent(sort)}`, { token }),
   createModelProvider: (token: string, body: CreateModelProviderRequest) =>
     apiRequest<ModelProviderRow>("/api/system/model-providers", { method: "POST", token, body }),
+  updateModelProvider: (token: string, providerId: string, body: UpdateModelProviderRequest) =>
+    apiRequest<ModelProviderRow>(`/api/system/model-providers/${providerId}`, { method: "PATCH", token, body }),
   listCapabilities: (token: string, page = 1, size = 10, sort = "createdAt,desc") =>
     apiRequest<SystemCapabilityPage>(`/api/system/capabilities?page=${page}&size=${size}&sort=${encodeURIComponent(sort)}`, { token }),
   createCapability: (token: string, body: CreateSystemCapabilityRequest) =>
     apiRequest<SystemCapabilityRow>("/api/system/capabilities", { method: "POST", token, body }),
+  updateCapability: (token: string, capabilityId: string, body: UpdateSystemCapabilityRequest) =>
+    apiRequest<SystemCapabilityRow>(`/api/system/capabilities/${capabilityId}`, { method: "PATCH", token, body }),
   testCapability: (token: string, capabilityId: string) =>
     apiRequest<CapabilityTestResult>(`/api/system/capabilities/${capabilityId}/test`, { method: "POST", token }),
   listGrants: (token: string, tenantId?: string) => {
@@ -225,6 +232,8 @@ export const systemApi = {
     apiRequest<TenantModelAssignmentRow[]>(`/api/system/tenant-model-assignments?tenantId=${encodeURIComponent(tenantId)}`, { token }),
   createTenantModelAssignment: (token: string, body: CreateTenantModelAssignmentRequest) =>
     apiRequest<TenantModelAssignmentRow>("/api/system/tenant-model-assignments", { method: "POST", token, body }),
+  updateTenantModelAssignmentStatus: (token: string, assignmentId: string, body: UpdateTenantModelAssignmentStatusRequest) =>
+    apiRequest<TenantModelAssignmentRow>(`/api/system/tenant-model-assignments/${assignmentId}/status`, { method: "PATCH", token, body }),
 };
 
 export const workflowApi = {

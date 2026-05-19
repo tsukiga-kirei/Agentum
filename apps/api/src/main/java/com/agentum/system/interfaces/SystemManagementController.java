@@ -111,6 +111,17 @@ public class SystemManagementController {
         return ApiResponse.success(systemManagementService.createModelProvider(body), RequestIds.current(request));
     }
 
+    @PatchMapping("/model-providers/{providerId}")
+    public ApiResponse<SystemManagementApi.ModelProviderRow> updateModelProvider(
+        @PathVariable UUID providerId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @Valid @RequestBody SystemManagementApi.UpdateModelProviderRequest body,
+        HttpServletRequest request
+    ) {
+        systemAdminAccess.assertSystemAdmin(principal);
+        return ApiResponse.success(systemManagementService.updateModelProvider(providerId, body), RequestIds.current(request));
+    }
+
     @GetMapping("/capabilities")
     public ApiResponse<PageResponse<SystemManagementApi.CapabilityRow>> listCapabilities(
         @AuthenticationPrincipal CurrentUserPrincipal principal,
@@ -131,6 +142,17 @@ public class SystemManagementController {
     ) {
         systemAdminAccess.assertSystemAdmin(principal);
         return ApiResponse.success(systemManagementService.createCapability(body), RequestIds.current(request));
+    }
+
+    @PatchMapping("/capabilities/{capabilityId}")
+    public ApiResponse<SystemManagementApi.CapabilityRow> updateCapability(
+        @PathVariable UUID capabilityId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @Valid @RequestBody SystemManagementApi.UpdateCapabilityRequest body,
+        HttpServletRequest request
+    ) {
+        systemAdminAccess.assertSystemAdmin(principal);
+        return ApiResponse.success(systemManagementService.updateCapability(capabilityId, body), RequestIds.current(request));
     }
 
     @PostMapping("/capabilities/{capabilityId}/test")
@@ -192,5 +214,16 @@ public class SystemManagementController {
     ) {
         systemAdminAccess.assertSystemAdmin(principal);
         return ApiResponse.success(systemManagementService.createTenantModelAssignment(body), RequestIds.current(request));
+    }
+
+    @PatchMapping("/tenant-model-assignments/{assignmentId}/status")
+    public ApiResponse<SystemManagementApi.TenantModelAssignmentRow> updateTenantModelAssignmentStatus(
+        @PathVariable UUID assignmentId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @Valid @RequestBody SystemManagementApi.UpdateTenantModelAssignmentStatusRequest body,
+        HttpServletRequest request
+    ) {
+        systemAdminAccess.assertSystemAdmin(principal);
+        return ApiResponse.success(systemManagementService.updateTenantModelAssignmentStatus(assignmentId, body), RequestIds.current(request));
     }
 }

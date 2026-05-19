@@ -49,6 +49,7 @@ public final class SystemManagementApi {
         String providerType,
         String baseUrl,
         String defaultModel,
+        boolean apiKeyConfigured,
         String status
     ) {
     }
@@ -67,7 +68,18 @@ public final class SystemManagementApi {
         @NotBlank @Size(max = 160) String name,
         @NotBlank @Size(max = 80) String providerType,
         @Size(max = 500) String baseUrl,
-        @Size(max = 160) String defaultModel,
+        @NotBlank @Size(max = 160) String defaultModel,
+        @Size(max = 2000) String apiKey,
+        @Size(max = 30) String status
+    ) {
+    }
+
+    public record UpdateModelProviderRequest(
+        @NotBlank @Size(max = 160) String name,
+        @NotBlank @Size(max = 80) String providerType,
+        @Size(max = 500) String baseUrl,
+        @NotBlank @Size(max = 160) String defaultModel,
+        @Size(max = 2000) String apiKey,
         @Size(max = 30) String status
     ) {
     }
@@ -85,6 +97,17 @@ public final class SystemManagementApi {
     }
 
     public record CreateCapabilityRequest(
+        @NotBlank @Size(max = 40) String capabilityType,
+        @NotBlank @Size(max = 160) String name,
+        @NotBlank @Size(max = 100) String code,
+        @Size(max = 40) String version,
+        @Size(max = 20) String riskLevel,
+        @Size(max = 30) String status,
+        Map<String, Object> config
+    ) {
+    }
+
+    public record UpdateCapabilityRequest(
         @NotBlank @Size(max = 40) String capabilityType,
         @NotBlank @Size(max = 160) String name,
         @NotBlank @Size(max = 100) String code,
@@ -152,6 +175,11 @@ public final class SystemManagementApi {
         @NotNull UUID providerId,
         @Size(max = 160) String defaultModel,
         @Size(max = 30) String status
+    ) {
+    }
+
+    public record UpdateTenantModelAssignmentStatusRequest(
+        @NotBlank @Size(max = 30) String status
     ) {
     }
 }

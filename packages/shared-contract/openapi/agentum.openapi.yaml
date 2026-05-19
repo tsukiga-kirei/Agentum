@@ -1307,6 +1307,46 @@ paths:
           description: 未登录或令牌无效
         "403":
           description: 当前账号不是系统管理员
+  /api/system/model-providers/{providerId}:
+    patch:
+      summary: 编辑模型供应商
+      tags:
+        - System
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: providerId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateModelProviderRequest"
+      responses:
+        "200":
+          description: 更新后的供应商
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/ModelProviderRow"
+        "400":
+          description: 供应商类型不存在或默认模型缺失
+        "401":
+          description: 未登录或令牌无效
+        "403":
+          description: 当前账号不是系统管理员
+        "404":
+          description: 模型供应商不存在
   /api/system/capabilities:
     get:
       summary: 列出系统级能力
@@ -1374,6 +1414,48 @@ paths:
           description: 未登录或令牌无效
         "403":
           description: 当前账号不是系统管理员
+        "409":
+          description: 能力编码与版本已存在
+  /api/system/capabilities/{capabilityId}:
+    patch:
+      summary: 编辑系统级能力
+      tags:
+        - System
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: capabilityId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSystemCapabilityRequest"
+      responses:
+        "200":
+          description: 更新后的能力
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/SystemCapabilityRow"
+        "400":
+          description: 能力类型非法
+        "401":
+          description: 未登录或令牌无效
+        "403":
+          description: 当前账号不是系统管理员
+        "404":
+          description: 系统能力不存在
         "409":
           description: 能力编码与版本已存在
   /api/system/capabilities/{capabilityId}/test:
@@ -1566,6 +1648,46 @@ paths:
           description: 当前账号不是系统管理员
         "409":
           description: 模型供应商已分配给该租户
+  /api/system/tenant-model-assignments/{assignmentId}/status:
+    patch:
+      summary: 更新租户模型分配状态
+      tags:
+        - System
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: assignmentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTenantModelAssignmentStatusRequest"
+      responses:
+        "200":
+          description: 更新后的模型分配
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/TenantModelAssignmentRow"
+        "400":
+          description: 状态取值非法
+        "401":
+          description: 未登录或令牌无效
+        "403":
+          description: 当前账号不是系统管理员
+        "404":
+          description: 模型分配不存在
 components:
   securitySchemes:
     bearerAuth:
@@ -2485,12 +2607,15 @@ components:
         defaultModel:
           type: string
           nullable: true
+        apiKeyConfigured:
+          type: boolean
         status:
           type: string
       required:
         - id
         - name
         - providerType
+        - apiKeyConfigured
         - status
     ModelProviderPageResponse:
       type: object
@@ -2547,11 +2672,18 @@ components:
           type: string
         defaultModel:
           type: string
+        apiKey:
+          type: string
+          description: 仅写入，不会在查询接口回显明文。
         status:
           type: string
       required:
         - name
         - providerType
+        - defaultModel
+    UpdateModelProviderRequest:
+      allOf:
+        - $ref: "#/components/schemas/CreateModelProviderRequest"
     SystemCapabilityRow:
       type: object
       properties:
@@ -2625,6 +2757,9 @@ components:
         - capabilityType
         - name
         - code
+    UpdateSystemCapabilityRequest:
+      allOf:
+        - $ref: "#/components/schemas/CreateSystemCapabilityRequest"
     CapabilityToolRow:
       type: object
       properties:
@@ -2762,6 +2897,14 @@ components:
       required:
         - tenantId
         - providerId
+    UpdateTenantModelAssignmentStatusRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [enabled, disabled]
+      required:
+        - status
     WorkflowDraftPageResponse:
       type: object
       properties:

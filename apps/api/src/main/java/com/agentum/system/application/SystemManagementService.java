@@ -213,15 +213,19 @@ public class SystemManagementService {
                 log.warn("系统管理注册模型供应商失败：供应商类型不可用 providerType={} requestId={}", request.providerType(), RequestIds.current());
                 return new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_MODEL_PROVIDER_TYPE_INVALID", "模型供应商类型不存在或已停用");
             });
+        String defaultModel = requireDefaultModel(request.defaultModel());
 
         ModelProviderEntity entity = ModelProviderEntity.create(
             request.name().trim(),
             providerType.getCode(),
             firstNonBlank(request.baseUrl(), providerType.getDefaultBaseUrl()),
-            request.defaultModel() == null ? null : request.defaultModel().trim(),
+            defaultModel,
             request.status() == null ? null : request.status().trim(),
             clock.instant()
         );
+        if (stringValue(request.apiKey()) != null) {
+            entity.markApiKeyConfigured(clock.instant());
+        }
         modelProviderRepository.save(entity);
         log.info(
             "系统管理注册模型供应商成功 providerId={} name={} type={} requestId={}",
@@ -230,6 +234,34 @@ public class SystemManagementService {
             entity.getProviderType(),
             RequestIds.current()
         );
+        return toModelRow(entity);
+    }
+
+    @Transactional
+    public SystemManagementApi.ModelProviderRow updateModelProvider(UUID providerId, SystemManagementApi.UpdateModelProviderRequest request) {
+        ModelProviderEntity entity = modelProviderRepository.findById(providerId)
+            .orElseThrow(() -> {
+                log.warn("系统管理更新模型供应商失败：供应商不存在 providerId={} requestId={}", providerId, RequestIds.current());
+                return new ApiException(HttpStatus.NOT_FOUND, "SYSTEM_MODEL_PROVIDER_NOT_FOUND", "模型供应商不存在");
+            });
+        ModelProviderTypeEntity providerType = modelProviderTypeRepository.findByCodeAndStatus(request.providerType().trim(), ACTIVE)
+            .orElseThrow(() -> {
+                log.warn("系统管理更新模型供应商失败：供应商类型不可用 providerId={} providerType={} requestId={}", providerId, request.providerType(), RequestIds.current());
+                return new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_MODEL_PROVIDER_TYPE_INVALID", "模型供应商类型不存在或已停用");
+            });
+        entity.updateProfile(
+            request.name().trim(),
+            providerType.getCode(),
+            firstNonBlank(request.baseUrl(), providerType.getDefaultBaseUrl()),
+            requireDefaultModel(request.defaultModel()),
+            request.status() == null ? null : request.status().trim(),
+            clock.instant()
+        );
+        if (stringValue(request.apiKey()) != null) {
+            entity.markApiKeyConfigured(clock.instant());
+        }
+        modelProviderRepository.save(entity);
+        log.info("系统管理更新模型供应商成功 providerId={} type={} requestId={}", entity.getId(), entity.getProviderType(), RequestIds.current());
         return toModelRow(entity);
     }
 
@@ -275,6 +307,47 @@ public class SystemManagementService {
             entity.getVersion(),
             RequestIds.current()
         );
+        return toCapabilityRow(entity);
+    }
+
+    @Transactional
+    public SystemManagementApi.CapabilityRow updateCapability(UUID capabilityId, SystemManagementApi.UpdateCapabilityRequest request) {
+        String version = request.version() == null ? "v1" : request.version().trim();
+        String capabilityType = request.capabilityType().trim();
+        if (!CAPABILITY_TYPES.contains(capabilityType)) {
+            log.warn("系统管理更新能力失败：能力类型不在全局能力范围 capabilityId={} capabilityType={} requestId={}", capabilityId, capabilityType, RequestIds.current());
+            throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_CAPABILITY_TYPE_INVALID", "全局能力类型只能是 MCP、Skill、提示词模板或交付能力");
+        }
+        SystemCapabilityEntity entity = systemCapabilityRepository.findById(capabilityId)
+            .orElseThrow(() -> {
+                log.warn("系统管理更新能力失败：能力不存在 capabilityId={} requestId={}", capabilityId, RequestIds.current());
+                return new ApiException(HttpStatus.NOT_FOUND, "SYSTEM_CAPABILITY_NOT_FOUND", "系统能力不存在");
+            });
+        systemCapabilityRepository.findByCodeAndVersion(request.code().trim(), version)
+            .filter(existing -> !existing.getId().equals(capabilityId))
+            .ifPresent(existing -> {
+                log.warn(
+                    "系统管理更新能力失败：编码与版本已存在 capabilityId={} duplicatedCapabilityId={} code={} version={} requestId={}",
+                    capabilityId,
+                    existing.getId(),
+                    request.code(),
+                    version,
+                    RequestIds.current()
+                );
+                throw new ApiException(HttpStatus.CONFLICT, "SYSTEM_CAPABILITY_DUPLICATE", "同一能力编码与版本已存在");
+            });
+        entity.updateProfile(
+            capabilityType,
+            request.name().trim(),
+            request.code().trim(),
+            version,
+            request.riskLevel() == null ? null : request.riskLevel().trim(),
+            request.status() == null ? null : request.status().trim(),
+            sanitizeCapabilityConfig(capabilityType, request.config()),
+            clock.instant()
+        );
+        systemCapabilityRepository.save(entity);
+        log.info("系统管理更新全局能力成功 capabilityId={} code={} version={} requestId={}", entity.getId(), entity.getCode(), entity.getVersion(), RequestIds.current());
         return toCapabilityRow(entity);
     }
 
@@ -390,8 +463,14 @@ public class SystemManagementService {
                 return new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_MODEL_PROVIDER_NOT_FOUND", "模型供应商不存在");
             });
 
-        if (tenantModelAssignmentRepository.findByTenantIdAndProviderId(tenant.getId(), provider.getId()).isPresent()) {
-            throw new ApiException(HttpStatus.CONFLICT, "SYSTEM_MODEL_ASSIGNMENT_DUPLICATE", "该租户已分配此模型供应商");
+        TenantModelAssignmentEntity existing = tenantModelAssignmentRepository.findByTenantIdAndProviderId(tenant.getId(), provider.getId()).orElse(null);
+        if (existing != null) {
+            // 模型分配是租户可用能力池的一部分，前端允许取消后再次启用，因此已有记录应复用并切回 enabled。
+            existing.updateDefaultModel(firstNonBlank(request.defaultModel(), provider.getDefaultModel()), clock.instant());
+            existing.updateStatus(request.status() == null ? "enabled" : request.status().trim(), clock.instant());
+            tenantModelAssignmentRepository.save(existing);
+            log.info("系统管理更新租户模型分配成功 tenantId={} providerId={} assignmentId={} requestId={}", tenant.getId(), provider.getId(), existing.getId(), RequestIds.current());
+            return toTenantModelAssignmentRow(existing);
         }
 
         TenantModelAssignmentEntity entity = TenantModelAssignmentEntity.create(
@@ -403,6 +482,23 @@ public class SystemManagementService {
         );
         tenantModelAssignmentRepository.save(entity);
         log.info("系统管理写入租户模型分配成功 tenantId={} providerId={} assignmentId={} requestId={}", tenant.getId(), provider.getId(), entity.getId(), RequestIds.current());
+        return toTenantModelAssignmentRow(entity);
+    }
+
+    @Transactional
+    public SystemManagementApi.TenantModelAssignmentRow updateTenantModelAssignmentStatus(UUID assignmentId, SystemManagementApi.UpdateTenantModelAssignmentStatusRequest request) {
+        String status = request.status().trim();
+        if (!"enabled".equals(status) && !"disabled".equals(status)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_MODEL_ASSIGNMENT_STATUS_INVALID", "模型分配状态只能是 enabled 或 disabled");
+        }
+        TenantModelAssignmentEntity entity = tenantModelAssignmentRepository.findById(assignmentId)
+            .orElseThrow(() -> {
+                log.warn("系统管理更新租户模型分配失败：分配记录不存在 assignmentId={} requestId={}", assignmentId, RequestIds.current());
+                return new ApiException(HttpStatus.NOT_FOUND, "SYSTEM_MODEL_ASSIGNMENT_NOT_FOUND", "租户模型分配不存在");
+            });
+        entity.updateStatus(status, clock.instant());
+        tenantModelAssignmentRepository.save(entity);
+        log.info("系统管理更新租户模型分配状态成功 assignmentId={} status={} requestId={}", assignmentId, status, RequestIds.current());
         return toTenantModelAssignmentRow(entity);
     }
 
@@ -524,6 +620,14 @@ public class SystemManagementService {
         return fallback == null || fallback.isBlank() ? null : fallback.trim();
     }
 
+    private static String requireDefaultModel(String defaultModel) {
+        String value = stringValue(defaultModel);
+        if (value == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_MODEL_DEFAULT_MODEL_REQUIRED", "默认模型不能为空");
+        }
+        return value;
+    }
+
     private static String nullableString(Object value) {
         String text = stringValue(value);
         return text == null ? "" : text;
@@ -544,6 +648,7 @@ public class SystemManagementService {
             entity.getProviderType(),
             entity.getBaseUrl(),
             entity.getDefaultModel(),
+            entity.hasCredentialRef(),
             entity.getStatus()
         );
     }

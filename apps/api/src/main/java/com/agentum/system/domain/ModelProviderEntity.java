@@ -70,6 +70,21 @@ public class ModelProviderEntity {
         return entity;
     }
 
+    public void updateProfile(String name, String providerType, String baseUrl, String defaultModel, String status, Instant now) {
+        this.name = name;
+        this.providerType = providerType;
+        this.baseUrl = baseUrl;
+        this.defaultModel = defaultModel;
+        this.status = status == null ? "draft" : status;
+        this.updatedAt = now;
+    }
+
+    public void markApiKeyConfigured(Instant now) {
+        // 当前阶段只记录“已配置密钥”的引用状态，避免把 API Key 明文落入响应、日志或后续列表查询。
+        this.credentialRef = "inline-api-key";
+        this.updatedAt = now;
+    }
+
     public UUID getId() {
         return id;
     }
@@ -88,6 +103,10 @@ public class ModelProviderEntity {
 
     public String getCredentialRef() {
         return credentialRef;
+    }
+
+    public boolean hasCredentialRef() {
+        return credentialRef != null && !credentialRef.isBlank();
     }
 
     public String getDefaultModel() {
