@@ -1549,13 +1549,21 @@ function ResourceAuthorizationPanel({
                   <div className="sys-card-avatar sys-card-avatar--tenant"><ShieldCheck size={22} /></div>
                   <div className="sys-card-info">
                     <div className="sys-card-name">{grant.groupName}</div>
-                    <div className="sys-card-code">页签：{grant.pages.map((page) => page.pageName).join("、")}</div>
-                    <div className="sys-card-code">对象：{formatPrincipalNames(grant.principals)}</div>
                   </div>
                 </div>
-                <div className="sys-info-tags">
-                  {grant.pages.map((page) => <span key={page.pageKey} className="sys-info-tag sys-info-tag--primary">{page.pageName}</span>)}
-                  {grant.principals.map((principal) => <span key={`${principal.principalType}:${principal.principalId}`} className="sys-info-tag">{formatPrincipalType(principal.principalType)} · {principal.principalName}</span>)}
+                <div className="tenant-auth-card-lines">
+                  <div className="tenant-auth-card-line">
+                    <span className="tenant-auth-card-line-label">页签</span>
+                    <div className="sys-info-tags">
+                      {grant.pages.map((page) => <span key={page.pageKey} className="sys-info-tag sys-info-tag--primary">{page.pageName}</span>)}
+                    </div>
+                  </div>
+                  <div className="tenant-auth-card-line">
+                    <span className="tenant-auth-card-line-label">对象</span>
+                    <div className="sys-info-tags">
+                      {grant.principals.map((principal) => <span key={`${principal.principalType}:${principal.principalId}`} className="sys-info-tag">{formatPrincipalType(principal.principalType)} · {principal.principalName}</span>)}
+                    </div>
+                  </div>
                 </div>
                 <div className="sys-card-footer">
                   <span className="sys-card-footer-time">创建于 {formatDateTime(grant.createdAt)}</span>
@@ -1598,17 +1606,25 @@ function ResourceAuthorizationPanel({
                   <div className="sys-card-avatar sys-card-avatar--tenant"><UserRoundCog size={22} /></div>
                   <div className="sys-card-info">
                     <div className="sys-card-name">{grant.groupName}</div>
-                    <div className="sys-card-code">能力：{grant.resources.map((resource) => resource.resourceName).join("、")}</div>
-                    <div className="sys-card-code">对象：{formatPrincipalNames(grant.principals)}</div>
                   </div>
                 </div>
-                <div className="sys-info-tags">
-                  {grant.resources.map((resource) => (
-                    <span key={`${resource.resourceType}:${resource.resourceId}`} className="sys-info-tag sys-info-tag--primary">
-                      {formatResourceType(resource.resourceType)} · {resource.resourceName}
-                    </span>
-                  ))}
-                  {grant.principals.map((principal) => <span key={`${principal.principalType}:${principal.principalId}`} className="sys-info-tag">{formatPrincipalType(principal.principalType)} · {principal.principalName}</span>)}
+                <div className="tenant-auth-card-lines">
+                  <div className="tenant-auth-card-line">
+                    <span className="tenant-auth-card-line-label">能力</span>
+                    <div className="sys-info-tags">
+                      {grant.resources.map((resource) => (
+                        <span key={`${resource.resourceType}:${resource.resourceId}`} className="sys-info-tag sys-info-tag--primary">
+                          {formatResourceType(resource.resourceType)} · {resource.resourceName}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="tenant-auth-card-line">
+                    <span className="tenant-auth-card-line-label">对象</span>
+                    <div className="sys-info-tags">
+                      {grant.principals.map((principal) => <span key={`${principal.principalType}:${principal.principalId}`} className="sys-info-tag">{formatPrincipalType(principal.principalType)} · {principal.principalName}</span>)}
+                    </div>
+                  </div>
                 </div>
                 <div className="sys-card-footer">
                   <span className="sys-card-footer-time">创建于 {formatDateTime(grant.createdAt)}</span>
