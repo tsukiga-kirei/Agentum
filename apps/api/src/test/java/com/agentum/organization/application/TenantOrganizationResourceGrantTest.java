@@ -15,11 +15,12 @@ import com.agentum.organization.infrastructure.UserMembershipRepository;
 import com.agentum.organization.infrastructure.UserMembershipRoleRepository;
 import com.agentum.organization.interfaces.CreateResourceGrantRequest;
 import com.agentum.organization.interfaces.CreatePageGrantRequest;
+import com.agentum.organization.interfaces.GrantPrincipalRequest;
 import com.agentum.organization.interfaces.PageGrantResponse;
+import com.agentum.organization.interfaces.ResourceGrantItemRequest;
 import com.agentum.organization.interfaces.ResourceGrantResponse;
 import com.agentum.organization.interfaces.UpdateTenantRoleRequest;
 import com.agentum.permission.domain.PageGrantEntity;
-import com.agentum.permission.domain.ResourceGrantEntity;
 import com.agentum.permission.domain.RoleEntity;
 import com.agentum.permission.infrastructure.ResourceGrantRepository;
 import com.agentum.permission.infrastructure.PageGrantRepository;
@@ -84,7 +85,6 @@ class TenantOrganizationResourceGrantTest {
         RoleEntity role = RoleEntity.create(TENANT_ID, "executor", "执行人", "business", "流程执行角色");
         SystemCapabilityEntity capability = SystemCapabilityEntity.create("skill", "合同解析", "contract_parse", "v1", "medium", "active", Map.of(), Instant.now());
         TenantCapabilityGrantEntity capabilityGrant = TenantCapabilityGrantEntity.create(TENANT_ID, capability.getId(), "enabled", Instant.now());
-        AtomicReference<ResourceGrantEntity> savedGrant = new AtomicReference<>();
 
         when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", Instant.now())));
         when(roleRepository.findByIdAndTenantIdAndStatus(role.getId(), TENANT_ID, "active")).thenReturn(Optional.of(role));
@@ -97,12 +97,6 @@ class TenantOrganizationResourceGrantTest {
             "skill",
             capability.getId()
         )).thenReturn(false);
-        when(resourceGrantRepository.save(any(ResourceGrantEntity.class))).thenAnswer(invocation -> {
-            ResourceGrantEntity grant = invocation.getArgument(0);
-            savedGrant.set(grant);
-            return grant;
-        });
-        when(resourceGrantRepository.findByTenantIdOrderByCreatedAtDesc(TENANT_ID)).thenAnswer(invocation -> List.of(savedGrant.get()));
         when(roleRepository.findByTenantIdAndStatusOrderByNameAsc(TENANT_ID, "active")).thenReturn(List.of(role));
         when(departmentRepository.findByTenantIdAndStatusOrderBySortOrderAscNameAsc(TENANT_ID, "active")).thenReturn(List.of());
         when(userMembershipRepository.findByTenantIdAndStatus(TENANT_ID, "active")).thenReturn(List.of());
@@ -111,13 +105,19 @@ class TenantOrganizationResourceGrantTest {
         ResourceGrantResponse response = service.createResourceGrant(
             TENANT_ID,
             OPERATOR_USER_ID,
-            new CreateResourceGrantRequest("role", role.getId(), "skill", capability.getId(), List.of("use", "execute"))
+            new CreateResourceGrantRequest(
+                "合同处理能力",
+                List.of(new GrantPrincipalRequest("role", role.getId())),
+                List.of(new ResourceGrantItemRequest("skill", capability.getId()))
+            )
         );
 
-        assertThat(response.principalType()).isEqualTo("role");
-        assertThat(response.principalName()).isEqualTo("执行人");
-        assertThat(response.resourceName()).isEqualTo("合同解析");
-        assertThat(response.actions()).containsExactly("use", "execute");
+        assertThat(response.groupName()).isEqualTo("合同处理能力");
+        assertThat(response.principals()).hasSize(1);
+        assertThat(response.principals().get(0).principalType()).isEqualTo("role");
+        assertThat(response.principals().get(0).principalName()).isEqualTo("执行人");
+        assertThat(response.resources()).hasSize(1);
+        assertThat(response.resources().get(0).resourceName()).isEqualTo("合同解析");
     }
 
     @Test
@@ -130,7 +130,11 @@ class TenantOrganizationResourceGrantTest {
         assertThatThrownBy(() -> service.createResourceGrant(
             TENANT_ID,
             OPERATOR_USER_ID,
-            new CreateResourceGrantRequest("user", USER_ID, "skill", UUID.randomUUID(), List.of("use"))
+            new CreateResourceGrantRequest(
+                "外部用户能力",
+                List.of(new GrantPrincipalRequest("user", USER_ID)),
+                List.of(new ResourceGrantItemRequest("skill", UUID.randomUUID()))
+            )
         ))
             .isInstanceOf(ApiException.class)
             .extracting("code")
@@ -146,10 +150,11 @@ class TenantOrganizationResourceGrantTest {
         when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", Instant.now())));
         when(roleRepository.findByIdAndTenantIdAndStatus(role.getId(), TENANT_ID, "active")).thenReturn(Optional.of(role));
         when(pageGrantRepository.existsByTenantIdAndPrincipalTypeAndPrincipalIdAndPageKey(TENANT_ID, "role", role.getId(), "designer")).thenReturn(false);
-        when(pageGrantRepository.save(any(PageGrantEntity.class))).thenAnswer(invocation -> {
-            PageGrantEntity grant = invocation.getArgument(0);
+        when(pageGrantRepository.saveAll(any())).thenAnswer(invocation -> {
+            List<PageGrantEntity> grants = invocation.getArgument(0);
+            PageGrantEntity grant = grants.get(0);
             savedGrant.set(grant);
-            return grant;
+            return grants;
         });
         when(roleRepository.findByTenantIdAndStatusOrderByNameAsc(TENANT_ID, "active")).thenReturn(List.of(role));
         when(departmentRepository.findByTenantIdAndStatusOrderBySortOrderAscNameAsc(TENANT_ID, "active")).thenReturn(List.of());
@@ -159,13 +164,18 @@ class TenantOrganizationResourceGrantTest {
         PageGrantResponse response = service.createPageGrant(
             TENANT_ID,
             OPERATOR_USER_ID,
-            new CreatePageGrantRequest("role", role.getId(), "designer")
+            new CreatePageGrantRequest(
+                "设计入口",
+                List.of(new GrantPrincipalRequest("role", role.getId())),
+                List.of("designer")
+            )
         );
 
         assertThat(savedGrant.get()).isNotNull();
-        assertThat(response.principalName()).isEqualTo("流程设计者");
-        assertThat(response.pageKey()).isEqualTo("designer");
-        assertThat(response.pageName()).isEqualTo("流程设计");
+        assertThat(response.groupName()).isEqualTo("设计入口");
+        assertThat(response.principals().get(0).principalName()).isEqualTo("流程设计者");
+        assertThat(response.pages().get(0).pageKey()).isEqualTo("designer");
+        assertThat(response.pages().get(0).pageName()).isEqualTo("流程设计");
     }
 
     @Test

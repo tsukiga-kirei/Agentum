@@ -12,5 +12,7 @@ public interface PageGrantRepository extends JpaRepository<PageGrantEntity, UUID
 
     Optional<PageGrantEntity> findByIdAndTenantId(UUID id, UUID tenantId);
 
+    List<PageGrantEntity> findByTenantIdAndGrantGroupId(UUID tenantId, UUID grantGroupId);
+
     boolean existsByTenantIdAndPrincipalTypeAndPrincipalIdAndPageKey(UUID tenantId, String principalType, UUID principalId, String pageKey);
 }

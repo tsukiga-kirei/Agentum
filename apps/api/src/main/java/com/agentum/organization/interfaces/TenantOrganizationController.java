@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -178,19 +179,31 @@ public class TenantOrganizationController {
         HttpServletRequest request
     ) {
         tenantOrganizationAccess.assertCanManageTenant(principal, tenantId);
-        // 页签授权是租户内第二层菜单权限，主体和页签范围都必须由后端按租户重新校验。
+        // 页签分配是租户内第二层菜单配置，分配对象和页签范围都必须由后端按租户重新校验。
         return ApiResponse.success(tenantOrganizationService.createPageGrant(tenantId, principal.userId(), createPageGrantRequest), RequestIds.current(request));
     }
 
-    @DeleteMapping("/page-grants/{grantId}")
+    @PutMapping("/page-grants/{grantGroupId}")
+    public ApiResponse<PageGrantResponse> updatePageGrant(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID grantGroupId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @Valid @RequestBody CreatePageGrantRequest createPageGrantRequest,
+        HttpServletRequest request
+    ) {
+        tenantOrganizationAccess.assertCanManageTenant(principal, tenantId);
+        return ApiResponse.success(tenantOrganizationService.updatePageGrant(tenantId, principal.userId(), grantGroupId, createPageGrantRequest), RequestIds.current(request));
+    }
+
+    @DeleteMapping("/page-grants/{grantGroupId}")
     public ApiResponse<Void> deletePageGrant(
         @PathVariable UUID tenantId,
-        @PathVariable UUID grantId,
+        @PathVariable UUID grantGroupId,
         @AuthenticationPrincipal CurrentUserPrincipal principal,
         HttpServletRequest request
     ) {
         tenantOrganizationAccess.assertCanManageTenant(principal, tenantId);
-        tenantOrganizationService.deletePageGrant(tenantId, principal.userId(), grantId);
+        tenantOrganizationService.deletePageGrant(tenantId, principal.userId(), grantGroupId);
         return ApiResponse.success(null, RequestIds.current(request));
     }
 
@@ -205,15 +218,27 @@ public class TenantOrganizationController {
         return ApiResponse.success(tenantOrganizationService.createResourceGrant(tenantId, principal.userId(), createResourceGrantRequest), RequestIds.current(request));
     }
 
-    @DeleteMapping("/resource-grants/{grantId}")
+    @PutMapping("/resource-grants/{grantGroupId}")
+    public ApiResponse<ResourceGrantResponse> updateResourceGrant(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID grantGroupId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @Valid @RequestBody CreateResourceGrantRequest createResourceGrantRequest,
+        HttpServletRequest request
+    ) {
+        tenantOrganizationAccess.assertCanManageTenant(principal, tenantId);
+        return ApiResponse.success(tenantOrganizationService.updateResourceGrant(tenantId, principal.userId(), grantGroupId, createResourceGrantRequest), RequestIds.current(request));
+    }
+
+    @DeleteMapping("/resource-grants/{grantGroupId}")
     public ApiResponse<Void> deleteResourceGrant(
         @PathVariable UUID tenantId,
-        @PathVariable UUID grantId,
+        @PathVariable UUID grantGroupId,
         @AuthenticationPrincipal CurrentUserPrincipal principal,
         HttpServletRequest request
     ) {
         tenantOrganizationAccess.assertCanManageTenant(principal, tenantId);
-        tenantOrganizationService.deleteResourceGrant(tenantId, principal.userId(), grantId);
+        tenantOrganizationService.deleteResourceGrant(tenantId, principal.userId(), grantGroupId);
         return ApiResponse.success(null, RequestIds.current(request));
     }
 

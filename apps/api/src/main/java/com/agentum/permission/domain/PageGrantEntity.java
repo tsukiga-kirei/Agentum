@@ -18,6 +18,12 @@ public class PageGrantEntity {
     @Column(name = "tenant_id", nullable = false)
     private UUID tenantId;
 
+    @Column(name = "grant_group_id", nullable = false)
+    private UUID grantGroupId;
+
+    @Column(name = "grant_group_name", nullable = false, length = 120)
+    private String grantGroupName;
+
     @Column(name = "page_key", nullable = false, length = 80)
     private String pageKey;
 
@@ -33,10 +39,12 @@ public class PageGrantEntity {
     protected PageGrantEntity() {
     }
 
-    public static PageGrantEntity create(UUID tenantId, String pageKey, String principalType, UUID principalId) {
+    public static PageGrantEntity create(UUID tenantId, UUID grantGroupId, String grantGroupName, String pageKey, String principalType, UUID principalId) {
         PageGrantEntity entity = new PageGrantEntity();
         entity.id = UUID.randomUUID();
         entity.tenantId = tenantId;
+        entity.grantGroupId = grantGroupId;
+        entity.grantGroupName = grantGroupName;
         entity.pageKey = pageKey;
         entity.principalType = principalType;
         entity.principalId = principalId;
@@ -50,6 +58,14 @@ public class PageGrantEntity {
 
     public UUID getTenantId() {
         return tenantId;
+    }
+
+    public UUID getGrantGroupId() {
+        return grantGroupId;
+    }
+
+    public String getGrantGroupName() {
+        return grantGroupName;
     }
 
     public String getPageKey() {

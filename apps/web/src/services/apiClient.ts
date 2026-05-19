@@ -151,6 +151,8 @@ export const organizationApi = {
     apiRequest<PageGrant[]>(`/api/admin/tenants/${tenantId}/organization/page-grants`, { token }),
   createPageGrant: (tenantId: string, token: string, request: CreatePageGrantRequest) =>
     apiRequest<PageGrant>(`/api/admin/tenants/${tenantId}/organization/page-grants`, { method: "POST", token, body: request }),
+  updatePageGrant: (tenantId: string, grantGroupId: string, token: string, request: CreatePageGrantRequest) =>
+    apiRequest<PageGrant>(`/api/admin/tenants/${tenantId}/organization/page-grants/${grantGroupId}`, { method: "PUT", token, body: request }),
   deletePageGrant: (tenantId: string, grantId: string, token: string) =>
     apiRequest<void>(`/api/admin/tenants/${tenantId}/organization/page-grants/${grantId}`, { method: "DELETE", token }),
   createMember: (tenantId: string, token: string, request: CreateMemberRequest) =>
@@ -171,6 +173,8 @@ export const organizationApi = {
     apiRequest<ResourceGrant[]>(`/api/admin/tenants/${tenantId}/organization/resource-grants`, { token }),
   createResourceGrant: (tenantId: string, token: string, request: CreateResourceGrantRequest) =>
     apiRequest<ResourceGrant>(`/api/admin/tenants/${tenantId}/organization/resource-grants`, { method: "POST", token, body: request }),
+  updateResourceGrant: (tenantId: string, grantGroupId: string, token: string, request: CreateResourceGrantRequest) =>
+    apiRequest<ResourceGrant>(`/api/admin/tenants/${tenantId}/organization/resource-grants/${grantGroupId}`, { method: "PUT", token, body: request }),
   deleteResourceGrant: (tenantId: string, grantId: string, token: string) =>
     apiRequest<void>(`/api/admin/tenants/${tenantId}/organization/resource-grants/${grantId}`, { method: "DELETE", token }),
   createOrgRole: (tenantId: string, token: string, request: CreateTenantOrgRoleRequest) =>

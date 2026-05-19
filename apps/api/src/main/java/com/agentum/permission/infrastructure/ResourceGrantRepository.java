@@ -12,6 +12,8 @@ public interface ResourceGrantRepository extends JpaRepository<ResourceGrantEnti
 
     Optional<ResourceGrantEntity> findByIdAndTenantId(UUID id, UUID tenantId);
 
+    List<ResourceGrantEntity> findByTenantIdAndGrantGroupId(UUID tenantId, UUID grantGroupId);
+
     boolean existsByTenantIdAndPrincipalTypeAndPrincipalIdAndResourceTypeAndResourceId(
         UUID tenantId,
         String principalType,

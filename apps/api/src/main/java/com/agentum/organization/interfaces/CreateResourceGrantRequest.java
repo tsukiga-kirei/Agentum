@@ -1,15 +1,14 @@
 package com.agentum.organization.interfaces;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import java.util.List;
-import java.util.UUID;
 
 public record CreateResourceGrantRequest(
-    @NotBlank(message = "请选择授权主体类型") String principalType,
-    @NotNull(message = "请选择授权主体") UUID principalId,
-    @NotBlank(message = "请选择资源类型") String resourceType,
-    @NotNull(message = "请选择资源") UUID resourceId,
-    List<String> actions
+    @NotBlank(message = "请输入分配名称") @Size(max = 120, message = "分配名称不能超过 120 个字符") String groupName,
+    @NotEmpty(message = "请选择分配对象") List<@Valid GrantPrincipalRequest> principals,
+    @NotEmpty(message = "请选择能力资源") List<@Valid ResourceGrantItemRequest> resources
 ) {
 }

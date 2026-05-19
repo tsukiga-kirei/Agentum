@@ -867,8 +867,8 @@ paths:
           description: 当前账号不能管理该租户
   /api/admin/tenants/{tenantId}/organization/page-grants:
     get:
-      summary: 获取租户页签授权规则
-      description: 返回按角色、部门或人员授权的业务侧页签入口规则。
+      summary: 获取租户页签分配卡片
+      description: 返回按一次分配聚合后的页签分配卡片，每张卡片包含分配对象集合和页签集合。
       tags:
         - Organization
       security:
@@ -882,7 +882,7 @@ paths:
             format: uuid
       responses:
         "200":
-          description: 页签授权规则列表
+          description: 页签分配卡片列表
           content:
             application/json:
               schema:
@@ -895,8 +895,8 @@ paths:
                         items:
                           $ref: "#/components/schemas/PageGrant"
     post:
-      summary: 新增租户页签授权
-      description: 授权主体支持 role、department、user；页签范围仅限业务工作台、流程设计、能力资产和运行审计。
+      summary: 新增租户页签分配卡片
+      description: 分配对象支持 role、department、user；页签范围仅限业务工作台、流程设计、能力资产和运行审计。
       tags:
         - Organization
       security:
@@ -916,7 +916,7 @@ paths:
               $ref: "#/components/schemas/CreatePageGrantRequest"
       responses:
         "200":
-          description: 新增后的页签授权规则
+          description: 新增后的页签分配卡片
           content:
             application/json:
               schema:
@@ -927,12 +927,12 @@ paths:
                       data:
                         $ref: "#/components/schemas/PageGrant"
         "400":
-          description: 授权主体或页签不可用
+          description: 分配对象或页签不可用
         "409":
-          description: 授权规则已存在
-  /api/admin/tenants/{tenantId}/organization/page-grants/{grantId}:
-    delete:
-      summary: 删除租户页签授权
+          description: 分配明细已存在
+  /api/admin/tenants/{tenantId}/organization/page-grants/{grantGroupId}:
+    put:
+      summary: 更新租户页签分配卡片
       tags:
         - Organization
       security:
@@ -944,21 +944,60 @@ paths:
           schema:
             type: string
             format: uuid
-        - name: grantId
+        - name: grantGroupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePageGrantRequest"
+      responses:
+        "200":
+          description: 更新后的页签分配卡片
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/PageGrant"
+        "404":
+          description: 页签分配卡片不存在
+    delete:
+      summary: 删除租户页签分配卡片
+      tags:
+        - Organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: grantGroupId
           in: path
           required: true
           schema:
             type: string
             format: uuid
       responses:
-        "204":
+        "200":
           description: 删除成功
         "404":
-          description: 授权规则不存在
+          description: 页签分配卡片不存在
   /api/admin/tenants/{tenantId}/organization/resource-grants:
     get:
-      summary: 获取租户能力授权规则
-      description: 返回按角色、部门或人员直接授权的能力资源规则。
+      summary: 获取租户能力分配卡片
+      description: 返回按一次分配聚合后的能力分配卡片，每张卡片包含分配对象集合和能力集合。
       tags:
         - Organization
       security:
@@ -972,7 +1011,7 @@ paths:
             format: uuid
       responses:
         "200":
-          description: 能力授权规则列表
+          description: 能力分配卡片列表
           content:
             application/json:
               schema:
@@ -985,8 +1024,8 @@ paths:
                         items:
                           $ref: "#/components/schemas/ResourceGrant"
     post:
-      summary: 新增租户能力授权
-      description: 授权主体支持 role、department、user；资源必须是系统管理已启用给当前租户的能力。
+      summary: 新增租户能力分配卡片
+      description: 分配对象支持 role、department、user；资源必须是系统管理已启用给当前租户的能力。
       tags:
         - Organization
       security:
@@ -1006,7 +1045,7 @@ paths:
               $ref: "#/components/schemas/CreateResourceGrantRequest"
       responses:
         "200":
-          description: 新增后的能力授权规则
+          description: 新增后的能力分配卡片
           content:
             application/json:
               schema:
@@ -1017,12 +1056,12 @@ paths:
                       data:
                         $ref: "#/components/schemas/ResourceGrant"
         "400":
-          description: 授权主体或资源不可用
+          description: 分配对象或资源不可用
         "409":
-          description: 授权规则已存在
-  /api/admin/tenants/{tenantId}/organization/resource-grants/{grantId}:
-    delete:
-      summary: 删除租户能力授权
+          description: 分配明细已存在
+  /api/admin/tenants/{tenantId}/organization/resource-grants/{grantGroupId}:
+    put:
+      summary: 更新租户能力分配卡片
       tags:
         - Organization
       security:
@@ -1034,17 +1073,56 @@ paths:
           schema:
             type: string
             format: uuid
-        - name: grantId
+        - name: grantGroupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateResourceGrantRequest"
+      responses:
+        "200":
+          description: 更新后的能力分配卡片
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/ResourceGrant"
+        "404":
+          description: 能力分配卡片不存在
+    delete:
+      summary: 删除租户能力分配卡片
+      tags:
+        - Organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: grantGroupId
           in: path
           required: true
           schema:
             type: string
             format: uuid
       responses:
-        "204":
+        "200":
           description: 删除成功
         "404":
-          description: 授权规则不存在
+          description: 能力分配卡片不存在
   /api/admin/tenants/{tenantId}/organization/org-roles/{roleId}:
     patch:
       summary: 更新租户内角色权限
@@ -2197,6 +2275,53 @@ components:
         id:
           type: string
           format: uuid
+        groupName:
+          type: string
+          maxLength: 120
+        principals:
+          type: array
+          items:
+            $ref: "#/components/schemas/GrantPrincipal"
+        resources:
+          type: array
+          items:
+            $ref: "#/components/schemas/ResourceGrantItem"
+        createdAt:
+          type: string
+      required:
+        - id
+        - groupName
+        - principals
+        - resources
+        - createdAt
+    PageGrant:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        groupName:
+          type: string
+          maxLength: 120
+        principals:
+          type: array
+          items:
+            $ref: "#/components/schemas/GrantPrincipal"
+        pages:
+          type: array
+          items:
+            $ref: "#/components/schemas/PageGrantItem"
+        createdAt:
+          type: string
+      required:
+        - id
+        - groupName
+        - principals
+        - pages
+        - createdAt
+    GrantPrincipal:
+      type: object
+      properties:
         principalType:
           type: string
           enum:
@@ -2208,6 +2333,43 @@ components:
           format: uuid
         principalName:
           type: string
+      required:
+        - principalType
+        - principalId
+        - principalName
+    GrantPrincipalRequest:
+      type: object
+      properties:
+        principalType:
+          type: string
+          enum:
+            - role
+            - department
+            - user
+        principalId:
+          type: string
+          format: uuid
+      required:
+        - principalType
+        - principalId
+    PageGrantItem:
+      type: object
+      properties:
+        pageKey:
+          type: string
+          enum:
+            - workbench
+            - designer
+            - assets
+            - audit
+        pageName:
+          type: string
+      required:
+        - pageKey
+        - pageName
+    ResourceGrantItem:
+      type: object
+      properties:
         resourceType:
           type: string
           enum:
@@ -2222,71 +2384,14 @@ components:
           type: string
         resourceCode:
           type: string
-        actions:
-          type: array
-          items:
-            type: string
-        createdAt:
-          type: string
       required:
-        - id
-        - principalType
-        - principalId
-        - principalName
         - resourceType
         - resourceId
         - resourceName
         - resourceCode
-        - actions
-        - createdAt
-    PageGrant:
+    ResourceGrantItemRequest:
       type: object
       properties:
-        id:
-          type: string
-          format: uuid
-        principalType:
-          type: string
-          enum:
-            - role
-            - department
-            - user
-        principalId:
-          type: string
-          format: uuid
-        principalName:
-          type: string
-        pageKey:
-          type: string
-          enum:
-            - workbench
-            - designer
-            - assets
-            - audit
-        pageName:
-          type: string
-        createdAt:
-          type: string
-      required:
-        - id
-        - principalType
-        - principalId
-        - principalName
-        - pageKey
-        - pageName
-        - createdAt
-    CreateResourceGrantRequest:
-      type: object
-      properties:
-        principalType:
-          type: string
-          enum:
-            - role
-            - department
-            - user
-        principalId:
-          type: string
-          format: uuid
         resourceType:
           type: string
           enum:
@@ -2297,38 +2402,50 @@ components:
         resourceId:
           type: string
           format: uuid
-        actions:
-          type: array
-          items:
-            type: string
       required:
-        - principalType
-        - principalId
         - resourceType
         - resourceId
+    CreateResourceGrantRequest:
+      type: object
+      properties:
+        groupName:
+          type: string
+          maxLength: 120
+        principals:
+          type: array
+          items:
+            $ref: "#/components/schemas/GrantPrincipalRequest"
+        resources:
+          type: array
+          items:
+            $ref: "#/components/schemas/ResourceGrantItemRequest"
+      required:
+        - groupName
+        - principals
+        - resources
     CreatePageGrantRequest:
       type: object
       properties:
-        principalType:
+        groupName:
           type: string
-          enum:
-            - role
-            - department
-            - user
-        principalId:
-          type: string
-          format: uuid
-        pageKey:
-          type: string
-          enum:
-            - workbench
-            - designer
-            - assets
-            - audit
+          maxLength: 120
+        principals:
+          type: array
+          items:
+            $ref: "#/components/schemas/GrantPrincipalRequest"
+        pageKeys:
+          type: array
+          items:
+            type: string
+            enum:
+              - workbench
+              - designer
+              - assets
+              - audit
       required:
-        - principalType
-        - principalId
-        - pageKey
+        - groupName
+        - principals
+        - pageKeys
     CreateTenantOrgRoleRequest:
       type: object
       properties:

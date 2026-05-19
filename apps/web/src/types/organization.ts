@@ -160,39 +160,57 @@ export type UpdateMembershipStatusRequest = {
 
 export type PrincipalType = "role" | "department" | "user";
 
-export type ResourceGrant = {
-  id: string;
+export type GrantPrincipal = {
   principalType: PrincipalType;
   principalId: string;
   principalName: string;
+};
+
+export type PageGrantItem = {
+  pageKey: string;
+  pageName: string;
+};
+
+export type ResourceGrantItem = {
   resourceType: string;
   resourceId: string;
   resourceName: string;
   resourceCode: string;
-  actions: string[];
+};
+
+export type ResourceGrant = {
+  id: string;
+  groupName: string;
+  principals: GrantPrincipal[];
+  resources: ResourceGrantItem[];
   createdAt: string;
 };
 
 export type PageGrant = {
   id: string;
-  principalType: PrincipalType;
-  principalId: string;
-  principalName: string;
-  pageKey: string;
-  pageName: string;
+  groupName: string;
+  principals: GrantPrincipal[];
+  pages: PageGrantItem[];
   createdAt: string;
 };
 
 export type CreateResourceGrantRequest = {
-  principalType: PrincipalType;
-  principalId: string;
-  resourceType: string;
-  resourceId: string;
-  actions: string[];
+  groupName: string;
+  principals: Array<{
+    principalType: PrincipalType;
+    principalId: string;
+  }>;
+  resources: Array<{
+    resourceType: string;
+    resourceId: string;
+  }>;
 };
 
 export type CreatePageGrantRequest = {
-  principalType: PrincipalType;
-  principalId: string;
-  pageKey: string;
+  groupName: string;
+  principals: Array<{
+    principalType: PrincipalType;
+    principalId: string;
+  }>;
+  pageKeys: string[];
 };

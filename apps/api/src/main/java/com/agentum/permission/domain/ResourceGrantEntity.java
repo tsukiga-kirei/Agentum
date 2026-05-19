@@ -18,6 +18,12 @@ public class ResourceGrantEntity {
     @Column(name = "tenant_id", nullable = false)
     private UUID tenantId;
 
+    @Column(name = "grant_group_id", nullable = false)
+    private UUID grantGroupId;
+
+    @Column(name = "grant_group_name", nullable = false, length = 120)
+    private String grantGroupName;
+
     @Column(name = "resource_type", nullable = false, length = 80)
     private String resourceType;
 
@@ -39,10 +45,12 @@ public class ResourceGrantEntity {
     protected ResourceGrantEntity() {
     }
 
-    public static ResourceGrantEntity create(UUID tenantId, String resourceType, UUID resourceId, String principalType, UUID principalId, String[] actions) {
+    public static ResourceGrantEntity create(UUID tenantId, UUID grantGroupId, String grantGroupName, String resourceType, UUID resourceId, String principalType, UUID principalId, String[] actions) {
         ResourceGrantEntity entity = new ResourceGrantEntity();
         entity.id = UUID.randomUUID();
         entity.tenantId = tenantId;
+        entity.grantGroupId = grantGroupId;
+        entity.grantGroupName = grantGroupName;
         entity.resourceType = resourceType;
         entity.resourceId = resourceId;
         entity.principalType = principalType;
@@ -58,6 +66,14 @@ public class ResourceGrantEntity {
 
     public UUID getTenantId() {
         return tenantId;
+    }
+
+    public UUID getGrantGroupId() {
+        return grantGroupId;
+    }
+
+    public String getGrantGroupName() {
+        return grantGroupName;
     }
 
     public String getResourceType() {

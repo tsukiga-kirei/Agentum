@@ -30,6 +30,7 @@ import type {
   CreatePageGrantRequest,
   CreateResourceGrantRequest,
   CreateTenantRoleRequest,
+  GrantPrincipal,
   OrganizationDepartment,
   OrganizationMembership,
   OrganizationRole,
@@ -53,7 +54,7 @@ type TenantManagementTab = {
 const tenantManagementTabs: TenantManagementTab[] = [
   { key: "organization", label: "人员组织", description: "用户、部门和空间成员关系", icon: UsersRound },
   { key: "roles", label: "角色维护", description: "租户内角色新增、编辑和停用", icon: ShieldCheck },
-  { key: "resources", label: "资源授权", description: "按角色、人员、部门授权可用功能", icon: UserRoundCog },
+  { key: "resources", label: "资源分配", description: "分配模块入口和可用能力池", icon: UserRoundCog },
 ];
 
 const pagePermissionOptions = [
@@ -89,20 +90,6 @@ const emptyRoleForm: RoleDraft = {
   description: "",
   status: "active",
   membershipIds: [],
-};
-
-const emptyGrantForm: CreateResourceGrantRequest = {
-  principalType: "role",
-  principalId: "",
-  resourceType: "skill",
-  resourceId: "",
-  actions: ["use"],
-};
-
-const emptyPageGrantForm: CreatePageGrantRequest = {
-  principalType: "role",
-  principalId: "",
-  pageKey: "",
 };
 
 const adminSelectClassNames = { popup: { root: "agent-select-dropdown agent-admin-select-dropdown" } };
@@ -219,13 +206,15 @@ export function TenantManagementPage() {
   const [authorizationError, setAuthorizationError] = useState("");
   const [pageGrants, setPageGrants] = useState<PageGrant[]>([]);
   const [pageGrantModalOpen, setPageGrantModalOpen] = useState(false);
-  const [pageGrantDraft, setPageGrantDraft] = useState<CreatePageGrantRequest>(emptyPageGrantForm);
+  const [editingPageGrantGroup, setEditingPageGrantGroup] = useState<PageGrant | null>(null);
+  const [pageGrantGroupName, setPageGrantGroupName] = useState("");
   const [pageGrantPrincipalKeys, setPageGrantPrincipalKeys] = useState<PrincipalSelectionKey[]>([]);
   const [selectedPageKeys, setSelectedPageKeys] = useState<string[]>([]);
   const [pageGrantSubmitting, setPageGrantSubmitting] = useState(false);
   const [resourceGrants, setResourceGrants] = useState<ResourceGrant[]>([]);
   const [grantModalOpen, setGrantModalOpen] = useState(false);
-  const [grantDraft, setGrantDraft] = useState<CreateResourceGrantRequest>(emptyGrantForm);
+  const [editingGrantGroup, setEditingGrantGroup] = useState<ResourceGrant | null>(null);
+  const [grantGroupName, setGrantGroupName] = useState("");
   const [grantPrincipalKeys, setGrantPrincipalKeys] = useState<PrincipalSelectionKey[]>([]);
   const [grantResourceIds, setGrantResourceIds] = useState<string[]>([]);
   const [grantSubmitting, setGrantSubmitting] = useState(false);
@@ -260,8 +249,8 @@ export function TenantManagementPage() {
     try {
       setPageGrants(await organizationApi.listPageGrants(user.tenantId, token));
     } catch (error) {
-      console.warn("[tenant-management] 页签授权规则加载失败", getTenantManagementErrorContext(error, user.tenantId));
-      setAuthorizationError(error instanceof AgentumApiError ? error.message : "无法加载页签授权数据");
+      console.warn("[tenant-management] 页签分配加载失败", getTenantManagementErrorContext(error, user.tenantId));
+      setAuthorizationError(error instanceof AgentumApiError ? error.message : "无法加载页签分配数据");
       setPageGrants([]);
     } finally {
       setAuthorizationLoading(false);
@@ -285,7 +274,7 @@ export function TenantManagementPage() {
     try {
       setResourceGrants(await organizationApi.listResourceGrants(user.tenantId, token));
     } catch (error) {
-      console.warn("[tenant-management] 资源授权规则加载失败", getTenantManagementErrorContext(error, user.tenantId));
+      console.warn("[tenant-management] 能力分配加载失败", getTenantManagementErrorContext(error, user.tenantId));
       setResourceGrants([]);
     }
   }, [token, user?.tenantId]);
@@ -300,7 +289,6 @@ export function TenantManagementPage() {
     setOrganizationLoading(true);
     setOrganizationError("");
 
-    // 租户管理页只展示当前阶段要做的治理视图；人员、部门和资源授权仍由后端按 token + tenantId 重新判断。
     organizationApi.overview(tenantId, token)
       .then((overview) => {
         if (active) {
@@ -562,109 +550,146 @@ export function TenantManagementPage() {
   }
 
   function openPageGrantModal() {
-    setPageGrantDraft(emptyPageGrantForm);
+    setEditingPageGrantGroup(null);
+    setPageGrantGroupName("");
     setPageGrantPrincipalKeys([]);
     setSelectedPageKeys([]);
     setPageGrantModalOpen(true);
   }
 
+  function openEditPageGrantModal(group: PageGrant) {
+    setEditingPageGrantGroup(group);
+    setPageGrantGroupName(group.groupName);
+    setPageGrantPrincipalKeys(group.principals.map((principal) => `${principal.principalType}:${principal.principalId}` as PrincipalSelectionKey));
+    setSelectedPageKeys(group.pages.map((page) => page.pageKey));
+    setPageGrantModalOpen(true);
+  }
+
   async function handleSubmitPageGrant() {
     if (!token || !user?.tenantId) return;
+    const groupName = pageGrantGroupName.trim();
+    if (!groupName) {
+      messageApi.warning("请输入分配名称");
+      return;
+    }
     if (pageGrantPrincipalKeys.length === 0 || selectedPageKeys.length === 0) {
-      messageApi.warning("请选择授权主体和可访问页签");
+      messageApi.warning("请选择分配对象和可访问页签");
       return;
     }
     const tenantId = user.tenantId;
     setPageGrantSubmitting(true);
     setAuthorizationError("");
     try {
-      // 页签授权和能力授权一样支持混选主体；每个主体 + 页签单独落库，方便后续审计和撤销。
-      await Promise.all(pageGrantPrincipalKeys.flatMap((principalKey) => {
-        const [principalType, principalId] = principalKey.split(":") as [PrincipalType, string];
-        return selectedPageKeys.map((pageKey) => organizationApi.createPageGrant(tenantId, token, {
-          ...pageGrantDraft,
-          principalType,
-          principalId,
-          pageKey,
-        }));
-      }));
+      const request: CreatePageGrantRequest = {
+        groupName,
+        principals: pageGrantPrincipalKeys.map((principalKey) => {
+          const [principalType, principalId] = principalKey.split(":") as [PrincipalType, string];
+          return { principalType, principalId };
+        }),
+        pageKeys: selectedPageKeys,
+      };
+      if (editingPageGrantGroup) {
+        await organizationApi.updatePageGrant(tenantId, editingPageGrantGroup.id, token, request);
+      } else {
+        await organizationApi.createPageGrant(tenantId, token, request);
+      }
       await loadPageGrants();
       setPageGrantModalOpen(false);
+      setEditingPageGrantGroup(null);
+      setPageGrantGroupName("");
       setPageGrantPrincipalKeys([]);
       setSelectedPageKeys([]);
-      messageApi.success("页签授权已新增");
+      messageApi.success(editingPageGrantGroup ? "页签分配已更新" : "页签分配已新增");
     } catch (error) {
-      console.warn("[tenant-management] 页签授权新增失败", getTenantManagementErrorContext(error, user.tenantId, { principalId: pageGrantPrincipalKeys.join(","), pageKey: selectedPageKeys.join(",") }));
-      setAuthorizationError(error instanceof AgentumApiError ? error.message : "页签授权新增失败，请稍后重试");
+      console.warn("[tenant-management] 页签分配保存失败", getTenantManagementErrorContext(error, user.tenantId, { principalId: pageGrantPrincipalKeys.join(","), pageKey: selectedPageKeys.join(",") }));
+      setAuthorizationError(error instanceof AgentumApiError ? error.message : "页签分配保存失败，请稍后重试");
     } finally {
       setPageGrantSubmitting(false);
     }
   }
 
-  async function handleDeletePageGrant(grant: PageGrant) {
+  async function handleDeletePageGrantGroup(group: PageGrant) {
     if (!token || !user?.tenantId) return;
     try {
-      await organizationApi.deletePageGrant(user.tenantId, grant.id, token);
+      await organizationApi.deletePageGrant(user.tenantId, group.id, token);
       await loadPageGrants();
-      messageApi.success("页签授权已删除");
+      messageApi.success("页签分配已删除");
     } catch (error) {
-      console.warn("[tenant-management] 页签授权删除失败", getTenantManagementErrorContext(error, user.tenantId, { grantId: grant.id }));
-      setAuthorizationError(error instanceof AgentumApiError ? error.message : "页签授权删除失败，请稍后重试");
+      console.warn("[tenant-management] 页签分配删除失败", getTenantManagementErrorContext(error, user.tenantId, { grantId: group.id }));
+      setAuthorizationError(error instanceof AgentumApiError ? error.message : "页签分配删除失败，请稍后重试");
     }
   }
 
   function openGrantModal() {
-    setGrantDraft(emptyGrantForm);
+    setEditingGrantGroup(null);
+    setGrantGroupName("");
     setGrantPrincipalKeys([]);
     setGrantResourceIds([]);
     setGrantModalOpen(true);
   }
 
+  function openEditGrantModal(group: ResourceGrant) {
+    setEditingGrantGroup(group);
+    setGrantGroupName(group.groupName);
+    setGrantPrincipalKeys(group.principals.map((principal) => `${principal.principalType}:${principal.principalId}` as PrincipalSelectionKey));
+    setGrantResourceIds(group.resources.map((resource) => resource.resourceId));
+    setGrantModalOpen(true);
+  }
+
   async function handleSubmitGrant() {
     if (!token || !user?.tenantId) return;
+    const groupName = grantGroupName.trim();
+    if (!groupName) {
+      messageApi.warning("请输入分配名称");
+      return;
+    }
     if (grantPrincipalKeys.length === 0 || grantResourceIds.length === 0) {
-      messageApi.warning("请选择授权主体和能力资源");
+      messageApi.warning("请选择分配对象和能力资源");
       return;
     }
     const tenantId = user.tenantId;
     setGrantSubmitting(true);
     try {
-      // 同一批授权允许混选角色、部门和人员；前端拆成多条后端授权记录，避免把不同主体揉进不可审计的复合字段。
-      await Promise.all(grantPrincipalKeys.flatMap((principalKey) => {
-        const [principalType, principalId] = principalKey.split(":") as [PrincipalType, string];
-        return grantResourceIds.map((resourceId) => {
+      const request: CreateResourceGrantRequest = {
+        groupName,
+        principals: grantPrincipalKeys.map((principalKey) => {
+          const [principalType, principalId] = principalKey.split(":") as [PrincipalType, string];
+          return { principalType, principalId };
+        }),
+        resources: grantResourceIds.map((resourceId) => {
           const resource = resourceOptions.find((option) => option.resourceId === resourceId);
-          return organizationApi.createResourceGrant(tenantId, token, {
-            ...grantDraft,
-            principalType,
-            principalId,
-            resourceId,
-            resourceType: resource?.resourceType ?? grantDraft.resourceType,
-          });
-        });
-      }));
+          return { resourceId, resourceType: resource?.resourceType ?? "skill" };
+        }),
+      };
+      if (editingGrantGroup) {
+        await organizationApi.updateResourceGrant(tenantId, editingGrantGroup.id, token, request);
+      } else {
+        await organizationApi.createResourceGrant(tenantId, token, request);
+      }
       await loadResourceGrants();
       setGrantModalOpen(false);
+      setEditingGrantGroup(null);
+      setGrantGroupName("");
       setGrantPrincipalKeys([]);
       setGrantResourceIds([]);
-      messageApi.success("资源授权已新增");
+      messageApi.success(editingGrantGroup ? "能力分配已更新" : "能力分配已新增");
     } catch (error) {
-      console.warn("[tenant-management] 资源授权新增失败", getTenantManagementErrorContext(error, user.tenantId, { principalId: grantPrincipalKeys.join(","), resourceId: grantResourceIds.join(",") }));
-      setAuthorizationError(error instanceof AgentumApiError ? error.message : "资源授权新增失败，请稍后重试");
+      console.warn("[tenant-management] 能力分配保存失败", getTenantManagementErrorContext(error, user.tenantId, { principalId: grantPrincipalKeys.join(","), resourceId: grantResourceIds.join(",") }));
+      setAuthorizationError(error instanceof AgentumApiError ? error.message : "能力分配保存失败，请稍后重试");
     } finally {
       setGrantSubmitting(false);
     }
   }
 
-  async function handleDeleteGrant(grant: ResourceGrant) {
+  async function handleDeleteGrantGroup(group: ResourceGrant) {
     if (!token || !user?.tenantId) return;
     try {
-      await organizationApi.deleteResourceGrant(user.tenantId, grant.id, token);
+      await organizationApi.deleteResourceGrant(user.tenantId, group.id, token);
       await loadResourceGrants();
-      messageApi.success("资源授权已删除");
+      messageApi.success("能力分配已删除");
     } catch (error) {
-      console.warn("[tenant-management] 资源授权删除失败", getTenantManagementErrorContext(error, user.tenantId, { grantId: grant.id }));
-      setAuthorizationError(error instanceof AgentumApiError ? error.message : "资源授权删除失败，请稍后重试");
+      console.warn("[tenant-management] 能力分配删除失败", getTenantManagementErrorContext(error, user.tenantId, { grantId: group.id }));
+      setAuthorizationError(error instanceof AgentumApiError ? error.message : "能力分配删除失败，请稍后重试");
     }
   }
 
@@ -685,7 +710,7 @@ export function TenantManagementPage() {
                 </span>
               </div>
               <p className="agent-muted mt-1.5 max-w-2xl text-sm leading-relaxed">
-                左侧菜单决定能否进入租户管理；当前先聚焦人员组织和资源授权，业务运行日志后续会在运行审计中独立呈现。
+                维护当前租户的人员组织、角色职责、业务入口和可用能力池，保证成员能在合适的范围内发起流程、设计流程和查看结果。
               </p>
             </div>
           </div>
@@ -710,11 +735,6 @@ export function TenantManagementPage() {
         <div className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] shadow-[var(--shadow-sm)]">
 
           <div className="p-5">
-            <div className="sys-hint mb-4">
-              <LockKeyhole size={14} />
-              页面入口不是安全边界。发布、凭证、外部交付、敏感 MCP 和审计查看都必须由后端再次校验。
-            </div>
-
             {activeTab === "organization" ? (
               <OrganizationPanel
                 overview={organizationOverview}
@@ -746,8 +766,10 @@ export function TenantManagementPage() {
                 grants={resourceGrants}
                 onCreateGrant={openGrantModal}
                 onCreatePageGrant={openPageGrantModal}
-                onDeletePageGrant={(grant) => void handleDeletePageGrant(grant)}
-                onDeleteGrant={(grant) => void handleDeleteGrant(grant)}
+                onEditPageGrant={openEditPageGrantModal}
+                onEditGrant={openEditGrantModal}
+                onDeletePageGrant={(group) => void handleDeletePageGrantGroup(group)}
+                onDeleteGrant={(group) => void handleDeleteGrantGroup(group)}
               />
             ) : null}
           </div>
@@ -807,7 +829,7 @@ export function TenantManagementPage() {
                     suffixIcon={adminSelectSuffixIcon}
                     placeholder="请选择角色"
                     value={memberDraft.roleId || undefined}
-                    options={(organizationOverview?.roles ?? []).map((role) => ({ value: role.id, label: `${role.name} (${role.code})` }))}
+                    options={(organizationOverview?.roles ?? []).map((role) => ({ value: role.id, label: role.name }))}
                     onChange={(roleId) => setMemberDraft((draft) => ({ ...draft, roleId }))}
                   />
                 </div>
@@ -865,7 +887,7 @@ export function TenantManagementPage() {
                     suffixIcon={adminSelectSuffixIcon}
                     placeholder="请选择一个或多个角色"
                     value={memberEditDraft.roleIds}
-                    options={(organizationOverview?.roles ?? []).map((role) => ({ value: role.id, label: `${role.name} (${role.code})` }))}
+                    options={(organizationOverview?.roles ?? []).map((role) => ({ value: role.id, label: role.name }))}
                     onChange={(roleIds) => setMemberEditDraft((draft) => ({ ...draft, roleIds }))}
                   />
                 </div>
@@ -1002,13 +1024,25 @@ export function TenantManagementPage() {
         <div className="sys-modal-mask" onClick={() => setPageGrantModalOpen(false)}>
           <div className="sys-modal" style={{ maxWidth: 720 }} onClick={(event) => event.stopPropagation()}>
             <div className="sys-modal-header">
-              <span className="sys-modal-title">新增页签授权</span>
+              <span className="sys-modal-title">{editingPageGrantGroup ? "编辑页签分配" : "新增页签分配"}</span>
               <button className="sys-modal-close" onClick={() => setPageGrantModalOpen(false)}><X size={18} /></button>
             </div>
             <div className="sys-modal-body">
-              <div className="sys-hint"><Info size={14} /> 选择能访问这些页签的角色、部门或人员；后端会按当前租户复核主体是否有效。</div>
               <div className="sys-field">
-                <label className="sys-field-label sys-field-label--required">授权主体</label>
+                <label className="sys-field-label sys-field-label--required">分配名称</label>
+                <div className="sys-field-input-wrap">
+                  <Tag size={16} className="sys-field-prefix" />
+                  <input
+                    className="sys-field-input"
+                    value={pageGrantGroupName}
+                    maxLength={120}
+                    placeholder="例如：设计与审计入口"
+                    onChange={(event) => setPageGrantGroupName(event.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="sys-field">
+                <label className="sys-field-label sys-field-label--required">分配对象</label>
                 <Select
                   mode="multiple"
                   className="agent-admin-select w-full"
@@ -1016,7 +1050,7 @@ export function TenantManagementPage() {
                   showSearch
                   prefix={<UserRoundCog className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
                   suffixIcon={adminSelectSuffixIcon}
-                  placeholder="可混选角色、部门和人员"
+                  placeholder="选择角色、部门或人员"
                   value={pageGrantPrincipalKeys}
                   options={getPrincipalOptions(organizationOverview)}
                   onChange={(principalKeys) => setPageGrantPrincipalKeys(principalKeys as PrincipalSelectionKey[])}
@@ -1049,7 +1083,7 @@ export function TenantManagementPage() {
             </div>
             <div className="sys-modal-footer">
               <button className="sys-btn sys-btn--default" onClick={() => setPageGrantModalOpen(false)}><X size={14} /> 取消</button>
-              <button className="sys-btn sys-btn--primary" disabled={pageGrantSubmitting} onClick={() => void handleSubmitPageGrant()}><Save size={14} /> 保存授权</button>
+              <button className="sys-btn sys-btn--primary" disabled={pageGrantSubmitting} onClick={() => void handleSubmitPageGrant()}><Save size={14} /> 保存分配</button>
             </div>
           </div>
         </div>
@@ -1059,13 +1093,25 @@ export function TenantManagementPage() {
         <div className="sys-modal-mask" onClick={() => setGrantModalOpen(false)}>
           <div className="sys-modal" style={{ maxWidth: 640 }} onClick={(event) => event.stopPropagation()}>
             <div className="sys-modal-header">
-              <span className="sys-modal-title">新增能力授权</span>
+              <span className="sys-modal-title">{editingGrantGroup ? "编辑能力分配" : "新增能力分配"}</span>
               <button className="sys-modal-close" onClick={() => setGrantModalOpen(false)}><X size={18} /></button>
             </div>
             <div className="sys-modal-body">
-              <div className="sys-hint"><Info size={14} /> 授权主体可以选择角色、部门或具体用户；后端会按当前租户复核主体和资源是否可用。</div>
               <div className="sys-field">
-                <label className="sys-field-label sys-field-label--required">授权主体</label>
+                <label className="sys-field-label sys-field-label--required">分配名称</label>
+                <div className="sys-field-input-wrap">
+                  <Tag size={16} className="sys-field-prefix" />
+                  <input
+                    className="sys-field-input"
+                    value={grantGroupName}
+                    maxLength={120}
+                    placeholder="例如：合同处理能力"
+                    onChange={(event) => setGrantGroupName(event.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="sys-field">
+                <label className="sys-field-label sys-field-label--required">分配对象</label>
                 <Select
                   mode="multiple"
                   className="agent-admin-select w-full"
@@ -1073,7 +1119,7 @@ export function TenantManagementPage() {
                   showSearch
                   prefix={<UserRoundCog className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
                   suffixIcon={adminSelectSuffixIcon}
-                  placeholder="可混选角色、部门和人员"
+                  placeholder="选择角色、部门或人员"
                   value={grantPrincipalKeys}
                   options={getPrincipalOptions(organizationOverview)}
                   onChange={(principalKeys) => setGrantPrincipalKeys(principalKeys as PrincipalSelectionKey[])}
@@ -1109,23 +1155,10 @@ export function TenantManagementPage() {
                   </div>
                 )}
               </div>
-              <div className="sys-field">
-                <label className="sys-field-label">动作</label>
-                <Select
-                  mode="multiple"
-                  className="agent-admin-select w-full"
-                  classNames={adminSelectClassNames}
-                  prefix={<ClipboardList className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
-                  suffixIcon={adminSelectSuffixIcon}
-                  value={grantDraft.actions}
-                  options={["use", "view", "execute", "manage"].map((action) => ({ value: action, label: formatGrantAction(action) }))}
-                  onChange={(actions) => setGrantDraft((draft) => ({ ...draft, actions }))}
-                />
-              </div>
             </div>
             <div className="sys-modal-footer">
               <button className="sys-btn sys-btn--default" onClick={() => setGrantModalOpen(false)}><X size={14} /> 取消</button>
-              <button className="sys-btn sys-btn--primary" disabled={grantSubmitting} onClick={() => void handleSubmitGrant()}><Save size={14} /> 保存授权</button>
+              <button className="sys-btn sys-btn--primary" disabled={grantSubmitting} onClick={() => void handleSubmitGrant()}><Save size={14} /> 保存分配</button>
             </div>
           </div>
         </div>
@@ -1220,7 +1253,6 @@ function OrganizationPanel({
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] px-4 py-3">
         <div>
           <h3 className="text-sm font-semibold">人员组织维护</h3>
-          <p className="agent-muted mt-1 text-xs">左侧按部门筛选，右侧查看成员信息；需要调整时进入单人成员编辑。</p>
         </div>
         <div className="flex flex-wrap gap-2">
           {selectedDepartment ? (
@@ -1319,7 +1351,7 @@ function OrganizationPanel({
                           {membership.roles.length === 0 ? (
                             <span className="sys-info-tag">未分配角色</span>
                           ) : membership.roles.map((role) => (
-                            <span key={role.id} className="sys-info-tag sys-info-tag--info">{role.name}（{role.code}）</span>
+                            <span key={role.id} className="sys-info-tag sys-info-tag--info">{role.name}</span>
                           ))}
                         </div>
                       </td>
@@ -1404,7 +1436,6 @@ function RoleManagementPanel({
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] px-4 py-3">
         <div>
           <h3 className="text-sm font-semibold">角色维护</h3>
-          <p className="agent-muted mt-1 text-xs">角色用于成员分配和能力授权；停用动作进入编辑弹窗后执行，避免列表误触。</p>
         </div>
         <button className="sys-btn sys-btn--primary" onClick={onCreateRole} disabled={!overview}>
           <PlusCircle size={14} />
@@ -1429,7 +1460,7 @@ function RoleManagementPanel({
                 <div className="sys-card-avatar sys-card-avatar--tenant"><ShieldCheck size={22} /></div>
                 <div className="sys-card-info">
                   <div className="sys-card-name">{role.name}</div>
-                  <div className="sys-card-code">{role.code} · {role.scope === "tenant" ? "租户角色" : role.scope}</div>
+                  <div className="sys-card-code">{role.scope === "tenant" ? "租户角色" : role.scope}</div>
                 </div>
               </div>
               <div className="sys-info-tags">
@@ -1464,6 +1495,8 @@ function ResourceAuthorizationPanel({
   grants,
   onCreateGrant,
   onCreatePageGrant,
+  onEditPageGrant,
+  onEditGrant,
   onDeletePageGrant,
   onDeleteGrant,
 }: {
@@ -1473,6 +1506,8 @@ function ResourceAuthorizationPanel({
   grants: ResourceGrant[];
   onCreateGrant: () => void;
   onCreatePageGrant: () => void;
+  onEditPageGrant: (grant: PageGrant) => void;
+  onEditGrant: (grant: ResourceGrant) => void;
   onDeletePageGrant: (grant: PageGrant) => void;
   onDeleteGrant: (grant: ResourceGrant) => void;
 }) {
@@ -1483,10 +1518,7 @@ function ResourceAuthorizationPanel({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] px-4 py-3">
         <div>
-          <h3 className="text-sm font-semibold">资源授权</h3>
-          <p className="agent-muted mt-1 text-xs">
-            页签授权决定能进哪些业务模块，能力授权决定可调用哪些 MCP、Skill、提示词模板和交付能力。
-          </p>
+          <h3 className="text-sm font-semibold">资源分配</h3>
         </div>
       </div>
 
@@ -1495,20 +1527,19 @@ function ResourceAuthorizationPanel({
       ) : null}
 
       {loading ? (
-        <div className="sys-preview-card"><div className="sys-preview-card-title"><UserRoundCog size={16} /> 正在加载资源授权</div></div>
+        <div className="sys-preview-card"><div className="sys-preview-card-title"><UserRoundCog size={16} /> 正在加载资源分配</div></div>
       ) : null}
 
       <section className="tenant-auth-section">
         <div className="tenant-auth-section-head">
           <div>
-            <h3>页签授权</h3>
-            <p>可按角色、部门、人员分配业务工作台、流程设计、能力资产和运行审计入口。</p>
+            <h3>页签分配</h3>
           </div>
-          <button className="sys-btn sys-btn--default sys-btn--sm" onClick={onCreatePageGrant}><PlusCircle size={14} /> 新增页签授权</button>
+          <button className="sys-btn sys-btn--default sys-btn--sm" onClick={onCreatePageGrant}><PlusCircle size={14} /> 新增页签分配</button>
         </div>
         {pageGrants.length === 0 && !loading ? (
           <div className="sys-preview-card">
-            <Empty description="暂无页签授权规则" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+            <Empty description="暂无页签分配" image={Empty.PRESENTED_IMAGE_SIMPLE} />
           </div>
         ) : (
           <div className="sys-card-grid">
@@ -1517,17 +1548,19 @@ function ResourceAuthorizationPanel({
                 <div className="sys-card-header">
                   <div className="sys-card-avatar sys-card-avatar--tenant"><ShieldCheck size={22} /></div>
                   <div className="sys-card-info">
-                    <div className="sys-card-name">{grant.principalName}</div>
-                    <div className="sys-card-code">{formatPrincipalType(grant.principalType)} · {grant.pageName}</div>
+                    <div className="sys-card-name">{grant.groupName}</div>
+                    <div className="sys-card-code">页签：{grant.pages.map((page) => page.pageName).join("、")}</div>
+                    <div className="sys-card-code">对象：{formatPrincipalNames(grant.principals)}</div>
                   </div>
                 </div>
                 <div className="sys-info-tags">
-                  <span className="sys-info-tag sys-info-tag--primary">{grant.pageName}</span>
-                  <span className="sys-info-tag">{formatPrincipalType(grant.principalType)}</span>
+                  {grant.pages.map((page) => <span key={page.pageKey} className="sys-info-tag sys-info-tag--primary">{page.pageName}</span>)}
+                  {grant.principals.map((principal) => <span key={`${principal.principalType}:${principal.principalId}`} className="sys-info-tag">{formatPrincipalType(principal.principalType)} · {principal.principalName}</span>)}
                 </div>
                 <div className="sys-card-footer">
                   <span className="sys-card-footer-time">创建于 {formatDateTime(grant.createdAt)}</span>
                   <div className="sys-card-footer-actions">
+                    <button className="sys-btn sys-btn--text sys-btn--sm" onClick={() => onEditPageGrant(grant)}><Edit size={14} /> 编辑</button>
                     <button className="sys-btn sys-btn--text sys-btn--sm" onClick={() => onDeletePageGrant(grant)}><X size={14} /> 删除</button>
                   </div>
                 </div>
@@ -1546,15 +1579,14 @@ function ResourceAuthorizationPanel({
       <section className="tenant-auth-section">
         <div className="tenant-auth-section-head">
           <div>
-            <h3>能力授权</h3>
-            <p>同一批能力可以同时授权给多个角色、部门和人员。</p>
+            <h3>能力分配</h3>
           </div>
-          <button className="sys-btn sys-btn--primary sys-btn--sm" onClick={onCreateGrant}><PlusCircle size={14} /> 新增能力授权</button>
+          <button className="sys-btn sys-btn--primary sys-btn--sm" onClick={onCreateGrant}><PlusCircle size={14} /> 新增能力分配</button>
         </div>
 
         {!loading && grants.length === 0 ? (
           <div className="sys-preview-card">
-            <Empty description="暂无能力授权规则" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+            <Empty description="暂无能力分配" image={Empty.PRESENTED_IMAGE_SIMPLE} />
           </div>
         ) : null}
 
@@ -1565,17 +1597,23 @@ function ResourceAuthorizationPanel({
                 <div className="sys-card-header">
                   <div className="sys-card-avatar sys-card-avatar--tenant"><UserRoundCog size={22} /></div>
                   <div className="sys-card-info">
-                    <div className="sys-card-name">{grant.principalName}</div>
-                    <div className="sys-card-code">{formatPrincipalType(grant.principalType)} · {grant.resourceName}</div>
+                    <div className="sys-card-name">{grant.groupName}</div>
+                    <div className="sys-card-code">能力：{grant.resources.map((resource) => resource.resourceName).join("、")}</div>
+                    <div className="sys-card-code">对象：{formatPrincipalNames(grant.principals)}</div>
                   </div>
                 </div>
                 <div className="sys-info-tags">
-                  <span className="sys-info-tag sys-info-tag--primary">{formatResourceType(grant.resourceType)}</span>
-                  {grant.actions.map((action) => <span key={action} className="sys-info-tag">{formatGrantAction(action)}</span>)}
+                  {grant.resources.map((resource) => (
+                    <span key={`${resource.resourceType}:${resource.resourceId}`} className="sys-info-tag sys-info-tag--primary">
+                      {formatResourceType(resource.resourceType)} · {resource.resourceName}
+                    </span>
+                  ))}
+                  {grant.principals.map((principal) => <span key={`${principal.principalType}:${principal.principalId}`} className="sys-info-tag">{formatPrincipalType(principal.principalType)} · {principal.principalName}</span>)}
                 </div>
                 <div className="sys-card-footer">
                   <span className="sys-card-footer-time">创建于 {formatDateTime(grant.createdAt)}</span>
                   <div className="sys-card-footer-actions">
+                    <button className="sys-btn sys-btn--text sys-btn--sm" onClick={() => onEditGrant(grant)}><Edit size={14} /> 编辑</button>
                     <button className="sys-btn sys-btn--text sys-btn--sm" onClick={() => onDeleteGrant(grant)}><X size={14} /> 删除</button>
                   </div>
                 </div>
@@ -1616,12 +1654,9 @@ function formatPrincipalType(type: string): string {
   return type;
 }
 
-function formatGrantAction(action: string): string {
-  if (action === "use") return "使用";
-  if (action === "view") return "查看";
-  if (action === "execute") return "执行";
-  if (action === "manage") return "管理";
-  return action;
+function formatPrincipalNames(principals: GrantPrincipal[]): string {
+  if (principals.length === 0) return "未选择对象";
+  return principals.map((principal) => principal.principalName).join("、");
 }
 
 function getPrincipalOptions(overview: TenantOrganizationOverview | null) {
@@ -1629,7 +1664,7 @@ function getPrincipalOptions(overview: TenantOrganizationOverview | null) {
   return [
     {
       label: "角色",
-      options: overview.roles.map((role) => ({ value: `role:${role.id}`, label: `${role.name} (${role.code})` })),
+      options: overview.roles.map((role) => ({ value: `role:${role.id}`, label: role.name })),
     },
     {
       label: "部门",

@@ -19,10 +19,15 @@ import com.agentum.organization.interfaces.CreateResourceGrantRequest;
 import com.agentum.organization.interfaces.CreateTenantOrgRoleRequest;
 import com.agentum.organization.interfaces.CreateTenantRoleRequest;
 import com.agentum.organization.interfaces.DepartmentResponse;
+import com.agentum.organization.interfaces.GrantPrincipalRequest;
+import com.agentum.organization.interfaces.GrantPrincipalResponse;
 import com.agentum.organization.interfaces.MemberResponse;
 import com.agentum.organization.interfaces.MembershipResponse;
 import com.agentum.organization.interfaces.MembershipRoleResponse;
+import com.agentum.organization.interfaces.PageGrantItemResponse;
 import com.agentum.organization.interfaces.PageGrantResponse;
+import com.agentum.organization.interfaces.ResourceGrantItemRequest;
+import com.agentum.organization.interfaces.ResourceGrantItemResponse;
 import com.agentum.organization.interfaces.ResourceGrantResponse;
 import com.agentum.organization.interfaces.RoleResponse;
 import com.agentum.organization.interfaces.TenantOrgRoleResponse;
@@ -665,47 +670,82 @@ public class TenantOrganizationService {
             .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "TENANT_NOT_FOUND", "租户不存在或已停用"));
         PrincipalNameResolver principalNameResolver = loadPrincipalNameResolver(tenantId);
         return pageGrantRepository.findByTenantIdOrderByCreatedAtDesc(tenantId).stream()
-            .map(grant -> toPageGrantResponse(grant, principalNameResolver))
+            .collect(Collectors.groupingBy(PageGrantEntity::getGrantGroupId, LinkedHashMap::new, Collectors.toList()))
+            .values()
+            .stream()
+            .map(grants -> toPageGrantResponse(grants, principalNameResolver))
             .toList();
     }
 
     @Transactional
     public PageGrantResponse createPageGrant(UUID tenantId, UUID operatorUserId, CreatePageGrantRequest request) {
-        tenantRepository.findByIdAndStatus(tenantId, ACTIVE_STATUS)
-            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "TENANT_NOT_FOUND", "租户不存在或已停用"));
-        String principalType = normalizeRequired(request.principalType());
-        String pageKey = normalizeRequired(request.pageKey());
-        if (!ALLOWED_PRINCIPAL_TYPES.contains(principalType)) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_PAGE_GRANT_PRINCIPAL_INVALID", "授权主体只能是角色、部门或用户");
-        }
-        if (!ALLOWED_PAGE_PERMISSIONS.contains(pageKey)) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_PAGE_GRANT_PAGE_INVALID", "包含不支持的页签");
-        }
-        validatePrincipal(tenantId, principalType, request.principalId());
-        if (pageGrantRepository.existsByTenantIdAndPrincipalTypeAndPrincipalIdAndPageKey(tenantId, principalType, request.principalId(), pageKey)) {
-            throw new ApiException(HttpStatus.CONFLICT, "ORG_PAGE_GRANT_EXISTS", "该主体已经拥有该页签授权");
-        }
-        PageGrantEntity grant = PageGrantEntity.create(tenantId, pageKey, principalType, request.principalId());
-        pageGrantRepository.save(grant);
+        ensureActiveTenant(tenantId);
+        UUID grantGroupId = UUID.randomUUID();
+        PageGrantResponse response = savePageGrantGroup(tenantId, operatorUserId, grantGroupId, request);
         log.info(
-            "租户页签授权创建成功 tenantId={} operatorUserId={} grantId={} principalType={} principalId={} pageKey={} requestId={}",
+            "租户页签分配卡片创建成功 tenantId={} operatorUserId={} grantGroupId={} principalCount={} pageCount={} requestId={}",
             tenantId,
             operatorUserId,
-            grant.getId(),
-            principalType,
-            request.principalId(),
-            pageKey,
+            grantGroupId,
+            response.principals().size(),
+            response.pages().size(),
             RequestIds.current()
         );
-        return toPageGrantResponse(grant, loadPrincipalNameResolver(tenantId));
+        return response;
     }
 
     @Transactional
-    public void deletePageGrant(UUID tenantId, UUID operatorUserId, UUID grantId) {
-        PageGrantEntity grant = pageGrantRepository.findByIdAndTenantId(grantId, tenantId)
-            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ORG_PAGE_GRANT_NOT_FOUND", "页签授权不存在"));
-        pageGrantRepository.delete(grant);
-        log.info("租户页签授权删除成功 tenantId={} operatorUserId={} grantId={} requestId={}", tenantId, operatorUserId, grantId, RequestIds.current());
+    public PageGrantResponse updatePageGrant(UUID tenantId, UUID operatorUserId, UUID grantGroupId, CreatePageGrantRequest request) {
+        ensureActiveTenant(tenantId);
+        List<PageGrantEntity> existingGrants = pageGrantRepository.findByTenantIdAndGrantGroupId(tenantId, grantGroupId);
+        if (existingGrants.isEmpty()) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "ORG_PAGE_GRANT_NOT_FOUND", "页签分配不存在");
+        }
+        // 分配卡片以主体集合和页签集合为整体编辑，明细行整体重建可以避免保留脏关系。
+        pageGrantRepository.deleteAll(existingGrants);
+        pageGrantRepository.flush();
+        PageGrantResponse response = savePageGrantGroup(tenantId, operatorUserId, grantGroupId, request);
+        log.info(
+            "租户页签分配卡片更新成功 tenantId={} operatorUserId={} grantGroupId={} principalCount={} pageCount={} requestId={}",
+            tenantId,
+            operatorUserId,
+            grantGroupId,
+            response.principals().size(),
+            response.pages().size(),
+            RequestIds.current()
+        );
+        return response;
+    }
+
+    private PageGrantResponse savePageGrantGroup(UUID tenantId, UUID operatorUserId, UUID grantGroupId, CreatePageGrantRequest request) {
+        tenantRepository.findByIdAndStatus(tenantId, ACTIVE_STATUS)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "TENANT_NOT_FOUND", "租户不存在或已停用"));
+        String groupName = normalizeGrantGroupName(request.groupName());
+        List<NormalizedPrincipal> principals = normalizeGrantPrincipals(tenantId, request.principals(), "ORG_PAGE_GRANT_PRINCIPAL_INVALID");
+        List<String> pageKeys = normalizePageGrantKeys(request.pageKeys());
+        List<PageGrantEntity> grants = new ArrayList<>();
+
+        for (NormalizedPrincipal principal : principals) {
+            for (String pageKey : pageKeys) {
+                if (pageGrantRepository.existsByTenantIdAndPrincipalTypeAndPrincipalIdAndPageKey(tenantId, principal.type(), principal.id(), pageKey)) {
+                    throw new ApiException(HttpStatus.CONFLICT, "ORG_PAGE_GRANT_EXISTS", "所选对象中已存在相同页签分配");
+                }
+                grants.add(PageGrantEntity.create(tenantId, grantGroupId, groupName, pageKey, principal.type(), principal.id()));
+            }
+        }
+
+        pageGrantRepository.saveAll(grants);
+        return toPageGrantResponse(grants, loadPrincipalNameResolver(tenantId));
+    }
+
+    @Transactional
+    public void deletePageGrant(UUID tenantId, UUID operatorUserId, UUID grantGroupId) {
+        List<PageGrantEntity> grants = pageGrantRepository.findByTenantIdAndGrantGroupId(tenantId, grantGroupId);
+        if (grants.isEmpty()) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "ORG_PAGE_GRANT_NOT_FOUND", "页签分配不存在");
+        }
+        pageGrantRepository.deleteAll(grants);
+        log.info("租户页签分配卡片删除成功 tenantId={} operatorUserId={} grantGroupId={} detailCount={} requestId={}", tenantId, operatorUserId, grantGroupId, grants.size(), RequestIds.current());
     }
 
     @Transactional(readOnly = true)
@@ -715,82 +755,89 @@ public class TenantOrganizationService {
         Map<UUID, SystemCapabilityEntity> capabilitiesById = loadEnabledCapabilitiesById(tenantId);
         PrincipalNameResolver principalNameResolver = loadPrincipalNameResolver(tenantId);
         return resourceGrantRepository.findByTenantIdOrderByCreatedAtDesc(tenantId).stream()
-            .map(grant -> {
-                SystemCapabilityEntity capability = capabilitiesById.get(grant.getResourceId());
-                return new ResourceGrantResponse(
-                    grant.getId().toString(),
-                    grant.getPrincipalType(),
-                    grant.getPrincipalId().toString(),
-                    principalNameResolver.resolve(grant.getPrincipalType(), grant.getPrincipalId()),
-                    grant.getResourceType(),
-                    grant.getResourceId().toString(),
-                    capability == null ? "已失效资源" : capability.getName(),
-                    capability == null ? "" : capability.getCode(),
-                    List.of(grant.getActions()),
-                    grant.getCreatedAt() == null ? "" : grant.getCreatedAt().toString()
-                );
-            })
+            .collect(Collectors.groupingBy(ResourceGrantEntity::getGrantGroupId, LinkedHashMap::new, Collectors.toList()))
+            .values()
+            .stream()
+            .map(grants -> toResourceGrantResponse(grants, capabilitiesById, principalNameResolver))
             .toList();
     }
 
     @Transactional
     public ResourceGrantResponse createResourceGrant(UUID tenantId, UUID operatorUserId, CreateResourceGrantRequest request) {
-        tenantRepository.findByIdAndStatus(tenantId, ACTIVE_STATUS)
-            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "TENANT_NOT_FOUND", "租户不存在或已停用"));
-        String principalType = normalizeRequired(request.principalType());
-        String resourceType = normalizeRequired(request.resourceType());
-        if (!ALLOWED_PRINCIPAL_TYPES.contains(principalType)) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_RESOURCE_GRANT_PRINCIPAL_INVALID", "授权主体只能是角色、部门或用户");
-        }
-        if (!ALLOWED_RESOURCE_TYPES.contains(resourceType)) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_RESOURCE_GRANT_RESOURCE_TYPE_INVALID", "包含不支持的资源类型");
-        }
-        validatePrincipal(tenantId, principalType, request.principalId());
-        SystemCapabilityEntity capability = loadEnabledCapabilitiesById(tenantId).get(request.resourceId());
-        if (capability == null || !resourceType.equals(capability.getCapabilityType())) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_RESOURCE_GRANT_RESOURCE_NOT_AVAILABLE", "只能授权系统管理已启用给当前租户的能力资源");
-        }
-        if (resourceGrantRepository.existsByTenantIdAndPrincipalTypeAndPrincipalIdAndResourceTypeAndResourceId(
-            tenantId,
-            principalType,
-            request.principalId(),
-            resourceType,
-            request.resourceId()
-        )) {
-            throw new ApiException(HttpStatus.CONFLICT, "ORG_RESOURCE_GRANT_EXISTS", "该主体已经拥有该资源授权");
-        }
-        ResourceGrantEntity grant = ResourceGrantEntity.create(
-            tenantId,
-            resourceType,
-            request.resourceId(),
-            principalType,
-            request.principalId(),
-            normalizeResourceActions(request.actions()).toArray(String[]::new)
-        );
-        resourceGrantRepository.save(grant);
+        ensureActiveTenant(tenantId);
+        UUID grantGroupId = UUID.randomUUID();
+        ResourceGrantResponse response = saveResourceGrantGroup(tenantId, grantGroupId, request);
         log.info(
-            "租户资源授权创建成功 tenantId={} operatorUserId={} grantId={} principalType={} principalId={} resourceType={} resourceId={} requestId={}",
+            "租户能力分配卡片创建成功 tenantId={} operatorUserId={} grantGroupId={} principalCount={} resourceCount={} requestId={}",
             tenantId,
             operatorUserId,
-            grant.getId(),
-            principalType,
-            request.principalId(),
-            resourceType,
-            request.resourceId(),
+            grantGroupId,
+            response.principals().size(),
+            response.resources().size(),
             RequestIds.current()
         );
-        return listResourceGrants(tenantId).stream()
-            .filter(row -> row.id().equals(grant.getId().toString()))
-            .findFirst()
-            .orElseThrow();
+        return response;
     }
 
     @Transactional
-    public void deleteResourceGrant(UUID tenantId, UUID operatorUserId, UUID grantId) {
-        ResourceGrantEntity grant = resourceGrantRepository.findByIdAndTenantId(grantId, tenantId)
-            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ORG_RESOURCE_GRANT_NOT_FOUND", "资源授权不存在"));
-        resourceGrantRepository.delete(grant);
-        log.info("租户资源授权删除成功 tenantId={} operatorUserId={} grantId={} requestId={}", tenantId, operatorUserId, grantId, RequestIds.current());
+    public ResourceGrantResponse updateResourceGrant(UUID tenantId, UUID operatorUserId, UUID grantGroupId, CreateResourceGrantRequest request) {
+        ensureActiveTenant(tenantId);
+        List<ResourceGrantEntity> existingGrants = resourceGrantRepository.findByTenantIdAndGrantGroupId(tenantId, grantGroupId);
+        if (existingGrants.isEmpty()) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "ORG_RESOURCE_GRANT_NOT_FOUND", "能力分配不存在");
+        }
+        // 能力分配编辑同样按卡片整体重建，避免动作和明细残留。当前能力授权统一等价于“可使用”。
+        resourceGrantRepository.deleteAll(existingGrants);
+        resourceGrantRepository.flush();
+        ResourceGrantResponse response = saveResourceGrantGroup(tenantId, grantGroupId, request);
+        log.info(
+            "租户能力分配卡片更新成功 tenantId={} operatorUserId={} grantGroupId={} principalCount={} resourceCount={} requestId={}",
+            tenantId,
+            operatorUserId,
+            grantGroupId,
+            response.principals().size(),
+            response.resources().size(),
+            RequestIds.current()
+        );
+        return response;
+    }
+
+    private ResourceGrantResponse saveResourceGrantGroup(UUID tenantId, UUID grantGroupId, CreateResourceGrantRequest request) {
+        tenantRepository.findByIdAndStatus(tenantId, ACTIVE_STATUS)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "TENANT_NOT_FOUND", "租户不存在或已停用"));
+        String groupName = normalizeGrantGroupName(request.groupName());
+        List<NormalizedPrincipal> principals = normalizeGrantPrincipals(tenantId, request.principals(), "ORG_RESOURCE_GRANT_PRINCIPAL_INVALID");
+        Map<UUID, SystemCapabilityEntity> capabilitiesById = loadEnabledCapabilitiesById(tenantId);
+        List<NormalizedResource> resources = normalizeResourceGrantItems(request.resources(), capabilitiesById);
+        List<ResourceGrantEntity> grants = new ArrayList<>();
+
+        for (NormalizedPrincipal principal : principals) {
+            for (NormalizedResource resource : resources) {
+                if (resourceGrantRepository.existsByTenantIdAndPrincipalTypeAndPrincipalIdAndResourceTypeAndResourceId(
+                    tenantId,
+                    principal.type(),
+                    principal.id(),
+                    resource.type(),
+                    resource.id()
+                )) {
+                    throw new ApiException(HttpStatus.CONFLICT, "ORG_RESOURCE_GRANT_EXISTS", "所选对象中已存在相同能力分配");
+                }
+                grants.add(ResourceGrantEntity.create(tenantId, grantGroupId, groupName, resource.type(), resource.id(), principal.type(), principal.id(), new String[] { "use" }));
+            }
+        }
+
+        resourceGrantRepository.saveAll(grants);
+        return toResourceGrantResponse(grants, capabilitiesById, loadPrincipalNameResolver(tenantId));
+    }
+
+    @Transactional
+    public void deleteResourceGrant(UUID tenantId, UUID operatorUserId, UUID grantGroupId) {
+        List<ResourceGrantEntity> grants = resourceGrantRepository.findByTenantIdAndGrantGroupId(tenantId, grantGroupId);
+        if (grants.isEmpty()) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "ORG_RESOURCE_GRANT_NOT_FOUND", "能力分配不存在");
+        }
+        resourceGrantRepository.deleteAll(grants);
+        log.info("租户能力分配卡片删除成功 tenantId={} operatorUserId={} grantGroupId={} detailCount={} requestId={}", tenantId, operatorUserId, grantGroupId, grants.size(), RequestIds.current());
     }
 
     @Transactional
@@ -1004,15 +1051,91 @@ public class TenantOrganizationService {
         }
     }
 
-    private PageGrantResponse toPageGrantResponse(PageGrantEntity grant, PrincipalNameResolver principalNameResolver) {
+    private PageGrantResponse toPageGrantResponse(List<PageGrantEntity> grants, PrincipalNameResolver principalNameResolver) {
+        if (grants.isEmpty()) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "ORG_PAGE_GRANT_GROUP_EMPTY", "页签分配数据异常");
+        }
+        PageGrantEntity firstGrant = grants.get(0);
+        List<GrantPrincipalResponse> principals = grants.stream()
+            .collect(Collectors.toMap(
+                grant -> grant.getPrincipalType() + ":" + grant.getPrincipalId(),
+                grant -> new GrantPrincipalResponse(
+                    grant.getPrincipalType(),
+                    grant.getPrincipalId().toString(),
+                    principalNameResolver.resolve(grant.getPrincipalType(), grant.getPrincipalId())
+                ),
+                (left, right) -> left,
+                LinkedHashMap::new
+            ))
+            .values()
+            .stream()
+            .toList();
+        List<PageGrantItemResponse> pages = grants.stream()
+            .collect(Collectors.toMap(
+                PageGrantEntity::getPageKey,
+                grant -> new PageGrantItemResponse(grant.getPageKey(), formatPagePermissionName(grant.getPageKey())),
+                (left, right) -> left,
+                LinkedHashMap::new
+            ))
+            .values()
+            .stream()
+            .toList();
         return new PageGrantResponse(
-            grant.getId().toString(),
-            grant.getPrincipalType(),
-            grant.getPrincipalId().toString(),
-            principalNameResolver.resolve(grant.getPrincipalType(), grant.getPrincipalId()),
-            grant.getPageKey(),
-            formatPagePermissionName(grant.getPageKey()),
-            grant.getCreatedAt() == null ? "" : grant.getCreatedAt().toString()
+            firstGrant.getGrantGroupId().toString(),
+            firstGrant.getGrantGroupName(),
+            principals,
+            pages,
+            firstGrant.getCreatedAt() == null ? "" : firstGrant.getCreatedAt().toString()
+        );
+    }
+
+    private ResourceGrantResponse toResourceGrantResponse(
+        List<ResourceGrantEntity> grants,
+        Map<UUID, SystemCapabilityEntity> capabilitiesById,
+        PrincipalNameResolver principalNameResolver
+    ) {
+        if (grants.isEmpty()) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "ORG_RESOURCE_GRANT_GROUP_EMPTY", "能力分配数据异常");
+        }
+        ResourceGrantEntity firstGrant = grants.get(0);
+        List<GrantPrincipalResponse> principals = grants.stream()
+            .collect(Collectors.toMap(
+                grant -> grant.getPrincipalType() + ":" + grant.getPrincipalId(),
+                grant -> new GrantPrincipalResponse(
+                    grant.getPrincipalType(),
+                    grant.getPrincipalId().toString(),
+                    principalNameResolver.resolve(grant.getPrincipalType(), grant.getPrincipalId())
+                ),
+                (left, right) -> left,
+                LinkedHashMap::new
+            ))
+            .values()
+            .stream()
+            .toList();
+        List<ResourceGrantItemResponse> resources = grants.stream()
+            .collect(Collectors.toMap(
+                grant -> grant.getResourceType() + ":" + grant.getResourceId(),
+                grant -> {
+                    SystemCapabilityEntity capability = capabilitiesById.get(grant.getResourceId());
+                    return new ResourceGrantItemResponse(
+                        grant.getResourceType(),
+                        grant.getResourceId().toString(),
+                        capability == null ? "已失效资源" : capability.getName(),
+                        capability == null ? "" : capability.getCode()
+                    );
+                },
+                (left, right) -> left,
+                LinkedHashMap::new
+            ))
+            .values()
+            .stream()
+            .toList();
+        return new ResourceGrantResponse(
+            firstGrant.getGrantGroupId().toString(),
+            firstGrant.getGrantGroupName(),
+            principals,
+            resources,
+            firstGrant.getCreatedAt() == null ? "" : firstGrant.getCreatedAt().toString()
         );
     }
 
@@ -1169,6 +1292,80 @@ public class TenantOrganizationService {
         return normalized.isEmpty() ? List.of("use") : normalized;
     }
 
+    private void ensureActiveTenant(UUID tenantId) {
+        tenantRepository.findByIdAndStatus(tenantId, ACTIVE_STATUS)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "TENANT_NOT_FOUND", "租户不存在或已停用"));
+    }
+
+    private String normalizeGrantGroupName(String groupName) {
+        String normalized = normalizeRequired(groupName);
+        if (normalized.length() > 120) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_GRANT_GROUP_NAME_TOO_LONG", "分配名称不能超过 120 个字符");
+        }
+        return normalized;
+    }
+
+    private List<NormalizedPrincipal> normalizeGrantPrincipals(UUID tenantId, List<GrantPrincipalRequest> principals, String invalidCode) {
+        if (principals == null || principals.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, invalidCode, "请选择分配对象");
+        }
+
+        Map<String, NormalizedPrincipal> normalized = new LinkedHashMap<>();
+        for (GrantPrincipalRequest principal : principals) {
+            String principalType = normalizeRequired(principal.principalType());
+            UUID principalId = principal.principalId();
+            if (!ALLOWED_PRINCIPAL_TYPES.contains(principalType) || principalId == null) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, invalidCode, "分配对象只能是角色、部门或用户");
+            }
+            validatePrincipal(tenantId, principalType, principalId);
+            normalized.putIfAbsent(principalType + ":" + principalId, new NormalizedPrincipal(principalType, principalId));
+        }
+        return List.copyOf(normalized.values());
+    }
+
+    private List<String> normalizePageGrantKeys(List<String> pageKeys) {
+        if (pageKeys == null || pageKeys.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_PAGE_GRANT_PAGE_INVALID", "请选择页签");
+        }
+
+        List<String> normalized = pageKeys.stream()
+            .map(TenantOrganizationService::normalizeOptional)
+            .filter(value -> !value.isBlank())
+            .distinct()
+            .toList();
+        if (normalized.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_PAGE_GRANT_PAGE_INVALID", "请选择页签");
+        }
+        List<String> invalid = normalized.stream()
+            .filter(value -> !ALLOWED_PAGE_PERMISSIONS.contains(value))
+            .toList();
+        if (!invalid.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_PAGE_GRANT_PAGE_INVALID", "包含不支持的页签");
+        }
+        return normalized;
+    }
+
+    private List<NormalizedResource> normalizeResourceGrantItems(List<ResourceGrantItemRequest> resources, Map<UUID, SystemCapabilityEntity> capabilitiesById) {
+        if (resources == null || resources.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_RESOURCE_GRANT_RESOURCE_NOT_AVAILABLE", "请选择能力资源");
+        }
+
+        Map<String, NormalizedResource> normalized = new LinkedHashMap<>();
+        for (ResourceGrantItemRequest resource : resources) {
+            String resourceType = normalizeRequired(resource.resourceType());
+            UUID resourceId = resource.resourceId();
+            if (!ALLOWED_RESOURCE_TYPES.contains(resourceType) || resourceId == null) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_RESOURCE_GRANT_RESOURCE_TYPE_INVALID", "包含不支持的资源类型");
+            }
+            SystemCapabilityEntity capability = capabilitiesById.get(resourceId);
+            if (capability == null || !resourceType.equals(capability.getCapabilityType())) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_RESOURCE_GRANT_RESOURCE_NOT_AVAILABLE", "只能分配系统管理员已启用给当前租户的能力资源");
+            }
+            normalized.putIfAbsent(resourceType + ":" + resourceId, new NormalizedResource(resourceType, resourceId));
+        }
+        return List.copyOf(normalized.values());
+    }
+
     private Map<UUID, SystemCapabilityEntity> loadEnabledCapabilitiesById(UUID tenantId) {
         List<TenantCapabilityGrantEntity> grants = tenantCapabilityGrantRepository.findByTenantIdOrderByCreatedAtDesc(tenantId)
             .stream()
@@ -1305,6 +1502,12 @@ public class TenantOrganizationService {
     }
 
     private record TenantResourcePermissionPayload(String resourceType, String resourceId, List<String> actions) {
+    }
+
+    private record NormalizedPrincipal(String type, UUID id) {
+    }
+
+    private record NormalizedResource(String type, UUID id) {
     }
 
     private interface PrincipalNameResolver {
