@@ -290,13 +290,13 @@ textarea:focus-visible {
 
 /* 深色模式下 Modal 渲染在 body 下，无法继承 .dark 变量；需单独覆盖系统管理/租户管理表单可读性 */
 .agent-dark-modal .ant-modal-content {
-  background: #151e31;
-  color: #f1f5f9;
+  background: #151e31 !important;
+  color: #f1f5f9 !important;
 }
 
 .agent-dark-modal .ant-modal-header {
-  background: transparent;
-  border-bottom-color: #1e2e4a;
+  background: transparent !important;
+  border-bottom-color: #1e2e4a !important;
 }
 
 .agent-dark-modal .ant-modal-title,
@@ -759,9 +759,11 @@ textarea:focus-visible {
 
 /* Modal.confirm 内部标题与内容文字色强制覆盖 */
 .agent-dark-modal .ant-modal-confirm-title,
-.agent-dark-modal .ant-modal-confirm-paragraph,
-.agent-dark-modal .ant-modal-confirm-content {
+.agent-dark-modal .ant-modal-confirm-paragraph {
   color: #f1f5f9 !important;
+}
+.agent-dark-modal .ant-modal-confirm-content {
+  color: #cbd5e1 !important;
 }
 .agent-dark-modal .ant-btn-default {
   background: #1a2540 !important;
@@ -772,7 +774,6 @@ textarea:focus-visible {
   border-color: var(--color-primary) !important;
   color: var(--color-primary) !important;
 }
-
 /* ==================== 主题切换药丸（与 AuraOA 完全一致） ==================== */
 .theme-toggle-btn {
   width: auto !important;
@@ -1704,6 +1705,13 @@ textarea:focus-visible {
   border: none; height: auto; padding: 6px 10px;
 }
 .sys-btn--text:hover { color: var(--color-primary); background: var(--color-bg-hover); }
+.sys-btn--danger-text {
+  color: var(--color-danger);
+}
+.sys-btn--danger-text:hover {
+  color: var(--color-danger);
+  background: var(--color-danger-bg);
+}
 .sys-btn--danger {
   background: var(--color-danger); color: #fff;
   border: 1px solid var(--color-danger);
@@ -1779,6 +1787,55 @@ textarea:focus-visible {
 .sys-modal-footer {
   display: flex; justify-content: flex-end; gap: 8px;
   padding: 16px 24px 20px; border-top: 1px solid var(--color-border-light);
+}
+.agent-delete-confirm-mask {
+  z-index: 1100;
+  background: rgb(2 6 23 / 0.56);
+}
+.agent-delete-confirm-modal {
+  max-width: 560px;
+  border: 1px solid var(--color-border-light);
+  overflow: hidden;
+}
+.agent-delete-confirm-body {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 20px;
+  padding: 28px 32px 20px;
+}
+.agent-delete-confirm-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-full);
+  background: #f59e0b;
+  color: #fff;
+}
+.agent-delete-confirm-content h2 {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+.agent-delete-confirm-content p {
+  margin: 14px 0 0;
+  color: var(--color-text-secondary);
+  font-size: 16px;
+  line-height: 1.8;
+}
+.agent-delete-confirm-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 14px;
+  padding: 0 32px 28px;
+}
+.agent-delete-confirm-footer .sys-btn {
+  min-width: 96px;
+  height: 44px;
+  font-size: 15px;
 }
 
 /* 自定义表单字段 */
@@ -2129,6 +2186,31 @@ textarea:focus-visible {
 .dark .agent-admin-pagination .ant-pagination-options .ant-select-dropdown {
   background: var(--color-bg-card);
 }
+.tenant-resource-panel {
+  display: grid;
+  gap: 30px;
+}
+.tenant-resource-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.tenant-resource-toolbar p {
+  margin: 0;
+  color: var(--color-text-tertiary);
+  font-size: 14px;
+}
+.tenant-resource-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.tenant-auth-section-block {
+  display: grid;
+  gap: 18px;
+}
 .tenant-auth-section {
   border: 1px solid color-mix(in srgb, var(--color-border-light) 86%, var(--color-primary) 14%);
   border-radius: var(--radius-lg);
@@ -2144,6 +2226,9 @@ textarea:focus-visible {
   justify-content: space-between;
   gap: 12px;
   padding-bottom: 14px;
+}
+.tenant-auth-section-head--loose {
+  padding-bottom: 0;
 }
 .tenant-auth-section-head h3 {
   margin: 0;
@@ -2177,6 +2262,10 @@ textarea:focus-visible {
 .tenant-auth-card-line .sys-info-tags {
   min-height: 30px;
 }
+.tenant-auth-card-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
 .tenant-auth-card {
   border-color: color-mix(in srgb, var(--color-border-light) 74%, var(--color-primary) 26%);
   background: var(--color-bg-card);
@@ -2193,6 +2282,11 @@ textarea:focus-visible {
 :root[data-theme="dark"] .tenant-auth-card {
   background: color-mix(in srgb, var(--color-bg-card) 92%, var(--color-primary) 8%);
   box-shadow: 0 18px 42px rgba(0, 0, 0, 0.24);
+}
+@media (max-width: 1100px) {
+  .tenant-auth-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 .tenant-org-layout {
   display: grid;
@@ -2645,6 +2739,30 @@ textarea:focus-visible {
 }
 
 @media (max-width: 720px) {
+  .tenant-auth-card-grid {
+    grid-template-columns: 1fr;
+  }
+  .agent-delete-confirm-modal {
+    max-width: calc(100vw - 32px);
+  }
+  .agent-delete-confirm-body {
+    grid-template-columns: 40px minmax(0, 1fr);
+    gap: 14px;
+    padding: 24px 20px 18px;
+  }
+  .agent-delete-confirm-icon {
+    width: 40px;
+    height: 40px;
+  }
+  .agent-delete-confirm-content h2 {
+    font-size: 18px;
+  }
+  .agent-delete-confirm-content p {
+    font-size: 14px;
+  }
+  .agent-delete-confirm-footer {
+    padding: 0 20px 22px;
+  }
   .tenant-permission-grid {
     grid-template-columns: 1fr;
   }
@@ -2657,6 +2775,13 @@ textarea:focus-visible {
   }
   .tenant-auth-section-head {
     flex-direction: column;
+  }
+  .tenant-resource-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .tenant-resource-toolbar-actions {
+    justify-content: flex-start;
   }
   .tenant-member-toolbar {
     align-items: flex-start;

@@ -1537,10 +1537,10 @@ function ResourceAuthorizationPanel({
   const grantPagination = useClientPagination(grants, 10);
 
   return (
-    <div className="space-y-4">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <p style={{ fontSize: 14, color: "var(--color-text-tertiary)", margin: 0 }}>分配模块入口和可用能力池</p>
-        <div style={{ display: "flex", gap: 8 }}>
+    <div className="tenant-resource-panel">
+      <div className="tenant-resource-toolbar">
+        <p>分配模块入口和可用能力池</p>
+        <div className="tenant-resource-toolbar-actions">
           <button className="sys-btn sys-btn--default" onClick={onCreatePageGrant}><PlusCircle size={14} /> 新增页签</button>
           <button className="sys-btn sys-btn--primary" onClick={onCreateGrant}><PlusCircle size={14} /> 新增能力</button>
         </div>
@@ -1554,8 +1554,8 @@ function ResourceAuthorizationPanel({
         <div className="sys-preview-card"><div className="sys-preview-card-title"><UserRoundCog size={16} /> 正在加载资源分配</div></div>
       ) : null}
 
-      <div style={{ marginBottom: 24, marginTop: 20 }}>
-        <div className="tenant-auth-section-head" style={{ borderBottom: "none", paddingBottom: 0 }}>
+      <div className="tenant-auth-section-block">
+        <div className="tenant-auth-section-head tenant-auth-section-head--loose">
           <div>
             <h3>页签分配</h3>
           </div>
@@ -1565,7 +1565,7 @@ function ResourceAuthorizationPanel({
             <Empty description="暂无页签分配" image={Empty.PRESENTED_IMAGE_SIMPLE} />
           </div>
         ) : (
-          <div className="sys-card-grid">
+          <div className="sys-card-grid tenant-auth-card-grid">
             {pageGrantPagination.pagedItems.map((grant) => (
               <article key={grant.id} className="sys-card tenant-auth-card" onClick={() => onEditPageGrant(grant)}>
                 <div className="sys-card-header">
@@ -1607,8 +1607,8 @@ function ResourceAuthorizationPanel({
         />
       </div>
 
-      <div style={{ marginBottom: 24, marginTop: 20 }}>
-        <div className="tenant-auth-section-head" style={{ borderBottom: "none", paddingBottom: 0 }}>
+      <div className="tenant-auth-section-block">
+        <div className="tenant-auth-section-head tenant-auth-section-head--loose">
           <div>
             <h3>能力分配</h3>
           </div>
@@ -1621,7 +1621,7 @@ function ResourceAuthorizationPanel({
         ) : null}
 
         {grants.length > 0 ? (
-          <div className="sys-card-grid">
+          <div className="sys-card-grid tenant-auth-card-grid">
             {grantPagination.pagedItems.map((grant) => (
               <article key={grant.id} className="sys-card tenant-auth-card" onClick={() => onEditGrant(grant)}>
                 <div className="sys-card-header">

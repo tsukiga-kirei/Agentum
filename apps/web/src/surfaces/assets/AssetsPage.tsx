@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Bot, Boxes, BrainCircuit, CheckCircle2, ChevronDown, Clock, Edit3, Eye, FileText, Hash, Library, PlusCircle, Search, Send, ShieldCheck, Tag, Trash2, UserRoundCog, X } from "lucide-react";
+import { Bot, Boxes, BrainCircuit, CheckCircle2, ChevronDown, CircleAlert, Clock, Edit3, Eye, FileText, Hash, Library, PlusCircle, Search, Send, ShieldCheck, Tag, Trash2, UserRoundCog, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { Empty, Modal, Pagination, Segmented, Select, Spin, message, Drawer } from "antd";
+import { Empty, Pagination, Segmented, Select, Spin, message, Drawer } from "antd";
 import { AgentumApiError, assetApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import type { AssetSummary, AssetType, CreatableAssetType, CreateMyAssetRequest, MyAssetDetail, MyAssetRow, SystemCapabilityAssetRow, UpdateMyAssetRequest } from "../../types/asset";
@@ -67,7 +67,6 @@ export function AssetsPage() {
   const user = useAuthStore((s) => s.user);
   const themeMode = useAuthStore((s) => s.themeMode);
   const [messageApi, messageContextHolder] = message.useMessage();
-  const [modalApi, modalContextHolder] = Modal.useModal();
   const drawerRootClassName = themeMode === "dark" ? "agent-admin-drawer agent-admin-drawer--dark" : "agent-admin-drawer";
 
   const [systemDetailOpen, setSystemDetailOpen] = useState(false);
@@ -84,6 +83,7 @@ export function AssetsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [currentAsset, setCurrentAsset] = useState<MyAssetDetail | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<MyAssetRow | MyAssetDetail | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [draft, setDraft] = useState<CreateMyAssetRequest>({
     assetType: "prompt_template",
@@ -106,7 +106,6 @@ export function AssetsPage() {
   });
 
   const tenantId = user?.tenantId ?? "";
-  const modalRootClassName = themeMode === "dark" ? "agent-dark-modal" : undefined;
   const activeTabMeta = assetTabs.find((tab) => tab.key === activeTab) ?? assetTabs[0];
   const tabSegmentedOptions = assetTabs.map((tab) => {
     const Icon = tab.icon;
@@ -303,6 +302,7 @@ export function AssetsPage() {
       await assetApi.deleteMine(tenantId, token, asset.id);
       messageApi.success("能力已删除");
       setEditOpen(false);
+      setDeleteTarget(null);
       if (currentAsset?.id === asset.id) {
         setCurrentAsset(null);
       }
@@ -315,15 +315,7 @@ export function AssetsPage() {
   };
 
   const confirmDelete = (asset: MyAssetRow | MyAssetDetail) => {
-    modalApi.confirm({
-      title: "删除我的能力",
-      content: `确认删除“${asset.name}”？后续接入流程引用校验后，已被使用的能力将禁止删除。`,
-      okText: "删除",
-      cancelText: "取消",
-      okButtonProps: { danger: true },
-      rootClassName: modalRootClassName,
-      onOk: () => deleteAsset(asset),
-    });
+    setDeleteTarget(asset);
   };
 
   if (!tenantId) {
@@ -357,7 +349,29 @@ export function AssetsPage() {
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-[var(--color-bg-page)] pb-10 pt-1">
       {messageContextHolder}
-      {modalContextHolder}
+      {deleteTarget ? (
+        <div className="sys-modal-mask agent-delete-confirm-mask" onClick={() => !submitting && setDeleteTarget(null)}>
+          <div className="sys-modal agent-delete-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="delete-my-asset-title" onClick={(event) => event.stopPropagation()}>
+            <div className="agent-delete-confirm-body">
+              <div className="agent-delete-confirm-icon">
+                <CircleAlert size={28} aria-hidden="true" />
+              </div>
+              <div className="agent-delete-confirm-content">
+                <h2 id="delete-my-asset-title">删除我的能力</h2>
+                <p>确认删除“{deleteTarget.name}”？后续接入流程引用校验后，已被使用的能力将禁止删除。</p>
+              </div>
+            </div>
+            <div className="agent-delete-confirm-footer">
+              <button type="button" className="sys-btn sys-btn--default" disabled={submitting} onClick={() => setDeleteTarget(null)}>
+                取消
+              </button>
+              <button type="button" className="sys-btn sys-btn--danger" disabled={submitting} onClick={() => void deleteAsset(deleteTarget)}>
+                删除
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div className="mx-auto max-w-[1400px] px-5 lg:px-6">
         <header className="mb-5 flex flex-col gap-4 border-b border-[var(--color-border-light)] pb-5 sm:flex-row sm:items-end sm:justify-between">
           <div className="flex min-w-0 gap-4">
@@ -664,7 +678,7 @@ export function AssetsPage() {
             <div className="sys-drawer-footer">
               {currentAsset.status === "draft" ? (
                 <>
-                  <button type="button" className="sys-btn sys-btn--default" style={{ marginRight: "auto" }} disabled={submitting} onClick={() => confirmDelete(currentAsset)}>
+                  <button type="button" className="sys-btn sys-btn--danger" style={{ marginRight: "auto" }} disabled={submitting} onClick={() => confirmDelete(currentAsset)}>
                     <Trash2 size={14} />
                     删除
                   </button>
@@ -685,7 +699,7 @@ export function AssetsPage() {
                 </>
               ) : (
                 <>
-                  <button type="button" className="sys-btn sys-btn--default" style={{ marginRight: "auto" }} disabled={submitting} onClick={() => confirmDelete(currentAsset)}>
+                  <button type="button" className="sys-btn sys-btn--danger" style={{ marginRight: "auto" }} disabled={submitting} onClick={() => confirmDelete(currentAsset)}>
                     <Trash2 size={14} />
                     删除
                   </button>
@@ -915,7 +929,7 @@ function MyAssetCard({ asset, onEdit, onDelete }: { asset: MyAssetRow; onEdit: (
             {asset.status === "draft" ? <Edit3 size={14} /> : <Eye size={14} />}
             {asset.status === "draft" ? "编辑草稿" : "查看详情"}
           </button>
-          <button type="button" className="sys-btn sys-btn--text sys-btn--sm" onClick={() => onDelete(asset)}>
+          <button type="button" className="sys-btn sys-btn--text sys-btn--danger-text sys-btn--sm" onClick={() => onDelete(asset)}>
             <Trash2 size={14} />
             删除
           </button>
