@@ -2,7 +2,7 @@
 
 ## 1. 架构目标
 
-Agentum 的架构目标是支撑长期演进的企业级智能体工作流，而不是只做一个可演示画布。
+Agentum 的架构目标是支撑长期演进的企业级智能体工作流，而不是只做一个可演示编排器。
 
 核心要求：
 
@@ -18,7 +18,7 @@ Agentum 的架构目标是支撑长期演进的企业级智能体工作流，而
 
 | 层 | 技术 |
 | --- | --- |
-| 前端 | React、TypeScript、Vite、React Flow、Tailwind CSS、Ant Design、lucide-react、Zustand |
+| 前端 | React、TypeScript、Vite、Tailwind CSS、Ant Design、lucide-react、Zustand |
 | API | Java 21、Spring Boot、Spring Security、Spring Data JPA |
 | 数据库 | PostgreSQL |
 | 数据库版本 | Flyway |
@@ -129,7 +129,7 @@ capabilities/mcp-servers/<server-key>
 
 - 登录页、工作台壳层和角色入口展示。
 - 业务工作台：待办、可用流程、业务运行详情、运行态摘要、交付物。
-- 流程设计：工作流列表、画布、节点配置、变量面板。
+- 流程设计：工作流列表、阶段积木编排、节点配置、变量面板。
 - 能力资产：智能体模板、Skills、MCP、提示词模板、交付能力。
 - 运行监控：运行状态、失败重试、取消、补偿和管理员介入入口。
 - 运行审计：只读执行链路、变量快照、工具调用、审核记录、交付记录和证据链。
@@ -248,7 +248,7 @@ isSystemAdmin
 
 - 保存工作流草稿。
 - 保存固定节点类型配置。
-- 管理节点和边。
+- 管理阶段、步骤、节点依赖和必要分支。
 - 校验变量引用。
 - 发布不可变版本。
 
@@ -260,7 +260,7 @@ isSystemAdmin
 - `WorkflowEdgeDefinition`
 - `WorkflowVariableDefinition`
 
-画布坐标、折叠状态和 UI 选中态只能放在 `layout` 或 `ui_schema`，不能污染执行器协议。
+设计态应优先保存“输入内容 -> 智能体协作处理 -> 审查交付”的阶段结构。节点顺序、阶段归属、折叠状态和 UI 选中态只能放在 `layout` 或 `ui_schema`，不能污染执行器协议；自由画布坐标不作为主交互假设。
 
 ### 5.5 工作流运行模块
 

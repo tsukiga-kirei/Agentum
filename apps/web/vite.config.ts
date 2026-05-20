@@ -9,7 +9,6 @@ export default defineConfig({
         manualChunks: {
           "vendor-antd": ["antd"],
           "vendor-react": ["react", "react-dom"],
-          "vendor-flow": ["reactflow"],
         },
       },
     },

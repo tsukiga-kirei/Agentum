@@ -40,7 +40,7 @@ Agentum 是一个以智能体为载体的企业工作流平台。它不是把所
 ## 推荐技术栈
 
 ```text
-前端：React + TypeScript + React Flow + Tailwind CSS + Ant Design
+前端：React + TypeScript + Tailwind CSS + Ant Design
 后端：Java 21 + Spring Boot
 数据库：PostgreSQL + Flyway
 缓存：Redis

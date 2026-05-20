@@ -100,7 +100,7 @@ const metrics: Metric[] = [
   },
 ];
 
-// 待办项模拟了三类暂停点：用户输入、人工审核和交付确认，便于验证业务区不暴露画布也能完成处理。
+// 待办项模拟了三类暂停点：用户输入、人工审核和交付确认，便于验证业务区不暴露设计态编排也能完成处理。
 const todoItems: TodoItem[] = [
   {
     title: "确认合同风险分析结论",
@@ -336,7 +336,7 @@ export function WorkbenchShell() {
                       从待办、运行态和模板入口开始推进核心闭环
                     </h2>
                     <p className="agent-muted mt-2 max-w-3xl text-sm leading-6">
-                      业务区只展示用户需要处理的节点和交付状态，复杂画布留给流程设计工作台。
+                      业务区只展示用户需要处理的步骤和交付状态，流程设计用阶段积木表达智能体协作。
                     </p>
                   </div>
                   <div className="rounded-[var(--radius-md)] border border-indigo-200 bg-indigo-50 p-4 dark:border-indigo-800/40 dark:bg-indigo-950/30">

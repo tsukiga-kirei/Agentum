@@ -82,9 +82,6 @@ body,
   --space-page: 20px;
   --space-card: 16px;
 
-  /* 画布专用背景 */
-  --color-canvas-bg: #f8f9fc;
-  --color-canvas-dot: #c8cdd8;
 }
 
 .dark {
@@ -120,8 +117,6 @@ body,
   --shadow-md: 0 8px 24px rgb(0 0 0 / 0.35);
   --shadow-lg: 0 16px 48px rgb(0 0 0 / 0.4);
 
-  --color-canvas-bg: #0c1222;
-  --color-canvas-dot: #253352;
 }
 
 body {
@@ -597,64 +592,6 @@ textarea:focus-visible {
 
 .dark .ant-empty-image svg {
   opacity: 0.72;
-}
-
-/* ==================== React Flow 画布样式 ==================== */
-
-.react-flow__attribution {
-  display: none;
-}
-
-.react-flow__edge-path {
-  stroke-width: 2;
-  stroke: var(--color-text-tertiary);
-}
-
-.react-flow__edge.selected .react-flow__edge-path {
-  stroke: var(--color-primary);
-  stroke-width: 2.5;
-}
-
-.react-flow__renderer {
-  background: var(--color-canvas-bg);
-}
-
-.react-flow__background {
-  opacity: 0.6;
-}
-
-.react-flow__controls {
-  box-shadow: var(--shadow-sm) !important;
-  border-radius: var(--radius-md) !important;
-  border: 1px solid var(--color-border-light) !important;
-  overflow: hidden;
-}
-
-.react-flow__controls-button {
-  background: var(--color-bg-card) !important;
-  border-color: var(--color-border-light) !important;
-  color: var(--color-text-secondary) !important;
-  width: 28px !important;
-  height: 28px !important;
-}
-
-.react-flow__controls-button:hover {
-  background: var(--color-bg-hover) !important;
-  color: var(--color-primary) !important;
-}
-
-.react-flow__minimap {
-  box-shadow: var(--shadow-sm) !important;
-  border-radius: var(--radius-md) !important;
-  border: 1px solid var(--color-border-light) !important;
-  overflow: hidden;
-  background: var(--color-bg-card) !important;
-}
-
-.dark .react-flow__controls-button {
-  background: var(--color-bg-card) !important;
-  border-color: var(--color-border) !important;
-  color: var(--color-text-secondary) !important;
 }
 
 /* ==================== 主题切换药丸（与 AuraOA 完全一致） ==================== */
@@ -1269,22 +1206,6 @@ textarea:focus-visible {
   .login-brand-mark::before {
     animation: none;
   }
-}
-
-/* ==================== 编辑器画布容器 ==================== */
-
-.editor-canvas-wrapper {
-  position: relative;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--color-border-light);
-  background: var(--color-canvas-bg);
-  overflow: hidden;
-  box-shadow: var(--shadow-xs);
-}
-
-/* 确保画布区域没有额外的 header-workspace 分隔线 */
-.workspace-no-border > header {
-  border-bottom: none;
 }
 
 /* ==================== 系统管理页（AuraOA 风格） ==================== */

@@ -57,7 +57,7 @@ function formatPaginationTotal(count: number, range: [number, number], pageSize:
 }
 
 export function WorkflowDraftsPage() {
-  // 草稿列表和画布图都已接入工作流草稿 API；列表仍只承接设计态入口，运行实例会在后续独立建模。
+  // 草稿列表已接入工作流草稿 API；编辑态改为阶段积木编排，运行实例会在后续独立建模。
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
   const [workflows, setWorkflows] = useState<WorkflowDraft[]>([]);
@@ -232,7 +232,7 @@ export function WorkflowDraftsPage() {
                 </span>
               </div>
               <p className="agent-muted mt-1.5 max-w-2xl text-sm leading-relaxed">
-                管理工作流定义、发布状态和画布配置；已发布版本会冻结为不可变快照，后续修改在草稿中继续演进。
+                管理工作流定义、发布状态和阶段积木配置；已发布版本会冻结为不可变快照，后续修改在草稿中继续演进。
               </p>
             </div>
           </div>
@@ -253,7 +253,7 @@ export function WorkflowDraftsPage() {
           </div>
           <div className="login-portal-description login-portal-description--business">
             <span className="login-portal-description-dot" />
-            草稿、发布状态与画布入口
+            草稿、发布状态与积木编排入口
           </div>
         </div>
 
@@ -275,7 +275,7 @@ export function WorkflowDraftsPage() {
               <div className="workflow-definition-toolbar">
                 <div>
                   <h2 id="workflow-list-title">工作流列表</h2>
-                  <p>查看定义状态、继续编辑画布或执行发布校验</p>
+                  <p>查看定义状态、继续编辑阶段积木或执行发布校验</p>
                 </div>
                 <div className="workflow-definition-toolbar-actions">
                   <label className="workflow-definition-search">
@@ -322,7 +322,7 @@ export function WorkflowDraftsPage() {
                           <td>{workflow.ownerName}</td>
                           <td>
                             <div className="workflow-definition-metrics">
-                              <span>{workflow.nodeCount} 个节点</span>
+                              <span>{workflow.nodeCount} 个积木</span>
                               <span>{workflow.pausePointCount} 个暂停点</span>
                             </div>
                           </td>
@@ -335,7 +335,7 @@ export function WorkflowDraftsPage() {
                               </button>
                               <button type="button" onClick={() => setEditingWorkflow(workflow)} className="sys-btn sys-btn--primary sys-btn--sm">
                                 <PanelRightOpen size={14} aria-hidden="true" />
-                                打开画布
+                                打开设计
                               </button>
                             </div>
                           </td>
@@ -392,7 +392,7 @@ export function WorkflowDraftsPage() {
             </div>
             <form onSubmit={handleCreateDraft}>
               <div className="sys-modal-body">
-                <div className="sys-hint mb-4">先保存基础信息，再进入画布配置节点、变量和发布规则。</div>
+                <div className="sys-hint mb-4">先保存基础信息，再进入阶段积木配置变量、能力和发布规则。</div>
                 <label className="sys-field">
                   <span className="sys-field-label sys-field-label--required">工作流名称</span>
                   <div className="sys-field-input-wrap">

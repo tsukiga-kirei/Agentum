@@ -1,34 +1,28 @@
-import type { Dispatch, MouseEvent, ReactNode, SetStateAction } from "react";
+import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import ReactFlow, {
-  Background,
-  Controls,
-  Edge,
-  Handle,
-  MiniMap,
-  Node,
-  NodeProps,
-  Position,
-} from "reactflow";
-import "reactflow/dist/style.css";
 import {
   AlertTriangle,
   Bot,
   CheckCircle2,
   ChevronLeft,
+  CircleDot,
   Clock3,
+  Database,
+  FileCheck2,
+  FileText,
   GitMerge,
-  Milestone,
-  PanelLeftClose,
-  PanelLeftOpen,
+  ListChecks,
+  MessageSquareText,
+  PackageCheck,
   PanelRightClose,
   PanelRightOpen,
-  PackageCheck,
+  RefreshCw,
   Route,
   Search,
   ShieldCheck,
   Split,
   TextCursorInput,
+  Wrench,
   Zap,
 } from "lucide-react";
 import { AgentumApiError, workflowApi } from "../../services/apiClient";
@@ -58,6 +52,20 @@ type EditorNodeData = {
   rawConfig?: Record<string, unknown>;
 };
 
+type WorkflowEditorNode = {
+  id: string;
+  position: { x: number; y: number };
+  data: EditorNodeData;
+};
+
+type WorkflowEditorEdge = {
+  id: string;
+  source: string;
+  target: string;
+  label?: string;
+  conditionExpression?: string;
+};
+
 type WorkflowVariable = {
   name: string;
   sourceNodeId: string;
@@ -73,6 +81,7 @@ type ParallelTask = {
   assignee: string;
   output: string;
   purpose: string;
+  mode: "数据采集" | "章节生成" | "组装校验";
 };
 
 type MergeMapping = {
@@ -81,49 +90,53 @@ type MergeMapping = {
   rule: string;
 };
 
+type WorkflowStage = {
+  id: "input" | "agent" | "review";
+  title: string;
+  subtitle: string;
+  icon: typeof TextCursorInput;
+  nodeTypes: WorkflowNodeType[];
+};
+
 type WorkflowEditorPageProps = {
   workflow: WorkflowDraft;
   onBack: () => void;
   onDraftSaved: (draft: WorkflowDraft) => void;
 };
 
-const nodeTypeMeta: Record<WorkflowNodeType, { color: string; icon: typeof Zap }> = {
+const nodeTypeMeta: Record<WorkflowNodeType, { icon: typeof Zap; accentClass: string }> = {
   trigger: {
-    color: "#71717a",
     icon: Zap,
+    accentClass: "bg-zinc-100 text-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-300",
   },
   user_input: {
-    color: "#f59e0b",
     icon: TextCursorInput,
+    accentClass: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
   },
   agent: {
-    color: "#4f46e5",
     icon: Bot,
+    accentClass: "bg-indigo-100 text-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-300",
   },
   parallel_group: {
-    color: "#059669",
     icon: Split,
+    accentClass: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300",
   },
   merge: {
-    color: "#7c3aed",
     icon: GitMerge,
+    accentClass: "bg-violet-100 text-violet-800 dark:bg-violet-950/50 dark:text-violet-300",
   },
   condition: {
-    color: "#ca8a04",
     icon: Route,
+    accentClass: "bg-yellow-100 text-yellow-800 dark:bg-yellow-950/50 dark:text-yellow-300",
   },
   human_review: {
-    color: "#dc2626",
     icon: ShieldCheck,
+    accentClass: "bg-red-100 text-red-800 dark:bg-red-950/50 dark:text-red-300",
   },
   delivery: {
-    color: "#ea580c",
     icon: PackageCheck,
+    accentClass: "bg-orange-100 text-orange-800 dark:bg-orange-950/50 dark:text-orange-300",
   },
-};
-
-const nodeTypes = {
-  workflow: WorkflowCanvasNode,
 };
 
 const nodeTypeLabels: Record<WorkflowNodeType, string> = {
@@ -137,17 +150,40 @@ const nodeTypeLabels: Record<WorkflowNodeType, string> = {
   delivery: "交付节点",
 };
 
-// 空草稿首次进入画布时先装载一份起步模板，用户保存后才会真正写入 workflow_node_definitions / workflow_edge_definitions。
-const starterNodes: Node<EditorNodeData>[] = [
+const workflowStages: WorkflowStage[] = [
+  {
+    id: "input",
+    title: "输入内容",
+    subtitle: "发起方式、公司全称、附件与补充说明",
+    icon: TextCursorInput,
+    nodeTypes: ["trigger", "user_input"],
+  },
+  {
+    id: "agent",
+    title: "智能体协作处理",
+    subtitle: "MCP 取数、Skill 强化角色、章节并行生成与组装",
+    icon: Bot,
+    nodeTypes: ["agent", "parallel_group", "merge", "condition"],
+  },
+  {
+    id: "review",
+    title: "审查交付",
+    subtitle: "人工确认、交付动作与结果固化",
+    icon: FileCheck2,
+    nodeTypes: ["human_review", "delivery"],
+  },
+];
+
+// 新草稿默认采用授信报告闭环，强调少量阶段和智能体协作；当前仍复用后端节点、边、变量定义持久化。
+const starterNodes: WorkflowEditorNode[] = [
   {
     id: "trigger_manual",
-    type: "workflow",
-    position: { x: 40, y: 180 },
+    position: { x: 0, y: 0 },
     data: {
-      label: "手动触发",
+      label: "手动发起授信报告",
       typeLabel: "触发节点",
       nodeType: "trigger",
-      summary: "由业务人员手动发起流程。",
+      summary: "由业务人员从工作台选择授信报告流程并创建一次运行。",
       inputVariables: [],
       outputVariables: ["starter", "started_at"],
       pausePoint: false,
@@ -159,16 +195,15 @@ const starterNodes: Node<EditorNodeData>[] = [
     },
   },
   {
-    id: "input_materials",
-    type: "workflow",
-    position: { x: 300, y: 110 },
+    id: "input_company",
+    position: { x: 260, y: 0 },
     data: {
-      label: "补充业务材料",
+      label: "输入授信主体",
       typeLabel: "用户输入节点",
       nodeType: "user_input",
-      summary: "收集需求背景、附件和期望交付物。",
+      summary: "收集授信公司全称、统一社会信用代码、授信用途和附件材料。",
       inputVariables: ["starter"],
-      outputVariables: ["project_info", "attachments"],
+      outputVariables: ["company_full_name", "credit_request", "attachments"],
       pausePoint: true,
       configStatus: "complete",
       runState: "等待输入",
@@ -178,16 +213,15 @@ const starterNodes: Node<EditorNodeData>[] = [
     },
   },
   {
-    id: "agent_analysis",
-    type: "workflow",
-    position: { x: 600, y: 110 },
+    id: "agent_intake",
+    position: { x: 560, y: 0 },
     data: {
-      label: "智能体分析",
+      label: "授信任务规划",
       typeLabel: "智能体节点",
       nodeType: "agent",
-      summary: "调用需求分析智能体生成范围、风险和追问建议。",
-      inputVariables: ["project_info", "attachments"],
-      outputVariables: ["analysis_result", "risk_level"],
+      summary: "智能体根据公司名称和授信用途识别缺失信息，必要时形成追问。",
+      inputVariables: ["company_full_name", "credit_request", "attachments"],
+      outputVariables: ["credit_work_plan", "missing_questions"],
       pausePoint: true,
       configStatus: "incomplete",
       runState: "待配置",
@@ -197,72 +231,68 @@ const starterNodes: Node<EditorNodeData>[] = [
     },
   },
   {
-    id: "parallel_collect",
-    type: "workflow",
-    position: { x: 900, y: 110 },
+    id: "parallel_data_collect",
+    position: { x: 860, y: 0 },
     data: {
-      label: "并行获取数据",
+      label: "并行获取授信数据",
       typeLabel: "并行节点组",
       nodeType: "parallel_group",
-      summary: "并行执行资料核验、子智能体数据收集和外部数据查询。",
-      inputVariables: ["analysis_result"],
-      outputVariables: ["research_pack"],
+      summary: "多个子智能体同时调用 MCP 获取工商、司法、财务和行业数据。",
+      inputVariables: ["credit_work_plan"],
+      outputVariables: ["credit_evidence_pack"],
       pausePoint: false,
       configStatus: "complete",
       runState: "执行中",
       outputMode: "一次性输出",
-      toolCount: 3,
+      toolCount: 4,
       allowQuestion: false,
     },
   },
   {
-    id: "merge_report",
-    type: "workflow",
-    position: { x: 1180, y: 110 },
+    id: "parallel_chapter_write",
+    position: { x: 1160, y: 0 },
     data: {
-      label: "合并组装报告",
+      label: "章节并行生成",
+      typeLabel: "并行节点组",
+      nodeType: "parallel_group",
+      summary: "经营概况、财务分析、风险判断和授信建议由多个章节智能体并行生成。",
+      inputVariables: ["credit_evidence_pack", "credit_work_plan"],
+      outputVariables: ["chapter_drafts"],
+      pausePoint: false,
+      configStatus: "complete",
+      runState: "未开始",
+      outputMode: "追问确认",
+      toolCount: 3,
+      allowQuestion: true,
+    },
+  },
+  {
+    id: "merge_credit_report",
+    position: { x: 1460, y: 0 },
+    data: {
+      label: "报告组装处理",
       typeLabel: "合并节点",
       nodeType: "merge",
-      summary: "把并行结果合并为结构化报告草稿。",
-      inputVariables: ["research_pack", "analysis_result"],
-      outputVariables: ["report_draft"],
-      pausePoint: false,
+      summary: "报告组装智能体统一口径、去重冲突信息，并生成待审查授信报告。",
+      inputVariables: ["chapter_drafts", "credit_evidence_pack"],
+      outputVariables: ["credit_report_draft"],
+      pausePoint: true,
       configStatus: "complete",
       runState: "未开始",
-      outputMode: "一次性输出",
+      outputMode: "追问确认",
       toolCount: 1,
-      allowQuestion: false,
-    },
-  },
-  {
-    id: "condition_risk",
-    type: "workflow",
-    position: { x: 1460, y: 110 },
-    data: {
-      label: "风险判断",
-      typeLabel: "条件分支节点",
-      nodeType: "condition",
-      summary: "根据 risk_level 判断是否需要人工审核。",
-      inputVariables: ["risk_level"],
-      outputVariables: ["review_required"],
-      pausePoint: false,
-      configStatus: "complete",
-      runState: "未开始",
-      outputMode: "一次性输出",
-      toolCount: 0,
-      allowQuestion: false,
+      allowQuestion: true,
     },
   },
   {
     id: "human_review",
-    type: "workflow",
-    position: { x: 1740, y: 40 },
+    position: { x: 1760, y: 0 },
     data: {
-      label: "人工审核",
+      label: "用户审查确认",
       typeLabel: "人工审核节点",
       nodeType: "human_review",
-      summary: "高风险流程等待负责人审核并可修改结论。",
-      inputVariables: ["report_draft", "risk_level"],
+      summary: "发起人或审核人审查报告草稿，可要求重新生成模型内容或确认交付。",
+      inputVariables: ["credit_report_draft"],
       outputVariables: ["review_decision"],
       pausePoint: true,
       configStatus: "incomplete",
@@ -273,15 +303,14 @@ const starterNodes: Node<EditorNodeData>[] = [
     },
   },
   {
-    id: "delivery_email",
-    type: "workflow",
-    position: { x: 2020, y: 110 },
+    id: "delivery_document",
+    position: { x: 2060, y: 0 },
     data: {
-      label: "邮件交付",
+      label: "生成并交付文档",
       typeLabel: "交付节点",
       nodeType: "delivery",
-      summary: "把审核后的报告发送给指定收件人并记录交付结果。",
-      inputVariables: ["report_draft", "review_decision"],
+      summary: "按租户交付能力生成 Word / PDF，确认后写入交付记录。",
+      inputVariables: ["credit_report_draft", "review_decision"],
       outputVariables: ["delivery_record"],
       pausePoint: false,
       configStatus: "incomplete",
@@ -293,68 +322,75 @@ const starterNodes: Node<EditorNodeData>[] = [
   },
 ];
 
-// 边关系对应工作流 MVP 主链路，后续应由 WorkflowDefinition.edges 持久化。
-const starterEdges: Edge[] = [
-  { id: "e_trigger_input", source: "trigger_manual", target: "input_materials", type: "smoothstep" },
-  { id: "e_input_agent", source: "input_materials", target: "agent_analysis", type: "smoothstep" },
-  { id: "e_agent_parallel", source: "agent_analysis", target: "parallel_collect", type: "smoothstep" },
-  { id: "e_parallel_merge", source: "parallel_collect", target: "merge_report", type: "smoothstep" },
-  { id: "e_merge_condition", source: "merge_report", target: "condition_risk", type: "smoothstep" },
-  { id: "e_condition_review", source: "condition_risk", target: "human_review", label: "高风险", type: "smoothstep" },
-  { id: "e_review_delivery", source: "human_review", target: "delivery_email", type: "smoothstep" },
-  { id: "e_condition_delivery", source: "condition_risk", target: "delivery_email", label: "低风险", type: "smoothstep" },
+const starterEdges: WorkflowEditorEdge[] = [
+  { id: "e_trigger_input", source: "trigger_manual", target: "input_company" },
+  { id: "e_input_agent", source: "input_company", target: "agent_intake" },
+  { id: "e_agent_data", source: "agent_intake", target: "parallel_data_collect" },
+  { id: "e_data_chapter", source: "parallel_data_collect", target: "parallel_chapter_write" },
+  { id: "e_chapter_merge", source: "parallel_chapter_write", target: "merge_credit_report" },
+  { id: "e_merge_review", source: "merge_credit_report", target: "human_review" },
+  { id: "e_review_delivery", source: "human_review", target: "delivery_document" },
 ];
 
-// 第一阶段变量元数据仍由前端模板补充；变量名称与来源已改为从当前图实时推导，后续会由变量声明和发布校验契约接管。
 const starterVariableMetadata: Record<string, Pick<WorkflowVariable, "type" | "sensitive" | "deliverable" | "description">> = {
   starter: { type: "string", sensitive: false, deliverable: false, description: "流程发起人标识" },
   started_at: { type: "string", sensitive: false, deliverable: false, description: "流程发起时间" },
-  project_info: { type: "object", sensitive: false, deliverable: false, description: "业务资料摘要" },
+  company_full_name: { type: "string", sensitive: false, deliverable: false, description: "授信公司全称" },
+  credit_request: { type: "object", sensitive: false, deliverable: false, description: "授信用途、金额和期限等申请信息" },
   attachments: { type: "file", sensitive: true, deliverable: false, description: "用户上传附件" },
-  analysis_result: { type: "object", sensitive: false, deliverable: false, description: "智能体分析结果" },
-  risk_level: { type: "decision", sensitive: false, deliverable: false, description: "风险等级判断" },
-  research_pack: { type: "object", sensitive: false, deliverable: false, description: "并行收集结果" },
-  report_draft: { type: "object", sensitive: false, deliverable: true, description: "待交付报告草稿" },
-  review_required: { type: "boolean", sensitive: false, deliverable: false, description: "是否需要人工审核" },
-  review_decision: { type: "decision", sensitive: false, deliverable: false, description: "人工审核结论" },
+  credit_work_plan: { type: "object", sensitive: false, deliverable: false, description: "智能体拆解后的授信处理计划" },
+  missing_questions: { type: "array", sensitive: false, deliverable: false, description: "需要用户补充的问题" },
+  credit_evidence_pack: { type: "object", sensitive: true, deliverable: false, description: "MCP 返回的数据证据包" },
+  chapter_drafts: { type: "object", sensitive: false, deliverable: false, description: "多个章节智能体生成的章节草稿" },
+  credit_report_draft: { type: "object", sensitive: false, deliverable: true, description: "待审查授信报告草稿" },
+  review_decision: { type: "decision", sensitive: false, deliverable: false, description: "人工审查结论" },
   delivery_record: { type: "object", sensitive: false, deliverable: true, description: "交付结果记录" },
 };
 
-// 并行与合并先用静态配置解释设计意图，后续会落到 parallel_group.config.tasks 和 merge.config.mappings。
 const parallelTasks: ParallelTask[] = [
   {
-    name: "资料核验智能体",
-    assignee: "需求分析智能体 / 文件读取 MCP",
-    output: "material_check",
-    purpose: "核验附件完整性、材料版本和缺失字段。",
+    name: "工商与股权信息",
+    assignee: "企业信息 MCP",
+    output: "company_registry",
+    purpose: "核验主体名称、股东、对外投资和经营状态。",
+    mode: "数据采集",
   },
   {
-    name: "外部数据查询智能体",
-    assignee: "数据查询 MCP",
-    output: "external_facts",
-    purpose: "并发读取业务系统中的客户、合同或经营指标摘要。",
+    name: "司法与舆情核验",
+    assignee: "司法查询 MCP / 舆情检索 Skill",
+    output: "risk_events",
+    purpose: "收集涉诉、执行、处罚和公开风险事件。",
+    mode: "数据采集",
   },
   {
-    name: "风险补充分析智能体",
-    assignee: "风险识别 Skill",
-    output: "risk_findings",
-    purpose: "补充范围变更、合规风险和需要人工确认的问题。",
+    name: "财务指标提取",
+    assignee: "文件读取 MCP / 财务分析 Skill",
+    output: "finance_metrics",
+    purpose: "从报表和附件中提取资产、负债、收入、现金流等指标。",
+    mode: "数据采集",
+  },
+  {
+    name: "章节智能体并行",
+    assignee: "经营分析 / 财务分析 / 风险建议智能体",
+    output: "chapter_drafts",
+    purpose: "按章节并发生成报告正文，再交给组装智能体统一口径。",
+    mode: "章节生成",
   },
 ];
 
 const mergeMappings: MergeMapping[] = [
-  { source: "material_check", target: "report_draft.materials", rule: "按附件类型分组写入报告材料段落" },
-  { source: "external_facts", target: "report_draft.facts", rule: "保留来源摘要和查询时间，供审计追溯" },
-  { source: "risk_findings", target: "report_draft.risks", rule: "按风险等级排序，并生成审核关注点" },
+  { source: "company_registry", target: "credit_report_draft.companyProfile", rule: "保留查询时间和来源摘要，用于审计追溯。" },
+  { source: "risk_events", target: "credit_report_draft.riskSection", rule: "风险事件只允许重新获取，不允许用户追问改写事实。" },
+  { source: "finance_metrics", target: "credit_report_draft.financeSection", rule: "指标进入结构化表格，异常口径交给审核人确认。" },
+  { source: "chapter_drafts", target: "credit_report_draft.sections", rule: "模型文本可重新生成或追问改写，但不得覆盖数据来源。" },
 ];
 
 export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowEditorPageProps) {
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
-  const [nodes, setNodes] = useState<Node<EditorNodeData>[]>([]);
-  const [edges, setEdges] = useState<Edge[]>([]);
+  const [nodes, setNodes] = useState<WorkflowEditorNode[]>([]);
+  const [edges, setEdges] = useState<WorkflowEditorEdge[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState("");
-  const [isOutlineCollapsed, setIsOutlineCollapsed] = useState(false);
   const [isConfigCollapsed, setIsConfigCollapsed] = useState(false);
   const [nodeSearchValue, setNodeSearchValue] = useState("");
   const [insertedVariableName, setInsertedVariableName] = useState("");
@@ -368,7 +404,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
   useEffect(() => {
     if (!token || !user?.tenantId) {
       setLoading(false);
-      setLoadError("当前账号缺少租户上下文，无法加载工作流草稿图");
+      setLoadError("当前账号缺少租户上下文，无法加载工作流草稿");
       return;
     }
 
@@ -377,7 +413,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
     setLoadError("");
     setSaveFeedback(null);
 
-    // 画布详情必须以后端事实为准；只有新草稿尚未保存节点时，才载入前端起步模板等待首次落库。
+    // 设计页不再要求用户理解坐标和连线，但后端草稿结构仍是事实来源；新草稿才加载授信报告起步模板。
     void workflowApi.getDraft(user.tenantId, workflow.id, token)
       .then((detail) => {
         if (cancelled) {
@@ -393,15 +429,15 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
         setSelectedNodeId(nextNodes[0]?.id ?? "");
         setUsingStarterTemplate(!hasPersistedGraph);
         if (!hasPersistedGraph) {
-          setSaveFeedback({ tone: "info", message: "当前草稿还没有节点，已载入起步模板；首次保存后会写入草稿图。" });
+          setSaveFeedback({ tone: "info", message: "已载入授信报告起步模板，首次保存后写入草稿。" });
         }
       })
       .catch((error) => {
         if (cancelled) {
           return;
         }
-        console.warn("[workflow] 工作流草稿图加载失败", getWorkflowEditorErrorContext(error, user.tenantId ?? undefined, workflow.id));
-        setLoadError(error instanceof AgentumApiError ? error.message : "无法加载工作流草稿图");
+        console.warn("[workflow] 工作流草稿加载失败", getWorkflowEditorErrorContext(error, user.tenantId ?? undefined, workflow.id));
+        setLoadError(error instanceof AgentumApiError ? error.message : "无法加载工作流草稿");
         setNodes([]);
         setEdges([]);
       })
@@ -416,42 +452,27 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
     };
   }, [token, user?.tenantId, workflow.id]);
 
-  const decoratedNodes = useMemo(() => {
-    return nodes.map((node) => {
-      const meta = nodeTypeMeta[node.data.nodeType];
-
-      return {
-        ...node,
-        style: {
-          border: "none",
-          borderRadius: 12,
-          boxShadow: selectedNodeId === node.id ? "0 14px 32px rgb(79 70 229 / 0.22)" : "0 6px 18px rgb(15 23 42 / 0.08)",
-          minWidth: 220,
-          padding: 0,
-        },
-      };
-    });
-  }, [nodes, selectedNodeId]);
-
-  const selectedNode = decoratedNodes.find((node) => node.id === selectedNodeId) ?? decoratedNodes[0];
-  const incompleteNodes = decoratedNodes.filter((node) => node.data.configStatus === "incomplete");
-  const selectedNodeIndex = selectedNode ? decoratedNodes.findIndex((node) => node.id === selectedNode.id) : -1;
+  const orderedNodes = useMemo(() => orderNodesByEdges(nodes, edges), [edges, nodes]);
+  const selectedNode = orderedNodes.find((node) => node.id === selectedNodeId) ?? orderedNodes[0];
+  const selectedNodeIndex = selectedNode ? orderedNodes.findIndex((node) => node.id === selectedNode.id) : -1;
   const workflowVariables = useMemo(
-    () => declaredVariables.length > 0 ? declaredVariables : buildWorkflowVariables(decoratedNodes),
-    [declaredVariables, decoratedNodes],
+    () => declaredVariables.length > 0 ? declaredVariables : buildWorkflowVariables(orderedNodes),
+    [declaredVariables, orderedNodes],
   );
-  // 变量只能引用上游节点输出，避免设计态形成循环依赖；后续由后端发布校验做最终判断。
   const availableVariables = workflowVariables.filter((variable) => {
-    const sourceIndex = decoratedNodes.findIndex((node) => node.id === variable.sourceNodeId);
+    const sourceIndex = orderedNodes.findIndex((node) => node.id === variable.sourceNodeId);
 
     return sourceIndex >= 0 && sourceIndex < selectedNodeIndex;
   });
-  // 搜索匹配保持轻量本地状态，真实画布较大时应交给节点索引或后端草稿查询辅助定位。
-  const matchedNodes = decoratedNodes.filter((node) => node.data.label.includes(nodeSearchValue.trim()));
+  const incompleteNodes = orderedNodes.filter((node) => node.data.configStatus === "incomplete");
+  const pausePointCount = orderedNodes.filter((node) => node.data.pausePoint).length;
+  const matchedNodes = orderedNodes.filter((node) => node.data.label.includes(nodeSearchValue.trim()));
+  const nodesByStage = useMemo(() => groupNodesByStage(orderedNodes), [orderedNodes]);
+  const selectedStage = selectedNode ? findStageForNode(selectedNode) : workflowStages[0];
 
-  const persistGraph = useCallback(async (nextNodes: Node<EditorNodeData>[], nextEdges: Edge[]) => {
+  const persistGraph = useCallback(async (nextNodes: WorkflowEditorNode[], nextEdges: WorkflowEditorEdge[]) => {
     if (!token || !user?.tenantId) {
-      setSaveFeedback({ tone: "error", message: "当前账号缺少租户上下文，无法保存工作流草稿图" });
+      setSaveFeedback({ tone: "error", message: "当前账号缺少租户上下文，无法保存工作流草稿" });
       return;
     }
 
@@ -459,34 +480,35 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
     setSaveFeedback(null);
 
     try {
+      const nextVariables = buildWorkflowVariables(nextNodes);
       const detail = await workflowApi.saveGraph(
         user.tenantId,
         workflow.id,
         token,
         nextNodes.map(toWorkflowNodeDraft),
         nextEdges.map(toWorkflowEdgeDraft),
-        workflowVariables.map(toWorkflowVariableDraft),
+        nextVariables.map(toWorkflowVariableDraft),
       );
       applyPersistedDetail(detail, setNodes, setEdges, setSelectedNodeId);
       setDeclaredVariables(toWorkflowVariables(detail.variables, detail.nodes.map(toEditorNode)));
       setUsingStarterTemplate(false);
-      setSaveFeedback({ tone: "success", message: "草稿图已保存" });
+      setSaveFeedback({ tone: "success", message: "流程设计已保存" });
       onDraftSaved(detail.draft);
     } catch (error) {
-      console.warn("[workflow] 工作流草稿图保存失败", getWorkflowEditorErrorContext(error, user.tenantId, workflow.id));
-      setSaveFeedback({ tone: "error", message: error instanceof AgentumApiError ? error.message : "保存工作流草稿图失败" });
+      console.warn("[workflow] 工作流草稿保存失败", getWorkflowEditorErrorContext(error, user.tenantId, workflow.id));
+      setSaveFeedback({ tone: "error", message: error instanceof AgentumApiError ? error.message : "保存工作流草稿失败" });
     } finally {
       setSaving(false);
     }
-  }, [onDraftSaved, token, user?.tenantId, workflow.id, workflowVariables]);
+  }, [onDraftSaved, token, user?.tenantId, workflow.id]);
 
   async function handleSaveSelectedNode() {
     if (!selectedNode) {
       return;
     }
 
-    // 节点配置在第一阶段仍是轻量示意，但保存动作已经改为整图提交，确保节点、边和摘要计数一起落库。
-    const nextNodes: Node<EditorNodeData>[] = nodes.map((node) => {
+    // 当前阶段保存的是积木配置摘要，后续接入表单后应只提交被编辑节点的配置补丁并由后端合并。
+    const nextNodes = nodes.map((node) => {
       if (node.id !== selectedNode.id) {
         return node;
       }
@@ -503,31 +525,16 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
     await persistGraph(nextNodes, edges);
   }
 
-  const handleNodeClick = (_event: MouseEvent, node: Node<EditorNodeData>) => {
-    // 节点选中态驱动右侧配置面板，后续接入表单保存时也以该 id 定位 NodeDefinition。
-    setSelectedNodeId(node.id);
-  };
-
   function handleSearchLocate() {
     const nextNode = matchedNodes[0];
 
     if (nextNode) {
-      // 搜索只负责定位选中态，后续接入自动布局后再同步控制 React Flow viewport。
       setSelectedNodeId(nextNode.id);
     }
   }
-  // 画布区域占据主要视觉空间，大纲和配置面板作为辅助侧栏，折叠状态后续应进入用户偏好设置。
-  const editorGridClass =
-    isOutlineCollapsed && isConfigCollapsed
-      ? "xl:grid-cols-[minmax(0,1fr)]"
-      : isOutlineCollapsed
-        ? "xl:grid-cols-[minmax(0,1fr)_300px]"
-        : isConfigCollapsed
-          ? "xl:grid-cols-[200px_minmax(0,1fr)]"
-          : "xl:grid-cols-[200px_minmax(0,1fr)_300px]";
 
   if (loading) {
-    return <EditorStateShell workflowName={workflow.name} onBack={onBack} icon={<Clock3 className="h-5 w-5" aria-hidden="true" />} message="正在加载工作流草稿图" />;
+    return <EditorStateShell workflowName={workflow.name} onBack={onBack} icon={<Clock3 className="h-5 w-5" aria-hidden="true" />} message="正在加载工作流草稿" />;
   }
 
   if (loadError || !selectedNode) {
@@ -536,47 +543,29 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
         workflowName={workflow.name}
         onBack={onBack}
         icon={<AlertTriangle className="h-5 w-5" aria-hidden="true" />}
-        message={loadError || "当前草稿没有可编辑节点"}
+        message={loadError || "当前草稿没有可编辑积木"}
       />
     );
   }
 
   return (
-    <div className="flex h-[calc(100vh-var(--header-height))] flex-col">
-      {/* 紧凑内联工具栏 —— 返回、标题、搜索、面板开关并排展示 */}
+    <div className="flex h-[calc(100vh-var(--header-height))] flex-col bg-[var(--color-bg-layout)]">
       <div className="flex flex-wrap items-center gap-3 border-b border-[var(--color-border-light)] bg-[var(--color-bg-card)] px-4 py-2">
-        <button
-          type="button"
-          onClick={onBack}
-          className="agent-button h-7 px-2 text-xs"
-        >
+        <button type="button" onClick={onBack} className="agent-button h-7 px-2 text-xs">
           <ChevronLeft className="h-3.5 w-3.5" aria-hidden="true" />
           返回
         </button>
         <div className="mr-auto min-w-0">
           <h2 className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{workflow.name}</h2>
+          <p className="truncate text-xs text-[var(--color-text-tertiary)]">输入内容、智能体协作处理、审查交付</p>
         </div>
-        <div className="flex items-center gap-1.5 text-xs text-[var(--color-text-tertiary)]">
-          <span className="rounded bg-[var(--color-bg-hover)] px-1.5 py-0.5">节点 {nodes.length}</span>
-          <span className="rounded bg-[var(--color-bg-hover)] px-1.5 py-0.5">暂停 {nodes.filter((n) => n.data.pausePoint).length}</span>
-          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">待配 {incompleteNodes.length}</span>
-        </div>
-        {saveFeedback ? (
-          <span
-            className={`rounded px-2 py-1 text-xs font-medium ${
-              saveFeedback.tone === "success"
-                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
-                : saveFeedback.tone === "error"
-                  ? "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300"
-                  : "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300"
-            }`}
-          >
-            {saveFeedback.message}
-          </span>
-        ) : null}
-        <label className="relative block w-48">
+        <ToolbarMetric icon={ListChecks} label="积木" value={orderedNodes.length.toString()} />
+        <ToolbarMetric icon={CircleDot} label="暂停" value={pausePointCount.toString()} />
+        <ToolbarMetric icon={AlertTriangle} label="待配" value={incompleteNodes.length.toString()} tone={incompleteNodes.length > 0 ? "warning" : "default"} />
+        {saveFeedback ? <SaveFeedback feedback={saveFeedback} /> : null}
+        <label className="relative block w-52">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--color-text-tertiary)]" aria-hidden="true" />
-          <span className="sr-only">搜索节点</span>
+          <span className="sr-only">搜索积木</span>
           <input
             value={nodeSearchValue}
             onChange={(event) => setNodeSearchValue(event.target.value)}
@@ -586,20 +575,12 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
               }
             }}
             className="agent-input h-7 w-full pl-7 pr-2 text-xs outline-none"
-            placeholder="搜索节点"
+            placeholder="搜索积木"
           />
         </label>
         <button
           type="button"
-          onClick={() => setIsOutlineCollapsed((c) => !c)}
-          className="agent-button h-7 px-2 text-xs"
-          title={isOutlineCollapsed ? "展开大纲" : "收起大纲"}
-        >
-          {isOutlineCollapsed ? <PanelLeftOpen className="h-3.5 w-3.5" /> : <PanelLeftClose className="h-3.5 w-3.5" />}
-        </button>
-        <button
-          type="button"
-          onClick={() => setIsConfigCollapsed((c) => !c)}
+          onClick={() => setIsConfigCollapsed((current) => !current)}
           className="agent-button h-7 px-2 text-xs"
           title={isConfigCollapsed ? "展开配置" : "收起配置"}
         >
@@ -607,78 +588,35 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
         </button>
       </div>
 
-      {/* 画布主体 —— 撑满剩余高度 */}
-      <div className={`grid min-h-0 flex-1 ${editorGridClass}`}>
-        {/* 左侧大纲 */}
-        {!isOutlineCollapsed ? (
-          <section className="overflow-y-auto border-r border-[var(--color-border-light)] bg-[var(--color-bg-card)]" aria-labelledby="outline-title">
-            <div className="px-3 pb-1.5 pt-3">
-              <h3 id="outline-title" className="text-xs font-semibold text-[var(--color-text-primary)]">流程大纲</h3>
-            </div>
-            <div className="space-y-1.5 px-2 pb-3">
-              {decoratedNodes.map((node, index) => {
-                const meta = nodeTypeMeta[node.data.nodeType];
-                const Icon = meta.icon;
-                const isActive = selectedNodeId === node.id;
+      <div className={`grid min-h-0 flex-1 ${isConfigCollapsed ? "xl:grid-cols-[minmax(0,1fr)]" : "xl:grid-cols-[minmax(0,1fr)_340px]"}`}>
+        <main className="min-h-0 overflow-y-auto px-4 py-4">
+          <div className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
+            <StageRail
+              stages={workflowStages}
+              nodesByStage={nodesByStage}
+              selectedStageId={selectedStage.id}
+              selectedNodeId={selectedNode.id}
+              onSelectNode={setSelectedNodeId}
+            />
+            <section className="space-y-4" aria-label="流程积木编排">
+              <WorkflowIntentPanel usingStarterTemplate={usingStarterTemplate} />
+              <StageBoard
+                stages={workflowStages}
+                nodesByStage={nodesByStage}
+                selectedNodeId={selectedNode.id}
+                onSelectNode={setSelectedNodeId}
+              />
+              <CollaborationPreview />
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+                <VariableRegistry variables={workflowVariables} />
+                <PublishCheckSummary incompleteNodes={incompleteNodes} />
+              </div>
+            </section>
+          </div>
+        </main>
 
-                return (
-                  <button
-                    key={node.id}
-                    type="button"
-                    onClick={() => setSelectedNodeId(node.id)}
-                    className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors duration-150 ${
-                      isActive
-                        ? "bg-[var(--color-primary)] text-white"
-                        : "text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]"
-                    }`}
-                  >
-                    <span
-                      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded ${
-                        isActive ? "bg-white/15" : "bg-[var(--color-bg-hover)]"
-                      }`}
-                      style={isActive ? {} : { color: meta.color }}
-                    >
-                      <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block truncate text-[11px] font-medium">
-                        {index + 1}. {node.data.label}
-                      </span>
-                      <span className={`block text-[10px] ${isActive ? "text-indigo-100" : "text-[var(--color-text-tertiary)]"}`}>
-                        {node.data.typeLabel}
-                      </span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-        ) : null}
-
-        {/* 中间画布 —— 完整撑满 */}
-        <section className="relative min-h-0 overflow-hidden bg-[var(--color-canvas-bg)]" aria-label="工作流画布">
-          <ReactFlow
-            nodes={decoratedNodes}
-            edges={edges}
-            nodeTypes={nodeTypes}
-            onNodeClick={handleNodeClick}
-            defaultViewport={{ x: 40, y: 120, zoom: 0.82 }}
-            nodesDraggable={false}
-            panOnScroll
-            zoomOnScroll
-            zoomOnPinch
-            minZoom={0.2}
-            maxZoom={2.5}
-          >
-            <Background color="var(--color-canvas-dot)" gap={20} size={1.5} />
-            <Controls position="bottom-left" />
-            <MiniMap nodeStrokeWidth={3} zoomable pannable />
-          </ReactFlow>
-        </section>
-
-        {/* 右侧配置面板 */}
         {!isConfigCollapsed ? (
-          <div className="overflow-y-auto border-l border-[var(--color-border-light)] bg-[var(--color-bg-card)]">
+          <div className="min-h-0 overflow-y-auto border-l border-[var(--color-border-light)] bg-[var(--color-bg-card)]">
             <NodeConfigPanel
               node={selectedNode}
               availableVariables={availableVariables}
@@ -695,56 +633,228 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
   );
 }
 
-// 编辑器指标卡片（当前未在主布局中使用，保留供后续工具栏扩展）
-function EditorMetric({ label, value }: { label: string; value: string }) {
+function StageRail({
+  stages,
+  nodesByStage,
+  selectedStageId,
+  selectedNodeId,
+  onSelectNode,
+}: {
+  stages: WorkflowStage[];
+  nodesByStage: Record<WorkflowStage["id"], WorkflowEditorNode[]>;
+  selectedStageId: WorkflowStage["id"];
+  selectedNodeId: string;
+  onSelectNode: (nodeId: string) => void;
+}) {
   return (
-    <div className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] px-4 py-2.5">
-      <p className="text-xs text-[var(--color-text-secondary)]">{label}</p>
-      <p className="mt-1 text-xl font-semibold text-[var(--color-text-primary)]">{value}</p>
+    <aside className="space-y-3" aria-label="阶段导航">
+      {stages.map((stage, stageIndex) => {
+        const Icon = stage.icon;
+        const stageNodes = nodesByStage[stage.id];
+        const isActive = selectedStageId === stage.id;
+
+        return (
+          <section
+            key={stage.id}
+            className={`rounded-[var(--radius-lg)] border bg-[var(--color-bg-card)] p-3 shadow-[var(--shadow-sm)] ${
+              isActive ? "border-[var(--color-primary)]" : "border-[var(--color-border-light)]"
+            }`}
+          >
+            <div className="flex items-start gap-3">
+              <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${isActive ? "bg-[var(--color-primary)] text-white" : "bg-[var(--color-bg-hover)] text-[var(--color-text-secondary)]"}`}>
+                <Icon className="h-4 w-4" aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-xs text-[var(--color-text-tertiary)]">阶段 {stageIndex + 1}</p>
+                <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">{stage.title}</h3>
+              </div>
+            </div>
+            <p className="mt-2 text-xs leading-5 text-[var(--color-text-secondary)]">{stage.subtitle}</p>
+            <div className="mt-3 space-y-1.5">
+              {stageNodes.map((node) => (
+                <button
+                  key={node.id}
+                  type="button"
+                  onClick={() => onSelectNode(node.id)}
+                  className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors duration-150 ${
+                    selectedNodeId === node.id
+                      ? "bg-[var(--color-primary)] text-white"
+                      : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]"
+                  }`}
+                >
+                  <span className="truncate">{node.data.label}</span>
+                  {node.data.configStatus === "incomplete" ? <AlertTriangle className="ml-auto h-3.5 w-3.5 shrink-0" aria-hidden="true" /> : null}
+                </button>
+              ))}
+            </div>
+          </section>
+        );
+      })}
+    </aside>
+  );
+}
+
+function WorkflowIntentPanel({ usingStarterTemplate }: { usingStarterTemplate: boolean }) {
+  return (
+    <section className="rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-4 shadow-[var(--shadow-sm)]">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="max-w-3xl">
+          <div className="flex items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-md bg-indigo-100 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300">
+              <FileText className="h-4 w-4" aria-hidden="true" />
+            </span>
+            <div>
+              <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">授信报告协作流</h3>
+              <p className="text-xs text-[var(--color-text-tertiary)]">公司输入、数据核验、章节生成、组装审查、文档交付</p>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-3 text-sm md:grid-cols-3">
+            <IntentItem title="大模型角色" detail="授信分析、章节撰写、报告组装" />
+            <IntentItem title="外部能力" detail="MCP 取数、Skill 风险识别、模板交付" />
+            <IntentItem title="用户参与" detail="输入、追问、重新生成、最终确认" />
+          </div>
+        </div>
+        {usingStarterTemplate ? (
+          <span className="rounded bg-sky-100 px-2 py-1 text-xs font-medium text-sky-800 dark:bg-sky-900/40 dark:text-sky-300">
+            起步模板
+          </span>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function IntentItem({ title, detail }: { title: string; detail: string }) {
+  return (
+    <div className="rounded-[var(--radius-md)] bg-[var(--color-bg-hover)] px-3 py-2">
+      <p className="text-xs text-[var(--color-text-tertiary)]">{title}</p>
+      <p className="mt-1 font-medium text-[var(--color-text-primary)]">{detail}</p>
     </div>
   );
 }
 
-function WorkflowCanvasNode({ data, selected }: NodeProps<EditorNodeData>) {
-  const meta = nodeTypeMeta[data.nodeType];
+function StageBoard({
+  stages,
+  nodesByStage,
+  selectedNodeId,
+  onSelectNode,
+}: {
+  stages: WorkflowStage[];
+  nodesByStage: Record<WorkflowStage["id"], WorkflowEditorNode[]>;
+  selectedNodeId: string;
+  onSelectNode: (nodeId: string) => void;
+}) {
+  return (
+    <div className="space-y-4">
+      {stages.map((stage) => {
+        const Icon = stage.icon;
+        const stageNodes = nodesByStage[stage.id];
+
+        return (
+          <section key={stage.id} className="rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-4 shadow-[var(--shadow-sm)]" aria-labelledby={`stage-${stage.id}`}>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span className="flex h-9 w-9 items-center justify-center rounded-md bg-[var(--color-bg-hover)] text-[var(--color-primary)]">
+                  <Icon className="h-4 w-4" aria-hidden="true" />
+                </span>
+                <div>
+                  <h3 id={`stage-${stage.id}`} className="text-base font-semibold text-[var(--color-text-primary)]">{stage.title}</h3>
+                  <p className="text-xs text-[var(--color-text-tertiary)]">{stage.subtitle}</p>
+                </div>
+              </div>
+              <span className="rounded bg-[var(--color-bg-hover)] px-2 py-1 text-xs font-medium text-[var(--color-text-secondary)]">
+                {stageNodes.length} 个积木
+              </span>
+            </div>
+            <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+              {stageNodes.map((node) => (
+                <WorkflowBlock
+                  key={node.id}
+                  node={node}
+                  selected={selectedNodeId === node.id}
+                  onSelect={() => onSelectNode(node.id)}
+                />
+              ))}
+            </div>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+function WorkflowBlock({ node, selected, onSelect }: { node: WorkflowEditorNode; selected: boolean; onSelect: () => void }) {
+  const meta = nodeTypeMeta[node.data.nodeType];
   const Icon = meta.icon;
+  const interaction = getInteractionPolicy(node);
 
   return (
-    <div className={`w-56 overflow-hidden rounded-[var(--radius-lg)] border bg-[var(--color-bg-card)] ${selected ? "border-[var(--color-primary)]" : "border-[var(--color-border-light)]"}`}>
-      <Handle type="target" position={Position.Left} className="!h-3 !w-3 !border-2 !border-white" style={{ background: meta.color }} />
-      <div className="p-3 pb-2">
-        <div className="flex items-start gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: `${meta.color}18`, color: meta.color }}>
-            <Icon className="h-4 w-4" aria-hidden="true" />
-          </span>
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{data.label}</p>
-            <p className="mt-0.5 text-xs text-[var(--color-text-tertiary)]">{data.typeLabel}</p>
-          </div>
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`flex h-full min-h-[188px] flex-col rounded-[var(--radius-lg)] border bg-[var(--color-bg-card)] p-3 text-left transition duration-150 ${
+        selected ? "border-[var(--color-primary)] shadow-[0_16px_36px_rgba(79,70,229,0.18)]" : "border-[var(--color-border-light)] hover:border-[var(--color-primary)]"
+      }`}
+    >
+      <div className="flex items-start gap-3">
+        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-md ${meta.accentClass}`}>
+          <Icon className="h-5 w-5" aria-hidden="true" />
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{node.data.label}</p>
+          <p className="mt-0.5 text-xs text-[var(--color-text-tertiary)]">{node.data.typeLabel}</p>
         </div>
       </div>
-      <div className="space-y-3 p-3">
-        <p className="line-clamp-2 text-xs leading-5 text-[var(--color-text-secondary)]">{data.summary}</p>
-        <p className="text-[11px] font-medium text-[var(--color-text-tertiary)]">
-          {data.runState} · {data.outputMode}
-        </p>
+      <p className="mt-3 line-clamp-3 text-xs leading-5 text-[var(--color-text-secondary)]">{node.data.summary}</p>
+      <div className="mt-auto space-y-3 pt-3">
         <div className="flex flex-wrap gap-1.5">
-          <span className="rounded bg-[var(--color-bg-hover)] px-2 py-1 text-[11px] font-medium text-[var(--color-text-secondary)]">
-            入 {data.inputVariables.length}
-          </span>
-          <span className="rounded bg-[var(--color-bg-hover)] px-2 py-1 text-[11px] font-medium text-[var(--color-text-secondary)]">
-            出 {data.outputVariables.length}
-          </span>
-          <span className="rounded bg-[var(--color-bg-hover)] px-2 py-1 text-[11px] font-medium text-[var(--color-text-secondary)]">
-            工具 {data.toolCount}
-          </span>
-          {data.pausePoint ? <span className="rounded bg-amber-100 px-2 py-1 text-[11px] font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">暂停</span> : null}
-          {data.allowQuestion ? <span className="rounded bg-sky-100 px-2 py-1 text-[11px] font-medium text-sky-800 dark:bg-sky-900/40 dark:text-sky-300">可追问</span> : null}
+          <TinyBadge>{node.data.runState}</TinyBadge>
+          {node.data.pausePoint ? <TinyBadge tone="warning">暂停点</TinyBadge> : null}
+          {node.data.toolCount > 0 ? <TinyBadge tone="info">MCP {node.data.toolCount}</TinyBadge> : null}
+          {node.data.allowQuestion ? <TinyBadge tone="success">可追问</TinyBadge> : null}
         </div>
-        <StatusBadge complete={data.configStatus === "complete"} compact />
+        <div className="flex flex-wrap gap-2">
+          <ActionPill icon={RefreshCw} label="重新生成" enabled={interaction.canRegenerate} />
+          <ActionPill icon={MessageSquareText} label="追问修改" enabled={interaction.canAskFollowUp} />
+        </div>
+        <StatusBadge complete={node.data.configStatus === "complete"} compact />
       </div>
-      <Handle type="source" position={Position.Right} className="!h-3 !w-3 !border-2 !border-white" style={{ background: meta.color }} />
-    </div>
+    </button>
+  );
+}
+
+function CollaborationPreview() {
+  return (
+    <section className="rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-4 shadow-[var(--shadow-sm)]" aria-labelledby="collaboration-preview-title">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 id="collaboration-preview-title" className="text-base font-semibold text-[var(--color-text-primary)]">智能体协作台</h3>
+          <p className="text-xs text-[var(--color-text-tertiary)]">数据取数、章节生成和报告组装分开执行</p>
+        </div>
+        <span className="rounded bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">并行优先</span>
+      </div>
+      <div className="mt-4 grid gap-3 lg:grid-cols-4">
+        {parallelTasks.map((task) => {
+          const Icon = task.mode === "数据采集" ? Database : task.mode === "章节生成" ? FileText : GitMerge;
+
+          return (
+            <article key={task.name} className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-3">
+              <div className="flex items-center gap-2">
+                <span className="flex h-8 w-8 items-center justify-center rounded-md bg-[var(--color-bg-card)] text-[var(--color-primary)] ring-1 ring-[var(--color-border-light)]">
+                  <Icon className="h-4 w-4" aria-hidden="true" />
+                </span>
+                <div className="min-w-0">
+                  <h4 className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{task.name}</h4>
+                  <p className="text-xs text-[var(--color-text-tertiary)]">{task.mode}</p>
+                </div>
+              </div>
+              <p className="mt-3 text-xs leading-5 text-[var(--color-text-secondary)]">{task.purpose}</p>
+              <p className="mt-2 truncate text-[11px] text-[var(--color-text-tertiary)]">能力：{task.assignee}</p>
+            </article>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -757,7 +867,7 @@ function NodeConfigPanel({
   saving,
   usingStarterTemplate,
 }: {
-  node: Node<EditorNodeData>;
+  node: WorkflowEditorNode;
   availableVariables: WorkflowVariable[];
   insertedVariableName: string;
   onInsertVariable: (variableName: string) => void;
@@ -767,12 +877,13 @@ function NodeConfigPanel({
 }) {
   const meta = nodeTypeMeta[node.data.nodeType];
   const Icon = meta.icon;
+  const interaction = getInteractionPolicy(node);
 
   return (
     <aside aria-labelledby="node-config-title">
       <div className="px-4 pb-2 pt-4">
         <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-lg" style={{ backgroundColor: `${meta.color}18`, color: meta.color }}>
+          <span className={`flex h-10 w-10 items-center justify-center rounded-lg ${meta.accentClass}`}>
             <Icon className="h-5 w-5" aria-hidden="true" />
           </span>
           <div>
@@ -785,27 +896,27 @@ function NodeConfigPanel({
       </div>
 
       <div className="space-y-4 p-4">
-        <PanelGroup title="基础信息">
+        <PanelGroup title="业务定位">
           <p className="agent-muted text-sm leading-6">{node.data.summary}</p>
           <div className="mt-3 flex flex-wrap gap-2">
             <StatusBadge complete={node.data.configStatus === "complete"} />
-            {node.data.pausePoint ? <span className="rounded bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">暂停点</span> : null}
+            {node.data.pausePoint ? <TinyBadge tone="warning">写入暂停点</TinyBadge> : null}
           </div>
           {usingStarterTemplate ? (
             <p className="mt-3 rounded bg-sky-50 px-2 py-1 text-xs font-medium text-sky-800 dark:bg-sky-950/40 dark:text-sky-200">
-              当前使用起步模板，保存后会写入该草稿的真实节点和边。
+              当前为起步模板，保存后写入真实草稿。
             </p>
           ) : null}
         </PanelGroup>
 
         <PanelGroup title="输入变量">
-          <VariableList variables={node.data.inputVariables} emptyText="该节点不需要上游输入" />
+          <VariableList variables={node.data.inputVariables} emptyText="该积木不需要上游输入" />
         </PanelGroup>
 
         <PanelGroup title="可引用变量">
           <VariableList
             variables={availableVariables.map((variable) => variable.name)}
-            emptyText="当前节点前没有可引用变量"
+            emptyText="当前积木前没有可引用变量"
             onInsertVariable={onInsertVariable}
           />
           {insertedVariableName ? (
@@ -824,13 +935,13 @@ function NodeConfigPanel({
         </PanelGroup>
 
         {node.data.nodeType === "parallel_group" ? (
-          <PanelGroup title="并行子智能体">
-            <ParallelTaskList tasks={parallelTasks} />
+          <PanelGroup title={node.id.includes("chapter") ? "章节智能体" : "并行子任务"}>
+            <ParallelTaskList tasks={node.id.includes("chapter") ? parallelTasks.filter((task) => task.mode === "章节生成") : parallelTasks.filter((task) => task.mode === "数据采集")} />
           </PanelGroup>
         ) : null}
 
         {node.data.nodeType === "merge" ? (
-          <PanelGroup title="合并映射">
+          <PanelGroup title="组装映射">
             <MergeMappingList mappings={mergeMappings} />
           </PanelGroup>
         ) : null}
@@ -838,28 +949,41 @@ function NodeConfigPanel({
         <PanelGroup title="能力装配">
           <ConfigRows
             rows={[
-              ["Skills", node.data.nodeType === "agent" || node.data.nodeType === "merge" ? "需求拆解、追问澄清、风险识别" : "按节点类型自动隐藏"],
+              ["Skills", node.data.nodeType === "agent" || node.data.nodeType === "merge" || node.data.nodeType === "parallel_group" ? "授信分析、风险识别、报告撰写" : "按积木类型隐藏"],
               ["MCP", node.data.toolCount > 0 ? `${node.data.toolCount} 个工具已启用` : "未启用外部工具"],
-              ["提示词模板", node.data.nodeType === "agent" ? "需求追问模板" : node.data.nodeType === "merge" ? "报告组装模板" : "按节点类型选择"],
+              ["提示词模板", node.data.nodeType === "merge" ? "授信报告组装模板" : node.data.nodeType === "agent" ? "授信追问模板" : "按积木类型选择"],
             ]}
           />
         </PanelGroup>
 
-        <PanelGroup title="交互模式">
-          <ConfigRows
-            rows={[
-              ["输出模式", node.data.outputMode],
-              ["允许追问", node.data.allowQuestion ? "允许用户确认后继续" : "不允许追问"],
-              ["暂停策略", node.data.pausePoint ? "写入 waiting_event" : "执行后进入下游"],
-            ]}
-          />
+        <PanelGroup title="用户交互">
+          <div className="space-y-3">
+            <ConfigRows
+              rows={[
+                ["输出模式", node.data.outputMode],
+                ["重新生成", interaction.canRegenerate ? "允许" : "不允许"],
+                ["追问修改", interaction.canAskFollowUp ? "允许" : "不允许"],
+                ["暂停策略", node.data.pausePoint ? "等待用户确认后继续" : "自动进入下游"],
+              ]}
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" disabled={!interaction.canRegenerate} className="agent-button h-9 px-2 text-xs">
+                <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+                重新生成
+              </button>
+              <button type="button" disabled={!interaction.canAskFollowUp} className="agent-button h-9 px-2 text-xs">
+                <MessageSquareText className="h-3.5 w-3.5" aria-hidden="true" />
+                追问修改
+              </button>
+            </div>
+          </div>
         </PanelGroup>
 
         <PanelGroup title="权限与审计">
           <ConfigRows
             rows={[
-              ["权限校验", node.data.toolCount > 0 || node.data.pausePoint ? "需要后端复核" : "基础读取"],
-              ["审计事件", node.data.toolCount > 0 ? "记录工具调用与脱敏摘要" : "记录节点状态变更"],
+              ["权限校验", node.data.toolCount > 0 || node.data.pausePoint ? "后端按租户与能力池复核" : "基础读取"],
+              ["审计事件", node.data.toolCount > 0 ? "记录工具调用与脱敏摘要" : "记录状态变更"],
             ]}
           />
         </PanelGroup>
@@ -870,36 +994,35 @@ function NodeConfigPanel({
           disabled={saving}
           className="agent-button agent-button-primary h-10 w-full px-3 text-sm"
         >
-          <Milestone className="h-4 w-4" aria-hidden="true" />
-          {saving ? "保存中" : "保存节点配置"}
+          <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+          {saving ? "保存中" : "保存积木配置"}
         </button>
       </div>
     </aside>
   );
 }
 
-function NodeTypeConfig({ node }: { node: Node<EditorNodeData> }) {
-  // 这里先按节点类型展示 MVP 必填配置，后续替换为 React Hook Form + Zod 校验表单。
+function NodeTypeConfig({ node }: { node: WorkflowEditorNode }) {
   if (node.data.nodeType === "agent") {
     return (
       <ConfigRows
         rows={[
-          ["智能体模板", "需求分析智能体"],
-          ["输出模式", "分析后暂停"],
-          ["模型配置", "待选择"],
-          ["输出 Schema", "analysis_result、risk_level"],
+          ["智能体模板", "授信任务规划智能体"],
+          ["模型配置", "租户默认模型"],
+          ["追问条件", "信息缺失或口径冲突"],
+          ["输出 Schema", "credit_work_plan、missing_questions"],
         ]}
       />
     );
   }
 
-  if (node.data.nodeType === "human_review") {
+  if (node.data.nodeType === "parallel_group" && node.id.includes("chapter")) {
     return (
       <ConfigRows
         rows={[
-          ["审核角色", "流程负责人"],
-          ["审核动作", "通过、驳回、修改后继续"],
-          ["超时策略", "待配置"],
+          ["执行方式", "多章节智能体并发"],
+          ["章节范围", "主体概况、财务分析、风险判断、授信建议"],
+          ["失败策略", "单章节可重试"],
         ]}
       />
     );
@@ -909,9 +1032,9 @@ function NodeTypeConfig({ node }: { node: Node<EditorNodeData> }) {
     return (
       <ConfigRows
         rows={[
-          ["执行方式", "3 个子智能体并发"],
-          ["失败策略", "单个失败可重试，全部失败才阻断"],
-          ["输出变量", "research_pack"],
+          ["执行方式", "多个 MCP / 子智能体并发"],
+          ["数据规则", "事实类结果只允许重新获取"],
+          ["失败策略", "单项失败可重试"],
         ]}
       />
     );
@@ -922,8 +1045,20 @@ function NodeTypeConfig({ node }: { node: Node<EditorNodeData> }) {
       <ConfigRows
         rows={[
           ["组装方式", "模板组装 + 报告组装智能体"],
-          ["输入来源", "并行结果、智能体分析"],
-          ["输出变量", "report_draft"],
+          ["冲突处理", "保留来源并交给用户审查"],
+          ["输出变量", "credit_report_draft"],
+        ]}
+      />
+    );
+  }
+
+  if (node.data.nodeType === "human_review") {
+    return (
+      <ConfigRows
+        rows={[
+          ["审核对象", "发起人 / 授信审核人"],
+          ["审核动作", "确认交付、退回重做"],
+          ["文本调整", "模型内容可追问修改"],
         ]}
       />
     );
@@ -933,8 +1068,8 @@ function NodeTypeConfig({ node }: { node: Node<EditorNodeData> }) {
     return (
       <ConfigRows
         rows={[
-          ["交付方式", "邮件"],
-          ["收件人", "待配置"],
+          ["交付方式", "Word / PDF"],
+          ["交付确认", "用户确认后生成正式件"],
           ["失败策略", "失败后可重试"],
         ]}
       />
@@ -945,9 +1080,9 @@ function NodeTypeConfig({ node }: { node: Node<EditorNodeData> }) {
     return (
       <ConfigRows
         rows={[
-          ["字段数量", "3"],
+          ["核心字段", "授信公司全称"],
+          ["补充字段", "授信用途、金额、期限"],
           ["附件", "允许上传"],
-          ["等待对象", "发起人"],
         ]}
       />
     );
@@ -956,8 +1091,8 @@ function NodeTypeConfig({ node }: { node: Node<EditorNodeData> }) {
   return (
     <ConfigRows
       rows={[
-        ["配置状态", node.data.configStatus === "complete" ? "已满足 MVP 字段" : "需要补齐字段"],
-        ["后续表单", "按节点协议生成"],
+        ["配置状态", node.data.configStatus === "complete" ? "已满足当前字段" : "需要补齐字段"],
+        ["节点类型", node.data.typeLabel],
       ]}
     />
   );
@@ -1048,6 +1183,107 @@ function VariableList({
   );
 }
 
+function VariableRegistry({ variables }: { variables: WorkflowVariable[] }) {
+  return (
+    <section className="rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-4 shadow-[var(--shadow-sm)]" aria-labelledby="variable-title">
+      <div className="flex items-center gap-2">
+        <Wrench className="h-4 w-4 text-[var(--color-primary)]" aria-hidden="true" />
+        <h3 id="variable-title" className="text-sm font-semibold text-[var(--color-text-primary)]">变量声明</h3>
+      </div>
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        {variables.slice(0, 8).map((variable) => (
+          <article key={variable.name} className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{variable.name}</p>
+              <span className="rounded bg-[var(--color-bg-card)] px-2 py-1 text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-[var(--color-border-light)]">{variable.type}</span>
+            </div>
+            <p className="mt-2 truncate text-xs text-[var(--color-text-tertiary)]">来源：{variable.sourceNodeName}</p>
+            {variable.sensitive ? <p className="mt-2 rounded bg-red-50 px-2 py-1 text-xs font-medium text-red-700 dark:bg-red-950/40 dark:text-red-300">敏感变量</p> : null}
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function PublishCheckSummary({ incompleteNodes }: { incompleteNodes: WorkflowEditorNode[] }) {
+  return (
+    <section className="rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-4 shadow-[var(--shadow-sm)]" aria-labelledby="publish-check-title">
+      <div className="flex items-center gap-2">
+        <ShieldCheck className="h-4 w-4 text-[var(--color-primary)]" aria-hidden="true" />
+        <h3 id="publish-check-title" className="text-sm font-semibold text-[var(--color-text-primary)]">发布校验摘要</h3>
+      </div>
+      <div className="mt-3 space-y-3">
+        {incompleteNodes.length > 0 ? (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900/60 dark:bg-amber-950/30">
+            <div className="flex items-center gap-2 text-sm font-medium text-amber-800 dark:text-amber-300">
+              <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+              {incompleteNodes.length} 个积木需要补齐配置
+            </div>
+            <ul className="mt-3 space-y-2 text-sm text-amber-800 dark:text-amber-300">
+              {incompleteNodes.map((node) => (
+                <li key={node.id}>- {node.data.label}</li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300">
+            当前积木已满足前端摘要校验。
+          </div>
+        )}
+        <p className="agent-muted text-sm leading-6">正式发布仍由后端校验节点、变量、连线和版本快照。</p>
+      </div>
+    </section>
+  );
+}
+
+function ToolbarMetric({ icon: Icon, label, value, tone = "default" }: { icon: typeof Zap; label: string; value: string; tone?: "default" | "warning" }) {
+  return (
+    <span className={`inline-flex h-7 items-center gap-1.5 rounded px-2 text-xs font-medium ${tone === "warning" ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300" : "bg-[var(--color-bg-hover)] text-[var(--color-text-secondary)]"}`}>
+      <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+      {label} {value}
+    </span>
+  );
+}
+
+function SaveFeedback({ feedback }: { feedback: { tone: "success" | "error" | "info"; message: string } }) {
+  return (
+    <span
+      className={`rounded px-2 py-1 text-xs font-medium ${
+        feedback.tone === "success"
+          ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
+          : feedback.tone === "error"
+            ? "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300"
+            : "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300"
+      }`}
+    >
+      {feedback.message}
+    </span>
+  );
+}
+
+function TinyBadge({ children, tone = "default" }: { children: ReactNode; tone?: "default" | "warning" | "info" | "success" }) {
+  const className =
+    tone === "warning"
+      ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+      : tone === "info"
+        ? "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300"
+        : tone === "success"
+          ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
+          : "bg-[var(--color-bg-hover)] text-[var(--color-text-secondary)]";
+
+  return <span className={`rounded px-2 py-1 text-[11px] font-medium ${className}`}>{children}</span>;
+}
+
+function ActionPill({ icon: Icon, label, enabled }: { icon: typeof RefreshCw; label: string; enabled: boolean }) {
+  return (
+    <span className={`inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium ${enabled ? "bg-[var(--color-bg-hover)] text-[var(--color-text-secondary)]" : "bg-[var(--color-bg-hover)] text-[var(--color-text-tertiary)] opacity-60"}`}>
+      <Icon className="h-3 w-3" aria-hidden="true" />
+      {label}
+    </span>
+  );
+}
+
 function StatusBadge({ complete, compact = false }: { complete: boolean; compact?: boolean }) {
   if (complete) {
     return (
@@ -1081,7 +1317,7 @@ function EditorStateShell({
         </button>
         <h2 className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{workflowName}</h2>
       </div>
-      <div className="flex flex-1 items-center justify-center bg-[var(--color-canvas-bg)] px-4">
+      <div className="flex flex-1 items-center justify-center bg-[var(--color-bg-layout)] px-4">
         <div className="agent-card flex min-w-[280px] items-center gap-3 p-4 text-sm text-[var(--color-text-primary)]">
           <span className="text-[var(--color-primary)]">{icon}</span>
           <span>{message}</span>
@@ -1091,69 +1327,7 @@ function EditorStateShell({
   );
 }
 
-function VariableRegistry({ variables }: { variables: WorkflowVariable[] }) {
-  return (
-    <section className="agent-card" aria-labelledby="variable-title">
-      <div className="px-4 pb-2 pt-3">
-        <h3 id="variable-title" className="text-sm font-semibold text-[var(--color-text-primary)]">
-          变量面板
-        </h3>
-        <p className="agent-muted mt-1 text-xs">展示节点输出变量、来源和敏感标记</p>
-      </div>
-      <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
-        {variables.map((variable) => (
-          <article key={variable.name} className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-3">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-semibold text-[var(--color-text-primary)]">{variable.name}</p>
-              <span className="rounded bg-[var(--color-bg-card)] px-2 py-1 text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-[var(--color-border-light)]">{variable.type}</span>
-            </div>
-            <p className="mt-2 text-xs text-[var(--color-text-tertiary)]">来源：{variable.sourceNodeName}</p>
-            {variable.sensitive ? (
-              <p className="mt-2 rounded bg-red-50 px-2 py-1 text-xs font-medium text-red-700 dark:bg-red-950/40 dark:text-red-300">敏感变量，交付前需校验权限</p>
-            ) : null}
-          </article>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function PublishCheckSummary({ incompleteNodes }: { incompleteNodes: Node<EditorNodeData>[] }) {
-  return (
-    <section className="agent-card" aria-labelledby="publish-check-title">
-      <div className="px-4 pb-2 pt-3">
-        <h3 id="publish-check-title" className="text-sm font-semibold text-[var(--color-text-primary)]">
-          发布校验摘要
-        </h3>
-        <p className="agent-muted mt-1 text-xs">这里展示画布内即时提示，正式发布仍以后端校验和版本快照为准</p>
-      </div>
-      <div className="space-y-3 p-4">
-        {incompleteNodes.length > 0 ? (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900/60 dark:bg-amber-950/30">
-            <div className="flex items-center gap-2 text-sm font-medium text-amber-800 dark:text-amber-300">
-              <AlertTriangle className="h-4 w-4" aria-hidden="true" />
-              {incompleteNodes.length} 个节点需要补齐配置
-            </div>
-            <ul className="mt-3 space-y-2 text-sm text-amber-800 dark:text-amber-300">
-              {incompleteNodes.map((node) => (
-                <li key={node.id}>- {node.data.label}</li>
-              ))}
-            </ul>
-          </div>
-        ) : (
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300">
-            所有节点已满足当前阶段发布校验。
-          </div>
-        )}
-        <p className="agent-muted text-sm leading-6">
-          当前摘要覆盖节点必填配置和敏感变量提示；保存后可回到列表页执行后端发布校验并冻结正式版本。
-        </p>
-      </div>
-    </section>
-  );
-}
-
-function cloneStarterNodes(): Node<EditorNodeData>[] {
+function cloneStarterNodes(): WorkflowEditorNode[] {
   return starterNodes.map((node) => ({
     ...node,
     position: { ...node.position },
@@ -1166,17 +1340,16 @@ function cloneStarterNodes(): Node<EditorNodeData>[] {
   }));
 }
 
-function cloneStarterEdges(): Edge[] {
+function cloneStarterEdges(): WorkflowEditorEdge[] {
   return starterEdges.map((edge) => ({ ...edge }));
 }
 
-function toEditorNode(node: WorkflowNodeDraft): Node<EditorNodeData> {
+function toEditorNode(node: WorkflowNodeDraft): WorkflowEditorNode {
   const preset = starterNodes.find((starter) => starter.data.nodeType === node.nodeType)?.data ?? buildFallbackNodeData(node.nodeType);
   const config = node.config ?? {};
 
   return {
     id: node.nodeId,
-    type: "workflow",
     position: { x: node.positionX, y: node.positionY },
     data: {
       label: node.name,
@@ -1196,18 +1369,17 @@ function toEditorNode(node: WorkflowNodeDraft): Node<EditorNodeData> {
   };
 }
 
-function toEditorEdge(edge: WorkflowEdgeDraft): Edge {
+function toEditorEdge(edge: WorkflowEdgeDraft): WorkflowEditorEdge {
   return {
     id: edge.edgeId,
     source: edge.sourceNodeId,
     target: edge.targetNodeId,
     label: edge.label || undefined,
-    data: edge.conditionExpression ? { conditionExpression: edge.conditionExpression } : undefined,
-    type: "smoothstep",
+    conditionExpression: edge.conditionExpression,
   };
 }
 
-function toWorkflowNodeDraft(node: Node<EditorNodeData>): WorkflowNodeDraft {
+function toWorkflowNodeDraft(node: WorkflowEditorNode): WorkflowNodeDraft {
   return {
     nodeId: node.id,
     nodeType: node.data.nodeType,
@@ -1230,24 +1402,21 @@ function toWorkflowNodeDraft(node: Node<EditorNodeData>): WorkflowNodeDraft {
   };
 }
 
-function toWorkflowEdgeDraft(edge: Edge): WorkflowEdgeDraft {
+function toWorkflowEdgeDraft(edge: WorkflowEditorEdge): WorkflowEdgeDraft {
   return {
     edgeId: edge.id,
     sourceNodeId: edge.source,
     targetNodeId: edge.target,
-    label: typeof edge.label === "string" ? edge.label : undefined,
-    conditionExpression:
-      typeof edge.data?.conditionExpression === "string"
-        ? edge.data.conditionExpression
-        : undefined,
+    label: edge.label,
+    conditionExpression: edge.conditionExpression,
   };
 }
 
 function applyPersistedDetail(
   detail: WorkflowDraftDetail,
-  setNodes: (nodes: Node<EditorNodeData>[]) => void,
-  setEdges: (edges: Edge[]) => void,
-  setSelectedNodeId: Dispatch<SetStateAction<string>>,
+  setNodes: (nodes: WorkflowEditorNode[]) => void,
+  setEdges: (edges: WorkflowEditorEdge[]) => void,
+  setSelectedNodeId: (updater: (currentSelection: string) => string) => void,
 ) {
   const nextNodes = detail.nodes.map(toEditorNode);
   const nextEdges = detail.edges.map(toEditorEdge);
@@ -1256,7 +1425,7 @@ function applyPersistedDetail(
   setSelectedNodeId((currentSelection) => nextNodes.some((node) => node.id === currentSelection) ? currentSelection : nextNodes[0]?.id ?? "");
 }
 
-function buildWorkflowVariables(nodes: Node<EditorNodeData>[]): WorkflowVariable[] {
+function buildWorkflowVariables(nodes: WorkflowEditorNode[]): WorkflowVariable[] {
   return nodes.flatMap((node) =>
     node.data.outputVariables.map((name) => {
       const metadata = starterVariableMetadata[name] ?? {
@@ -1278,7 +1447,7 @@ function buildWorkflowVariables(nodes: Node<EditorNodeData>[]): WorkflowVariable
   );
 }
 
-function toWorkflowVariables(variables: WorkflowVariableDraft[], nodes: Node<EditorNodeData>[]): WorkflowVariable[] {
+function toWorkflowVariables(variables: WorkflowVariableDraft[], nodes: WorkflowEditorNode[]): WorkflowVariable[] {
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
 
   return variables.map((variable) => ({
@@ -1306,10 +1475,10 @@ function toWorkflowVariableDraft(variable: WorkflowVariable): WorkflowVariableDr
 
 function buildFallbackNodeData(nodeType: WorkflowNodeType): EditorNodeData {
   return {
-    label: "未命名节点",
+    label: "未命名积木",
     typeLabel: nodeTypeLabels[nodeType],
     nodeType,
-    summary: "节点配置尚未补充说明。",
+    summary: "积木配置尚未补充说明。",
     inputVariables: [],
     outputVariables: [],
     pausePoint: ["user_input", "agent", "human_review"].includes(nodeType),
@@ -1318,6 +1487,57 @@ function buildFallbackNodeData(nodeType: WorkflowNodeType): EditorNodeData {
     outputMode: "一次性输出",
     toolCount: 0,
     allowQuestion: false,
+  };
+}
+
+function orderNodesByEdges(nodes: WorkflowEditorNode[], edges: WorkflowEditorEdge[]) {
+  const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  const incomingTargets = new Set(edges.map((edge) => edge.target));
+  const startNode = nodes.find((node) => !incomingTargets.has(node.id)) ?? nodes[0];
+  const ordered: WorkflowEditorNode[] = [];
+  const visited = new Set<string>();
+
+  function visit(nodeId: string) {
+    const node = nodesById.get(nodeId);
+    if (!node || visited.has(nodeId)) {
+      return;
+    }
+    visited.add(nodeId);
+    ordered.push(node);
+    edges.filter((edge) => edge.source === nodeId).forEach((edge) => visit(edge.target));
+  }
+
+  if (startNode) {
+    visit(startNode.id);
+  }
+
+  nodes.forEach((node) => {
+    if (!visited.has(node.id)) {
+      ordered.push(node);
+    }
+  });
+
+  return ordered;
+}
+
+function groupNodesByStage(nodes: WorkflowEditorNode[]): Record<WorkflowStage["id"], WorkflowEditorNode[]> {
+  return workflowStages.reduce((groups, stage) => {
+    groups[stage.id] = nodes.filter((node) => stage.nodeTypes.includes(node.data.nodeType));
+    return groups;
+  }, { input: [], agent: [], review: [] } as Record<WorkflowStage["id"], WorkflowEditorNode[]>);
+}
+
+function findStageForNode(node: WorkflowEditorNode): WorkflowStage {
+  return workflowStages.find((stage) => stage.nodeTypes.includes(node.data.nodeType)) ?? workflowStages[0];
+}
+
+function getInteractionPolicy(node: WorkflowEditorNode) {
+  const isDataNode = node.data.nodeType === "parallel_group" && !node.id.includes("chapter");
+  const isModelNode = node.data.nodeType === "agent" || node.data.nodeType === "merge" || node.id.includes("chapter");
+
+  return {
+    canRegenerate: node.data.nodeType !== "trigger" && node.data.nodeType !== "delivery",
+    canAskFollowUp: node.data.allowQuestion && isModelNode && !isDataNode,
   };
 }
 
