@@ -424,15 +424,13 @@ export function AssetsPage() {
 
           {activeTab === "mine" ? (
             <section className="sys-fade-in">
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-                <div>
-                  <p style={{ fontSize: 14, color: "var(--color-text-tertiary)", margin: 0 }}>草稿完善后发布为正式能力，进入流程节点引用链路。</p>
-                </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginBottom: 20 }}>
                 <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
-                  <div className="sys-field-input-wrap min-w-[260px]">
-                    <Search size={16} className="sys-field-prefix" aria-hidden="true" />
+                  <div className="sys-field-input-wrap min-w-[260px]" style={{ height: 36, minHeight: 36 }}>
+                    <Search size={16} className="sys-field-prefix" aria-hidden="true" style={{ marginTop: 0 }} />
                     <input
                       className="sys-field-input"
+                      style={{ height: 36, minHeight: 36, paddingTop: 0, paddingBottom: 0 }}
                       value={keyword}
                       placeholder="搜索名称、编码或说明"
                       onChange={(event) => setKeyword(event.target.value)}
@@ -441,11 +439,11 @@ export function AssetsPage() {
                       }}
                     />
                   </div>
-                  <button type="button" className="sys-btn sys-btn--default sys-btn--sm" onClick={() => void loadMyAssets(1, minePage.size, keyword)}>
+                  <button type="button" className="sys-btn sys-btn--default" onClick={() => void loadMyAssets(1, minePage.size, keyword)}>
                     <Search size={14} />
                     查询
                   </button>
-                  <button type="button" className="sys-btn sys-btn--primary sys-btn--sm" onClick={() => setCreateOpen(true)}>
+                  <button type="button" className="sys-btn sys-btn--primary" onClick={() => setCreateOpen(true)}>
                     <PlusCircle size={14} />
                     新建能力草稿
                   </button>
@@ -666,7 +664,7 @@ export function AssetsPage() {
             <div className="sys-drawer-footer">
               {currentAsset.status === "draft" ? (
                 <>
-                  <button type="button" className="sys-btn sys-btn--danger" style={{ marginRight: "auto" }} disabled={submitting} onClick={() => confirmDelete(currentAsset)}>
+                  <button type="button" className="sys-btn sys-btn--default" style={{ marginRight: "auto" }} disabled={submitting} onClick={() => confirmDelete(currentAsset)}>
                     <Trash2 size={14} />
                     删除
                   </button>
@@ -687,7 +685,7 @@ export function AssetsPage() {
                 </>
               ) : (
                 <>
-                  <button type="button" className="sys-btn sys-btn--danger" style={{ marginRight: "auto" }} disabled={submitting} onClick={() => confirmDelete(currentAsset)}>
+                  <button type="button" className="sys-btn sys-btn--default" style={{ marginRight: "auto" }} disabled={submitting} onClick={() => confirmDelete(currentAsset)}>
                     <Trash2 size={14} />
                     删除
                   </button>

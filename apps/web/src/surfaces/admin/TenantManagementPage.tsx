@@ -741,10 +741,9 @@ export function TenantManagementPage() {
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] shadow-[var(--shadow-sm)]">
-
-          <div className="p-5">
-            {activeTab === "organization" ? (
+        {activeTab === "organization" ? (
+          <div className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] shadow-[var(--shadow-sm)]">
+            <div className="p-5">
               <OrganizationPanel
                 overview={organizationOverview}
                 loading={organizationLoading}
@@ -756,33 +755,33 @@ export function TenantManagementPage() {
                 membershipUpdatingId={membershipUpdatingId}
                 onEditMembership={openEditMemberModal}
               />
-            ) : null}
-            {activeTab === "roles" ? (
-              <RoleManagementPanel
-                overview={organizationOverview}
-                loading={organizationLoading}
-                error={organizationError}
-                hasTenantContext={Boolean(user?.tenantId)}
-                onCreateRole={openCreateRoleModal}
-                onEditRole={openEditRoleModal}
-              />
-            ) : null}
-            {activeTab === "resources" ? (
-              <ResourceAuthorizationPanel
-                pageGrants={pageGrants}
-                loading={authorizationLoading}
-                error={authorizationError}
-                grants={resourceGrants}
-                onCreateGrant={openGrantModal}
-                onCreatePageGrant={openPageGrantModal}
-                onEditPageGrant={openEditPageGrantModal}
-                onEditGrant={openEditGrantModal}
-                onDeletePageGrant={(group) => void handleDeletePageGrantGroup(group)}
-                onDeleteGrant={(group) => void handleDeleteGrantGroup(group)}
-              />
-            ) : null}
+            </div>
           </div>
-        </div>
+        ) : null}
+        {activeTab === "roles" ? (
+          <RoleManagementPanel
+            overview={organizationOverview}
+            loading={organizationLoading}
+            error={organizationError}
+            hasTenantContext={Boolean(user?.tenantId)}
+            onCreateRole={openCreateRoleModal}
+            onEditRole={openEditRoleModal}
+          />
+        ) : null}
+        {activeTab === "resources" ? (
+          <ResourceAuthorizationPanel
+            pageGrants={pageGrants}
+            loading={authorizationLoading}
+            error={authorizationError}
+            grants={resourceGrants}
+            onCreateGrant={openGrantModal}
+            onCreatePageGrant={openPageGrantModal}
+            onEditPageGrant={openEditPageGrantModal}
+            onEditGrant={openEditGrantModal}
+            onDeletePageGrant={(group) => void handleDeletePageGrantGroup(group)}
+            onDeleteGrant={(group) => void handleDeleteGrantGroup(group)}
+          />
+        ) : null}
       </div>
 
       {createMemberOpen && (
@@ -1555,7 +1554,7 @@ function ResourceAuthorizationPanel({
         <div className="sys-preview-card"><div className="sys-preview-card-title"><UserRoundCog size={16} /> 正在加载资源分配</div></div>
       ) : null}
 
-      <div style={{ marginBottom: 24 }}>
+      <div style={{ marginBottom: 24, marginTop: 20 }}>
         <div className="tenant-auth-section-head" style={{ borderBottom: "none", paddingBottom: 0 }}>
           <div>
             <h3>页签分配</h3>
@@ -1608,7 +1607,7 @@ function ResourceAuthorizationPanel({
         />
       </div>
 
-      <div style={{ marginBottom: 24 }}>
+      <div style={{ marginBottom: 24, marginTop: 20 }}>
         <div className="tenant-auth-section-head" style={{ borderBottom: "none", paddingBottom: 0 }}>
           <div>
             <h3>能力分配</h3>

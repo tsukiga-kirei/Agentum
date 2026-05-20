@@ -757,6 +757,22 @@ textarea:focus-visible {
   border-color: #253352;
 }
 
+/* Modal.confirm 内部标题与内容文字色强制覆盖 */
+.agent-dark-modal .ant-modal-confirm-title,
+.agent-dark-modal .ant-modal-confirm-paragraph,
+.agent-dark-modal .ant-modal-confirm-content {
+  color: #f1f5f9 !important;
+}
+.agent-dark-modal .ant-btn-default {
+  background: #1a2540 !important;
+  color: #f1f5f9 !important;
+  border-color: #253352 !important;
+}
+.agent-dark-modal .ant-btn-default:hover {
+  border-color: var(--color-primary) !important;
+  color: var(--color-primary) !important;
+}
+
 /* ==================== 主题切换药丸（与 AuraOA 完全一致） ==================== */
 .theme-toggle-btn {
   width: auto !important;
@@ -1087,9 +1103,30 @@ textarea:focus-visible {
   background: #081122;
 }
 
+.dark .login-portal-segmented .ant-segmented-item {
+  color: var(--color-text-secondary) !important;
+}
+
+.dark .login-portal-segmented .ant-segmented-item:hover,
+.dark .login-portal-segmented .ant-segmented-item-hover,
+.dark .login-portal-segmented .ant-segmented-item:focus,
+.dark .login-portal-segmented .ant-segmented-item-focus,
+.dark .login-portal-segmented .ant-segmented-item:active,
+.dark .login-portal-segmented .ant-segmented-item-active {
+  color: var(--color-text-primary) !important;
+}
+
 .dark .login-portal-segmented .ant-segmented-item-selected {
-  background: color-mix(in srgb, var(--login-portal-color) 16%, #0f1829);
-  color: color-mix(in srgb, var(--login-portal-color) 72%, #ffffff);
+  background: color-mix(in srgb, var(--login-portal-color) 16%, #0f1829) !important;
+  color: color-mix(in srgb, var(--login-portal-color) 85%, #ffffff) !important;
+}
+
+.dark .login-portal-segmented .ant-segmented-item-selected .ant-segmented-item-label {
+  color: color-mix(in srgb, var(--login-portal-color) 85%, #ffffff) !important;
+}
+
+.dark .login-portal-segmented .ant-segmented-item-label {
+  color: inherit !important;
 }
 
 .dark .login-portal-segmented .ant-segmented-thumb {
@@ -1467,12 +1504,15 @@ textarea:focus-visible {
 .sys-info-tag {
   display: inline-flex; align-items: center; gap: 4px;
   font-size: 11px; font-weight: 500; padding: 3px 10px; border-radius: 9999px;
+  background: var(--color-bg-hover);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-light);
 }
-.sys-info-tag--primary { background: var(--color-primary-bg); color: var(--color-primary); }
-.sys-info-tag--info { background: rgba(59, 130, 246, 0.10); color: #3b82f6; }
-.sys-info-tag--success { background: rgba(16, 185, 129, 0.10); color: #10b981; }
-.sys-info-tag--warn { background: rgba(245, 158, 11, 0.10); color: #f59e0b; }
-.sys-info-tag--danger { background: rgba(239, 68, 68, 0.10); color: #ef4444; }
+.sys-info-tag--primary { background: var(--color-primary-bg); color: var(--color-primary); border-color: transparent; }
+.sys-info-tag--info { background: rgba(59, 130, 246, 0.10); color: #3b82f6; border-color: transparent; }
+.sys-info-tag--success { background: rgba(16, 185, 129, 0.10); color: #10b981; border-color: transparent; }
+.sys-info-tag--warn { background: rgba(245, 158, 11, 0.10); color: #f59e0b; border-color: transparent; }
+.sys-info-tag--danger { background: rgba(239, 68, 68, 0.10); color: #ef4444; border-color: transparent; }
 
 /* 统计行 */
 .sys-card-stats {
@@ -1503,9 +1543,11 @@ textarea:focus-visible {
 }
 .sys-card-footer-time {
   font-size: 12px; color: var(--color-text-tertiary);
-  display: flex; align-items: center; gap: 4px;
+  display: inline-flex; align-items: center; gap: 4px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  flex: 1; min-width: 0; margin-right: 8px;
 }
-.sys-card-footer-actions { display: flex; gap: 4px; }
+.sys-card-footer-actions { display: flex; gap: 4px; flex-shrink: 0; }
 
 /* 概览统计卡片（顶部一排） */
 .sys-overview-stats {
@@ -1635,14 +1677,15 @@ textarea:focus-visible {
 
 /* 自定义按钮（替代 Ant Button，与 AuraOA 风格统一） */
 .sys-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 8px 18px; border: none; border-radius: var(--radius-md);
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 36px; padding: 0 18px; border: 1px solid transparent; border-radius: var(--radius-md);
   font-size: 13px; font-weight: 500; cursor: pointer;
   transition: all var(--transition-fast); white-space: nowrap;
-  line-height: 1.4;
+  line-height: 1; box-sizing: border-box;
 }
 .sys-btn--primary {
   background: var(--color-primary); color: #fff;
+  border-color: var(--color-primary);
   box-shadow: 0 1px 3px rgba(79, 70, 229, 0.25);
 }
 .sys-btn--primary:hover {
@@ -1658,18 +1701,21 @@ textarea:focus-visible {
 }
 .sys-btn--text {
   background: transparent; color: var(--color-text-secondary);
-  padding: 6px 10px;
+  border: none; height: auto; padding: 6px 10px;
 }
 .sys-btn--text:hover { color: var(--color-primary); background: var(--color-bg-hover); }
 .sys-btn--danger {
-  background: transparent; color: var(--color-text-secondary);
-  border: 1px solid var(--color-border-light);
+  background: var(--color-danger); color: #fff;
+  border: 1px solid var(--color-danger);
 }
-.sys-btn--danger:hover { border-color: #ef4444; color: #ef4444; background: rgba(239,68,68,0.06); }
-.sys-btn--sm { padding: 5px 12px; font-size: 12px; }
+.sys-btn--danger:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
+}
+.sys-btn--sm { height: 28px; padding: 0 12px; font-size: 12px; }
 .sys-btn--link {
   background: transparent; color: var(--color-primary); padding: 4px 0;
-  border: none; font-size: 13px;
+  border: none; font-size: 13px; height: auto;
 }
 .sys-btn--link:hover { filter: brightness(1.15); }
 .sys-btn:disabled {
