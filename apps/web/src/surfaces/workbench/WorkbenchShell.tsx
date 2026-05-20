@@ -189,13 +189,14 @@ export function WorkbenchShell() {
   const isDarkMode = themeMode === "dark";
 
   // 根据菜单列表确定初始页面（第一个菜单项）
-  const [activeSurface, setActiveSurface] = useState<SurfaceKey>(() => {
+  const [activeSurface, setActiveSurface] = useState<SurfaceKey | null>(() => {
     const firstMenu = menus[0];
-    return (firstMenu?.key as SurfaceKey) ?? "workbench";
+    return firstMenu ? (firstMenu.key as SurfaceKey) : null;
   });
 
   useEffect(() => {
     if (menus.length === 0) {
+      setActiveSurface(null);
       return;
     }
 
@@ -310,6 +311,18 @@ export function WorkbenchShell() {
               </div>
             </div>
           </header>
+
+          {activeSurface === null ? (
+            <div className="mx-auto max-w-[1400px] px-5 py-4 lg:px-6">
+              <section className="agent-card flex min-h-[360px] items-center justify-center p-8 text-center" aria-label="无可访问页签">
+                <div>
+                  <ShieldCheck className="mx-auto h-10 w-10 text-[var(--color-text-tertiary)]" aria-hidden="true" />
+                  <h2 className="mt-4 text-base font-semibold text-[var(--color-text-primary)]">暂无可访问页签</h2>
+                  <p className="agent-muted mt-2 text-sm">当前账号尚未获得租户内页签分配，请联系租户管理员配置业务入口。</p>
+                </div>
+              </section>
+            </div>
+          ) : null}
 
           {/* 业务工作台内容 */}
           {activeSurface === "workbench" ? (

@@ -114,7 +114,7 @@ public class AuthService {
         RoleInfoResponse activeRole = buildRoleInfo(activeAssignment, tenant);
 
         // 计算菜单和权限
-        List<MenuItemResponse> menus = menuService.resolveMenus(activeAssignment.getRole());
+        List<MenuItemResponse> menus = menuService.resolveMenus(activeAssignment.getRole(), activeAssignment.getTenantId(), user.getId());
         List<String> permissions = List.of();
 
         // 签发 token
@@ -169,7 +169,7 @@ public class AuthService {
 
         List<RoleInfoResponse> roles = buildRoleInfoList(allAssignments);
         RoleInfoResponse activeRole = buildRoleInfo(activeAssignment, tenant);
-        List<MenuItemResponse> menus = menuService.resolveMenus(activeAssignment.getRole());
+        List<MenuItemResponse> menus = menuService.resolveMenus(activeAssignment.getRole(), activeAssignment.getTenantId(), user.getId());
 
         AuthUserResponse userResponse = buildUserResponse(user, activeAssignment, tenant);
         // 复用 LoginResponse 结构（不含 token），前端通过已有 token 识别
@@ -215,7 +215,7 @@ public class AuthService {
         String newToken = authTokenService.createToken(newPrincipal);
 
         RoleInfoResponse activeRole = buildRoleInfo(targetAssignment, tenant);
-        List<MenuItemResponse> menus = menuService.resolveMenus(targetAssignment.getRole());
+        List<MenuItemResponse> menus = menuService.resolveMenus(targetAssignment.getRole(), targetAssignment.getTenantId(), user.getId());
         AuthUserResponse userResponse = buildUserResponse(user, targetAssignment, tenant);
 
         log.info(
