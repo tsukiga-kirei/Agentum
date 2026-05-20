@@ -2,26 +2,27 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
+  ArrowDown,
+  ArrowUp,
   Bot,
   CheckCircle2,
   ChevronLeft,
-  CircleDot,
   Clock3,
-  Database,
-  FileCheck2,
   FileText,
-  GitMerge,
+  GripVertical,
+  Layers3,
   ListChecks,
   MessageSquareText,
   PackageCheck,
   PanelRightClose,
   PanelRightOpen,
+  Plus,
   RefreshCw,
-  Route,
+  Save,
   Search,
-  ShieldCheck,
-  Split,
+  Settings2,
   TextCursorInput,
+  Trash2,
   Wrench,
   Zap,
 } from "lucide-react";
@@ -76,26 +77,20 @@ type WorkflowVariable = {
   description: string;
 };
 
-type ParallelTask = {
+type WorkflowBrickType = "input" | "agent" | "cluster" | "delivery";
+
+type InputFieldConfig = {
+  id: string;
+  label: string;
+  variable: string;
+  placeholder: string;
+};
+
+type ClusterAgentConfig = {
+  id: string;
   name: string;
-  assignee: string;
+  prompt: string;
   output: string;
-  purpose: string;
-  mode: "数据采集" | "章节生成" | "组装校验";
-};
-
-type MergeMapping = {
-  source: string;
-  target: string;
-  rule: string;
-};
-
-type WorkflowStage = {
-  id: "input" | "agent" | "review";
-  title: string;
-  subtitle: string;
-  icon: typeof TextCursorInput;
-  nodeTypes: WorkflowNodeType[];
 };
 
 type WorkflowEditorPageProps = {
@@ -104,86 +99,65 @@ type WorkflowEditorPageProps = {
   onDraftSaved: (draft: WorkflowDraft) => void;
 };
 
-const nodeTypeMeta: Record<WorkflowNodeType, { icon: typeof Zap; accentClass: string }> = {
-  trigger: {
-    icon: Zap,
-    accentClass: "bg-zinc-100 text-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-300",
-  },
-  user_input: {
+const SYSTEM_TRIGGER_ID = "trigger_manual";
+
+const nodeTypeLabels: Record<WorkflowNodeType, string> = {
+  trigger: "系统触发",
+  user_input: "输入节点",
+  agent: "单智能体节点",
+  parallel_group: "智能体集群节点",
+  merge: "组装节点",
+  condition: "条件节点",
+  human_review: "审核节点",
+  delivery: "交付节点",
+};
+
+const brickDefinitions: Record<WorkflowBrickType, {
+  label: string;
+  description: string;
+  icon: typeof TextCursorInput;
+  nodeType: WorkflowNodeType;
+  accentClass: string;
+}> = {
+  input: {
+    label: "输入节点",
+    description: "配置用户需要填写的输入框和输出参数",
     icon: TextCursorInput,
+    nodeType: "user_input",
     accentClass: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
   },
   agent: {
+    label: "单智能体节点",
+    description: "选择智能体，或配置提示词、MCP 与 Skill",
     icon: Bot,
+    nodeType: "agent",
     accentClass: "bg-indigo-100 text-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-300",
   },
-  parallel_group: {
-    icon: Split,
+  cluster: {
+    label: "智能体集群节点",
+    description: "编排多个智能体并配置拼接与汇总规则",
+    icon: Layers3,
+    nodeType: "parallel_group",
     accentClass: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300",
   },
-  merge: {
-    icon: GitMerge,
-    accentClass: "bg-violet-100 text-violet-800 dark:bg-violet-950/50 dark:text-violet-300",
-  },
-  condition: {
-    icon: Route,
-    accentClass: "bg-yellow-100 text-yellow-800 dark:bg-yellow-950/50 dark:text-yellow-300",
-  },
-  human_review: {
-    icon: ShieldCheck,
-    accentClass: "bg-red-100 text-red-800 dark:bg-red-950/50 dark:text-red-300",
-  },
   delivery: {
+    label: "交付节点",
+    description: "配置最终文档、OA、邮件等交付方式",
     icon: PackageCheck,
+    nodeType: "delivery",
     accentClass: "bg-orange-100 text-orange-800 dark:bg-orange-950/50 dark:text-orange-300",
   },
 };
 
-const nodeTypeLabels: Record<WorkflowNodeType, string> = {
-  trigger: "触发节点",
-  user_input: "用户输入节点",
-  agent: "智能体节点",
-  parallel_group: "并行节点组",
-  merge: "合并节点",
-  condition: "条件分支节点",
-  human_review: "人工审核节点",
-  delivery: "交付节点",
-};
-
-const workflowStages: WorkflowStage[] = [
-  {
-    id: "input",
-    title: "输入内容",
-    subtitle: "发起方式、公司全称、附件与补充说明",
-    icon: TextCursorInput,
-    nodeTypes: ["trigger", "user_input"],
-  },
-  {
-    id: "agent",
-    title: "智能体协作处理",
-    subtitle: "MCP 取数、Skill 强化角色、章节并行生成与组装",
-    icon: Bot,
-    nodeTypes: ["agent", "parallel_group", "merge", "condition"],
-  },
-  {
-    id: "review",
-    title: "审查交付",
-    subtitle: "人工确认、交付动作与结果固化",
-    icon: FileCheck2,
-    nodeTypes: ["human_review", "delivery"],
-  },
-];
-
-// 新草稿默认采用授信报告闭环，强调少量阶段和智能体协作；当前仍复用后端节点、边、变量定义持久化。
 const starterNodes: WorkflowEditorNode[] = [
   {
-    id: "trigger_manual",
+    id: SYSTEM_TRIGGER_ID,
     position: { x: 0, y: 0 },
     data: {
-      label: "手动发起授信报告",
-      typeLabel: "触发节点",
+      label: "手动发起",
+      typeLabel: "系统触发",
       nodeType: "trigger",
-      summary: "由业务人员从工作台选择授信报告流程并创建一次运行。",
+      summary: "业务人员从工作台发起流程，系统自动写入发起人和发起时间。",
       inputVariables: [],
       outputVariables: ["starter", "started_at"],
       pausePoint: false,
@@ -192,198 +166,25 @@ const starterNodes: WorkflowEditorNode[] = [
       outputMode: "一次性输出",
       toolCount: 0,
       allowQuestion: false,
+      rawConfig: { brickType: "trigger" },
     },
   },
-  {
-    id: "input_company",
-    position: { x: 260, y: 0 },
-    data: {
-      label: "输入授信主体",
-      typeLabel: "用户输入节点",
-      nodeType: "user_input",
-      summary: "收集授信公司全称、统一社会信用代码、授信用途和附件材料。",
-      inputVariables: ["starter"],
-      outputVariables: ["company_full_name", "credit_request", "attachments"],
-      pausePoint: true,
-      configStatus: "complete",
-      runState: "等待输入",
-      outputMode: "一次性输出",
-      toolCount: 0,
-      allowQuestion: false,
-    },
-  },
-  {
-    id: "agent_intake",
-    position: { x: 560, y: 0 },
-    data: {
-      label: "授信任务规划",
-      typeLabel: "智能体节点",
-      nodeType: "agent",
-      summary: "智能体根据公司名称和授信用途识别缺失信息，必要时形成追问。",
-      inputVariables: ["company_full_name", "credit_request", "attachments"],
-      outputVariables: ["credit_work_plan", "missing_questions"],
-      pausePoint: true,
-      configStatus: "incomplete",
-      runState: "待配置",
-      outputMode: "分析后暂停",
-      toolCount: 2,
-      allowQuestion: true,
-    },
-  },
-  {
-    id: "parallel_data_collect",
-    position: { x: 860, y: 0 },
-    data: {
-      label: "并行获取授信数据",
-      typeLabel: "并行节点组",
-      nodeType: "parallel_group",
-      summary: "多个子智能体同时调用 MCP 获取工商、司法、财务和行业数据。",
-      inputVariables: ["credit_work_plan"],
-      outputVariables: ["credit_evidence_pack"],
-      pausePoint: false,
-      configStatus: "complete",
-      runState: "执行中",
-      outputMode: "一次性输出",
-      toolCount: 4,
-      allowQuestion: false,
-    },
-  },
-  {
-    id: "parallel_chapter_write",
-    position: { x: 1160, y: 0 },
-    data: {
-      label: "章节并行生成",
-      typeLabel: "并行节点组",
-      nodeType: "parallel_group",
-      summary: "经营概况、财务分析、风险判断和授信建议由多个章节智能体并行生成。",
-      inputVariables: ["credit_evidence_pack", "credit_work_plan"],
-      outputVariables: ["chapter_drafts"],
-      pausePoint: false,
-      configStatus: "complete",
-      runState: "未开始",
-      outputMode: "追问确认",
-      toolCount: 3,
-      allowQuestion: true,
-    },
-  },
-  {
-    id: "merge_credit_report",
-    position: { x: 1460, y: 0 },
-    data: {
-      label: "报告组装处理",
-      typeLabel: "合并节点",
-      nodeType: "merge",
-      summary: "报告组装智能体统一口径、去重冲突信息，并生成待审查授信报告。",
-      inputVariables: ["chapter_drafts", "credit_evidence_pack"],
-      outputVariables: ["credit_report_draft"],
-      pausePoint: true,
-      configStatus: "complete",
-      runState: "未开始",
-      outputMode: "追问确认",
-      toolCount: 1,
-      allowQuestion: true,
-    },
-  },
-  {
-    id: "human_review",
-    position: { x: 1760, y: 0 },
-    data: {
-      label: "用户审查确认",
-      typeLabel: "人工审核节点",
-      nodeType: "human_review",
-      summary: "发起人或审核人审查报告草稿，可要求重新生成模型内容或确认交付。",
-      inputVariables: ["credit_report_draft"],
-      outputVariables: ["review_decision"],
-      pausePoint: true,
-      configStatus: "incomplete",
-      runState: "等待审核",
-      outputMode: "一次性输出",
-      toolCount: 0,
-      allowQuestion: false,
-    },
-  },
-  {
-    id: "delivery_document",
-    position: { x: 2060, y: 0 },
-    data: {
-      label: "生成并交付文档",
-      typeLabel: "交付节点",
-      nodeType: "delivery",
-      summary: "按租户交付能力生成 Word / PDF，确认后写入交付记录。",
-      inputVariables: ["credit_report_draft", "review_decision"],
-      outputVariables: ["delivery_record"],
-      pausePoint: false,
-      configStatus: "incomplete",
-      runState: "待配置",
-      outputMode: "一次性输出",
-      toolCount: 1,
-      allowQuestion: false,
-    },
-  },
+  createBrickNode("input", 0, ["starter"]),
+  createBrickNode("agent", 1, ["company_full_name"]),
+  createBrickNode("cluster", 2, ["agent_response"]),
+  createBrickNode("delivery", 3, ["cluster_result"]),
 ];
 
-const starterEdges: WorkflowEditorEdge[] = [
-  { id: "e_trigger_input", source: "trigger_manual", target: "input_company" },
-  { id: "e_input_agent", source: "input_company", target: "agent_intake" },
-  { id: "e_agent_data", source: "agent_intake", target: "parallel_data_collect" },
-  { id: "e_data_chapter", source: "parallel_data_collect", target: "parallel_chapter_write" },
-  { id: "e_chapter_merge", source: "parallel_chapter_write", target: "merge_credit_report" },
-  { id: "e_merge_review", source: "merge_credit_report", target: "human_review" },
-  { id: "e_review_delivery", source: "human_review", target: "delivery_document" },
-];
+const starterEdges = rebuildSequentialEdges(starterNodes.filter((node) => node.id !== SYSTEM_TRIGGER_ID));
 
 const starterVariableMetadata: Record<string, Pick<WorkflowVariable, "type" | "sensitive" | "deliverable" | "description">> = {
   starter: { type: "string", sensitive: false, deliverable: false, description: "流程发起人标识" },
   started_at: { type: "string", sensitive: false, deliverable: false, description: "流程发起时间" },
   company_full_name: { type: "string", sensitive: false, deliverable: false, description: "授信公司全称" },
-  credit_request: { type: "object", sensitive: false, deliverable: false, description: "授信用途、金额和期限等申请信息" },
-  attachments: { type: "file", sensitive: true, deliverable: false, description: "用户上传附件" },
-  credit_work_plan: { type: "object", sensitive: false, deliverable: false, description: "智能体拆解后的授信处理计划" },
-  missing_questions: { type: "array", sensitive: false, deliverable: false, description: "需要用户补充的问题" },
-  credit_evidence_pack: { type: "object", sensitive: true, deliverable: false, description: "MCP 返回的数据证据包" },
-  chapter_drafts: { type: "object", sensitive: false, deliverable: false, description: "多个章节智能体生成的章节草稿" },
-  credit_report_draft: { type: "object", sensitive: false, deliverable: true, description: "待审查授信报告草稿" },
-  review_decision: { type: "decision", sensitive: false, deliverable: false, description: "人工审查结论" },
-  delivery_record: { type: "object", sensitive: false, deliverable: true, description: "交付结果记录" },
+  agent_response: { type: "object", sensitive: false, deliverable: false, description: "单智能体回复内容" },
+  cluster_result: { type: "object", sensitive: false, deliverable: true, description: "智能体集群拼接后的结果" },
+  delivery_record: { type: "object", sensitive: false, deliverable: true, description: "交付记录" },
 };
-
-const parallelTasks: ParallelTask[] = [
-  {
-    name: "工商与股权信息",
-    assignee: "企业信息 MCP",
-    output: "company_registry",
-    purpose: "核验主体名称、股东、对外投资和经营状态。",
-    mode: "数据采集",
-  },
-  {
-    name: "司法与舆情核验",
-    assignee: "司法查询 MCP / 舆情检索 Skill",
-    output: "risk_events",
-    purpose: "收集涉诉、执行、处罚和公开风险事件。",
-    mode: "数据采集",
-  },
-  {
-    name: "财务指标提取",
-    assignee: "文件读取 MCP / 财务分析 Skill",
-    output: "finance_metrics",
-    purpose: "从报表和附件中提取资产、负债、收入、现金流等指标。",
-    mode: "数据采集",
-  },
-  {
-    name: "章节智能体并行",
-    assignee: "经营分析 / 财务分析 / 风险建议智能体",
-    output: "chapter_drafts",
-    purpose: "按章节并发生成报告正文，再交给组装智能体统一口径。",
-    mode: "章节生成",
-  },
-];
-
-const mergeMappings: MergeMapping[] = [
-  { source: "company_registry", target: "credit_report_draft.companyProfile", rule: "保留查询时间和来源摘要，用于审计追溯。" },
-  { source: "risk_events", target: "credit_report_draft.riskSection", rule: "风险事件只允许重新获取，不允许用户追问改写事实。" },
-  { source: "finance_metrics", target: "credit_report_draft.financeSection", rule: "指标进入结构化表格，异常口径交给审核人确认。" },
-  { source: "chapter_drafts", target: "credit_report_draft.sections", rule: "模型文本可重新生成或追问改写，但不得覆盖数据来源。" },
-];
 
 export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowEditorPageProps) {
   const token = useAuthStore((s) => s.token);
@@ -393,13 +194,13 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
   const [selectedNodeId, setSelectedNodeId] = useState("");
   const [isConfigCollapsed, setIsConfigCollapsed] = useState(false);
   const [nodeSearchValue, setNodeSearchValue] = useState("");
-  const [insertedVariableName, setInsertedVariableName] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [saveFeedback, setSaveFeedback] = useState<{ tone: "success" | "error" | "info"; message: string } | null>(null);
   const [usingStarterTemplate, setUsingStarterTemplate] = useState(false);
   const [declaredVariables, setDeclaredVariables] = useState<WorkflowVariable[]>([]);
+  const [isAddBrickModalOpen, setIsAddBrickModalOpen] = useState(false);
 
   useEffect(() => {
     if (!token || !user?.tenantId) {
@@ -413,23 +214,23 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
     setLoadError("");
     setSaveFeedback(null);
 
-    // 设计页不再要求用户理解坐标和连线，但后端草稿结构仍是事实来源；新草稿才加载授信报告起步模板。
+    // 设计态现在以“步骤积木”为主，但仍读取后端草稿结构，便于后续平滑迁移到阶段 / 步骤契约。
     void workflowApi.getDraft(user.tenantId, workflow.id, token)
       .then((detail) => {
         if (cancelled) {
           return;
         }
         const hasPersistedGraph = detail.nodes.length > 0;
-        const nextNodes = hasPersistedGraph ? detail.nodes.map(toEditorNode) : cloneStarterNodes();
+        const nextNodes = hasPersistedGraph ? ensureSystemTrigger(detail.nodes.map(toEditorNode)) : cloneStarterNodes();
         const nextEdges = hasPersistedGraph ? detail.edges.map(toEditorEdge) : cloneStarterEdges();
         const nextVariables = detail.variables.length > 0 ? toWorkflowVariables(detail.variables, nextNodes) : buildWorkflowVariables(nextNodes);
         setNodes(nextNodes);
-        setEdges(nextEdges);
+        setEdges(nextEdges.length > 0 ? nextEdges : rebuildSequentialEdges(nextNodes.filter((node) => node.id !== SYSTEM_TRIGGER_ID)));
         setDeclaredVariables(nextVariables);
-        setSelectedNodeId(nextNodes[0]?.id ?? "");
+        setSelectedNodeId("");
         setUsingStarterTemplate(!hasPersistedGraph);
         if (!hasPersistedGraph) {
-          setSaveFeedback({ tone: "info", message: "已载入授信报告起步模板，首次保存后写入草稿。" });
+          setSaveFeedback({ tone: "info", message: "已载入基础积木模板，左侧可继续添加和调整步骤。" });
         }
       })
       .catch((error) => {
@@ -453,22 +254,24 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
   }, [token, user?.tenantId, workflow.id]);
 
   const orderedNodes = useMemo(() => orderNodesByEdges(nodes, edges), [edges, nodes]);
-  const selectedNode = orderedNodes.find((node) => node.id === selectedNodeId) ?? orderedNodes[0];
-  const selectedNodeIndex = selectedNode ? orderedNodes.findIndex((node) => node.id === selectedNode.id) : -1;
+  const visibleNodes = useMemo(() => orderedNodes.filter((node) => node.id !== SYSTEM_TRIGGER_ID), [orderedNodes]);
+  const selectedNode = visibleNodes.find((node) => node.id === selectedNodeId) ?? null;
+  const selectedNodeIndex = selectedNode ? visibleNodes.findIndex((node) => node.id === selectedNode.id) : -1;
   const workflowVariables = useMemo(
     () => declaredVariables.length > 0 ? declaredVariables : buildWorkflowVariables(orderedNodes),
     [declaredVariables, orderedNodes],
   );
   const availableVariables = workflowVariables.filter((variable) => {
-    const sourceIndex = orderedNodes.findIndex((node) => node.id === variable.sourceNodeId);
+    if (!selectedNode) {
+      return true;
+    }
+    const sourceIndex = visibleNodes.findIndex((node) => node.id === variable.sourceNodeId);
 
-    return sourceIndex >= 0 && sourceIndex < selectedNodeIndex;
+    return variable.sourceNodeId === SYSTEM_TRIGGER_ID || (sourceIndex >= 0 && sourceIndex < selectedNodeIndex);
   });
-  const incompleteNodes = orderedNodes.filter((node) => node.data.configStatus === "incomplete");
-  const pausePointCount = orderedNodes.filter((node) => node.data.pausePoint).length;
-  const matchedNodes = orderedNodes.filter((node) => node.data.label.includes(nodeSearchValue.trim()));
-  const nodesByStage = useMemo(() => groupNodesByStage(orderedNodes), [orderedNodes]);
-  const selectedStage = selectedNode ? findStageForNode(selectedNode) : workflowStages[0];
+  const incompleteNodes = visibleNodes.filter((node) => node.data.configStatus === "incomplete");
+  const pausePointCount = visibleNodes.filter((node) => node.data.pausePoint).length;
+  const matchedNodes = visibleNodes.filter((node) => node.data.label.includes(nodeSearchValue.trim()));
 
   const persistGraph = useCallback(async (nextNodes: WorkflowEditorNode[], nextEdges: WorkflowEditorEdge[]) => {
     if (!token || !user?.tenantId) {
@@ -502,27 +305,40 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
     }
   }, [onDraftSaved, token, user?.tenantId, workflow.id]);
 
-  async function handleSaveSelectedNode() {
-    if (!selectedNode) {
+  function commitVisibleNodes(nextVisibleNodes: WorkflowEditorNode[], nextSelectedNodeId = selectedNodeId) {
+    const systemTrigger = nodes.find((node) => node.id === SYSTEM_TRIGGER_ID) ?? cloneStarterNodes()[0];
+    const normalizedVisibleNodes = normalizeVisibleNodeOrder(nextVisibleNodes);
+    const nextNodes = [systemTrigger, ...normalizedVisibleNodes];
+    const nextEdges = rebuildSequentialEdges(normalizedVisibleNodes);
+    setNodes(nextNodes);
+    setEdges(nextEdges);
+    setDeclaredVariables(buildWorkflowVariables(nextNodes));
+    setSelectedNodeId(nextSelectedNodeId);
+    setSaveFeedback({ tone: "info", message: "本地编排已更新，保存后写入草稿。" });
+  }
+
+  function handleAddBrick(brickType: WorkflowBrickType) {
+    const previousOutputs = visibleNodes.length > 0 ? visibleNodes[visibleNodes.length - 1].data.outputVariables : ["starter"];
+    const nextNode = createBrickNode(brickType, visibleNodes.length, previousOutputs);
+    commitVisibleNodes([...visibleNodes, nextNode], nextNode.id);
+    setIsAddBrickModalOpen(false);
+  }
+
+  function handleMoveNode(nodeId: string, direction: -1 | 1) {
+    const currentIndex = visibleNodes.findIndex((node) => node.id === nodeId);
+    const nextIndex = currentIndex + direction;
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= visibleNodes.length) {
       return;
     }
+    const nextVisibleNodes = [...visibleNodes];
+    const [movingNode] = nextVisibleNodes.splice(currentIndex, 1);
+    nextVisibleNodes.splice(nextIndex, 0, movingNode);
+    commitVisibleNodes(nextVisibleNodes, nodeId);
+  }
 
-    // 当前阶段保存的是积木配置摘要，后续接入表单后应只提交被编辑节点的配置补丁并由后端合并。
-    const nextNodes = nodes.map((node) => {
-      if (node.id !== selectedNode.id) {
-        return node;
-      }
-
-      return {
-        ...node,
-        data: {
-          ...node.data,
-          configStatus: "complete" as const,
-        },
-      };
-    });
-    setNodes(nextNodes);
-    await persistGraph(nextNodes, edges);
+  function handleDeleteNode(nodeId: string) {
+    const nextVisibleNodes = visibleNodes.filter((node) => node.id !== nodeId);
+    commitVisibleNodes(nextVisibleNodes, nextVisibleNodes[0]?.id ?? "");
   }
 
   function handleSearchLocate() {
@@ -533,17 +349,78 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
     }
   }
 
+  function updateSelectedNode(patch: Partial<EditorNodeData>) {
+    if (!selectedNode) {
+      return;
+    }
+    const nextNodes = nodes.map((node) => {
+      if (node.id !== selectedNode.id) {
+        return node;
+      }
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          ...patch,
+          configStatus: "incomplete" as const,
+        },
+      };
+    });
+    setNodes(nextNodes);
+    setDeclaredVariables(buildWorkflowVariables(nextNodes));
+  }
+
+  function updateSelectedConfig(nextConfig: Record<string, unknown>) {
+    if (!selectedNode) {
+      return;
+    }
+    updateSelectedNode({
+      rawConfig: {
+        ...(selectedNode.data.rawConfig ?? {}),
+        ...nextConfig,
+      },
+    });
+  }
+
+  async function handleSaveAll() {
+    const normalizedVisibleNodes = normalizeVisibleNodeOrder(visibleNodes);
+    const systemTrigger = nodes.find((node) => node.id === SYSTEM_TRIGGER_ID) ?? cloneStarterNodes()[0];
+    const nextNodes = [systemTrigger, ...normalizedVisibleNodes];
+    const nextEdges = rebuildSequentialEdges(normalizedVisibleNodes);
+    await persistGraph(nextNodes, nextEdges);
+  }
+
+  async function handleSaveSelectedNode() {
+    if (!selectedNode) {
+      await handleSaveAll();
+      return;
+    }
+    const nextNodes = nodes.map((node) => {
+      if (node.id !== selectedNode.id) {
+        return node;
+      }
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          configStatus: "complete" as const,
+        },
+      };
+    });
+    await persistGraph(nextNodes, rebuildSequentialEdges(nextNodes.filter((node) => node.id !== SYSTEM_TRIGGER_ID)));
+  }
+
   if (loading) {
     return <EditorStateShell workflowName={workflow.name} onBack={onBack} icon={<Clock3 className="h-5 w-5" aria-hidden="true" />} message="正在加载工作流草稿" />;
   }
 
-  if (loadError || !selectedNode) {
+  if (loadError) {
     return (
       <EditorStateShell
         workflowName={workflow.name}
         onBack={onBack}
         icon={<AlertTriangle className="h-5 w-5" aria-hidden="true" />}
-        message={loadError || "当前草稿没有可编辑积木"}
+        message={loadError}
       />
     );
   }
@@ -557,11 +434,11 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
         </button>
         <div className="mr-auto min-w-0">
           <h2 className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{workflow.name}</h2>
-          <p className="truncate text-xs text-[var(--color-text-tertiary)]">输入内容、智能体协作处理、审查交付</p>
+          <p className="truncate text-xs text-[var(--color-text-tertiary)]">左侧搭积木，右侧配置当前步骤</p>
         </div>
-        <ToolbarMetric icon={ListChecks} label="积木" value={orderedNodes.length.toString()} />
-        <ToolbarMetric icon={CircleDot} label="暂停" value={pausePointCount.toString()} />
-        <ToolbarMetric icon={AlertTriangle} label="待配" value={incompleteNodes.length.toString()} tone={incompleteNodes.length > 0 ? "warning" : "default"} />
+        <ToolbarMetric icon={ListChecks} label="积木" value={visibleNodes.length.toString()} />
+        <ToolbarMetric icon={Settings2} label="待配" value={incompleteNodes.length.toString()} tone={incompleteNodes.length > 0 ? "warning" : "default"} />
+        <ToolbarMetric icon={Clock3} label="暂停" value={pausePointCount.toString()} />
         {saveFeedback ? <SaveFeedback feedback={saveFeedback} /> : null}
         <label className="relative block w-52">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--color-text-tertiary)]" aria-hidden="true" />
@@ -578,6 +455,10 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
             placeholder="搜索积木"
           />
         </label>
+        <button type="button" onClick={() => void handleSaveAll()} disabled={saving} className="agent-button agent-button-primary h-8 px-3 text-xs">
+          <Save className="h-3.5 w-3.5" aria-hidden="true" />
+          {saving ? "保存中" : "保存流程"}
+        </button>
         <button
           type="button"
           onClick={() => setIsConfigCollapsed((current) => !current)}
@@ -588,306 +469,241 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
         </button>
       </div>
 
-      <div className={`grid min-h-0 flex-1 ${isConfigCollapsed ? "xl:grid-cols-[minmax(0,1fr)]" : "xl:grid-cols-[minmax(0,1fr)_340px]"}`}>
-        <main className="min-h-0 overflow-y-auto px-4 py-4">
-          <div className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
-            <StageRail
-              stages={workflowStages}
-              nodesByStage={nodesByStage}
-              selectedStageId={selectedStage.id}
-              selectedNodeId={selectedNode.id}
-              onSelectNode={setSelectedNodeId}
-            />
-            <section className="space-y-4" aria-label="流程积木编排">
-              <WorkflowIntentPanel usingStarterTemplate={usingStarterTemplate} />
-              <StageBoard
-                stages={workflowStages}
-                nodesByStage={nodesByStage}
-                selectedNodeId={selectedNode.id}
-                onSelectNode={setSelectedNodeId}
-              />
-              <CollaborationPreview />
-              <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-                <VariableRegistry variables={workflowVariables} />
-                <PublishCheckSummary incompleteNodes={incompleteNodes} />
-              </div>
-            </section>
-          </div>
+      <div className={`grid min-h-0 flex-1 ${isConfigCollapsed ? "grid-cols-[280px]" : "grid-cols-[280px_minmax(0,1fr)]"}`}>
+        <main className="min-h-0 overflow-y-auto border-r border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-3">
+          <WorkflowStepBuilder
+            nodes={visibleNodes}
+            selectedNodeId={selectedNodeId}
+            usingStarterTemplate={usingStarterTemplate}
+            onSelectNode={setSelectedNodeId}
+            onOpenAddBrick={() => setIsAddBrickModalOpen(true)}
+            onMoveNode={handleMoveNode}
+            onDeleteNode={handleDeleteNode}
+          />
         </main>
 
         {!isConfigCollapsed ? (
-          <div className="min-h-0 overflow-y-auto border-l border-[var(--color-border-light)] bg-[var(--color-bg-card)]">
-            <NodeConfigPanel
-              node={selectedNode}
-              availableVariables={availableVariables}
-              insertedVariableName={insertedVariableName}
-              onInsertVariable={setInsertedVariableName}
-              onSave={handleSaveSelectedNode}
-              saving={saving}
-              usingStarterTemplate={usingStarterTemplate}
-            />
+          <div className="min-h-0 overflow-y-auto bg-[var(--color-bg-layout)] p-4">
+            {selectedNode ? (
+              <NodeConfigPanel
+                node={selectedNode}
+                availableVariables={availableVariables}
+                workflowVariables={workflowVariables}
+                onUpdateNode={updateSelectedNode}
+                onUpdateConfig={updateSelectedConfig}
+                onSave={handleSaveSelectedNode}
+                saving={saving}
+              />
+            ) : (
+              <WorkflowOverviewPanel
+                nodes={visibleNodes}
+                variables={workflowVariables}
+                incompleteNodes={incompleteNodes}
+                onSelectNode={setSelectedNodeId}
+              />
+            )}
           </div>
         ) : null}
       </div>
+
+      {isAddBrickModalOpen ? (
+        <AddBrickModal
+          onClose={() => setIsAddBrickModalOpen(false)}
+          onSelect={handleAddBrick}
+        />
+      ) : null}
     </div>
   );
 }
 
-function StageRail({
-  stages,
-  nodesByStage,
-  selectedStageId,
+function WorkflowStepBuilder({
+  nodes,
   selectedNodeId,
+  usingStarterTemplate,
   onSelectNode,
+  onOpenAddBrick,
+  onMoveNode,
+  onDeleteNode,
 }: {
-  stages: WorkflowStage[];
-  nodesByStage: Record<WorkflowStage["id"], WorkflowEditorNode[]>;
-  selectedStageId: WorkflowStage["id"];
+  nodes: WorkflowEditorNode[];
   selectedNodeId: string;
+  usingStarterTemplate: boolean;
   onSelectNode: (nodeId: string) => void;
+  onOpenAddBrick: () => void;
+  onMoveNode: (nodeId: string, direction: -1 | 1) => void;
+  onDeleteNode: (nodeId: string) => void;
 }) {
   return (
-    <aside className="space-y-3" aria-label="阶段导航">
-      {stages.map((stage, stageIndex) => {
-        const Icon = stage.icon;
-        const stageNodes = nodesByStage[stage.id];
-        const isActive = selectedStageId === stage.id;
-
-        return (
-          <section
-            key={stage.id}
-            className={`rounded-[var(--radius-lg)] border bg-[var(--color-bg-card)] p-3 shadow-[var(--shadow-sm)] ${
-              isActive ? "border-[var(--color-primary)]" : "border-[var(--color-border-light)]"
-            }`}
-          >
-            <div className="flex items-start gap-3">
-              <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${isActive ? "bg-[var(--color-primary)] text-white" : "bg-[var(--color-bg-hover)] text-[var(--color-text-secondary)]"}`}>
-                <Icon className="h-4 w-4" aria-hidden="true" />
-              </span>
-              <div className="min-w-0">
-                <p className="text-xs text-[var(--color-text-tertiary)]">阶段 {stageIndex + 1}</p>
-                <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">{stage.title}</h3>
-              </div>
-            </div>
-            <p className="mt-2 text-xs leading-5 text-[var(--color-text-secondary)]">{stage.subtitle}</p>
-            <div className="mt-3 space-y-1.5">
-              {stageNodes.map((node) => (
-                <button
-                  key={node.id}
-                  type="button"
-                  onClick={() => onSelectNode(node.id)}
-                  className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors duration-150 ${
-                    selectedNodeId === node.id
-                      ? "bg-[var(--color-primary)] text-white"
-                      : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]"
-                  }`}
-                >
-                  <span className="truncate">{node.data.label}</span>
-                  {node.data.configStatus === "incomplete" ? <AlertTriangle className="ml-auto h-3.5 w-3.5 shrink-0" aria-hidden="true" /> : null}
-                </button>
-              ))}
-            </div>
-          </section>
-        );
-      })}
-    </aside>
-  );
-}
-
-function WorkflowIntentPanel({ usingStarterTemplate }: { usingStarterTemplate: boolean }) {
-  return (
-    <section className="rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-4 shadow-[var(--shadow-sm)]">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="max-w-3xl">
-          <div className="flex items-center gap-2">
-            <span className="flex h-8 w-8 items-center justify-center rounded-md bg-indigo-100 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300">
-              <FileText className="h-4 w-4" aria-hidden="true" />
-            </span>
-            <div>
-              <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">授信报告协作流</h3>
-              <p className="text-xs text-[var(--color-text-tertiary)]">公司输入、数据核验、章节生成、组装审查、文档交付</p>
-            </div>
-          </div>
-          <div className="mt-4 grid gap-3 text-sm md:grid-cols-3">
-            <IntentItem title="大模型角色" detail="授信分析、章节撰写、报告组装" />
-            <IntentItem title="外部能力" detail="MCP 取数、Skill 风险识别、模板交付" />
-            <IntentItem title="用户参与" detail="输入、追问、重新生成、最终确认" />
-          </div>
-        </div>
-        {usingStarterTemplate ? (
-          <span className="rounded bg-sky-100 px-2 py-1 text-xs font-medium text-sky-800 dark:bg-sky-900/40 dark:text-sky-300">
-            起步模板
-          </span>
-        ) : null}
-      </div>
-    </section>
-  );
-}
-
-function IntentItem({ title, detail }: { title: string; detail: string }) {
-  return (
-    <div className="rounded-[var(--radius-md)] bg-[var(--color-bg-hover)] px-3 py-2">
-      <p className="text-xs text-[var(--color-text-tertiary)]">{title}</p>
-      <p className="mt-1 font-medium text-[var(--color-text-primary)]">{detail}</p>
-    </div>
-  );
-}
-
-function StageBoard({
-  stages,
-  nodesByStage,
-  selectedNodeId,
-  onSelectNode,
-}: {
-  stages: WorkflowStage[];
-  nodesByStage: Record<WorkflowStage["id"], WorkflowEditorNode[]>;
-  selectedNodeId: string;
-  onSelectNode: (nodeId: string) => void;
-}) {
-  return (
-    <div className="space-y-4">
-      {stages.map((stage) => {
-        const Icon = stage.icon;
-        const stageNodes = nodesByStage[stage.id];
-
-        return (
-          <section key={stage.id} className="rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-4 shadow-[var(--shadow-sm)]" aria-labelledby={`stage-${stage.id}`}>
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <span className="flex h-9 w-9 items-center justify-center rounded-md bg-[var(--color-bg-hover)] text-[var(--color-primary)]">
-                  <Icon className="h-4 w-4" aria-hidden="true" />
-                </span>
-                <div>
-                  <h3 id={`stage-${stage.id}`} className="text-base font-semibold text-[var(--color-text-primary)]">{stage.title}</h3>
-                  <p className="text-xs text-[var(--color-text-tertiary)]">{stage.subtitle}</p>
-                </div>
-              </div>
-              <span className="rounded bg-[var(--color-bg-hover)] px-2 py-1 text-xs font-medium text-[var(--color-text-secondary)]">
-                {stageNodes.length} 个积木
-              </span>
-            </div>
-            <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
-              {stageNodes.map((node) => (
-                <WorkflowBlock
-                  key={node.id}
-                  node={node}
-                  selected={selectedNodeId === node.id}
-                  onSelect={() => onSelectNode(node.id)}
-                />
-              ))}
-            </div>
-          </section>
-        );
-      })}
-    </div>
-  );
-}
-
-function WorkflowBlock({ node, selected, onSelect }: { node: WorkflowEditorNode; selected: boolean; onSelect: () => void }) {
-  const meta = nodeTypeMeta[node.data.nodeType];
-  const Icon = meta.icon;
-  const interaction = getInteractionPolicy(node);
-
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={`flex h-full min-h-[188px] flex-col rounded-[var(--radius-lg)] border bg-[var(--color-bg-card)] p-3 text-left transition duration-150 ${
-        selected ? "border-[var(--color-primary)] shadow-[0_16px_36px_rgba(79,70,229,0.18)]" : "border-[var(--color-border-light)] hover:border-[var(--color-primary)]"
-      }`}
-    >
-      <div className="flex items-start gap-3">
-        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-md ${meta.accentClass}`}>
-          <Icon className="h-5 w-5" aria-hidden="true" />
-        </span>
+    <section className="space-y-3" aria-label="工作流步骤编排">
+      <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{node.data.label}</p>
-          <p className="mt-0.5 text-xs text-[var(--color-text-tertiary)]">{node.data.typeLabel}</p>
+          <h3 className="truncate text-sm font-semibold text-[var(--color-text-primary)]">工作流步骤</h3>
+          {usingStarterTemplate ? <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">起步模板，可继续调整</p> : null}
         </div>
+        <button type="button" onClick={onOpenAddBrick} className="agent-button agent-button-primary h-8 shrink-0 px-2.5 text-xs">
+          <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+          添加
+        </button>
       </div>
-      <p className="mt-3 line-clamp-3 text-xs leading-5 text-[var(--color-text-secondary)]">{node.data.summary}</p>
-      <div className="mt-auto space-y-3 pt-3">
-        <div className="flex flex-wrap gap-1.5">
-          <TinyBadge>{node.data.runState}</TinyBadge>
-          {node.data.pausePoint ? <TinyBadge tone="warning">暂停点</TinyBadge> : null}
-          {node.data.toolCount > 0 ? <TinyBadge tone="info">MCP {node.data.toolCount}</TinyBadge> : null}
-          {node.data.allowQuestion ? <TinyBadge tone="success">可追问</TinyBadge> : null}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <ActionPill icon={RefreshCw} label="重新生成" enabled={interaction.canRegenerate} />
-          <ActionPill icon={MessageSquareText} label="追问修改" enabled={interaction.canAskFollowUp} />
-        </div>
-        <StatusBadge complete={node.data.configStatus === "complete"} compact />
-      </div>
-    </button>
-  );
-}
 
-function CollaborationPreview() {
-  return (
-    <section className="rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-4 shadow-[var(--shadow-sm)]" aria-labelledby="collaboration-preview-title">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h3 id="collaboration-preview-title" className="text-base font-semibold text-[var(--color-text-primary)]">智能体协作台</h3>
-          <p className="text-xs text-[var(--color-text-tertiary)]">数据取数、章节生成和报告组装分开执行</p>
-        </div>
-        <span className="rounded bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">并行优先</span>
-      </div>
-      <div className="mt-4 grid gap-3 lg:grid-cols-4">
-        {parallelTasks.map((task) => {
-          const Icon = task.mode === "数据采集" ? Database : task.mode === "章节生成" ? FileText : GitMerge;
+      <div className="space-y-2">
+        {nodes.length === 0 ? (
+          <div className="rounded-[var(--radius-lg)] border border-dashed border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-5 text-center">
+            <Plus className="mx-auto h-7 w-7 text-[var(--color-text-tertiary)]" aria-hidden="true" />
+            <p className="mt-3 text-sm font-medium text-[var(--color-text-primary)]">还没有步骤</p>
+            <p className="mt-1 text-xs text-[var(--color-text-secondary)]">点击添加积木开始搭建。</p>
+          </div>
+        ) : null}
 
-          return (
-            <article key={task.name} className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-3">
-              <div className="flex items-center gap-2">
-                <span className="flex h-8 w-8 items-center justify-center rounded-md bg-[var(--color-bg-card)] text-[var(--color-primary)] ring-1 ring-[var(--color-border-light)]">
-                  <Icon className="h-4 w-4" aria-hidden="true" />
-                </span>
-                <div className="min-w-0">
-                  <h4 className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{task.name}</h4>
-                  <p className="text-xs text-[var(--color-text-tertiary)]">{task.mode}</p>
-                </div>
-              </div>
-              <p className="mt-3 text-xs leading-5 text-[var(--color-text-secondary)]">{task.purpose}</p>
-              <p className="mt-2 truncate text-[11px] text-[var(--color-text-tertiary)]">能力：{task.assignee}</p>
-            </article>
-          );
-        })}
+        {nodes.map((node, index) => (
+          <WorkflowStepRow
+            key={node.id}
+            node={node}
+            index={index}
+            selected={selectedNodeId === node.id}
+            canMoveUp={index > 0}
+            canMoveDown={index < nodes.length - 1}
+            onSelect={() => onSelectNode(node.id)}
+            onMoveUp={() => onMoveNode(node.id, -1)}
+            onMoveDown={() => onMoveNode(node.id, 1)}
+            onDelete={() => onDeleteNode(node.id)}
+          />
+        ))}
       </div>
     </section>
   );
 }
 
+function WorkflowStepRow({
+  node,
+  index,
+  selected,
+  canMoveUp,
+  canMoveDown,
+  onSelect,
+  onMoveUp,
+  onMoveDown,
+  onDelete,
+}: {
+  node: WorkflowEditorNode;
+  index: number;
+  selected: boolean;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  onSelect: () => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+  onDelete: () => void;
+}) {
+  const brickType = getBrickType(node);
+  const definition = brickDefinitions[brickType];
+  const Icon = definition.icon;
+
+  return (
+    <article className={`rounded-[var(--radius-md)] border bg-[var(--color-bg-card)] shadow-[var(--shadow-xs)] transition ${selected ? "border-[var(--color-primary)]" : "border-[var(--color-border-light)]"}`}>
+      <div className="p-2.5">
+        <button type="button" onClick={onSelect} className="flex w-full min-w-0 items-start gap-2 text-left">
+          <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${definition.accentClass}`}>
+            <Icon className="h-4 w-4" aria-hidden="true" />
+          </span>
+          <span className="min-w-0">
+            <span className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-medium text-[var(--color-text-tertiary)]">步骤 {index + 1}</span>
+              <span className="rounded bg-[var(--color-bg-hover)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-text-secondary)]">{definition.label}</span>
+            </span>
+            <span className="mt-1 block truncate text-sm font-semibold text-[var(--color-text-primary)]">{node.data.label}</span>
+            <span className="mt-1 line-clamp-2 text-xs leading-5 text-[var(--color-text-secondary)]">{node.data.summary}</span>
+          </span>
+        </button>
+        <div className="mt-2 flex items-center justify-between gap-2">
+          {node.data.configStatus === "incomplete" ? <TinyBadge tone="warning">待配置</TinyBadge> : <TinyBadge tone="success">已配置</TinyBadge>}
+          <div className="flex items-center gap-0.5">
+            <IconButton label="拖动占位" icon={GripVertical} disabled onClick={() => undefined} />
+            <IconButton label="上移" icon={ArrowUp} disabled={!canMoveUp} onClick={onMoveUp} />
+            <IconButton label="下移" icon={ArrowDown} disabled={!canMoveDown} onClick={onMoveDown} />
+            <IconButton label="删除" icon={Trash2} onClick={onDelete} tone="danger" />
+          </div>
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-1.5 border-t border-[var(--color-border-light)] px-2.5 py-2">
+        <TinyBadge>入 {node.data.inputVariables.length}</TinyBadge>
+        <TinyBadge>出 {node.data.outputVariables.length}</TinyBadge>
+        {node.data.allowQuestion ? <TinyBadge tone="info">追问</TinyBadge> : null}
+      </div>
+    </article>
+  );
+}
+
+function AddBrickModal({ onClose, onSelect }: { onClose: () => void; onSelect: (brickType: WorkflowBrickType) => void }) {
+  return (
+    <div className="sys-modal-mask" onClick={onClose}>
+      <section className="sys-modal" style={{ maxWidth: 720 }} aria-labelledby="add-brick-title" onClick={(event) => event.stopPropagation()}>
+        <div className="sys-modal-header">
+          <div>
+            <div className="sys-field-label" style={{ marginBottom: 4 }}>添加到末尾</div>
+            <span id="add-brick-title" className="sys-modal-title">选择积木</span>
+          </div>
+          <button className="sys-modal-close" onClick={onClose} aria-label="关闭添加积木弹窗">×</button>
+        </div>
+        <div className="sys-modal-body">
+          <div className="grid gap-3 md:grid-cols-2">
+            {(Object.keys(brickDefinitions) as WorkflowBrickType[]).map((brickType) => {
+              const definition = brickDefinitions[brickType];
+              const Icon = definition.icon;
+
+              return (
+                <button
+                  key={brickType}
+                  type="button"
+                  onClick={() => onSelect(brickType)}
+                  className="flex min-h-[116px] items-start gap-3 rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-4 text-left transition hover:border-[var(--color-primary)]"
+                >
+                  <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-md ${definition.accentClass}`}>
+                    <Icon className="h-5 w-5" aria-hidden="true" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold text-[var(--color-text-primary)]">{definition.label}</span>
+                    <span className="mt-2 block text-sm leading-6 text-[var(--color-text-secondary)]">{definition.description}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
 function NodeConfigPanel({
   node,
   availableVariables,
-  insertedVariableName,
-  onInsertVariable,
+  workflowVariables,
+  onUpdateNode,
+  onUpdateConfig,
   onSave,
   saving,
-  usingStarterTemplate,
 }: {
   node: WorkflowEditorNode;
   availableVariables: WorkflowVariable[];
-  insertedVariableName: string;
-  onInsertVariable: (variableName: string) => void;
+  workflowVariables: WorkflowVariable[];
+  onUpdateNode: (patch: Partial<EditorNodeData>) => void;
+  onUpdateConfig: (nextConfig: Record<string, unknown>) => void;
   onSave: () => Promise<void>;
   saving: boolean;
-  usingStarterTemplate: boolean;
 }) {
-  const meta = nodeTypeMeta[node.data.nodeType];
-  const Icon = meta.icon;
-  const interaction = getInteractionPolicy(node);
+  const brickType = getBrickType(node);
+  const definition = brickDefinitions[brickType];
+  const Icon = definition.icon;
 
   return (
-    <aside aria-labelledby="node-config-title">
-      <div className="px-4 pb-2 pt-4">
+    <aside className="mx-auto max-w-5xl rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] shadow-[var(--shadow-sm)]" aria-labelledby="node-config-title">
+      <div className="border-b border-[var(--color-border-light)] px-5 py-4">
         <div className="flex items-center gap-3">
-          <span className={`flex h-10 w-10 items-center justify-center rounded-lg ${meta.accentClass}`}>
+          <span className={`flex h-10 w-10 items-center justify-center rounded-lg ${definition.accentClass}`}>
             <Icon className="h-5 w-5" aria-hidden="true" />
           </span>
           <div>
-            <p className="text-xs text-[var(--color-text-tertiary)]">{node.data.typeLabel}</p>
+            <p className="text-xs text-[var(--color-text-tertiary)]">{definition.label}</p>
             <h3 id="node-config-title" className="text-base font-semibold text-[var(--color-text-primary)]">
               {node.data.label}
             </h3>
@@ -895,239 +711,500 @@ function NodeConfigPanel({
         </div>
       </div>
 
-      <div className="space-y-4 p-4">
-        <PanelGroup title="业务定位">
-          <p className="agent-muted text-sm leading-6">{node.data.summary}</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <StatusBadge complete={node.data.configStatus === "complete"} />
-            {node.data.pausePoint ? <TinyBadge tone="warning">写入暂停点</TinyBadge> : null}
-          </div>
-          {usingStarterTemplate ? (
-            <p className="mt-3 rounded bg-sky-50 px-2 py-1 text-xs font-medium text-sky-800 dark:bg-sky-950/40 dark:text-sky-200">
-              当前为起步模板，保存后写入真实草稿。
-            </p>
-          ) : null}
-        </PanelGroup>
-
-        <PanelGroup title="输入变量">
-          <VariableList variables={node.data.inputVariables} emptyText="该积木不需要上游输入" />
-        </PanelGroup>
-
-        <PanelGroup title="可引用变量">
-          <VariableList
-            variables={availableVariables.map((variable) => variable.name)}
-            emptyText="当前积木前没有可引用变量"
-            onInsertVariable={onInsertVariable}
-          />
-          {insertedVariableName ? (
-            <p className="mt-3 rounded bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-200">
-              已插入变量占位：{"{{"}{insertedVariableName}{"}}"}
-            </p>
-          ) : null}
-        </PanelGroup>
-
-        <PanelGroup title="输出变量">
-          <VariableList variables={node.data.outputVariables} emptyText="暂未声明输出变量" />
-        </PanelGroup>
-
-        <PanelGroup title="核心配置">
-          <NodeTypeConfig node={node} />
-        </PanelGroup>
-
-        {node.data.nodeType === "parallel_group" ? (
-          <PanelGroup title={node.id.includes("chapter") ? "章节智能体" : "并行子任务"}>
-            <ParallelTaskList tasks={node.id.includes("chapter") ? parallelTasks.filter((task) => task.mode === "章节生成") : parallelTasks.filter((task) => task.mode === "数据采集")} />
-          </PanelGroup>
-        ) : null}
-
-        {node.data.nodeType === "merge" ? (
-          <PanelGroup title="组装映射">
-            <MergeMappingList mappings={mergeMappings} />
-          </PanelGroup>
-        ) : null}
-
-        <PanelGroup title="能力装配">
-          <ConfigRows
-            rows={[
-              ["Skills", node.data.nodeType === "agent" || node.data.nodeType === "merge" || node.data.nodeType === "parallel_group" ? "授信分析、风险识别、报告撰写" : "按积木类型隐藏"],
-              ["MCP", node.data.toolCount > 0 ? `${node.data.toolCount} 个工具已启用` : "未启用外部工具"],
-              ["提示词模板", node.data.nodeType === "merge" ? "授信报告组装模板" : node.data.nodeType === "agent" ? "授信追问模板" : "按积木类型选择"],
-            ]}
-          />
-        </PanelGroup>
-
-        <PanelGroup title="用户交互">
-          <div className="space-y-3">
-            <ConfigRows
-              rows={[
-                ["输出模式", node.data.outputMode],
-                ["重新生成", interaction.canRegenerate ? "允许" : "不允许"],
-                ["追问修改", interaction.canAskFollowUp ? "允许" : "不允许"],
-                ["暂停策略", node.data.pausePoint ? "等待用户确认后继续" : "自动进入下游"],
-              ]}
+      <div className="grid gap-4 p-5 xl:grid-cols-2">
+        <PanelGroup title="基础信息">
+          <label className="sys-field">
+            <span className="sys-field-label">步骤名称</span>
+            <input
+              value={node.data.label}
+              onChange={(event) => onUpdateNode({ label: event.target.value })}
+              className="sys-field-input"
+              placeholder="请输入步骤名称"
             />
-            <div className="grid grid-cols-2 gap-2">
-              <button type="button" disabled={!interaction.canRegenerate} className="agent-button h-9 px-2 text-xs">
-                <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
-                重新生成
-              </button>
-              <button type="button" disabled={!interaction.canAskFollowUp} className="agent-button h-9 px-2 text-xs">
-                <MessageSquareText className="h-3.5 w-3.5" aria-hidden="true" />
-                追问修改
-              </button>
-            </div>
-          </div>
+          </label>
+          <label className="sys-field">
+            <span className="sys-field-label">步骤说明</span>
+            <textarea
+              value={node.data.summary}
+              onChange={(event) => onUpdateNode({ summary: event.target.value })}
+              className="sys-field-textarea"
+              placeholder="说明这一步要完成什么任务"
+            />
+          </label>
         </PanelGroup>
 
-        <PanelGroup title="权限与审计">
-          <ConfigRows
-            rows={[
-              ["权限校验", node.data.toolCount > 0 || node.data.pausePoint ? "后端按租户与能力池复核" : "基础读取"],
-              ["审计事件", node.data.toolCount > 0 ? "记录工具调用与脱敏摘要" : "记录状态变更"],
-            ]}
-          />
-        </PanelGroup>
+        <ParameterPanel
+          node={node}
+          availableVariables={availableVariables}
+          onUpdateNode={onUpdateNode}
+        />
+
+        {brickType === "input" ? (
+          <InputBrickConfig node={node} onUpdateConfig={onUpdateConfig} onUpdateNode={onUpdateNode} />
+        ) : null}
+
+        {brickType === "agent" ? (
+          <SingleAgentBrickConfig node={node} availableVariables={availableVariables} onUpdateConfig={onUpdateConfig} onUpdateNode={onUpdateNode} />
+        ) : null}
+
+        {brickType === "cluster" ? (
+          <AgentClusterBrickConfig node={node} availableVariables={availableVariables} onUpdateConfig={onUpdateConfig} onUpdateNode={onUpdateNode} />
+        ) : null}
+
+        {brickType === "delivery" ? (
+          <DeliveryBrickConfig node={node} workflowVariables={workflowVariables} onUpdateConfig={onUpdateConfig} />
+        ) : null}
+
+        {(brickType === "agent" || brickType === "cluster") ? (
+          <InteractionConfig node={node} onUpdateNode={onUpdateNode} />
+        ) : null}
 
         <button
           type="button"
           onClick={() => void onSave()}
           disabled={saving}
-          className="agent-button agent-button-primary h-10 w-full px-3 text-sm"
+          className="agent-button agent-button-primary h-10 w-full px-3 text-sm xl:col-span-2"
         >
           <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-          {saving ? "保存中" : "保存积木配置"}
+          {saving ? "保存中" : "保存当前积木"}
         </button>
       </div>
     </aside>
   );
 }
 
-function NodeTypeConfig({ node }: { node: WorkflowEditorNode }) {
-  if (node.data.nodeType === "agent") {
-    return (
-      <ConfigRows
-        rows={[
-          ["智能体模板", "授信任务规划智能体"],
-          ["模型配置", "租户默认模型"],
-          ["追问条件", "信息缺失或口径冲突"],
-          ["输出 Schema", "credit_work_plan、missing_questions"],
-        ]}
-      />
-    );
-  }
-
-  if (node.data.nodeType === "parallel_group" && node.id.includes("chapter")) {
-    return (
-      <ConfigRows
-        rows={[
-          ["执行方式", "多章节智能体并发"],
-          ["章节范围", "主体概况、财务分析、风险判断、授信建议"],
-          ["失败策略", "单章节可重试"],
-        ]}
-      />
-    );
-  }
-
-  if (node.data.nodeType === "parallel_group") {
-    return (
-      <ConfigRows
-        rows={[
-          ["执行方式", "多个 MCP / 子智能体并发"],
-          ["数据规则", "事实类结果只允许重新获取"],
-          ["失败策略", "单项失败可重试"],
-        ]}
-      />
-    );
-  }
-
-  if (node.data.nodeType === "merge") {
-    return (
-      <ConfigRows
-        rows={[
-          ["组装方式", "模板组装 + 报告组装智能体"],
-          ["冲突处理", "保留来源并交给用户审查"],
-          ["输出变量", "credit_report_draft"],
-        ]}
-      />
-    );
-  }
-
-  if (node.data.nodeType === "human_review") {
-    return (
-      <ConfigRows
-        rows={[
-          ["审核对象", "发起人 / 授信审核人"],
-          ["审核动作", "确认交付、退回重做"],
-          ["文本调整", "模型内容可追问修改"],
-        ]}
-      />
-    );
-  }
-
-  if (node.data.nodeType === "delivery") {
-    return (
-      <ConfigRows
-        rows={[
-          ["交付方式", "Word / PDF"],
-          ["交付确认", "用户确认后生成正式件"],
-          ["失败策略", "失败后可重试"],
-        ]}
-      />
-    );
-  }
-
-  if (node.data.nodeType === "user_input") {
-    return (
-      <ConfigRows
-        rows={[
-          ["核心字段", "授信公司全称"],
-          ["补充字段", "授信用途、金额、期限"],
-          ["附件", "允许上传"],
-        ]}
-      />
-    );
-  }
-
+function WorkflowOverviewPanel({
+  nodes,
+  variables,
+  incompleteNodes,
+  onSelectNode,
+}: {
+  nodes: WorkflowEditorNode[];
+  variables: WorkflowVariable[];
+  incompleteNodes: WorkflowEditorNode[];
+  onSelectNode: (nodeId: string) => void;
+}) {
   return (
-    <ConfigRows
-      rows={[
-        ["配置状态", node.data.configStatus === "complete" ? "已满足当前字段" : "需要补齐字段"],
-        ["节点类型", node.data.typeLabel],
-      ]}
-    />
+    <aside className="mx-auto max-w-5xl space-y-4 rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-5 shadow-[var(--shadow-sm)]" aria-labelledby="workflow-overview-title">
+      <div>
+        <p className="text-xs text-[var(--color-text-tertiary)]">工作流总览</p>
+        <h3 id="workflow-overview-title" className="text-base font-semibold text-[var(--color-text-primary)]">先搭步骤，再配置能力</h3>
+        <p className="mt-2 text-sm leading-6 text-[var(--color-text-secondary)]">左侧添加四类积木并调整顺序。点击某个积木后，这里会切换为对应配置面板。</p>
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        <OverviewMetric label="步骤" value={String(nodes.length)} />
+        <OverviewMetric label="变量" value={String(variables.length)} />
+        <OverviewMetric label="待配" value={String(incompleteNodes.length)} />
+      </div>
+      <PanelGroup title="待配置积木">
+        {incompleteNodes.length === 0 ? (
+          <p className="text-sm text-[var(--color-text-tertiary)]">当前没有待配置积木。</p>
+        ) : (
+          <div className="space-y-2">
+            {incompleteNodes.map((node) => (
+              <button key={node.id} type="button" onClick={() => onSelectNode(node.id)} className="flex w-full items-center justify-between rounded bg-[var(--color-bg-card)] px-2 py-2 text-left text-sm ring-1 ring-[var(--color-border-light)]">
+                <span className="truncate text-[var(--color-text-primary)]">{node.data.label}</span>
+                <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" aria-hidden="true" />
+              </button>
+            ))}
+          </div>
+        )}
+      </PanelGroup>
+      <PanelGroup title="输出参数">
+        <VariableList variables={variables.map((variable) => variable.name)} emptyText="暂无输出参数" />
+      </PanelGroup>
+    </aside>
   );
 }
 
-function ParallelTaskList({ tasks }: { tasks: ParallelTask[] }) {
+function ParameterPanel({
+  node,
+  availableVariables,
+  onUpdateNode,
+}: {
+  node: WorkflowEditorNode;
+  availableVariables: WorkflowVariable[];
+  onUpdateNode: (patch: Partial<EditorNodeData>) => void;
+}) {
   return (
-    <div className="space-y-2">
-      {tasks.map((task) => (
-        <article key={task.name} className="rounded bg-[var(--color-bg-card)] px-2 py-2 ring-1 ring-[var(--color-border-light)]">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h5 className="text-xs font-semibold text-[var(--color-text-primary)]">{task.name}</h5>
-            <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">{task.output}</span>
-          </div>
-          <p className="mt-1 text-xs text-[var(--color-text-secondary)]">{task.purpose}</p>
-          <p className="mt-1 text-[11px] text-[var(--color-text-tertiary)]">执行能力：{task.assignee}</p>
-        </article>
-      ))}
+    <PanelGroup title="输入输出参数">
+      <label className="sys-field">
+        <span className="sys-field-label">输入参数</span>
+        <VariableSelectList
+          selectedVariables={node.data.inputVariables}
+          availableVariables={availableVariables.map((variable) => variable.name)}
+          onChange={(variables) => onUpdateNode({ inputVariables: variables })}
+        />
+      </label>
+      <label className="sys-field">
+        <span className="sys-field-label">输出参数</span>
+        <input
+          value={node.data.outputVariables.join(", ")}
+          onChange={(event) => onUpdateNode({ outputVariables: parseVariableList(event.target.value) })}
+          className="sys-field-input"
+          placeholder="例如：agent_response"
+        />
+        <span className="sys-field-hint">多个参数用英文逗号分隔；下游积木通过这些参数衔接。</span>
+      </label>
+    </PanelGroup>
+  );
+}
+
+function InputBrickConfig({
+  node,
+  onUpdateConfig,
+  onUpdateNode,
+}: {
+  node: WorkflowEditorNode;
+  onUpdateConfig: (nextConfig: Record<string, unknown>) => void;
+  onUpdateNode: (patch: Partial<EditorNodeData>) => void;
+}) {
+  const fields = readInputFields(node.data.rawConfig?.inputFields, node.data.outputVariables);
+
+  function updateField(fieldId: string, patch: Partial<InputFieldConfig>) {
+    const nextFields = fields.map((field) => field.id === fieldId ? { ...field, ...patch } : field);
+    onUpdateConfig({ inputFields: nextFields });
+    onUpdateNode({ outputVariables: nextFields.map((field) => field.variable).filter(Boolean) });
+  }
+
+  return (
+    <PanelGroup title="输入框配置">
+      <div className="space-y-3">
+        {fields.map((field, index) => (
+          <article key={field.id} className="rounded-[var(--radius-md)] bg-[var(--color-bg-card)] p-3 ring-1 ring-[var(--color-border-light)]">
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-xs font-medium text-[var(--color-text-tertiary)]">输入框 {index + 1}</span>
+            </div>
+            <label className="sys-field">
+              <span className="sys-field-label">显示名称</span>
+              <input value={field.label} onChange={(event) => updateField(field.id, { label: event.target.value })} className="sys-field-input" />
+            </label>
+            <label className="sys-field">
+              <span className="sys-field-label">输出参数名</span>
+              <input value={field.variable} onChange={(event) => updateField(field.id, { variable: normalizeVariableName(event.target.value) })} className="sys-field-input" />
+            </label>
+            <label className="sys-field">
+              <span className="sys-field-label">占位提示</span>
+              <input value={field.placeholder} onChange={(event) => updateField(field.id, { placeholder: event.target.value })} className="sys-field-input" />
+            </label>
+          </article>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={() => {
+          const nextField = createInputField(fields.length);
+          onUpdateConfig({ inputFields: [...fields, nextField] });
+          onUpdateNode({ outputVariables: [...node.data.outputVariables, nextField.variable] });
+        }}
+        className="agent-button mt-3 h-9 px-3 text-xs"
+      >
+        <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+        添加输入框
+      </button>
+    </PanelGroup>
+  );
+}
+
+function SingleAgentBrickConfig({
+  node,
+  availableVariables,
+  onUpdateConfig,
+  onUpdateNode,
+}: {
+  node: WorkflowEditorNode;
+  availableVariables: WorkflowVariable[];
+  onUpdateConfig: (nextConfig: Record<string, unknown>) => void;
+  onUpdateNode: (patch: Partial<EditorNodeData>) => void;
+}) {
+  const config = node.data.rawConfig ?? {};
+  const selectedMcps = readStringArray(config.mcpServices, ["企业信息 MCP"]);
+  const selectedSkills = readStringArray(config.skills, ["授信分析 Skill"]);
+
+  return (
+    <PanelGroup title="智能体配置">
+      <SelectLikeField
+        label="智能体来源"
+        value={readString(config.agentSource, "自定义智能体")}
+        options={["自定义智能体", "能力资产：授信分析智能体", "能力资产：报告撰写智能体"]}
+        onChange={(value) => onUpdateConfig({ agentSource: value })}
+      />
+      <SelectLikeField
+        label="提示词模板"
+        value={readString(config.promptTemplate, "授信报告分析模板")}
+        options={["授信报告分析模板", "风险识别模板", "不使用模板"]}
+        onChange={(value) => onUpdateConfig({ promptTemplate: value })}
+      />
+      <label className="sys-field">
+        <span className="sys-field-label">自定义提示词</span>
+        <textarea
+          value={readString(config.systemPrompt, "你是授信报告分析智能体，请基于输入参数完成分析并输出结构化回复。")}
+          onChange={(event) => onUpdateConfig({ systemPrompt: event.target.value })}
+          className="sys-field-textarea"
+          placeholder="配置这个智能体的角色、任务边界和输出要求"
+        />
+      </label>
+      <CapabilityToggleGroup
+        title="MCP"
+        options={["企业信息 MCP", "司法查询 MCP", "文件读取 MCP", "财务数据库 MCP"]}
+        selected={selectedMcps}
+        onChange={(values) => {
+          onUpdateConfig({ mcpServices: values });
+          onUpdateNode({ toolCount: values.length });
+        }}
+      />
+      <CapabilityToggleGroup
+        title="Skill"
+        options={["授信分析 Skill", "风险识别 Skill", "报告撰写 Skill", "追问澄清 Skill"]}
+        selected={selectedSkills}
+        onChange={(values) => onUpdateConfig({ skills: values })}
+      />
+      <p className="text-xs leading-5 text-[var(--color-text-tertiary)]">可引用输入：{availableVariables.map((variable) => variable.name).join("、") || "暂无"}</p>
+    </PanelGroup>
+  );
+}
+
+function AgentClusterBrickConfig({
+  node,
+  availableVariables,
+  onUpdateConfig,
+  onUpdateNode,
+}: {
+  node: WorkflowEditorNode;
+  availableVariables: WorkflowVariable[];
+  onUpdateConfig: (nextConfig: Record<string, unknown>) => void;
+  onUpdateNode: (patch: Partial<EditorNodeData>) => void;
+}) {
+  const config = node.data.rawConfig ?? {};
+  const agents = readClusterAgents(config.clusterAgents);
+
+  function updateAgent(agentId: string, patch: Partial<ClusterAgentConfig>) {
+    const nextAgents = agents.map((agent) => agent.id === agentId ? { ...agent, ...patch } : agent);
+    onUpdateConfig({ clusterAgents: nextAgents });
+    onUpdateNode({ toolCount: nextAgents.length });
+  }
+
+  return (
+    <PanelGroup title="智能体集群配置">
+      <div className="space-y-3">
+        {agents.map((agent, index) => (
+          <article key={agent.id} className="rounded-[var(--radius-md)] bg-[var(--color-bg-card)] p-3 ring-1 ring-[var(--color-border-light)]">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <span className="text-xs font-medium text-[var(--color-text-tertiary)]">智能体 {index + 1}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  const nextAgents = agents.filter((item) => item.id !== agent.id);
+                  onUpdateConfig({ clusterAgents: nextAgents });
+                  onUpdateNode({ toolCount: nextAgents.length });
+                }}
+                className="rounded p-1 text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-red-600"
+                aria-label="删除智能体"
+              >
+                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            </div>
+            <label className="sys-field">
+              <span className="sys-field-label">智能体名称</span>
+              <input value={agent.name} onChange={(event) => updateAgent(agent.id, { name: event.target.value })} className="sys-field-input" />
+            </label>
+            <label className="sys-field">
+              <span className="sys-field-label">任务提示词</span>
+              <textarea value={agent.prompt} onChange={(event) => updateAgent(agent.id, { prompt: event.target.value })} className="sys-field-textarea" />
+            </label>
+            <label className="sys-field">
+              <span className="sys-field-label">输出参数</span>
+              <input value={agent.output} onChange={(event) => updateAgent(agent.id, { output: normalizeVariableName(event.target.value) })} className="sys-field-input" />
+            </label>
+          </article>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={() => {
+          const nextAgents = [...agents, createClusterAgent(agents.length)];
+          onUpdateConfig({ clusterAgents: nextAgents });
+          onUpdateNode({ toolCount: nextAgents.length });
+        }}
+        className="agent-button mt-3 h-9 px-3 text-xs"
+      >
+        <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+        添加智能体
+      </button>
+      <label className="sys-field mt-3">
+        <span className="sys-field-label">拼接规则</span>
+        <textarea
+          value={readString(config.mergeRule, "按章节顺序合并多个智能体输出，冲突内容保留来源并交给用户审查。")}
+          onChange={(event) => onUpdateConfig({ mergeRule: event.target.value })}
+          className="sys-field-textarea"
+          placeholder="说明多智能体结果如何拼接、去重和处理冲突"
+        />
+      </label>
+      <p className="text-xs leading-5 text-[var(--color-text-tertiary)]">可引用输入：{availableVariables.map((variable) => variable.name).join("、") || "暂无"}</p>
+    </PanelGroup>
+  );
+}
+
+function DeliveryBrickConfig({
+  node,
+  workflowVariables,
+  onUpdateConfig,
+}: {
+  node: WorkflowEditorNode;
+  workflowVariables: WorkflowVariable[];
+  onUpdateConfig: (nextConfig: Record<string, unknown>) => void;
+}) {
+  const config = node.data.rawConfig ?? {};
+
+  return (
+    <PanelGroup title="交付配置">
+      <SelectLikeField
+        label="交付方式"
+        value={readString(config.deliveryChannel, "Word / PDF")}
+        options={["Word / PDF", "OA 流程", "邮件", "Webhook"]}
+        onChange={(value) => onUpdateConfig({ deliveryChannel: value })}
+      />
+      <SelectLikeField
+        label="交付内容"
+        value={readString(config.artifactVariable, node.data.inputVariables[0] ?? "cluster_result")}
+        options={workflowVariables.map((variable) => variable.name)}
+        onChange={(value) => onUpdateConfig({ artifactVariable: value })}
+      />
+      <label className="sys-field">
+        <span className="sys-field-label">交付说明</span>
+        <textarea
+          value={readString(config.deliveryTarget, "生成授信报告正式文档，等待用户确认后交付。")}
+          onChange={(event) => onUpdateConfig({ deliveryTarget: event.target.value })}
+          className="sys-field-textarea"
+          placeholder="说明交付目标、模板和确认方式"
+        />
+      </label>
+    </PanelGroup>
+  );
+}
+
+function InteractionConfig({
+  node,
+  onUpdateNode,
+}: {
+  node: WorkflowEditorNode;
+  onUpdateNode: (patch: Partial<EditorNodeData>) => void;
+}) {
+  return (
+    <PanelGroup title="交互控制">
+      <label className="flex items-center justify-between gap-3 rounded bg-[var(--color-bg-card)] px-3 py-2 text-sm ring-1 ring-[var(--color-border-light)]">
+        <span className="text-[var(--color-text-primary)]">允许重新生成</span>
+        <input
+          type="checkbox"
+          checked={node.data.outputMode === "追问确认" || node.data.outputMode === "分析后暂停"}
+          onChange={(event) => onUpdateNode({ outputMode: event.target.checked ? "追问确认" : "一次性输出" })}
+        />
+      </label>
+      <label className="mt-2 flex items-center justify-between gap-3 rounded bg-[var(--color-bg-card)] px-3 py-2 text-sm ring-1 ring-[var(--color-border-light)]">
+        <span className="text-[var(--color-text-primary)]">允许追问修改</span>
+        <input
+          type="checkbox"
+          checked={node.data.allowQuestion}
+          onChange={(event) => onUpdateNode({ allowQuestion: event.target.checked })}
+        />
+      </label>
+    </PanelGroup>
+  );
+}
+
+function VariableSelectList({
+  selectedVariables,
+  availableVariables,
+  onChange,
+}: {
+  selectedVariables: string[];
+  availableVariables: string[];
+  onChange: (variables: string[]) => void;
+}) {
+  if (availableVariables.length === 0) {
+    return <p className="text-sm text-[var(--color-text-tertiary)]">暂无可选输入参数。</p>;
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {availableVariables.map((variable) => {
+        const selected = selectedVariables.includes(variable);
+        return (
+          <button
+            key={variable}
+            type="button"
+            onClick={() => {
+              onChange(selected ? selectedVariables.filter((item) => item !== variable) : [...selectedVariables, variable]);
+            }}
+            className={`rounded px-2 py-1 text-xs font-medium ring-1 transition ${
+              selected
+                ? "bg-[var(--color-primary)] text-white ring-[var(--color-primary)]"
+                : "bg-[var(--color-bg-card)] text-[var(--color-text-secondary)] ring-[var(--color-border-light)] hover:text-[var(--color-primary)]"
+            }`}
+          >
+            {variable}
+          </button>
+        );
+      })}
     </div>
   );
 }
 
-function MergeMappingList({ mappings }: { mappings: MergeMapping[] }) {
+function CapabilityToggleGroup({
+  title,
+  options,
+  selected,
+  onChange,
+}: {
+  title: string;
+  options: string[];
+  selected: string[];
+  onChange: (values: string[]) => void;
+}) {
   return (
-    <div className="space-y-2">
-      {mappings.map((mapping) => (
-        <article key={mapping.target} className="rounded bg-[var(--color-bg-card)] px-2 py-2 ring-1 ring-[var(--color-border-light)]">
-          <div className="grid gap-1 text-xs md:grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)]">
-            <span className="font-medium text-[var(--color-text-secondary)]">{mapping.source}</span>
-            <span className="font-semibold text-[var(--color-text-primary)]">{mapping.target}</span>
-          </div>
-          <p className="mt-1 text-[11px] leading-5 text-[var(--color-text-tertiary)]">{mapping.rule}</p>
-        </article>
-      ))}
+    <div>
+      <p className="mb-2 text-xs font-medium text-[var(--color-text-tertiary)]">{title}</p>
+      <div className="flex flex-wrap gap-2">
+        {options.map((option) => {
+          const active = selected.includes(option);
+          return (
+            <button
+              key={option}
+              type="button"
+              onClick={() => onChange(active ? selected.filter((item) => item !== option) : [...selected, option])}
+              className={`rounded px-2 py-1 text-xs font-medium ring-1 transition ${
+                active
+                  ? "bg-[var(--color-primary)] text-white ring-[var(--color-primary)]"
+                  : "bg-[var(--color-bg-card)] text-[var(--color-text-secondary)] ring-[var(--color-border-light)] hover:text-[var(--color-primary)]"
+              }`}
+            >
+              {option}
+            </button>
+          );
+        })}
+      </div>
     </div>
+  );
+}
+
+function SelectLikeField({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="sys-field">
+      <span className="sys-field-label">{label}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value)} className="sys-field-input">
+        {options.map((option) => <option key={option} value={option}>{option}</option>)}
+      </select>
+    </label>
   );
 }
 
@@ -1147,21 +1224,13 @@ function ConfigRows({ rows }: { rows: Array<[string, string]> }) {
 function PanelGroup({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="rounded-[var(--radius-md)] bg-[var(--color-bg-hover)] px-3 py-3">
-      <h4 className="text-sm font-semibold text-[var(--color-text-primary)]">{title}</h4>
-      <div className="mt-2">{children}</div>
+      <h4 className="mb-2 text-sm font-semibold text-[var(--color-text-primary)]">{title}</h4>
+      {children}
     </section>
   );
 }
 
-function VariableList({
-  variables,
-  emptyText,
-  onInsertVariable,
-}: {
-  variables: string[];
-  emptyText: string;
-  onInsertVariable?: (variableName: string) => void;
-}) {
+function VariableList({ variables, emptyText }: { variables: string[]; emptyText: string }) {
   if (variables.length === 0) {
     return <p className="text-sm text-[var(--color-text-tertiary)]">{emptyText}</p>;
   }
@@ -1169,71 +1238,14 @@ function VariableList({
   return (
     <div className="flex flex-wrap gap-2">
       {variables.map((variable) => (
-        <button
+        <span
           key={variable}
-          type="button"
-          onClick={() => onInsertVariable?.(variable)}
-          className="rounded bg-[var(--color-bg-card)] px-2 py-1 text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-[var(--color-border-light)] transition-colors duration-200 hover:text-[var(--color-primary)]"
-          title={onInsertVariable ? "点击插入变量占位符" : undefined}
+          className="rounded bg-[var(--color-bg-card)] px-2 py-1 text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-[var(--color-border-light)]"
         >
           {variable}
-        </button>
+        </span>
       ))}
     </div>
-  );
-}
-
-function VariableRegistry({ variables }: { variables: WorkflowVariable[] }) {
-  return (
-    <section className="rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-4 shadow-[var(--shadow-sm)]" aria-labelledby="variable-title">
-      <div className="flex items-center gap-2">
-        <Wrench className="h-4 w-4 text-[var(--color-primary)]" aria-hidden="true" />
-        <h3 id="variable-title" className="text-sm font-semibold text-[var(--color-text-primary)]">变量声明</h3>
-      </div>
-      <div className="mt-3 grid gap-3 md:grid-cols-2">
-        {variables.slice(0, 8).map((variable) => (
-          <article key={variable.name} className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-3">
-            <div className="flex items-center justify-between gap-3">
-              <p className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{variable.name}</p>
-              <span className="rounded bg-[var(--color-bg-card)] px-2 py-1 text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-[var(--color-border-light)]">{variable.type}</span>
-            </div>
-            <p className="mt-2 truncate text-xs text-[var(--color-text-tertiary)]">来源：{variable.sourceNodeName}</p>
-            {variable.sensitive ? <p className="mt-2 rounded bg-red-50 px-2 py-1 text-xs font-medium text-red-700 dark:bg-red-950/40 dark:text-red-300">敏感变量</p> : null}
-          </article>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function PublishCheckSummary({ incompleteNodes }: { incompleteNodes: WorkflowEditorNode[] }) {
-  return (
-    <section className="rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-4 shadow-[var(--shadow-sm)]" aria-labelledby="publish-check-title">
-      <div className="flex items-center gap-2">
-        <ShieldCheck className="h-4 w-4 text-[var(--color-primary)]" aria-hidden="true" />
-        <h3 id="publish-check-title" className="text-sm font-semibold text-[var(--color-text-primary)]">发布校验摘要</h3>
-      </div>
-      <div className="mt-3 space-y-3">
-        {incompleteNodes.length > 0 ? (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900/60 dark:bg-amber-950/30">
-            <div className="flex items-center gap-2 text-sm font-medium text-amber-800 dark:text-amber-300">
-              <AlertTriangle className="h-4 w-4" aria-hidden="true" />
-              {incompleteNodes.length} 个积木需要补齐配置
-            </div>
-            <ul className="mt-3 space-y-2 text-sm text-amber-800 dark:text-amber-300">
-              {incompleteNodes.map((node) => (
-                <li key={node.id}>- {node.data.label}</li>
-              ))}
-            </ul>
-          </div>
-        ) : (
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300">
-            当前积木已满足前端摘要校验。
-          </div>
-        )}
-        <p className="agent-muted text-sm leading-6">正式发布仍由后端校验节点、变量、连线和版本快照。</p>
-      </div>
-    </section>
   );
 }
 
@@ -1243,6 +1255,15 @@ function ToolbarMetric({ icon: Icon, label, value, tone = "default" }: { icon: t
       <Icon className="h-3.5 w-3.5" aria-hidden="true" />
       {label} {value}
     </span>
+  );
+}
+
+function OverviewMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-[var(--radius-md)] bg-[var(--color-bg-hover)] px-3 py-2 text-center">
+      <p className="text-xs text-[var(--color-text-tertiary)]">{label}</p>
+      <p className="mt-1 text-lg font-semibold text-[var(--color-text-primary)]">{value}</p>
+    </div>
   );
 }
 
@@ -1275,26 +1296,35 @@ function TinyBadge({ children, tone = "default" }: { children: ReactNode; tone?:
   return <span className={`rounded px-2 py-1 text-[11px] font-medium ${className}`}>{children}</span>;
 }
 
-function ActionPill({ icon: Icon, label, enabled }: { icon: typeof RefreshCw; label: string; enabled: boolean }) {
+function IconButton({
+  icon: Icon,
+  label,
+  disabled,
+  onClick,
+  tone = "default",
+}: {
+  icon: typeof ArrowUp;
+  label: string;
+  disabled?: boolean;
+  onClick: () => void;
+  tone?: "default" | "danger";
+}) {
   return (
-    <span className={`inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium ${enabled ? "bg-[var(--color-bg-hover)] text-[var(--color-text-secondary)]" : "bg-[var(--color-bg-hover)] text-[var(--color-text-tertiary)] opacity-60"}`}>
-      <Icon className="h-3 w-3" aria-hidden="true" />
-      {label}
-    </span>
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={`rounded-md p-2 transition disabled:cursor-not-allowed disabled:opacity-40 ${
+        tone === "danger"
+          ? "text-[var(--color-text-tertiary)] hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30"
+          : "text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-primary)]"
+      }`}
+      aria-label={label}
+      title={label}
+    >
+      <Icon className="h-4 w-4" aria-hidden="true" />
+    </button>
   );
-}
-
-function StatusBadge({ complete, compact = false }: { complete: boolean; compact?: boolean }) {
-  if (complete) {
-    return (
-      <span className={`inline-flex items-center gap-1 rounded bg-emerald-100 px-2 py-1 font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 ${compact ? "text-[11px]" : "text-xs"}`}>
-        <CheckCircle2 className={compact ? "h-3 w-3" : "h-3.5 w-3.5"} aria-hidden="true" />
-        配置完整
-      </span>
-    );
-  }
-
-  return <span className={`rounded bg-red-100 px-2 py-1 font-medium text-red-700 dark:bg-red-950/40 dark:text-red-300 ${compact ? "text-[11px]" : "text-xs"}`}>待补配置</span>;
 }
 
 function EditorStateShell({
@@ -1328,43 +1358,171 @@ function EditorStateShell({
 }
 
 function cloneStarterNodes(): WorkflowEditorNode[] {
-  return starterNodes.map((node) => ({
-    ...node,
-    position: { ...node.position },
-    data: {
-      ...node.data,
-      inputVariables: [...node.data.inputVariables],
-      outputVariables: [...node.data.outputVariables],
-      rawConfig: { ...(node.data.rawConfig ?? {}) },
-    },
-  }));
+  return starterNodes.map((node) => cloneEditorNode(node));
 }
 
 function cloneStarterEdges(): WorkflowEditorEdge[] {
   return starterEdges.map((edge) => ({ ...edge }));
 }
 
+function cloneEditorNode(node: WorkflowEditorNode): WorkflowEditorNode {
+  return {
+    ...node,
+    position: { ...node.position },
+    data: {
+      ...node.data,
+      inputVariables: [...node.data.inputVariables],
+      outputVariables: [...node.data.outputVariables],
+      rawConfig: cloneRecord(node.data.rawConfig ?? {}),
+    },
+  };
+}
+
+function createBrickNode(brickType: WorkflowBrickType, index: number, inputVariables: string[] = []): WorkflowEditorNode {
+  const definition = brickDefinitions[brickType];
+  const id = `${brickType}_${Date.now().toString(36)}_${index}`;
+  const outputVariable = getDefaultOutputVariable(brickType, index);
+  const defaultData: Record<WorkflowBrickType, Pick<EditorNodeData, "label" | "summary" | "pausePoint" | "runState" | "outputMode" | "toolCount" | "allowQuestion" | "rawConfig">> = {
+    input: {
+      label: "输入信息",
+      summary: "配置用户需要填写的输入框。",
+      pausePoint: true,
+      runState: "等待输入",
+      outputMode: "一次性输出",
+      toolCount: 0,
+      allowQuestion: false,
+      rawConfig: {
+        brickType,
+        inputFields: [createInputField(0)],
+      },
+    },
+    agent: {
+      label: "单智能体处理",
+      summary: "选择或配置一个智能体，加载提示词模板、MCP 和 Skill 完成任务。",
+      pausePoint: true,
+      runState: "待配置",
+      outputMode: "追问确认",
+      toolCount: 1,
+      allowQuestion: true,
+      rawConfig: {
+        brickType,
+        agentSource: "自定义智能体",
+        promptTemplate: "授信报告分析模板",
+        systemPrompt: "你是授信报告分析智能体，请基于输入参数完成分析并输出结构化回复。",
+        mcpServices: ["企业信息 MCP"],
+        skills: ["授信分析 Skill"],
+      },
+    },
+    cluster: {
+      label: "智能体集群处理",
+      summary: "多个智能体并行处理，再按拼接规则汇总输出。",
+      pausePoint: true,
+      runState: "待配置",
+      outputMode: "追问确认",
+      toolCount: 2,
+      allowQuestion: true,
+      rawConfig: {
+        brickType,
+        clusterAgents: [createClusterAgent(0), createClusterAgent(1)],
+        mergeRule: "按章节顺序合并多个智能体输出，冲突内容保留来源并交给用户审查。",
+      },
+    },
+    delivery: {
+      label: "交付结果",
+      summary: "配置最终交付方式和交付内容。",
+      pausePoint: false,
+      runState: "待配置",
+      outputMode: "一次性输出",
+      toolCount: 1,
+      allowQuestion: false,
+      rawConfig: {
+        brickType,
+        deliveryChannel: "Word / PDF",
+        artifactVariable: inputVariables[0] ?? "cluster_result",
+        deliveryTarget: "生成正式文档，等待用户确认后交付。",
+      },
+    },
+  };
+
+  const data = defaultData[brickType];
+
+  return {
+    id,
+    position: { x: index * 260, y: 0 },
+    data: {
+      label: data.label,
+      typeLabel: definition.label,
+      nodeType: definition.nodeType,
+      summary: data.summary,
+      inputVariables,
+      outputVariables: [outputVariable],
+      pausePoint: data.pausePoint,
+      configStatus: "incomplete",
+      runState: data.runState,
+      outputMode: data.outputMode,
+      toolCount: data.toolCount,
+      allowQuestion: data.allowQuestion,
+      rawConfig: data.rawConfig,
+    },
+  };
+}
+
+function createInputField(index: number): InputFieldConfig {
+  return {
+    id: `field_${Date.now().toString(36)}_${index}`,
+    label: index === 0 ? "授信公司全称" : `输入字段 ${index + 1}`,
+    variable: index === 0 ? "company_full_name" : `input_${index + 1}`,
+    placeholder: index === 0 ? "请输入完整公司名称" : "请输入内容",
+  };
+}
+
+function createClusterAgent(index: number): ClusterAgentConfig {
+  const defaults = [
+    ["经营概况智能体", "基于输入和外部数据生成主体经营概况。", "business_section"],
+    ["风险分析智能体", "识别司法、舆情、财务和经营风险。", "risk_section"],
+    ["授信建议智能体", "结合上下文形成授信额度、期限和条件建议。", "credit_suggestion"],
+  ];
+  const fallback = defaults[index] ?? [`子智能体 ${index + 1}`, "请补充该智能体的任务提示词。", `agent_${index + 1}_output`];
+
+  return {
+    id: `cluster_agent_${Date.now().toString(36)}_${index}`,
+    name: fallback[0],
+    prompt: fallback[1],
+    output: fallback[2],
+  };
+}
+
+function ensureSystemTrigger(nextNodes: WorkflowEditorNode[]) {
+  if (nextNodes.some((node) => node.id === SYSTEM_TRIGGER_ID)) {
+    return nextNodes;
+  }
+
+  return [cloneStarterNodes()[0], ...nextNodes];
+}
+
 function toEditorNode(node: WorkflowNodeDraft): WorkflowEditorNode {
-  const preset = starterNodes.find((starter) => starter.data.nodeType === node.nodeType)?.data ?? buildFallbackNodeData(node.nodeType);
   const config = node.config ?? {};
+  const brickType = readBrickType(config.brickType, inferBrickTypeFromNodeType(node.nodeType));
+  const definition = brickDefinitions[brickType];
+  const fallback = buildFallbackNodeData(node.nodeType, brickType);
 
   return {
     id: node.nodeId,
     position: { x: node.positionX, y: node.positionY },
     data: {
       label: node.name,
-      typeLabel: readString(config.typeLabel, preset.typeLabel),
+      typeLabel: readString(config.typeLabel, fallback.typeLabel || definition.label),
       nodeType: node.nodeType,
-      summary: readString(config.summary, preset.summary),
+      summary: readString(config.summary, fallback.summary),
       inputVariables: [...(node.inputVariables ?? [])],
       outputVariables: [...(node.outputVariables ?? [])],
-      pausePoint: readBoolean(config.pausePoint, preset.pausePoint),
-      configStatus: readLiteral(config.configStatus, ["complete", "incomplete"], preset.configStatus),
-      runState: readLiteral(config.runState, ["未开始", "等待输入", "执行中", "等待审核", "已完成", "待配置"], preset.runState),
-      outputMode: readLiteral(config.outputMode, ["一次性输出", "追问确认", "分析后暂停"], preset.outputMode),
-      toolCount: readNumber(config.toolCount, preset.toolCount),
-      allowQuestion: readBoolean(config.allowQuestion, preset.allowQuestion),
-      rawConfig: { ...config },
+      pausePoint: readBoolean(config.pausePoint, fallback.pausePoint),
+      configStatus: readLiteral(config.configStatus, ["complete", "incomplete"], fallback.configStatus),
+      runState: readLiteral(config.runState, ["未开始", "等待输入", "执行中", "等待审核", "已完成", "待配置"], fallback.runState),
+      outputMode: readLiteral(config.outputMode, ["一次性输出", "追问确认", "分析后暂停"], fallback.outputMode),
+      toolCount: readNumber(config.toolCount, fallback.toolCount),
+      allowQuestion: readBoolean(config.allowQuestion, fallback.allowQuestion),
+      rawConfig: { ...config, brickType },
     },
   };
 }
@@ -1418,11 +1576,11 @@ function applyPersistedDetail(
   setEdges: (edges: WorkflowEditorEdge[]) => void,
   setSelectedNodeId: (updater: (currentSelection: string) => string) => void,
 ) {
-  const nextNodes = detail.nodes.map(toEditorNode);
+  const nextNodes = ensureSystemTrigger(detail.nodes.map(toEditorNode));
   const nextEdges = detail.edges.map(toEditorEdge);
   setNodes(nextNodes);
-  setEdges(nextEdges);
-  setSelectedNodeId((currentSelection) => nextNodes.some((node) => node.id === currentSelection) ? currentSelection : nextNodes[0]?.id ?? "");
+  setEdges(nextEdges.length > 0 ? nextEdges : rebuildSequentialEdges(nextNodes.filter((node) => node.id !== SYSTEM_TRIGGER_ID)));
+  setSelectedNodeId((currentSelection) => nextNodes.some((node) => node.id === currentSelection) ? currentSelection : "");
 }
 
 function buildWorkflowVariables(nodes: WorkflowEditorNode[]): WorkflowVariable[] {
@@ -1431,7 +1589,7 @@ function buildWorkflowVariables(nodes: WorkflowEditorNode[]): WorkflowVariable[]
       const metadata = starterVariableMetadata[name] ?? {
         type: "string" as const,
         sensitive: false,
-        deliverable: false,
+        deliverable: node.data.nodeType === "delivery",
         description: "",
       };
       return {
@@ -1473,27 +1631,27 @@ function toWorkflowVariableDraft(variable: WorkflowVariable): WorkflowVariableDr
   };
 }
 
-function buildFallbackNodeData(nodeType: WorkflowNodeType): EditorNodeData {
+function buildFallbackNodeData(nodeType: WorkflowNodeType, brickType: WorkflowBrickType): EditorNodeData {
   return {
     label: "未命名积木",
-    typeLabel: nodeTypeLabels[nodeType],
+    typeLabel: brickDefinitions[brickType].label,
     nodeType,
-    summary: "积木配置尚未补充说明。",
+    summary: "请在右侧配置这个积木的业务目标和参数。",
     inputVariables: [],
     outputVariables: [],
-    pausePoint: ["user_input", "agent", "human_review"].includes(nodeType),
+    pausePoint: ["user_input", "agent", "parallel_group"].includes(nodeType),
     configStatus: "incomplete",
     runState: "待配置",
     outputMode: "一次性输出",
     toolCount: 0,
     allowQuestion: false,
+    rawConfig: { brickType },
   };
 }
 
 function orderNodesByEdges(nodes: WorkflowEditorNode[], edges: WorkflowEditorEdge[]) {
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
-  const incomingTargets = new Set(edges.map((edge) => edge.target));
-  const startNode = nodes.find((node) => !incomingTargets.has(node.id)) ?? nodes[0];
+  const startNode = nodesById.get(SYSTEM_TRIGGER_ID) ?? nodes[0];
   const ordered: WorkflowEditorNode[] = [];
   const visited = new Set<string>();
 
@@ -1520,25 +1678,110 @@ function orderNodesByEdges(nodes: WorkflowEditorNode[], edges: WorkflowEditorEdg
   return ordered;
 }
 
-function groupNodesByStage(nodes: WorkflowEditorNode[]): Record<WorkflowStage["id"], WorkflowEditorNode[]> {
-  return workflowStages.reduce((groups, stage) => {
-    groups[stage.id] = nodes.filter((node) => stage.nodeTypes.includes(node.data.nodeType));
-    return groups;
-  }, { input: [], agent: [], review: [] } as Record<WorkflowStage["id"], WorkflowEditorNode[]>);
+function normalizeVisibleNodeOrder(visibleNodes: WorkflowEditorNode[]) {
+  return visibleNodes.map((node, index) => ({
+    ...node,
+    position: { x: (index + 1) * 260, y: 0 },
+    data: {
+      ...node.data,
+      inputVariables: index === 0 ? ["starter"] : visibleNodes[index - 1]?.data.outputVariables ?? [],
+    },
+  }));
 }
 
-function findStageForNode(node: WorkflowEditorNode): WorkflowStage {
-  return workflowStages.find((stage) => stage.nodeTypes.includes(node.data.nodeType)) ?? workflowStages[0];
+function rebuildSequentialEdges(visibleNodes: WorkflowEditorNode[]): WorkflowEditorEdge[] {
+  if (visibleNodes.length === 0) {
+    return [];
+  }
+
+  const edges: WorkflowEditorEdge[] = [
+    {
+      id: `e_${SYSTEM_TRIGGER_ID}_${visibleNodes[0].id}`,
+      source: SYSTEM_TRIGGER_ID,
+      target: visibleNodes[0].id,
+    },
+  ];
+
+  for (let index = 0; index < visibleNodes.length - 1; index += 1) {
+    edges.push({
+      id: `e_${visibleNodes[index].id}_${visibleNodes[index + 1].id}`,
+      source: visibleNodes[index].id,
+      target: visibleNodes[index + 1].id,
+    });
+  }
+
+  return edges;
 }
 
-function getInteractionPolicy(node: WorkflowEditorNode) {
-  const isDataNode = node.data.nodeType === "parallel_group" && !node.id.includes("chapter");
-  const isModelNode = node.data.nodeType === "agent" || node.data.nodeType === "merge" || node.id.includes("chapter");
+function getBrickType(node: WorkflowEditorNode): WorkflowBrickType {
+  return readBrickType(node.data.rawConfig?.brickType, inferBrickTypeFromNodeType(node.data.nodeType));
+}
 
-  return {
-    canRegenerate: node.data.nodeType !== "trigger" && node.data.nodeType !== "delivery",
-    canAskFollowUp: node.data.allowQuestion && isModelNode && !isDataNode,
-  };
+function inferBrickTypeFromNodeType(nodeType: WorkflowNodeType): WorkflowBrickType {
+  if (nodeType === "user_input") {
+    return "input";
+  }
+  if (nodeType === "agent") {
+    return "agent";
+  }
+  if (nodeType === "parallel_group" || nodeType === "merge") {
+    return "cluster";
+  }
+  return "delivery";
+}
+
+function getDefaultOutputVariable(brickType: WorkflowBrickType, index: number) {
+  if (brickType === "input") {
+    return index === 0 ? "company_full_name" : `input_${index + 1}`;
+  }
+  if (brickType === "agent") {
+    return index === 1 ? "agent_response" : `agent_response_${index + 1}`;
+  }
+  if (brickType === "cluster") {
+    return index === 2 ? "cluster_result" : `cluster_result_${index + 1}`;
+  }
+  return "delivery_record";
+}
+
+function readInputFields(value: unknown, outputVariables: string[]): InputFieldConfig[] {
+  if (Array.isArray(value)) {
+    const fields = value.filter(isInputFieldConfig);
+    if (fields.length > 0) {
+      return fields;
+    }
+  }
+
+  return outputVariables.length > 0
+    ? outputVariables.map((variable, index) => ({
+      id: `field_fallback_${index}`,
+      label: index === 0 ? "授信公司全称" : `输入字段 ${index + 1}`,
+      variable,
+      placeholder: index === 0 ? "请输入完整公司名称" : "请输入内容",
+    }))
+    : [createInputField(0)];
+}
+
+function readClusterAgents(value: unknown): ClusterAgentConfig[] {
+  if (Array.isArray(value)) {
+    const agents = value.filter(isClusterAgentConfig);
+    if (agents.length > 0) {
+      return agents;
+    }
+  }
+
+  return [createClusterAgent(0), createClusterAgent(1)];
+}
+
+function parseVariableList(value: string) {
+  return value.split(",").map((item) => normalizeVariableName(item)).filter(Boolean);
+}
+
+function normalizeVariableName(value: string) {
+  return value.trim().replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_]/g, "");
+}
+
+function cloneRecord(value: Record<string, unknown>): Record<string, unknown> {
+  return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
 }
 
 function readString(value: unknown, fallback: string): string {
@@ -1555,6 +1798,32 @@ function readNumber(value: unknown, fallback: number): number {
 
 function readLiteral<T extends string>(value: unknown, values: readonly T[], fallback: T): T {
   return typeof value === "string" && values.includes(value as T) ? value as T : fallback;
+}
+
+function readStringArray(value: unknown, fallback: string[]): string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string") ? value : fallback;
+}
+
+function readBrickType(value: unknown, fallback: WorkflowBrickType): WorkflowBrickType {
+  return value === "input" || value === "agent" || value === "cluster" || value === "delivery" ? value : fallback;
+}
+
+function isInputFieldConfig(value: unknown): value is InputFieldConfig {
+  return typeof value === "object"
+    && value !== null
+    && typeof (value as InputFieldConfig).id === "string"
+    && typeof (value as InputFieldConfig).label === "string"
+    && typeof (value as InputFieldConfig).variable === "string"
+    && typeof (value as InputFieldConfig).placeholder === "string";
+}
+
+function isClusterAgentConfig(value: unknown): value is ClusterAgentConfig {
+  return typeof value === "object"
+    && value !== null
+    && typeof (value as ClusterAgentConfig).id === "string"
+    && typeof (value as ClusterAgentConfig).name === "string"
+    && typeof (value as ClusterAgentConfig).prompt === "string"
+    && typeof (value as ClusterAgentConfig).output === "string";
 }
 
 function getWorkflowEditorErrorContext(error: unknown, tenantId?: string, workflowId?: string) {

@@ -1,14 +1,18 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
+  Bot,
   CheckCircle2,
   Clock3,
   FilePlus2,
   GitBranch,
+  Layers3,
   ListChecks,
-  X,
   PanelRightOpen,
+  PackageCheck,
   Search,
+  TextCursorInput,
+  X,
 } from "lucide-react";
 import { Pagination, Segmented } from "antd";
 import { AgentumApiError, workflowApi } from "../../services/apiClient";
@@ -52,6 +56,8 @@ const workflowPaginationLocale = {
   page_size: "每页条数",
 };
 
+type WorkflowDesignerTab = "overview" | "definitions" | "validation";
+
 function formatPaginationTotal(count: number, range: [number, number], pageSize: number): string {
   return count <= pageSize ? `共 ${count} 条` : `当前 ${range[0]}-${range[1]} 条，共 ${count} 条`;
 }
@@ -81,6 +87,7 @@ export function WorkflowDraftsPage() {
   const [validationError, setValidationError] = useState("");
   const [publishingWorkflowId, setPublishingWorkflowId] = useState("");
   const [publishSuccess, setPublishSuccess] = useState("");
+  const [activeTab, setActiveTab] = useState<WorkflowDesignerTab>("overview");
 
   const loadDrafts = useCallback(async (nextPage = 1, keyword = searchValue, nextPageSize = pageSize) => {
     if (!token || !user?.tenantId) {
@@ -118,15 +125,35 @@ export function WorkflowDraftsPage() {
   const draftCount = workflows.filter((workflow) => workflow.status === "draft").length;
   const publishedCount = workflows.filter((workflow) => workflow.status === "published").length;
   const reviewCount = workflows.filter((workflow) => workflow.status === "review").length;
-  const moduleOptions = [{
-    value: "definitions",
-    label: (
-      <span className="login-portal-option">
-        <GitBranch className="login-portal-option-icon" aria-hidden="true" />
-        <span>工作流定义</span>
-      </span>
-    ),
-  }];
+  const moduleOptions = [
+    {
+      value: "overview",
+      label: (
+        <span className="login-portal-option">
+          <GitBranch className="login-portal-option-icon" aria-hidden="true" />
+          <span>总览</span>
+        </span>
+      ),
+    },
+    {
+      value: "definitions",
+      label: (
+        <span className="login-portal-option">
+          <PanelRightOpen className="login-portal-option-icon" aria-hidden="true" />
+          <span>工作流定义</span>
+        </span>
+      ),
+    },
+    {
+      value: "validation",
+      label: (
+        <span className="login-portal-option">
+          <ListChecks className="login-portal-option-icon" aria-hidden="true" />
+          <span>发布校验</span>
+        </span>
+      ),
+    },
+  ];
 
   async function handleCreateDraft(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -246,14 +273,15 @@ export function WorkflowDraftsPage() {
           <div className="system-mgmt-segmented-scroll">
             <Segmented
               aria-label="流程设计模块"
-              value="definitions"
+              value={activeTab}
               options={moduleOptions}
+              onChange={(value) => setActiveTab(value as WorkflowDesignerTab)}
               className="login-portal-segmented login-portal-segmented--business system-mgmt-segmented"
             />
           </div>
           <div className="login-portal-description login-portal-description--business">
             <span className="login-portal-description-dot" />
-            草稿、发布状态与积木编排入口
+            {activeTab === "overview" ? "流程设计总览与积木说明" : activeTab === "definitions" ? "工作流定义卡片与积木配置入口" : "发布前校验、阻塞项与正式发布"}
           </div>
         </div>
 
@@ -264,18 +292,64 @@ export function WorkflowDraftsPage() {
           <OverviewStat icon={ListChecks} label="当前页待校验" value={String(reviewCount)} tone="cap" />
         </section>
 
-        <section className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] shadow-[var(--shadow-sm)]" aria-labelledby="workflow-list-title">
-          <div className="p-5">
-            <div className="sys-hint mb-4">
-              <ListChecks size={14} />
-              发布前会重新校验节点、连线和变量声明；正式发布后，当前版本只读保留，避免运行中的流程被草稿改动影响。
+        {activeTab === "overview" ? (
+          <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]" aria-label="流程设计总览">
+            <div className="rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-5 shadow-[var(--shadow-sm)]">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-base font-semibold text-[var(--color-text-primary)]">设计策略</h2>
+                  <p className="agent-muted mt-2 max-w-3xl text-sm leading-6">
+                    流程设计页不再用自由画布表达复杂编排，而是通过少量积木搭出清晰步骤。左侧配置工作流顺序，右侧配置每个积木的输入、能力、输出参数和用户交互模式。
+                  </p>
+                </div>
+                <button type="button" onClick={() => setActiveTab("definitions")} className="sys-btn sys-btn--primary sys-btn--sm">
+                  <PanelRightOpen size={14} aria-hidden="true" />
+                  进入定义
+                </button>
+              </div>
+              <div className="mt-5 grid gap-3 md:grid-cols-2">
+                <BrickIntroCard icon={TextCursorInput} title="输入节点" description="配置用户需要填写的输入框，当前先支持基础文本输入。" />
+                <BrickIntroCard icon={Bot} title="单智能体节点" description="选择能力中的智能体，或配置提示词模板、MCP、Skill 和输出参数。" />
+                <BrickIntroCard icon={Layers3} title="智能体集群节点" description="组合多个单智能体，并配置并行执行、拼接规则和聚合输出。" />
+                <BrickIntroCard icon={PackageCheck} title="交付节点" description="配置最终文档、邮件、OA 或 Webhook 等交付能力。" />
+              </div>
             </div>
+            <div className="space-y-4">
+              <section className="rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-5 shadow-[var(--shadow-sm)]">
+                <h2 className="text-base font-semibold text-[var(--color-text-primary)]">最近工作流</h2>
+                <div className="mt-4 space-y-2">
+                  {filteredWorkflows.slice(0, 4).map((workflow) => {
+                    const status = statusMeta[workflow.status];
+                    return (
+                      <button key={workflow.id} type="button" onClick={() => setEditingWorkflow(workflow)} className="flex w-full items-center justify-between gap-3 rounded-[var(--radius-md)] bg-[var(--color-bg-hover)] px-3 py-2 text-left">
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-medium text-[var(--color-text-primary)]">{workflow.name}</span>
+                          <span className="mt-1 block text-xs text-[var(--color-text-tertiary)]">{workflow.nodeCount} 个积木 · {workflow.pausePointCount} 个暂停点</span>
+                        </span>
+                        <span className={`sys-info-tag ${status.className}`}>{status.label}</span>
+                      </button>
+                    );
+                  })}
+                  {!loading && filteredWorkflows.length === 0 ? <p className="text-sm text-[var(--color-text-tertiary)]">暂无工作流定义。</p> : null}
+                </div>
+              </section>
+              <section className="rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-5 shadow-[var(--shadow-sm)]">
+                <h2 className="text-base font-semibold text-[var(--color-text-primary)]">发布边界</h2>
+                <p className="agent-muted mt-2 text-sm leading-6">
+                  发布前会校验步骤顺序、输入输出参数、能力引用和交付配置。已发布版本冻结为不可变快照，运行态不会被草稿修改影响。
+                </p>
+              </section>
+            </div>
+          </section>
+        ) : null}
 
-            <div className="workflow-definition-table-card">
+        {activeTab === "definitions" ? (
+          <section className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] shadow-[var(--shadow-sm)]" aria-labelledby="workflow-list-title">
+            <div className="p-5">
               <div className="workflow-definition-toolbar">
                 <div>
-                  <h2 id="workflow-list-title">工作流列表</h2>
-                  <p>查看定义状态、继续编辑阶段积木或执行发布校验</p>
+                  <h2 id="workflow-list-title">工作流定义</h2>
+                  <p>卡片点击后进入具体积木配置，支持左侧搭步骤、右侧配置能力。</p>
                 </div>
                 <div className="workflow-definition-toolbar-actions">
                   <label className="workflow-definition-search">
@@ -297,53 +371,16 @@ export function WorkflowDraftsPage() {
               {validationError ? <div className="workflow-feedback workflow-feedback--danger">{validationError}</div> : null}
               {publishSuccess ? <div className="workflow-feedback workflow-feedback--success">{publishSuccess}</div> : null}
 
-              <div className="workflow-definition-table-wrap">
-                <table className="workflow-definition-table">
-                  <thead>
-                    <tr>
-                      <th>工作流</th>
-                      <th>状态</th>
-                      <th>负责人</th>
-                      <th>结构</th>
-                      <th>更新时间</th>
-                      <th>操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredWorkflows.map((workflow) => {
-                      const status = statusMeta[workflow.status];
-                      return (
-                        <tr key={workflow.id}>
-                          <td>
-                            <div className="workflow-definition-name">{workflow.name}</div>
-                            <div className="workflow-definition-description">{workflow.description || "未填写说明"}</div>
-                          </td>
-                          <td><span className={`sys-info-tag ${status.className}`}>{status.label}</span></td>
-                          <td>{workflow.ownerName}</td>
-                          <td>
-                            <div className="workflow-definition-metrics">
-                              <span>{workflow.nodeCount} 个积木</span>
-                              <span>{workflow.pausePointCount} 个暂停点</span>
-                            </div>
-                          </td>
-                          <td>{formatDateTime(workflow.updatedAt)}</td>
-                          <td>
-                            <div className="workflow-definition-actions">
-                              <button type="button" disabled={validatingWorkflowId === workflow.id} onClick={() => void handleValidateForPublish(workflow)} className="sys-btn sys-btn--default sys-btn--sm">
-                                <ListChecks size={14} aria-hidden="true" />
-                                {validatingWorkflowId === workflow.id ? "校验中" : "发布校验"}
-                              </button>
-                              <button type="button" onClick={() => setEditingWorkflow(workflow)} className="sys-btn sys-btn--primary sys-btn--sm">
-                                <PanelRightOpen size={14} aria-hidden="true" />
-                                打开设计
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {filteredWorkflows.map((workflow) => (
+                  <WorkflowDefinitionCard
+                    key={workflow.id}
+                    workflow={workflow}
+                    validating={validatingWorkflowId === workflow.id}
+                    onOpen={() => setEditingWorkflow(workflow)}
+                    onValidate={() => void handleValidateForPublish(workflow)}
+                  />
+                ))}
               </div>
 
               {loading ? (
@@ -379,8 +416,44 @@ export function WorkflowDraftsPage() {
                 </div>
               ) : null}
             </div>
-          </div>
-        </section>
+          </section>
+        ) : null}
+
+        {activeTab === "validation" ? (
+          <section className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] shadow-[var(--shadow-sm)]" aria-labelledby="workflow-validation-list-title">
+            <div className="p-5">
+              <div className="sys-hint mb-4">
+                <ListChecks size={14} />
+                发布校验会重新检查步骤结构、输入输出参数和变量依赖；正式发布仍由后端再次复核。
+              </div>
+              <div className="workflow-definition-toolbar">
+                <div>
+                  <h2 id="workflow-validation-list-title">发布校验</h2>
+                  <p>对草稿执行校验，校验通过后冻结为正式版本。</p>
+                </div>
+              </div>
+              {validationError ? <div className="workflow-feedback workflow-feedback--danger">{validationError}</div> : null}
+              {publishSuccess ? <div className="workflow-feedback workflow-feedback--success">{publishSuccess}</div> : null}
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {filteredWorkflows.map((workflow) => (
+                  <WorkflowValidationCard
+                    key={workflow.id}
+                    workflow={workflow}
+                    validating={validatingWorkflowId === workflow.id}
+                    onValidate={() => void handleValidateForPublish(workflow)}
+                    onOpen={() => setEditingWorkflow(workflow)}
+                  />
+                ))}
+              </div>
+              {!loading && filteredWorkflows.length === 0 ? (
+                <div className="workflow-definition-empty-state">
+                  <AlertCircle className="h-8 w-8" aria-hidden="true" />
+                  <p>暂无可校验的工作流</p>
+                </div>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
       </div>
 
       {isCreating ? (
@@ -462,6 +535,114 @@ export function WorkflowDraftsPage() {
           </section>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function BrickIntroCard({ icon: Icon, title, description }: { icon: typeof GitBranch; title: string; description: string }) {
+  return (
+    <article className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-4">
+      <div className="flex items-start gap-3">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-[var(--color-bg-card)] text-[var(--color-primary)] ring-1 ring-[var(--color-border-light)]">
+          <Icon size={18} aria-hidden="true" />
+        </span>
+        <div>
+          <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">{title}</h3>
+          <p className="mt-1 text-sm leading-6 text-[var(--color-text-secondary)]">{description}</p>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function WorkflowDefinitionCard({
+  workflow,
+  validating,
+  onOpen,
+  onValidate,
+}: {
+  workflow: WorkflowDraft;
+  validating: boolean;
+  onOpen: () => void;
+  onValidate: () => void;
+}) {
+  const status = statusMeta[workflow.status];
+
+  return (
+    <article className="flex min-h-[210px] flex-col rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-4 shadow-[var(--shadow-xs)] transition hover:border-[var(--color-primary)]">
+      <button type="button" onClick={onOpen} className="flex-1 text-left">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="truncate text-base font-semibold text-[var(--color-text-primary)]">{workflow.name}</h3>
+            <p className="mt-2 line-clamp-2 text-sm leading-6 text-[var(--color-text-secondary)]">{workflow.description || "未填写说明"}</p>
+          </div>
+          <span className={`sys-info-tag ${status.className}`}>{status.label}</span>
+        </div>
+        <div className="mt-4 grid grid-cols-3 gap-2">
+          <CardMetric label="积木" value={String(workflow.nodeCount)} />
+          <CardMetric label="暂停点" value={String(workflow.pausePointCount)} />
+          <CardMetric label="负责人" value={workflow.ownerName || "-"} compact />
+        </div>
+        <p className="mt-4 text-xs text-[var(--color-text-tertiary)]">更新：{formatDateTime(workflow.updatedAt)}</p>
+      </button>
+      <div className="mt-4 flex flex-wrap gap-2 border-t border-[var(--color-border-light)] pt-3">
+        <button type="button" onClick={onValidate} disabled={validating} className="sys-btn sys-btn--default sys-btn--sm">
+          <ListChecks size={14} aria-hidden="true" />
+          {validating ? "校验中" : "发布校验"}
+        </button>
+        <button type="button" onClick={onOpen} className="sys-btn sys-btn--primary sys-btn--sm">
+          <PanelRightOpen size={14} aria-hidden="true" />
+          配置积木
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function WorkflowValidationCard({
+  workflow,
+  validating,
+  onValidate,
+  onOpen,
+}: {
+  workflow: WorkflowDraft;
+  validating: boolean;
+  onValidate: () => void;
+  onOpen: () => void;
+}) {
+  const status = statusMeta[workflow.status];
+
+  return (
+    <article className="rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="truncate text-base font-semibold text-[var(--color-text-primary)]">{workflow.name}</h3>
+          <p className="mt-2 text-sm text-[var(--color-text-secondary)]">{workflow.nodeCount} 个积木 · {workflow.pausePointCount} 个暂停点</p>
+        </div>
+        <span className={`sys-info-tag ${status.className}`}>{status.label}</span>
+      </div>
+      <div className="mt-4 rounded-[var(--radius-md)] bg-[var(--color-bg-card)] p-3 text-sm leading-6 text-[var(--color-text-secondary)] ring-1 ring-[var(--color-border-light)]">
+        发布前需要确认输入参数、智能体能力引用、集群拼接规则和交付配置均已完成。
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button type="button" disabled={validating} onClick={onValidate} className="sys-btn sys-btn--primary sys-btn--sm">
+          <ListChecks size={14} aria-hidden="true" />
+          {validating ? "校验中" : "执行校验"}
+        </button>
+        <button type="button" onClick={onOpen} className="sys-btn sys-btn--default sys-btn--sm">
+          <PanelRightOpen size={14} aria-hidden="true" />
+          打开配置
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function CardMetric({ label, value, compact = false }: { label: string; value: string; compact?: boolean }) {
+  return (
+    <div className="rounded-[var(--radius-md)] bg-[var(--color-bg-card)] px-2 py-2 ring-1 ring-[var(--color-border-light)]">
+      <p className="text-[11px] text-[var(--color-text-tertiary)]">{label}</p>
+      <p className={`mt-1 truncate font-semibold text-[var(--color-text-primary)] ${compact ? "text-xs" : "text-base"}`}>{value}</p>
     </div>
   );
 }
