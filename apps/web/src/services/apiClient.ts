@@ -1,5 +1,5 @@
 import type { LoginRequest, LoginResponse, MeResponse, SwitchRoleRequest, SwitchRoleResponse, TenantOption } from "../types/auth";
-import type { AssetSummary, CreateMyAssetRequest, MyAssetPage, MyAssetRow, SystemCapabilityAssetPage } from "../types/asset";
+import type { AssetSummary, CreateMyAssetRequest, MyAssetDetail, MyAssetPage, MyAssetRow, SystemCapabilityAssetPage, UpdateMyAssetRequest } from "../types/asset";
 import type {
   CreateDepartmentRequest,
   CreateMemberRequest,
@@ -254,6 +254,14 @@ export const assetApi = {
   },
   createMine: (tenantId: string, token: string, body: CreateMyAssetRequest) =>
     apiRequest<MyAssetRow>(`/api/tenants/${tenantId}/assets/mine`, { method: "POST", token, body }),
+  getMine: (tenantId: string, token: string, assetId: string) =>
+    apiRequest<MyAssetDetail>(`/api/tenants/${tenantId}/assets/mine/${assetId}`, { token }),
+  updateMine: (tenantId: string, token: string, assetId: string, body: UpdateMyAssetRequest) =>
+    apiRequest<MyAssetDetail>(`/api/tenants/${tenantId}/assets/mine/${assetId}`, { method: "PATCH", token, body }),
+  publishMine: (tenantId: string, token: string, assetId: string) =>
+    apiRequest<MyAssetDetail>(`/api/tenants/${tenantId}/assets/mine/${assetId}/publish`, { method: "POST", token }),
+  deleteMine: (tenantId: string, token: string, assetId: string) =>
+    apiRequest<void>(`/api/tenants/${tenantId}/assets/mine/${assetId}`, { method: "DELETE", token }),
 };
 
 export const workflowApi = {

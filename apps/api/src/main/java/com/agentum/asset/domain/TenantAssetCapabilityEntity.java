@@ -68,6 +68,9 @@ public class TenantAssetCapabilityEntity {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Column(name = "published_at")
+    private Instant publishedAt;
+
     protected TenantAssetCapabilityEntity() {
     }
 
@@ -105,6 +108,36 @@ public class TenantAssetCapabilityEntity {
         entity.createdAt = now;
         entity.updatedAt = now;
         return entity;
+    }
+
+    public void updateDraft(
+        String name,
+        String code,
+        String version,
+        String description,
+        String riskLevel,
+        String visibility,
+        Map<String, Object> config,
+        UUID operatorUserId,
+        Instant now
+    ) {
+        this.name = name;
+        this.code = code;
+        this.version = version;
+        this.description = description;
+        this.riskLevel = riskLevel;
+        this.visibility = visibility;
+        this.config = config == null ? new HashMap<>() : new HashMap<>(config);
+        this.updatedBy = operatorUserId;
+        this.updatedAt = now;
+    }
+
+    public void publish(UUID operatorUserId, Instant now) {
+        this.status = "published";
+        this.visibility = "tenant";
+        this.updatedBy = operatorUserId;
+        this.updatedAt = now;
+        this.publishedAt = now;
     }
 
     public UUID getId() {
@@ -169,5 +202,9 @@ public class TenantAssetCapabilityEntity {
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    public Instant getPublishedAt() {
+        return publishedAt;
     }
 }

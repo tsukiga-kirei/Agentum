@@ -11,7 +11,9 @@ import jakarta.validation.Valid;
 import java.util.UUID;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -78,5 +80,51 @@ public class AssetManagementController {
     ) {
         assetAccess.assertCanUseAssets(principal, tenantId);
         return ApiResponse.success(assetManagementService.createMyAsset(tenantId, principal, body), RequestIds.current(request));
+    }
+
+    @GetMapping("/mine/{assetId}")
+    public ApiResponse<AssetManagementApi.MyAssetDetail> getMine(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID assetId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        assetAccess.assertCanUseAssets(principal, tenantId);
+        return ApiResponse.success(assetManagementService.getMyAsset(tenantId, assetId, principal), RequestIds.current(request));
+    }
+
+    @PatchMapping("/mine/{assetId}")
+    public ApiResponse<AssetManagementApi.MyAssetDetail> updateMine(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID assetId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @Valid @RequestBody AssetManagementApi.UpdateMyAssetRequest body,
+        HttpServletRequest request
+    ) {
+        assetAccess.assertCanUseAssets(principal, tenantId);
+        return ApiResponse.success(assetManagementService.updateMyAsset(tenantId, assetId, principal, body), RequestIds.current(request));
+    }
+
+    @PostMapping("/mine/{assetId}/publish")
+    public ApiResponse<AssetManagementApi.MyAssetDetail> publishMine(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID assetId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        assetAccess.assertCanUseAssets(principal, tenantId);
+        return ApiResponse.success(assetManagementService.publishMyAsset(tenantId, assetId, principal), RequestIds.current(request));
+    }
+
+    @DeleteMapping("/mine/{assetId}")
+    public ApiResponse<Void> deleteMine(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID assetId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        assetAccess.assertCanUseAssets(principal, tenantId);
+        assetManagementService.deleteMyAsset(tenantId, assetId, principal);
+        return ApiResponse.success(RequestIds.current(request));
     }
 }

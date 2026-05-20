@@ -24,6 +24,7 @@ import com.agentum.tenant.infrastructure.TenantRepository;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -47,7 +48,8 @@ public class AssetManagementService {
 
     private static final Logger log = LoggerFactory.getLogger(AssetManagementService.class);
     private static final String ACTIVE_STATUS = "active";
-    private static final Set<String> ALLOWED_ASSET_TYPES = Set.of("agent_template", "skill", "mcp", "prompt_template", "delivery");
+    private static final Set<String> USER_CREATABLE_ASSET_TYPES = Set.of("agent_template", "prompt_template");
+    private static final Set<String> SYSTEM_CAPABILITY_TYPES = Set.of("skill", "mcp", "prompt_template", "delivery");
     private static final Set<String> ALLOWED_RISK_LEVELS = Set.of("low", "medium", "high");
     private static final Set<String> ALLOWED_VISIBILITY = Set.of("private", "tenant");
     private static final SortWhitelist SYSTEM_CAPABILITY_SORT = SortWhitelist.of("openedAt", "name", "assetType", "riskLevel", "openedAt");
@@ -139,7 +141,10 @@ public class AssetManagementService {
         String version = normalizeVersion(request.version());
         String riskLevel = normalizeRiskLevel(request.riskLevel());
         String visibility = normalizeVisibility(request.visibility());
-        UUID baseSystemCapabilityId = normalizeBaseSystemCapabilityId(tenantId, principal, assetType, request.baseSystemCapabilityId());
+        if (request.baseSystemCapabilityId() != null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ASSET_BASE_CAPABILITY_NOT_SUPPORTED", "当前只能新建提示词模板草稿或智能体模板草稿，不能派生底层系统能力");
+        }
+        Map<String, Object> config = normalizeAssetConfig(tenantId, principal, assetType, request.config(), false);
         Instant now = clock.instant();
 
         if (tenantAssetCapabilityRepository.existsByTenantIdAndCodeAndVersion(tenantId, code, version)) {
@@ -156,8 +161,8 @@ public class AssetManagementService {
             riskLevel,
             "draft",
             visibility,
-            baseSystemCapabilityId,
-            request.config(),
+            null,
+            config,
             principal.userId(),
             now
         );
@@ -185,6 +190,92 @@ public class AssetManagementService {
             );
             throw new ApiException(HttpStatus.CONFLICT, "ASSET_CODE_VERSION_EXISTS", "同一租户下已存在相同编码和版本的能力资产");
         }
+    }
+
+    @Transactional(readOnly = true)
+    public AssetManagementApi.MyAssetDetail getMyAsset(UUID tenantId, UUID assetId, CurrentUserPrincipal principal) {
+        ensureActiveTenant(tenantId);
+        TenantAssetCapabilityEntity asset = loadMyAssetForOwner(tenantId, assetId, principal);
+        return toMyAssetDetail(asset);
+    }
+
+    @Transactional
+    public AssetManagementApi.MyAssetDetail updateMyAsset(
+        UUID tenantId,
+        UUID assetId,
+        CurrentUserPrincipal principal,
+        AssetManagementApi.UpdateMyAssetRequest request
+    ) {
+        ensureActiveTenant(tenantId);
+        TenantAssetCapabilityEntity asset = loadMyAssetForOwner(tenantId, assetId, principal);
+        if (!"draft".equals(asset.getStatus())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ASSET_ONLY_DRAFT_EDITABLE", "只有能力草稿可以继续编辑");
+        }
+
+        String name = normalizeRequired(request.name(), "ASSET_NAME_REQUIRED", "请输入能力名称");
+        String code = normalizeCode(request.code());
+        String version = normalizeVersion(request.version());
+        String riskLevel = normalizeRiskLevel(request.riskLevel());
+        String visibility = normalizeVisibility(request.visibility());
+        if (tenantAssetCapabilityRepository.existsByTenantIdAndCodeAndVersionAndIdNot(tenantId, code, version, assetId)) {
+            throw new ApiException(HttpStatus.CONFLICT, "ASSET_CODE_VERSION_EXISTS", "同一租户下已存在相同编码和版本的能力资产");
+        }
+
+        Map<String, Object> config = normalizeAssetConfig(tenantId, principal, asset.getAssetType(), request.config(), false);
+        asset.updateDraft(name, code, version, normalizeOptional(request.description()), riskLevel, visibility, config, principal.userId(), clock.instant());
+        log.info(
+            "租户能力草稿已更新 tenantId={} userId={} assetId={} assetType={} requestId={}",
+            tenantId,
+            principal.userId(),
+            assetId,
+            asset.getAssetType(),
+            RequestIds.current()
+        );
+        return toMyAssetDetail(asset);
+    }
+
+    @Transactional
+    public AssetManagementApi.MyAssetDetail publishMyAsset(UUID tenantId, UUID assetId, CurrentUserPrincipal principal) {
+        ensureActiveTenant(tenantId);
+        TenantAssetCapabilityEntity asset = loadMyAssetForOwner(tenantId, assetId, principal);
+        if ("published".equals(asset.getStatus())) {
+            return toMyAssetDetail(asset);
+        }
+        if (!"draft".equals(asset.getStatus())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ASSET_STATUS_NOT_PUBLISHABLE", "当前能力状态不能发布");
+        }
+
+        // 发布前重新校验配置引用，避免草稿期间权限变化后仍把未授权 Skill/MCP 固化进智能体模板。
+        normalizeAssetConfig(tenantId, principal, asset.getAssetType(), asset.getConfig(), true);
+        asset.publish(principal.userId(), clock.instant());
+        log.info(
+            "租户能力草稿已发布 tenantId={} userId={} assetId={} assetType={} requestId={}",
+            tenantId,
+            principal.userId(),
+            assetId,
+            asset.getAssetType(),
+            RequestIds.current()
+        );
+        return toMyAssetDetail(asset);
+    }
+
+    @Transactional
+    public void deleteMyAsset(UUID tenantId, UUID assetId, CurrentUserPrincipal principal) {
+        ensureActiveTenant(tenantId);
+        TenantAssetCapabilityEntity asset = loadMyAssetForOwner(tenantId, assetId, principal);
+
+        // 当前阶段流程节点尚未落完整资产引用表，因此只能校验创建者边界。
+        // 后续接入 workflow_versions / node 配置引用索引后，应先判断是否被草稿、已发布流程或运行快照引用，被使用时禁止删除。
+        tenantAssetCapabilityRepository.delete(asset);
+        log.info(
+            "租户我的能力已删除 tenantId={} userId={} assetId={} assetType={} status={} requestId={}",
+            tenantId,
+            principal.userId(),
+            assetId,
+            asset.getAssetType(),
+            asset.getStatus(),
+            RequestIds.current()
+        );
     }
 
     private AssetManagementApi.SystemCapabilityAssetRow toSystemCapabilityRow(SystemCapabilityAsset asset, boolean assignedToMe, boolean manager) {
@@ -217,7 +308,28 @@ public class AssetManagementService {
             asset.getSourceType(),
             asset.getBaseSystemCapabilityId(),
             asset.getCreatedAt(),
-            asset.getUpdatedAt()
+            asset.getUpdatedAt(),
+            asset.getPublishedAt()
+        );
+    }
+
+    private AssetManagementApi.MyAssetDetail toMyAssetDetail(TenantAssetCapabilityEntity asset) {
+        return new AssetManagementApi.MyAssetDetail(
+            asset.getId(),
+            asset.getAssetType(),
+            asset.getName(),
+            asset.getCode(),
+            asset.getVersion(),
+            asset.getDescription(),
+            asset.getRiskLevel(),
+            asset.getStatus(),
+            asset.getVisibility(),
+            asset.getSourceType(),
+            asset.getBaseSystemCapabilityId(),
+            asset.getConfig(),
+            asset.getCreatedAt(),
+            asset.getUpdatedAt(),
+            asset.getPublishedAt()
         );
     }
 
@@ -235,7 +347,7 @@ public class AssetManagementService {
         return systemCapabilityRepository.findAllById(grantsByCapabilityId.keySet())
             .stream()
             .filter(capability -> ACTIVE_STATUS.equals(capability.getStatus()))
-            .filter(capability -> ALLOWED_ASSET_TYPES.contains(capability.getCapabilityType()))
+            .filter(capability -> SYSTEM_CAPABILITY_TYPES.contains(capability.getCapabilityType()))
             .sorted(Comparator.comparing(SystemCapabilityEntity::getCapabilityType).thenComparing(SystemCapabilityEntity::getName))
             .map(capability -> new SystemCapabilityAsset(capability, grantsByCapabilityId.get(capability.getId()).getCreatedAt()))
             .toList();
@@ -293,21 +405,94 @@ public class AssetManagementService {
             .collect(Collectors.toSet());
     }
 
-    private UUID normalizeBaseSystemCapabilityId(UUID tenantId, CurrentUserPrincipal principal, String assetType, UUID baseSystemCapabilityId) {
-        if (baseSystemCapabilityId == null) {
-            return null;
+    private TenantAssetCapabilityEntity loadMyAssetForOwner(UUID tenantId, UUID assetId, CurrentUserPrincipal principal) {
+        TenantAssetCapabilityEntity asset = tenantAssetCapabilityRepository.findByIdAndTenantId(assetId, tenantId)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ASSET_NOT_FOUND", "能力资产不存在"));
+        // “我的能力”只允许创建者维护，避免租户内其他有资产入口的人修改不属于自己的草稿。
+        if (principal == null || asset.getCreatedBy() == null || !asset.getCreatedBy().equals(principal.userId())) {
+            log.warn(
+                "租户能力资产访问被拒绝：非创建者 tenantId={} assetId={} userId={} requestId={}",
+                tenantId,
+                assetId,
+                principal == null ? null : principal.userId(),
+                RequestIds.current()
+            );
+            throw new ApiException(HttpStatus.FORBIDDEN, "ASSET_OWNER_REQUIRED", "只能维护自己创建的能力");
         }
-        // 自建能力从系统能力派生时，也必须沿用“对我开放”的权限边界，避免业务用户绕过租户分配直接引用租户池能力。
-        SystemCapabilityEntity capability = filterVisibleCapabilities(tenantId, principal, loadTenantOpenCapabilities(tenantId))
+        return asset;
+    }
+
+    private Map<String, Object> normalizeAssetConfig(
+        UUID tenantId,
+        CurrentUserPrincipal principal,
+        String assetType,
+        Map<String, Object> config,
+        boolean publishing
+    ) {
+        Map<String, Object> normalized = new HashMap<>();
+        Map<String, Object> source = config == null ? Map.of() : config;
+        if ("prompt_template".equals(assetType)) {
+            String promptContent = valueAsString(source.get("promptContent"));
+            if (publishing && promptContent.isBlank()) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "ASSET_PROMPT_CONTENT_REQUIRED", "发布提示词模板前必须填写提示词内容");
+            }
+            normalized.put("promptContent", promptContent);
+            return normalized;
+        }
+        if ("agent_template".equals(assetType)) {
+            String systemPrompt = valueAsString(source.get("systemPrompt"));
+            if (publishing && systemPrompt.isBlank()) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "ASSET_AGENT_SYSTEM_PROMPT_REQUIRED", "发布智能体模板前必须填写系统提示词");
+            }
+            List<UUID> skillIds = normalizeUuidList(source.get("skillIds"), "ASSET_AGENT_SKILL_REFERENCE_INVALID", "智能体模板引用的 Skill 不合法");
+            List<UUID> mcpIds = normalizeUuidList(source.get("mcpIds"), "ASSET_AGENT_MCP_REFERENCE_INVALID", "智能体模板引用的 MCP 不合法");
+            validateAgentCapabilityReferences(tenantId, principal, skillIds, "skill");
+            validateAgentCapabilityReferences(tenantId, principal, mcpIds, "mcp");
+            normalized.put("systemPrompt", systemPrompt);
+            normalized.put("skillIds", skillIds.stream().map(UUID::toString).toList());
+            normalized.put("mcpIds", mcpIds.stream().map(UUID::toString).toList());
+            return normalized;
+        }
+        throw new ApiException(HttpStatus.BAD_REQUEST, "ASSET_TYPE_INVALID", "当前只能维护提示词模板草稿或智能体模板草稿");
+    }
+
+    private void validateAgentCapabilityReferences(UUID tenantId, CurrentUserPrincipal principal, List<UUID> capabilityIds, String expectedType) {
+        if (capabilityIds.isEmpty()) {
+            return;
+        }
+        Map<UUID, SystemCapabilityEntity> visibleCapabilities = filterVisibleCapabilities(tenantId, principal, loadTenantOpenCapabilities(tenantId))
             .stream()
             .map(SystemCapabilityAsset::capability)
-            .filter(candidate -> candidate.getId().equals(baseSystemCapabilityId))
-            .findFirst()
-            .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "ASSET_BASE_CAPABILITY_NOT_AVAILABLE", "只能基于租户管理已分配给当前主体的系统能力创建派生资产"));
-        if (!assetType.equals(capability.getCapabilityType())) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "ASSET_BASE_CAPABILITY_TYPE_MISMATCH", "派生资产类型必须与系统能力类型一致");
+            .collect(Collectors.toMap(SystemCapabilityEntity::getId, Function.identity()));
+        for (UUID capabilityId : capabilityIds) {
+            SystemCapabilityEntity capability = visibleCapabilities.get(capabilityId);
+            if (capability == null || !expectedType.equals(capability.getCapabilityType())) {
+                // 智能体草稿只能引用当前主体已开放的 Skill/MCP，不能通过手写 ID 绕过租户能力池和分配边界。
+                throw new ApiException(HttpStatus.BAD_REQUEST, "ASSET_AGENT_CAPABILITY_NOT_AVAILABLE", "智能体模板只能引用已对当前主体开放的 Skill 或 MCP");
+            }
         }
-        return baseSystemCapabilityId;
+    }
+
+    private List<UUID> normalizeUuidList(Object value, String code, String message) {
+        if (value == null) {
+            return List.of();
+        }
+        if (!(value instanceof List<?> rawList)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, code, message);
+        }
+        LinkedHashSet<UUID> ids = new LinkedHashSet<>();
+        for (Object item : rawList) {
+            try {
+                ids.add(UUID.fromString(valueAsString(item)));
+            } catch (IllegalArgumentException exception) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, code, message);
+            }
+        }
+        return new ArrayList<>(ids);
+    }
+
+    private String valueAsString(Object value) {
+        return value == null ? "" : String.valueOf(value).trim();
     }
 
     private void ensureActiveTenant(UUID tenantId) {
@@ -321,8 +506,8 @@ public class AssetManagementService {
 
     private String normalizeAssetType(String assetType) {
         String normalized = normalizeRequired(assetType, "ASSET_TYPE_REQUIRED", "请选择能力类型");
-        if (!ALLOWED_ASSET_TYPES.contains(normalized)) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "ASSET_TYPE_INVALID", "能力类型不受支持");
+        if (!USER_CREATABLE_ASSET_TYPES.contains(normalized)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ASSET_TYPE_INVALID", "当前只能新建提示词模板草稿或智能体模板草稿");
         }
         return normalized;
     }

@@ -231,8 +231,8 @@ paths:
                       data:
                         $ref: "#/components/schemas/MyAssetPageResponse"
     post:
-      summary: 新建当前用户能力资产
-      description: 创建租户内自建能力，默认草稿状态；发布、分配和运行安全策略后续继续在资产治理链路中补齐。
+      summary: 新建当前用户能力草稿
+      description: 只允许创建提示词模板草稿或智能体模板草稿；Skill、MCP 和交付能力由系统管理登记，业务用户不能自建。
       tags:
         - Asset
       security:
@@ -262,6 +262,132 @@ paths:
                     properties:
                       data:
                         $ref: "#/components/schemas/MyAssetRow"
+  /api/tenants/{tenantId}/assets/mine/{assetId}:
+    get:
+      summary: 获取我的能力详情
+      tags:
+        - Asset
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 我的能力详情
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/MyAssetDetail"
+    patch:
+      summary: 编辑我的能力草稿
+      description: 只有草稿状态可以编辑；提示词模板保存 promptContent，智能体模板保存 systemPrompt、skillIds、mcpIds。
+      tags:
+        - Asset
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMyAssetRequest"
+      responses:
+        "200":
+          description: 编辑成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/MyAssetDetail"
+    delete:
+      summary: 删除我的能力
+      description: 当前阶段允许删除自己创建的能力；后续接入流程引用关系后，已被草稿、发布流程或运行快照引用的能力应禁止删除。
+      tags:
+        - Asset
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 删除成功
+  /api/tenants/{tenantId}/assets/mine/{assetId}/publish:
+    post:
+      summary: 发布我的能力草稿
+      description: 发布前校验提示词内容、智能体系统提示词，以及智能体引用的 Skill/MCP 是否仍对当前主体开放。
+      tags:
+        - Asset
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 发布成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/MyAssetDetail"
   /api/tenants/{tenantId}/workflows/drafts:
     get:
       summary: 查询工作流草稿列表
@@ -3030,7 +3156,7 @@ components:
           format: uuid
         assetType:
           type: string
-          enum: [agent_template, skill, mcp, prompt_template, delivery]
+          enum: [agent_template, prompt_template]
         name:
           type: string
         code:
@@ -3058,6 +3184,10 @@ components:
         updatedAt:
           type: string
           format: date-time
+        publishedAt:
+          type: string
+          format: date-time
+          nullable: true
       required:
         - id
         - assetType
@@ -3070,6 +3200,16 @@ components:
         - sourceType
         - createdAt
         - updatedAt
+    MyAssetDetail:
+      allOf:
+        - $ref: "#/components/schemas/MyAssetRow"
+        - type: object
+          properties:
+            config:
+              type: object
+              additionalProperties: true
+          required:
+            - config
     MyAssetPageResponse:
       type: object
       properties:
@@ -3097,7 +3237,7 @@ components:
       properties:
         assetType:
           type: string
-          enum: [agent_template, skill, mcp, prompt_template, delivery]
+          enum: [agent_template, prompt_template]
         name:
           type: string
         code:
@@ -3120,6 +3260,29 @@ components:
           additionalProperties: true
       required:
         - assetType
+        - name
+        - code
+    UpdateMyAssetRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        code:
+          type: string
+        version:
+          type: string
+        description:
+          type: string
+        riskLevel:
+          type: string
+          enum: [low, medium, high]
+        visibility:
+          type: string
+          enum: [private, tenant]
+        config:
+          type: object
+          additionalProperties: true
+      required:
         - name
         - code
     SystemCapabilityRow:

@@ -45,7 +45,27 @@ public final class AssetManagementApi {
         String sourceType,
         UUID baseSystemCapabilityId,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        Instant publishedAt
+    ) {
+    }
+
+    public record MyAssetDetail(
+        UUID id,
+        String assetType,
+        String name,
+        String code,
+        String version,
+        String description,
+        String riskLevel,
+        String status,
+        String visibility,
+        String sourceType,
+        UUID baseSystemCapabilityId,
+        Map<String, Object> config,
+        Instant createdAt,
+        Instant updatedAt,
+        Instant publishedAt
     ) {
     }
 
@@ -58,6 +78,17 @@ public final class AssetManagementApi {
         @Size(max = 20) String riskLevel,
         @Size(max = 30) String visibility,
         UUID baseSystemCapabilityId,
+        Map<String, Object> config
+    ) {
+    }
+
+    public record UpdateMyAssetRequest(
+        @NotBlank @Size(max = 160) String name,
+        @NotBlank @Size(max = 100) String code,
+        @Size(max = 40) String version,
+        @Size(max = 1000) String description,
+        @Size(max = 20) String riskLevel,
+        @Size(max = 30) String visibility,
         Map<String, Object> config
     ) {
     }

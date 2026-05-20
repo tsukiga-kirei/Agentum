@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Bot, Boxes, BrainCircuit, CheckCircle2, ChevronDown, Clock, Eye, FileText, Hash, Library, PlusCircle, Search, ShieldCheck, Tag, UserRoundCog, X } from "lucide-react";
+import { Bot, Boxes, BrainCircuit, CheckCircle2, ChevronDown, Clock, Edit3, Eye, FileText, Hash, Library, PlusCircle, Search, Send, ShieldCheck, Tag, Trash2, UserRoundCog, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Empty, Modal, Pagination, Segmented, Select, Spin, message } from "antd";
 import { AgentumApiError, assetApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
-import type { AssetSummary, AssetType, CreateMyAssetRequest, MyAssetRow, SystemCapabilityAssetRow } from "../../types/asset";
+import type { AssetSummary, AssetType, CreatableAssetType, CreateMyAssetRequest, MyAssetDetail, MyAssetRow, SystemCapabilityAssetRow, UpdateMyAssetRequest } from "../../types/asset";
 
 type AssetTab = "overview" | "system" | "mine";
 
@@ -20,7 +20,12 @@ const defaultPageState: PageState = {
   total: 0,
 };
 
-const assetTypeOptions: Array<{ value: AssetType; label: string }> = [
+const creatableAssetTypeOptions: Array<{ value: CreatableAssetType; label: string }> = [
+  { value: "agent_template", label: "智能体模板" },
+  { value: "prompt_template", label: "提示词模板" },
+];
+
+const allAssetTypeOptions: Array<{ value: AssetType; label: string }> = [
   { value: "agent_template", label: "智能体模板" },
   { value: "skill", label: "Skill" },
   { value: "mcp", label: "MCP" },
@@ -50,8 +55,8 @@ const paginationLocale = {
 
 const assetTabs: Array<{ key: AssetTab; label: string; icon: LucideIcon; description: string }> = [
   { key: "overview", label: "总览", icon: Library, description: "查看系统能力、租户分配和自建资产的整体勾稽" },
-  { key: "system", label: "对我开放", icon: Boxes, description: "租户管理已分配给当前用户、部门或角色的能力，可直接进入资产创建和流程设计引用" },
-  { key: "mine", label: "我的能力", icon: Bot, description: "沉淀我在当前租户内创建的业务能力草稿和后续发布资产" },
+  { key: "system", label: "对我开放", icon: Boxes, description: "租户管理已分配给当前用户、部门或角色的系统能力，可作为智能体模板的构建材料" },
+  { key: "mine", label: "我的能力", icon: Bot, description: "管理我创建的提示词模板草稿、智能体模板草稿和已发布能力" },
 ];
 
 const adminSelectClassNames = { popup: { root: "agent-select-dropdown agent-admin-select-dropdown" } };
@@ -62,6 +67,7 @@ export function AssetsPage() {
   const user = useAuthStore((s) => s.user);
   const themeMode = useAuthStore((s) => s.themeMode);
   const [messageApi, messageContextHolder] = message.useMessage();
+  const [modalApi, modalContextHolder] = Modal.useModal();
 
   const [activeTab, setActiveTab] = useState<AssetTab>("overview");
   const [loading, setLoading] = useState(false);
@@ -72,6 +78,8 @@ export function AssetsPage() {
   const [minePage, setMinePage] = useState<PageState>(defaultPageState);
   const [keyword, setKeyword] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [currentAsset, setCurrentAsset] = useState<MyAssetDetail | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [draft, setDraft] = useState<CreateMyAssetRequest>({
     assetType: "prompt_template",
@@ -81,6 +89,16 @@ export function AssetsPage() {
     description: "",
     riskLevel: "low",
     visibility: "private",
+    config: { promptContent: "" },
+  });
+  const [editDraft, setEditDraft] = useState<UpdateMyAssetRequest>({
+    name: "",
+    code: "",
+    version: "v1",
+    description: "",
+    riskLevel: "low",
+    visibility: "private",
+    config: {},
   });
 
   const tenantId = user?.tenantId ?? "";
@@ -174,10 +192,18 @@ export function AssetsPage() {
 
   const assignedSystemAssets = useMemo(() => systemAssets.filter((asset) => asset.assignedToMe), [systemAssets]);
   const draftAssets = useMemo(() => myAssets.filter((asset) => asset.status === "draft"), [myAssets]);
+  const skillOptions = useMemo(
+    () => assignedSystemAssets.filter((asset) => asset.assetType === "skill").map((asset) => ({ value: asset.id, label: `${asset.name} · ${asset.version}` })),
+    [assignedSystemAssets],
+  );
+  const mcpOptions = useMemo(
+    () => assignedSystemAssets.filter((asset) => asset.assetType === "mcp").map((asset) => ({ value: asset.id, label: `${asset.name} · ${asset.version}` })),
+    [assignedSystemAssets],
+  );
 
   const handleCreate = async () => {
     if (!token || !tenantId) {
-      messageApi.warning("请先进入有效租户后再创建能力");
+      messageApi.warning("请先进入有效租户后再创建能力草稿");
       return;
     }
     if (!draft.name.trim() || !draft.code.trim()) {
@@ -194,16 +220,106 @@ export function AssetsPage() {
         version: draft.version?.trim() || "v1",
         description: draft.description?.trim(),
       });
-      messageApi.success("能力资产已创建");
+      messageApi.success("能力草稿已创建");
       setCreateOpen(false);
-      setDraft({ assetType: "prompt_template", name: "", code: "", version: "v1", description: "", riskLevel: "low", visibility: "private" });
+      setDraft({ assetType: "prompt_template", name: "", code: "", version: "v1", description: "", riskLevel: "low", visibility: "private", config: { promptContent: "" } });
       await Promise.all([loadSummary(), loadMyAssets(1, minePage.size, keyword)]);
       setActiveTab("mine");
     } catch (error) {
-      handleApiError(error, "创建能力资产失败");
+      handleApiError(error, "创建能力草稿失败");
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const openEdit = async (assetId: string) => {
+    if (!token || !tenantId) return;
+    setSubmitting(true);
+    try {
+      const detail = await assetApi.getMine(tenantId, token, assetId);
+      setCurrentAsset(detail);
+      setEditDraft({
+        name: detail.name,
+        code: detail.code,
+        version: detail.version,
+        description: detail.description,
+        riskLevel: detail.riskLevel,
+        visibility: detail.visibility,
+        config: detail.config ?? {},
+      });
+      setEditOpen(true);
+    } catch (error) {
+      handleApiError(error, "加载能力草稿失败");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleUpdate = async () => {
+    if (!token || !tenantId || !currentAsset) return;
+    if (!editDraft.name.trim() || !editDraft.code.trim()) {
+      messageApi.warning("请输入能力名称和编码");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const updated = await assetApi.updateMine(tenantId, token, currentAsset.id, normalizeEditDraft(editDraft, currentAsset.assetType));
+      setCurrentAsset(updated);
+      messageApi.success("能力草稿已保存");
+      await Promise.all([loadSummary(), loadMyAssets(minePage.page, minePage.size, keyword)]);
+    } catch (error) {
+      handleApiError(error, "保存能力草稿失败");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handlePublish = async () => {
+    if (!token || !tenantId || !currentAsset) return;
+    setSubmitting(true);
+    try {
+      await assetApi.updateMine(tenantId, token, currentAsset.id, normalizeEditDraft(editDraft, currentAsset.assetType));
+      const published = await assetApi.publishMine(tenantId, token, currentAsset.id);
+      setCurrentAsset(published);
+      setEditOpen(false);
+      messageApi.success("能力已发布");
+      await Promise.all([loadSummary(), loadMyAssets(1, minePage.size, keyword)]);
+    } catch (error) {
+      handleApiError(error, "发布能力失败");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const deleteAsset = async (asset: MyAssetRow | MyAssetDetail) => {
+    if (!token || !tenantId) return;
+    setSubmitting(true);
+    try {
+      await assetApi.deleteMine(tenantId, token, asset.id);
+      messageApi.success("能力已删除");
+      setEditOpen(false);
+      if (currentAsset?.id === asset.id) {
+        setCurrentAsset(null);
+      }
+      await Promise.all([loadSummary(), loadMyAssets(1, minePage.size, keyword)]);
+    } catch (error) {
+      handleApiError(error, "删除能力失败");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const confirmDelete = (asset: MyAssetRow | MyAssetDetail) => {
+    modalApi.confirm({
+      title: "删除我的能力",
+      content: `确认删除“${asset.name}”？后续接入流程引用校验后，已被使用的能力将禁止删除。`,
+      okText: "删除",
+      cancelText: "取消",
+      okButtonProps: { danger: true },
+      rootClassName: modalRootClassName,
+      onOk: () => deleteAsset(asset),
+    });
   };
 
   if (!tenantId) {
@@ -237,6 +353,7 @@ export function AssetsPage() {
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-[var(--color-bg-page)] pb-10 pt-1">
       {messageContextHolder}
+      {modalContextHolder}
       <div className="mx-auto max-w-[1400px] px-5 lg:px-6">
         <header className="mb-5 flex flex-col gap-4 border-b border-[var(--color-border-light)] pb-5 sm:flex-row sm:items-end sm:justify-between">
           <div className="flex min-w-0 gap-4">
@@ -257,7 +374,7 @@ export function AssetsPage() {
           </div>
           <button type="button" className="sys-btn sys-btn--primary" onClick={() => setCreateOpen(true)}>
             <PlusCircle size={15} />
-            新建能力
+            新建能力草稿
           </button>
         </header>
 
@@ -303,8 +420,8 @@ export function AssetsPage() {
             <section className="sys-fade-in">
               <div className="mb-5 flex flex-col gap-3 rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
                 <div>
-                  <h3 className="text-sm font-semibold">我的能力资产</h3>
-                  <p className="agent-muted mt-1 text-xs">先以草稿沉淀，后续发布和分配后进入流程节点引用链路。</p>
+                  <h3 className="text-sm font-semibold">我的能力</h3>
+                  <p className="agent-muted mt-1 text-xs">草稿完善后发布为正式能力，进入流程节点引用链路。</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="sys-field-input-wrap min-w-[260px]">
@@ -327,11 +444,11 @@ export function AssetsPage() {
               </div>
               {myAssets.length === 0 ? (
                 <div className="sys-preview-card">
-                  <Empty description="还没有自建能力" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                  <Empty description="还没有我的能力" image={Empty.PRESENTED_IMAGE_SIMPLE} />
                 </div>
               ) : (
                 <div className="sys-card-grid">
-                  {myAssets.map((asset) => <MyAssetCard key={asset.id} asset={asset} />)}
+                  {myAssets.map((asset) => <MyAssetCard key={asset.id} asset={asset} onEdit={openEdit} onDelete={confirmDelete} />)}
                 </div>
               )}
               <AssetPagination pageState={minePage} onChange={(page, size) => void loadMyAssets(page, size, keyword)} />
@@ -342,7 +459,7 @@ export function AssetsPage() {
 
       <Modal
         open={createOpen}
-        title={<span className="sys-modal-title">新建我的能力</span>}
+        title={<span className="sys-modal-title">新建能力草稿</span>}
         footer={null}
         rootClassName={modalRootClassName}
         onCancel={() => setCreateOpen(false)}
@@ -355,8 +472,8 @@ export function AssetsPage() {
             prefix={<Boxes className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
             suffixIcon={adminSelectSuffixIcon}
             value={draft.assetType}
-            options={assetTypeOptions}
-            onChange={(assetType) => setDraft((current) => ({ ...current, assetType }))}
+            options={creatableAssetTypeOptions}
+            onChange={(assetType) => setDraft((current) => ({ ...current, assetType, config: assetType === "prompt_template" ? { promptContent: "" } : { systemPrompt: "", skillIds: [], mcpIds: [] } }))}
           />
         </div>
         <div className="sys-field-row">
@@ -419,9 +536,149 @@ export function AssetsPage() {
           </button>
           <button type="button" className="sys-btn sys-btn--primary" disabled={submitting} onClick={() => void handleCreate()}>
             <PlusCircle size={14} />
-            创建能力
+            创建草稿
           </button>
         </div>
+      </Modal>
+
+      <Modal
+        open={editOpen}
+        title={<span className="sys-modal-title">{currentAsset?.status === "draft" ? "编辑能力草稿" : "查看正式能力"}</span>}
+        footer={null}
+        width={720}
+        rootClassName={modalRootClassName}
+        onCancel={() => setEditOpen(false)}
+      >
+        {currentAsset ? (
+          <>
+            <div className="sys-field-row">
+              <div className="sys-field">
+                <label className="sys-field-label sys-field-label--required">能力名称</label>
+                <div className="sys-field-input-wrap">
+                  <Tag size={16} className="sys-field-prefix" aria-hidden="true" />
+                  <input className="sys-field-input" disabled={currentAsset.status !== "draft"} value={editDraft.name} onChange={(event) => setEditDraft((current) => ({ ...current, name: event.target.value }))} />
+                </div>
+              </div>
+              <div className="sys-field">
+                <label className="sys-field-label sys-field-label--required">能力编码</label>
+                <div className="sys-field-input-wrap">
+                  <Hash size={16} className="sys-field-prefix" aria-hidden="true" />
+                  <input className="sys-field-input" disabled={currentAsset.status !== "draft"} value={editDraft.code} onChange={(event) => setEditDraft((current) => ({ ...current, code: event.target.value }))} />
+                </div>
+              </div>
+            </div>
+            <div className="sys-field-row">
+              <div className="sys-field">
+                <label className="sys-field-label">版本</label>
+                <div className="sys-field-input-wrap">
+                  <FileText size={16} className="sys-field-prefix" aria-hidden="true" />
+                  <input className="sys-field-input" disabled={currentAsset.status !== "draft"} value={editDraft.version ?? "v1"} onChange={(event) => setEditDraft((current) => ({ ...current, version: event.target.value }))} />
+                </div>
+              </div>
+              <div className="sys-field">
+                <label className="sys-field-label">风险等级</label>
+                <Select
+                  className="agent-admin-select w-full"
+                  classNames={adminSelectClassNames}
+                  disabled={currentAsset.status !== "draft"}
+                  prefix={<ShieldCheck className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+                  suffixIcon={adminSelectSuffixIcon}
+                  value={editDraft.riskLevel}
+                  options={riskOptions}
+                  onChange={(riskLevel) => setEditDraft((current) => ({ ...current, riskLevel }))}
+                />
+              </div>
+            </div>
+            <div className="sys-field">
+              <label className="sys-field-label">说明</label>
+              <textarea className="sys-field-textarea" disabled={currentAsset.status !== "draft"} value={editDraft.description ?? ""} onChange={(event) => setEditDraft((current) => ({ ...current, description: event.target.value }))} />
+            </div>
+
+            {currentAsset.assetType === "prompt_template" ? (
+              <div className="sys-field">
+                <label className="sys-field-label sys-field-label--required">提示词内容</label>
+                <textarea
+                  className="sys-field-textarea min-h-[220px]"
+                  disabled={currentAsset.status !== "draft"}
+                  value={getConfigString(editDraft.config, "promptContent")}
+                  onChange={(event) => setEditDraft((current) => ({ ...current, config: { ...(current.config ?? {}), promptContent: event.target.value } }))}
+                />
+              </div>
+            ) : null}
+
+            {currentAsset.assetType === "agent_template" ? (
+              <>
+                <div className="sys-field">
+                  <label className="sys-field-label sys-field-label--required">系统提示词</label>
+                  <textarea
+                    className="sys-field-textarea min-h-[180px]"
+                    disabled={currentAsset.status !== "draft"}
+                    value={getConfigString(editDraft.config, "systemPrompt")}
+                    onChange={(event) => setEditDraft((current) => ({ ...current, config: { ...(current.config ?? {}), systemPrompt: event.target.value } }))}
+                  />
+                </div>
+                <div className="sys-field-row">
+                  <div className="sys-field">
+                    <label className="sys-field-label">可用 Skill</label>
+                    <Select
+                      mode="multiple"
+                      className="agent-admin-select w-full"
+                      classNames={adminSelectClassNames}
+                      disabled={currentAsset.status !== "draft"}
+                      prefix={<BrainCircuit className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+                      suffixIcon={adminSelectSuffixIcon}
+                      value={getConfigIds(editDraft.config, "skillIds")}
+                      options={skillOptions}
+                      onChange={(skillIds) => setEditDraft((current) => ({ ...current, config: { ...(current.config ?? {}), skillIds } }))}
+                    />
+                  </div>
+                  <div className="sys-field">
+                    <label className="sys-field-label">可用 MCP</label>
+                    <Select
+                      mode="multiple"
+                      className="agent-admin-select w-full"
+                      classNames={adminSelectClassNames}
+                      disabled={currentAsset.status !== "draft"}
+                      prefix={<Boxes className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+                      suffixIcon={adminSelectSuffixIcon}
+                      value={getConfigIds(editDraft.config, "mcpIds")}
+                      options={mcpOptions}
+                      onChange={(mcpIds) => setEditDraft((current) => ({ ...current, config: { ...(current.config ?? {}), mcpIds } }))}
+                    />
+                  </div>
+                </div>
+              </>
+            ) : null}
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" className="sys-btn sys-btn--default" onClick={() => setEditOpen(false)}>
+                <X size={14} />
+                关闭
+              </button>
+              {currentAsset.status === "draft" ? (
+                <>
+                  <button type="button" className="sys-btn sys-btn--default" disabled={submitting} onClick={() => confirmDelete(currentAsset)}>
+                    <Trash2 size={14} />
+                    删除
+                  </button>
+                  <button type="button" className="sys-btn sys-btn--default" disabled={submitting} onClick={() => void handleUpdate()}>
+                    <Edit3 size={14} />
+                    保存草稿
+                  </button>
+                  <button type="button" className="sys-btn sys-btn--primary" disabled={submitting} onClick={() => void handlePublish()}>
+                    <Send size={14} />
+                    发布能力
+                  </button>
+                </>
+              ) : (
+                <button type="button" className="sys-btn sys-btn--default" disabled={submitting} onClick={() => confirmDelete(currentAsset)}>
+                  <Trash2 size={14} />
+                  删除
+                </button>
+              )}
+            </div>
+          </>
+        ) : null}
       </Modal>
     </div>
   );
@@ -443,7 +700,7 @@ function OverviewPanel({
       <div className="sys-overview-stats">
         <OverviewStat icon={CheckCircle2} value={summary?.openedToMeSystemTotal ?? 0} label="对我开放能力" tone="success" />
         <OverviewStat icon={Boxes} value={summary?.tenantSystemPoolTotal ?? 0} label="租户能力池" tone="primary" />
-        <OverviewStat icon={Library} value={summary?.myAssetTotal ?? 0} label="我的自建能力" tone="cap" />
+        <OverviewStat icon={Library} value={summary?.myAssetTotal ?? 0} label="我的能力" tone="cap" />
         <OverviewStat icon={BrainCircuit} value={draftAssets.length} label="待完善草稿" tone="info" />
       </div>
 
@@ -533,7 +790,7 @@ function SystemAssetCard({ asset }: { asset: SystemCapabilityAssetRow }) {
   );
 }
 
-function MyAssetCard({ asset }: { asset: MyAssetRow }) {
+function MyAssetCard({ asset, onEdit, onDelete }: { asset: MyAssetRow; onEdit: (assetId: string) => void; onDelete: (asset: MyAssetRow) => void }) {
   return (
     <article className="sys-card sys-card--static">
       <div className="sys-card-header">
@@ -554,9 +811,16 @@ function MyAssetCard({ asset }: { asset: MyAssetRow }) {
       </div>
       <p className="agent-muted min-h-12 text-sm leading-6">{asset.description || "暂无说明"}</p>
       <div className="sys-card-footer">
-        <span className="sys-card-footer-time"><Clock size={12} /> {asset.sourceType === "derived" ? "系统能力派生" : "自建能力"}</span>
+        <span className="sys-card-footer-time"><Clock size={12} /> {asset.sourceType === "derived" ? "系统能力派生" : "我的能力"}</span>
         <div className="sys-card-footer-actions">
-          <button type="button" className="sys-btn sys-btn--text sys-btn--sm"><Eye size={14} /> 查看详情</button>
+          <button type="button" className="sys-btn sys-btn--text sys-btn--sm" onClick={() => onEdit(asset.id)}>
+            {asset.status === "draft" ? <Edit3 size={14} /> : <Eye size={14} />}
+            {asset.status === "draft" ? "编辑草稿" : "查看详情"}
+          </button>
+          <button type="button" className="sys-btn sys-btn--text sys-btn--sm" onClick={() => onDelete(asset)}>
+            <Trash2 size={14} />
+            删除
+          </button>
         </div>
       </div>
     </article>
@@ -616,8 +880,42 @@ function RiskTag({ level }: { level: string }) {
   return <span className={`sys-info-tag ${cls}`}>{formatRisk(level)}</span>;
 }
 
+function normalizeEditDraft(draft: UpdateMyAssetRequest, assetType: AssetType): UpdateMyAssetRequest {
+  const base = {
+    ...draft,
+    name: draft.name.trim(),
+    code: draft.code.trim(),
+    version: draft.version?.trim() || "v1",
+    description: draft.description?.trim(),
+  };
+  if (assetType === "prompt_template") {
+    return { ...base, config: { promptContent: getConfigString(draft.config, "promptContent") } };
+  }
+  if (assetType === "agent_template") {
+    return {
+      ...base,
+      config: {
+        systemPrompt: getConfigString(draft.config, "systemPrompt"),
+        skillIds: getConfigIds(draft.config, "skillIds"),
+        mcpIds: getConfigIds(draft.config, "mcpIds"),
+      },
+    };
+  }
+  return base;
+}
+
+function getConfigString(config: Record<string, unknown> | undefined, key: string): string {
+  const value = config?.[key];
+  return typeof value === "string" ? value : "";
+}
+
+function getConfigIds(config: Record<string, unknown> | undefined, key: string): string[] {
+  const value = config?.[key];
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
 function formatAssetType(type: string): string {
-  return assetTypeOptions.find((item) => item.value === type)?.label ?? type;
+  return allAssetTypeOptions.find((item) => item.value === type)?.label ?? type;
 }
 
 function formatRisk(level: string): string {

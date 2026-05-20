@@ -7,6 +7,7 @@ export type AssetSummary = {
 };
 
 export type AssetType = "agent_template" | "skill" | "mcp" | "prompt_template" | "delivery";
+export type CreatableAssetType = "agent_template" | "prompt_template";
 
 export type SystemCapabilityAssetRow = {
   id: string;
@@ -35,10 +36,20 @@ export type MyAssetRow = {
   baseSystemCapabilityId: string | null;
   createdAt: string;
   updatedAt: string;
+  publishedAt: string | null;
+};
+
+export type MyAssetDetail = MyAssetRow & {
+  config: {
+    promptContent?: string;
+    systemPrompt?: string;
+    skillIds?: string[];
+    mcpIds?: string[];
+  };
 };
 
 export type CreateMyAssetRequest = {
-  assetType: AssetType;
+  assetType: CreatableAssetType;
   name: string;
   code: string;
   version?: string;
@@ -48,6 +59,8 @@ export type CreateMyAssetRequest = {
   baseSystemCapabilityId?: string;
   config?: Record<string, unknown>;
 };
+
+export type UpdateMyAssetRequest = Omit<CreateMyAssetRequest, "assetType" | "baseSystemCapabilityId">;
 
 export type SystemCapabilityAssetPage = PageResponse<SystemCapabilityAssetRow>;
 export type MyAssetPage = PageResponse<MyAssetRow>;
