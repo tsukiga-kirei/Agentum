@@ -1043,18 +1043,22 @@ export function TenantManagementPage() {
               </div>
               <div className="sys-field">
                 <label className="sys-field-label sys-field-label--required">分配对象</label>
-                <Select
-                  mode="multiple"
-                  className="agent-admin-select w-full"
-                  classNames={adminSelectClassNames}
-                  showSearch
-                  prefix={<UserRoundCog className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
-                  suffixIcon={adminSelectSuffixIcon}
-                  placeholder="选择角色、部门或人员"
-                  value={pageGrantPrincipalKeys}
-                  options={getPrincipalOptions(organizationOverview)}
-                  onChange={(principalKeys) => setPageGrantPrincipalKeys(principalKeys as PrincipalSelectionKey[])}
-                />
+                <div className="sys-field-input-wrap sys-field-input-wrap--select">
+                  <UserRoundCog size={16} className="sys-field-prefix" aria-hidden="true" />
+                  <Select
+                    mode="multiple"
+                    className="agent-admin-select w-full"
+                    classNames={adminSelectClassNames}
+                    showSearch
+                    suffixIcon={adminSelectSuffixIcon}
+                    maxTagCount="responsive"
+                    maxTagTextLength={16}
+                    placeholder="选择角色、部门或人员"
+                    value={pageGrantPrincipalKeys}
+                    options={getPrincipalOptions(organizationOverview)}
+                    onChange={(principalKeys) => setPageGrantPrincipalKeys(principalKeys as PrincipalSelectionKey[])}
+                  />
+                </div>
               </div>
               <div className="sys-config-group">
                 <div className="sys-config-group-title">可访问页签</div>
@@ -1112,18 +1116,22 @@ export function TenantManagementPage() {
               </div>
               <div className="sys-field">
                 <label className="sys-field-label sys-field-label--required">分配对象</label>
-                <Select
-                  mode="multiple"
-                  className="agent-admin-select w-full"
-                  classNames={adminSelectClassNames}
-                  showSearch
-                  prefix={<UserRoundCog className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
-                  suffixIcon={adminSelectSuffixIcon}
-                  placeholder="选择角色、部门或人员"
-                  value={grantPrincipalKeys}
-                  options={getPrincipalOptions(organizationOverview)}
-                  onChange={(principalKeys) => setGrantPrincipalKeys(principalKeys as PrincipalSelectionKey[])}
-                />
+                <div className="sys-field-input-wrap sys-field-input-wrap--select">
+                  <UserRoundCog size={16} className="sys-field-prefix" aria-hidden="true" />
+                  <Select
+                    mode="multiple"
+                    className="agent-admin-select w-full"
+                    classNames={adminSelectClassNames}
+                    showSearch
+                    suffixIcon={adminSelectSuffixIcon}
+                    maxTagCount="responsive"
+                    maxTagTextLength={16}
+                    placeholder="选择角色、部门或人员"
+                    value={grantPrincipalKeys}
+                    options={getPrincipalOptions(organizationOverview)}
+                    onChange={(principalKeys) => setGrantPrincipalKeys(principalKeys as PrincipalSelectionKey[])}
+                  />
+                </div>
               </div>
               <div className="sys-config-group">
                 <div className="sys-config-group-title">能力资源</div>
