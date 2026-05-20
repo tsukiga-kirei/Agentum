@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Empty, Segmented, Select, message, Pagination } from "antd";
+import { Empty, Segmented, Select, message, Pagination, Drawer } from "antd";
 import {
   Building2,
   CheckCircle2,
@@ -188,6 +188,8 @@ export function TenantManagementPage() {
   const [activeTab, setActiveTab] = useState<TenantManagementTabKey>("organization");
   const user = useAuthStore((s) => s.user);
   const token = useAuthStore((s) => s.token);
+  const themeMode = useAuthStore((s) => s.themeMode);
+  const drawerRootClassName = themeMode === "dark" ? "agent-admin-drawer agent-admin-drawer--dark" : "agent-admin-drawer";
   const [messageApi, messageContextHolder] = message.useMessage();
   const [organizationOverview, setOrganizationOverview] = useState<TenantOrganizationOverview | null>(null);
   const [organizationLoading, setOrganizationLoading] = useState(false);
@@ -969,217 +971,223 @@ export function TenantManagementPage() {
         </div>
       )}
 
-      {roleModalOpen && (
-        <div className="sys-modal-mask" onClick={() => setRoleModalOpen(false)}>
-          <div className="sys-modal" style={{ maxWidth: 560 }} onClick={(event) => event.stopPropagation()}>
-            <div className="sys-modal-header">
-              <span className="sys-modal-title">{editingRole ? "编辑角色" : "新增角色"}</span>
-              <button className="sys-modal-close" onClick={() => setRoleModalOpen(false)}><X size={18} /></button>
+      {/* 角色编辑抽屉 */}
+      <Drawer
+        title={editingRole ? "编辑角色" : "新增角色"}
+        placement="right"
+        width={560}
+        onClose={() => setRoleModalOpen(false)}
+        open={roleModalOpen}
+        rootClassName={drawerRootClassName}
+      >
+        <div className="sys-drawer-section">
+          <div className="sys-hint"><Info size={14} /> 角色编码由后端自动生成；编辑角色时可同步维护该角色下的启用成员。</div>
+          <div className="sys-field">
+            <label className="sys-field-label sys-field-label--required">角色名称</label>
+            <div className="sys-field-input-wrap"><ShieldCheck size={16} className="sys-field-prefix" /><input className="sys-field-input" value={roleDraft.name} placeholder="例如：合同审核员" onChange={(event) => setRoleDraft((draft) => ({ ...draft, name: event.target.value }))} /></div>
+          </div>
+          <div className="sys-field">
+            <label className="sys-field-label">说明</label>
+            <textarea className="sys-field-textarea" value={roleDraft.description ?? ""} onChange={(event) => setRoleDraft((draft) => ({ ...draft, description: event.target.value }))} />
+          </div>
+          {editingRole ? (
+            <div className="sys-field">
+              <label className="sys-field-label">状态</label>
+              <Select className="agent-admin-select w-full" classNames={adminSelectClassNames} prefix={<CheckCircle2 className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />} suffixIcon={adminSelectSuffixIcon} value={roleDraft.status} options={[{ value: "active", label: "启用" }, { value: "disabled", label: "停用" }]} onChange={(status) => setRoleDraft((draft) => ({ ...draft, status }))} />
             </div>
-            <div className="sys-modal-body">
-              <div className="sys-hint"><Info size={14} /> 角色编码由后端自动生成；编辑角色时可同步维护该角色下的启用成员。</div>
+          ) : null}
+          {editingRole ? (
+            <div className="sys-config-group">
+              <div className="sys-config-group-title">角色成员</div>
               <div className="sys-field">
-                <label className="sys-field-label sys-field-label--required">角色名称</label>
-                <div className="sys-field-input-wrap"><ShieldCheck size={16} className="sys-field-prefix" /><input className="sys-field-input" value={roleDraft.name} placeholder="例如：合同审核员" onChange={(event) => setRoleDraft((draft) => ({ ...draft, name: event.target.value }))} /></div>
+                <label className="sys-field-label">包含成员</label>
+                <Select
+                  mode="multiple"
+                  allowClear
+                  className="agent-admin-select w-full"
+                  classNames={adminSelectClassNames}
+                  showSearch
+                  prefix={<UsersRound className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+                  suffixIcon={adminSelectSuffixIcon}
+                  placeholder="选择该角色下的启用成员"
+                  value={roleDraft.membershipIds}
+                  options={roleMemberOptions}
+                  optionFilterProp="label"
+                  onChange={(membershipIds) => setRoleDraft((draft) => ({ ...draft, membershipIds }))}
+                />
+                <div className="sys-field-hint">勾选表示给人员增加当前角色；取消勾选只取消当前角色，不影响该人员已有的其他角色。</div>
               </div>
-              <div className="sys-field">
-                <label className="sys-field-label">说明</label>
-                <textarea className="sys-field-textarea" value={roleDraft.description ?? ""} onChange={(event) => setRoleDraft((draft) => ({ ...draft, description: event.target.value }))} />
-              </div>
-              {editingRole ? (
-                <div className="sys-field">
-                  <label className="sys-field-label">状态</label>
-                  <Select className="agent-admin-select w-full" classNames={adminSelectClassNames} prefix={<CheckCircle2 className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />} suffixIcon={adminSelectSuffixIcon} value={roleDraft.status} options={[{ value: "active", label: "启用" }, { value: "disabled", label: "停用" }]} onChange={(status) => setRoleDraft((draft) => ({ ...draft, status }))} />
-                </div>
-              ) : null}
-              {editingRole ? (
-                <div className="sys-config-group">
-                  <div className="sys-config-group-title">角色成员</div>
-                  <div className="sys-field">
-                    <label className="sys-field-label">包含成员</label>
-                    <Select
-                      mode="multiple"
-                      allowClear
-                      className="agent-admin-select w-full"
-                      classNames={adminSelectClassNames}
-                      showSearch
-                      prefix={<UsersRound className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
-                      suffixIcon={adminSelectSuffixIcon}
-                      placeholder="选择该角色下的启用成员"
-                      value={roleDraft.membershipIds}
-                      options={roleMemberOptions}
-                      optionFilterProp="label"
-                      onChange={(membershipIds) => setRoleDraft((draft) => ({ ...draft, membershipIds }))}
-                    />
-                    <div className="sys-field-hint">勾选表示给人员增加当前角色；取消勾选只取消当前角色，不影响该人员已有的其他角色。</div>
-                  </div>
-                </div>
-              ) : null}
             </div>
-            <div className="sys-modal-footer">
-              {editingRole ? (
-                <button className="sys-btn sys-btn--danger" style={{ marginRight: "auto" }} disabled={roleSubmitting} onClick={() => void handleDeleteRole(editingRole)}><X size={14} /> 停用角色</button>
-              ) : null}
-              <button className="sys-btn sys-btn--default" onClick={() => setRoleModalOpen(false)}><X size={14} /> 取消</button>
-              <button className="sys-btn sys-btn--primary" disabled={roleSubmitting} onClick={() => void handleSubmitRole()}><Save size={14} /> 保存角色</button>
-            </div>
+          ) : null}
+        </div>
+        <div className="sys-drawer-footer">
+          {editingRole ? (
+            <button className="sys-btn sys-btn--danger" style={{ marginRight: "auto" }} disabled={roleSubmitting} onClick={() => void handleDeleteRole(editingRole)}><X size={14} /> 停用角色</button>
+          ) : null}
+          <div className="sys-drawer-footer-right">
+            <button className="sys-btn sys-btn--default" onClick={() => setRoleModalOpen(false)}><X size={14} /> 取消</button>
+            <button className="sys-btn sys-btn--primary" disabled={roleSubmitting} onClick={() => void handleSubmitRole()}><Save size={14} /> 保存角色</button>
           </div>
         </div>
-      )}
+      </Drawer>
 
-      {pageGrantModalOpen && (
-        <div className="sys-modal-mask" onClick={() => setPageGrantModalOpen(false)}>
-          <div className="sys-modal" style={{ maxWidth: 720 }} onClick={(event) => event.stopPropagation()}>
-            <div className="sys-modal-header">
-              <span className="sys-modal-title">{editingPageGrantGroup ? "编辑页签分配" : "新增页签分配"}</span>
-              <button className="sys-modal-close" onClick={() => setPageGrantModalOpen(false)}><X size={18} /></button>
+      {/* 页签分配抽屉 */}
+      <Drawer
+        title={editingPageGrantGroup ? "编辑页签分配" : "新增页签分配"}
+        placement="right"
+        width={560}
+        onClose={() => setPageGrantModalOpen(false)}
+        open={pageGrantModalOpen}
+        rootClassName={drawerRootClassName}
+      >
+        <div className="sys-drawer-section">
+          <div className="sys-field">
+            <label className="sys-field-label sys-field-label--required">分配名称</label>
+            <div className="sys-field-input-wrap">
+              <Tag size={16} className="sys-field-prefix" />
+              <input
+                className="sys-field-input"
+                value={pageGrantGroupName}
+                maxLength={120}
+                placeholder="例如：设计与审计入口"
+                onChange={(event) => setPageGrantGroupName(event.target.value)}
+              />
             </div>
-            <div className="sys-modal-body">
-              <div className="sys-field">
-                <label className="sys-field-label sys-field-label--required">分配名称</label>
-                <div className="sys-field-input-wrap">
-                  <Tag size={16} className="sys-field-prefix" />
-                  <input
-                    className="sys-field-input"
-                    value={pageGrantGroupName}
-                    maxLength={120}
-                    placeholder="例如：设计与审计入口"
-                    onChange={(event) => setPageGrantGroupName(event.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="sys-field">
-                <label className="sys-field-label sys-field-label--required">分配对象</label>
-                <div className="sys-field-input-wrap sys-field-input-wrap--select">
-                  <UserRoundCog size={16} className="sys-field-prefix" aria-hidden="true" />
-                  <Select
-                    mode="multiple"
-                    className="agent-admin-select w-full"
-                    classNames={adminSelectClassNames}
-                    styles={adminPrincipalSelectStyles}
-                    showSearch
-                    suffixIcon={adminSelectSuffixIcon}
-                    maxTagCount="responsive"
-                    maxTagTextLength={16}
-                    placeholder="选择角色、部门或人员"
-                    value={pageGrantPrincipalKeys}
-                    options={getPrincipalOptions(organizationOverview)}
-                    onChange={(principalKeys) => setPageGrantPrincipalKeys(principalKeys as PrincipalSelectionKey[])}
-                  />
-                </div>
-              </div>
-              <div className="sys-config-group">
-                <div className="sys-config-group-title">可访问页签</div>
-                <div className="tenant-permission-grid">
-                  {pagePermissionOptions.map((option) => {
-                    const Icon = option.icon;
-                    const checked = selectedPageKeys.includes(option.value);
-                    return (
-                      <button
-                        key={option.value}
-                        type="button"
-                        className={`tenant-permission-option ${checked ? "tenant-permission-option--checked" : ""}`}
-                        onClick={() => setSelectedPageKeys((keys) => keys.includes(option.value) ? keys.filter((key) => key !== option.value) : [...keys, option.value])}
-                      >
-                        <span className="tenant-permission-option-icon"><Icon size={16} /></span>
-                        <span className="tenant-permission-option-text">
-                          <span>{option.label}</span>
-                          <small>{option.description}</small>
-                        </span>
-                        <CheckCircle2 size={16} className="tenant-permission-option-check" />
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+          </div>
+          <div className="sys-field">
+            <label className="sys-field-label sys-field-label--required">分配对象</label>
+            <div className="sys-field-input-wrap sys-field-input-wrap--select">
+              <UserRoundCog size={16} className="sys-field-prefix" aria-hidden="true" />
+              <Select
+                mode="multiple"
+                className="agent-admin-select w-full"
+                classNames={adminSelectClassNames}
+                styles={adminPrincipalSelectStyles}
+                showSearch
+                suffixIcon={adminSelectSuffixIcon}
+                maxTagCount="responsive"
+                maxTagTextLength={16}
+                placeholder="选择角色、部门或人员"
+                value={pageGrantPrincipalKeys}
+                options={getPrincipalOptions(organizationOverview)}
+                onChange={(principalKeys) => setPageGrantPrincipalKeys(principalKeys as PrincipalSelectionKey[])}
+              />
             </div>
-            <div className="sys-modal-footer">
-              <button className="sys-btn sys-btn--default" onClick={() => setPageGrantModalOpen(false)}><X size={14} /> 取消</button>
-              <button className="sys-btn sys-btn--primary" disabled={pageGrantSubmitting} onClick={() => void handleSubmitPageGrant()}><Save size={14} /> 保存分配</button>
+          </div>
+          <div className="sys-config-group">
+            <div className="sys-config-group-title">可访问页签</div>
+            <div className="tenant-permission-grid">
+              {pagePermissionOptions.map((option) => {
+                const Icon = option.icon;
+                const checked = selectedPageKeys.includes(option.value);
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`tenant-permission-option ${checked ? "tenant-permission-option--checked" : ""}`}
+                    onClick={() => setSelectedPageKeys((keys) => keys.includes(option.value) ? keys.filter((key) => key !== option.value) : [...keys, option.value])}
+                  >
+                    <span className="tenant-permission-option-icon"><Icon size={16} /></span>
+                    <span className="tenant-permission-option-text">
+                      <span>{option.label}</span>
+                      <small>{option.description}</small>
+                    </span>
+                    <CheckCircle2 size={16} className="tenant-permission-option-check" />
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
-      )}
+        <div className="sys-drawer-footer">
+          <div className="sys-drawer-footer-right">
+            <button className="sys-btn sys-btn--default" onClick={() => setPageGrantModalOpen(false)}><X size={14} /> 取消</button>
+            <button className="sys-btn sys-btn--primary" disabled={pageGrantSubmitting} onClick={() => void handleSubmitPageGrant()}><Save size={14} /> 保存分配</button>
+          </div>
+        </div>
+      </Drawer>
 
-      {grantModalOpen && (
-        <div className="sys-modal-mask" onClick={() => setGrantModalOpen(false)}>
-          <div className="sys-modal" style={{ maxWidth: 640 }} onClick={(event) => event.stopPropagation()}>
-            <div className="sys-modal-header">
-              <span className="sys-modal-title">{editingGrantGroup ? "编辑能力分配" : "新增能力分配"}</span>
-              <button className="sys-modal-close" onClick={() => setGrantModalOpen(false)}><X size={18} /></button>
-            </div>
-            <div className="sys-modal-body">
-              <div className="sys-field">
-                <label className="sys-field-label sys-field-label--required">分配名称</label>
-                <div className="sys-field-input-wrap">
-                  <Tag size={16} className="sys-field-prefix" />
-                  <input
-                    className="sys-field-input"
-                    value={grantGroupName}
-                    maxLength={120}
-                    placeholder="例如：合同处理能力"
-                    onChange={(event) => setGrantGroupName(event.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="sys-field">
-                <label className="sys-field-label sys-field-label--required">分配对象</label>
-                <div className="sys-field-input-wrap sys-field-input-wrap--select">
-                  <UserRoundCog size={16} className="sys-field-prefix" aria-hidden="true" />
-                  <Select
-                    mode="multiple"
-                    className="agent-admin-select w-full"
-                    classNames={adminSelectClassNames}
-                    styles={adminPrincipalSelectStyles}
-                    showSearch
-                    suffixIcon={adminSelectSuffixIcon}
-                    maxTagCount="responsive"
-                    maxTagTextLength={16}
-                    placeholder="选择角色、部门或人员"
-                    value={grantPrincipalKeys}
-                    options={getPrincipalOptions(organizationOverview)}
-                    onChange={(principalKeys) => setGrantPrincipalKeys(principalKeys as PrincipalSelectionKey[])}
-                  />
-                </div>
-              </div>
-              <div className="sys-config-group">
-                <div className="sys-config-group-title">能力资源</div>
-                {resourceOptions.length === 0 ? (
-                  <div className="sys-hint">
-                    <Info size={14} />
-                    当前租户暂无可分配能力。请先在系统管理的租户配置中启用 MCP、Skill、提示词模板或交付能力。
-                  </div>
-                ) : (
-                  <div className="tenant-permission-grid">
-                    {resourceOptions.map((option) => {
-                      const checked = grantResourceIds.includes(option.resourceId);
-                      return (
-                        <button
-                          key={`${option.resourceType}:${option.resourceId}`}
-                          type="button"
-                          className={`tenant-permission-option ${checked ? "tenant-permission-option--checked" : ""}`}
-                          onClick={() => setGrantResourceIds((ids) => ids.includes(option.resourceId) ? ids.filter((id) => id !== option.resourceId) : [...ids, option.resourceId])}
-                        >
-                          <span className="tenant-permission-option-icon">{getResourceTypeIcon(option.resourceType)}</span>
-                          <span className="tenant-permission-option-text">
-                            <span>{option.resourceName}</span>
-                            <small>{formatResourceType(option.resourceType)} · {option.version} · {formatRiskLevel(option.riskLevel)}</small>
-                          </span>
-                          <CheckCircle2 size={16} className="tenant-permission-option-check" />
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="sys-modal-footer">
-              <button className="sys-btn sys-btn--default" onClick={() => setGrantModalOpen(false)}><X size={14} /> 取消</button>
-              <button className="sys-btn sys-btn--primary" disabled={grantSubmitting} onClick={() => void handleSubmitGrant()}><Save size={14} /> 保存分配</button>
+      {/* 能力分配抽屉 */}
+      <Drawer
+        title={editingGrantGroup ? "编辑能力分配" : "新增能力分配"}
+        placement="right"
+        width={560}
+        onClose={() => setGrantModalOpen(false)}
+        open={grantModalOpen}
+        rootClassName={drawerRootClassName}
+      >
+        <div className="sys-drawer-section">
+          <div className="sys-field">
+            <label className="sys-field-label sys-field-label--required">分配名称</label>
+            <div className="sys-field-input-wrap">
+              <Tag size={16} className="sys-field-prefix" />
+              <input
+                className="sys-field-input"
+                value={grantGroupName}
+                maxLength={120}
+                placeholder="例如：合同处理能力"
+                onChange={(event) => setGrantGroupName(event.target.value)}
+              />
             </div>
           </div>
+          <div className="sys-field">
+            <label className="sys-field-label sys-field-label--required">分配对象</label>
+            <div className="sys-field-input-wrap sys-field-input-wrap--select">
+              <UserRoundCog size={16} className="sys-field-prefix" aria-hidden="true" />
+              <Select
+                mode="multiple"
+                className="agent-admin-select w-full"
+                classNames={adminSelectClassNames}
+                styles={adminPrincipalSelectStyles}
+                showSearch
+                suffixIcon={adminSelectSuffixIcon}
+                maxTagCount="responsive"
+                maxTagTextLength={16}
+                placeholder="选择角色、部门或人员"
+                value={grantPrincipalKeys}
+                options={getPrincipalOptions(organizationOverview)}
+                onChange={(principalKeys) => setGrantPrincipalKeys(principalKeys as PrincipalSelectionKey[])}
+              />
+            </div>
+          </div>
+          <div className="sys-config-group">
+            <div className="sys-config-group-title">能力资源</div>
+            {resourceOptions.length === 0 ? (
+              <div className="sys-hint">
+                <Info size={14} />
+                当前租户暂无可分配能力。请先在系统管理的租户配置中启用 MCP、Skill、提示词模板或交付能力。
+              </div>
+            ) : (
+              <div className="tenant-permission-grid">
+                {resourceOptions.map((option) => {
+                  const checked = grantResourceIds.includes(option.resourceId);
+                  return (
+                    <button
+                      key={`${option.resourceType}:${option.resourceId}`}
+                      type="button"
+                      className={`tenant-permission-option ${checked ? "tenant-permission-option--checked" : ""}`}
+                      onClick={() => setGrantResourceIds((ids) => ids.includes(option.resourceId) ? ids.filter((id) => id !== option.resourceId) : [...ids, option.resourceId])}
+                    >
+                      <span className="tenant-permission-option-icon">{getResourceTypeIcon(option.resourceType)}</span>
+                      <span className="tenant-permission-option-text">
+                        <span>{option.resourceName}</span>
+                        <small>{formatResourceType(option.resourceType)} · {option.version} · {formatRiskLevel(option.riskLevel)}</small>
+                      </span>
+                      <CheckCircle2 size={16} className="tenant-permission-option-check" />
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
-      )}
+        <div className="sys-drawer-footer">
+          <div className="sys-drawer-footer-right">
+            <button className="sys-btn sys-btn--default" onClick={() => setGrantModalOpen(false)}><X size={14} /> 取消</button>
+            <button className="sys-btn sys-btn--primary" disabled={grantSubmitting} onClick={() => void handleSubmitGrant()}><Save size={14} /> 保存分配</button>
+          </div>
+        </div>
+      </Drawer>
     </div>
   );
 }
@@ -1450,10 +1458,8 @@ function RoleManagementPanel({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] px-4 py-3">
-        <div>
-          <h3 className="text-sm font-semibold">角色维护</h3>
-        </div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <p style={{ fontSize: 14, color: "var(--color-text-tertiary)", margin: 0 }}>租户内角色新增、编辑和停用</p>
         <button className="sys-btn sys-btn--primary" onClick={onCreateRole} disabled={!overview}>
           <PlusCircle size={14} />
           新增角色
@@ -1472,7 +1478,7 @@ function RoleManagementPanel({
         <>
           <div className="sys-card-grid">
             {rolePagination.pagedItems.map((role) => (
-              <article key={role.id} className="sys-card sys-card--static">
+              <article key={role.id} className="sys-card" onClick={() => onEditRole(role)}>
               <div className="sys-card-header">
                 <div className="sys-card-avatar sys-card-avatar--tenant"><ShieldCheck size={22} /></div>
                 <div className="sys-card-info">
@@ -1486,7 +1492,7 @@ function RoleManagementPanel({
               </div>
               <div className="sys-card-footer">
                 <span className="sys-card-footer-time">成员分配请在人员组织中编辑成员</span>
-                <div className="sys-card-footer-actions">
+                <div className="sys-card-footer-actions" onClick={(e) => e.stopPropagation()}>
                   <button className="sys-btn sys-btn--text sys-btn--sm" onClick={() => onEditRole(role)}><Edit size={14} /> 编辑</button>
                 </div>
               </div>
@@ -1533,9 +1539,11 @@ function ResourceAuthorizationPanel({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] px-4 py-3">
-        <div>
-          <h3 className="text-sm font-semibold">资源分配</h3>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <p style={{ fontSize: 14, color: "var(--color-text-tertiary)", margin: 0 }}>分配模块入口和可用能力池</p>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="sys-btn sys-btn--default" onClick={onCreatePageGrant}><PlusCircle size={14} /> 新增页签</button>
+          <button className="sys-btn sys-btn--primary" onClick={onCreateGrant}><PlusCircle size={14} /> 新增能力</button>
         </div>
       </div>
 
@@ -1547,12 +1555,11 @@ function ResourceAuthorizationPanel({
         <div className="sys-preview-card"><div className="sys-preview-card-title"><UserRoundCog size={16} /> 正在加载资源分配</div></div>
       ) : null}
 
-      <section className="tenant-auth-section">
-        <div className="tenant-auth-section-head">
+      <div style={{ marginBottom: 24 }}>
+        <div className="tenant-auth-section-head" style={{ borderBottom: "none", paddingBottom: 0 }}>
           <div>
             <h3>页签分配</h3>
           </div>
-          <button className="sys-btn sys-btn--default sys-btn--sm" onClick={onCreatePageGrant}><PlusCircle size={14} /> 新增页签分配</button>
         </div>
         {pageGrants.length === 0 && !loading ? (
           <div className="sys-preview-card">
@@ -1561,7 +1568,7 @@ function ResourceAuthorizationPanel({
         ) : (
           <div className="sys-card-grid">
             {pageGrantPagination.pagedItems.map((grant) => (
-              <article key={grant.id} className="sys-card sys-card--static tenant-auth-card">
+              <article key={grant.id} className="sys-card tenant-auth-card" onClick={() => onEditPageGrant(grant)}>
                 <div className="sys-card-header">
                   <div className="sys-card-avatar sys-card-avatar--tenant"><ShieldCheck size={22} /></div>
                   <div className="sys-card-info">
@@ -1584,7 +1591,7 @@ function ResourceAuthorizationPanel({
                 </div>
                 <div className="sys-card-footer">
                   <span className="sys-card-footer-time">创建于 {formatDateTime(grant.createdAt)}</span>
-                  <div className="sys-card-footer-actions">
+                  <div className="sys-card-footer-actions" onClick={(e) => e.stopPropagation()}>
                     <button className="sys-btn sys-btn--text sys-btn--sm" onClick={() => onEditPageGrant(grant)}><Edit size={14} /> 编辑</button>
                     <button className="sys-btn sys-btn--text sys-btn--sm" onClick={() => onDeletePageGrant(grant)}><X size={14} /> 删除</button>
                   </div>
@@ -1599,14 +1606,13 @@ function ResourceAuthorizationPanel({
           total={pageGrantPagination.total}
           onChange={pageGrantPagination.onChange}
         />
-      </section>
+      </div>
 
-      <section className="tenant-auth-section">
-        <div className="tenant-auth-section-head">
+      <div style={{ marginBottom: 24 }}>
+        <div className="tenant-auth-section-head" style={{ borderBottom: "none", paddingBottom: 0 }}>
           <div>
             <h3>能力分配</h3>
           </div>
-          <button className="sys-btn sys-btn--primary sys-btn--sm" onClick={onCreateGrant}><PlusCircle size={14} /> 新增能力分配</button>
         </div>
 
         {!loading && grants.length === 0 ? (
@@ -1618,7 +1624,7 @@ function ResourceAuthorizationPanel({
         {grants.length > 0 ? (
           <div className="sys-card-grid">
             {grantPagination.pagedItems.map((grant) => (
-              <article key={grant.id} className="sys-card sys-card--static tenant-auth-card">
+              <article key={grant.id} className="sys-card tenant-auth-card" onClick={() => onEditGrant(grant)}>
                 <div className="sys-card-header">
                   <div className="sys-card-avatar sys-card-avatar--tenant"><UserRoundCog size={22} /></div>
                   <div className="sys-card-info">
@@ -1645,7 +1651,7 @@ function ResourceAuthorizationPanel({
                 </div>
                 <div className="sys-card-footer">
                   <span className="sys-card-footer-time">创建于 {formatDateTime(grant.createdAt)}</span>
-                  <div className="sys-card-footer-actions">
+                  <div className="sys-card-footer-actions" onClick={(e) => e.stopPropagation()}>
                     <button className="sys-btn sys-btn--text sys-btn--sm" onClick={() => onEditGrant(grant)}><Edit size={14} /> 编辑</button>
                     <button className="sys-btn sys-btn--text sys-btn--sm" onClick={() => onDeleteGrant(grant)}><X size={14} /> 删除</button>
                   </div>
@@ -1660,7 +1666,7 @@ function ResourceAuthorizationPanel({
           total={grantPagination.total}
           onChange={grantPagination.onChange}
         />
-      </section>
+      </div>
     </div>
   );
 }

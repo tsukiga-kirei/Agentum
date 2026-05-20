@@ -682,7 +682,19 @@ export function SystemManagementPage() {
                     <div className="sys-preview-card-title"><DatabaseZap size={16}/> 模型提供商一览</div>
                     {previewModelProviders.length === 0 ? <Empty description="暂无模型供应商" image={Empty.PRESENTED_IMAGE_SIMPLE}/> : <>
                       {previewModelProviders.map(m=>(
-                        <div key={m.id} className="sys-preview-item">
+                        <div key={m.id} className="sys-preview-item" style={{cursor:"pointer"}} onClick={()=>{
+                          setSection("models");
+                          setEditingModelProvider(m);
+                          modelRef.current={
+                            name:m.name,
+                            providerType:m.providerType,
+                            baseUrl:m.baseUrl || "",
+                            defaultModel:m.defaultModel || "",
+                            status:m.status,
+                          };
+                          setSelectedModelProviderType(m.providerType);
+                          setModelModalOpen(true);
+                        }}>
                           <div className="sys-preview-item-left">
                             <div className="sys-preview-item-icon sys-card-avatar--model"><DatabaseZap size={16}/></div>
                             <div><div className="sys-preview-item-name">{m.name}</div><div className="sys-preview-item-sub">{m.providerType} · {m.defaultModel || "未配置默认模型"}</div></div>
@@ -697,7 +709,30 @@ export function SystemManagementPage() {
                     <div className="sys-preview-card-title"><Boxes size={16}/> 核心能力一览</div>
                     {previewCapabilities.length === 0 ? <Empty description="暂无能力" image={Empty.PRESENTED_IMAGE_SIMPLE}/> : <>
                       {previewCapabilities.map(c=>(
-                        <div key={c.id} className="sys-preview-item">
+                        <div key={c.id} className="sys-preview-item" style={{cursor:"pointer"}} onClick={()=>{
+                          setSection("capabilities");
+                          setEditingCapability(c);
+                          capRef.current={
+                            capabilityType:c.capabilityType,
+                            name:c.name,
+                            code:c.code,
+                            version:c.version,
+                            riskLevel:c.riskLevel,
+                            status:c.status,
+                            transport:readConfigString(c.config,"transport")||"stdio",
+                            command:readConfigString(c.config,"command"),
+                            args:readConfigString(c.config,"args"),
+                            workingDir:readConfigString(c.config,"workingDir"),
+                            sseUrl:readConfigString(c.config,"sseUrl"),
+                            deliveryChannel:readConfigString(c.config,"deliveryChannel"),
+                            target:readConfigString(c.config,"target"),
+                            sourcePath:readConfigString(c.config,"sourcePath"),
+                            manifestPath:readConfigString(c.config,"manifestPath")
+                          };
+                          setSelectedCapabilityType(c.capabilityType);
+                          setSelectedMcpTransport(readConfigString(c.config,"transport")||"stdio");
+                          setCapModalOpen(true);
+                        }}>
                           <div className="sys-preview-item-left">
                             <div className="sys-preview-item-icon sys-card-avatar--cap"><Boxes size={16}/></div>
                             <div><div className="sys-preview-item-name">{c.name}</div><div className="sys-preview-item-sub">{formatCapabilityType(c.capabilityType)} · {c.version}</div></div>
@@ -763,7 +798,18 @@ export function SystemManagementPage() {
                   <>
                     <div className="sys-card-grid">
                       {modelProviders.map(m=>(
-                      <div key={m.id} className="sys-card sys-card--static">
+                      <div key={m.id} className="sys-card" onClick={()=>{
+                        setEditingModelProvider(m);
+                        modelRef.current={
+                          name:m.name,
+                          providerType:m.providerType,
+                          baseUrl:m.baseUrl || "",
+                          defaultModel:m.defaultModel || "",
+                          status:m.status,
+                        };
+                        setSelectedModelProviderType(m.providerType);
+                        setModelModalOpen(true);
+                      }}>
                         <div className="sys-card-header">
                           <div className="sys-card-avatar sys-card-avatar--model"><DatabaseZap size={22}/></div>
                           <div className="sys-card-info"><div className="sys-card-name">{m.name}</div><div className="sys-card-code">{m.providerType}</div></div>
@@ -776,7 +822,7 @@ export function SystemManagementPage() {
                         </div>
                         <div className="sys-card-footer">
                           <span className="sys-card-footer-time"><ShieldCheck size={12}/> {m.providerType}</span>
-                          <div className="sys-card-footer-actions">
+                          <div className="sys-card-footer-actions" onClick={e=>e.stopPropagation()}>
                             <button className="sys-btn sys-btn--default sys-btn--sm" onClick={()=>testModelProviderConnection()}><PlayCircle size={14}/> 测试连接</button>
                             <button className="sys-btn sys-btn--text sys-btn--sm" onClick={()=>{
                               setEditingModelProvider(m);
@@ -817,7 +863,29 @@ export function SystemManagementPage() {
                   <>
                     <div className="sys-card-grid">
                       {capabilities.map(c=>(
-                      <div key={c.id} className="sys-card sys-card--static">
+                      <div key={c.id} className="sys-card" onClick={()=>{
+                        setEditingCapability(c);
+                        capRef.current={
+                          capabilityType:c.capabilityType,
+                          name:c.name,
+                          code:c.code,
+                          version:c.version,
+                          riskLevel:c.riskLevel,
+                          status:c.status,
+                          transport:readConfigString(c.config, "transport") || "stdio",
+                          command:readConfigString(c.config, "command"),
+                          args:readConfigString(c.config, "args"),
+                          workingDir:readConfigString(c.config, "workingDir"),
+                          sseUrl:readConfigString(c.config, "sseUrl"),
+                          deliveryChannel:readConfigString(c.config, "deliveryChannel"),
+                          target:readConfigString(c.config, "target"),
+                          sourcePath:readConfigString(c.config, "sourcePath"),
+                          manifestPath:readConfigString(c.config, "manifestPath"),
+                        };
+                        setSelectedCapabilityType(c.capabilityType);
+                        setSelectedMcpTransport(readConfigString(c.config, "transport") || "stdio");
+                        setCapModalOpen(true);
+                      }}>
                         <div className="sys-card-header">
                           <div className="sys-card-avatar sys-card-avatar--cap"><Boxes size={22}/></div>
                           <div className="sys-card-info"><div className="sys-card-name">{c.name}</div><div className="sys-card-code">{c.code}</div></div>
@@ -830,7 +898,7 @@ export function SystemManagementPage() {
                         </div>
                         <div className="sys-card-footer">
                           <span className="sys-card-footer-time"><ShieldCheck size={12}/> {c.code}</span>
-                          <div className="sys-card-footer-actions">
+                          <div className="sys-card-footer-actions" onClick={e=>e.stopPropagation()}>
                             <button className="sys-btn sys-btn--default sys-btn--sm" onClick={()=>testCapabilityConnection(c.id)}><PlayCircle size={14}/> 测试连通性</button>
                             <button className="sys-btn sys-btn--text sys-btn--sm" onClick={()=>{
                               setEditingCapability(c);
@@ -1076,89 +1144,91 @@ export function SystemManagementPage() {
         </div>
       )}
 
-      {/* 注册模型供应商弹窗 */}
-      {modelModalOpen && (
-        <div className="sys-modal-mask" onClick={()=>{setModelModalOpen(false);setEditingModelProvider(null);}}>
-          <div className="sys-modal" style={{maxWidth:520}} onClick={e=>e.stopPropagation()}>
-            <div className="sys-modal-header">
-              <span className="sys-modal-title">{editingModelProvider ? "编辑模型供应商" : "注册模型供应商"}</span>
-              <button className="sys-modal-close" onClick={()=>{setModelModalOpen(false);setEditingModelProvider(null);}}><X size={18}/></button>
-            </div>
-            <div className="sys-modal-body">
-              <div className="sys-field"><label className="sys-field-label sys-field-label--required">名称</label><div className="sys-field-input-wrap"><Tag size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如：通义千问" maxLength={160} defaultValue={modelRef.current.name || ""} onChange={e=>{modelRef.current.name=e.target.value;}}/></div></div>
-              <div className="sys-field"><label className="sys-field-label sys-field-label--required">模型供应商</label><SysSelect icon={ServerCog} placeholder="请选择模型供应商" defaultValue={modelRef.current.providerType || ""} options={modelProviderTypes.map((type)=>({value:type.code,label:type.name}))} onChange={v=>{modelRef.current.providerType=v;setSelectedModelProviderType(v);}}/></div>
-              {selectedModelProviderType && (
-                <div className="sys-hint"><ServerCog size={14}/> {modelProviderTypes.find((type)=>type.code===selectedModelProviderType)?.description || "平台内置模型供应商类型"}</div>
-              )}
-              <div className="sys-field"><label className="sys-field-label">基址 URL</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder={modelProviderTypes.find((type)=>type.code===selectedModelProviderType)?.defaultBaseUrl || "https://api.example.com"} maxLength={500} defaultValue={modelRef.current.baseUrl || ""} onChange={e=>{modelRef.current.baseUrl=e.target.value;}}/></div><div className="sys-field-hint">不填写时沿用供应商类型的默认基址</div></div>
-              <div className="sys-field"><label className="sys-field-label sys-field-label--required">默认模型</label><div className="sys-field-input-wrap"><DatabaseZap size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如 qwen-max" maxLength={160} defaultValue={modelRef.current.defaultModel || ""} onChange={e=>{modelRef.current.defaultModel=e.target.value;}}/></div></div>
-              <div className="sys-field"><label className="sys-field-label">API Key</label><div className="sys-field-input-wrap"><KeyRound size={16} className="sys-field-prefix"/><input className="sys-field-input" type="password" placeholder={editingModelProvider?.apiKeyConfigured ? "已配置，留空则保持不变" : "部分供应商需要填写"} maxLength={2000} onChange={e=>{modelRef.current.apiKey=e.target.value;}}/></div><div className="sys-field-hint">密钥不会在列表中回显；当前阶段只记录已配置状态，后续接入凭证托管。</div></div>
-              <div className="sys-field"><label className="sys-field-label">状态</label><SysSelect icon={Check} defaultValue={modelRef.current.status || "draft"} options={[{value:"draft",label:"草稿"},{value:"active",label:"可用"}]} onChange={v=>{modelRef.current.status=v;}}/></div>
-            </div>
-            <div className="sys-modal-footer">
-              <button className="sys-btn sys-btn--default" onClick={()=>testModelProviderConnection()}><PlayCircle size={14}/> 测试连接</button>
-              <button className="sys-btn sys-btn--default" onClick={()=>{setModelModalOpen(false);setEditingModelProvider(null);}}><X size={14}/> 取消</button>
-              <button className="sys-btn sys-btn--primary" onClick={()=>void submitModel()}><PlusCircle size={14}/> {editingModelProvider ? "保存修改" : "确认注册"}</button>
-            </div>
+      {/* 注册模型供应商抽屉 */}
+      <Drawer
+        title={editingModelProvider ? "编辑模型供应商" : "注册模型供应商"}
+        placement="right"
+        width={560}
+        onClose={()=>{setModelModalOpen(false);setEditingModelProvider(null);}}
+        open={modelModalOpen}
+        rootClassName={drawerRootClassName}
+      >
+        <div className="sys-drawer-section">
+          <div className="sys-field"><label className="sys-field-label sys-field-label--required">名称</label><div className="sys-field-input-wrap"><Tag size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如：通义千问" maxLength={160} defaultValue={modelRef.current.name || ""} onChange={e=>{modelRef.current.name=e.target.value;}}/></div></div>
+          <div className="sys-field"><label className="sys-field-label sys-field-label--required">模型供应商</label><SysSelect icon={ServerCog} placeholder="请选择模型供应商" defaultValue={modelRef.current.providerType || ""} options={modelProviderTypes.map((type)=>({value:type.code,label:type.name}))} onChange={v=>{modelRef.current.providerType=v;setSelectedModelProviderType(v);}}/></div>
+          {selectedModelProviderType && (
+            <div className="sys-hint"><ServerCog size={14}/> {modelProviderTypes.find((type)=>type.code===selectedModelProviderType)?.description || "平台内置模型供应商类型"}</div>
+          )}
+          <div className="sys-field"><label className="sys-field-label">基址 URL</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder={modelProviderTypes.find((type)=>type.code===selectedModelProviderType)?.defaultBaseUrl || "https://api.example.com"} maxLength={500} defaultValue={modelRef.current.baseUrl || ""} onChange={e=>{modelRef.current.baseUrl=e.target.value;}}/></div><div className="sys-field-hint">不填写时沿用供应商类型的默认基址</div></div>
+          <div className="sys-field"><label className="sys-field-label sys-field-label--required">默认模型</label><div className="sys-field-input-wrap"><DatabaseZap size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如 qwen-max" maxLength={160} defaultValue={modelRef.current.defaultModel || ""} onChange={e=>{modelRef.current.defaultModel=e.target.value;}}/></div></div>
+          <div className="sys-field"><label className="sys-field-label">API Key</label><div className="sys-field-input-wrap"><KeyRound size={16} className="sys-field-prefix"/><input className="sys-field-input" type="password" placeholder={editingModelProvider?.apiKeyConfigured ? "已配置，留空则保持不变" : "部分供应商需要填写"} maxLength={2000} onChange={e=>{modelRef.current.apiKey=e.target.value;}}/></div><div className="sys-field-hint">密钥不会在列表中回显；当前阶段只记录已配置状态，后续接入凭证托管。</div></div>
+          <div className="sys-field"><label className="sys-field-label">状态</label><SysSelect icon={Check} defaultValue={modelRef.current.status || "draft"} options={[{value:"draft",label:"草稿"},{value:"active",label:"可用"}]} onChange={v=>{modelRef.current.status=v;}}/></div>
+        </div>
+        <div className="sys-drawer-footer">
+          <div className="sys-drawer-footer-right">
+            <button className="sys-btn sys-btn--default" onClick={()=>testModelProviderConnection()}><PlayCircle size={14}/> 测试连接</button>
+            <button className="sys-btn sys-btn--default" onClick={()=>{setModelModalOpen(false);setEditingModelProvider(null);}}><X size={14}/> 取消</button>
+            <button className="sys-btn sys-btn--primary" onClick={()=>void submitModel()}><PlusCircle size={14}/> {editingModelProvider ? "保存修改" : "确认注册"}</button>
           </div>
         </div>
-      )}
+      </Drawer>
 
-      {/* 注册系统能力弹窗 */}
-      {capModalOpen && (
-        <div className="sys-modal-mask" onClick={()=>{setCapModalOpen(false);setEditingCapability(null);}}>
-          <div className="sys-modal" style={{maxWidth:520}} onClick={e=>e.stopPropagation()}>
-            <div className="sys-modal-header">
-              <span className="sys-modal-title">{editingCapability ? "编辑系统能力" : "注册系统能力"}</span>
-              <button className="sys-modal-close" onClick={()=>{setCapModalOpen(false);setEditingCapability(null);}}><X size={18}/></button>
-            </div>
-            <div className="sys-modal-body">
-              <div className="sys-field"><label className="sys-field-label sys-field-label--required">能力类型</label><SysSelect icon={Boxes} defaultValue={capRef.current.capabilityType || "mcp"} options={capabilityTypeOptions} onChange={v=>{capRef.current.capabilityType=v;setSelectedCapabilityType(v);}}/></div>
-              <div className="sys-field-row">
-                <div className="sys-field"><label className="sys-field-label sys-field-label--required">名称</label><div className="sys-field-input-wrap"><Tag size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如：文档解析器" maxLength={160} defaultValue={capRef.current.name || ""} onChange={e=>{capRef.current.name=e.target.value;}}/></div></div>
-                <div className="sys-field"><label className="sys-field-label sys-field-label--required">编码</label><div className="sys-field-input-wrap"><Code2 size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如 doc_parser" maxLength={100} defaultValue={capRef.current.code || ""} onChange={e=>{capRef.current.code=e.target.value;}}/></div></div>
-              </div>
-              <div className="sys-field-row">
-                <div className="sys-field"><label className="sys-field-label">版本</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" defaultValue={capRef.current.version || "v1"} maxLength={40} onChange={e=>{capRef.current.version=e.target.value;}}/></div></div>
-                <div className="sys-field"><label className="sys-field-label">风险等级</label><SysSelect icon={ShieldAlert} defaultValue={capRef.current.riskLevel || "low"} options={[{value:"low",label:"低"},{value:"medium",label:"中"},{value:"high",label:"高"}]} onChange={v=>{capRef.current.riskLevel=v;}}/></div>
-              </div>
-              <div className="sys-field"><label className="sys-field-label">状态</label><SysSelect icon={Check} defaultValue={capRef.current.status || "draft"} options={[{value:"draft",label:"草稿"},{value:"active",label:"启用"}]} onChange={v=>{capRef.current.status=v;}}/></div>
-              {selectedCapabilityType === "mcp" && (
-                <div className="sys-config-group">
-                  <div className="sys-field"><label className="sys-field-label">MCP 传输方式</label><SysSelect icon={ServerCog} defaultValue={capRef.current.transport || "stdio"} options={[{value:"stdio",label:"stdio 命令"},{value:"sse",label:"SSE 地址"}]} onChange={v=>{capRef.current.transport=v;setSelectedMcpTransport(v);}}/></div>
-                  {selectedMcpTransport === "sse" ? (
-                    <div className="sys-field"><label className="sys-field-label sys-field-label--required">SSE 地址</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="https://mcp.example.com/sse" maxLength={500} defaultValue={capRef.current.sseUrl || ""} onChange={e=>{capRef.current.sseUrl=e.target.value;}}/></div></div>
-                  ) : (
-                    <>
-                      <div className="sys-field"><label className="sys-field-label sys-field-label--required">启动命令</label><div className="sys-field-input-wrap"><ServerCog size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="node /opt/mcp/server.js" maxLength={500} defaultValue={capRef.current.command || ""} onChange={e=>{capRef.current.command=e.target.value;}}/></div></div>
-                      <div className="sys-field-row">
-                        <div className="sys-field"><label className="sys-field-label">命令参数</label><div className="sys-field-input-wrap"><Code2 size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="--readonly --tenant-safe" maxLength={500} defaultValue={capRef.current.args || ""} onChange={e=>{capRef.current.args=e.target.value;}}/></div></div>
-                        <div className="sys-field"><label className="sys-field-label">工作目录</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="/opt/agentum/mcp/file-read" maxLength={500} defaultValue={capRef.current.workingDir || ""} onChange={e=>{capRef.current.workingDir=e.target.value;}}/></div></div>
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
-              {(selectedCapabilityType === "skill" || selectedCapabilityType === "prompt_template") && (
-                <div className="sys-field-row">
-                  <div className="sys-field"><label className="sys-field-label">源码路径</label><div className="sys-field-input-wrap"><Code2 size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder={selectedCapabilityType === "skill" ? "capabilities/skills/..." : "capabilities/prompt-templates/..."} maxLength={500} defaultValue={capRef.current.sourcePath || ""} onChange={e=>{capRef.current.sourcePath=e.target.value;}}/></div></div>
-                  <div className="sys-field"><label className="sys-field-label">Manifest 路径</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="manifest.yaml / skill.yaml" maxLength={500} defaultValue={capRef.current.manifestPath || ""} onChange={e=>{capRef.current.manifestPath=e.target.value;}}/></div></div>
-                </div>
-              )}
-              {selectedCapabilityType === "delivery" && (
-                <div className="sys-field-row">
-                  <div className="sys-field"><label className="sys-field-label">交付通道</label><SysSelect icon={Mail} defaultValue={capRef.current.deliveryChannel || ""} options={[{value:"document",label:"文档生成"},{value:"email",label:"邮件"},{value:"oa",label:"OA 流程"},{value:"webhook",label:"Webhook"}]} onChange={v=>{capRef.current.deliveryChannel=v;}}/></div>
-                  <div className="sys-field"><label className="sys-field-label">目标说明</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="通道标识或模板路径" maxLength={500} defaultValue={capRef.current.target || ""} onChange={e=>{capRef.current.target=e.target.value;}}/></div></div>
-                </div>
+      {/* 注册系统能力抽屉 */}
+      <Drawer
+        title={editingCapability ? "编辑系统能力" : "注册系统能力"}
+        placement="right"
+        width={560}
+        onClose={()=>{setCapModalOpen(false);setEditingCapability(null);}}
+        open={capModalOpen}
+        rootClassName={drawerRootClassName}
+      >
+        <div className="sys-drawer-section">
+          <div className="sys-field"><label className="sys-field-label sys-field-label--required">能力类型</label><SysSelect icon={Boxes} defaultValue={capRef.current.capabilityType || "mcp"} options={capabilityTypeOptions} onChange={v=>{capRef.current.capabilityType=v;setSelectedCapabilityType(v);}}/></div>
+          <div className="sys-field-row">
+            <div className="sys-field"><label className="sys-field-label sys-field-label--required">名称</label><div className="sys-field-input-wrap"><Tag size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如：文档解析器" maxLength={160} defaultValue={capRef.current.name || ""} onChange={e=>{capRef.current.name=e.target.value;}}/></div></div>
+            <div className="sys-field"><label className="sys-field-label sys-field-label--required">编码</label><div className="sys-field-input-wrap"><Code2 size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如 doc_parser" maxLength={100} defaultValue={capRef.current.code || ""} onChange={e=>{capRef.current.code=e.target.value;}}/></div></div>
+          </div>
+          <div className="sys-field-row">
+            <div className="sys-field"><label className="sys-field-label">版本</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" defaultValue={capRef.current.version || "v1"} maxLength={40} onChange={e=>{capRef.current.version=e.target.value;}}/></div></div>
+            <div className="sys-field"><label className="sys-field-label">风险等级</label><SysSelect icon={ShieldAlert} defaultValue={capRef.current.riskLevel || "low"} options={[{value:"low",label:"低"},{value:"medium",label:"中"},{value:"high",label:"高"}]} onChange={v=>{capRef.current.riskLevel=v;}}/></div>
+          </div>
+          <div className="sys-field"><label className="sys-field-label">状态</label><SysSelect icon={Check} defaultValue={capRef.current.status || "draft"} options={[{value:"draft",label:"草稿"},{value:"active",label:"启用"}]} onChange={v=>{capRef.current.status=v;}}/></div>
+          {selectedCapabilityType === "mcp" && (
+            <div className="sys-config-group">
+              <div className="sys-field"><label className="sys-field-label">MCP 传输方式</label><SysSelect icon={ServerCog} defaultValue={capRef.current.transport || "stdio"} options={[{value:"stdio",label:"stdio 命令"},{value:"sse",label:"SSE 地址"}]} onChange={v=>{capRef.current.transport=v;setSelectedMcpTransport(v);}}/></div>
+              {selectedMcpTransport === "sse" ? (
+                <div className="sys-field"><label className="sys-field-label sys-field-label--required">SSE 地址</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="https://mcp.example.com/sse" maxLength={500} defaultValue={capRef.current.sseUrl || ""} onChange={e=>{capRef.current.sseUrl=e.target.value;}}/></div></div>
+              ) : (
+                <>
+                  <div className="sys-field"><label className="sys-field-label sys-field-label--required">启动命令</label><div className="sys-field-input-wrap"><ServerCog size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="node /opt/mcp/server.js" maxLength={500} defaultValue={capRef.current.command || ""} onChange={e=>{capRef.current.command=e.target.value;}}/></div></div>
+                  <div className="sys-field-row">
+                    <div className="sys-field"><label className="sys-field-label">命令参数</label><div className="sys-field-input-wrap"><Code2 size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="--readonly --tenant-safe" maxLength={500} defaultValue={capRef.current.args || ""} onChange={e=>{capRef.current.args=e.target.value;}}/></div></div>
+                    <div className="sys-field"><label className="sys-field-label">工作目录</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="/opt/agentum/mcp/file-read" maxLength={500} defaultValue={capRef.current.workingDir || ""} onChange={e=>{capRef.current.workingDir=e.target.value;}}/></div></div>
+                  </div>
+                </>
               )}
             </div>
-            <div className="sys-modal-footer">
-              <button className="sys-btn sys-btn--default" onClick={()=>{setCapModalOpen(false);setEditingCapability(null);}}><X size={14}/> 取消</button>
-              <button className="sys-btn sys-btn--primary" onClick={()=>void submitCapability()}><PlusCircle size={14}/> {editingCapability ? "保存修改" : "确认注册"}</button>
+          )}
+          {(selectedCapabilityType === "skill" || selectedCapabilityType === "prompt_template") && (
+            <div className="sys-field-row">
+              <div className="sys-field"><label className="sys-field-label">源码路径</label><div className="sys-field-input-wrap"><Code2 size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder={selectedCapabilityType === "skill" ? "capabilities/skills/..." : "capabilities/prompt-templates/..."} maxLength={500} defaultValue={capRef.current.sourcePath || ""} onChange={e=>{capRef.current.sourcePath=e.target.value;}}/></div></div>
+              <div className="sys-field"><label className="sys-field-label">Manifest 路径</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="manifest.yaml / skill.yaml" maxLength={500} defaultValue={capRef.current.manifestPath || ""} onChange={e=>{capRef.current.manifestPath=e.target.value;}}/></div></div>
             </div>
+          )}
+          {selectedCapabilityType === "delivery" && (
+            <div className="sys-field-row">
+              <div className="sys-field"><label className="sys-field-label">交付通道</label><SysSelect icon={Mail} defaultValue={capRef.current.deliveryChannel || ""} options={[{value:"document",label:"文档生成"},{value:"email",label:"邮件"},{value:"oa",label:"OA 流程"},{value:"webhook",label:"Webhook"}]} onChange={v=>{capRef.current.deliveryChannel=v;}}/></div>
+              <div className="sys-field"><label className="sys-field-label">目标说明</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="通道标识或模板路径" maxLength={500} defaultValue={capRef.current.target || ""} onChange={e=>{capRef.current.target=e.target.value;}}/></div></div>
+            </div>
+          )}
+        </div>
+        <div className="sys-drawer-footer">
+          <div className="sys-drawer-footer-right">
+            <button className="sys-btn sys-btn--default" onClick={()=>{setCapModalOpen(false);setEditingCapability(null);}}><X size={14}/> 取消</button>
+            <button className="sys-btn sys-btn--primary" onClick={()=>void submitCapability()}><PlusCircle size={14}/> {editingCapability ? "保存修改" : "确认注册"}</button>
           </div>
         </div>
-      )}
+      </Drawer>
     </>
   );
 }

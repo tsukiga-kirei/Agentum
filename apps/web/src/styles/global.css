@@ -594,6 +594,169 @@ textarea:focus-visible {
   opacity: 0.72;
 }
 
+/* ===== 深色模式：Ant Design message 全局提示 ===== */
+.dark .ant-message .ant-message-notice-content {
+  background: var(--color-bg-card);
+  color: var(--color-text-primary);
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--color-border-light);
+}
+.dark .ant-message-success .ant-message-icon { color: var(--color-success); }
+.dark .ant-message-error .ant-message-icon { color: var(--color-danger); }
+.dark .ant-message-warning .ant-message-icon { color: var(--color-warning); }
+.dark .ant-message-info .ant-message-icon { color: var(--color-primary-light); }
+.dark .ant-message-loading .ant-message-icon { color: var(--color-primary-light); }
+
+/* ===== 深色模式：Ant Design Modal.confirm 对话框 ===== */
+.dark .ant-modal-confirm .ant-modal-content {
+  background: var(--color-bg-card);
+  color: var(--color-text-primary);
+}
+.dark .ant-modal-confirm .ant-modal-confirm-title {
+  color: var(--color-text-primary);
+}
+.dark .ant-modal-confirm .ant-modal-confirm-content {
+  color: var(--color-text-secondary);
+}
+.dark .ant-modal-confirm .ant-btn-default {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+  border-color: var(--color-border-light);
+}
+.dark .ant-modal-confirm .ant-btn-default:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+/* ===== 深色模式：自定义弹窗 sys-modal 内部全量文字色 ===== */
+.dark .sys-modal {
+  border: 1px solid var(--color-border-light);
+}
+.dark .sys-hint {
+  background: rgba(59, 130, 246, 0.12);
+}
+.dark .sys-config-group {
+  background: var(--color-bg-hover);
+}
+
+/* ===== 深色模式：Drawer 内子组件文字色完整覆盖 ===== */
+.agent-admin-drawer--dark .sys-drawer-tab {
+  color: var(--color-text-tertiary);
+}
+.agent-admin-drawer--dark .sys-drawer-tab:hover {
+  color: var(--color-text-primary);
+}
+.agent-admin-drawer--dark .sys-drawer-tab--active {
+  background: var(--color-bg-card);
+  color: var(--color-primary);
+}
+.agent-admin-drawer--dark .sys-section-header {
+  color: var(--color-text-primary);
+}
+.agent-admin-drawer--dark .sys-form-label {
+  color: var(--color-text-tertiary);
+}
+.agent-admin-drawer--dark .sys-form-value {
+  color: var(--color-text-primary);
+}
+.agent-admin-drawer--dark .sys-config-group {
+  background: var(--color-bg-hover);
+}
+.agent-admin-drawer--dark .sys-config-group-title {
+  color: var(--color-text-secondary);
+}
+.agent-admin-drawer--dark .sys-hint {
+  background: rgba(59, 130, 246, 0.12);
+  color: #60a5fa;
+}
+.agent-admin-drawer--dark .sys-info-tag {
+  color: var(--color-text-secondary);
+}
+.agent-admin-drawer--dark .sys-info-tag--primary {
+  color: var(--color-primary-light);
+}
+.agent-admin-drawer--dark .sys-info-tag--info {
+  color: #60a5fa;
+}
+.agent-admin-drawer--dark .sys-status--active {
+  color: #34d399;
+}
+.agent-admin-drawer--dark .sys-status--inactive {
+  color: var(--color-text-tertiary);
+}
+.agent-admin-drawer--dark .sys-field-label {
+  color: var(--color-text-secondary);
+}
+.agent-admin-drawer--dark .sys-field-input {
+  background: var(--color-bg-input);
+  color: var(--color-text-primary);
+  border-color: var(--color-border);
+}
+.agent-admin-drawer--dark .sys-field-textarea {
+  background: var(--color-bg-input);
+  color: var(--color-text-primary);
+  border-color: var(--color-border);
+}
+.agent-admin-drawer--dark .sys-field-hint {
+  color: var(--color-text-tertiary);
+}
+.agent-admin-drawer--dark .sys-btn--default {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+  border-color: var(--color-border);
+}
+.agent-admin-drawer--dark .sys-readonly-field {
+  background: var(--color-bg-hover);
+  color: var(--color-text-secondary);
+  border-color: var(--color-border);
+}
+
+/* ===== 深色模式：Ant Design Modal（能力资产等使用） 增强覆盖 ===== */
+.agent-dark-modal .sys-field-label {
+  color: #94a3b8;
+}
+.agent-dark-modal .sys-field-input {
+  background: #0f1829;
+  color: #f1f5f9;
+  border-color: #253352;
+}
+.agent-dark-modal .sys-field-input::placeholder {
+  color: #64748b;
+}
+.agent-dark-modal .sys-field-textarea {
+  background: #0f1829;
+  color: #f1f5f9;
+  border-color: #253352;
+}
+.agent-dark-modal .sys-field-textarea::placeholder {
+  color: #64748b;
+}
+.agent-dark-modal .sys-field-hint {
+  color: #64748b;
+}
+.agent-dark-modal .sys-hint {
+  background: rgba(59, 130, 246, 0.12);
+  color: #60a5fa;
+}
+.agent-dark-modal .sys-config-group {
+  background: #1a2540;
+}
+.agent-dark-modal .sys-config-group-title {
+  color: #94a3b8;
+}
+.agent-dark-modal .sys-info-tag {
+  color: #94a3b8;
+}
+.agent-dark-modal .sys-info-tag--primary {
+  color: #a5b4fc;
+  background: rgba(99, 102, 241, 0.14);
+}
+.agent-dark-modal .sys-btn--default {
+  background: #1a2540;
+  color: #f1f5f9;
+  border-color: #253352;
+}
+
 /* ==================== 主题切换药丸（与 AuraOA 完全一致） ==================== */
 .theme-toggle-btn {
   width: auto !important;
@@ -1213,10 +1376,13 @@ textarea:focus-visible {
 /* 卡片网格：租户 / 模型 / 能力共用 */
 .sys-card-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 20px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
 }
-@media (max-width: 900px) {
+@media (max-width: 1200px) {
+  .sys-card-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 768px) {
   .sys-card-grid { grid-template-columns: 1fr; }
 }
 
@@ -1225,7 +1391,7 @@ textarea:focus-visible {
   background: var(--color-bg-card);
   border-radius: var(--radius-xl, 16px);
   border: 1px solid var(--color-border-light);
-  padding: 22px;
+  padding: 18px;
   transition: all var(--transition-base);
   cursor: pointer;
 }
@@ -1245,10 +1411,10 @@ textarea:focus-visible {
   margin-bottom: 16px;
 }
 .sys-card-avatar {
-  width: 48px; height: 48px;
+  width: 42px; height: 42px;
   border-radius: var(--radius-lg);
   display: flex; align-items: center; justify-content: center;
-  font-size: 22px; flex-shrink: 0;
+  font-size: 20px; flex-shrink: 0;
 }
 .sys-card-avatar--tenant {
   background: linear-gradient(135deg, var(--color-primary-bg), color-mix(in srgb, var(--color-primary) 18%, transparent));
@@ -1270,7 +1436,7 @@ textarea:focus-visible {
 }
 .sys-card-info { flex: 1; min-width: 0; }
 .sys-card-name {
-  font-size: 16px; font-weight: 600;
+  font-size: 15px; font-weight: 600;
   color: var(--color-text-primary);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }

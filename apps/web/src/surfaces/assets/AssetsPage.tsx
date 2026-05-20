@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bot, Boxes, BrainCircuit, CheckCircle2, ChevronDown, Clock, Edit3, Eye, FileText, Hash, Library, PlusCircle, Search, Send, ShieldCheck, Tag, Trash2, UserRoundCog, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { Empty, Modal, Pagination, Segmented, Select, Spin, message } from "antd";
+import { Empty, Modal, Pagination, Segmented, Select, Spin, message, Drawer } from "antd";
 import { AgentumApiError, assetApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import type { AssetSummary, AssetType, CreatableAssetType, CreateMyAssetRequest, MyAssetDetail, MyAssetRow, SystemCapabilityAssetRow, UpdateMyAssetRequest } from "../../types/asset";
@@ -68,6 +68,10 @@ export function AssetsPage() {
   const themeMode = useAuthStore((s) => s.themeMode);
   const [messageApi, messageContextHolder] = message.useMessage();
   const [modalApi, modalContextHolder] = Modal.useModal();
+  const drawerRootClassName = themeMode === "dark" ? "agent-admin-drawer agent-admin-drawer--dark" : "agent-admin-drawer";
+
+  const [systemDetailOpen, setSystemDetailOpen] = useState(false);
+  const [selectedSystemAsset, setSelectedSystemAsset] = useState<SystemCapabilityAssetRow | null>(null);
 
   const [activeTab, setActiveTab] = useState<AssetTab>("overview");
   const [loading, setLoading] = useState(false);
@@ -372,10 +376,6 @@ export function AssetsPage() {
               </p>
             </div>
           </div>
-          <button type="button" className="sys-btn sys-btn--primary" onClick={() => setCreateOpen(true)}>
-            <PlusCircle size={15} />
-            新建能力草稿
-          </button>
         </header>
 
         <div className="system-mgmt-module-switch mb-5">
@@ -400,16 +400,22 @@ export function AssetsPage() {
 
           {activeTab === "system" ? (
             <section className="sys-fade-in">
-              <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-                <p className="m-0 text-sm text-[var(--color-text-tertiary)]">这里仅展示租户管理已经开放给当前用户、部门或角色的能力；只进入租户池但未分配给当前主体的能力不会出现在业务视图中。</p>
-              </div>
               {systemAssets.length === 0 ? (
                 <div className="sys-preview-card">
                   <Empty description="当前暂无对我开放的能力" image={Empty.PRESENTED_IMAGE_SIMPLE} />
                 </div>
               ) : (
                 <div className="sys-card-grid">
-                  {systemAssets.map((asset) => <SystemAssetCard key={asset.id} asset={asset} />)}
+                  {systemAssets.map((asset) => (
+                    <SystemAssetCard
+                      key={asset.id}
+                      asset={asset}
+                      onView={(a) => {
+                        setSelectedSystemAsset(a);
+                        setSystemDetailOpen(true);
+                      }}
+                    />
+                  ))}
                 </div>
               )}
               <AssetPagination pageState={systemPage} onChange={(page, size) => void loadSystemAssets(page, size)} />
@@ -418,12 +424,11 @@ export function AssetsPage() {
 
           {activeTab === "mine" ? (
             <section className="sys-fade-in">
-              <div className="mb-5 flex flex-col gap-3 rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
                 <div>
-                  <h3 className="text-sm font-semibold">我的能力</h3>
-                  <p className="agent-muted mt-1 text-xs">草稿完善后发布为正式能力，进入流程节点引用链路。</p>
+                  <p style={{ fontSize: 14, color: "var(--color-text-tertiary)", margin: 0 }}>草稿完善后发布为正式能力，进入流程节点引用链路。</p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
+                <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
                   <div className="sys-field-input-wrap min-w-[260px]">
                     <Search size={16} className="sys-field-prefix" aria-hidden="true" />
                     <input
@@ -439,6 +444,10 @@ export function AssetsPage() {
                   <button type="button" className="sys-btn sys-btn--default sys-btn--sm" onClick={() => void loadMyAssets(1, minePage.size, keyword)}>
                     <Search size={14} />
                     查询
+                  </button>
+                  <button type="button" className="sys-btn sys-btn--primary sys-btn--sm" onClick={() => setCreateOpen(true)}>
+                    <PlusCircle size={14} />
+                    新建能力草稿
                   </button>
                 </div>
               </div>
@@ -457,229 +466,320 @@ export function AssetsPage() {
         </Spin>
       </div>
 
-      <Modal
+      {/* 新建能力草稿抽屉 */}
+      <Drawer
+        title="新建能力草稿"
+        placement="right"
+        width={560}
+        onClose={() => setCreateOpen(false)}
         open={createOpen}
-        title={<span className="sys-modal-title">新建能力草稿</span>}
-        footer={null}
-        rootClassName={modalRootClassName}
-        onCancel={() => setCreateOpen(false)}
+        rootClassName={drawerRootClassName}
       >
-        <div className="sys-field">
-          <label className="sys-field-label sys-field-label--required">能力类型</label>
-          <Select
-            className="agent-admin-select w-full"
-            classNames={adminSelectClassNames}
-            prefix={<Boxes className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
-            suffixIcon={adminSelectSuffixIcon}
-            value={draft.assetType}
-            options={creatableAssetTypeOptions}
-            onChange={(assetType) => setDraft((current) => ({ ...current, assetType, config: assetType === "prompt_template" ? { promptContent: "" } : { systemPrompt: "", skillIds: [], mcpIds: [] } }))}
-          />
-        </div>
-        <div className="sys-field-row">
+        <div className="sys-drawer-section">
           <div className="sys-field">
-            <label className="sys-field-label sys-field-label--required">能力名称</label>
-            <div className="sys-field-input-wrap">
-              <Tag size={16} className="sys-field-prefix" aria-hidden="true" />
-              <input className="sys-field-input" value={draft.name} placeholder="例如：续约风险追问模板" onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} />
-            </div>
-          </div>
-          <div className="sys-field">
-            <label className="sys-field-label sys-field-label--required">能力编码</label>
-            <div className="sys-field-input-wrap">
-              <Hash size={16} className="sys-field-prefix" aria-hidden="true" />
-              <input className="sys-field-input" value={draft.code} placeholder="renewal_risk_prompt" onChange={(event) => setDraft((current) => ({ ...current, code: event.target.value }))} />
-            </div>
-          </div>
-        </div>
-        <div className="sys-field-row">
-          <div className="sys-field">
-            <label className="sys-field-label">版本</label>
-            <div className="sys-field-input-wrap">
-              <FileText size={16} className="sys-field-prefix" aria-hidden="true" />
-              <input className="sys-field-input" value={draft.version ?? "v1"} onChange={(event) => setDraft((current) => ({ ...current, version: event.target.value }))} />
-            </div>
-          </div>
-          <div className="sys-field">
-            <label className="sys-field-label">风险等级</label>
+            <label className="sys-field-label sys-field-label--required">能力类型</label>
             <Select
               className="agent-admin-select w-full"
               classNames={adminSelectClassNames}
-              prefix={<ShieldCheck className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+              prefix={<Boxes className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
               suffixIcon={adminSelectSuffixIcon}
-              value={draft.riskLevel}
-              options={riskOptions}
-              onChange={(riskLevel) => setDraft((current) => ({ ...current, riskLevel }))}
+              value={draft.assetType}
+              options={creatableAssetTypeOptions}
+              onChange={(assetType) => setDraft((current) => ({ ...current, assetType, config: assetType === "prompt_template" ? { promptContent: "" } : { systemPrompt: "", skillIds: [], mcpIds: [] } }))}
             />
           </div>
-        </div>
-        <div className="sys-field">
-          <label className="sys-field-label">可见范围</label>
-          <Select
-            className="agent-admin-select w-full"
-            classNames={adminSelectClassNames}
-            prefix={<Eye className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
-            suffixIcon={adminSelectSuffixIcon}
-            value={draft.visibility}
-            options={visibilityOptions}
-            onChange={(visibility) => setDraft((current) => ({ ...current, visibility }))}
-          />
-        </div>
-        <div className="sys-field">
-          <label className="sys-field-label">说明</label>
-          <textarea className="sys-field-textarea" value={draft.description ?? ""} placeholder="说明这项能力的业务用途、输入约束和后续发布方向" onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} />
-        </div>
-        <div className="mt-4 flex justify-end gap-2">
-          <button type="button" className="sys-btn sys-btn--default" onClick={() => setCreateOpen(false)}>
-            <X size={14} />
-            取消
-          </button>
-          <button type="button" className="sys-btn sys-btn--primary" disabled={submitting} onClick={() => void handleCreate()}>
-            <PlusCircle size={14} />
-            创建草稿
-          </button>
-        </div>
-      </Modal>
-
-      <Modal
-        open={editOpen}
-        title={<span className="sys-modal-title">{currentAsset?.status === "draft" ? "编辑能力草稿" : "查看正式能力"}</span>}
-        footer={null}
-        width={720}
-        rootClassName={modalRootClassName}
-        onCancel={() => setEditOpen(false)}
-      >
-        {currentAsset ? (
-          <>
-            <div className="sys-field-row">
-              <div className="sys-field">
-                <label className="sys-field-label sys-field-label--required">能力名称</label>
-                <div className="sys-field-input-wrap">
-                  <Tag size={16} className="sys-field-prefix" aria-hidden="true" />
-                  <input className="sys-field-input" disabled={currentAsset.status !== "draft"} value={editDraft.name} onChange={(event) => setEditDraft((current) => ({ ...current, name: event.target.value }))} />
-                </div>
-              </div>
-              <div className="sys-field">
-                <label className="sys-field-label sys-field-label--required">能力编码</label>
-                <div className="sys-field-input-wrap">
-                  <Hash size={16} className="sys-field-prefix" aria-hidden="true" />
-                  <input className="sys-field-input" disabled={currentAsset.status !== "draft"} value={editDraft.code} onChange={(event) => setEditDraft((current) => ({ ...current, code: event.target.value }))} />
-                </div>
-              </div>
-            </div>
-            <div className="sys-field-row">
-              <div className="sys-field">
-                <label className="sys-field-label">版本</label>
-                <div className="sys-field-input-wrap">
-                  <FileText size={16} className="sys-field-prefix" aria-hidden="true" />
-                  <input className="sys-field-input" disabled={currentAsset.status !== "draft"} value={editDraft.version ?? "v1"} onChange={(event) => setEditDraft((current) => ({ ...current, version: event.target.value }))} />
-                </div>
-              </div>
-              <div className="sys-field">
-                <label className="sys-field-label">风险等级</label>
-                <Select
-                  className="agent-admin-select w-full"
-                  classNames={adminSelectClassNames}
-                  disabled={currentAsset.status !== "draft"}
-                  prefix={<ShieldCheck className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
-                  suffixIcon={adminSelectSuffixIcon}
-                  value={editDraft.riskLevel}
-                  options={riskOptions}
-                  onChange={(riskLevel) => setEditDraft((current) => ({ ...current, riskLevel }))}
-                />
+          <div className="sys-field-row">
+            <div className="sys-field">
+              <label className="sys-field-label sys-field-label--required">能力名称</label>
+              <div className="sys-field-input-wrap">
+                <Tag size={16} className="sys-field-prefix" aria-hidden="true" />
+                <input className="sys-field-input" value={draft.name} placeholder="例如：续约风险追问模板" onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} />
               </div>
             </div>
             <div className="sys-field">
-              <label className="sys-field-label">说明</label>
-              <textarea className="sys-field-textarea" disabled={currentAsset.status !== "draft"} value={editDraft.description ?? ""} onChange={(event) => setEditDraft((current) => ({ ...current, description: event.target.value }))} />
-            </div>
-
-            {currentAsset.assetType === "prompt_template" ? (
-              <div className="sys-field">
-                <label className="sys-field-label sys-field-label--required">提示词内容</label>
-                <textarea
-                  className="sys-field-textarea min-h-[220px]"
-                  disabled={currentAsset.status !== "draft"}
-                  value={getConfigString(editDraft.config, "promptContent")}
-                  onChange={(event) => setEditDraft((current) => ({ ...current, config: { ...(current.config ?? {}), promptContent: event.target.value } }))}
-                />
+              <label className="sys-field-label sys-field-label--required">能力编码</label>
+              <div className="sys-field-input-wrap">
+                <Hash size={16} className="sys-field-prefix" aria-hidden="true" />
+                <input className="sys-field-input" value={draft.code} placeholder="renewal_risk_prompt" onChange={(event) => setDraft((current) => ({ ...current, code: event.target.value }))} />
               </div>
-            ) : null}
+            </div>
+          </div>
+          <div className="sys-field-row">
+            <div className="sys-field">
+              <label className="sys-field-label">版本</label>
+              <div className="sys-field-input-wrap">
+                <FileText size={16} className="sys-field-prefix" aria-hidden="true" />
+                <input className="sys-field-input" value={draft.version ?? "v1"} onChange={(event) => setDraft((current) => ({ ...current, version: event.target.value }))} />
+              </div>
+            </div>
+            <div className="sys-field">
+              <label className="sys-field-label">风险等级</label>
+              <Select
+                className="agent-admin-select w-full"
+                classNames={adminSelectClassNames}
+                prefix={<ShieldCheck className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+                suffixIcon={adminSelectSuffixIcon}
+                value={draft.riskLevel}
+                options={riskOptions}
+                onChange={(riskLevel) => setDraft((current) => ({ ...current, riskLevel }))}
+              />
+            </div>
+          </div>
+          <div className="sys-field">
+            <label className="sys-field-label">可见范围</label>
+            <Select
+              className="agent-admin-select w-full"
+              classNames={adminSelectClassNames}
+              prefix={<Eye className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+              suffixIcon={adminSelectSuffixIcon}
+              value={draft.visibility}
+              options={visibilityOptions}
+              onChange={(visibility) => setDraft((current) => ({ ...current, visibility }))}
+            />
+          </div>
+          <div className="sys-field">
+            <label className="sys-field-label">说明</label>
+            <textarea className="sys-field-textarea" value={draft.description ?? ""} placeholder="说明这项能力的业务用途、输入约束和后续发布方向" onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} />
+          </div>
+        </div>
+        <div className="sys-drawer-footer">
+          <div className="sys-drawer-footer-right">
+            <button type="button" className="sys-btn sys-btn--default" onClick={() => setCreateOpen(false)}>
+              <X size={14} />
+              取消
+            </button>
+            <button type="button" className="sys-btn sys-btn--primary" disabled={submitting} onClick={() => void handleCreate()}>
+              <PlusCircle size={14} />
+              创建草稿
+            </button>
+          </div>
+        </div>
+      </Drawer>
 
-            {currentAsset.assetType === "agent_template" ? (
-              <>
+      {/* 编辑能力抽屉 */}
+      <Drawer
+        title={currentAsset?.status === "draft" ? "编辑能力草稿" : "编辑正式能力"}
+        placement="right"
+        width={560}
+        onClose={() => setEditOpen(false)}
+        open={editOpen}
+        rootClassName={drawerRootClassName}
+      >
+        {currentAsset ? (
+          <>
+            <div className="sys-drawer-section">
+              <div className="sys-field-row">
                 <div className="sys-field">
-                  <label className="sys-field-label sys-field-label--required">系统提示词</label>
-                  <textarea
-                    className="sys-field-textarea min-h-[180px]"
-                    disabled={currentAsset.status !== "draft"}
-                    value={getConfigString(editDraft.config, "systemPrompt")}
-                    onChange={(event) => setEditDraft((current) => ({ ...current, config: { ...(current.config ?? {}), systemPrompt: event.target.value } }))}
+                  <label className="sys-field-label sys-field-label--required">能力名称</label>
+                  <div className="sys-field-input-wrap">
+                    <Tag size={16} className="sys-field-prefix" aria-hidden="true" />
+                    <input className="sys-field-input" value={editDraft.name} onChange={(event) => setEditDraft((current) => ({ ...current, name: event.target.value }))} />
+                  </div>
+                </div>
+                <div className="sys-field">
+                  <label className="sys-field-label sys-field-label--required">能力编码</label>
+                  <div className="sys-field-input-wrap">
+                    <Hash size={16} className="sys-field-prefix" aria-hidden="true" />
+                    <input className="sys-field-input" value={editDraft.code} onChange={(event) => setEditDraft((current) => ({ ...current, code: event.target.value }))} />
+                  </div>
+                </div>
+              </div>
+              <div className="sys-field-row">
+                <div className="sys-field">
+                  <label className="sys-field-label">版本</label>
+                  <div className="sys-field-input-wrap">
+                    <FileText size={16} className="sys-field-prefix" aria-hidden="true" />
+                    <input className="sys-field-input" value={editDraft.version ?? "v1"} onChange={(event) => setEditDraft((current) => ({ ...current, version: event.target.value }))} />
+                  </div>
+                </div>
+                <div className="sys-field">
+                  <label className="sys-field-label">风险等级</label>
+                  <Select
+                    className="agent-admin-select w-full"
+                    classNames={adminSelectClassNames}
+                    prefix={<ShieldCheck className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+                    suffixIcon={adminSelectSuffixIcon}
+                    value={editDraft.riskLevel}
+                    options={riskOptions}
+                    onChange={(riskLevel) => setEditDraft((current) => ({ ...current, riskLevel }))}
                   />
                 </div>
-                <div className="sys-field-row">
-                  <div className="sys-field">
-                    <label className="sys-field-label">可用 Skill</label>
-                    <Select
-                      mode="multiple"
-                      className="agent-admin-select w-full"
-                      classNames={adminSelectClassNames}
-                      disabled={currentAsset.status !== "draft"}
-                      prefix={<BrainCircuit className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
-                      suffixIcon={adminSelectSuffixIcon}
-                      value={getConfigIds(editDraft.config, "skillIds")}
-                      options={skillOptions}
-                      onChange={(skillIds) => setEditDraft((current) => ({ ...current, config: { ...(current.config ?? {}), skillIds } }))}
-                    />
-                  </div>
-                  <div className="sys-field">
-                    <label className="sys-field-label">可用 MCP</label>
-                    <Select
-                      mode="multiple"
-                      className="agent-admin-select w-full"
-                      classNames={adminSelectClassNames}
-                      disabled={currentAsset.status !== "draft"}
-                      prefix={<Boxes className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
-                      suffixIcon={adminSelectSuffixIcon}
-                      value={getConfigIds(editDraft.config, "mcpIds")}
-                      options={mcpOptions}
-                      onChange={(mcpIds) => setEditDraft((current) => ({ ...current, config: { ...(current.config ?? {}), mcpIds } }))}
-                    />
-                  </div>
-                </div>
-              </>
-            ) : null}
+              </div>
+              <div className="sys-field">
+                <label className="sys-field-label">说明</label>
+                <textarea className="sys-field-textarea" value={editDraft.description ?? ""} onChange={(event) => setEditDraft((current) => ({ ...current, description: event.target.value }))} />
+              </div>
 
-            <div className="mt-4 flex justify-end gap-2">
-              <button type="button" className="sys-btn sys-btn--default" onClick={() => setEditOpen(false)}>
-                <X size={14} />
-                关闭
-              </button>
+              {currentAsset.assetType === "prompt_template" ? (
+                <div className="sys-field">
+                  <label className="sys-field-label sys-field-label--required">提示词内容</label>
+                  <textarea
+                    className="sys-field-textarea min-h-[220px]"
+                    value={getConfigString(editDraft.config, "promptContent")}
+                    onChange={(event) => setEditDraft((current) => ({ ...current, config: { ...(current.config ?? {}), promptContent: event.target.value } }))}
+                  />
+                </div>
+              ) : null}
+
+              {currentAsset.assetType === "agent_template" ? (
+                <>
+                  <div className="sys-field">
+                    <label className="sys-field-label sys-field-label--required">系统提示词</label>
+                    <textarea
+                      className="sys-field-textarea min-h-[180px]"
+                      value={getConfigString(editDraft.config, "systemPrompt")}
+                      onChange={(event) => setEditDraft((current) => ({ ...current, config: { ...(current.config ?? {}), systemPrompt: event.target.value } }))}
+                    />
+                  </div>
+                  <div className="sys-field-row">
+                    <div className="sys-field">
+                      <label className="sys-field-label">可用 Skill</label>
+                      <Select
+                        mode="multiple"
+                        className="agent-admin-select w-full"
+                        classNames={adminSelectClassNames}
+                        prefix={<BrainCircuit className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+                        suffixIcon={adminSelectSuffixIcon}
+                        value={getConfigIds(editDraft.config, "skillIds")}
+                        options={skillOptions}
+                        onChange={(skillIds) => setEditDraft((current) => ({ ...current, config: { ...(current.config ?? {}), skillIds } }))}
+                      />
+                    </div>
+                    <div className="sys-field">
+                      <label className="sys-field-label">可用 MCP</label>
+                      <Select
+                        mode="multiple"
+                        className="agent-admin-select w-full"
+                        classNames={adminSelectClassNames}
+                        prefix={<Boxes className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+                        suffixIcon={adminSelectSuffixIcon}
+                        value={getConfigIds(editDraft.config, "mcpIds")}
+                        options={mcpOptions}
+                        onChange={(mcpIds) => setEditDraft((current) => ({ ...current, config: { ...(current.config ?? {}), mcpIds } }))}
+                      />
+                    </div>
+                  </div>
+                </>
+              ) : null}
+            </div>
+
+            <div className="sys-drawer-footer">
               {currentAsset.status === "draft" ? (
                 <>
-                  <button type="button" className="sys-btn sys-btn--default" disabled={submitting} onClick={() => confirmDelete(currentAsset)}>
+                  <button type="button" className="sys-btn sys-btn--danger" style={{ marginRight: "auto" }} disabled={submitting} onClick={() => confirmDelete(currentAsset)}>
                     <Trash2 size={14} />
                     删除
                   </button>
-                  <button type="button" className="sys-btn sys-btn--default" disabled={submitting} onClick={() => void handleUpdate()}>
-                    <Edit3 size={14} />
-                    保存草稿
-                  </button>
-                  <button type="button" className="sys-btn sys-btn--primary" disabled={submitting} onClick={() => void handlePublish()}>
-                    <Send size={14} />
-                    发布能力
-                  </button>
+                  <div className="sys-drawer-footer-right">
+                    <button type="button" className="sys-btn sys-btn--default" onClick={() => setEditOpen(false)}>
+                      <X size={14} />
+                      取消
+                    </button>
+                    <button type="button" className="sys-btn sys-btn--default" disabled={submitting} onClick={() => void handleUpdate()}>
+                      <Edit3 size={14} />
+                      保存草稿
+                    </button>
+                    <button type="button" className="sys-btn sys-btn--primary" disabled={submitting} onClick={() => void handlePublish()}>
+                      <Send size={14} />
+                      发布能力
+                    </button>
+                  </div>
                 </>
               ) : (
-                <button type="button" className="sys-btn sys-btn--default" disabled={submitting} onClick={() => confirmDelete(currentAsset)}>
-                  <Trash2 size={14} />
-                  删除
-                </button>
+                <>
+                  <button type="button" className="sys-btn sys-btn--danger" style={{ marginRight: "auto" }} disabled={submitting} onClick={() => confirmDelete(currentAsset)}>
+                    <Trash2 size={14} />
+                    删除
+                  </button>
+                  <div className="sys-drawer-footer-right">
+                    <button type="button" className="sys-btn sys-btn--default" onClick={() => setEditOpen(false)}>
+                      <X size={14} />
+                      取消
+                    </button>
+                    <button type="button" className="sys-btn sys-btn--primary" disabled={submitting} onClick={() => void handleUpdate()}>
+                      <Edit3 size={14} />
+                      保存修改
+                    </button>
+                  </div>
+                </>
               )}
             </div>
           </>
         ) : null}
-      </Modal>
+      </Drawer>
+
+      {/* 系统能力详情抽屉 */}
+      <Drawer
+        title="系统能力详情"
+        placement="right"
+        width={560}
+        onClose={() => { setSystemDetailOpen(false); setSelectedSystemAsset(null); }}
+        open={systemDetailOpen}
+        rootClassName={drawerRootClassName}
+      >
+        {selectedSystemAsset ? (
+          <div className="sys-drawer-section">
+            <div className="sys-field">
+              <label className="sys-field-label">能力名称</label>
+              <div className="sys-field-input-wrap">
+                <Tag size={16} className="sys-field-prefix" aria-hidden="true" />
+                <input className="sys-field-input" disabled value={selectedSystemAsset.name} />
+              </div>
+            </div>
+            <div className="sys-field">
+              <label className="sys-field-label">能力编码</label>
+              <div className="sys-field-input-wrap">
+                <Hash size={16} className="sys-field-prefix" aria-hidden="true" />
+                <input className="sys-field-input" disabled value={selectedSystemAsset.code} />
+              </div>
+            </div>
+            <div className="sys-field-row">
+              <div className="sys-field">
+                <label className="sys-field-label">能力类型</label>
+                <div className="sys-field-input-wrap">
+                  <Boxes size={16} className="sys-field-prefix" aria-hidden="true" />
+                  <input className="sys-field-input" disabled value={formatAssetType(selectedSystemAsset.assetType)} />
+                </div>
+              </div>
+              <div className="sys-field">
+                <label className="sys-field-label">版本</label>
+                <div className="sys-field-input-wrap">
+                  <FileText size={16} className="sys-field-prefix" aria-hidden="true" />
+                  <input className="sys-field-input" disabled value={selectedSystemAsset.version} />
+                </div>
+              </div>
+            </div>
+            <div className="sys-field-row">
+              <div className="sys-field">
+                <label className="sys-field-label">风险等级</label>
+                <div className="sys-field-input-wrap">
+                  <ShieldCheck size={16} className="sys-field-prefix" aria-hidden="true" />
+                  <input className="sys-field-input" disabled value={formatRisk(selectedSystemAsset.riskLevel)} />
+                </div>
+              </div>
+              <div className="sys-field">
+                <label className="sys-field-label">分配状态</label>
+                <div className="sys-field-input-wrap">
+                  <UserRoundCog size={16} className="sys-field-prefix" aria-hidden="true" />
+                  <input className="sys-field-input" disabled value={selectedSystemAsset.assignmentScope} />
+                </div>
+              </div>
+            </div>
+            <div className="sys-field">
+              <label className="sys-field-label">说明</label>
+              <textarea className="sys-field-textarea" disabled value="系统开放的通用能力，可用于编排智能体模板或在流程节点中进行引用。" />
+            </div>
+          </div>
+        ) : null}
+        <div className="sys-drawer-footer">
+          <div className="sys-drawer-footer-right">
+            <button type="button" className="sys-btn sys-btn--default" onClick={() => { setSystemDetailOpen(false); setSelectedSystemAsset(null); }}>
+              <X size={14} />
+              关闭
+            </button>
+          </div>
+        </div>
+      </Drawer>
     </div>
   );
 }
@@ -752,9 +852,9 @@ function PathStep({ icon: Icon, title, detail }: { icon: LucideIcon; title: stri
   );
 }
 
-function SystemAssetCard({ asset }: { asset: SystemCapabilityAssetRow }) {
+function SystemAssetCard({ asset, onView }: { asset: SystemCapabilityAssetRow; onView: (asset: SystemCapabilityAssetRow) => void }) {
   return (
-    <article className="sys-card sys-card--static">
+    <article className="sys-card" onClick={() => onView(asset)}>
       <div className="sys-card-header">
         <div className="sys-card-avatar sys-card-avatar--cap"><AssetTypeIcon type={asset.assetType} /></div>
         <div className="sys-card-info">
@@ -782,7 +882,7 @@ function SystemAssetCard({ asset }: { asset: SystemCapabilityAssetRow }) {
       </div>
       <div className="sys-card-footer">
         <span className="sys-card-footer-time"><Clock size={12} /> 系统开放能力</span>
-        <div className="sys-card-footer-actions">
+        <div className="sys-card-footer-actions" onClick={(e) => e.stopPropagation()}>
           <button type="button" disabled={!asset.assignedToMe} className="sys-btn sys-btn--text sys-btn--sm"><PlusCircle size={14} /> 加入节点引用</button>
         </div>
       </div>
@@ -792,7 +892,7 @@ function SystemAssetCard({ asset }: { asset: SystemCapabilityAssetRow }) {
 
 function MyAssetCard({ asset, onEdit, onDelete }: { asset: MyAssetRow; onEdit: (assetId: string) => void; onDelete: (asset: MyAssetRow) => void }) {
   return (
-    <article className="sys-card sys-card--static">
+    <article className="sys-card" onClick={() => onEdit(asset.id)}>
       <div className="sys-card-header">
         <div className="sys-card-avatar sys-card-avatar--cap"><AssetTypeIcon type={asset.assetType} /></div>
         <div className="sys-card-info">
@@ -812,7 +912,7 @@ function MyAssetCard({ asset, onEdit, onDelete }: { asset: MyAssetRow; onEdit: (
       <p className="agent-muted min-h-12 text-sm leading-6">{asset.description || "暂无说明"}</p>
       <div className="sys-card-footer">
         <span className="sys-card-footer-time"><Clock size={12} /> {asset.sourceType === "derived" ? "系统能力派生" : "我的能力"}</span>
-        <div className="sys-card-footer-actions">
+        <div className="sys-card-footer-actions" onClick={(e) => e.stopPropagation()}>
           <button type="button" className="sys-btn sys-btn--text sys-btn--sm" onClick={() => onEdit(asset.id)}>
             {asset.status === "draft" ? <Edit3 size={14} /> : <Eye size={14} />}
             {asset.status === "draft" ? "编辑草稿" : "查看详情"}
