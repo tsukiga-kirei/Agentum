@@ -1704,7 +1704,10 @@ textarea:focus-visible {
 }
 
 .sys-field-input-wrap--select .agent-admin-select.ant-select-multiple {
+  --ant-select-multi-padding-vertical: 0px;
+  --ant-select-multi-padding-base: 0px;
   height: auto !important;
+  padding-block: 0 !important;
 }
 
 .sys-field-input-wrap--select .agent-admin-select.ant-select-focused {

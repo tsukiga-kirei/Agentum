@@ -94,6 +94,13 @@ const emptyRoleForm: RoleDraft = {
 
 const adminSelectClassNames = { popup: { root: "agent-select-dropdown agent-admin-select-dropdown" } };
 const adminSelectSuffixIcon = <ChevronDown className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />;
+// 多选空态占位与左侧图标需同一垂直中线；antd 6 默认把占位符放在仅 font-size 高的槽位里，需用 styles 拉回居中。
+const adminPrincipalSelectStyles = {
+  root: { alignItems: "center" as const, paddingBlock: 0 },
+  content: { alignItems: "center" as const, lineHeight: 1.4 },
+  placeholder: { position: "static" as const, transform: "none", lineHeight: 1.4 },
+  input: { height: 22, lineHeight: "22px" },
+};
 
 type MemberEditDraft = {
   departmentId?: string;
@@ -1049,6 +1056,7 @@ export function TenantManagementPage() {
                     mode="multiple"
                     className="agent-admin-select w-full"
                     classNames={adminSelectClassNames}
+                    styles={adminPrincipalSelectStyles}
                     showSearch
                     suffixIcon={adminSelectSuffixIcon}
                     maxTagCount="responsive"
@@ -1122,6 +1130,7 @@ export function TenantManagementPage() {
                     mode="multiple"
                     className="agent-admin-select w-full"
                     classNames={adminSelectClassNames}
+                    styles={adminPrincipalSelectStyles}
                     showSearch
                     suffixIcon={adminSelectSuffixIcon}
                     maxTagCount="responsive"
