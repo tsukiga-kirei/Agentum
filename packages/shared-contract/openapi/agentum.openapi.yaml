@@ -409,10 +409,17 @@ paths:
             type: string
         - name: scope
           in: query
-          description: 工作流范围，all 表示当前租户可见流程，mine 表示当前创建人维护的流程
+          description: 工作流范围，all 表示当前租户可见流程，shared 表示他人开放给当前用户参与设计的流程，mine 表示当前创建人维护的流程
           schema:
             type: string
-            enum: [all, mine]
+            enum: [all, shared, mine]
+            default: all
+        - name: status
+          in: query
+          description: 工作流发布状态筛选，all 表示不过滤状态
+          schema:
+            type: string
+            enum: [all, draft, published, review]
             default: all
         - name: page
           in: query

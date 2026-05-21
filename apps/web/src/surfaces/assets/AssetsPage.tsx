@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import { ArrowRight, Bot, Boxes, BrainCircuit, CheckCircle2, ChevronDown, CircleAlert, Clock, Edit3, Eye, FileText, Hash, Library, PlusCircle, Search, Send, ShieldCheck, Tag, Trash2, UserRoundCog, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Empty, Pagination, Segmented, Select, Spin, message, Drawer } from "antd";
@@ -60,7 +61,7 @@ const assetTabs: Array<{ key: AssetTab; label: string; icon: LucideIcon; descrip
 ];
 
 const adminSelectClassNames = { popup: { root: "agent-select-dropdown agent-admin-select-dropdown" } };
-const adminSelectSuffixIcon = <ChevronDown className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />;
+const adminSelectSuffixIcon = <ChevronDown className="h-[18px] w-[18px] text-[var(--color-text-tertiary)]" aria-hidden="true" />;
 
 export function AssetsPage() {
   const token = useAuthStore((s) => s.token);
@@ -80,6 +81,10 @@ export function AssetsPage() {
   const [systemPage, setSystemPage] = useState<PageState>(defaultPageState);
   const [minePage, setMinePage] = useState<PageState>(defaultPageState);
   const [keyword, setKeyword] = useState("");
+  const [systemKeyword, setSystemKeyword] = useState("");
+  const [systemTypeFilter, setSystemTypeFilter] = useState<AssetType | "all">("all");
+  const [mineTypeFilter, setMineTypeFilter] = useState<AssetType | "all">("all");
+  const [mineStatusFilter, setMineStatusFilter] = useState<"all" | "draft" | "published">("all");
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [currentAsset, setCurrentAsset] = useState<MyAssetDetail | null>(null);
@@ -194,7 +199,22 @@ export function AssetsPage() {
   }, [activeTab, loadMyAssets, loadSystemAssets]);
 
   const assignedSystemAssets = useMemo(() => systemAssets.filter((asset) => asset.assignedToMe), [systemAssets]);
+  const filteredSystemAssets = useMemo(() => {
+    const search = systemKeyword.trim().toLowerCase();
+    return systemAssets.filter((asset) => {
+      const matchesType = systemTypeFilter === "all" || asset.assetType === systemTypeFilter;
+      const matchesKeyword = !search || [asset.name, asset.code, asset.version, asset.assignmentScope].some((value) => value.toLowerCase().includes(search));
+      return matchesType && matchesKeyword;
+    });
+  }, [systemAssets, systemKeyword, systemTypeFilter]);
   const draftAssets = useMemo(() => myAssets.filter((asset) => asset.status === "draft"), [myAssets]);
+  const filteredMyAssets = useMemo(() => {
+    return myAssets.filter((asset) => {
+      const matchesType = mineTypeFilter === "all" || asset.assetType === mineTypeFilter;
+      const matchesStatus = mineStatusFilter === "all" || asset.status === mineStatusFilter;
+      return matchesType && matchesStatus;
+    });
+  }, [mineStatusFilter, mineTypeFilter, myAssets]);
   const skillOptions = useMemo(
     () => assignedSystemAssets.filter((asset) => asset.assetType === "skill").map((asset) => ({ value: asset.id, label: `${asset.name} · ${asset.version}` })),
     [assignedSystemAssets],
@@ -416,19 +436,48 @@ export function AssetsPage() {
               draftAssets={draftAssets}
               onOpenSystem={() => setActiveTab("system")}
               onOpenMine={() => setActiveTab("mine")}
+              onOpenDrafts={() => {
+                setMineStatusFilter("draft");
+                setActiveTab("mine");
+              }}
               onCreateDraft={() => setCreateOpen(true)}
+              onOpenSystemAsset={(asset) => {
+                setSelectedSystemAsset(asset);
+                setSystemDetailOpen(true);
+              }}
+              onOpenMyAsset={(asset) => void openEdit(asset.id)}
             />
           ) : null}
 
           {activeTab === "system" ? (
             <section className="sys-fade-in">
-              {systemAssets.length === 0 ? (
+              <AssetFilterBar>
+                <div className="sys-field-input-wrap asset-filter-search min-w-[280px]">
+                  <Search size={18} className="sys-field-prefix" aria-hidden="true" />
+                  <input
+                    className="sys-field-input"
+                    value={systemKeyword}
+                    placeholder="搜索名称、编码或分配范围"
+                    onChange={(event) => setSystemKeyword(event.target.value)}
+                  />
+                </div>
+                <Select
+                  className="agent-admin-select min-w-[180px]"
+                  classNames={adminSelectClassNames}
+                  prefix={<Boxes className="h-[18px] w-[18px] text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+                  suffixIcon={adminSelectSuffixIcon}
+                  value={systemTypeFilter}
+                  options={[{ value: "all", label: "全部能力类型" }, ...allAssetTypeOptions]}
+                  onChange={(value) => setSystemTypeFilter(value as AssetType | "all")}
+                />
+              </AssetFilterBar>
+              {filteredSystemAssets.length === 0 ? (
                 <div className="sys-preview-card">
-                  <Empty description="当前暂无对我开放的能力" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                  <Empty description="当前暂无匹配的开放能力" image={Empty.PRESENTED_IMAGE_SIMPLE} />
                 </div>
               ) : (
                 <div className="sys-card-grid">
-                  {systemAssets.map((asset) => (
+                  {filteredSystemAssets.map((asset) => (
                     <SystemAssetCard
                       key={asset.id}
                       asset={asset}
@@ -446,13 +495,11 @@ export function AssetsPage() {
 
           {activeTab === "mine" ? (
             <section className="sys-fade-in">
-              <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginBottom: 20 }}>
-                <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
-                  <div className="sys-field-input-wrap min-w-[260px]" style={{ height: 36, minHeight: 36 }}>
-                    <Search size={16} className="sys-field-prefix" aria-hidden="true" style={{ marginTop: 0 }} />
+              <AssetFilterBar>
+                  <div className="sys-field-input-wrap asset-filter-search min-w-[260px]">
+                    <Search size={18} className="sys-field-prefix" aria-hidden="true" />
                     <input
                       className="sys-field-input"
-                      style={{ height: 36, minHeight: 36, paddingTop: 0, paddingBottom: 0 }}
                       value={keyword}
                       placeholder="搜索名称、编码或说明"
                       onChange={(event) => setKeyword(event.target.value)}
@@ -461,23 +508,44 @@ export function AssetsPage() {
                       }}
                     />
                   </div>
+                  <Select
+                    className="agent-admin-select min-w-[170px]"
+                    classNames={adminSelectClassNames}
+                    prefix={<Boxes className="h-[18px] w-[18px] text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+                    suffixIcon={adminSelectSuffixIcon}
+                    value={mineTypeFilter}
+                    options={[{ value: "all", label: "全部能力类型" }, ...allAssetTypeOptions.filter((item) => item.value === "agent_template" || item.value === "prompt_template")]}
+                    onChange={(value) => setMineTypeFilter(value as AssetType | "all")}
+                  />
+                  <Select
+                    className="agent-admin-select min-w-[150px]"
+                    classNames={adminSelectClassNames}
+                    prefix={<ShieldCheck className="h-[18px] w-[18px] text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+                    suffixIcon={adminSelectSuffixIcon}
+                    value={mineStatusFilter}
+                    options={[
+                      { value: "all", label: "全部状态" },
+                      { value: "draft", label: "草稿" },
+                      { value: "published", label: "已发布" },
+                    ]}
+                    onChange={(value) => setMineStatusFilter(value as "all" | "draft" | "published")}
+                  />
                   <button type="button" className="sys-btn sys-btn--default" onClick={() => void loadMyAssets(1, minePage.size, keyword)}>
-                    <Search size={14} />
+                    <Search size={18} />
                     查询
                   </button>
                   <button type="button" className="sys-btn sys-btn--primary" onClick={() => setCreateOpen(true)}>
-                    <PlusCircle size={14} />
+                    <PlusCircle size={18} />
                     新建能力草稿
                   </button>
-                </div>
-              </div>
-              {myAssets.length === 0 ? (
+              </AssetFilterBar>
+              {filteredMyAssets.length === 0 ? (
                 <div className="sys-preview-card">
-                  <Empty description="还没有我的能力" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                  <Empty description="当前暂无匹配的我的能力" image={Empty.PRESENTED_IMAGE_SIMPLE} />
                 </div>
               ) : (
                 <div className="sys-card-grid">
-                  {myAssets.map((asset) => <MyAssetCard key={asset.id} asset={asset} onEdit={openEdit} onDelete={confirmDelete} />)}
+                  {filteredMyAssets.map((asset) => <MyAssetCard key={asset.id} asset={asset} onEdit={openEdit} onDelete={confirmDelete} />)}
                 </div>
               )}
               <AssetPagination pageState={minePage} onChange={(page, size) => void loadMyAssets(page, size, keyword)} />
@@ -811,7 +879,10 @@ function OverviewPanel({
   draftAssets,
   onOpenSystem,
   onOpenMine,
+  onOpenDrafts,
   onCreateDraft,
+  onOpenSystemAsset,
+  onOpenMyAsset,
 }: {
   summary: AssetSummary | null;
   systemAssets: SystemCapabilityAssetRow[];
@@ -819,7 +890,10 @@ function OverviewPanel({
   draftAssets: MyAssetRow[];
   onOpenSystem: () => void;
   onOpenMine: () => void;
+  onOpenDrafts: () => void;
   onCreateDraft: () => void;
+  onOpenSystemAsset: (asset: SystemCapabilityAssetRow) => void;
+  onOpenMyAsset: (asset: MyAssetRow) => void;
 }) {
   return (
     <div className="sys-fade-in">
@@ -837,16 +911,29 @@ function OverviewPanel({
             <AssetFeatureCard icon={Boxes} title="对我开放" detail="查看当前用户、部门或角色已被分配的系统能力。" meta={`${systemAssets.length} 项当前页可引用能力`} onClick={onOpenSystem} />
             <AssetFeatureCard icon={Library} title="我的能力" detail="维护我创建的提示词模板和智能体模板草稿。" meta={`${summary?.myAssetTotal ?? myAssets.length} 项我的能力`} onClick={onOpenMine} />
             <AssetFeatureCard icon={PlusCircle} title="新建能力草稿" detail="创建提示词模板或智能体模板，再通过发布进入复用链路。" meta="提示词模板 / 智能体模板" onClick={onCreateDraft} />
-            <AssetFeatureCard icon={BrainCircuit} title="待完善草稿" detail="回到我的能力处理未发布草稿和版本说明。" meta={`${draftAssets.length} 项待完善`} onClick={onOpenMine} />
+            <AssetFeatureCard icon={BrainCircuit} title="待完善草稿" detail="回到我的能力处理未发布草稿和版本说明。" meta={`${draftAssets.length} 项待完善`} onClick={onOpenDrafts} />
           </div>
         </section>
 
         <aside className="sys-preview-card">
-          <div className="sys-preview-card-title"><BrainCircuit size={16} /> 近期治理</div>
+          <div className="sys-preview-card-title"><BrainCircuit size={16} /> 近期能力</div>
           <div className="space-y-3">
-            <SideList title="对我开放的系统能力" empty="暂无开放给我的能力" items={systemAssets.slice(0, 4).map((asset) => `${formatAssetType(asset.assetType)} · ${asset.name}`)} />
-            <SideList title="待完善能力草稿" empty="暂无待完善的能力草稿" items={draftAssets.slice(0, 4).map((asset) => `${formatAssetType(asset.assetType)} · ${asset.name}`)} />
-            <SideList title="最近创建的能力" empty="暂无最近创建的能力" items={myAssets.slice(0, 4).map((asset) => `${formatAssetType(asset.assetType)} · ${asset.name}`)} />
+            <SideList
+              title="近期开放的能力"
+              empty="暂无开放给我的能力"
+            >
+              {systemAssets.slice(0, 3).map((asset) => (
+                <SystemAssetPreviewItem key={asset.id} asset={asset} onClick={() => onOpenSystemAsset(asset)} />
+              ))}
+            </SideList>
+            <SideList
+              title="近期新建的能力"
+              empty="暂无最近创建的能力"
+            >
+              {myAssets.slice(0, 3).map((asset) => (
+                <MyAssetPreviewItem key={asset.id} asset={asset} onClick={() => onOpenMyAsset(asset)} />
+              ))}
+            </SideList>
           </div>
         </aside>
       </div>
@@ -969,22 +1056,66 @@ function MyAssetCard({ asset, onEdit, onDelete }: { asset: MyAssetRow; onEdit: (
   );
 }
 
-function SideList({ title, empty, items }: { title: string; empty: string; items: string[] }) {
+function AssetFilterBar({ children }: { children: ReactNode }) {
   return (
-    <div className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-3">
-      <h3 className="text-sm font-semibold">{title}</h3>
+    <div className="asset-filter-bar">
+      {children}
+    </div>
+  );
+}
+
+function SideList({ title, empty, children }: { title: string; empty: string; children: ReactNode }) {
+  const hasChildren = Array.isArray(children) ? children.length > 0 : Boolean(children);
+  return (
+    <div className="asset-side-list">
+      <h3>{title}</h3>
       <div className="mt-3 space-y-2">
-        {items.length === 0 ? (
+        {!hasChildren ? (
           <p className="agent-muted text-sm">{empty}</p>
         ) : (
-          items.map((item) => <p key={item} className="text-sm text-[var(--color-text-secondary)]">{item}</p>)
+          children
         )}
       </div>
     </div>
   );
 }
 
-function AssetTypeIcon({ type }: { type: string }) {
+function SystemAssetPreviewItem({ asset, onClick }: { asset: SystemCapabilityAssetRow; onClick: () => void }) {
+  return (
+    <button type="button" className="sys-preview-item asset-preview-item" onClick={onClick}>
+        <span className="sys-preview-item-left">
+          <span className="sys-preview-item-icon sys-card-avatar--cap">
+          <AssetTypeIcon type={asset.assetType} size={16} />
+        </span>
+        <span className="min-w-0">
+          <span className="sys-preview-item-name">{asset.name}</span>
+          <span className="sys-preview-item-sub">{asset.version} · {asset.assignmentScope}</span>
+        </span>
+      </span>
+      <span className="sys-info-tag sys-info-tag--primary">{formatAssetType(asset.assetType)}</span>
+    </button>
+  );
+}
+
+function MyAssetPreviewItem({ asset, onClick }: { asset: MyAssetRow; onClick: () => void }) {
+  const isDraft = asset.status === "draft";
+  return (
+    <button type="button" className="sys-preview-item asset-preview-item" onClick={onClick}>
+        <span className="sys-preview-item-left">
+          <span className="sys-preview-item-icon sys-card-avatar--cap">
+          <AssetTypeIcon type={asset.assetType} size={16} />
+        </span>
+        <span className="min-w-0">
+          <span className="sys-preview-item-name">{asset.name}</span>
+          <span className="sys-preview-item-sub">{formatAssetType(asset.assetType)} · {asset.version}</span>
+        </span>
+      </span>
+      <span className={`sys-info-tag ${isDraft ? "sys-info-tag--warn" : "sys-info-tag--success"}`}>{formatStatus(asset.status)}</span>
+    </button>
+  );
+}
+
+function AssetTypeIcon({ type, size = 22 }: { type: string; size?: number }) {
   const Icon = type === "agent_template"
     ? Bot
     : type === "mcp"
@@ -994,7 +1125,7 @@ function AssetTypeIcon({ type }: { type: string }) {
         : type === "delivery"
           ? CheckCircle2
           : BrainCircuit;
-  return <Icon size={22} />;
+  return <Icon size={size} />;
 }
 
 function AssetPagination({ pageState, onChange }: { pageState: PageState; onChange: (page: number, size: number) => void }) {

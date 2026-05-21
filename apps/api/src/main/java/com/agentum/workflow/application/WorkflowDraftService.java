@@ -98,14 +98,16 @@ public class WorkflowDraftService {
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<WorkflowDraftApi.WorkflowDraftRow> listDrafts(UUID tenantId, UUID operatorUserId, String keyword, String scope, int page, int size, String sort) {
+    public PageResponse<WorkflowDraftApi.WorkflowDraftRow> listDrafts(UUID tenantId, UUID operatorUserId, String keyword, String scope, String status, int page, int size, String sort) {
         ensureActiveTenant(tenantId);
         Pageable pageable = PageableFactory.from(PageQuery.of(page, size, sort), DRAFT_SORT);
         String normalizedKeyword = keyword == null ? "" : keyword.trim();
         boolean onlyMine = "mine".equals(scope);
+        boolean onlyShared = "shared".equals(scope);
+        String normalizedStatus = status == null || status.isBlank() || "all".equals(status) ? null : status.trim();
         Map<UUID, UserAccount> usersById = loadUsersById();
-        // 全部流程代表当前租户可见的共享协作池；我的流程只筛当前创建人，避免前端用负责人姓名猜测归属。
-        return PageResponse.from(workflowDefinitionRepository.searchDrafts(tenantId, normalizedKeyword, onlyMine ? operatorUserId : null, pageable)
+        // 协作开放只展示他人开放给当前用户参与设计的流程；我的流程只筛当前创建人，避免前端用负责人姓名猜测归属。
+        return PageResponse.from(workflowDefinitionRepository.searchDrafts(tenantId, normalizedKeyword, onlyMine ? operatorUserId : null, onlyShared ? operatorUserId : null, normalizedStatus, pageable)
             .map(definition -> toDraftRow(definition, usersById)));
     }
 

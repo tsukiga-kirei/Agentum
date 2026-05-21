@@ -265,12 +265,13 @@ export const assetApi = {
 };
 
 export const workflowApi = {
-  listDrafts: (tenantId: string, token: string, page = 1, size = 10, keyword = "", scope: "all" | "mine" = "all", sort = "updatedAt,desc") => {
+  listDrafts: (tenantId: string, token: string, page = 1, size = 10, keyword = "", scope: "all" | "mine" | "shared" = "all", status: "all" | "draft" | "published" | "review" = "all", sort = "updatedAt,desc") => {
     const params = new URLSearchParams({
       page: String(page),
       size: String(size),
       keyword,
       scope,
+      status,
       sort,
     });
     return apiRequest<PageResponse<WorkflowDraftRow>>(`/api/tenants/${tenantId}/workflows/drafts?${params.toString()}`, { token });

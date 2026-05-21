@@ -3,6 +3,7 @@ import {
   AlertCircle,
   ArrowRight,
   CheckCircle2,
+  ChevronDown,
   ClipboardCheck,
   Clock3,
   FilePlus2,
@@ -18,7 +19,7 @@ import {
   X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { Drawer, Pagination, Segmented } from "antd";
+import { Drawer, Pagination, Segmented, Select } from "antd";
 import { AgentumApiError, workflowApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import type {
@@ -61,7 +62,18 @@ const workflowPaginationLocale = {
 };
 
 type WorkflowDesignerTab = "overview" | "all" | "mine";
-type WorkflowListScope = "all" | "mine";
+type WorkflowListScope = "all" | "mine" | "shared";
+type WorkflowStatusFilter = WorkflowStatus | "all";
+
+const workflowStatusOptions: Array<{ value: WorkflowStatusFilter; label: string }> = [
+  { value: "all", label: "全部状态" },
+  { value: "draft", label: "草稿" },
+  { value: "published", label: "已发布" },
+  { value: "review", label: "待校验" },
+];
+
+const workflowSelectClassNames = { popup: { root: "agent-select-dropdown agent-admin-select-dropdown" } };
+const workflowSelectSuffixIcon = <ChevronDown className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />;
 
 function formatPaginationTotal(count: number, range: [number, number], pageSize: number): string {
   return count <= pageSize ? `共 ${count} 条` : `当前 ${range[0]}-${range[1]} 条，共 ${count} 条`;
@@ -95,11 +107,13 @@ export function WorkflowDraftsPage() {
   const [publishSuccess, setPublishSuccess] = useState("");
   const [activeTab, setActiveTab] = useState<WorkflowDesignerTab>("overview");
   const [detailWorkflow, setDetailWorkflow] = useState<WorkflowDraft | null>(null);
+  const [workflowStatusFilter, setWorkflowStatusFilter] = useState<WorkflowStatusFilter>("all");
 
-  const currentScope: WorkflowListScope = activeTab === "mine" ? "mine" : "all";
+  const currentUserId = user?.id ?? "";
+  const currentScope: WorkflowListScope = activeTab === "mine" ? "mine" : activeTab === "all" ? "shared" : "all";
   const drawerRootClassName = themeMode === "dark" ? "agent-admin-drawer agent-admin-drawer--dark" : "agent-admin-drawer";
 
-  const loadDrafts = useCallback(async (nextPage = 1, keyword = searchValue, nextPageSize = pageSize, scope: WorkflowListScope = currentScope) => {
+  const loadDrafts = useCallback(async (nextPage = 1, keyword = searchValue, nextPageSize = pageSize, scope: WorkflowListScope = currentScope, status: WorkflowStatusFilter = workflowStatusFilter) => {
     if (!token || !user?.tenantId) {
       setLoadError("当前账号缺少租户上下文，无法加载工作流草稿");
       setWorkflows([]);
@@ -110,7 +124,7 @@ export function WorkflowDraftsPage() {
     setLoadError("");
 
     try {
-      const result = await workflowApi.listDrafts(user.tenantId, token, nextPage, nextPageSize, keyword, scope);
+      const result = await workflowApi.listDrafts(user.tenantId, token, nextPage, nextPageSize, keyword, scope, status);
       setWorkflows(result.items);
       setPage(result.page);
       setPageSize(result.size);
@@ -122,15 +136,23 @@ export function WorkflowDraftsPage() {
     } finally {
       setLoading(false);
     }
-  }, [currentScope, pageSize, searchValue, token, user?.tenantId]);
+  }, [currentScope, pageSize, searchValue, token, user?.tenantId, workflowStatusFilter]);
 
   useEffect(() => {
     void loadDrafts(1, searchValue, pageSize, currentScope);
   }, [loadDrafts]);
 
   const filteredWorkflows = useMemo(() => {
+    if (activeTab === "all") {
+      return workflows.filter((workflow) => !isWorkflowOwnedByCurrentUser(workflow, currentUserId));
+    }
+    if (activeTab === "mine") {
+      return workflows.filter((workflow) => isWorkflowOwnedByCurrentUser(workflow, currentUserId));
+    }
     return workflows;
-  }, [workflows]);
+  }, [activeTab, currentUserId, workflows]);
+  const sharedWorkflows = useMemo(() => workflows.filter((workflow) => !isWorkflowOwnedByCurrentUser(workflow, currentUserId)), [currentUserId, workflows]);
+  const myOwnedWorkflows = useMemo(() => workflows.filter((workflow) => isWorkflowOwnedByCurrentUser(workflow, currentUserId)), [currentUserId, workflows]);
 
   const draftCount = workflows.filter((workflow) => workflow.status === "draft").length;
   const publishedCount = workflows.filter((workflow) => workflow.status === "published").length;
@@ -150,7 +172,7 @@ export function WorkflowDraftsPage() {
       label: (
         <span className="login-portal-option">
           <UsersRound className="login-portal-option-icon" aria-hidden="true" />
-          <span>全部流程</span>
+          <span>协作开放</span>
         </span>
       ),
     },
@@ -274,10 +296,6 @@ export function WorkflowDraftsPage() {
               </p>
             </div>
           </div>
-          <button type="button" onClick={() => setIsCreating(true)} className="sys-btn sys-btn--primary">
-            <FilePlus2 size={15} aria-hidden="true" />
-            新建工作流
-          </button>
         </header>
 
         <div className="system-mgmt-module-switch mb-5">
@@ -292,13 +310,13 @@ export function WorkflowDraftsPage() {
           </div>
           <div className="login-portal-description login-portal-description--business">
             <span className="login-portal-description-dot" />
-            {activeTab === "overview" ? "功能入口与近期协作流程" : activeTab === "all" ? "当前租户可见流程，可参与共享设计" : "我创建或维护的流程草稿与发布治理"}
+            {activeTab === "overview" ? "功能入口与近期协作流程" : activeTab === "all" ? "他人开放给我的流程，可参与共享设计" : "我创建或维护的流程草稿与发布治理"}
           </div>
         </div>
 
         {activeTab === "overview" ? (
           <section className="sys-overview-stats mb-5" aria-label="工作流概览">
-            <OverviewStat icon={GitBranch} label="全部工作流" value={String(total)} tone="primary" />
+            <OverviewStat icon={GitBranch} label="可见工作流" value={String(total)} tone="primary" />
             <OverviewStat icon={Clock3} label="当前页草稿" value={String(draftCount)} tone="info" />
             <OverviewStat icon={CheckCircle2} label="当前页已发布" value={String(publishedCount)} tone="success" />
             <OverviewStat icon={ListChecks} label="当前页待校验" value={String(reviewCount)} tone="cap" />
@@ -312,16 +330,16 @@ export function WorkflowDraftsPage() {
               <div className="grid gap-3 md:grid-cols-2">
                 <WorkflowFeatureCard
                   icon={UsersRound}
-                  title="全部流程"
-                  description="查看当前租户可见的流程，包含他人共享出来、允许共同参与设计的流程。"
-                  meta={`${total} 个可见流程`}
+                  title="协作开放"
+                  description="查看他人开放给我的流程，先看详情抽屉，再进入具体积木设计。"
+                  meta={`${sharedWorkflows.length} 个当前页协作流程`}
                   onClick={() => setActiveTab("all")}
                 />
                 <WorkflowFeatureCard
                   icon={UserRound}
                   title="我的流程"
                   description="处理自己创建或负责维护的流程草稿、发布校验和版本演进。"
-                  meta={`${filteredWorkflows.filter((workflow) => workflow.ownerId === user?.id).length} 个当前页我的流程`}
+                  meta={`${myOwnedWorkflows.length} 个当前页我的流程`}
                   onClick={() => setActiveTab("mine")}
                 />
                 <WorkflowFeatureCard
@@ -329,7 +347,10 @@ export function WorkflowDraftsPage() {
                   title="发布治理"
                   description="进入流程抽屉后执行校验，查看阻塞项，通过后冻结正式版本。"
                   meta={`${reviewCount} 个当前页待校验`}
-                  onClick={() => setActiveTab("mine")}
+                  onClick={() => {
+                    setWorkflowStatusFilter("review");
+                    setActiveTab("mine");
+                  }}
                 />
                 <WorkflowFeatureCard
                   icon={FilePlus2}
@@ -343,23 +364,20 @@ export function WorkflowDraftsPage() {
 
             <aside className="sys-preview-card">
               <div className="sys-preview-card-title"><Share2 size={16} /> 近期协作流程</div>
-              {filteredWorkflows.length === 0 ? (
-                <p className="agent-muted text-sm">暂无可见流程。</p>
-              ) : (
-                filteredWorkflows.slice(0, 5).map((workflow) => (
-                  <WorkflowPreviewItem
-                    key={workflow.id}
-                    workflow={workflow}
-                    onClick={() => setDetailWorkflow(workflow)}
-                  />
-                ))
-              )}
-              {total > 5 ? (
-                <button type="button" className="sys-btn sys-btn--link mt-3" onClick={() => setActiveTab("all")}>
-                  查看全部 {total} 个流程
-                  <ArrowRight size={14} aria-hidden="true" />
-                </button>
-              ) : null}
+              <div className="space-y-3">
+                <WorkflowSideList
+                  title="协作开放"
+                  empty="暂无他人开放给我的流程"
+                  workflows={sharedWorkflows.slice(0, 3)}
+                  onOpen={(workflow) => setDetailWorkflow(workflow)}
+                />
+                <WorkflowSideList
+                  title="我的流程"
+                  empty="暂无最近维护的我的流程"
+                  workflows={myOwnedWorkflows.slice(0, 3)}
+                  onOpen={(workflow) => setDetailWorkflow(workflow)}
+                />
+              </div>
             </aside>
           </section>
         ) : null}
@@ -367,13 +385,9 @@ export function WorkflowDraftsPage() {
         {activeTab === "all" || activeTab === "mine" ? (
           <section className="sys-fade-in" aria-labelledby="workflow-list-title">
             <div className="workflow-library-toolbar">
-              <div>
-                <h2 id="workflow-list-title">{activeTab === "all" ? "全部流程" : "我的流程"}</h2>
-                <p>{activeTab === "all" ? "点击流程卡片先查看协作说明，再进入具体积木设计。" : "集中处理自己的流程草稿、发布校验和版本维护。"}</p>
-              </div>
               <div className="workflow-library-toolbar-actions">
                 <label className="workflow-definition-search">
-                  <Search className="h-4 w-4" aria-hidden="true" />
+                  <Search className="h-[18px] w-[18px]" aria-hidden="true" />
                   <span className="sr-only">搜索工作流</span>
                   <input
                     value={searchValue}
@@ -383,14 +397,22 @@ export function WorkflowDraftsPage() {
                     }}
                     onKeyDown={(event) => {
                       if (event.key === "Enter") {
-                        void loadDrafts(1, searchValue, pageSize, currentScope);
+                        void loadDrafts(1, searchValue, pageSize, currentScope, workflowStatusFilter);
                       }
                     }}
                     placeholder="搜索名称或说明"
                   />
                 </label>
-                <button type="button" className="sys-btn sys-btn--default" onClick={() => void loadDrafts(1, searchValue, pageSize, currentScope)}>
-                  <Search size={14} aria-hidden="true" />
+                <Select
+                  className="agent-admin-select workflow-status-select"
+                  classNames={workflowSelectClassNames}
+                  suffixIcon={workflowSelectSuffixIcon}
+                  value={workflowStatusFilter}
+                  options={workflowStatusOptions}
+                  onChange={(value) => setWorkflowStatusFilter(value as WorkflowStatusFilter)}
+                />
+                <button type="button" className="sys-btn sys-btn--default" onClick={() => void loadDrafts(1, searchValue, pageSize, currentScope, workflowStatusFilter)}>
+                  <Search size={18} aria-hidden="true" />
                   查询
                 </button>
               </div>
@@ -405,7 +427,7 @@ export function WorkflowDraftsPage() {
                 <WorkflowDesignCard
                   key={workflow.id}
                   workflow={workflow}
-                  mine={workflow.ownerId === user?.id}
+                  mine={isWorkflowOwnedByCurrentUser(workflow, currentUserId)}
                   validating={validatingWorkflowId === workflow.id}
                   onOpenDetail={() => setDetailWorkflow(workflow)}
                   onValidate={() => void handleValidateForPublish(workflow)}
@@ -424,7 +446,7 @@ export function WorkflowDraftsPage() {
               <div className="workflow-definition-empty-state">
                 <AlertCircle className="h-8 w-8" aria-hidden="true" />
                 <p>{activeTab === "mine" ? "还没有我的流程" : "没有找到匹配的流程"}</p>
-                <span>{activeTab === "mine" ? "可以新建流程草稿，或查看全部流程参与协作设计。" : "可以调整搜索词，或创建一个新的工作流。"}</span>
+                <span>{activeTab === "mine" ? "可以新建流程草稿，或查看协作开放流程参与设计。" : "可以调整搜索词或筛选条件。"}</span>
               </div>
             ) : null}
 
@@ -440,8 +462,8 @@ export function WorkflowDraftsPage() {
                   pageSizeOptions={["8", "16", "32"]}
                   showTotal={(count, range) => formatPaginationTotal(count, range, pageSize)}
                   disabled={loading}
-                  onChange={(nextPage, nextPageSize) => void loadDrafts(nextPage, searchValue, nextPageSize, currentScope)}
-                  onShowSizeChange={(nextPage, nextPageSize) => void loadDrafts(nextPage, searchValue, nextPageSize, currentScope)}
+                  onChange={(nextPage, nextPageSize) => void loadDrafts(nextPage, searchValue, nextPageSize, currentScope, workflowStatusFilter)}
+                  onShowSizeChange={(nextPage, nextPageSize) => void loadDrafts(nextPage, searchValue, nextPageSize, currentScope, workflowStatusFilter)}
                 />
               </div>
             ) : null}
@@ -467,7 +489,7 @@ export function WorkflowDraftsPage() {
                 <div className="min-w-0">
                   <div className="sys-info-tags mb-2">
                     <span className={`sys-info-tag ${statusMeta[detailWorkflow.status].className}`}>{statusMeta[detailWorkflow.status].label}</span>
-                    <span className="sys-info-tag">{detailWorkflow.ownerId === user?.id ? "我的流程" : "共享协作"}</span>
+                    <span className="sys-info-tag">{isWorkflowOwnedByCurrentUser(detailWorkflow, currentUserId) ? "我的流程" : "协作开放"}</span>
                   </div>
                   <h2 className="workflow-detail-drawer-title">{detailWorkflow.name}</h2>
                   <p className="agent-muted mt-2 text-sm leading-6">{detailWorkflow.description || "暂无说明"}</p>
@@ -496,7 +518,7 @@ export function WorkflowDraftsPage() {
               <div className="workflow-detail-actions-grid">
                 <WorkflowDrawerAction icon={TextCursorInput} title="步骤设计" detail="进入左侧积木、右侧配置的设计界面。" />
                 <WorkflowDrawerAction icon={ClipboardCheck} title="发布校验" detail="检查结构、变量、能力引用和交付配置。" />
-                <WorkflowDrawerAction icon={Share2} title="协作范围" detail="当前展示为租户可见流程，后续接资源范围策略。" />
+                <WorkflowDrawerAction icon={Share2} title="协作范围" detail="当前按协作开放或本人维护范围展示，后续接资源策略明细。" />
                 <WorkflowDrawerAction icon={PackageCheck} title="发布版本" detail="通过校验后冻结不可变工作流版本。" />
               </div>
             </div>
@@ -619,18 +641,35 @@ function WorkflowFeatureCard({
 }) {
   return (
     <button type="button" onClick={onClick} className="workflow-feature-card">
-      <span className="workflow-feature-card-icon">
-        <Icon size={18} aria-hidden="true" />
-      </span>
-      <span className="workflow-feature-card-body">
-        <span className="workflow-feature-card-title">{title}</span>
-        <span className="workflow-feature-card-description">{description}</span>
-        <span className="workflow-feature-card-meta">
-          {meta}
-          <ArrowRight size={14} aria-hidden="true" />
+      <span className="workflow-feature-card-head">
+        <span className="workflow-feature-card-icon">
+          <Icon size={16} aria-hidden="true" />
         </span>
+        <span className="workflow-feature-card-title">{title}</span>
+      </span>
+      <span className="workflow-feature-card-description">{description}</span>
+      <span className="workflow-feature-card-meta">
+        {meta}
+        <ArrowRight size={14} aria-hidden="true" />
       </span>
     </button>
+  );
+}
+
+function WorkflowSideList({ title, empty, workflows, onOpen }: { title: string; empty: string; workflows: WorkflowDraft[]; onOpen: (workflow: WorkflowDraft) => void }) {
+  return (
+    <div className="workflow-side-list">
+      <h3>{title}</h3>
+      <div className="mt-3 space-y-2">
+        {workflows.length === 0 ? (
+          <p className="agent-muted text-sm">{empty}</p>
+        ) : (
+          workflows.map((workflow) => (
+            <WorkflowPreviewItem key={workflow.id} workflow={workflow} onClick={() => onOpen(workflow)} />
+          ))
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -651,6 +690,10 @@ function WorkflowPreviewItem({ workflow, onClick }: { workflow: WorkflowDraft; o
       <span className={`sys-info-tag ${status.className}`}>{status.label}</span>
     </button>
   );
+}
+
+function isWorkflowOwnedByCurrentUser(workflow: WorkflowDraft, currentUserId: string) {
+  return Boolean(currentUserId) && workflow.ownerId === currentUserId;
 }
 
 function WorkflowDesignCard({
@@ -684,7 +727,7 @@ function WorkflowDesignCard({
         </span>
       </div>
       <div className="sys-info-tags">
-        <span className="sys-info-tag sys-info-tag--primary">{mine ? "我的流程" : "共享流程"}</span>
+        <span className="sys-info-tag sys-info-tag--primary">{mine ? "我的流程" : "协作开放"}</span>
         <span className="sys-info-tag">{workflow.nodeCount} 个积木</span>
         <span className="sys-info-tag">{workflow.pausePointCount} 个暂停点</span>
       </div>
