@@ -22,6 +22,7 @@ public final class WorkflowDraftApi {
         String status,
         int nodeCount,
         int pausePointCount,
+        UUID ownerId,
         String ownerName,
         Instant updatedAt
     ) {

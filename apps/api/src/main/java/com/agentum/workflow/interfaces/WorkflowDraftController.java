@@ -36,13 +36,14 @@ public class WorkflowDraftController {
         @PathVariable UUID tenantId,
         @AuthenticationPrincipal CurrentUserPrincipal principal,
         @RequestParam(defaultValue = "") String keyword,
+        @RequestParam(defaultValue = "all") String scope,
         @RequestParam(defaultValue = "1") int page,
         @RequestParam(defaultValue = "10") int size,
         @RequestParam(defaultValue = "updatedAt,desc") String sort,
         HttpServletRequest request
     ) {
         workflowDesignAccess.assertCanDesign(principal, tenantId);
-        return ApiResponse.success(workflowDraftService.listDrafts(tenantId, keyword, page, size, sort), RequestIds.current(request));
+        return ApiResponse.success(workflowDraftService.listDrafts(tenantId, principal.userId(), keyword, scope, page, size, sort), RequestIds.current(request));
     }
 
     @PostMapping

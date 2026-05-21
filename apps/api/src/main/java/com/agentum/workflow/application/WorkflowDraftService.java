@@ -98,12 +98,14 @@ public class WorkflowDraftService {
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<WorkflowDraftApi.WorkflowDraftRow> listDrafts(UUID tenantId, String keyword, int page, int size, String sort) {
+    public PageResponse<WorkflowDraftApi.WorkflowDraftRow> listDrafts(UUID tenantId, UUID operatorUserId, String keyword, String scope, int page, int size, String sort) {
         ensureActiveTenant(tenantId);
         Pageable pageable = PageableFactory.from(PageQuery.of(page, size, sort), DRAFT_SORT);
         String normalizedKeyword = keyword == null ? "" : keyword.trim();
+        boolean onlyMine = "mine".equals(scope);
         Map<UUID, UserAccount> usersById = loadUsersById();
-        return PageResponse.from(workflowDefinitionRepository.searchDrafts(tenantId, normalizedKeyword, pageable)
+        // 全部流程代表当前租户可见的共享协作池；我的流程只筛当前创建人，避免前端用负责人姓名猜测归属。
+        return PageResponse.from(workflowDefinitionRepository.searchDrafts(tenantId, normalizedKeyword, onlyMine ? operatorUserId : null, pageable)
             .map(definition -> toDraftRow(definition, usersById)));
     }
 
@@ -378,6 +380,7 @@ public class WorkflowDraftService {
             definition.getStatus(),
             definition.getNodeCount(),
             definition.getPausePointCount(),
+            definition.getCreatedBy(),
             owner == null ? "未知用户" : owner.getDisplayName(),
             definition.getUpdatedAt()
         );

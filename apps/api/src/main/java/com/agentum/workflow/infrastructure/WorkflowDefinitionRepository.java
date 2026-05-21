@@ -20,6 +20,12 @@ public interface WorkflowDefinitionRepository extends JpaRepository<WorkflowDefi
             lower(definition.name) like lower(concat('%', :keyword, '%'))
             or lower(coalesce(definition.description, '')) like lower(concat('%', :keyword, '%'))
           )
+          and (:ownerId is null or definition.createdBy = :ownerId)
         """)
-    Page<WorkflowDefinitionEntity> searchDrafts(@Param("tenantId") UUID tenantId, @Param("keyword") String keyword, Pageable pageable);
+    Page<WorkflowDefinitionEntity> searchDrafts(
+        @Param("tenantId") UUID tenantId,
+        @Param("keyword") String keyword,
+        @Param("ownerId") UUID ownerId,
+        Pageable pageable
+    );
 }

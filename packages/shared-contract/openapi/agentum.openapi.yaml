@@ -407,6 +407,13 @@ paths:
           in: query
           schema:
             type: string
+        - name: scope
+          in: query
+          description: 工作流范围，all 表示当前租户可见流程，mine 表示当前创建人维护的流程
+          schema:
+            type: string
+            enum: [all, mine]
+            default: all
         - name: page
           in: query
           schema:
@@ -3548,6 +3555,10 @@ components:
           type: integer
         pausePointCount:
           type: integer
+        ownerId:
+          type: string
+          format: uuid
+          nullable: true
         ownerName:
           type: string
         updatedAt:
@@ -3561,6 +3572,7 @@ components:
         - status
         - nodeCount
         - pausePointCount
+        - ownerId
         - ownerName
         - updatedAt
     CreateWorkflowDraftRequest:

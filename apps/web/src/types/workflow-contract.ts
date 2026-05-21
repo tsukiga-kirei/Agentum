@@ -21,6 +21,7 @@ export type WorkflowDraftRow = {
   status: WorkflowStatus;
   nodeCount: number;
   pausePointCount: number;
+  ownerId: string | null;
   ownerName: string;
   updatedAt: string;
 };

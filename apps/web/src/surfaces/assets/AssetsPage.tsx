@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Bot, Boxes, BrainCircuit, CheckCircle2, ChevronDown, CircleAlert, Clock, Edit3, Eye, FileText, Hash, Library, PlusCircle, Search, Send, ShieldCheck, Tag, Trash2, UserRoundCog, X } from "lucide-react";
+import { ArrowRight, Bot, Boxes, BrainCircuit, CheckCircle2, ChevronDown, CircleAlert, Clock, Edit3, Eye, FileText, Hash, Library, PlusCircle, Search, Send, ShieldCheck, Tag, Trash2, UserRoundCog, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Empty, Pagination, Segmented, Select, Spin, message, Drawer } from "antd";
 import { AgentumApiError, assetApi } from "../../services/apiClient";
@@ -409,7 +409,15 @@ export function AssetsPage() {
 
         <Spin spinning={loading}>
           {activeTab === "overview" ? (
-            <OverviewPanel summary={summary} systemAssets={assignedSystemAssets} myAssets={myAssets} draftAssets={draftAssets} />
+            <OverviewPanel
+              summary={summary}
+              systemAssets={assignedSystemAssets}
+              myAssets={myAssets}
+              draftAssets={draftAssets}
+              onOpenSystem={() => setActiveTab("system")}
+              onOpenMine={() => setActiveTab("mine")}
+              onCreateDraft={() => setCreateOpen(true)}
+            />
           ) : null}
 
           {activeTab === "system" ? (
@@ -801,11 +809,17 @@ function OverviewPanel({
   systemAssets,
   myAssets,
   draftAssets,
+  onOpenSystem,
+  onOpenMine,
+  onCreateDraft,
 }: {
   summary: AssetSummary | null;
   systemAssets: SystemCapabilityAssetRow[];
   myAssets: MyAssetRow[];
   draftAssets: MyAssetRow[];
+  onOpenSystem: () => void;
+  onOpenMine: () => void;
+  onCreateDraft: () => void;
 }) {
   return (
     <div className="sys-fade-in">
@@ -818,12 +832,12 @@ function OverviewPanel({
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
         <section className="sys-preview-card">
-          <div className="sys-preview-card-title"><ShieldCheck size={16} /> 能力进入业务的路径</div>
+          <div className="sys-preview-card-title"><ShieldCheck size={16} /> 能力功能入口</div>
           <div className="grid gap-3 lg:grid-cols-2">
-            <PathStep icon={Boxes} title="系统管理开放" detail="登记全局 MCP、Skill、提示词模板和交付能力，并放入租户可用能力池。" />
-            <PathStep icon={UserRoundCog} title="租户管理分配" detail="按角色、部门或人员分配能力池，形成业务侧可见和可引用范围。" />
-            <PathStep icon={Library} title="能力资产沉淀" detail="业务成员创建智能体模板和业务能力，先以草稿进入当前租户资产台账。" />
-            <PathStep icon={Bot} title="流程节点引用" detail="流程设计只引用能力版本，运行审计可追溯当时使用的资产与能力来源。" />
+            <AssetFeatureCard icon={Boxes} title="对我开放" detail="查看当前用户、部门或角色已被分配的系统能力。" meta={`${systemAssets.length} 项当前页可引用能力`} onClick={onOpenSystem} />
+            <AssetFeatureCard icon={Library} title="我的能力" detail="维护我创建的提示词模板和智能体模板草稿。" meta={`${summary?.myAssetTotal ?? myAssets.length} 项我的能力`} onClick={onOpenMine} />
+            <AssetFeatureCard icon={PlusCircle} title="新建能力草稿" detail="创建提示词模板或智能体模板，再通过发布进入复用链路。" meta="提示词模板 / 智能体模板" onClick={onCreateDraft} />
+            <AssetFeatureCard icon={BrainCircuit} title="待完善草稿" detail="回到我的能力处理未发布草稿和版本说明。" meta={`${draftAssets.length} 项待完善`} onClick={onOpenMine} />
           </div>
         </section>
 
@@ -852,15 +866,31 @@ function OverviewStat({ icon: Icon, value, label, tone }: { icon: LucideIcon; va
   );
 }
 
-function PathStep({ icon: Icon, title, detail }: { icon: LucideIcon; title: string; detail: string }) {
+function AssetFeatureCard({
+  icon: Icon,
+  title,
+  detail,
+  meta,
+  onClick,
+}: {
+  icon: LucideIcon;
+  title: string;
+  detail: string;
+  meta: string;
+  onClick: () => void;
+}) {
   return (
-    <article className="asset-path-step rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-4">
+    <button type="button" className="asset-feature-card" onClick={onClick}>
       <div className="flex items-center gap-2">
-        <span className="asset-path-step-icon sys-preview-item-icon sys-card-avatar--cap"><Icon size={16} /></span>
-        <h3 className="asset-path-step-title text-sm font-semibold">{title}</h3>
+        <span className="asset-feature-card-icon sys-preview-item-icon sys-card-avatar--cap"><Icon size={16} /></span>
+        <h3 className="asset-feature-card-title text-sm font-semibold">{title}</h3>
       </div>
-      <p className="asset-path-step-detail agent-muted mt-3 text-sm leading-6">{detail}</p>
-    </article>
+      <p className="asset-feature-card-detail agent-muted mt-3 text-sm leading-6">{detail}</p>
+      <span className="asset-feature-card-meta">
+        {meta}
+        <ArrowRight size={14} aria-hidden="true" />
+      </span>
+    </button>
   );
 }
 
