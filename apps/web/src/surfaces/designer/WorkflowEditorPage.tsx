@@ -47,7 +47,7 @@ type EditorNodeData = {
   pausePoint: boolean;
   configStatus: "complete" | "incomplete";
   runState: "未开始" | "等待输入" | "执行中" | "等待审核" | "已完成" | "待配置";
-  outputMode: "一次性输出" | "追问确认" | "分析后暂停";
+  outputMode: "一次性输出" | "追问确认";
   toolCount: number;
   allowQuestion: boolean;
   rawConfig?: Record<string, unknown>;
@@ -175,8 +175,6 @@ const starterNodes: WorkflowEditorNode[] = [
   createBrickNode("delivery", 3, ["cluster_result"]),
 ];
 
-const starterEdges = rebuildSequentialEdges(starterNodes.filter((node) => node.id !== SYSTEM_TRIGGER_ID));
-
 const starterVariableMetadata: Record<string, Pick<WorkflowVariable, "type" | "sensitive" | "deliverable" | "description">> = {
   starter: { type: "string", sensitive: false, deliverable: false, description: "流程发起人标识" },
   started_at: { type: "string", sensitive: false, deliverable: false, description: "流程发起时间" },
@@ -198,7 +196,6 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [saveFeedback, setSaveFeedback] = useState<{ tone: "success" | "error" | "info"; message: string } | null>(null);
-  const [usingStarterTemplate, setUsingStarterTemplate] = useState(false);
   const [declaredVariables, setDeclaredVariables] = useState<WorkflowVariable[]>([]);
   const [isAddBrickModalOpen, setIsAddBrickModalOpen] = useState(false);
 
@@ -220,18 +217,14 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
         if (cancelled) {
           return;
         }
-        const hasPersistedGraph = detail.nodes.length > 0;
-        const nextNodes = hasPersistedGraph ? ensureSystemTrigger(detail.nodes.map(toEditorNode)) : cloneStarterNodes();
-        const nextEdges = hasPersistedGraph ? detail.edges.map(toEditorEdge) : cloneStarterEdges();
+        const hasPersistedGraph = detail.nodes.some((node) => node.nodeType !== "trigger" && node.nodeId !== SYSTEM_TRIGGER_ID);
+        const nextNodes = hasPersistedGraph ? ensureSystemTrigger(detail.nodes.map(toEditorNode)) : [cloneEditorNode(starterNodes[0])];
+        const nextEdges = hasPersistedGraph ? detail.edges.map(toEditorEdge) : [];
         const nextVariables = detail.variables.length > 0 ? toWorkflowVariables(detail.variables, nextNodes) : buildWorkflowVariables(nextNodes);
         setNodes(nextNodes);
         setEdges(nextEdges.length > 0 ? nextEdges : rebuildSequentialEdges(nextNodes.filter((node) => node.id !== SYSTEM_TRIGGER_ID)));
         setDeclaredVariables(nextVariables);
-        setSelectedNodeId("");
-        setUsingStarterTemplate(!hasPersistedGraph);
-        if (!hasPersistedGraph) {
-          setSaveFeedback({ tone: "info", message: "已载入基础积木模板，左侧可继续添加和调整步骤。" });
-        }
+        setSelectedNodeId(nextNodes.find((node) => node.id !== SYSTEM_TRIGGER_ID)?.id ?? "");
       })
       .catch((error) => {
         if (cancelled) {
@@ -270,8 +263,22 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
     return variable.sourceNodeId === SYSTEM_TRIGGER_ID || (sourceIndex >= 0 && sourceIndex < selectedNodeIndex);
   });
   const incompleteNodes = visibleNodes.filter((node) => node.data.configStatus === "incomplete");
-  const pausePointCount = visibleNodes.filter((node) => node.data.pausePoint).length;
   const matchedNodes = visibleNodes.filter((node) => node.data.label.includes(nodeSearchValue.trim()));
+
+  useEffect(() => {
+    if (loading) {
+      return;
+    }
+
+    if (visibleNodes.length === 0 && selectedNodeId) {
+      setSelectedNodeId("");
+      return;
+    }
+
+    if (visibleNodes.length > 0 && !visibleNodes.some((node) => node.id === selectedNodeId)) {
+      setSelectedNodeId(visibleNodes[0].id);
+    }
+  }, [loading, selectedNodeId, visibleNodes]);
 
   const persistGraph = useCallback(async (nextNodes: WorkflowEditorNode[], nextEdges: WorkflowEditorEdge[]) => {
     if (!token || !user?.tenantId) {
@@ -294,7 +301,6 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
       );
       applyPersistedDetail(detail, setNodes, setEdges, setSelectedNodeId);
       setDeclaredVariables(toWorkflowVariables(detail.variables, detail.nodes.map(toEditorNode)));
-      setUsingStarterTemplate(false);
       setSaveFeedback({ tone: "success", message: "流程设计已保存" });
       onDraftSaved(detail.draft);
     } catch (error) {
@@ -427,18 +433,16 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
 
   return (
     <div className="flex h-[calc(100vh-var(--header-height))] flex-col bg-[var(--color-bg-layout)]">
-      <div className="flex flex-wrap items-center gap-3 border-b border-[var(--color-border-light)] bg-[var(--color-bg-card)] px-4 py-2">
+      <div className="workflow-editor-toolbar flex flex-wrap items-center gap-3 border-b border-[var(--color-border-light)] px-4 py-2">
         <button type="button" onClick={onBack} className="agent-button h-7 px-2 text-xs">
           <ChevronLeft className="h-3.5 w-3.5" aria-hidden="true" />
           返回
         </button>
         <div className="mr-auto min-w-0">
           <h2 className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{workflow.name}</h2>
-          <p className="truncate text-xs text-[var(--color-text-tertiary)]">左侧搭积木，右侧配置当前步骤</p>
         </div>
         <ToolbarMetric icon={ListChecks} label="积木" value={visibleNodes.length.toString()} />
         <ToolbarMetric icon={Settings2} label="待配" value={incompleteNodes.length.toString()} tone={incompleteNodes.length > 0 ? "warning" : "default"} />
-        <ToolbarMetric icon={Clock3} label="暂停" value={pausePointCount.toString()} />
         {saveFeedback ? <SaveFeedback feedback={saveFeedback} /> : null}
         <label className="relative block w-52">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--color-text-tertiary)]" aria-hidden="true" />
@@ -474,7 +478,6 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
           <WorkflowStepBuilder
             nodes={visibleNodes}
             selectedNodeId={selectedNodeId}
-            usingStarterTemplate={usingStarterTemplate}
             onSelectNode={setSelectedNodeId}
             onOpenAddBrick={() => setIsAddBrickModalOpen(true)}
             onMoveNode={handleMoveNode}
@@ -500,6 +503,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
                 variables={workflowVariables}
                 incompleteNodes={incompleteNodes}
                 onSelectNode={setSelectedNodeId}
+                onOpenAddBrick={() => setIsAddBrickModalOpen(true)}
               />
             )}
           </div>
@@ -519,7 +523,6 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
 function WorkflowStepBuilder({
   nodes,
   selectedNodeId,
-  usingStarterTemplate,
   onSelectNode,
   onOpenAddBrick,
   onMoveNode,
@@ -527,7 +530,6 @@ function WorkflowStepBuilder({
 }: {
   nodes: WorkflowEditorNode[];
   selectedNodeId: string;
-  usingStarterTemplate: boolean;
   onSelectNode: (nodeId: string) => void;
   onOpenAddBrick: () => void;
   onMoveNode: (nodeId: string, direction: -1 | 1) => void;
@@ -538,7 +540,6 @@ function WorkflowStepBuilder({
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
           <h3 className="truncate text-sm font-semibold text-[var(--color-text-primary)]">工作流步骤</h3>
-          {usingStarterTemplate ? <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">起步模板，可继续调整</p> : null}
         </div>
         <button type="button" onClick={onOpenAddBrick} className="agent-button agent-button-primary h-8 shrink-0 px-2.5 text-xs">
           <Plus className="h-3.5 w-3.5" aria-hidden="true" />
@@ -778,18 +779,23 @@ function WorkflowOverviewPanel({
   variables,
   incompleteNodes,
   onSelectNode,
+  onOpenAddBrick,
 }: {
   nodes: WorkflowEditorNode[];
   variables: WorkflowVariable[];
   incompleteNodes: WorkflowEditorNode[];
   onSelectNode: (nodeId: string) => void;
+  onOpenAddBrick: () => void;
 }) {
+  if (nodes.length === 0) {
+    return <EmptyWorkflowGuide onOpenAddBrick={onOpenAddBrick} />;
+  }
+
   return (
-    <aside className="mx-auto max-w-5xl space-y-4 rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-5 shadow-[var(--shadow-sm)]" aria-labelledby="workflow-overview-title">
+    <aside className="mx-auto max-w-5xl space-y-4 rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-5 shadow-[var(--shadow-sm)]" aria-labelledby="workflow-selection-title">
       <div>
-        <p className="text-xs text-[var(--color-text-tertiary)]">工作流总览</p>
-        <h3 id="workflow-overview-title" className="text-base font-semibold text-[var(--color-text-primary)]">先搭步骤，再配置能力</h3>
-        <p className="mt-2 text-sm leading-6 text-[var(--color-text-secondary)]">左侧添加四类积木并调整顺序。点击某个积木后，这里会切换为对应配置面板。</p>
+        <p className="text-xs text-[var(--color-text-tertiary)]">当前步骤</p>
+        <h3 id="workflow-selection-title" className="text-base font-semibold text-[var(--color-text-primary)]">选择左侧积木继续配置</h3>
       </div>
       <div className="grid grid-cols-3 gap-2">
         <OverviewMetric label="步骤" value={String(nodes.length)} />
@@ -814,6 +820,40 @@ function WorkflowOverviewPanel({
         <VariableList variables={variables.map((variable) => variable.name)} emptyText="暂无输出参数" />
       </PanelGroup>
     </aside>
+  );
+}
+
+function EmptyWorkflowGuide({ onOpenAddBrick }: { onOpenAddBrick: () => void }) {
+  return (
+    <aside className="workflow-empty-guide mx-auto max-w-4xl rounded-[var(--radius-lg)] border border-dashed border-[var(--color-border-light)] p-6">
+      <div className="mx-auto max-w-2xl text-center">
+        <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-primary-bg)] text-[var(--color-primary)]">
+          <Layers3 className="h-6 w-6" aria-hidden="true" />
+        </span>
+        <h3 className="mt-4 text-base font-semibold text-[var(--color-text-primary)]">从第一个积木开始搭建</h3>
+        <p className="mt-2 text-sm leading-6 text-[var(--color-text-secondary)]">
+          推荐先添加输入节点收集业务资料，再接单智能体或智能体集群处理，最后用交付节点生成文档、邮件或 OA 结果。
+        </p>
+        <div className="mt-5 grid gap-3 text-left md:grid-cols-3">
+          <BuildGuideCard title="输入" detail="定义用户需要填写的字段和输出参数。" />
+          <BuildGuideCard title="处理" detail="选择智能体、Skill、MCP 和提示词模板。" />
+          <BuildGuideCard title="交付" detail="配置最终结果变量和交付方式。" />
+        </div>
+        <button type="button" onClick={onOpenAddBrick} className="agent-button agent-button-primary mt-6 h-9 px-4 text-sm">
+          <Plus className="h-4 w-4" aria-hidden="true" />
+          添加第一个积木
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+function BuildGuideCard({ title, detail }: { title: string; detail: string }) {
+  return (
+    <article className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-3">
+      <strong className="block text-sm text-[var(--color-text-primary)]">{title}</strong>
+      <span className="mt-1 block text-xs leading-5 text-[var(--color-text-secondary)]">{detail}</span>
+    </article>
   );
 }
 
@@ -1096,7 +1136,7 @@ function InteractionConfig({
         <span className="text-[var(--color-text-primary)]">允许重新生成</span>
         <input
           type="checkbox"
-          checked={node.data.outputMode === "追问确认" || node.data.outputMode === "分析后暂停"}
+          checked={node.data.outputMode === "追问确认"}
           onChange={(event) => onUpdateNode({ outputMode: event.target.checked ? "追问确认" : "一次性输出" })}
         />
       </label>
@@ -1361,10 +1401,6 @@ function cloneStarterNodes(): WorkflowEditorNode[] {
   return starterNodes.map((node) => cloneEditorNode(node));
 }
 
-function cloneStarterEdges(): WorkflowEditorEdge[] {
-  return starterEdges.map((edge) => ({ ...edge }));
-}
-
 function cloneEditorNode(node: WorkflowEditorNode): WorkflowEditorNode {
   return {
     ...node,
@@ -1386,7 +1422,7 @@ function createBrickNode(brickType: WorkflowBrickType, index: number, inputVaria
     input: {
       label: "输入信息",
       summary: "配置用户需要填写的输入框。",
-      pausePoint: true,
+      pausePoint: false,
       runState: "等待输入",
       outputMode: "一次性输出",
       toolCount: 0,
@@ -1399,7 +1435,7 @@ function createBrickNode(brickType: WorkflowBrickType, index: number, inputVaria
     agent: {
       label: "单智能体处理",
       summary: "选择或配置一个智能体，加载提示词模板、MCP 和 Skill 完成任务。",
-      pausePoint: true,
+      pausePoint: false,
       runState: "待配置",
       outputMode: "追问确认",
       toolCount: 1,
@@ -1416,7 +1452,7 @@ function createBrickNode(brickType: WorkflowBrickType, index: number, inputVaria
     cluster: {
       label: "智能体集群处理",
       summary: "多个智能体并行处理，再按拼接规则汇总输出。",
-      pausePoint: true,
+      pausePoint: false,
       runState: "待配置",
       outputMode: "追问确认",
       toolCount: 2,
@@ -1516,10 +1552,10 @@ function toEditorNode(node: WorkflowNodeDraft): WorkflowEditorNode {
       summary: readString(config.summary, fallback.summary),
       inputVariables: [...(node.inputVariables ?? [])],
       outputVariables: [...(node.outputVariables ?? [])],
-      pausePoint: readBoolean(config.pausePoint, fallback.pausePoint),
+      pausePoint: false,
       configStatus: readLiteral(config.configStatus, ["complete", "incomplete"], fallback.configStatus),
       runState: readLiteral(config.runState, ["未开始", "等待输入", "执行中", "等待审核", "已完成", "待配置"], fallback.runState),
-      outputMode: readLiteral(config.outputMode, ["一次性输出", "追问确认", "分析后暂停"], fallback.outputMode),
+      outputMode: readLiteral(config.outputMode, ["一次性输出", "追问确认"], fallback.outputMode),
       toolCount: readNumber(config.toolCount, fallback.toolCount),
       allowQuestion: readBoolean(config.allowQuestion, fallback.allowQuestion),
       rawConfig: { ...config, brickType },
@@ -1550,7 +1586,7 @@ function toWorkflowNodeDraft(node: WorkflowEditorNode): WorkflowNodeDraft {
       ...(node.data.rawConfig ?? {}),
       typeLabel: node.data.typeLabel,
       summary: node.data.summary,
-      pausePoint: node.data.pausePoint,
+      pausePoint: false,
       configStatus: node.data.configStatus,
       runState: node.data.runState,
       outputMode: node.data.outputMode,
@@ -1639,7 +1675,7 @@ function buildFallbackNodeData(nodeType: WorkflowNodeType, brickType: WorkflowBr
     summary: "请在右侧配置这个积木的业务目标和参数。",
     inputVariables: [],
     outputVariables: [],
-    pausePoint: ["user_input", "agent", "parallel_group"].includes(nodeType),
+    pausePoint: false,
     configStatus: "incomplete",
     runState: "待配置",
     outputMode: "一次性输出",

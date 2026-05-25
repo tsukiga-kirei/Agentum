@@ -10,10 +10,8 @@ import {
   GitBranch,
   ListChecks,
   PanelRightOpen,
-  PackageCheck,
   Share2,
   Search,
-  TextCursorInput,
   UserRound,
   UsersRound,
   X,
@@ -23,9 +21,12 @@ import { Drawer, Pagination, Segmented, Select } from "antd";
 import { AgentumApiError, workflowApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import type {
+  WorkflowDraftDetail,
   WorkflowDraftRow,
+  WorkflowNodeDraft,
   WorkflowPublishValidationResult,
   WorkflowStatus,
+  WorkflowVariableDraft,
 } from "../../types/workflow-contract";
 import { WorkflowEditorPage } from "./WorkflowEditorPage";
 
@@ -107,6 +108,9 @@ export function WorkflowDraftsPage() {
   const [publishSuccess, setPublishSuccess] = useState("");
   const [activeTab, setActiveTab] = useState<WorkflowDesignerTab>("overview");
   const [detailWorkflow, setDetailWorkflow] = useState<WorkflowDraft | null>(null);
+  const [drawerDetail, setDrawerDetail] = useState<WorkflowDraftDetail | null>(null);
+  const [drawerDetailLoading, setDrawerDetailLoading] = useState(false);
+  const [drawerDetailError, setDrawerDetailError] = useState("");
   const [workflowStatusFilter, setWorkflowStatusFilter] = useState<WorkflowStatusFilter>("all");
 
   const currentUserId = user?.id ?? "";
@@ -141,6 +145,51 @@ export function WorkflowDraftsPage() {
   useEffect(() => {
     void loadDrafts(1, searchValue, pageSize, currentScope);
   }, [loadDrafts]);
+
+  useEffect(() => {
+    if (!detailWorkflow) {
+      setDrawerDetail(null);
+      setDrawerDetailError("");
+      setDrawerDetailLoading(false);
+      return;
+    }
+
+    if (!token || !user?.tenantId) {
+      setDrawerDetailError("当前账号缺少租户上下文，无法加载流程内容");
+      setDrawerDetail(null);
+      return;
+    }
+
+    const tenantId = user.tenantId;
+    let cancelled = false;
+    setDrawerDetailLoading(true);
+    setDrawerDetailError("");
+
+    // 抽屉用于进入设计前快速看完整流程内容，只读取草稿详情，不触发保存或发布等写动作。
+    void workflowApi.getDraft(tenantId, detailWorkflow.id, token)
+      .then((detail) => {
+        if (!cancelled) {
+          setDrawerDetail(detail);
+        }
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+        console.warn("[workflow] 工作流详情抽屉加载失败", getWorkflowErrorContext(error, tenantId, { workflowId: detailWorkflow.id }));
+        setDrawerDetailError(error instanceof AgentumApiError ? error.message : "无法加载流程内容");
+        setDrawerDetail(null);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setDrawerDetailLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [detailWorkflow, token, user?.tenantId]);
 
   const filteredWorkflows = useMemo(() => {
     if (activeTab === "all") {
@@ -506,21 +555,16 @@ export function WorkflowDraftsPage() {
                   <span className="sys-form-value">{detailWorkflow.nodeCount} 个</span>
                 </div>
                 <div className="sys-form-row">
-                  <span className="sys-form-label">暂停点</span>
-                  <span className="sys-form-value">{detailWorkflow.pausePointCount} 个</span>
-                </div>
-                <div className="sys-form-row">
                   <span className="sys-form-label">更新时间</span>
                   <span className="sys-form-value">{formatDateTime(detailWorkflow.updatedAt)}</span>
                 </div>
               </div>
 
-              <div className="workflow-detail-actions-grid">
-                <WorkflowDrawerAction icon={TextCursorInput} title="步骤设计" detail="进入左侧积木、右侧配置的设计界面。" />
-                <WorkflowDrawerAction icon={ClipboardCheck} title="发布校验" detail="检查结构、变量、能力引用和交付配置。" />
-                <WorkflowDrawerAction icon={Share2} title="协作范围" detail="当前按协作开放或本人维护范围展示，后续接资源策略明细。" />
-                <WorkflowDrawerAction icon={PackageCheck} title="发布版本" detail="通过校验后冻结不可变工作流版本。" />
-              </div>
+              <WorkflowDrawerContent
+                detail={drawerDetail}
+                loading={drawerDetailLoading}
+                error={drawerDetailError}
+              />
             </div>
 
             <div className="sys-drawer-footer">
@@ -729,7 +773,6 @@ function WorkflowDesignCard({
       <div className="sys-info-tags">
         <span className="sys-info-tag sys-info-tag--primary">{mine ? "我的流程" : "协作开放"}</span>
         <span className="sys-info-tag">{workflow.nodeCount} 个积木</span>
-        <span className="sys-info-tag">{workflow.pausePointCount} 个暂停点</span>
       </div>
       <p className="agent-muted workflow-design-card-desc">{workflow.description || "暂无说明"}</p>
       <div className="sys-card-meta">
@@ -759,17 +802,83 @@ function WorkflowDesignCard({
   );
 }
 
-function WorkflowDrawerAction({ icon: Icon, title, detail }: { icon: LucideIcon; title: string; detail: string }) {
+function WorkflowDrawerContent({
+  detail,
+  loading,
+  error,
+}: {
+  detail: WorkflowDraftDetail | null;
+  loading: boolean;
+  error: string;
+}) {
+  if (loading) {
+    return (
+      <div className="workflow-drawer-loading">
+        <Clock3 size={16} aria-hidden="true" />
+        正在读取流程内容
+      </div>
+    );
+  }
+
+  if (error) {
+    return <div className="workflow-feedback workflow-feedback--danger">{error}</div>;
+  }
+
+  const nodes = sortDrawerNodes(detail?.nodes ?? []);
+  const variables = detail?.variables ?? [];
+
   return (
-    <article className="workflow-drawer-action">
-      <span className="workflow-drawer-action-icon">
-        <Icon size={16} aria-hidden="true" />
-      </span>
-      <span>
-        <strong>{title}</strong>
-        <small>{detail}</small>
+    <div className="workflow-drawer-overview">
+      <section className="workflow-drawer-block">
+        <h3>流程内容</h3>
+        {nodes.length === 0 ? (
+          <p className="agent-muted text-sm leading-6">当前还没有配置积木，进入设计后可以从输入节点、智能体节点、智能体集群和交付节点开始搭建。</p>
+        ) : (
+          <div className="workflow-drawer-step-list">
+            {nodes.map((node, index) => (
+              <WorkflowDrawerStep key={node.nodeId} node={node} index={index} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="workflow-drawer-block">
+        <h3>输出变量</h3>
+        {variables.length === 0 ? (
+          <p className="agent-muted text-sm">暂无变量声明</p>
+        ) : (
+          <div className="workflow-drawer-variable-list">
+            {variables.slice(0, 12).map((variable) => (
+              <WorkflowDrawerVariable key={`${variable.sourceNode}-${variable.name}`} variable={variable} />
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function WorkflowDrawerStep({ node, index }: { node: WorkflowNodeDraft; index: number }) {
+  const nodeType = formatWorkflowNodeType(node.nodeType);
+  const summary = readWorkflowConfigString(node.config.summary, node.outputVariables.length > 0 ? `输出 ${node.outputVariables.join("、")}` : "尚未配置输出参数");
+
+  return (
+    <article className="workflow-drawer-step">
+      <span className="workflow-drawer-step-index">{index + 1}</span>
+      <span className="min-w-0">
+        <strong>{node.name}</strong>
+        <small>{nodeType} · {summary}</small>
       </span>
     </article>
+  );
+}
+
+function WorkflowDrawerVariable({ variable }: { variable: WorkflowVariableDraft }) {
+  return (
+    <span className="workflow-drawer-variable">
+      <strong>{variable.name}</strong>
+      <small>{formatVariableType(variable.type)}</small>
+    </span>
   );
 }
 
@@ -802,6 +911,45 @@ function formatDateTime(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function sortDrawerNodes(nodes: WorkflowNodeDraft[]) {
+  return [...nodes]
+    .filter((node) => node.nodeType !== "trigger")
+    .sort((left, right) => left.positionX - right.positionX || left.positionY - right.positionY);
+}
+
+function readWorkflowConfigString(value: unknown, fallback: string) {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function formatWorkflowNodeType(nodeType: WorkflowNodeDraft["nodeType"]) {
+  const labels: Record<WorkflowNodeDraft["nodeType"], string> = {
+    trigger: "系统触发",
+    user_input: "输入节点",
+    agent: "单智能体节点",
+    parallel_group: "智能体集群节点",
+    merge: "组装节点",
+    condition: "条件分支",
+    human_review: "人工审核",
+    delivery: "交付节点",
+  };
+
+  return labels[nodeType];
+}
+
+function formatVariableType(type: WorkflowVariableDraft["type"]) {
+  const labels: Record<WorkflowVariableDraft["type"], string> = {
+    string: "文本",
+    number: "数字",
+    object: "对象",
+    array: "数组",
+    boolean: "布尔",
+    decision: "决策",
+    file: "文件",
+  };
+
+  return labels[type];
 }
 
 function getWorkflowErrorContext(error: unknown, tenantId?: string, extra?: Record<string, unknown>) {
