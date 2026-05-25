@@ -5,6 +5,7 @@ import com.agentum.shared.api.ApiResponse;
 import com.agentum.shared.api.RequestIds;
 import com.agentum.shared.pagination.PageResponse;
 import com.agentum.workflow.application.WorkflowDesignAccess;
+import com.agentum.workflow.application.WorkflowDesignerCatalogService;
 import com.agentum.workflow.application.WorkflowDraftService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -24,11 +25,27 @@ import org.springframework.web.bind.annotation.RestController;
 public class WorkflowDraftController {
 
     private final WorkflowDesignAccess workflowDesignAccess;
+    private final WorkflowDesignerCatalogService workflowDesignerCatalogService;
     private final WorkflowDraftService workflowDraftService;
 
-    public WorkflowDraftController(WorkflowDesignAccess workflowDesignAccess, WorkflowDraftService workflowDraftService) {
+    public WorkflowDraftController(
+        WorkflowDesignAccess workflowDesignAccess,
+        WorkflowDesignerCatalogService workflowDesignerCatalogService,
+        WorkflowDraftService workflowDraftService
+    ) {
         this.workflowDesignAccess = workflowDesignAccess;
+        this.workflowDesignerCatalogService = workflowDesignerCatalogService;
         this.workflowDraftService = workflowDraftService;
+    }
+
+    @GetMapping("/designer-catalog")
+    public ApiResponse<WorkflowDraftApi.WorkflowDesignerCatalog> getDesignerCatalog(
+        @PathVariable UUID tenantId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        workflowDesignAccess.assertCanDesign(principal, tenantId);
+        return ApiResponse.success(workflowDesignerCatalogService.getCatalog(), RequestIds.current(request));
     }
 
     @GetMapping

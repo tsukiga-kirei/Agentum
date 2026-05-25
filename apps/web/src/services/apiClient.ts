@@ -45,6 +45,7 @@ import type {
 } from "../types/system";
 import type {
   CreateWorkflowDraftRequest,
+  WorkflowDesignerCatalog,
   WorkflowDraftDetail,
   WorkflowEdgeDraft,
   WorkflowNodeDraft,
@@ -265,6 +266,8 @@ export const assetApi = {
 };
 
 export const workflowApi = {
+  getDesignerCatalog: (tenantId: string, token: string) =>
+    apiRequest<WorkflowDesignerCatalog>(`/api/tenants/${tenantId}/workflows/drafts/designer-catalog`, { token }),
   listDrafts: (tenantId: string, token: string, page = 1, size = 10, keyword = "", scope: "all" | "mine" | "shared" = "all", status: "all" | "draft" | "published" | "review" = "all", sort = "updatedAt,desc") => {
     const params = new URLSearchParams({
       page: String(page),

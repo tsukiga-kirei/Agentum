@@ -24,6 +24,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -96,6 +97,33 @@ class WorkflowDraftServicePublishTest {
         verify(workflowVersionRepository, never()).save(any());
     }
 
+    @Test
+    void shouldKeepPausePointCountZeroWhenSavingSequentialGraph() {
+        WorkflowDefinitionEntity definition = draft();
+        stubDefinitionLookup(definition);
+        WorkflowDraftApi.SaveWorkflowDraftGraphRequest request = new WorkflowDraftApi.SaveWorkflowDraftGraphRequest(
+            List.of(
+                node("trigger_manual", "trigger", List.of("starter")),
+                node("input_1", "user_input", List.of("input_1")),
+                node("agent_1", "agent", List.of("agent_response"))
+            ),
+            List.of(
+                edge("e_trigger_input", "trigger_manual", "input_1"),
+                edge("e_input_agent", "input_1", "agent_1")
+            ),
+            List.of(
+                variable("starter", "string", "trigger_manual"),
+                variable("input_1", "string", "input_1"),
+                variable("agent_response", "object", "agent_1")
+            )
+        );
+
+        WorkflowDraftApi.WorkflowDraftDetail detail = service().saveGraph(TENANT_ID, USER_ID, definition.getId(), request);
+
+        assertThat(definition.getPausePointCount()).isZero();
+        assertThat(detail.draft().pausePointCount()).isZero();
+    }
+
     private void stubDefinitionLookup(WorkflowDefinitionEntity definition) {
         when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("租户", "tenant", NOW)));
         when(workflowDefinitionRepository.findByIdAndTenantId(definition.getId(), TENANT_ID)).thenReturn(Optional.of(definition));
@@ -123,5 +151,17 @@ class WorkflowDraftServicePublishTest {
 
     private static WorkflowDefinitionEntity draft() {
         return WorkflowDefinitionEntity.create(TENANT_ID, "需求评审", "用于验证正式发布", USER_ID, NOW);
+    }
+
+    private static WorkflowDraftApi.WorkflowNodeDraft node(String nodeId, String nodeType, List<String> outputVariables) {
+        return new WorkflowDraftApi.WorkflowNodeDraft(nodeId, nodeType, nodeId, 0, 0, List.of(), outputVariables, Map.of());
+    }
+
+    private static WorkflowDraftApi.WorkflowEdgeDraft edge(String edgeId, String sourceNodeId, String targetNodeId) {
+        return new WorkflowDraftApi.WorkflowEdgeDraft(edgeId, sourceNodeId, targetNodeId, "", "");
+    }
+
+    private static WorkflowDraftApi.WorkflowVariableDraft variable(String name, String type, String sourceNode) {
+        return new WorkflowDraftApi.WorkflowVariableDraft(name, type, sourceNode, "", Map.of(), false, false);
     }
 }

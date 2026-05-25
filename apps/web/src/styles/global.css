@@ -3065,6 +3065,109 @@ textarea:focus-visible {
   color: var(--color-text-tertiary);
 }
 
+.workflow-cluster-agent-card {
+  border: 1px solid color-mix(in srgb, var(--color-border-light) 74%, var(--color-primary) 26%);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-bg-card) 92%, var(--color-primary) 8%);
+  padding: 12px;
+}
+
+.workflow-step-row {
+  position: relative;
+  overflow: hidden;
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.workflow-step-row::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: transparent;
+  content: "";
+  transition: background var(--transition-fast);
+}
+
+.workflow-step-row:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--color-primary) 30%, var(--color-border-light));
+  box-shadow: var(--shadow-sm);
+}
+
+.workflow-step-row--selected {
+  box-shadow: 0 12px 28px rgba(79, 70, 229, 0.14);
+}
+
+.workflow-step-row--selected::before {
+  background: var(--color-primary);
+}
+
+.workflow-config-panel-group {
+  border: 1px solid color-mix(in srgb, var(--color-border-light) 86%, var(--color-primary) 14%);
+  background: color-mix(in srgb, var(--color-bg-hover) 82%, var(--color-bg-card) 18%);
+}
+
+.workflow-capability-state {
+  margin: 0 0 10px;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 22%, var(--color-border-light));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-primary) 7%, var(--color-bg-card));
+  padding: 8px 10px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.workflow-capability-state--danger {
+  border-color: color-mix(in srgb, var(--color-danger) 30%, var(--color-border-light));
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
+.workflow-capability-chip {
+  display: inline-flex;
+  min-height: 34px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-card);
+  padding: 6px 10px;
+  color: var(--color-text-secondary);
+  text-align: left;
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast),
+    color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.workflow-capability-chip:hover {
+  border-color: color-mix(in srgb, var(--color-primary) 42%, var(--color-border-light));
+  color: var(--color-primary);
+}
+
+.workflow-capability-chip--active {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-bg-card));
+  color: var(--color-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 12%, transparent);
+}
+
+.workflow-capability-chip span {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.workflow-capability-chip small {
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+}
+
 .workflow-editor-toolbar {
   background: color-mix(in srgb, var(--color-bg-hover) 74%, var(--color-bg-page) 26%);
 }

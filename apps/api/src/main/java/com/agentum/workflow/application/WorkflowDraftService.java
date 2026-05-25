@@ -57,7 +57,6 @@ public class WorkflowDraftService {
         "human_review",
         "delivery"
     );
-    private static final Set<String> PAUSE_NODE_TYPES = Set.of("user_input", "agent", "human_review");
 
     private final TenantRepository tenantRepository;
     private final UserAccountRepository userAccountRepository;
@@ -289,7 +288,8 @@ public class WorkflowDraftService {
         }
         workflowVariableDefinitionRepository.saveAll(variableEntities);
 
-        definition.updateGraphSummary(nodes.size(), countPausePoints(nodes), operatorUserId, now);
+        // 设计态已取消“暂停点”概念，流程执行按照积木顺序推进；历史字段仅为兼容旧表结构保留为 0。
+        definition.updateGraphSummary(nodes.size(), 0, operatorUserId, now);
         workflowDefinitionRepository.save(definition);
         log.info(
             "工作流草稿图保存成功 tenantId={} operatorUserId={} workflowId={} nodeCount={} edgeCount={} variableCount={} requestId={}",
@@ -425,10 +425,6 @@ public class WorkflowDraftService {
 
     private Map<UUID, UserAccount> loadUsersById() {
         return userAccountRepository.findAll().stream().collect(Collectors.toMap(UserAccount::getId, Function.identity()));
-    }
-
-    private int countPausePoints(List<WorkflowDraftApi.WorkflowNodeDraft> nodes) {
-        return (int) nodes.stream().filter(node -> PAUSE_NODE_TYPES.contains(normalizeRequired(node.nodeType()))).count();
     }
 
     private String writeJsonArray(List<String> values) {

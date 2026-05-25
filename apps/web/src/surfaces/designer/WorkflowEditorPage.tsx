@@ -26,14 +26,18 @@ import {
   Wrench,
   Zap,
 } from "lucide-react";
-import { AgentumApiError, workflowApi } from "../../services/apiClient";
+import { AgentumApiError, assetApi, workflowApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
+import type { AssetType, MyAssetRow, SystemCapabilityAssetRow } from "../../types/asset";
 import type {
+  WorkflowBrickTemplate,
+  WorkflowDesignerCatalog,
   WorkflowDraftDetail,
   WorkflowEdgeDraft,
   WorkflowNodeDraft,
   WorkflowNodeType,
   WorkflowVariableDraft,
+  WorkflowVariableTemplate,
 } from "../../types/workflow-contract";
 import { WorkflowDraft } from "./WorkflowDraftsPage";
 
@@ -77,7 +81,8 @@ type WorkflowVariable = {
   description: string;
 };
 
-type WorkflowBrickType = "input" | "agent" | "cluster" | "delivery";
+type WorkflowBrickType = WorkflowBrickTemplate["brickType"];
+type VisibleWorkflowBrickType = Exclude<WorkflowBrickType, "trigger">;
 
 type InputFieldConfig = {
   id: string;
@@ -89,8 +94,29 @@ type InputFieldConfig = {
 type ClusterAgentConfig = {
   id: string;
   name: string;
+  agentAssetId: string;
+  promptTemplateId: string;
+  skillIds: string[];
+  mcpIds: string[];
   prompt: string;
   output: string;
+};
+
+type WorkflowCapabilityOption = {
+  id: string;
+  assetType: AssetType;
+  name: string;
+  code: string;
+  version: string;
+  status: string;
+  source: "system" | "mine";
+  scope: string;
+};
+
+type WorkflowCapabilityState = {
+  capabilities: WorkflowCapabilityOption[];
+  loading: boolean;
+  error: string;
 };
 
 type WorkflowEditorPageProps = {
@@ -112,7 +138,7 @@ const nodeTypeLabels: Record<WorkflowNodeType, string> = {
   delivery: "交付节点",
 };
 
-const brickDefinitions: Record<WorkflowBrickType, {
+const brickDefinitions: Record<VisibleWorkflowBrickType, {
   label: string;
   description: string;
   icon: typeof TextCursorInput;
@@ -149,41 +175,6 @@ const brickDefinitions: Record<WorkflowBrickType, {
   },
 };
 
-const starterNodes: WorkflowEditorNode[] = [
-  {
-    id: SYSTEM_TRIGGER_ID,
-    position: { x: 0, y: 0 },
-    data: {
-      label: "手动发起",
-      typeLabel: "系统触发",
-      nodeType: "trigger",
-      summary: "业务人员从工作台发起流程，系统自动写入发起人和发起时间。",
-      inputVariables: [],
-      outputVariables: ["starter", "started_at"],
-      pausePoint: false,
-      configStatus: "complete",
-      runState: "已完成",
-      outputMode: "一次性输出",
-      toolCount: 0,
-      allowQuestion: false,
-      rawConfig: { brickType: "trigger" },
-    },
-  },
-  createBrickNode("input", 0, ["starter"]),
-  createBrickNode("agent", 1, ["company_full_name"]),
-  createBrickNode("cluster", 2, ["agent_response"]),
-  createBrickNode("delivery", 3, ["cluster_result"]),
-];
-
-const starterVariableMetadata: Record<string, Pick<WorkflowVariable, "type" | "sensitive" | "deliverable" | "description">> = {
-  starter: { type: "string", sensitive: false, deliverable: false, description: "流程发起人标识" },
-  started_at: { type: "string", sensitive: false, deliverable: false, description: "流程发起时间" },
-  company_full_name: { type: "string", sensitive: false, deliverable: false, description: "授信公司全称" },
-  agent_response: { type: "object", sensitive: false, deliverable: false, description: "单智能体回复内容" },
-  cluster_result: { type: "object", sensitive: false, deliverable: true, description: "智能体集群拼接后的结果" },
-  delivery_record: { type: "object", sensitive: false, deliverable: true, description: "交付记录" },
-};
-
 export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowEditorPageProps) {
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
@@ -196,6 +187,10 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [saveFeedback, setSaveFeedback] = useState<{ tone: "success" | "error" | "info"; message: string } | null>(null);
+  const [designerCatalog, setDesignerCatalog] = useState<WorkflowDesignerCatalog | null>(null);
+  const [capabilityOptions, setCapabilityOptions] = useState<WorkflowCapabilityOption[]>([]);
+  const [capabilitiesLoading, setCapabilitiesLoading] = useState(false);
+  const [capabilityError, setCapabilityError] = useState("");
   const [declaredVariables, setDeclaredVariables] = useState<WorkflowVariable[]>([]);
   const [isAddBrickModalOpen, setIsAddBrickModalOpen] = useState(false);
 
@@ -211,16 +206,20 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
     setLoadError("");
     setSaveFeedback(null);
 
-    // 设计态现在以“步骤积木”为主，但仍读取后端草稿结构，便于后续平滑迁移到阶段 / 步骤契约。
-    void workflowApi.getDraft(user.tenantId, workflow.id, token)
-      .then((detail) => {
+    // 设计态模板由后端统一下发；前端加载草稿后只负责映射成可编辑状态。
+    void Promise.all([
+      workflowApi.getDraft(user.tenantId, workflow.id, token),
+      workflowApi.getDesignerCatalog(user.tenantId, token),
+    ])
+      .then(([detail, catalog]) => {
         if (cancelled) {
           return;
         }
+        setDesignerCatalog(catalog);
         const hasPersistedGraph = detail.nodes.some((node) => node.nodeType !== "trigger" && node.nodeId !== SYSTEM_TRIGGER_ID);
-        const nextNodes = hasPersistedGraph ? ensureSystemTrigger(detail.nodes.map(toEditorNode)) : [cloneEditorNode(starterNodes[0])];
+        const nextNodes = hasPersistedGraph ? ensureSystemTrigger(detail.nodes.map(toEditorNode), catalog) : [createNodeFromTemplate(catalog.systemTrigger, 0, [])];
         const nextEdges = hasPersistedGraph ? detail.edges.map(toEditorEdge) : [];
-        const nextVariables = detail.variables.length > 0 ? toWorkflowVariables(detail.variables, nextNodes) : buildWorkflowVariables(nextNodes);
+        const nextVariables = detail.variables.length > 0 ? toWorkflowVariables(detail.variables, nextNodes) : buildWorkflowVariables(nextNodes, catalog.variableMetadata);
         setNodes(nextNodes);
         setEdges(nextEdges.length > 0 ? nextEdges : rebuildSequentialEdges(nextNodes.filter((node) => node.id !== SYSTEM_TRIGGER_ID)));
         setDeclaredVariables(nextVariables);
@@ -232,6 +231,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
         }
         console.warn("[workflow] 工作流草稿加载失败", getWorkflowEditorErrorContext(error, user.tenantId ?? undefined, workflow.id));
         setLoadError(error instanceof AgentumApiError ? error.message : "无法加载工作流草稿");
+        setDesignerCatalog(null);
         setNodes([]);
         setEdges([]);
       })
@@ -246,13 +246,54 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
     };
   }, [token, user?.tenantId, workflow.id]);
 
+  useEffect(() => {
+    if (!token || !user?.tenantId) {
+      setCapabilityOptions([]);
+      setCapabilityError("");
+      return;
+    }
+
+    let cancelled = false;
+    const tenantId = user.tenantId;
+    setCapabilitiesLoading(true);
+    setCapabilityError("");
+
+    // 流程节点只能引用当前主体可见的能力资产；MCP / Skill 等执行类能力不再使用前端硬编码选项。
+    void Promise.all([
+      assetApi.listSystemCapabilities(tenantId, token, 1, 100),
+      assetApi.listMine(tenantId, token, "", 1, 100),
+    ])
+      .then(([systemPage, myPage]) => {
+        if (!cancelled) {
+          setCapabilityOptions(buildCapabilityOptions(systemPage.items, myPage.items));
+        }
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+        console.warn("[workflow] 流程设计能力资产加载失败", getWorkflowEditorErrorContext(error, tenantId, workflow.id));
+        setCapabilityError(error instanceof AgentumApiError ? error.message : "无法加载可引用能力");
+        setCapabilityOptions([]);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setCapabilitiesLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token, user?.tenantId, workflow.id]);
+
   const orderedNodes = useMemo(() => orderNodesByEdges(nodes, edges), [edges, nodes]);
   const visibleNodes = useMemo(() => orderedNodes.filter((node) => node.id !== SYSTEM_TRIGGER_ID), [orderedNodes]);
   const selectedNode = visibleNodes.find((node) => node.id === selectedNodeId) ?? null;
   const selectedNodeIndex = selectedNode ? visibleNodes.findIndex((node) => node.id === selectedNode.id) : -1;
   const workflowVariables = useMemo(
-    () => declaredVariables.length > 0 ? declaredVariables : buildWorkflowVariables(orderedNodes),
-    [declaredVariables, orderedNodes],
+    () => declaredVariables.length > 0 ? declaredVariables : buildWorkflowVariables(orderedNodes, designerCatalog?.variableMetadata),
+    [declaredVariables, designerCatalog?.variableMetadata, orderedNodes],
   );
   const availableVariables = workflowVariables.filter((variable) => {
     if (!selectedNode) {
@@ -285,12 +326,16 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
       setSaveFeedback({ tone: "error", message: "当前账号缺少租户上下文，无法保存工作流草稿" });
       return;
     }
+    if (!designerCatalog) {
+      setSaveFeedback({ tone: "error", message: "流程设计模板尚未加载完成，暂时不能保存工作流草稿" });
+      return;
+    }
 
     setSaving(true);
     setSaveFeedback(null);
 
     try {
-      const nextVariables = buildWorkflowVariables(nextNodes);
+      const nextVariables = buildWorkflowVariables(nextNodes, designerCatalog.variableMetadata);
       const detail = await workflowApi.saveGraph(
         user.tenantId,
         workflow.id,
@@ -299,7 +344,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
         nextEdges.map(toWorkflowEdgeDraft),
         nextVariables.map(toWorkflowVariableDraft),
       );
-      applyPersistedDetail(detail, setNodes, setEdges, setSelectedNodeId);
+      applyPersistedDetail(detail, designerCatalog, setNodes, setEdges, setSelectedNodeId);
       setDeclaredVariables(toWorkflowVariables(detail.variables, detail.nodes.map(toEditorNode)));
       setSaveFeedback({ tone: "success", message: "流程设计已保存" });
       onDraftSaved(detail.draft);
@@ -309,23 +354,36 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
     } finally {
       setSaving(false);
     }
-  }, [onDraftSaved, token, user?.tenantId, workflow.id]);
+  }, [designerCatalog, onDraftSaved, token, user?.tenantId, workflow.id]);
 
   function commitVisibleNodes(nextVisibleNodes: WorkflowEditorNode[], nextSelectedNodeId = selectedNodeId) {
-    const systemTrigger = nodes.find((node) => node.id === SYSTEM_TRIGGER_ID) ?? cloneStarterNodes()[0];
+    if (!designerCatalog) {
+      setSaveFeedback({ tone: "error", message: "流程设计模板尚未加载完成，暂时不能更新编排" });
+      return;
+    }
+    const systemTrigger = nodes.find((node) => node.id === SYSTEM_TRIGGER_ID) ?? createNodeFromTemplate(designerCatalog.systemTrigger, 0, []);
     const normalizedVisibleNodes = normalizeVisibleNodeOrder(nextVisibleNodes);
     const nextNodes = [systemTrigger, ...normalizedVisibleNodes];
     const nextEdges = rebuildSequentialEdges(normalizedVisibleNodes);
     setNodes(nextNodes);
     setEdges(nextEdges);
-    setDeclaredVariables(buildWorkflowVariables(nextNodes));
+    setDeclaredVariables(buildWorkflowVariables(nextNodes, designerCatalog.variableMetadata));
     setSelectedNodeId(nextSelectedNodeId);
     setSaveFeedback({ tone: "info", message: "本地编排已更新，保存后写入草稿。" });
   }
 
-  function handleAddBrick(brickType: WorkflowBrickType) {
+  function handleAddBrick(brickType: VisibleWorkflowBrickType) {
+    if (!designerCatalog) {
+      setSaveFeedback({ tone: "error", message: "流程设计模板尚未加载完成，暂时不能添加积木" });
+      return;
+    }
+    const template = designerCatalog.brickTemplates.find((item) => item.brickType === brickType);
+    if (!template) {
+      setSaveFeedback({ tone: "error", message: "当前积木模板不存在，请刷新后重试" });
+      return;
+    }
     const previousOutputs = visibleNodes.length > 0 ? visibleNodes[visibleNodes.length - 1].data.outputVariables : ["starter"];
-    const nextNode = createBrickNode(brickType, visibleNodes.length, previousOutputs);
+    const nextNode = createNodeFromTemplate(template, visibleNodes.length + 1, previousOutputs);
     commitVisibleNodes([...visibleNodes, nextNode], nextNode.id);
     setIsAddBrickModalOpen(false);
   }
@@ -373,7 +431,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
       };
     });
     setNodes(nextNodes);
-    setDeclaredVariables(buildWorkflowVariables(nextNodes));
+    setDeclaredVariables(buildWorkflowVariables(nextNodes, designerCatalog?.variableMetadata));
   }
 
   function updateSelectedConfig(nextConfig: Record<string, unknown>) {
@@ -389,8 +447,12 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
   }
 
   async function handleSaveAll() {
+    if (!designerCatalog) {
+      setSaveFeedback({ tone: "error", message: "流程设计模板尚未加载完成，暂时不能保存流程" });
+      return;
+    }
     const normalizedVisibleNodes = normalizeVisibleNodeOrder(visibleNodes);
-    const systemTrigger = nodes.find((node) => node.id === SYSTEM_TRIGGER_ID) ?? cloneStarterNodes()[0];
+    const systemTrigger = nodes.find((node) => node.id === SYSTEM_TRIGGER_ID) ?? createNodeFromTemplate(designerCatalog.systemTrigger, 0, []);
     const nextNodes = [systemTrigger, ...normalizedVisibleNodes];
     const nextEdges = rebuildSequentialEdges(normalizedVisibleNodes);
     await persistGraph(nextNodes, nextEdges);
@@ -492,6 +554,9 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
                 node={selectedNode}
                 availableVariables={availableVariables}
                 workflowVariables={workflowVariables}
+                capabilities={capabilityOptions}
+                capabilitiesLoading={capabilitiesLoading}
+                capabilityError={capabilityError}
                 onUpdateNode={updateSelectedNode}
                 onUpdateConfig={updateSelectedConfig}
                 onSave={handleSaveSelectedNode}
@@ -512,6 +577,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
 
       {isAddBrickModalOpen ? (
         <AddBrickModal
+          templates={designerCatalog?.brickTemplates ?? []}
           onClose={() => setIsAddBrickModalOpen(false)}
           onSelect={handleAddBrick}
         />
@@ -601,7 +667,7 @@ function WorkflowStepRow({
   const Icon = definition.icon;
 
   return (
-    <article className={`rounded-[var(--radius-md)] border bg-[var(--color-bg-card)] shadow-[var(--shadow-xs)] transition ${selected ? "border-[var(--color-primary)]" : "border-[var(--color-border-light)]"}`}>
+    <article className={`workflow-step-row rounded-[var(--radius-md)] border bg-[var(--color-bg-card)] shadow-[var(--shadow-xs)] transition ${selected ? "workflow-step-row--selected border-[var(--color-primary)]" : "border-[var(--color-border-light)]"}`}>
       <div className="p-2.5">
         <button type="button" onClick={onSelect} className="flex w-full min-w-0 items-start gap-2 text-left">
           <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${definition.accentClass}`}>
@@ -635,7 +701,15 @@ function WorkflowStepRow({
   );
 }
 
-function AddBrickModal({ onClose, onSelect }: { onClose: () => void; onSelect: (brickType: WorkflowBrickType) => void }) {
+function AddBrickModal({
+  templates,
+  onClose,
+  onSelect,
+}: {
+  templates: WorkflowBrickTemplate[];
+  onClose: () => void;
+  onSelect: (brickType: VisibleWorkflowBrickType) => void;
+}) {
   return (
     <div className="sys-modal-mask" onClick={onClose}>
       <section className="sys-modal" style={{ maxWidth: 720 }} aria-labelledby="add-brick-title" onClick={(event) => event.stopPropagation()}>
@@ -648,8 +722,12 @@ function AddBrickModal({ onClose, onSelect }: { onClose: () => void; onSelect: (
         </div>
         <div className="sys-modal-body">
           <div className="grid gap-3 md:grid-cols-2">
-            {(Object.keys(brickDefinitions) as WorkflowBrickType[]).map((brickType) => {
+            {templates.map((template) => {
+              const brickType = template.brickType as VisibleWorkflowBrickType;
               const definition = brickDefinitions[brickType];
+              if (!definition) {
+                return null;
+              }
               const Icon = definition.icon;
 
               return (
@@ -663,13 +741,18 @@ function AddBrickModal({ onClose, onSelect }: { onClose: () => void; onSelect: (
                     <Icon className="h-5 w-5" aria-hidden="true" />
                   </span>
                   <span className="min-w-0">
-                    <span className="block text-sm font-semibold text-[var(--color-text-primary)]">{definition.label}</span>
-                    <span className="mt-2 block text-sm leading-6 text-[var(--color-text-secondary)]">{definition.description}</span>
+                    <span className="block text-sm font-semibold text-[var(--color-text-primary)]">{template.label}</span>
+                    <span className="mt-2 block text-sm leading-6 text-[var(--color-text-secondary)]">{template.description}</span>
                   </span>
                 </button>
               );
             })}
           </div>
+          {templates.length === 0 ? (
+            <p className="rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-light)] bg-[var(--color-bg-hover)] px-3 py-4 text-center text-sm text-[var(--color-text-tertiary)]">
+              暂未加载到可添加积木模板，请稍后刷新。
+            </p>
+          ) : null}
         </div>
       </section>
     </div>
@@ -679,6 +762,9 @@ function NodeConfigPanel({
   node,
   availableVariables,
   workflowVariables,
+  capabilities,
+  capabilitiesLoading,
+  capabilityError,
   onUpdateNode,
   onUpdateConfig,
   onSave,
@@ -687,6 +773,9 @@ function NodeConfigPanel({
   node: WorkflowEditorNode;
   availableVariables: WorkflowVariable[];
   workflowVariables: WorkflowVariable[];
+  capabilities: WorkflowCapabilityOption[];
+  capabilitiesLoading: boolean;
+  capabilityError: string;
   onUpdateNode: (patch: Partial<EditorNodeData>) => void;
   onUpdateConfig: (nextConfig: Record<string, unknown>) => void;
   onSave: () => Promise<void>;
@@ -695,6 +784,7 @@ function NodeConfigPanel({
   const brickType = getBrickType(node);
   const definition = brickDefinitions[brickType];
   const Icon = definition.icon;
+  const capabilityState = { capabilities, loading: capabilitiesLoading, error: capabilityError };
 
   return (
     <aside className="mx-auto max-w-5xl rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] shadow-[var(--shadow-sm)]" aria-labelledby="node-config-title">
@@ -745,15 +835,15 @@ function NodeConfigPanel({
         ) : null}
 
         {brickType === "agent" ? (
-          <SingleAgentBrickConfig node={node} availableVariables={availableVariables} onUpdateConfig={onUpdateConfig} onUpdateNode={onUpdateNode} />
+          <SingleAgentBrickConfig node={node} availableVariables={availableVariables} capabilityState={capabilityState} onUpdateConfig={onUpdateConfig} onUpdateNode={onUpdateNode} />
         ) : null}
 
         {brickType === "cluster" ? (
-          <AgentClusterBrickConfig node={node} availableVariables={availableVariables} onUpdateConfig={onUpdateConfig} onUpdateNode={onUpdateNode} />
+          <AgentClusterBrickConfig node={node} availableVariables={availableVariables} capabilityState={capabilityState} onUpdateConfig={onUpdateConfig} onUpdateNode={onUpdateNode} />
         ) : null}
 
         {brickType === "delivery" ? (
-          <DeliveryBrickConfig node={node} workflowVariables={workflowVariables} onUpdateConfig={onUpdateConfig} />
+          <DeliveryBrickConfig node={node} workflowVariables={workflowVariables} capabilityState={capabilityState} onUpdateConfig={onUpdateConfig} />
         ) : null}
 
         {(brickType === "agent" || brickType === "cluster") ? (
@@ -949,36 +1039,47 @@ function InputBrickConfig({
 function SingleAgentBrickConfig({
   node,
   availableVariables,
+  capabilityState,
   onUpdateConfig,
   onUpdateNode,
 }: {
   node: WorkflowEditorNode;
   availableVariables: WorkflowVariable[];
+  capabilityState: WorkflowCapabilityState;
   onUpdateConfig: (nextConfig: Record<string, unknown>) => void;
   onUpdateNode: (patch: Partial<EditorNodeData>) => void;
 }) {
   const config = node.data.rawConfig ?? {};
-  const selectedMcps = readStringArray(config.mcpServices, ["企业信息 MCP"]);
-  const selectedSkills = readStringArray(config.skills, ["授信分析 Skill"]);
+  const agentAssets = filterCapabilities(capabilityState.capabilities, "agent_template");
+  const promptAssets = filterCapabilities(capabilityState.capabilities, "prompt_template");
+  const mcpAssets = filterCapabilities(capabilityState.capabilities, "mcp");
+  const skillAssets = filterCapabilities(capabilityState.capabilities, "skill");
+  const selectedMcps = readStringArray(config.mcpServices, []);
+  const selectedSkills = readStringArray(config.skills, []);
 
   return (
     <PanelGroup title="智能体配置">
-      <SelectLikeField
-        label="智能体来源"
-        value={readString(config.agentSource, "自定义智能体")}
-        options={["自定义智能体", "能力资产：授信分析智能体", "能力资产：报告撰写智能体"]}
-        onChange={(value) => onUpdateConfig({ agentSource: value })}
+      <CapabilityStateBanner state={capabilityState} />
+      <CapabilitySelectField
+        label="智能体模板"
+        value={readString(config.agentAssetId, "custom")}
+        emptyValue="custom"
+        emptyLabel="自定义智能体"
+        options={agentAssets}
+        onChange={(value) => onUpdateConfig({ agentAssetId: value, agentSource: value === "custom" ? "custom" : "asset" })}
       />
-      <SelectLikeField
+      <CapabilitySelectField
         label="提示词模板"
-        value={readString(config.promptTemplate, "授信报告分析模板")}
-        options={["授信报告分析模板", "风险识别模板", "不使用模板"]}
-        onChange={(value) => onUpdateConfig({ promptTemplate: value })}
+        value={readString(config.promptTemplateId, "none")}
+        emptyValue="none"
+        emptyLabel="不使用模板"
+        options={promptAssets}
+        onChange={(value) => onUpdateConfig({ promptTemplateId: value })}
       />
       <label className="sys-field">
         <span className="sys-field-label">自定义提示词</span>
         <textarea
-          value={readString(config.systemPrompt, "你是授信报告分析智能体，请基于输入参数完成分析并输出结构化回复。")}
+          value={readString(config.systemPrompt, "请配置这个智能体的角色、任务边界和输出要求。")}
           onChange={(event) => onUpdateConfig({ systemPrompt: event.target.value })}
           className="sys-field-textarea"
           placeholder="配置这个智能体的角色、任务边界和输出要求"
@@ -986,8 +1087,9 @@ function SingleAgentBrickConfig({
       </label>
       <CapabilityToggleGroup
         title="MCP"
-        options={["企业信息 MCP", "司法查询 MCP", "文件读取 MCP", "财务数据库 MCP"]}
-        selected={selectedMcps}
+        options={mcpAssets}
+        selectedIds={selectedMcps}
+        emptyText="暂无可引用 MCP，请先在能力资产中确认分配范围。"
         onChange={(values) => {
           onUpdateConfig({ mcpServices: values });
           onUpdateNode({ toolCount: values.length });
@@ -995,8 +1097,9 @@ function SingleAgentBrickConfig({
       />
       <CapabilityToggleGroup
         title="Skill"
-        options={["授信分析 Skill", "风险识别 Skill", "报告撰写 Skill", "追问澄清 Skill"]}
-        selected={selectedSkills}
+        options={skillAssets}
+        selectedIds={selectedSkills}
+        emptyText="暂无可引用 Skill，请先在能力资产中确认分配范围。"
         onChange={(values) => onUpdateConfig({ skills: values })}
       />
       <p className="text-xs leading-5 text-[var(--color-text-tertiary)]">可引用输入：{availableVariables.map((variable) => variable.name).join("、") || "暂无"}</p>
@@ -1007,16 +1110,22 @@ function SingleAgentBrickConfig({
 function AgentClusterBrickConfig({
   node,
   availableVariables,
+  capabilityState,
   onUpdateConfig,
   onUpdateNode,
 }: {
   node: WorkflowEditorNode;
   availableVariables: WorkflowVariable[];
+  capabilityState: WorkflowCapabilityState;
   onUpdateConfig: (nextConfig: Record<string, unknown>) => void;
   onUpdateNode: (patch: Partial<EditorNodeData>) => void;
 }) {
   const config = node.data.rawConfig ?? {};
   const agents = readClusterAgents(config.clusterAgents);
+  const agentAssets = filterCapabilities(capabilityState.capabilities, "agent_template");
+  const promptAssets = filterCapabilities(capabilityState.capabilities, "prompt_template");
+  const mcpAssets = filterCapabilities(capabilityState.capabilities, "mcp");
+  const skillAssets = filterCapabilities(capabilityState.capabilities, "skill");
 
   function updateAgent(agentId: string, patch: Partial<ClusterAgentConfig>) {
     const nextAgents = agents.map((agent) => agent.id === agentId ? { ...agent, ...patch } : agent);
@@ -1026,9 +1135,10 @@ function AgentClusterBrickConfig({
 
   return (
     <PanelGroup title="智能体集群配置">
+      <CapabilityStateBanner state={capabilityState} />
       <div className="space-y-3">
         {agents.map((agent, index) => (
-          <article key={agent.id} className="rounded-[var(--radius-md)] bg-[var(--color-bg-card)] p-3 ring-1 ring-[var(--color-border-light)]">
+          <article key={agent.id} className="workflow-cluster-agent-card">
             <div className="mb-2 flex items-center justify-between gap-2">
               <span className="text-xs font-medium text-[var(--color-text-tertiary)]">智能体 {index + 1}</span>
               <button
@@ -1048,10 +1158,40 @@ function AgentClusterBrickConfig({
               <span className="sys-field-label">智能体名称</span>
               <input value={agent.name} onChange={(event) => updateAgent(agent.id, { name: event.target.value })} className="sys-field-input" />
             </label>
+            <CapabilitySelectField
+              label="智能体模板"
+              value={agent.agentAssetId || "custom"}
+              emptyValue="custom"
+              emptyLabel="自定义智能体"
+              options={agentAssets}
+              onChange={(value) => updateAgent(agent.id, { agentAssetId: value })}
+            />
+            <CapabilitySelectField
+              label="提示词模板"
+              value={agent.promptTemplateId || "none"}
+              emptyValue="none"
+              emptyLabel="不使用模板"
+              options={promptAssets}
+              onChange={(value) => updateAgent(agent.id, { promptTemplateId: value })}
+            />
             <label className="sys-field">
               <span className="sys-field-label">任务提示词</span>
               <textarea value={agent.prompt} onChange={(event) => updateAgent(agent.id, { prompt: event.target.value })} className="sys-field-textarea" />
             </label>
+            <CapabilityToggleGroup
+              title="Skill"
+              options={skillAssets}
+              selectedIds={agent.skillIds}
+              emptyText="暂无可引用 Skill"
+              onChange={(values) => updateAgent(agent.id, { skillIds: values })}
+            />
+            <CapabilityToggleGroup
+              title="MCP"
+              options={mcpAssets}
+              selectedIds={agent.mcpIds}
+              emptyText="暂无可引用 MCP"
+              onChange={(values) => updateAgent(agent.id, { mcpIds: values })}
+            />
             <label className="sys-field">
               <span className="sys-field-label">输出参数</span>
               <input value={agent.output} onChange={(event) => updateAgent(agent.id, { output: normalizeVariableName(event.target.value) })} className="sys-field-input" />
@@ -1088,21 +1228,27 @@ function AgentClusterBrickConfig({
 function DeliveryBrickConfig({
   node,
   workflowVariables,
+  capabilityState,
   onUpdateConfig,
 }: {
   node: WorkflowEditorNode;
   workflowVariables: WorkflowVariable[];
+  capabilityState: WorkflowCapabilityState;
   onUpdateConfig: (nextConfig: Record<string, unknown>) => void;
 }) {
   const config = node.data.rawConfig ?? {};
+  const deliveryAssets = filterCapabilities(capabilityState.capabilities, "delivery");
 
   return (
     <PanelGroup title="交付配置">
-      <SelectLikeField
-        label="交付方式"
-        value={readString(config.deliveryChannel, "Word / PDF")}
-        options={["Word / PDF", "OA 流程", "邮件", "Webhook"]}
-        onChange={(value) => onUpdateConfig({ deliveryChannel: value })}
+      <CapabilityStateBanner state={capabilityState} />
+      <CapabilitySelectField
+        label="交付能力"
+        value={readString(config.deliveryCapabilityId, "none")}
+        emptyValue="none"
+        emptyLabel="暂不绑定交付能力"
+        options={deliveryAssets}
+        onChange={(value) => onUpdateConfig({ deliveryCapabilityId: value })}
       />
       <SelectLikeField
         label="交付内容"
@@ -1113,7 +1259,7 @@ function DeliveryBrickConfig({
       <label className="sys-field">
         <span className="sys-field-label">交付说明</span>
         <textarea
-          value={readString(config.deliveryTarget, "生成授信报告正式文档，等待用户确认后交付。")}
+          value={readString(config.deliveryTarget, "说明交付目标、模板和确认方式。")}
           onChange={(event) => onUpdateConfig({ deliveryTarget: event.target.value })}
           className="sys-field-textarea"
           placeholder="说明交付目标、模板和确认方式"
@@ -1193,38 +1339,87 @@ function VariableSelectList({
 function CapabilityToggleGroup({
   title,
   options,
-  selected,
+  selectedIds,
+  emptyText,
   onChange,
 }: {
   title: string;
-  options: string[];
-  selected: string[];
+  options: WorkflowCapabilityOption[];
+  selectedIds: string[];
+  emptyText: string;
   onChange: (values: string[]) => void;
 }) {
   return (
     <div>
       <p className="mb-2 text-xs font-medium text-[var(--color-text-tertiary)]">{title}</p>
+      {options.length === 0 ? (
+        <p className="rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-light)] bg-[var(--color-bg-card)] px-3 py-2 text-xs text-[var(--color-text-tertiary)]">{emptyText}</p>
+      ) : null}
       <div className="flex flex-wrap gap-2">
         {options.map((option) => {
-          const active = selected.includes(option);
+          const active = selectedIds.includes(option.id);
           return (
             <button
-              key={option}
+              key={option.id}
               type="button"
-              onClick={() => onChange(active ? selected.filter((item) => item !== option) : [...selected, option])}
-              className={`rounded px-2 py-1 text-xs font-medium ring-1 transition ${
+              onClick={() => onChange(active ? selectedIds.filter((item) => item !== option.id) : [...selectedIds, option.id])}
+              className={`workflow-capability-chip ${
                 active
-                  ? "bg-[var(--color-primary)] text-white ring-[var(--color-primary)]"
-                  : "bg-[var(--color-bg-card)] text-[var(--color-text-secondary)] ring-[var(--color-border-light)] hover:text-[var(--color-primary)]"
+                  ? "workflow-capability-chip--active"
+                  : ""
               }`}
             >
-              {option}
+              <span>{option.name}</span>
+              <small>{formatAssetSource(option)} · {option.version}</small>
             </button>
           );
         })}
       </div>
     </div>
   );
+}
+
+function CapabilitySelectField({
+  label,
+  value,
+  emptyValue,
+  emptyLabel,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  emptyValue: string;
+  emptyLabel: string;
+  options: WorkflowCapabilityOption[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="sys-field">
+      <span className="sys-field-label">{label}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value)} className="sys-field-input">
+        <option value={emptyValue}>{emptyLabel}</option>
+        {options.map((option) => (
+          <option key={option.id} value={option.id}>
+            {option.name} · {option.version} · {formatAssetSource(option)}
+          </option>
+        ))}
+      </select>
+      {options.length === 0 ? <span className="sys-field-hint">暂无可选能力资产</span> : null}
+    </label>
+  );
+}
+
+function CapabilityStateBanner({ state }: { state: WorkflowCapabilityState }) {
+  if (state.loading) {
+    return <p className="workflow-capability-state">正在加载可引用能力...</p>;
+  }
+
+  if (state.error) {
+    return <p className="workflow-capability-state workflow-capability-state--danger">{state.error}</p>;
+  }
+
+  return null;
 }
 
 function SelectLikeField({
@@ -1263,7 +1458,7 @@ function ConfigRows({ rows }: { rows: Array<[string, string]> }) {
 
 function PanelGroup({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="rounded-[var(--radius-md)] bg-[var(--color-bg-hover)] px-3 py-3">
+    <section className="workflow-config-panel-group rounded-[var(--radius-md)] bg-[var(--color-bg-hover)] px-3 py-3">
       <h4 className="mb-2 text-sm font-semibold text-[var(--color-text-primary)]">{title}</h4>
       {children}
     </section>
@@ -1397,10 +1592,6 @@ function EditorStateShell({
   );
 }
 
-function cloneStarterNodes(): WorkflowEditorNode[] {
-  return starterNodes.map((node) => cloneEditorNode(node));
-}
-
 function cloneEditorNode(node: WorkflowEditorNode): WorkflowEditorNode {
   return {
     ...node,
@@ -1414,132 +1605,125 @@ function cloneEditorNode(node: WorkflowEditorNode): WorkflowEditorNode {
   };
 }
 
-function createBrickNode(brickType: WorkflowBrickType, index: number, inputVariables: string[] = []): WorkflowEditorNode {
-  const definition = brickDefinitions[brickType];
-  const id = `${brickType}_${Date.now().toString(36)}_${index}`;
-  const outputVariable = getDefaultOutputVariable(brickType, index);
-  const defaultData: Record<WorkflowBrickType, Pick<EditorNodeData, "label" | "summary" | "pausePoint" | "runState" | "outputMode" | "toolCount" | "allowQuestion" | "rawConfig">> = {
-    input: {
-      label: "输入信息",
-      summary: "配置用户需要填写的输入框。",
-      pausePoint: false,
-      runState: "等待输入",
-      outputMode: "一次性输出",
-      toolCount: 0,
-      allowQuestion: false,
-      rawConfig: {
-        brickType,
-        inputFields: [createInputField(0)],
-      },
-    },
-    agent: {
-      label: "单智能体处理",
-      summary: "选择或配置一个智能体，加载提示词模板、MCP 和 Skill 完成任务。",
-      pausePoint: false,
-      runState: "待配置",
-      outputMode: "追问确认",
-      toolCount: 1,
-      allowQuestion: true,
-      rawConfig: {
-        brickType,
-        agentSource: "自定义智能体",
-        promptTemplate: "授信报告分析模板",
-        systemPrompt: "你是授信报告分析智能体，请基于输入参数完成分析并输出结构化回复。",
-        mcpServices: ["企业信息 MCP"],
-        skills: ["授信分析 Skill"],
-      },
-    },
-    cluster: {
-      label: "智能体集群处理",
-      summary: "多个智能体并行处理，再按拼接规则汇总输出。",
-      pausePoint: false,
-      runState: "待配置",
-      outputMode: "追问确认",
-      toolCount: 2,
-      allowQuestion: true,
-      rawConfig: {
-        brickType,
-        clusterAgents: [createClusterAgent(0), createClusterAgent(1)],
-        mergeRule: "按章节顺序合并多个智能体输出，冲突内容保留来源并交给用户审查。",
-      },
-    },
-    delivery: {
-      label: "交付结果",
-      summary: "配置最终交付方式和交付内容。",
-      pausePoint: false,
-      runState: "待配置",
-      outputMode: "一次性输出",
-      toolCount: 1,
-      allowQuestion: false,
-      rawConfig: {
-        brickType,
-        deliveryChannel: "Word / PDF",
-        artifactVariable: inputVariables[0] ?? "cluster_result",
-        deliveryTarget: "生成正式文档，等待用户确认后交付。",
-      },
-    },
-  };
+function buildCapabilityOptions(systemAssets: SystemCapabilityAssetRow[], myAssets: MyAssetRow[]): WorkflowCapabilityOption[] {
+  const systemOptions = systemAssets.map((asset) => ({
+    id: asset.id,
+    assetType: asset.assetType,
+    name: asset.name,
+    code: asset.code,
+    version: asset.version,
+    status: asset.status,
+    source: "system" as const,
+    scope: asset.assignmentScope,
+  }));
+  const myOptions = myAssets
+    .filter((asset) => asset.assetType === "agent_template" || asset.assetType === "prompt_template")
+    .map((asset) => ({
+      id: asset.id,
+      assetType: asset.assetType,
+      name: asset.name,
+      code: asset.code,
+      version: asset.version,
+      status: asset.status,
+      source: "mine" as const,
+      scope: asset.visibility === "tenant" ? "租户内复用" : "本人维护",
+    }));
 
-  const data = defaultData[brickType];
+  return [...systemOptions, ...myOptions].sort((left, right) => {
+    if (left.assetType !== right.assetType) {
+      return left.assetType.localeCompare(right.assetType);
+    }
+    return left.name.localeCompare(right.name, "zh-CN");
+  });
+}
+
+function filterCapabilities(capabilities: WorkflowCapabilityOption[], assetType: AssetType) {
+  return capabilities.filter((capability) => capability.assetType === assetType);
+}
+
+function formatAssetSource(option: WorkflowCapabilityOption) {
+  return option.source === "system" ? "对我开放" : "我的能力";
+}
+
+function createNodeFromTemplate(template: WorkflowBrickTemplate, index: number, inputVariables: string[] = []): WorkflowEditorNode {
+  const brickType = template.brickType;
+  const id = brickType === "trigger" ? SYSTEM_TRIGGER_ID : `${brickType}_${Date.now().toString(36)}_${index}`;
+  const outputVariables = buildTemplateOutputVariables(template, index);
+  const rawConfig = cloneRecord(template.defaultConfig);
+  const effectiveInputVariables = brickType === "trigger" ? template.defaultInputVariables : (inputVariables.length > 0 ? inputVariables : template.defaultInputVariables);
+
+  if (brickType === "delivery") {
+    rawConfig.artifactVariable = effectiveInputVariables[0] ?? readString(rawConfig.artifactVariable, "delivery_record");
+  }
 
   return {
     id,
     position: { x: index * 260, y: 0 },
     data: {
-      label: data.label,
-      typeLabel: definition.label,
-      nodeType: definition.nodeType,
-      summary: data.summary,
-      inputVariables,
-      outputVariables: [outputVariable],
-      pausePoint: data.pausePoint,
-      configStatus: "incomplete",
-      runState: data.runState,
-      outputMode: data.outputMode,
-      toolCount: data.toolCount,
-      allowQuestion: data.allowQuestion,
-      rawConfig: data.rawConfig,
+      label: template.defaultName,
+      typeLabel: template.label,
+      nodeType: template.nodeType,
+      summary: template.defaultSummary,
+      inputVariables: effectiveInputVariables,
+      outputVariables,
+      pausePoint: false,
+      configStatus: brickType === "trigger" ? "complete" : "incomplete",
+      runState: template.runState,
+      outputMode: template.outputMode,
+      toolCount: template.toolCount,
+      allowQuestion: template.allowQuestion,
+      rawConfig: {
+        ...rawConfig,
+        brickType,
+      },
     },
   };
+}
+
+function buildTemplateOutputVariables(template: WorkflowBrickTemplate, index: number) {
+  if (template.brickType === "trigger") {
+    return [...template.defaultOutputVariables];
+  }
+  if (index <= 1 && template.firstOutputVariable) {
+    return [template.firstOutputVariable];
+  }
+
+  return template.outputPrefix ? [`${template.outputPrefix}_${index}`] : [...template.defaultOutputVariables];
 }
 
 function createInputField(index: number): InputFieldConfig {
   return {
     id: `field_${Date.now().toString(36)}_${index}`,
-    label: index === 0 ? "授信公司全称" : `输入字段 ${index + 1}`,
-    variable: index === 0 ? "company_full_name" : `input_${index + 1}`,
-    placeholder: index === 0 ? "请输入完整公司名称" : "请输入内容",
+    label: index === 0 ? "业务输入" : `输入字段 ${index + 1}`,
+    variable: `input_${index + 1}`,
+    placeholder: "请输入内容",
   };
 }
 
 function createClusterAgent(index: number): ClusterAgentConfig {
-  const defaults = [
-    ["经营概况智能体", "基于输入和外部数据生成主体经营概况。", "business_section"],
-    ["风险分析智能体", "识别司法、舆情、财务和经营风险。", "risk_section"],
-    ["授信建议智能体", "结合上下文形成授信额度、期限和条件建议。", "credit_suggestion"],
-  ];
-  const fallback = defaults[index] ?? [`子智能体 ${index + 1}`, "请补充该智能体的任务提示词。", `agent_${index + 1}_output`];
-
   return {
     id: `cluster_agent_${Date.now().toString(36)}_${index}`,
-    name: fallback[0],
-    prompt: fallback[1],
-    output: fallback[2],
+    name: `子智能体 ${index + 1}`,
+    agentAssetId: "custom",
+    promptTemplateId: "none",
+    skillIds: [],
+    mcpIds: [],
+    prompt: "请补充该智能体的任务提示词。",
+    output: `agent_${index + 1}_output`,
   };
 }
 
-function ensureSystemTrigger(nextNodes: WorkflowEditorNode[]) {
+function ensureSystemTrigger(nextNodes: WorkflowEditorNode[], catalog: WorkflowDesignerCatalog) {
   if (nextNodes.some((node) => node.id === SYSTEM_TRIGGER_ID)) {
     return nextNodes;
   }
 
-  return [cloneStarterNodes()[0], ...nextNodes];
+  return [createNodeFromTemplate(catalog.systemTrigger, 0, []), ...nextNodes];
 }
 
 function toEditorNode(node: WorkflowNodeDraft): WorkflowEditorNode {
   const config = node.config ?? {};
   const brickType = readBrickType(config.brickType, inferBrickTypeFromNodeType(node.nodeType));
-  const definition = brickDefinitions[brickType];
   const fallback = buildFallbackNodeData(node.nodeType, brickType);
 
   return {
@@ -1547,7 +1731,7 @@ function toEditorNode(node: WorkflowNodeDraft): WorkflowEditorNode {
     position: { x: node.positionX, y: node.positionY },
     data: {
       label: node.name,
-      typeLabel: readString(config.typeLabel, fallback.typeLabel || definition.label),
+      typeLabel: readString(config.typeLabel, fallback.typeLabel),
       nodeType: node.nodeType,
       summary: readString(config.summary, fallback.summary),
       inputVariables: [...(node.inputVariables ?? [])],
@@ -1608,21 +1792,22 @@ function toWorkflowEdgeDraft(edge: WorkflowEditorEdge): WorkflowEdgeDraft {
 
 function applyPersistedDetail(
   detail: WorkflowDraftDetail,
+  catalog: WorkflowDesignerCatalog,
   setNodes: (nodes: WorkflowEditorNode[]) => void,
   setEdges: (edges: WorkflowEditorEdge[]) => void,
   setSelectedNodeId: (updater: (currentSelection: string) => string) => void,
 ) {
-  const nextNodes = ensureSystemTrigger(detail.nodes.map(toEditorNode));
+  const nextNodes = ensureSystemTrigger(detail.nodes.map(toEditorNode), catalog);
   const nextEdges = detail.edges.map(toEditorEdge);
   setNodes(nextNodes);
   setEdges(nextEdges.length > 0 ? nextEdges : rebuildSequentialEdges(nextNodes.filter((node) => node.id !== SYSTEM_TRIGGER_ID)));
   setSelectedNodeId((currentSelection) => nextNodes.some((node) => node.id === currentSelection) ? currentSelection : "");
 }
 
-function buildWorkflowVariables(nodes: WorkflowEditorNode[]): WorkflowVariable[] {
+function buildWorkflowVariables(nodes: WorkflowEditorNode[], metadataByName: Record<string, WorkflowVariableTemplate> = {}): WorkflowVariable[] {
   return nodes.flatMap((node) =>
     node.data.outputVariables.map((name) => {
-      const metadata = starterVariableMetadata[name] ?? {
+      const metadata = metadataByName[name] ?? {
         type: "string" as const,
         sensitive: false,
         deliverable: node.data.nodeType === "delivery",
@@ -1668,9 +1853,10 @@ function toWorkflowVariableDraft(variable: WorkflowVariable): WorkflowVariableDr
 }
 
 function buildFallbackNodeData(nodeType: WorkflowNodeType, brickType: WorkflowBrickType): EditorNodeData {
+  const visibleDefinition = brickType === "trigger" ? null : brickDefinitions[brickType];
   return {
     label: "未命名积木",
-    typeLabel: brickDefinitions[brickType].label,
+    typeLabel: visibleDefinition?.label ?? nodeTypeLabels[nodeType],
     nodeType,
     summary: "请在右侧配置这个积木的业务目标和参数。",
     inputVariables: [],
@@ -1749,8 +1935,9 @@ function rebuildSequentialEdges(visibleNodes: WorkflowEditorNode[]): WorkflowEdi
   return edges;
 }
 
-function getBrickType(node: WorkflowEditorNode): WorkflowBrickType {
-  return readBrickType(node.data.rawConfig?.brickType, inferBrickTypeFromNodeType(node.data.nodeType));
+function getBrickType(node: WorkflowEditorNode): VisibleWorkflowBrickType {
+  const brickType = readBrickType(node.data.rawConfig?.brickType, inferBrickTypeFromNodeType(node.data.nodeType));
+  return brickType === "trigger" ? "delivery" : brickType;
 }
 
 function inferBrickTypeFromNodeType(nodeType: WorkflowNodeType): WorkflowBrickType {
@@ -1763,20 +1950,10 @@ function inferBrickTypeFromNodeType(nodeType: WorkflowNodeType): WorkflowBrickTy
   if (nodeType === "parallel_group" || nodeType === "merge") {
     return "cluster";
   }
+  if (nodeType === "trigger") {
+    return "trigger";
+  }
   return "delivery";
-}
-
-function getDefaultOutputVariable(brickType: WorkflowBrickType, index: number) {
-  if (brickType === "input") {
-    return index === 0 ? "company_full_name" : `input_${index + 1}`;
-  }
-  if (brickType === "agent") {
-    return index === 1 ? "agent_response" : `agent_response_${index + 1}`;
-  }
-  if (brickType === "cluster") {
-    return index === 2 ? "cluster_result" : `cluster_result_${index + 1}`;
-  }
-  return "delivery_record";
 }
 
 function readInputFields(value: unknown, outputVariables: string[]): InputFieldConfig[] {
@@ -1790,9 +1967,9 @@ function readInputFields(value: unknown, outputVariables: string[]): InputFieldC
   return outputVariables.length > 0
     ? outputVariables.map((variable, index) => ({
       id: `field_fallback_${index}`,
-      label: index === 0 ? "授信公司全称" : `输入字段 ${index + 1}`,
+      label: index === 0 ? "业务输入" : `输入字段 ${index + 1}`,
       variable,
-      placeholder: index === 0 ? "请输入完整公司名称" : "请输入内容",
+      placeholder: "请输入内容",
     }))
     : [createInputField(0)];
 }
@@ -1801,7 +1978,13 @@ function readClusterAgents(value: unknown): ClusterAgentConfig[] {
   if (Array.isArray(value)) {
     const agents = value.filter(isClusterAgentConfig);
     if (agents.length > 0) {
-      return agents;
+      return agents.map((agent) => ({
+        ...agent,
+        agentAssetId: readString(agent.agentAssetId, "custom"),
+        promptTemplateId: readString(agent.promptTemplateId, "none"),
+        skillIds: readStringArray(agent.skillIds, []),
+        mcpIds: readStringArray(agent.mcpIds, []),
+      }));
     }
   }
 
@@ -1841,7 +2024,7 @@ function readStringArray(value: unknown, fallback: string[]): string[] {
 }
 
 function readBrickType(value: unknown, fallback: WorkflowBrickType): WorkflowBrickType {
-  return value === "input" || value === "agent" || value === "cluster" || value === "delivery" ? value : fallback;
+  return value === "trigger" || value === "input" || value === "agent" || value === "cluster" || value === "delivery" ? value : fallback;
 }
 
 function isInputFieldConfig(value: unknown): value is InputFieldConfig {

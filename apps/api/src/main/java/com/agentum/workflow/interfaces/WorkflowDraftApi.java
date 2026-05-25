@@ -51,6 +51,40 @@ public final class WorkflowDraftApi {
     ) {
     }
 
+    public record WorkflowDesignerCatalog(
+        WorkflowBrickTemplate systemTrigger,
+        List<WorkflowBrickTemplate> brickTemplates,
+        Map<String, WorkflowVariableTemplate> variableMetadata
+    ) {
+    }
+
+    public record WorkflowBrickTemplate(
+        String brickType,
+        String label,
+        String description,
+        String nodeType,
+        String defaultName,
+        String defaultSummary,
+        String outputPrefix,
+        String firstOutputVariable,
+        List<String> defaultInputVariables,
+        List<String> defaultOutputVariables,
+        Map<String, Object> defaultConfig,
+        String runState,
+        String outputMode,
+        int toolCount,
+        boolean allowQuestion
+    ) {
+    }
+
+    public record WorkflowVariableTemplate(
+        String type,
+        boolean sensitive,
+        boolean deliverable,
+        String description
+    ) {
+    }
+
     public record WorkflowValidationIssue(
         String code,
         String level,

@@ -78,6 +78,37 @@ export type WorkflowPublishResult = {
   publishedAt: string;
 };
 
+export type WorkflowDesignerCatalog = {
+  systemTrigger: WorkflowBrickTemplate;
+  brickTemplates: WorkflowBrickTemplate[];
+  variableMetadata: Record<string, WorkflowVariableTemplate>;
+};
+
+export type WorkflowBrickTemplate = {
+  brickType: "trigger" | "input" | "agent" | "cluster" | "delivery";
+  label: string;
+  description: string;
+  nodeType: WorkflowNodeType;
+  defaultName: string;
+  defaultSummary: string;
+  outputPrefix: string;
+  firstOutputVariable: string;
+  defaultInputVariables: string[];
+  defaultOutputVariables: string[];
+  defaultConfig: Record<string, unknown>;
+  runState: "未开始" | "等待输入" | "执行中" | "等待审核" | "已完成" | "待配置";
+  outputMode: "一次性输出" | "追问确认";
+  toolCount: number;
+  allowQuestion: boolean;
+};
+
+export type WorkflowVariableTemplate = {
+  type: VariableType;
+  sensitive: boolean;
+  deliverable: boolean;
+  description: string;
+};
+
 export type WorkflowVariableDraft = {
   name: string;
   type: VariableType;
