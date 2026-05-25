@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Activity,
   Archive,
@@ -207,6 +207,28 @@ export function WorkbenchShell() {
 
   // 侧栏折叠属于工作台级偏好，后续接入用户设置 API 后应从服务端恢复并跨设备同步。
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isSidebarTransitioning, setIsSidebarTransitioning] = useState(false);
+  const sidebarTransitionTimer = useRef<number | null>(null);
+  const isSidebarCompact = isSidebarCollapsed || isSidebarTransitioning;
+  const showSidebarText = !isSidebarCompact;
+
+  useEffect(() => () => {
+    if (sidebarTransitionTimer.current !== null) {
+      window.clearTimeout(sidebarTransitionTimer.current);
+    }
+  }, []);
+
+  function handleToggleSidebar() {
+    if (sidebarTransitionTimer.current !== null) {
+      window.clearTimeout(sidebarTransitionTimer.current);
+    }
+    setIsSidebarTransitioning(true);
+    setIsSidebarCollapsed((current) => !current);
+    sidebarTransitionTimer.current = window.setTimeout(() => {
+      setIsSidebarTransitioning(false);
+      sidebarTransitionTimer.current = null;
+    }, 320);
+  }
 
   return (
     <main className={`min-h-screen bg-[var(--color-bg-page)] text-[var(--color-text-primary)] transition-colors duration-300 ${isDarkMode ? "dark" : ""}`}>
@@ -214,18 +236,18 @@ export function WorkbenchShell() {
         {/* ===== 侧边栏 ===== */}
         <aside className={`hidden shrink-0 sticky top-0 h-screen max-h-screen overflow-hidden bg-[var(--color-bg-sidebar)] text-[var(--color-text-sidebar)] transition-[width,background-color] duration-300 lg:flex lg:flex-col ${isSidebarCollapsed ? "w-[var(--sidebar-collapsed-width)]" : "w-[var(--sidebar-width)]"}`}>
           {/* Logo 区 */}
-          <div className={`flex h-[var(--header-height)] items-center gap-3 px-5 ${isSidebarCollapsed ? "justify-center px-0" : ""}`}>
+          <div className={`flex h-[var(--header-height)] items-center gap-3 px-5 ${isSidebarCompact ? "justify-center px-0" : ""}`}>
             <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg shadow-sm">
               <AgentumMark className="h-9 w-9" />
             </div>
-            <div className={isSidebarCollapsed ? "hidden" : ""}>
+            <div className={`workbench-sidebar-text ${showSidebarText ? "workbench-sidebar-text--visible" : ""}`}>
               <p className="text-lg font-bold text-[var(--color-sidebar-logo-text)]">Agentum</p>
             </div>
           </div>
 
           {/* 导航菜单 —— 由后端 menus 驱动，不再硬编码 visibleFor */}
           <nav className="flex-1 overflow-y-auto min-h-0 space-y-1 px-3 py-3" aria-label="主导航">
-            <p className={`px-3 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--color-sidebar-section-title)] ${isSidebarCollapsed ? "sr-only" : ""}`}>
+            <p className={`px-3 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--color-sidebar-section-title)] ${showSidebarText ? "" : "sr-only"}`}>
               主工作区
             </p>
             {menus.map((menuItem) => {
@@ -237,7 +259,7 @@ export function WorkbenchShell() {
                   key={menuItem.key}
                   type="button"
                   onClick={() => setActiveSurface(menuItem.key as SurfaceKey)}
-                  className={`relative flex w-full items-center rounded-lg text-left transition-all duration-200 ${isSidebarCollapsed ? "h-11 justify-center px-0" : "gap-3 px-3 py-2.5"} ${
+                  className={`relative flex w-full items-center rounded-lg text-left transition-all duration-200 ${isSidebarCompact ? "h-11 justify-center px-0" : "gap-3 px-3 py-2.5"} ${
                     isActive
                       ? "bg-[var(--color-bg-sidebar-active)] font-medium text-[var(--color-text-sidebar-active)]"
                       : "text-[var(--color-text-sidebar)] hover:bg-[var(--color-bg-sidebar-hover)] hover:text-[var(--color-text-primary)]"
@@ -245,7 +267,7 @@ export function WorkbenchShell() {
                   title={menuItem.description}
                 >
                   <Icon className={`h-5 w-5 shrink-0 ${isActive ? "text-[var(--color-primary)]" : ""}`} aria-hidden="true" />
-                  <span className={`min-w-0 ${isSidebarCollapsed ? "hidden" : ""}`}>
+                  <span className={`workbench-sidebar-text min-w-0 ${showSidebarText ? "workbench-sidebar-text--visible" : ""}`} aria-hidden={!showSidebarText}>
                     <span className="block text-sm font-medium">{menuItem.label}</span>
                     <span className="block text-xs text-[var(--color-text-tertiary)]">{menuItem.description}</span>
                   </span>
@@ -256,8 +278,8 @@ export function WorkbenchShell() {
           </nav>
 
           {/* 底部用户区域 */}
-          <div className={`border-t border-[var(--color-border-light)] p-3 ${isSidebarCollapsed ? "flex justify-center" : ""}`}>
-            {isSidebarCollapsed ? (
+          <div className={`border-t border-[var(--color-border-light)] p-3 ${isSidebarCompact ? "flex justify-center" : ""}`}>
+            {isSidebarCompact ? (
               <button
                 type="button"
                 onClick={logout}
@@ -296,7 +318,7 @@ export function WorkbenchShell() {
               <div className="flex min-w-0 items-center gap-3">
                 <button
                   type="button"
-                  onClick={() => setIsSidebarCollapsed((current) => !current)}
+                  onClick={handleToggleSidebar}
                   className="agent-button hidden h-8 w-8 shrink-0 px-0 lg:inline-flex"
                   aria-label={isSidebarCollapsed ? "展开左侧导航" : "收起左侧导航"}
                 >

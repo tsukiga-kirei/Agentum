@@ -312,6 +312,26 @@ export function WorkflowDraftsPage() {
     }
   }
 
+  function resetWorkflowFilters() {
+    setSearchValue("");
+    setWorkflowStatusFilter("all");
+    setPage(1);
+  }
+
+  function handleSwitchTab(nextTab: WorkflowDesignerTab) {
+    if (nextTab === "all" || nextTab === "mine") {
+      resetWorkflowFilters();
+    }
+    setActiveTab(nextTab);
+  }
+
+  function handleOpenPublishGovernance() {
+    setSearchValue("");
+    setWorkflowStatusFilter("review");
+    setPage(1);
+    setActiveTab("mine");
+  }
+
   if (editingWorkflow) {
     return (
       <WorkflowEditorPage
@@ -353,7 +373,7 @@ export function WorkflowDraftsPage() {
               aria-label="流程设计模块"
               value={activeTab}
               options={moduleOptions}
-              onChange={(value) => setActiveTab(value as WorkflowDesignerTab)}
+              onChange={(value) => handleSwitchTab(value as WorkflowDesignerTab)}
               className="login-portal-segmented login-portal-segmented--business system-mgmt-segmented"
             />
           </div>
@@ -382,24 +402,21 @@ export function WorkflowDraftsPage() {
                   title="协作开放"
                   description="查看他人开放给我的流程，先看详情抽屉，再进入具体积木设计。"
                   meta={`${sharedWorkflows.length} 个当前页协作流程`}
-                  onClick={() => setActiveTab("all")}
+                  onClick={() => handleSwitchTab("all")}
                 />
                 <WorkflowFeatureCard
                   icon={UserRound}
                   title="我的流程"
                   description="处理自己创建或负责维护的流程草稿、发布校验和版本演进。"
                   meta={`${myOwnedWorkflows.length} 个当前页我的流程`}
-                  onClick={() => setActiveTab("mine")}
+                  onClick={() => handleSwitchTab("mine")}
                 />
                 <WorkflowFeatureCard
                   icon={ClipboardCheck}
                   title="发布治理"
                   description="进入流程抽屉后执行校验，查看阻塞项，通过后冻结正式版本。"
                   meta={`${reviewCount} 个当前页待校验`}
-                  onClick={() => {
-                    setWorkflowStatusFilter("review");
-                    setActiveTab("mine");
-                  }}
+                  onClick={handleOpenPublishGovernance}
                 />
                 <WorkflowFeatureCard
                   icon={FilePlus2}

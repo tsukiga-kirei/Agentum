@@ -263,6 +263,33 @@ textarea:focus-visible {
   box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
 
+.workbench-sidebar-text {
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-6px);
+  transition:
+    max-width var(--transition-base),
+    opacity var(--transition-fast),
+    transform var(--transition-fast);
+  white-space: nowrap;
+}
+
+.workbench-sidebar-text--visible {
+  max-width: 180px;
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
+}
+
+.workbench-sidebar-text span,
+.workbench-sidebar-text p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Ant Design 组件桥接层：组件库负责复杂交互，Agentum 继续用本地 token 统一视觉。 */
 
 /* 系统管理页内表格：与卡片背景融合，表头弱化、行 hover 使用主题 hover 色 */
