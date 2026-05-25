@@ -3169,7 +3169,13 @@ textarea:focus-visible {
 }
 
 .workflow-editor-toolbar {
-  background: color-mix(in srgb, var(--color-bg-hover) 74%, var(--color-bg-page) 26%);
+  border-color: color-mix(in srgb, var(--color-border-light) 62%, transparent) !important;
+  background: var(--color-bg-page);
+}
+
+.workflow-step-sidebar {
+  border-color: color-mix(in srgb, var(--color-border-light) 70%, transparent) !important;
+  background: var(--color-bg-page);
 }
 
 .workflow-empty-guide {

@@ -9,13 +9,10 @@ import {
   ChevronLeft,
   Clock3,
   FileText,
-  GripVertical,
   Layers3,
   ListChecks,
   MessageSquareText,
   PackageCheck,
-  PanelRightClose,
-  PanelRightOpen,
   Plus,
   RefreshCw,
   Save,
@@ -181,7 +178,6 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
   const [nodes, setNodes] = useState<WorkflowEditorNode[]>([]);
   const [edges, setEdges] = useState<WorkflowEditorEdge[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState("");
-  const [isConfigCollapsed, setIsConfigCollapsed] = useState(false);
   const [nodeSearchValue, setNodeSearchValue] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -525,18 +521,10 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
           <Save className="h-3.5 w-3.5" aria-hidden="true" />
           {saving ? "保存中" : "保存流程"}
         </button>
-        <button
-          type="button"
-          onClick={() => setIsConfigCollapsed((current) => !current)}
-          className="agent-button h-7 px-2 text-xs"
-          title={isConfigCollapsed ? "展开配置" : "收起配置"}
-        >
-          {isConfigCollapsed ? <PanelRightOpen className="h-3.5 w-3.5" /> : <PanelRightClose className="h-3.5 w-3.5" />}
-        </button>
       </div>
 
-      <div className={`grid min-h-0 flex-1 ${isConfigCollapsed ? "grid-cols-[280px]" : "grid-cols-[280px_minmax(0,1fr)]"}`}>
-        <main className="min-h-0 overflow-y-auto border-r border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-3">
+      <div className="grid min-h-0 flex-1 grid-cols-[280px_minmax(0,1fr)]">
+        <main className="workflow-step-sidebar min-h-0 overflow-y-auto border-r border-[var(--color-border-light)] p-3">
           <WorkflowStepBuilder
             nodes={visibleNodes}
             selectedNodeId={selectedNodeId}
@@ -547,32 +535,30 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
           />
         </main>
 
-        {!isConfigCollapsed ? (
-          <div className="min-h-0 overflow-y-auto bg-[var(--color-bg-layout)] p-4">
-            {selectedNode ? (
-              <NodeConfigPanel
-                node={selectedNode}
-                availableVariables={availableVariables}
-                workflowVariables={workflowVariables}
-                capabilities={capabilityOptions}
-                capabilitiesLoading={capabilitiesLoading}
-                capabilityError={capabilityError}
-                onUpdateNode={updateSelectedNode}
-                onUpdateConfig={updateSelectedConfig}
-                onSave={handleSaveSelectedNode}
-                saving={saving}
-              />
-            ) : (
-              <WorkflowOverviewPanel
-                nodes={visibleNodes}
-                variables={workflowVariables}
-                incompleteNodes={incompleteNodes}
-                onSelectNode={setSelectedNodeId}
-                onOpenAddBrick={() => setIsAddBrickModalOpen(true)}
-              />
-            )}
-          </div>
-        ) : null}
+        <div className="min-h-0 overflow-y-auto bg-[var(--color-bg-layout)] p-4">
+          {selectedNode ? (
+            <NodeConfigPanel
+              node={selectedNode}
+              availableVariables={availableVariables}
+              workflowVariables={workflowVariables}
+              capabilities={capabilityOptions}
+              capabilitiesLoading={capabilitiesLoading}
+              capabilityError={capabilityError}
+              onUpdateNode={updateSelectedNode}
+              onUpdateConfig={updateSelectedConfig}
+              onSave={handleSaveSelectedNode}
+              saving={saving}
+            />
+          ) : (
+            <WorkflowOverviewPanel
+              nodes={visibleNodes}
+              variables={workflowVariables}
+              incompleteNodes={incompleteNodes}
+              onSelectNode={setSelectedNodeId}
+              onOpenAddBrick={() => setIsAddBrickModalOpen(true)}
+            />
+          )}
+        </div>
       </div>
 
       {isAddBrickModalOpen ? (
@@ -685,7 +671,6 @@ function WorkflowStepRow({
         <div className="mt-2 flex items-center justify-between gap-2">
           {node.data.configStatus === "incomplete" ? <TinyBadge tone="warning">待配置</TinyBadge> : <TinyBadge tone="success">已配置</TinyBadge>}
           <div className="flex items-center gap-0.5">
-            <IconButton label="拖动占位" icon={GripVertical} disabled onClick={() => undefined} />
             <IconButton label="上移" icon={ArrowUp} disabled={!canMoveUp} onClick={onMoveUp} />
             <IconButton label="下移" icon={ArrowDown} disabled={!canMoveDown} onClick={onMoveDown} />
             <IconButton label="删除" icon={Trash2} onClick={onDelete} tone="danger" />
@@ -1510,7 +1495,7 @@ function SaveFeedback({ feedback }: { feedback: { tone: "success" | "error" | "i
           ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
           : feedback.tone === "error"
             ? "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300"
-            : "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300"
+            : "border border-[var(--color-border-light)] bg-[var(--color-bg-card)] text-[var(--color-text-secondary)] shadow-[var(--shadow-xs)]"
       }`}
     >
       {feedback.message}
