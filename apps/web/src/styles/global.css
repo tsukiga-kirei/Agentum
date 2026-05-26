@@ -571,6 +571,10 @@ textarea:focus-visible {
   line-height: 1.4 !important;
 }
 
+.agent-admin-select.ant-select-multiple .ant-select-input {
+  caret-color: transparent !important;
+}
+
 .agent-admin-select.ant-select-single .ant-select-content-value {
   color: var(--color-text-primary) !important;
   line-height: 1.4 !important;
@@ -3129,6 +3133,24 @@ textarea:focus-visible {
   background: color-mix(in srgb, var(--color-bg-hover) 82%, var(--color-bg-card) 18%);
 }
 
+.workflow-node-config-surface {
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--color-border-light) 86%, var(--color-primary) 14%);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--color-bg-hover) 78%, var(--color-bg-card) 22%);
+}
+
+.workflow-node-config-surface .workflow-config-panel-group {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 18px;
+}
+
+.workflow-node-config-surface .workflow-config-panel-group + .workflow-config-panel-group {
+  border-top: 1px solid var(--color-border-light);
+}
+
 .workflow-capability-state {
   margin: 0 0 10px;
   border: 1px solid color-mix(in srgb, var(--color-primary) 22%, var(--color-border-light));
@@ -3319,6 +3341,15 @@ textarea:focus-visible {
 
 .workflow-prompt-textarea {
   min-height: 132px;
+}
+
+.workflow-prompt-section {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-bg-card) 88%, var(--color-bg-hover) 12%);
+  padding: 12px;
 }
 
 .workflow-config-modal {

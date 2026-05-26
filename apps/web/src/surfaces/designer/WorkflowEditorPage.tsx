@@ -792,28 +792,30 @@ function NodeConfigPanel({
         </div>
       </div>
 
-      <div className="grid gap-4 p-5 xl:grid-cols-2">
-        <BasicInfoPanel
-          node={node}
-          brickType={brickType}
-          availableVariables={availableVariables}
-          onUpdateNode={onUpdateNode}
-          onUpdateConfig={onUpdateConfig}
-        />
+      <div className="p-5">
+        <div className="workflow-node-config-surface">
+          <BasicInfoPanel
+            node={node}
+            brickType={brickType}
+            availableVariables={availableVariables}
+            onUpdateNode={onUpdateNode}
+            onUpdateConfig={onUpdateConfig}
+          />
 
-        {brickType === "agent" ? (
-          <SingleAgentBrickConfig node={node} availableVariables={availableVariables} capabilityState={capabilityState} onUpdateConfig={onUpdateConfig} onUpdateNode={onUpdateNode} />
-        ) : null}
+          {brickType === "agent" ? (
+            <SingleAgentBrickConfig node={node} availableVariables={availableVariables} capabilityState={capabilityState} onUpdateConfig={onUpdateConfig} onUpdateNode={onUpdateNode} />
+          ) : null}
 
-        {brickType === "cluster" ? (
-          <AgentClusterBrickConfig node={node} availableVariables={availableVariables} capabilityState={capabilityState} onUpdateConfig={onUpdateConfig} onUpdateNode={onUpdateNode} />
-        ) : null}
+          {brickType === "cluster" ? (
+            <AgentClusterBrickConfig node={node} availableVariables={availableVariables} capabilityState={capabilityState} onUpdateConfig={onUpdateConfig} onUpdateNode={onUpdateNode} />
+          ) : null}
 
-        {brickType === "delivery" ? (
-          <DeliveryBrickConfig node={node} workflowVariables={availableVariables} capabilityState={capabilityState} onUpdateConfig={onUpdateConfig} />
-        ) : null}
+          {brickType === "delivery" ? (
+            <DeliveryBrickConfig node={node} workflowVariables={availableVariables} capabilityState={capabilityState} onUpdateConfig={onUpdateConfig} />
+          ) : null}
+        </div>
 
-        <div className="flex justify-end xl:col-span-2">
+        <div className="mt-4 flex justify-end">
           <button
             type="button"
             onClick={() => void onSave()}
@@ -1206,15 +1208,6 @@ function AgentClusterBrickConfig({
           ) : null}
         </div>
       </div>
-      <label className="sys-field mt-3">
-        <span className="sys-field-label">拼接规则</span>
-        <textarea
-          value={readString(config.mergeRule, "按章节顺序合并多个智能体输出，冲突内容保留来源并交给用户审查。")}
-          onChange={(event) => onUpdateConfig({ mergeRule: event.target.value })}
-          className="sys-field-textarea"
-          placeholder="说明多智能体结果如何拼接、去重和处理冲突"
-        />
-      </label>
       {editingAgent ? (
         <ClusterAgentModal
           agent={editingAgent}
@@ -1313,6 +1306,7 @@ function CapabilitySelectField({
         className="agent-admin-select w-full"
         classNames={workflowSelectClassNames}
         suffixIcon={workflowSelectSuffixIcon}
+        showSearch={false}
         value={value}
         options={[
           { value: emptyValue, label: emptyLabel },
@@ -1349,6 +1343,7 @@ function CapabilityMultiSelectField({
         className="agent-admin-select w-full"
         classNames={workflowSelectClassNames}
         suffixIcon={workflowSelectSuffixIcon}
+        showSearch={false}
         value={selectedIds}
         placeholder={placeholder}
         options={options.map((option) => ({
@@ -1401,6 +1396,7 @@ function SelectLikeField({
         className="agent-admin-select w-full"
         classNames={workflowSelectClassNames}
         suffixIcon={workflowSelectSuffixIcon}
+        showSearch={false}
         value={value}
         options={effectiveOptions}
         onChange={onChange}
@@ -1457,6 +1453,47 @@ function VariableReferenceBar({
           {`{{${variable.name}}}`}
         </button>
       ))}
+    </div>
+  );
+}
+
+function PromptTemplateEditor({
+  label,
+  templateLabel,
+  templateValue,
+  templateEmptyLabel,
+  promptAssets,
+  value,
+  availableVariables,
+  onTemplateChange,
+  onChange,
+}: {
+  label: string;
+  templateLabel: string;
+  templateValue: string;
+  templateEmptyLabel: string;
+  promptAssets: WorkflowCapabilityOption[];
+  value: string;
+  availableVariables: WorkflowVariable[];
+  onTemplateChange: (value: string) => void;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="workflow-prompt-section">
+      <CapabilitySelectField
+        label={templateLabel}
+        value={templateValue}
+        emptyValue="none"
+        emptyLabel={templateEmptyLabel}
+        options={promptAssets}
+        onChange={onTemplateChange}
+      />
+      <PromptEditor
+        label={label}
+        value={value}
+        availableVariables={availableVariables}
+        onChange={onChange}
+      />
     </div>
   );
 }
@@ -1566,33 +1603,27 @@ function SingleAgentConfigModal({
               options={agentAssets}
               onChange={(value) => setDraft({ ...draft, agentAssetId: value })}
             />
-            <CapabilitySelectField
-              label="系统提示词模板"
-              value={draft.systemPromptTemplateId}
-              emptyValue="none"
-              emptyLabel="系统提示词自定义"
-              options={promptAssets}
-              onChange={(value) => setDraft({ ...draft, systemPromptTemplateId: value })}
-            />
-            <CapabilitySelectField
-              label="用户提示词模板"
-              value={draft.userPromptTemplateId}
-              emptyValue="none"
-              emptyLabel="用户提示词自定义"
-              options={promptAssets}
-              onChange={(value) => setDraft({ ...draft, userPromptTemplateId: value })}
-            />
           </div>
-          <PromptEditor
+          <PromptTemplateEditor
             label="系统提示词"
+            templateLabel="系统提示词模板"
+            templateValue={draft.systemPromptTemplateId}
+            templateEmptyLabel="系统提示词自定义"
+            promptAssets={promptAssets}
             value={draft.systemPrompt}
             availableVariables={availableVariables}
+            onTemplateChange={(value) => setDraft({ ...draft, systemPromptTemplateId: value })}
             onChange={(value) => setDraft({ ...draft, systemPrompt: value })}
           />
-          <PromptEditor
+          <PromptTemplateEditor
             label="用户提示词"
+            templateLabel="用户提示词模板"
+            templateValue={draft.userPromptTemplateId}
+            templateEmptyLabel="用户提示词自定义"
+            promptAssets={promptAssets}
             value={draft.userPrompt}
             availableVariables={availableVariables}
+            onTemplateChange={(value) => setDraft({ ...draft, userPromptTemplateId: value })}
             onChange={(value) => setDraft({ ...draft, userPrompt: value })}
           />
           <div className="grid gap-4 lg:grid-cols-2">
@@ -1710,33 +1741,27 @@ function ClusterAgentModal({
               options={agentAssets}
               onChange={(value) => setDraft({ ...draft, agentAssetId: value })}
             />
-            <CapabilitySelectField
-              label="系统提示词模板"
-              value={draft.systemPromptTemplateId || draft.promptTemplateId || "none"}
-              emptyValue="none"
-              emptyLabel="系统提示词自定义"
-              options={promptAssets}
-              onChange={(value) => setDraft({ ...draft, systemPromptTemplateId: value, promptTemplateId: value })}
-            />
-            <CapabilitySelectField
-              label="用户提示词模板"
-              value={draft.userPromptTemplateId || "none"}
-              emptyValue="none"
-              emptyLabel="用户提示词自定义"
-              options={promptAssets}
-              onChange={(value) => setDraft({ ...draft, userPromptTemplateId: value })}
-            />
           </div>
-          <PromptEditor
+          <PromptTemplateEditor
             label="系统提示词"
+            templateLabel="系统提示词模板"
+            templateValue={draft.systemPromptTemplateId || draft.promptTemplateId || "none"}
+            templateEmptyLabel="系统提示词自定义"
+            promptAssets={promptAssets}
             value={draft.systemPrompt}
             availableVariables={availableVariables}
+            onTemplateChange={(value) => setDraft({ ...draft, systemPromptTemplateId: value, promptTemplateId: value })}
             onChange={(value) => setDraft({ ...draft, systemPrompt: value })}
           />
-          <PromptEditor
+          <PromptTemplateEditor
             label="用户提示词"
+            templateLabel="用户提示词模板"
+            templateValue={draft.userPromptTemplateId || "none"}
+            templateEmptyLabel="用户提示词自定义"
+            promptAssets={promptAssets}
             value={draft.userPrompt}
             availableVariables={availableVariables}
+            onTemplateChange={(value) => setDraft({ ...draft, userPromptTemplateId: value })}
             onChange={(value) => setDraft({ ...draft, userPrompt: value })}
           />
           <div className="grid gap-4 lg:grid-cols-2">
