@@ -25,6 +25,8 @@ public interface TenantAssetCapabilityRepository extends JpaRepository<TenantAss
         select asset from TenantAssetCapabilityEntity asset
         where asset.tenantId = :tenantId
           and asset.createdBy = :createdBy
+          and (:assetType is null or asset.assetType = :assetType)
+          and (:status is null or asset.status = :status)
           and (
             lower(asset.name) like lower(concat('%', :keyword, '%'))
             or lower(asset.code) like lower(concat('%', :keyword, '%'))
@@ -35,6 +37,8 @@ public interface TenantAssetCapabilityRepository extends JpaRepository<TenantAss
         @Param("tenantId") UUID tenantId,
         @Param("createdBy") UUID createdBy,
         @Param("keyword") String keyword,
+        @Param("assetType") String assetType,
+        @Param("status") String status,
         Pageable pageable
     );
 }

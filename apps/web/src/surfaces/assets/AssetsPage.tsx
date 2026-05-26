@@ -148,11 +148,11 @@ export function AssetsPage() {
   }, [handleApiError, tenantId, token]);
 
   const loadSystemAssets = useCallback(
-    async (page = systemPage.page, size = systemPage.size) => {
+    async (page = systemPage.page, size = systemPage.size, type: string = systemTypeFilter === "all" ? "" : systemTypeFilter, search: string = systemKeyword.trim()) => {
       if (!token || !tenantId) return;
       setLoading(true);
       try {
-        const response = await assetApi.listSystemCapabilities(tenantId, token, page, size);
+        const response = await assetApi.listSystemCapabilities(tenantId, token, page, size, "openedAt,desc", type, search);
         setSystemAssets(response.items);
         setSystemPage({ page: response.page, size: response.size, total: response.total });
       } catch (error) {
@@ -161,15 +161,15 @@ export function AssetsPage() {
         setLoading(false);
       }
     },
-    [handleApiError, systemPage.page, systemPage.size, tenantId, token],
+    [handleApiError, systemKeyword, systemPage.page, systemPage.size, systemTypeFilter, tenantId, token],
   );
 
   const loadMyAssets = useCallback(
-    async (page = minePage.page, size = minePage.size, search = keyword) => {
+    async (page = minePage.page, size = minePage.size, search = keyword, type: string = mineTypeFilter === "all" ? "" : mineTypeFilter, statusFilter: string = mineStatusFilter === "all" ? "" : mineStatusFilter) => {
       if (!token || !tenantId) return;
       setLoading(true);
       try {
-        const response = await assetApi.listMine(tenantId, token, search, page, size);
+        const response = await assetApi.listMine(tenantId, token, search, page, size, "updatedAt,desc", type, statusFilter);
         setMyAssets(response.items);
         setMinePage({ page: response.page, size: response.size, total: response.total });
       } catch (error) {
@@ -178,7 +178,7 @@ export function AssetsPage() {
         setLoading(false);
       }
     },
-    [handleApiError, keyword, minePage.page, minePage.size, tenantId, token],
+    [handleApiError, keyword, minePage.page, minePage.size, mineStatusFilter, mineTypeFilter, tenantId, token],
   );
 
   useEffect(() => {
@@ -199,22 +199,10 @@ export function AssetsPage() {
   }, [activeTab, loadMyAssets, loadSystemAssets]);
 
   const assignedSystemAssets = useMemo(() => systemAssets.filter((asset) => asset.assignedToMe), [systemAssets]);
-  const filteredSystemAssets = useMemo(() => {
-    const search = systemKeyword.trim().toLowerCase();
-    return systemAssets.filter((asset) => {
-      const matchesType = systemTypeFilter === "all" || asset.assetType === systemTypeFilter;
-      const matchesKeyword = !search || [asset.name, asset.code, asset.version, asset.assignmentScope].some((value) => value.toLowerCase().includes(search));
-      return matchesType && matchesKeyword;
-    });
-  }, [systemAssets, systemKeyword, systemTypeFilter]);
+  // 能力类型和关键字过滤已经在服务端执行，前端直接使用服务端返回结果，避免客户端在已分页数据上再次过滤导致显示不一致。
+  const filteredSystemAssets = systemAssets;
   const draftAssets = useMemo(() => myAssets.filter((asset) => asset.status === "draft"), [myAssets]);
-  const filteredMyAssets = useMemo(() => {
-    return myAssets.filter((asset) => {
-      const matchesType = mineTypeFilter === "all" || asset.assetType === mineTypeFilter;
-      const matchesStatus = mineStatusFilter === "all" || asset.status === mineStatusFilter;
-      return matchesType && matchesStatus;
-    });
-  }, [mineStatusFilter, mineTypeFilter, myAssets]);
+  const filteredMyAssets = myAssets;
   const skillOptions = useMemo(
     () => assignedSystemAssets.filter((asset) => asset.assetType === "skill").map((asset) => ({ value: asset.id, label: `${asset.name} · ${asset.version}` })),
     [assignedSystemAssets],
@@ -459,6 +447,9 @@ export function AssetsPage() {
                     value={systemKeyword}
                     placeholder="搜索名称、编码或分配范围"
                     onChange={(event) => setSystemKeyword(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") void loadSystemAssets(1, systemPage.size, systemTypeFilter === "all" ? "" : systemTypeFilter, event.currentTarget.value.trim());
+                    }}
                   />
                 </div>
                 <Select
@@ -468,7 +459,10 @@ export function AssetsPage() {
                   suffixIcon={adminSelectSuffixIcon}
                   value={systemTypeFilter}
                   options={[{ value: "all", label: "全部能力类型" }, ...allAssetTypeOptions]}
-                  onChange={(value) => setSystemTypeFilter(value as AssetType | "all")}
+                  onChange={(value) => {
+                    setSystemTypeFilter(value as AssetType | "all");
+                    void loadSystemAssets(1, systemPage.size, value === "all" ? "" : value, systemKeyword.trim());
+                  }}
                 />
               </AssetFilterBar>
               {filteredSystemAssets.length === 0 ? (
@@ -515,7 +509,10 @@ export function AssetsPage() {
                     suffixIcon={adminSelectSuffixIcon}
                     value={mineTypeFilter}
                     options={[{ value: "all", label: "全部能力类型" }, ...allAssetTypeOptions.filter((item) => item.value === "agent_template" || item.value === "prompt_template")]}
-                    onChange={(value) => setMineTypeFilter(value as AssetType | "all")}
+                    onChange={(value) => {
+                      setMineTypeFilter(value as AssetType | "all");
+                      void loadMyAssets(1, minePage.size, keyword, value === "all" ? "" : value, mineStatusFilter === "all" ? "" : mineStatusFilter);
+                    }}
                   />
                   <Select
                     className="agent-admin-select min-w-[150px]"
@@ -528,7 +525,10 @@ export function AssetsPage() {
                       { value: "draft", label: "草稿" },
                       { value: "published", label: "已发布" },
                     ]}
-                    onChange={(value) => setMineStatusFilter(value as "all" | "draft" | "published")}
+                    onChange={(value) => {
+                      setMineStatusFilter(value as "all" | "draft" | "published");
+                      void loadMyAssets(1, minePage.size, keyword, mineTypeFilter === "all" ? "" : mineTypeFilter, value === "all" ? "" : value);
+                    }}
                   />
                   <button type="button" className="sys-btn sys-btn--default" onClick={() => void loadMyAssets(1, minePage.size, keyword)}>
                     <Search size={18} />

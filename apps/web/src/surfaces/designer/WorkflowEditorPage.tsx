@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Select } from "antd";
 import {
   AlertTriangle,
@@ -194,6 +194,8 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
   const [capabilityError, setCapabilityError] = useState("");
   const [declaredVariables, setDeclaredVariables] = useState<WorkflowVariable[]>([]);
   const [isAddBrickModalOpen, setIsAddBrickModalOpen] = useState(false);
+  // 防止双击保存按钮导致并发 API 调用；useState 在同一渲染帧内可能未及时更新，需要额外的 ref 锁。
+  const saveLockRef = useRef(false);
 
   useEffect(() => {
     if (!token || !user?.tenantId) {
@@ -260,13 +262,14 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
     setCapabilityError("");
 
     // 流程节点只能引用当前主体可见的能力资产；MCP / Skill 等执行类能力不再使用前端硬编码选项。
+    // 循环分页加载全部可引用能力，避免硬编码单页上限导致超出部分的 MCP / Skill 不出现在下拉列表。
     void Promise.all([
-      assetApi.listSystemCapabilities(tenantId, token, 1, 100),
-      assetApi.listMine(tenantId, token, "", 1, 100),
+      loadAllCapabilityPages((page, size) => assetApi.listSystemCapabilities(tenantId, token, page, size)),
+      loadAllCapabilityPages((page, size) => assetApi.listMine(tenantId, token, "", page, size)),
     ])
-      .then(([systemPage, myPage]) => {
+      .then(([systemItems, myItems]) => {
         if (!cancelled) {
-          setCapabilityOptions(buildCapabilityOptions(systemPage.items, myPage.items));
+          setCapabilityOptions(buildCapabilityOptions(systemItems as SystemCapabilityAssetRow[], myItems as MyAssetRow[]));
         }
       })
       .catch((error) => {
@@ -332,6 +335,11 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
       setSaveFeedback({ tone: "error", message: "流程设计模板尚未加载完成，暂时不能保存工作流草稿" });
       return;
     }
+    // 防止同一渲染帧内双击保存触发并发请求
+    if (saveLockRef.current) {
+      return;
+    }
+    saveLockRef.current = true;
 
     setSaving(true);
     setSaveFeedback(null);
@@ -355,6 +363,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
       setSaveFeedback({ tone: "error", message: error instanceof AgentumApiError ? error.message : "保存工作流草稿失败" });
     } finally {
       setSaving(false);
+      saveLockRef.current = false;
     }
   }, [designerCatalog, onDraftSaved, token, user?.tenantId, workflow.id]);
 
@@ -403,6 +412,9 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
   }
 
   function handleDeleteNode(nodeId: string) {
+    if (!window.confirm("确认删除这个积木？删除后需要手动保存才会生效。")) {
+      return;
+    }
     const nextVisibleNodes = visibleNodes.filter((node) => node.id !== nodeId);
     commitVisibleNodes(nextVisibleNodes, nextVisibleNodes[0]?.id ?? "");
   }
@@ -1075,8 +1087,8 @@ function SingleAgentBrickConfig({
   const promptAssets = filterCapabilities(capabilityState.capabilities, "prompt_template");
   const mcpAssets = filterCapabilities(capabilityState.capabilities, "mcp");
   const skillAssets = filterCapabilities(capabilityState.capabilities, "skill");
-  const selectedMcps = readStringArray(config.mcpServices, []);
-  const selectedSkills = readStringArray(config.skills, []);
+  const selectedMcps = readStringArray(config.mcpIds ?? config.mcpServices, []);
+  const selectedSkills = readStringArray(config.skillIds ?? config.skills, []);
   const agentName = findCapabilityName(agentAssets, readString(config.agentAssetId, "custom"), "自定义智能体");
   const systemPromptName = findCapabilityName(promptAssets, readString(config.systemPromptTemplateId, readString(config.promptTemplateId, "none")), "系统提示词自定义");
   const userPromptName = findCapabilityName(promptAssets, readString(config.userPromptTemplateId, "none"), "用户提示词自定义");
@@ -1113,8 +1125,8 @@ function SingleAgentBrickConfig({
                   userPromptTemplateId: "none",
                   systemPrompt: "",
                   userPrompt: "",
-                  mcpServices: [],
-                  skills: [],
+                  mcpIds: [],
+                  skillIds: [],
                 });
                 onUpdateNode({ toolCount: 0, outputMode: "一次性输出", allowQuestion: false });
               }}
@@ -1577,8 +1589,8 @@ function SingleAgentConfigModal({
     userPromptTemplateId: readString(config.userPromptTemplateId, "none"),
     systemPrompt: readString(config.systemPrompt, "请配置这个智能体的角色、任务边界和输出要求。"),
     userPrompt: readString(config.userPrompt, "请基于已产生的可引用内容完成本步骤任务。"),
-    mcpServices: readStringArray(config.mcpServices, []),
-    skills: readStringArray(config.skills, []),
+    mcpIds: readStringArray(config.mcpIds ?? config.mcpServices, []),
+    skillIds: readStringArray(config.skillIds ?? config.skills, []),
     outputMode: node.data.outputMode,
     allowQuestion: node.data.allowQuestion,
   });
@@ -1630,16 +1642,16 @@ function SingleAgentConfigModal({
             <CapabilityMultiSelectField
               label="MCP"
               options={mcpAssets}
-              selectedIds={draft.mcpServices}
+              selectedIds={draft.mcpIds}
               placeholder="选择 MCP"
-              onChange={(values) => setDraft({ ...draft, mcpServices: values })}
+              onChange={(values) => setDraft({ ...draft, mcpIds: values })}
             />
             <CapabilityMultiSelectField
               label="Skill"
               options={skillAssets}
-              selectedIds={draft.skills}
+              selectedIds={draft.skillIds}
               placeholder="选择 Skill"
-              onChange={(values) => setDraft({ ...draft, skills: values })}
+              onChange={(values) => setDraft({ ...draft, skillIds: values })}
             />
           </div>
           <div className="grid gap-3 lg:grid-cols-2">
@@ -1674,10 +1686,10 @@ function SingleAgentConfigModal({
               userPromptTemplateId: draft.userPromptTemplateId,
               systemPrompt: draft.systemPrompt,
               userPrompt: draft.userPrompt,
-              mcpServices: draft.mcpServices,
-              skills: draft.skills,
+              mcpIds: draft.mcpIds,
+              skillIds: draft.skillIds,
             }, {
-              toolCount: draft.mcpServices.length,
+              toolCount: draft.mcpIds.length + draft.skillIds.length,
               outputMode: draft.outputMode,
               allowQuestion: draft.allowQuestion,
             })}
@@ -2153,7 +2165,7 @@ function applyPersistedDetail(
   catalog: WorkflowDesignerCatalog,
   setNodes: (nodes: WorkflowEditorNode[]) => void,
   setEdges: (edges: WorkflowEditorEdge[]) => void,
-  setSelectedNodeId: (updater: (currentSelection: string) => string) => void,
+  setSelectedNodeId: (updater: string | ((currentSelection: string) => string)) => void,
 ) {
   const nextNodes = ensureSystemTrigger(detail.nodes.map(toEditorNode), catalog);
   const nextEdges = detail.edges.map(toEditorEdge);
@@ -2381,11 +2393,13 @@ function readClusterAgents(value: unknown): ClusterAgentConfig[] {
     }
   }
 
-  return [createClusterAgent(0), createClusterAgent(1)];
+  // 集群节点默认空列表，让用户按需添加子智能体，避免自动占位污染变量声明。
+  return [];
 }
 
 function normalizeVariableName(value: string) {
-  return value.trim().replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_]/g, "");
+  // 后端 WorkflowVariableDeclarationValidator 正则 ^[a-z][a-z0-9_]*$ 只接受纯小写；前端统一转小写，避免保存时 400。
+  return value.trim().toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
 }
 
 function cloneRecord(value: Record<string, unknown>): Record<string, unknown> {
@@ -2439,4 +2453,19 @@ function getWorkflowEditorErrorContext(error: unknown, tenantId?: string, workfl
   }
 
   return { message: error instanceof Error ? error.message : "unknown", tenantId, workflowId };
+}
+
+// 能力资产分页加载，确保获取全部可引用能力，避免硬编码单页上限导致选项截断。
+async function loadAllCapabilityPages<T extends { items: unknown[]; total: number }>(
+  fetcher: (page: number, size: number) => Promise<T>,
+  size = 100,
+): Promise<unknown[]> {
+  const firstPage = await fetcher(1, size);
+  const allItems = [...firstPage.items];
+  const totalPages = Math.ceil(firstPage.total / size);
+  for (let page = 2; page <= totalPages; page++) {
+    const nextPage = await fetcher(page, size);
+    allItems.push(...nextPage.items);
+  }
+  return allItems;
 }

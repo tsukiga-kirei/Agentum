@@ -6,6 +6,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 // 租户内自定义角色，用于第二层细粒度权限。
 // page_permissions 控制业务用户在租户内可见的页签（如 workbench、designer、assets、audit）。
@@ -28,10 +30,12 @@ public class TenantOrgRoleEntity {
 
     // JSON 数组，如 ["workbench","designer","assets","audit"]
     @Column(name = "page_permissions", nullable = false, columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
     private String pagePermissions;
 
     // JSON 数组，如 [{"resourceType":"skill","resourceId":"...","actions":["use"]}]
     @Column(name = "resource_permissions", nullable = false, columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
     private String resourcePermissions;
 
     @Column(name = "is_system", nullable = false)

@@ -27,9 +27,11 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
@@ -67,6 +69,7 @@ public class WorkflowDraftService {
     private final WorkflowVersionRepository workflowVersionRepository;
     private final WorkflowVariableDeclarationValidator workflowVariableDeclarationValidator;
     private final WorkflowPublishValidator workflowPublishValidator;
+    private final WorkflowNodeConfigValidator workflowNodeConfigValidator;
     private final ObjectMapper objectMapper;
     private final Clock clock;
 
@@ -80,6 +83,7 @@ public class WorkflowDraftService {
         WorkflowVersionRepository workflowVersionRepository,
         WorkflowVariableDeclarationValidator workflowVariableDeclarationValidator,
         WorkflowPublishValidator workflowPublishValidator,
+        WorkflowNodeConfigValidator workflowNodeConfigValidator,
         ObjectMapper objectMapper,
         Clock clock
     ) {
@@ -92,6 +96,7 @@ public class WorkflowDraftService {
         this.workflowVersionRepository = workflowVersionRepository;
         this.workflowVariableDeclarationValidator = workflowVariableDeclarationValidator;
         this.workflowPublishValidator = workflowPublishValidator;
+        this.workflowNodeConfigValidator = workflowNodeConfigValidator;
         this.objectMapper = objectMapper;
         this.clock = clock;
     }
@@ -104,10 +109,14 @@ public class WorkflowDraftService {
         boolean onlyMine = "mine".equals(scope);
         boolean onlyShared = "shared".equals(scope);
         String normalizedStatus = status == null || status.isBlank() || "all".equals(status) ? null : status.trim();
-        Map<UUID, UserAccount> usersById = loadUsersById();
         // 协作开放只展示他人开放给当前用户参与设计的流程；我的流程只筛当前创建人，避免前端用负责人姓名猜测归属。
-        return PageResponse.from(workflowDefinitionRepository.searchDrafts(tenantId, normalizedKeyword, onlyMine ? operatorUserId : null, onlyShared ? operatorUserId : null, normalizedStatus, pageable)
-            .map(definition -> toDraftRow(definition, usersById)));
+        var resultPage = workflowDefinitionRepository.searchDrafts(tenantId, normalizedKeyword, onlyMine ? operatorUserId : null, onlyShared ? operatorUserId : null, normalizedStatus, pageable);
+        Set<UUID> creatorIds = resultPage.getContent().stream()
+            .map(WorkflowDefinitionEntity::getCreatedBy)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
+        Map<UUID, UserAccount> usersById = loadUsersById(creatorIds);
+        return PageResponse.from(resultPage.map(definition -> toDraftRow(definition, usersById)));
     }
 
     @Transactional
@@ -129,7 +138,7 @@ public class WorkflowDraftService {
             name,
             RequestIds.current()
         );
-        return toDraftRow(definition, loadUsersById());
+        return toDraftRow(definition, loadUsersById(Set.of(operatorUserId)));
     }
 
     @Transactional(readOnly = true)
@@ -187,6 +196,25 @@ public class WorkflowDraftService {
             );
         }
 
+        // 发布前校验节点 config 中引用的 MCP / Skill / 交付能力仍在租户能力池内且状态有效。
+        List<WorkflowDraftApi.WorkflowValidationIssue> configIssues = workflowNodeConfigValidator.validateCapabilityReferences(tenantId, detail.nodes());
+        if (!configIssues.isEmpty()) {
+            log.warn(
+                "工作流发布被拒绝：节点能力引用校验未通过 tenantId={} operatorUserId={} workflowId={} issueCount={} requestId={}",
+                tenantId,
+                operatorUserId,
+                workflowId,
+                configIssues.size(),
+                RequestIds.current()
+            );
+            throw new ApiException(
+                HttpStatus.BAD_REQUEST,
+                "WORKFLOW_PUBLISH_CAPABILITY_REFERENCE_INVALID",
+                "流程节点引用的 MCP、Skill 或交付能力不在当前租户能力池中或已失效",
+                Map.of("issueCount", configIssues.size())
+            );
+        }
+
         Instant now = clock.instant();
         int nextVersionNumber = workflowVersionRepository.findTopByWorkflowIdOrderByVersionNumberDesc(workflowId)
             .map(version -> version.getVersionNumber() + 1)
@@ -213,7 +241,7 @@ public class WorkflowDraftService {
             nextVersionNumber,
             RequestIds.current()
         );
-        return new WorkflowDraftApi.WorkflowPublishResult(toDraftRow(definition, loadUsersById()), nextVersionNumber, now);
+        return new WorkflowDraftApi.WorkflowPublishResult(toDraftRow(definition, loadUsersById(definition.getCreatedBy() == null ? Set.of() : Set.of(definition.getCreatedBy()))), nextVersionNumber, now);
     }
 
     @Transactional
@@ -365,7 +393,7 @@ public class WorkflowDraftService {
 
     private WorkflowDraftApi.WorkflowDraftDetail toDetail(WorkflowDefinitionEntity definition) {
         return new WorkflowDraftApi.WorkflowDraftDetail(
-            toDraftRow(definition, loadUsersById()),
+            toDraftRow(definition, loadUsersById(definition.getCreatedBy() == null ? Set.of() : Set.of(definition.getCreatedBy()))),
             workflowNodeDefinitionRepository.findByWorkflowIdOrderBySortOrderAsc(definition.getId()).stream().map(this::toNodeRow).toList(),
             workflowEdgeDefinitionRepository.findByWorkflowIdOrderBySortOrderAsc(definition.getId()).stream().map(this::toEdgeRow).toList(),
             workflowVariableDefinitionRepository.findByWorkflowIdOrderBySortOrderAsc(definition.getId()).stream().map(this::toVariableRow).toList()
@@ -423,8 +451,13 @@ public class WorkflowDraftService {
         );
     }
 
-    private Map<UUID, UserAccount> loadUsersById() {
-        return userAccountRepository.findAll().stream().collect(Collectors.toMap(UserAccount::getId, Function.identity()));
+    // 按需加载涉及用户，避免全表扫描；后续可改用二级缓存进一步优化。
+    private Map<UUID, UserAccount> loadUsersById(Collection<UUID> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return Map.of();
+        }
+        return userAccountRepository.findAllById(userIds).stream()
+            .collect(Collectors.toMap(UserAccount::getId, Function.identity()));
     }
 
     private String writeJsonObject(Map<String, Object> values) {

@@ -244,13 +244,19 @@ export const systemApi = {
 
 export const assetApi = {
   summary: (tenantId: string, token: string) => apiRequest<AssetSummary>(`/api/tenants/${tenantId}/assets/summary`, { token }),
-  listSystemCapabilities: (tenantId: string, token: string, page = 1, size = 10, sort = "openedAt,desc") =>
-    apiRequest<SystemCapabilityAssetPage>(
-      `/api/tenants/${tenantId}/assets/system-capabilities?page=${page}&size=${size}&sort=${encodeURIComponent(sort)}`,
+  listSystemCapabilities: (tenantId: string, token: string, page = 1, size = 10, sort = "openedAt,desc", assetType = "", keyword = "") => {
+    const params = new URLSearchParams({ page: String(page), size: String(size), sort });
+    if (assetType) params.set("assetType", assetType);
+    if (keyword) params.set("keyword", keyword);
+    return apiRequest<SystemCapabilityAssetPage>(
+      `/api/tenants/${tenantId}/assets/system-capabilities?${params.toString()}`,
       { token }
-    ),
-  listMine: (tenantId: string, token: string, keyword = "", page = 1, size = 10, sort = "updatedAt,desc") => {
+    );
+  },
+  listMine: (tenantId: string, token: string, keyword = "", page = 1, size = 10, sort = "updatedAt,desc", assetType = "", status = "") => {
     const params = new URLSearchParams({ keyword, page: String(page), size: String(size), sort });
+    if (assetType) params.set("assetType", assetType);
+    if (status) params.set("status", status);
     return apiRequest<MyAssetPage>(`/api/tenants/${tenantId}/assets/mine?${params.toString()}`, { token });
   },
   createMine: (tenantId: string, token: string, body: CreateMyAssetRequest) =>

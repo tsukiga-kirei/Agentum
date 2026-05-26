@@ -6,6 +6,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 // 发布版本是运行态后续唯一可信的定义来源；草稿继续可编辑，但历史版本必须保持不可变。
 @Entity
@@ -25,6 +27,7 @@ public class WorkflowVersionEntity {
     private int versionNumber;
 
     @Column(name = "definition_snapshot", nullable = false, columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
     private String definitionSnapshot;
 
     @Column(name = "node_count", nullable = false)

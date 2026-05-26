@@ -103,14 +103,23 @@ public class AssetManagementService {
         CurrentUserPrincipal principal,
         int page,
         int size,
-        String sort
+        String sort,
+        String assetType,
+        String keyword
     ) {
         ensureActiveTenant(tenantId);
         PageQuery query = PageQuery.of(page, size, sort);
         Pageable pageable = PageableFactory.from(query, SYSTEM_CAPABILITY_SORT);
         boolean manager = isTenantManager(principal);
         List<SystemCapabilityAsset> assets = filterVisibleCapabilities(tenantId, principal, loadTenantOpenCapabilities(tenantId));
+        // 服务端按能力类型和关键字过滤，避免客户端在已分页结果上再过滤导致显示不一致。
+        String normalizedAssetType = assetType == null || assetType.isBlank() || "all".equals(assetType) ? null : assetType.trim();
+        String normalizedKeyword = keyword == null ? "" : keyword.trim().toLowerCase();
         List<AssetManagementApi.SystemCapabilityAssetRow> rows = assets.stream()
+            .filter(asset -> normalizedAssetType == null || normalizedAssetType.equals(asset.capability().getCapabilityType()))
+            .filter(asset -> normalizedKeyword.isEmpty() || asset.capability().getName().toLowerCase().contains(normalizedKeyword)
+                || asset.capability().getCode().toLowerCase().contains(normalizedKeyword)
+                || asset.capability().getVersion().toLowerCase().contains(normalizedKeyword))
             .map(asset -> toSystemCapabilityRow(asset, true, manager))
             .toList();
 
@@ -124,12 +133,17 @@ public class AssetManagementService {
         String keyword,
         int page,
         int size,
-        String sort
+        String sort,
+        String assetType,
+        String status
     ) {
         ensureActiveTenant(tenantId);
         Pageable pageable = PageableFactory.from(PageQuery.of(page, size, sort), MY_ASSET_SORT);
         String normalizedKeyword = keyword == null ? "" : keyword.trim();
-        return PageResponse.from(tenantAssetCapabilityRepository.searchMine(tenantId, principal.userId(), normalizedKeyword, pageable).map(this::toMyAssetRow));
+        // 能力类型和状态过滤在服务端执行，避免前端在已分页结果上再过滤导致页面记录数和分页总数不一致。
+        String normalizedAssetType = assetType == null || assetType.isBlank() || "all".equals(assetType) ? null : assetType.trim();
+        String normalizedStatus = status == null || status.isBlank() || "all".equals(status) ? null : status.trim();
+        return PageResponse.from(tenantAssetCapabilityRepository.searchMine(tenantId, principal.userId(), normalizedKeyword, normalizedAssetType, normalizedStatus, pageable).map(this::toMyAssetRow));
     }
 
     @Transactional
@@ -397,9 +411,11 @@ public class AssetManagementService {
             return Set.of();
         }
 
-        // 能力池分配当前以 resource_grants 明细承接，运行时可复用同一批主体和资源判断。
+        // 能力池分配以 resource_grants 明细承接；resourceType 存储具体能力类型（skill/mcp/delivery/prompt_template），
+        // 需按系统能力类型集合过滤，排除将来可能新增的非能力类资源。
         return resourceGrantRepository.findByTenantIdOrderByCreatedAtDesc(tenantId)
             .stream()
+            .filter(grant -> SYSTEM_CAPABILITY_TYPES.contains(grant.getResourceType()))
             .filter(grant -> principalKeys.contains(grant.getPrincipalType() + ":" + grant.getPrincipalId()))
             .map(ResourceGrantEntity::getResourceId)
             .collect(Collectors.toSet());

@@ -6,6 +6,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 // 变量定义独立于节点保存，避免后续发布版本、运行快照和交付节点只能从松散字符串数组反推业务含义。
 @Entity
@@ -30,6 +32,7 @@ public class WorkflowVariableDefinitionEntity {
     private String description;
 
     @Column(name = "json_schema", nullable = false, columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
     private String jsonSchema;
 
     @Column(nullable = false)

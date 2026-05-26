@@ -51,10 +51,12 @@ public class AssetManagementController {
         @RequestParam(defaultValue = "1") int page,
         @RequestParam(defaultValue = "10") int size,
         @RequestParam(defaultValue = "openedAt,desc") String sort,
+        @RequestParam(defaultValue = "") String assetType,
+        @RequestParam(defaultValue = "") String keyword,
         HttpServletRequest request
     ) {
         assetAccess.assertCanUseAssets(principal, tenantId);
-        return ApiResponse.success(assetManagementService.listTenantSystemCapabilities(tenantId, principal, page, size, sort), RequestIds.current(request));
+        return ApiResponse.success(assetManagementService.listTenantSystemCapabilities(tenantId, principal, page, size, sort, assetType, keyword), RequestIds.current(request));
     }
 
     @GetMapping("/mine")
@@ -65,10 +67,12 @@ public class AssetManagementController {
         @RequestParam(defaultValue = "1") int page,
         @RequestParam(defaultValue = "10") int size,
         @RequestParam(defaultValue = "updatedAt,desc") String sort,
+        @RequestParam(defaultValue = "") String assetType,
+        @RequestParam(defaultValue = "") String status,
         HttpServletRequest request
     ) {
         assetAccess.assertCanUseAssets(principal, tenantId);
-        return ApiResponse.success(assetManagementService.listMyAssets(tenantId, principal, keyword, page, size, sort), RequestIds.current(request));
+        return ApiResponse.success(assetManagementService.listMyAssets(tenantId, principal, keyword, page, size, sort, assetType, status), RequestIds.current(request));
     }
 
     @PostMapping("/mine")
