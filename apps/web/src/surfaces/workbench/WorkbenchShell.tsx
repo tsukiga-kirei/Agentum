@@ -1,20 +1,29 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Activity,
+  ArrowRight,
   Archive,
   CheckCircle2,
-  FileText,
+  CircleAlert,
+  ClipboardList,
   GitBranch,
+  History,
   LayoutDashboard,
   Library,
+  ListTodo,
+  Lock,
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
+  PauseCircle,
+  PlayCircle,
   Settings,
   ShieldCheck,
   User,
   UserRoundCheck,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { Segmented, message } from "antd";
 import { TenantManagementPage } from "../admin/TenantManagementPage";
 import { SystemManagementPage } from "../admin/SystemManagementPage";
 import { AssetsPage } from "../assets/AssetsPage";
@@ -26,6 +35,7 @@ import { AgentumMark } from "../../components/brand/AgentumMark";
 import { useAuthStore } from "../../stores/authStore";
 
 type SurfaceKey = "workbench" | "designer" | "assets" | "audit" | "tenant" | "system";
+type WorkbenchTab = "overview" | "create" | "tasks";
 
 // 图标映射：后端返回菜单 icon 字符串，前端映射为 lucide-react 组件
 const ICON_MAP: Record<string, typeof LayoutDashboard> = {
@@ -40,9 +50,8 @@ const ICON_MAP: Record<string, typeof LayoutDashboard> = {
 type Metric = {
   label: string;
   value: string;
-  detail: string;
-  tone: string;
-  icon: typeof LayoutDashboard;
+  tone: "primary" | "success" | "info" | "cap";
+  icon: LucideIcon;
 };
 
 type TodoItem = {
@@ -51,6 +60,7 @@ type TodoItem = {
   owner: string;
   deadline: string;
   status: string;
+  action: string;
 };
 
 type WorkflowTemplate = {
@@ -59,13 +69,28 @@ type WorkflowTemplate = {
   nodes: string;
   tag: string;
   startLabel: string;
+  agent: string;
+  flow: string[];
+  capabilityAssets: string[];
+  canCreate: boolean;
+  permissionScope: string;
+  blockedReason?: string;
 };
 
 type RunRecord = {
   name: string;
   state: string;
   node: string;
-  duration: string;
+  owner: string;
+  updatedAt: string;
+  progress: string;
+};
+
+type WorkbenchTabMeta = {
+  key: WorkbenchTab;
+  label: string;
+  icon: LucideIcon;
+  description: string;
 };
 
 // 工作台数据当前用于撑起业务信息层级，后续由待办、运行记录和资产统计 API 替换。
@@ -73,29 +98,25 @@ const metrics: Metric[] = [
   {
     label: "待处理事项",
     value: "8",
-    detail: "3 个审核，5 个补充输入",
-    tone: "bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:ring-amber-800",
+    tone: "primary",
     icon: UserRoundCheck,
   },
   {
     label: "今日运行",
     value: "24",
-    detail: "21 次完成，3 次暂停",
-    tone: "bg-indigo-50 text-indigo-700 ring-indigo-200 dark:bg-indigo-950/30 dark:text-indigo-300 dark:ring-indigo-800",
+    tone: "info",
     icon: Activity,
   },
   {
     label: "已发布流程",
     value: "12",
-    detail: "覆盖 5 类企业 SOP",
-    tone: "bg-sky-50 text-sky-700 ring-sky-200 dark:bg-sky-950/30 dark:text-sky-300 dark:ring-sky-800",
+    tone: "success",
     icon: GitBranch,
   },
   {
     label: "能力资产",
     value: "36",
-    detail: "智能体、Skills 和 MCP",
-    tone: "bg-violet-50 text-violet-700 ring-violet-200 dark:bg-violet-950/30 dark:text-violet-300 dark:ring-violet-800",
+    tone: "cap",
     icon: Library,
   },
 ];
@@ -108,6 +129,7 @@ const todoItems: TodoItem[] = [
     owner: "法务组",
     deadline: "今天 18:00",
     status: "等待人工审核",
+    action: "审核结论",
   },
   {
     title: "补充项目立项背景材料",
@@ -115,6 +137,7 @@ const todoItems: TodoItem[] = [
     owner: "项目经理",
     deadline: "明天 10:00",
     status: "等待用户输入",
+    action: "补充资料",
   },
   {
     title: "复核月报交付邮件",
@@ -122,10 +145,11 @@ const todoItems: TodoItem[] = [
     owner: "运营组",
     deadline: "明天 16:00",
     status: "等待交付确认",
+    action: "确认交付",
   },
 ];
 
-// 模板卡片先展示 MVP 场景，后续接入工作流模板库后应带上模板版本和适用权限。
+// 模板卡片先展示 MVP 场景，后续接入工作流模板库后应带上模板版本、运行入口和后端权限校验结果。
 const workflowTemplates: WorkflowTemplate[] = [
   {
     title: "需求分析闭环",
@@ -133,6 +157,11 @@ const workflowTemplates: WorkflowTemplate[] = [
     nodes: "7 个节点",
     tag: "需求",
     startLabel: "发起需求分析",
+    agent: "需求拆解智能体",
+    flow: ["资料输入", "智能体追问", "人工确认", "文档交付"],
+    capabilityAssets: ["需求分析 Skill", "评审文档模板", "Word 交付"],
+    canCreate: true,
+    permissionScope: "产品与项目组可创建",
   },
   {
     title: "合同审查交付",
@@ -140,6 +169,11 @@ const workflowTemplates: WorkflowTemplate[] = [
     nodes: "8 个节点",
     tag: "法务",
     startLabel: "发起合同审查",
+    agent: "合同风险智能体",
+    flow: ["合同上传", "条款识别", "法务审核", "交付归档"],
+    capabilityAssets: ["合同审查 Skill", "条款抽取 MCP", "邮件交付"],
+    canCreate: true,
+    permissionScope: "法务与采购组可创建",
   },
   {
     title: "经营报告组装",
@@ -147,6 +181,25 @@ const workflowTemplates: WorkflowTemplate[] = [
     nodes: "9 个节点",
     tag: "经营",
     startLabel: "发起报告流程",
+    agent: "经营分析智能体集群",
+    flow: ["选择周期", "并行取数", "章节生成", "报告组装"],
+    capabilityAssets: ["数据摘要 Skill", "经营数据库 MCP", "PDF 交付"],
+    canCreate: false,
+    permissionScope: "经营管理组可创建",
+    blockedReason: "当前角色只能查看流程，未获得经营报告创建权限",
+  },
+  {
+    title: "授信报告生成",
+    description: "工商、司法、财务和行业数据并行核验，组装授信报告初稿。",
+    nodes: "11 个节点",
+    tag: "授信",
+    startLabel: "发起授信报告",
+    agent: "授信分析智能体集群",
+    flow: ["企业名称输入", "外部数据核验", "章节并行生成", "报告审核"],
+    capabilityAssets: ["风险识别 Skill", "工商司法 MCP", "报告组装模板"],
+    canCreate: false,
+    permissionScope: "风控部门可创建",
+    blockedReason: "当前用户未被分配该智能体流程的创建范围",
   },
 ];
 
@@ -156,19 +209,33 @@ const runRecords: RunRecord[] = [
     name: "客户续约风险评估",
     state: "运行中",
     node: "并行数据获取",
-    duration: "12 分钟",
+    owner: "客户成功组",
+    updatedAt: "10 分钟前",
+    progress: "4/7",
   },
   {
     name: "采购合同审查",
     state: "已暂停",
     node: "人工审核",
-    duration: "38 分钟",
+    owner: "采购部",
+    updatedAt: "32 分钟前",
+    progress: "5/8",
   },
   {
     name: "周报生成与发送",
     state: "已完成",
     node: "邮件交付",
-    duration: "6 分钟",
+    owner: "运营组",
+    updatedAt: "昨天 17:40",
+    progress: "7/7",
+  },
+  {
+    name: "供应商准入评估",
+    state: "已暂停",
+    node: "补充资料",
+    owner: "采购部",
+    updatedAt: "今天 09:20",
+    progress: "2/6",
   },
 ];
 
@@ -177,7 +244,16 @@ const stateColors: Record<string, string> = {
   "运行中": "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300",
   "已暂停": "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
   "已完成": "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300",
+  "等待人工审核": "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
+  "等待用户输入": "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300",
+  "等待交付确认": "bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300",
 };
+
+const workbenchTabs: WorkbenchTabMeta[] = [
+  { key: "overview", label: "总览", icon: LayoutDashboard, description: "查看今日待办、可创建流程和运行态概况" },
+  { key: "create", label: "创建任务", icon: PlayCircle, description: "浏览全部开放智能体流程，有权限的流程可创建任务" },
+  { key: "tasks", label: "任务中心", icon: ListTodo, description: "合并查看待办、运行中、暂停和历史完成任务" },
+];
 
 export function WorkbenchShell() {
   // 菜单来自后端（通过 authStore.menus），不再前端硬编码 visibleFor。
@@ -187,6 +263,7 @@ export function WorkbenchShell() {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const isDarkMode = themeMode === "dark";
+  const [messageApi, messageContextHolder] = message.useMessage();
 
   // 根据菜单列表确定初始页面（第一个菜单项）
   const [activeSurface, setActiveSurface] = useState<SurfaceKey | null>(() => {
@@ -208,9 +285,23 @@ export function WorkbenchShell() {
   // 侧栏折叠属于工作台级偏好，后续接入用户设置 API 后应从服务端恢复并跨设备同步。
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isSidebarTransitioning, setIsSidebarTransitioning] = useState(false);
+  const [activeWorkbenchTab, setActiveWorkbenchTab] = useState<WorkbenchTab>("overview");
   const sidebarTransitionTimer = useRef<number | null>(null);
   const isSidebarCompact = isSidebarCollapsed || isSidebarTransitioning;
   const showSidebarText = !isSidebarCompact;
+  const activeWorkbenchTabMeta = workbenchTabs.find((tab) => tab.key === activeWorkbenchTab) ?? workbenchTabs[0];
+  const workbenchSegmentedOptions = workbenchTabs.map((tab) => {
+    const Icon = tab.icon;
+    return {
+      value: tab.key,
+      label: (
+        <span className="login-portal-option">
+          <Icon className="login-portal-option-icon" aria-hidden="true" />
+          <span>{tab.label}</span>
+        </span>
+      ),
+    };
+  });
 
   useEffect(() => () => {
     if (sidebarTransitionTimer.current !== null) {
@@ -230,8 +321,19 @@ export function WorkbenchShell() {
     }, 320);
   }
 
+  function handleCreateTask(template: WorkflowTemplate) {
+    if (!template.canCreate) {
+      messageApi.warning(template.blockedReason ?? "当前账号暂无创建该任务的权限");
+      return;
+    }
+
+    // 任务运行 API 尚未接入，当前只在前端保留创建动作入口，后续替换为创建 WorkflowRun 后进入业务运行详情。
+    messageApi.success(`${template.title} 创建入口已就绪，后续将进入任务填写页`);
+  }
+
   return (
     <main className={`min-h-screen bg-[var(--color-bg-page)] text-[var(--color-text-primary)] transition-colors duration-300 ${isDarkMode ? "dark" : ""}`}>
+      {messageContextHolder}
       <div className="flex min-h-screen">
         {/* ===== 侧边栏 ===== */}
         <aside className={`hidden shrink-0 sticky top-0 h-screen max-h-screen overflow-hidden bg-[var(--color-bg-sidebar)] text-[var(--color-text-sidebar)] transition-[width,background-color] duration-300 lg:flex lg:flex-col ${isSidebarCollapsed ? "w-[var(--sidebar-collapsed-width)]" : "w-[var(--sidebar-width)]"}`}>
@@ -348,148 +450,154 @@ export function WorkbenchShell() {
 
           {/* 业务工作台内容 */}
           {activeSurface === "workbench" ? (
-            <div className="mx-auto max-w-[1400px] space-y-4 px-5 py-4 lg:px-6">
-              {/* 概览卡片 */}
-              <section className="agent-card p-5" aria-label="工作台总览">
-                <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-center">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-primary)]">今日运行概览</p>
-                    <h2 className="mt-2 text-lg font-semibold text-[var(--color-text-primary)]">
-                      从待办、运行态和模板入口开始推进核心闭环
-                    </h2>
-                    <p className="agent-muted mt-2 max-w-3xl text-sm leading-6">
-                      业务区只展示用户需要处理的步骤和交付状态，流程设计用阶段积木表达智能体协作。
-                    </p>
-                  </div>
-                  <div className="rounded-[var(--radius-md)] border border-indigo-200 bg-indigo-50 p-4 dark:border-indigo-800/40 dark:bg-indigo-950/30">
-                    <p className="text-sm font-semibold text-indigo-900 dark:text-indigo-100">MVP 进度</p>
-                    <div className="mt-3 h-1.5 rounded-full bg-indigo-100 dark:bg-indigo-900/50">
-                      <div className="h-1.5 w-2/5 rounded-full bg-[var(--color-primary)]" />
+            <div className="min-h-[calc(100vh-4rem)] bg-[var(--color-bg-page)] pb-10 pt-1">
+              <div className="mx-auto max-w-[1400px] px-5 lg:px-6">
+                <header className="mb-5 flex flex-col gap-4 border-b border-[var(--color-border-light)] pb-5 sm:flex-row sm:items-end sm:justify-between">
+                  <div className="flex min-w-0 gap-4">
+                    <div className="workbench-page-mark flex h-12 w-12 shrink-0 items-center justify-center rounded-[var(--radius-lg)]">
+                      <LayoutDashboard className="h-6 w-6" aria-hidden="true" />
                     </div>
-                    <p className="mt-3 text-xs text-indigo-700 dark:text-indigo-200">工作台、列表和编辑器骨架已就绪，下一步接入真实草稿 API。</p>
-                  </div>
-                </div>
-              </section>
-
-              {/* 指标卡片 */}
-              <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="关键指标">
-                {metrics.map((metric) => {
-                  const Icon = metric.icon;
-
-                  return (
-                    <article key={metric.label} className="agent-card p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-xs text-[var(--color-text-secondary)]">{metric.label}</p>
-                        <span className={`flex h-8 w-8 items-center justify-center rounded-lg ring-1 ${metric.tone}`}>
-                          <Icon className="h-4 w-4" aria-hidden="true" />
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h1 className="text-lg font-semibold tracking-tight text-[var(--color-text-primary)] sm:text-xl">业务工作台</h1>
+                        <span className="rounded-full bg-[var(--color-bg-hover)] px-2.5 py-0.5 text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-[var(--color-border-light)]">
+                          任务运行
                         </span>
                       </div>
-                      <p className="mt-3 text-2xl font-semibold text-[var(--color-text-primary)]">{metric.value}</p>
-                      <p className="agent-muted mt-1.5 text-xs">{metric.detail}</p>
-                    </article>
-                  );
-                })}
-              </section>
-
-              {/* 待办 + 运行态 */}
-              <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.65fr)]">
-                <section className="agent-card" aria-labelledby="todo-title">
-                  <div className="agent-card-header flex items-center justify-between">
-                    <div>
-                      <h2 id="todo-title" className="text-sm font-semibold text-[var(--color-text-primary)]">
-                        我的待办
-                      </h2>
-                      <p className="agent-muted mt-0.5 text-xs">流程已暂停，并且现在轮到我处理</p>
+                      <p className="agent-muted mt-1.5 max-w-2xl text-sm leading-relaxed">
+                        面向业务用户的任务入口：从总览进入任务创建、待办处理和任务续办；全部开放智能体流程可查看，有创建范围的流程才可发起任务。
+                      </p>
                     </div>
-                    <UserRoundCheck className="h-4 w-4 text-amber-600" aria-hidden="true" />
                   </div>
-                  <div className="divide-y divide-[var(--color-border-light)]">
-                    {todoItems.map((item) => (
-                      <article key={item.title} className="grid gap-3 px-4 py-3.5 md:grid-cols-[minmax(0,1fr)_120px] md:items-center">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="text-sm font-medium text-[var(--color-text-primary)]">{item.title}</h3>
-                            <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
-                              {item.status}
-                            </span>
-                          </div>
-                          <p className="agent-muted mt-1.5 text-xs">{item.workflow}</p>
-                          <p className="mt-0.5 text-[11px] text-[var(--color-text-tertiary)]">
-                            {item.owner} · {item.deadline}
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          className="agent-button h-8 px-2.5 text-xs"
-                        >
-                          <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
-                          处理
-                        </button>
-                      </article>
+                </header>
+
+                <div className="system-mgmt-module-switch mb-5">
+                  <div className="system-mgmt-segmented-scroll">
+                    <Segmented<WorkbenchTab>
+                      aria-label="业务工作台模块"
+                      value={activeWorkbenchTab}
+                      options={workbenchSegmentedOptions}
+                      onChange={setActiveWorkbenchTab}
+                      className="login-portal-segmented login-portal-segmented--business system-mgmt-segmented"
+                    />
+                  </div>
+                  <div className="login-portal-description login-portal-description--business">
+                    <span className="login-portal-description-dot" />
+                    {activeWorkbenchTabMeta.description}
+                  </div>
+                </div>
+
+              {activeWorkbenchTab === "overview" ? (
+                <>
+                  <section className="sys-overview-stats" aria-label="业务工作台概览">
+                    {metrics.map((metric) => (
+                      <WorkbenchOverviewStat key={metric.label} icon={metric.icon} label={metric.label} value={metric.value} tone={metric.tone} />
+                    ))}
+                  </section>
+
+                  <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]" aria-label="业务工作台总览">
+                    <section className="sys-preview-card">
+                      <div className="sys-preview-card-title"><LayoutDashboard size={16} /> 工作台功能入口</div>
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <WorkbenchFeatureCard
+                          icon={PlayCircle}
+                          title="创建任务"
+                          description="查看全部开放智能体流程，按创建权限发起业务任务。"
+                          meta={`${workflowTemplates.filter((template) => template.canCreate).length} 个可创建流程`}
+                          onClick={() => setActiveWorkbenchTab("create")}
+                        />
+                        <WorkbenchFeatureCard
+                          icon={ListTodo}
+                          title="我的待办"
+                          description="处理需要我补充资料、确认结果、人工审核或交付确认的暂停点。"
+                          meta={`${todoItems.length} 个待办`}
+                          onClick={() => setActiveWorkbenchTab("tasks")}
+                        />
+                        <WorkbenchFeatureCard
+                          icon={PauseCircle}
+                          title="暂停续办"
+                          description="从正在进行和已暂停任务中恢复上下文，继续推进下一步。"
+                          meta={`${runRecords.filter((record) => record.state !== "已完成").length} 个可继续任务`}
+                          onClick={() => setActiveWorkbenchTab("tasks")}
+                        />
+                        <WorkbenchFeatureCard
+                          icon={Archive}
+                          title="历史完成"
+                          description="查看已完成任务与交付结果，后续可进入运行详情追溯过程。"
+                          meta={`${runRecords.filter((record) => record.state === "已完成").length} 个完成任务`}
+                          onClick={() => setActiveWorkbenchTab("tasks")}
+                        />
+                      </div>
+                    </section>
+
+                    <aside className="sys-preview-card">
+                      <div className="sys-preview-card-title"><History size={16} /> 最近任务</div>
+                      <div className="space-y-2">
+                        {runRecords.slice(0, 4).map((record) => (
+                          <WorkbenchPreviewItem
+                            key={record.name}
+                            title={record.name}
+                            description={`${record.node} · ${record.owner}`}
+                            meta={`${record.progress} · ${record.updatedAt}`}
+                            badge={record.state}
+                            icon={record.state === "已完成" ? CheckCircle2 : record.state === "已暂停" ? PauseCircle : Activity}
+                          />
+                        ))}
+                      </div>
+                    </aside>
+                  </section>
+                </>
+              ) : null}
+
+              {activeWorkbenchTab === "create" ? (
+                <section className="sys-preview-card" aria-labelledby="create-task-title">
+                  <div id="create-task-title" className="sys-preview-card-title"><ClipboardList size={16} /> 开放智能体流程</div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {workflowTemplates.map((template) => (
+                      <WorkbenchFlowCard key={template.title} template={template} onCreate={() => handleCreateTask(template)} />
                     ))}
                   </div>
                 </section>
+              ) : null}
 
-                <section className="agent-card" aria-labelledby="run-title">
-                  <div className="agent-card-header flex items-center justify-between">
-                    <div>
-                      <h2 id="run-title" className="text-sm font-semibold text-[var(--color-text-primary)]">
-                        运行态摘要
-                      </h2>
-                      <p className="agent-muted mt-0.5 text-xs">我有权限查看的流程位置，不一定需要我处理</p>
+              {activeWorkbenchTab === "tasks" ? (
+                <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]" aria-label="任务中心">
+                  <section className="sys-preview-card">
+                    <div className="sys-preview-card-title"><UserRoundCheck size={16} /> 我的待办</div>
+                    <div className="space-y-2">
+                      {todoItems.map((item) => (
+                        <WorkbenchPreviewItem
+                          key={item.title}
+                          title={item.title}
+                          description={`${item.workflow} · ${item.owner}`}
+                          meta={`${item.action} · ${item.deadline}`}
+                          badge={item.status}
+                          icon={UserRoundCheck}
+                          actionLabel="处理"
+                        />
+                      ))}
                     </div>
-                    <Activity className="h-4 w-4 text-sky-600" aria-hidden="true" />
-                  </div>
-                  <div className="space-y-2.5 p-4">
-                    {runRecords.map((record) => (
-                      <article key={record.name} className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-3">
-                        <div className="flex items-center justify-between gap-3">
-                          <h3 className="min-w-0 text-xs font-medium">{record.name}</h3>
-                          <span className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium ${stateColors[record.state] ?? ""}`}>
-                            {record.state}
-                          </span>
-                        </div>
-                        <p className="agent-muted mt-2 text-xs">{record.node}</p>
-                        <p className="mt-0.5 text-[11px] text-[var(--color-text-tertiary)]">已执行 {record.duration}</p>
-                      </article>
-                    ))}
-                  </div>
+                  </section>
+
+                  <section className="sys-preview-card">
+                    <div className="sys-preview-card-title"><History size={16} /> 任务记录</div>
+                    <div className="space-y-2">
+                      {runRecords.map((record) => (
+                        <WorkbenchPreviewItem
+                          key={record.name}
+                          title={record.name}
+                          description={`${record.node} · ${record.owner}`}
+                          meta={`${record.progress} · 更新于 ${record.updatedAt}`}
+                          badge={record.state}
+                          icon={record.state === "已完成" ? CheckCircle2 : record.state === "已暂停" ? PauseCircle : Activity}
+                          actionLabel={record.state === "已完成" ? "查看" : "继续"}
+                        />
+                      ))}
+                    </div>
+                  </section>
                 </section>
+              ) : null}
               </div>
-
-              {/* 流程模板 */}
-              <section className="agent-card" aria-labelledby="template-title">
-                <div className="agent-card-header flex items-center justify-between">
-                  <div>
-                    <h2 id="template-title" className="text-sm font-semibold text-[var(--color-text-primary)]">
-                      可用流程模板
-                    </h2>
-                    <p className="agent-muted mt-0.5 text-xs">点击后创建一次流程运行，进入业务步骤页</p>
-                  </div>
-                  <Archive className="h-4 w-4 text-violet-600" aria-hidden="true" />
-                </div>
-                <div className="grid gap-3 p-4 lg:grid-cols-3">
-                  {workflowTemplates.map((template) => (
-                    <article key={template.title} className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-4 transition-all duration-200 hover:border-[var(--color-primary)] hover:bg-[var(--color-bg-card)] hover:shadow-sm">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[11px] font-medium text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300">
-                          {template.tag}
-                        </span>
-                        <span className="text-[11px] text-[var(--color-text-tertiary)]">{template.nodes}</span>
-                      </div>
-                      <h3 className="mt-3 text-sm font-medium text-[var(--color-text-primary)]">{template.title}</h3>
-                      <p className="agent-muted mt-1.5 min-h-10 text-xs leading-5">{template.description}</p>
-                      <button
-                        type="button"
-                        className="agent-button agent-button-primary mt-3 h-8 px-2.5 text-xs"
-                      >
-                        <FileText className="h-3.5 w-3.5" aria-hidden="true" />
-                        {template.startLabel}
-                      </button>
-                    </article>
-                  ))}
-                </div>
-              </section>
             </div>
           ) : null}
 
@@ -505,5 +613,131 @@ export function WorkbenchShell() {
         </section>
       </div>
     </main>
+  );
+}
+
+function WorkbenchOverviewStat({ icon: Icon, label, value, tone }: { icon: LucideIcon; label: string; value: string; tone: "primary" | "success" | "info" | "cap" }) {
+  return (
+    <div className="sys-overview-stat">
+      <div className={`sys-overview-stat-icon sys-overview-stat-icon--${tone}`}>
+        <Icon size={20} aria-hidden="true" />
+      </div>
+      <div>
+        <div className="sys-overview-stat-value">{value}</div>
+        <div className="sys-overview-stat-label">{label}</div>
+      </div>
+    </div>
+  );
+}
+
+function WorkbenchFeatureCard({
+  icon: Icon,
+  title,
+  description,
+  meta,
+  onClick,
+}: {
+  icon: LucideIcon;
+  title: string;
+  description: string;
+  meta: string;
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" onClick={onClick} className="workflow-feature-card">
+      <span className="workflow-feature-card-head">
+        <span className="workflow-feature-card-icon">
+          <Icon size={16} aria-hidden="true" />
+        </span>
+        <span className="workflow-feature-card-title">{title}</span>
+      </span>
+      <span className="workflow-feature-card-description">{description}</span>
+      <span className="workflow-feature-card-meta">
+        {meta}
+        <ArrowRight size={14} aria-hidden="true" />
+      </span>
+    </button>
+  );
+}
+
+function WorkbenchFlowCard({ template, onCreate }: { template: WorkflowTemplate; onCreate: () => void }) {
+  return (
+    <button type="button" onClick={onCreate} className="workflow-feature-card">
+      <span className="workflow-feature-card-head">
+        <span className="workflow-feature-card-icon">
+          {template.canCreate ? <PlayCircle size={16} aria-hidden="true" /> : <Lock size={16} aria-hidden="true" />}
+        </span>
+        <span className="min-w-0">
+          <span className="workflow-feature-card-title block">{template.title}</span>
+          <span className="mt-1 block text-[11px] text-[var(--color-text-tertiary)]">{template.agent} · {template.nodes}</span>
+        </span>
+      </span>
+      <span className="workflow-feature-card-description">{template.description}</span>
+      <span className="mt-3 flex flex-wrap gap-1.5">
+        {template.flow.map((step) => (
+          <span key={step} className="rounded border border-[var(--color-border-light)] bg-[var(--color-bg-card)] px-2 py-1 text-[11px] text-[var(--color-text-secondary)]">
+            {step}
+          </span>
+        ))}
+      </span>
+      <span className="mt-3 flex flex-wrap gap-1.5">
+        {template.capabilityAssets.map((asset) => (
+          <span key={asset} className="rounded bg-sky-50 px-2 py-1 text-[11px] text-sky-700 dark:bg-sky-950/30 dark:text-sky-300">
+            {asset}
+          </span>
+        ))}
+      </span>
+      {template.blockedReason ? (
+        <span className="mt-3 flex items-center gap-1.5 text-xs text-[var(--color-warning)]">
+          <CircleAlert className="h-3.5 w-3.5" aria-hidden="true" />
+          {template.blockedReason}
+        </span>
+      ) : null}
+      <span className="workflow-feature-card-meta">
+        {template.canCreate ? template.startLabel : "无权限创建"}
+        <ArrowRight size={14} aria-hidden="true" />
+      </span>
+    </button>
+  );
+}
+
+function WorkbenchPreviewItem({
+  title,
+  description,
+  meta,
+  badge,
+  icon: Icon,
+  actionLabel,
+}: {
+  title: string;
+  description: string;
+  meta: string;
+  badge: string;
+  icon: LucideIcon;
+  actionLabel?: string;
+}) {
+  return (
+    <div className="sys-preview-item">
+      <div className="sys-preview-item-left">
+        <span className="sys-preview-item-icon sys-card-avatar--cap">
+          <Icon size={16} aria-hidden="true" />
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{title}</p>
+          <p className="truncate text-xs text-[var(--color-text-secondary)]">{description}</p>
+          <p className="truncate text-[11px] text-[var(--color-text-tertiary)]">{meta}</p>
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${stateColors[badge] ?? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"}`}>
+          {badge}
+        </span>
+        {actionLabel ? (
+          <button type="button" className="agent-button h-7 px-2 text-xs">
+            {actionLabel}
+          </button>
+        ) : null}
+      </div>
+    </div>
   );
 }

@@ -1248,6 +1248,19 @@ textarea:focus-visible {
   color: color-mix(in srgb, #fbbf24 88%, #ffffff);
 }
 
+.workbench-page-mark {
+  border: 1px solid color-mix(in srgb, var(--color-primary) 24%, var(--color-border));
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-bg-card));
+  color: var(--color-primary);
+  box-shadow: var(--shadow-xs);
+}
+
+.dark .workbench-page-mark {
+  border-color: color-mix(in srgb, var(--color-primary-light) 38%, var(--color-border));
+  background: color-mix(in srgb, var(--color-primary) 16%, var(--color-bg-card));
+  color: color-mix(in srgb, var(--color-primary-light) 88%, #ffffff);
+}
+
 .asset-mgmt-page-mark {
   border: 1px solid color-mix(in srgb, var(--color-primary) 24%, var(--color-border));
   background: color-mix(in srgb, var(--color-primary) 10%, var(--color-bg-card));
