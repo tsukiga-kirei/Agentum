@@ -245,9 +245,9 @@ public class WorkflowDraftService {
                 normalizeRequired(node.name()),
                 BigDecimal.valueOf(node.positionX()),
                 BigDecimal.valueOf(node.positionY()),
-                writeJsonArray(node.inputVariables()),
-                writeJsonArray(node.outputVariables()),
-                writeJsonObject(node.config()),
+                node.inputVariables(),
+                node.outputVariables(),
+                node.config(),
                 index,
                 now
             ));
@@ -395,9 +395,9 @@ public class WorkflowDraftService {
             node.getName(),
             node.getPositionX().doubleValue(),
             node.getPositionY().doubleValue(),
-            readJsonArray(node.getInputVariables()),
-            readJsonArray(node.getOutputVariables()),
-            readJsonObject(node.getConfig())
+            node.getInputVariables(),
+            node.getOutputVariables(),
+            node.getConfig()
         );
     }
 
@@ -427,15 +427,6 @@ public class WorkflowDraftService {
         return userAccountRepository.findAll().stream().collect(Collectors.toMap(UserAccount::getId, Function.identity()));
     }
 
-    private String writeJsonArray(List<String> values) {
-        try {
-            return objectMapper.writeValueAsString(values == null ? List.of() : values);
-        } catch (JsonProcessingException exception) {
-            log.error("工作流节点变量序列化失败 requestId={}", RequestIds.current(), exception);
-            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "SYSTEM_JSON_SERIALIZE_FAILED", "系统暂时无法保存节点变量");
-        }
-    }
-
     private String writeJsonObject(Map<String, Object> values) {
         try {
             return objectMapper.writeValueAsString(values == null ? Map.of() : values);
@@ -458,15 +449,6 @@ public class WorkflowDraftService {
         } catch (JsonProcessingException exception) {
             log.error("工作流发布快照序列化失败 workflowId={} requestId={}", definition.getId(), RequestIds.current(), exception);
             throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "SYSTEM_JSON_SERIALIZE_FAILED", "系统暂时无法生成工作流发布版本");
-        }
-    }
-
-    private List<String> readJsonArray(String value) {
-        try {
-            return objectMapper.readValue(value, new TypeReference<List<String>>() {});
-        } catch (JsonProcessingException exception) {
-            log.warn("工作流节点变量解析失败 requestId={}", RequestIds.current());
-            return List.of();
         }
     }
 

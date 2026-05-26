@@ -1,26 +1,25 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Select } from "antd";
 import {
   AlertTriangle,
   ArrowDown,
   ArrowUp,
   Bot,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   Clock3,
-  FileText,
   Layers3,
   ListChecks,
-  MessageSquareText,
   PackageCheck,
   Plus,
-  RefreshCw,
   Save,
   Search,
   Settings2,
   TextCursorInput,
   Trash2,
-  Wrench,
+  X,
   Zap,
 } from "lucide-react";
 import { AgentumApiError, assetApi, workflowApi } from "../../services/apiClient";
@@ -86,6 +85,7 @@ type InputFieldConfig = {
   label: string;
   variable: string;
   placeholder: string;
+  defaultValue: string;
 };
 
 type ClusterAgentConfig = {
@@ -93,9 +93,12 @@ type ClusterAgentConfig = {
   name: string;
   agentAssetId: string;
   promptTemplateId: string;
+  systemPromptTemplateId: string;
+  userPromptTemplateId: string;
   skillIds: string[];
   mcpIds: string[];
-  prompt: string;
+  systemPrompt: string;
+  userPrompt: string;
   output: string;
 };
 
@@ -123,6 +126,8 @@ type WorkflowEditorPageProps = {
 };
 
 const SYSTEM_TRIGGER_ID = "trigger_manual";
+const workflowSelectClassNames = { popup: { root: "agent-select-dropdown agent-admin-select-dropdown" } };
+const workflowSelectSuffixIcon = <ChevronDown className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />;
 
 const nodeTypeLabels: Record<WorkflowNodeType, string> = {
   trigger: "系统触发",
@@ -144,7 +149,7 @@ const brickDefinitions: Record<VisibleWorkflowBrickType, {
 }> = {
   input: {
     label: "输入节点",
-    description: "配置用户需要填写的输入框和输出参数",
+    description: "配置用户需要填写的输入框和输出内容",
     icon: TextCursorInput,
     nodeType: "user_input",
     accentClass: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
@@ -158,7 +163,7 @@ const brickDefinitions: Record<VisibleWorkflowBrickType, {
   },
   cluster: {
     label: "智能体集群节点",
-    description: "编排多个智能体并配置拼接与汇总规则",
+    description: "编排多个智能体并行执行并汇总成果",
     icon: Layers3,
     nodeType: "parallel_group",
     accentClass: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300",
@@ -291,13 +296,14 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
     () => declaredVariables.length > 0 ? declaredVariables : buildWorkflowVariables(orderedNodes, designerCatalog?.variableMetadata),
     [declaredVariables, designerCatalog?.variableMetadata, orderedNodes],
   );
+  const businessVariables = workflowVariables.filter((variable) => variable.sourceNodeId !== SYSTEM_TRIGGER_ID);
   const availableVariables = workflowVariables.filter((variable) => {
     if (!selectedNode) {
       return true;
     }
     const sourceIndex = visibleNodes.findIndex((node) => node.id === variable.sourceNodeId);
 
-    return variable.sourceNodeId === SYSTEM_TRIGGER_ID || (sourceIndex >= 0 && sourceIndex < selectedNodeIndex);
+    return sourceIndex >= 0 && sourceIndex < selectedNodeIndex;
   });
   const incompleteNodes = visibleNodes.filter((node) => node.data.configStatus === "incomplete");
   const matchedNodes = visibleNodes.filter((node) => node.data.label.includes(nodeSearchValue.trim()));
@@ -378,7 +384,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
       setSaveFeedback({ tone: "error", message: "当前积木模板不存在，请刷新后重试" });
       return;
     }
-    const previousOutputs = visibleNodes.length > 0 ? visibleNodes[visibleNodes.length - 1].data.outputVariables : ["starter"];
+    const previousOutputs = visibleNodes.length > 0 ? visibleNodes[visibleNodes.length - 1].data.outputVariables : [];
     const nextNode = createNodeFromTemplate(template, visibleNodes.length + 1, previousOutputs);
     commitVisibleNodes([...visibleNodes, nextNode], nextNode.id);
     setIsAddBrickModalOpen(false);
@@ -552,7 +558,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
           ) : (
             <WorkflowOverviewPanel
               nodes={visibleNodes}
-              variables={workflowVariables}
+              variables={businessVariables}
               incompleteNodes={incompleteNodes}
               onSelectNode={setSelectedNodeId}
               onOpenAddBrick={() => setIsAddBrickModalOpen(true)}
@@ -678,8 +684,7 @@ function WorkflowStepRow({
         </div>
       </div>
       <div className="flex flex-wrap gap-1.5 border-t border-[var(--color-border-light)] px-2.5 py-2">
-        <TinyBadge>入 {node.data.inputVariables.length}</TinyBadge>
-        <TinyBadge>出 {node.data.outputVariables.length}</TinyBadge>
+        <TinyBadge>输出 {node.data.outputVariables.length}</TinyBadge>
         {node.data.allowQuestion ? <TinyBadge tone="info">追问</TinyBadge> : null}
       </div>
     </article>
@@ -788,36 +793,13 @@ function NodeConfigPanel({
       </div>
 
       <div className="grid gap-4 p-5 xl:grid-cols-2">
-        <PanelGroup title="基础信息">
-          <label className="sys-field">
-            <span className="sys-field-label">步骤名称</span>
-            <input
-              value={node.data.label}
-              onChange={(event) => onUpdateNode({ label: event.target.value })}
-              className="sys-field-input"
-              placeholder="请输入步骤名称"
-            />
-          </label>
-          <label className="sys-field">
-            <span className="sys-field-label">步骤说明</span>
-            <textarea
-              value={node.data.summary}
-              onChange={(event) => onUpdateNode({ summary: event.target.value })}
-              className="sys-field-textarea"
-              placeholder="说明这一步要完成什么任务"
-            />
-          </label>
-        </PanelGroup>
-
-        <ParameterPanel
+        <BasicInfoPanel
           node={node}
+          brickType={brickType}
           availableVariables={availableVariables}
           onUpdateNode={onUpdateNode}
+          onUpdateConfig={onUpdateConfig}
         />
-
-        {brickType === "input" ? (
-          <InputBrickConfig node={node} onUpdateConfig={onUpdateConfig} onUpdateNode={onUpdateNode} />
-        ) : null}
 
         {brickType === "agent" ? (
           <SingleAgentBrickConfig node={node} availableVariables={availableVariables} capabilityState={capabilityState} onUpdateConfig={onUpdateConfig} onUpdateNode={onUpdateNode} />
@@ -828,22 +810,20 @@ function NodeConfigPanel({
         ) : null}
 
         {brickType === "delivery" ? (
-          <DeliveryBrickConfig node={node} workflowVariables={workflowVariables} capabilityState={capabilityState} onUpdateConfig={onUpdateConfig} />
+          <DeliveryBrickConfig node={node} workflowVariables={availableVariables} capabilityState={capabilityState} onUpdateConfig={onUpdateConfig} />
         ) : null}
 
-        {(brickType === "agent" || brickType === "cluster") ? (
-          <InteractionConfig node={node} onUpdateNode={onUpdateNode} />
-        ) : null}
-
-        <button
-          type="button"
-          onClick={() => void onSave()}
-          disabled={saving}
-          className="agent-button agent-button-primary h-10 w-full px-3 text-sm xl:col-span-2"
-        >
-          <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-          {saving ? "保存中" : "保存当前积木"}
-        </button>
+        <div className="flex justify-end xl:col-span-2">
+          <button
+            type="button"
+            onClick={() => void onSave()}
+            disabled={saving}
+            className="agent-button agent-button-primary h-9 px-4 text-sm"
+          >
+            <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+            {saving ? "保存中" : "保存当前积木"}
+          </button>
+        </div>
       </div>
     </aside>
   );
@@ -874,7 +854,7 @@ function WorkflowOverviewPanel({
       </div>
       <div className="grid grid-cols-3 gap-2">
         <OverviewMetric label="步骤" value={String(nodes.length)} />
-        <OverviewMetric label="变量" value={String(variables.length)} />
+        <OverviewMetric label="输出" value={String(variables.length)} />
         <OverviewMetric label="待配" value={String(incompleteNodes.length)} />
       </div>
       <PanelGroup title="待配置积木">
@@ -891,8 +871,8 @@ function WorkflowOverviewPanel({
           </div>
         )}
       </PanelGroup>
-      <PanelGroup title="输出参数">
-        <VariableList variables={variables.map((variable) => variable.name)} emptyText="暂无输出参数" />
+      <PanelGroup title="输出内容">
+        <VariableList variables={variables.map((variable) => variable.name)} emptyText="暂无输出内容" />
       </PanelGroup>
     </aside>
   );
@@ -910,9 +890,9 @@ function EmptyWorkflowGuide({ onOpenAddBrick }: { onOpenAddBrick: () => void }) 
           推荐先添加输入节点收集业务资料，再接单智能体或智能体集群处理，最后用交付节点生成文档、邮件或 OA 结果。
         </p>
         <div className="mt-5 grid gap-3 text-left md:grid-cols-3">
-          <BuildGuideCard title="输入" detail="定义用户需要填写的字段和输出参数。" />
+          <BuildGuideCard title="输入" detail="定义用户需要填写的字段和输出内容。" />
           <BuildGuideCard title="处理" detail="选择智能体、Skill、MCP 和提示词模板。" />
-          <BuildGuideCard title="交付" detail="配置最终结果变量和交付方式。" />
+          <BuildGuideCard title="交付" detail="配置最终输出内容和交付方式。" />
         </div>
         <button type="button" onClick={onOpenAddBrick} className="agent-button agent-button-primary mt-6 h-9 px-4 text-sm">
           <Plus className="h-4 w-4" aria-hidden="true" />
@@ -932,92 +912,145 @@ function BuildGuideCard({ title, detail }: { title: string; detail: string }) {
   );
 }
 
-function ParameterPanel({
+function BasicInfoPanel({
   node,
+  brickType,
   availableVariables,
   onUpdateNode,
+  onUpdateConfig,
 }: {
   node: WorkflowEditorNode;
+  brickType: VisibleWorkflowBrickType;
   availableVariables: WorkflowVariable[];
   onUpdateNode: (patch: Partial<EditorNodeData>) => void;
+  onUpdateConfig: (nextConfig: Record<string, unknown>) => void;
 }) {
   return (
-    <PanelGroup title="输入输出参数">
+    <PanelGroup title="基础信息" className={brickType === "input" ? "xl:col-span-2" : undefined}>
       <label className="sys-field">
-        <span className="sys-field-label">输入参数</span>
-        <VariableSelectList
-          selectedVariables={node.data.inputVariables}
-          availableVariables={availableVariables.map((variable) => variable.name)}
-          onChange={(variables) => onUpdateNode({ inputVariables: variables })}
-        />
-      </label>
-      <label className="sys-field">
-        <span className="sys-field-label">输出参数</span>
+        <span className="sys-field-label">步骤名称</span>
         <input
-          value={node.data.outputVariables.join(", ")}
-          onChange={(event) => onUpdateNode({ outputVariables: parseVariableList(event.target.value) })}
+          value={node.data.label}
+          onChange={(event) => onUpdateNode({ label: event.target.value })}
           className="sys-field-input"
-          placeholder="例如：agent_response"
+          placeholder="请输入步骤名称"
         />
-        <span className="sys-field-hint">多个参数用英文逗号分隔；下游积木通过这些参数衔接。</span>
       </label>
+      <label className="sys-field">
+        <span className="sys-field-label">步骤说明</span>
+        <textarea
+          value={node.data.summary}
+          onChange={(event) => onUpdateNode({ summary: event.target.value })}
+          className="sys-field-textarea"
+          placeholder="说明这一步要完成什么任务"
+        />
+      </label>
+      {brickType === "input" ? (
+        <InputFieldsManager
+          node={node}
+          availableVariables={availableVariables}
+          onUpdateConfig={onUpdateConfig}
+          onUpdateNode={onUpdateNode}
+        />
+      ) : null}
+      {brickType === "agent" || brickType === "delivery" ? (
+        <OutcomeVariableField
+          label={brickType === "delivery" ? "交付输出内容" : "智能体输出内容"}
+          value={node.data.outputVariables[0] ?? ""}
+          placeholder={brickType === "delivery" ? "delivery_record" : "agent_output"}
+          onChange={(value) => onUpdateNode({ outputVariables: value ? [normalizeVariableName(value)] : [] })}
+        />
+      ) : null}
     </PanelGroup>
   );
 }
 
-function InputBrickConfig({
+function OutcomeVariableField({
+  label,
+  value,
+  placeholder,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  placeholder: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="sys-field">
+      <span className="sys-field-label">{label}</span>
+      <input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="sys-field-input"
+        placeholder={placeholder}
+      />
+    </label>
+  );
+}
+
+function InputFieldsManager({
   node,
+  availableVariables,
   onUpdateConfig,
   onUpdateNode,
 }: {
   node: WorkflowEditorNode;
+  availableVariables: WorkflowVariable[];
   onUpdateConfig: (nextConfig: Record<string, unknown>) => void;
   onUpdateNode: (patch: Partial<EditorNodeData>) => void;
 }) {
+  const [editingField, setEditingField] = useState<InputFieldConfig | null>(null);
   const fields = readInputFields(node.data.rawConfig?.inputFields, node.data.outputVariables);
 
-  function updateField(fieldId: string, patch: Partial<InputFieldConfig>) {
-    const nextFields = fields.map((field) => field.id === fieldId ? { ...field, ...patch } : field);
+  function commitFields(nextFields: InputFieldConfig[]) {
     onUpdateConfig({ inputFields: nextFields });
     onUpdateNode({ outputVariables: nextFields.map((field) => field.variable).filter(Boolean) });
   }
 
   return (
-    <PanelGroup title="输入框配置">
+    <div className="workflow-input-field-manager">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <span className="text-sm font-semibold text-[var(--color-text-primary)]">输入框</span>
+        <button type="button" onClick={() => setEditingField(createInputField(fields.length))} className="agent-button h-8 px-3 text-xs">
+          <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+          新增输入框
+        </button>
+      </div>
       <div className="space-y-3">
         {fields.map((field, index) => (
-          <article key={field.id} className="rounded-[var(--radius-md)] bg-[var(--color-bg-card)] p-3 ring-1 ring-[var(--color-border-light)]">
-            <div className="mb-3 flex items-center justify-between">
-              <span className="text-xs font-medium text-[var(--color-text-tertiary)]">输入框 {index + 1}</span>
+          <article key={field.id} className="workflow-input-field-row">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-medium text-[var(--color-text-tertiary)]">输入框 {index + 1}</span>
+                <TinyBadge>{field.variable}</TinyBadge>
+              </div>
+              <p className="mt-1 truncate text-sm font-semibold text-[var(--color-text-primary)]">{field.label}</p>
+              <p className="mt-1 line-clamp-1 text-xs text-[var(--color-text-secondary)]">{field.placeholder || "未设置占位提示"}</p>
             </div>
-            <label className="sys-field">
-              <span className="sys-field-label">显示名称</span>
-              <input value={field.label} onChange={(event) => updateField(field.id, { label: event.target.value })} className="sys-field-input" />
-            </label>
-            <label className="sys-field">
-              <span className="sys-field-label">输出参数名</span>
-              <input value={field.variable} onChange={(event) => updateField(field.id, { variable: normalizeVariableName(event.target.value) })} className="sys-field-input" />
-            </label>
-            <label className="sys-field">
-              <span className="sys-field-label">占位提示</span>
-              <input value={field.placeholder} onChange={(event) => updateField(field.id, { placeholder: event.target.value })} className="sys-field-input" />
-            </label>
+            <div className="flex shrink-0 items-center gap-1">
+              <button type="button" onClick={() => setEditingField(field)} className="agent-button h-8 px-2 text-xs">编辑</button>
+              <IconButton label="删除输入框" icon={Trash2} tone="danger" onClick={() => commitFields(fields.filter((item) => item.id !== field.id))} />
+            </div>
           </article>
         ))}
+        {fields.length === 0 ? (
+          <p className="rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-light)] bg-[var(--color-bg-card)] px-3 py-4 text-center text-sm text-[var(--color-text-tertiary)]">暂无输入框</p>
+        ) : null}
       </div>
-      <button
-        type="button"
-        onClick={() => {
-          const nextField = createInputField(fields.length);
-          onUpdateConfig({ inputFields: [...fields, nextField] });
-          onUpdateNode({ outputVariables: [...node.data.outputVariables, nextField.variable] });
-        }}
-        className="agent-button mt-3 h-9 px-3 text-xs"
-      >
-        <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-        添加输入框
-      </button>
-    </PanelGroup>
+      {editingField ? (
+        <InputFieldModal
+          field={editingField}
+          availableVariables={availableVariables}
+          onClose={() => setEditingField(null)}
+          onSave={(field) => {
+            const exists = fields.some((item) => item.id === field.id);
+            commitFields(exists ? fields.map((item) => item.id === field.id ? field : item) : [...fields, field]);
+            setEditingField(null);
+          }}
+        />
+      ) : null}
+    </div>
   );
 }
 
@@ -1034,6 +1067,7 @@ function SingleAgentBrickConfig({
   onUpdateConfig: (nextConfig: Record<string, unknown>) => void;
   onUpdateNode: (patch: Partial<EditorNodeData>) => void;
 }) {
+  const [modalOpen, setModalOpen] = useState(false);
   const config = node.data.rawConfig ?? {};
   const agentAssets = filterCapabilities(capabilityState.capabilities, "agent_template");
   const promptAssets = filterCapabilities(capabilityState.capabilities, "prompt_template");
@@ -1041,53 +1075,67 @@ function SingleAgentBrickConfig({
   const skillAssets = filterCapabilities(capabilityState.capabilities, "skill");
   const selectedMcps = readStringArray(config.mcpServices, []);
   const selectedSkills = readStringArray(config.skills, []);
+  const agentName = findCapabilityName(agentAssets, readString(config.agentAssetId, "custom"), "自定义智能体");
+  const systemPromptName = findCapabilityName(promptAssets, readString(config.systemPromptTemplateId, readString(config.promptTemplateId, "none")), "系统提示词自定义");
+  const userPromptName = findCapabilityName(promptAssets, readString(config.userPromptTemplateId, "none"), "用户提示词自定义");
 
   return (
-    <PanelGroup title="智能体配置">
+    <PanelGroup title="智能体配置" className="xl:col-span-2">
       <CapabilityStateBanner state={capabilityState} />
-      <CapabilitySelectField
-        label="智能体模板"
-        value={readString(config.agentAssetId, "custom")}
-        emptyValue="custom"
-        emptyLabel="自定义智能体"
-        options={agentAssets}
-        onChange={(value) => onUpdateConfig({ agentAssetId: value, agentSource: value === "custom" ? "custom" : "asset" })}
-      />
-      <CapabilitySelectField
-        label="提示词模板"
-        value={readString(config.promptTemplateId, "none")}
-        emptyValue="none"
-        emptyLabel="不使用模板"
-        options={promptAssets}
-        onChange={(value) => onUpdateConfig({ promptTemplateId: value })}
-      />
-      <label className="sys-field">
-        <span className="sys-field-label">自定义提示词</span>
-        <textarea
-          value={readString(config.systemPrompt, "请配置这个智能体的角色、任务边界和输出要求。")}
-          onChange={(event) => onUpdateConfig({ systemPrompt: event.target.value })}
-          className="sys-field-textarea"
-          placeholder="配置这个智能体的角色、任务边界和输出要求"
+      <div className="workflow-config-list-box">
+        <div className="workflow-config-list-header">
+          <span>智能体</span>
+          <button type="button" className="agent-button h-8 px-2 text-xs" onClick={() => setModalOpen(true)}>编辑配置</button>
+        </div>
+        <div className="workflow-agent-summary-row">
+          <button type="button" className="workflow-agent-summary-main" onClick={() => setModalOpen(true)}>
+            <span className="workflow-agent-summary-icon"><Bot className="h-4 w-4" aria-hidden="true" /></span>
+            <span className="min-w-0 text-left">
+              <span className="block truncate text-sm font-semibold text-[var(--color-text-primary)]">{agentName}</span>
+              <span className="mt-1 block truncate text-xs text-[var(--color-text-secondary)]">
+                {systemPromptName} / {userPromptName} · Skill {selectedSkills.length} · MCP {selectedMcps.length} · {node.data.outputMode}
+              </span>
+            </span>
+          </button>
+          <div className="flex shrink-0 items-center gap-1">
+            <IconButton
+              label="清空智能体配置"
+              icon={Trash2}
+              tone="danger"
+              onClick={() => {
+                onUpdateConfig({
+                  agentAssetId: "custom",
+                  agentSource: "custom",
+                  promptTemplateId: "none",
+                  systemPromptTemplateId: "none",
+                  userPromptTemplateId: "none",
+                  systemPrompt: "",
+                  userPrompt: "",
+                  mcpServices: [],
+                  skills: [],
+                });
+                onUpdateNode({ toolCount: 0, outputMode: "一次性输出", allowQuestion: false });
+              }}
+            />
+          </div>
+        </div>
+      </div>
+      {modalOpen ? (
+        <SingleAgentConfigModal
+          node={node}
+          availableVariables={availableVariables}
+          agentAssets={agentAssets}
+          promptAssets={promptAssets}
+          mcpAssets={mcpAssets}
+          skillAssets={skillAssets}
+          onClose={() => setModalOpen(false)}
+          onSave={(nextConfig, patch) => {
+            onUpdateConfig(nextConfig);
+            onUpdateNode(patch);
+            setModalOpen(false);
+          }}
         />
-      </label>
-      <CapabilityToggleGroup
-        title="MCP"
-        options={mcpAssets}
-        selectedIds={selectedMcps}
-        emptyText="暂无可引用 MCP，请先在能力资产中确认分配范围。"
-        onChange={(values) => {
-          onUpdateConfig({ mcpServices: values });
-          onUpdateNode({ toolCount: values.length });
-        }}
-      />
-      <CapabilityToggleGroup
-        title="Skill"
-        options={skillAssets}
-        selectedIds={selectedSkills}
-        emptyText="暂无可引用 Skill，请先在能力资产中确认分配范围。"
-        onChange={(values) => onUpdateConfig({ skills: values })}
-      />
-      <p className="text-xs leading-5 text-[var(--color-text-tertiary)]">可引用输入：{availableVariables.map((variable) => variable.name).join("、") || "暂无"}</p>
+      ) : null}
     </PanelGroup>
   );
 }
@@ -1106,96 +1154,58 @@ function AgentClusterBrickConfig({
   onUpdateNode: (patch: Partial<EditorNodeData>) => void;
 }) {
   const config = node.data.rawConfig ?? {};
+  const [editingAgent, setEditingAgent] = useState<ClusterAgentConfig | null>(null);
   const agents = readClusterAgents(config.clusterAgents);
   const agentAssets = filterCapabilities(capabilityState.capabilities, "agent_template");
   const promptAssets = filterCapabilities(capabilityState.capabilities, "prompt_template");
   const mcpAssets = filterCapabilities(capabilityState.capabilities, "mcp");
   const skillAssets = filterCapabilities(capabilityState.capabilities, "skill");
 
-  function updateAgent(agentId: string, patch: Partial<ClusterAgentConfig>) {
-    const nextAgents = agents.map((agent) => agent.id === agentId ? { ...agent, ...patch } : agent);
+  function commitAgents(nextAgents: ClusterAgentConfig[]) {
     onUpdateConfig({ clusterAgents: nextAgents });
-    onUpdateNode({ toolCount: nextAgents.length });
+    onUpdateNode({ toolCount: nextAgents.length, outputVariables: nextAgents.map((agent) => agent.output).filter(Boolean) });
   }
 
   return (
-    <PanelGroup title="智能体集群配置">
+    <PanelGroup title="智能体集群配置" className="xl:col-span-2">
       <CapabilityStateBanner state={capabilityState} />
-      <div className="space-y-3">
-        {agents.map((agent, index) => (
-          <article key={agent.id} className="workflow-cluster-agent-card">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <span className="text-xs font-medium text-[var(--color-text-tertiary)]">智能体 {index + 1}</span>
-              <button
-                type="button"
-                onClick={() => {
-                  const nextAgents = agents.filter((item) => item.id !== agent.id);
-                  onUpdateConfig({ clusterAgents: nextAgents });
-                  onUpdateNode({ toolCount: nextAgents.length });
-                }}
-                className="rounded p-1 text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-red-600"
-                aria-label="删除智能体"
-              >
-                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
-            </div>
-            <label className="sys-field">
-              <span className="sys-field-label">智能体名称</span>
-              <input value={agent.name} onChange={(event) => updateAgent(agent.id, { name: event.target.value })} className="sys-field-input" />
-            </label>
-            <CapabilitySelectField
-              label="智能体模板"
-              value={agent.agentAssetId || "custom"}
-              emptyValue="custom"
-              emptyLabel="自定义智能体"
-              options={agentAssets}
-              onChange={(value) => updateAgent(agent.id, { agentAssetId: value })}
-            />
-            <CapabilitySelectField
-              label="提示词模板"
-              value={agent.promptTemplateId || "none"}
-              emptyValue="none"
-              emptyLabel="不使用模板"
-              options={promptAssets}
-              onChange={(value) => updateAgent(agent.id, { promptTemplateId: value })}
-            />
-            <label className="sys-field">
-              <span className="sys-field-label">任务提示词</span>
-              <textarea value={agent.prompt} onChange={(event) => updateAgent(agent.id, { prompt: event.target.value })} className="sys-field-textarea" />
-            </label>
-            <CapabilityToggleGroup
-              title="Skill"
-              options={skillAssets}
-              selectedIds={agent.skillIds}
-              emptyText="暂无可引用 Skill"
-              onChange={(values) => updateAgent(agent.id, { skillIds: values })}
-            />
-            <CapabilityToggleGroup
-              title="MCP"
-              options={mcpAssets}
-              selectedIds={agent.mcpIds}
-              emptyText="暂无可引用 MCP"
-              onChange={(values) => updateAgent(agent.id, { mcpIds: values })}
-            />
-            <label className="sys-field">
-              <span className="sys-field-label">输出参数</span>
-              <input value={agent.output} onChange={(event) => updateAgent(agent.id, { output: normalizeVariableName(event.target.value) })} className="sys-field-input" />
-            </label>
-          </article>
-        ))}
+      <div className="workflow-config-list-box">
+        <div className="workflow-config-list-header">
+          <span>集群智能体</span>
+          <button type="button" onClick={() => setEditingAgent(createClusterAgent(agents.length))} className="agent-button agent-button-primary h-8 px-3 text-xs">
+            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+            新增智能体
+          </button>
+        </div>
+        <SelectLikeField
+          label="执行方式"
+          value={readString(config.executionMode, "parallel")}
+          options={[{ value: "parallel", label: "并行执行" }]}
+          onChange={(value) => onUpdateConfig({ executionMode: value })}
+        />
+        <div className="workflow-cluster-agent-list">
+          {agents.map((agent, index) => (
+            <article key={agent.id} className="workflow-cluster-agent-row">
+              <div className="workflow-cluster-agent-index">{index + 1}</div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{agent.name}</p>
+                <div className="mt-1 flex flex-wrap gap-1.5">
+                  <TinyBadge>{agent.output}</TinyBadge>
+                  <TinyBadge tone="info">Skill {agent.skillIds.length}</TinyBadge>
+                  <TinyBadge tone="info">MCP {agent.mcpIds.length}</TinyBadge>
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                <button type="button" onClick={() => setEditingAgent(agent)} className="agent-button h-8 px-2 text-xs">编辑</button>
+                <IconButton label="删除智能体" icon={Trash2} tone="danger" onClick={() => commitAgents(agents.filter((item) => item.id !== agent.id))} />
+              </div>
+            </article>
+          ))}
+          {agents.length === 0 ? (
+            <p className="rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-light)] bg-[var(--color-bg-card)] px-3 py-4 text-center text-sm text-[var(--color-text-tertiary)]">暂无智能体</p>
+          ) : null}
+        </div>
       </div>
-      <button
-        type="button"
-        onClick={() => {
-          const nextAgents = [...agents, createClusterAgent(agents.length)];
-          onUpdateConfig({ clusterAgents: nextAgents });
-          onUpdateNode({ toolCount: nextAgents.length });
-        }}
-        className="agent-button mt-3 h-9 px-3 text-xs"
-      >
-        <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-        添加智能体
-      </button>
       <label className="sys-field mt-3">
         <span className="sys-field-label">拼接规则</span>
         <textarea
@@ -1205,7 +1215,22 @@ function AgentClusterBrickConfig({
           placeholder="说明多智能体结果如何拼接、去重和处理冲突"
         />
       </label>
-      <p className="text-xs leading-5 text-[var(--color-text-tertiary)]">可引用输入：{availableVariables.map((variable) => variable.name).join("、") || "暂无"}</p>
+      {editingAgent ? (
+        <ClusterAgentModal
+          agent={editingAgent}
+          availableVariables={availableVariables}
+          agentAssets={agentAssets}
+          promptAssets={promptAssets}
+          mcpAssets={mcpAssets}
+          skillAssets={skillAssets}
+          onClose={() => setEditingAgent(null)}
+          onSave={(agent) => {
+            const exists = agents.some((item) => item.id === agent.id);
+            commitAgents(exists ? agents.map((item) => item.id === agent.id ? agent : item) : [...agents, agent]);
+            setEditingAgent(null);
+          }}
+        />
+      ) : null}
     </PanelGroup>
   );
 }
@@ -1223,144 +1248,46 @@ function DeliveryBrickConfig({
 }) {
   const config = node.data.rawConfig ?? {};
   const deliveryAssets = filterCapabilities(capabilityState.capabilities, "delivery");
+  const deliveryMode = readString(config.deliveryMode, "capability");
 
   return (
-    <PanelGroup title="交付配置">
+    <PanelGroup title="交付配置" className="xl:col-span-2">
       <CapabilityStateBanner state={capabilityState} />
-      <CapabilitySelectField
-        label="交付能力"
-        value={readString(config.deliveryCapabilityId, "none")}
-        emptyValue="none"
-        emptyLabel="暂不绑定交付能力"
-        options={deliveryAssets}
-        onChange={(value) => onUpdateConfig({ deliveryCapabilityId: value })}
-      />
+      <div className="grid gap-4 lg:grid-cols-2">
+        <SelectLikeField
+          label="交付模式"
+          value={deliveryMode}
+          options={[
+            { value: "capability", label: "使用交付能力" },
+            { value: "direct", label: "直接输出交付" },
+          ]}
+          onChange={(value) => onUpdateConfig({ deliveryMode: value })}
+        />
+        {deliveryMode === "capability" ? (
+          <CapabilitySelectField
+            label="交付能力"
+            value={readString(config.deliveryCapabilityId, "none")}
+            emptyValue="none"
+            emptyLabel="暂不绑定交付能力"
+            options={deliveryAssets}
+            onChange={(value) => onUpdateConfig({ deliveryCapabilityId: value })}
+          />
+        ) : null}
+      </div>
       <SelectLikeField
-        label="交付内容"
-        value={readString(config.artifactVariable, node.data.inputVariables[0] ?? "cluster_result")}
-        options={workflowVariables.map((variable) => variable.name)}
+        label="交付输出内容"
+        value={readString(config.artifactVariable, workflowVariables[0]?.name ?? "delivery_content")}
+        options={workflowVariables.map((variable) => ({ value: variable.name, label: `${variable.name} · ${variable.sourceNodeName}` }))}
         onChange={(value) => onUpdateConfig({ artifactVariable: value })}
       />
-      <label className="sys-field">
-        <span className="sys-field-label">交付说明</span>
-        <textarea
-          value={readString(config.deliveryTarget, "说明交付目标、模板和确认方式。")}
-          onChange={(event) => onUpdateConfig({ deliveryTarget: event.target.value })}
-          className="sys-field-textarea"
-          placeholder="说明交付目标、模板和确认方式"
-        />
-      </label>
+      <PromptEditor
+        label="交付配置"
+        value={readString(config.deliveryTarget, "请基于 {{输出内容}} 生成交付内容，并说明目标、模板和确认方式。")}
+        availableVariables={workflowVariables}
+        onChange={(value) => onUpdateConfig({ deliveryTarget: value })}
+        placeholder="配置交付目标、模板、正文或回调参数"
+      />
     </PanelGroup>
-  );
-}
-
-function InteractionConfig({
-  node,
-  onUpdateNode,
-}: {
-  node: WorkflowEditorNode;
-  onUpdateNode: (patch: Partial<EditorNodeData>) => void;
-}) {
-  return (
-    <PanelGroup title="交互控制">
-      <label className="flex items-center justify-between gap-3 rounded bg-[var(--color-bg-card)] px-3 py-2 text-sm ring-1 ring-[var(--color-border-light)]">
-        <span className="text-[var(--color-text-primary)]">允许重新生成</span>
-        <input
-          type="checkbox"
-          checked={node.data.outputMode === "追问确认"}
-          onChange={(event) => onUpdateNode({ outputMode: event.target.checked ? "追问确认" : "一次性输出" })}
-        />
-      </label>
-      <label className="mt-2 flex items-center justify-between gap-3 rounded bg-[var(--color-bg-card)] px-3 py-2 text-sm ring-1 ring-[var(--color-border-light)]">
-        <span className="text-[var(--color-text-primary)]">允许追问修改</span>
-        <input
-          type="checkbox"
-          checked={node.data.allowQuestion}
-          onChange={(event) => onUpdateNode({ allowQuestion: event.target.checked })}
-        />
-      </label>
-    </PanelGroup>
-  );
-}
-
-function VariableSelectList({
-  selectedVariables,
-  availableVariables,
-  onChange,
-}: {
-  selectedVariables: string[];
-  availableVariables: string[];
-  onChange: (variables: string[]) => void;
-}) {
-  if (availableVariables.length === 0) {
-    return <p className="text-sm text-[var(--color-text-tertiary)]">暂无可选输入参数。</p>;
-  }
-
-  return (
-    <div className="flex flex-wrap gap-2">
-      {availableVariables.map((variable) => {
-        const selected = selectedVariables.includes(variable);
-        return (
-          <button
-            key={variable}
-            type="button"
-            onClick={() => {
-              onChange(selected ? selectedVariables.filter((item) => item !== variable) : [...selectedVariables, variable]);
-            }}
-            className={`rounded px-2 py-1 text-xs font-medium ring-1 transition ${
-              selected
-                ? "bg-[var(--color-primary)] text-white ring-[var(--color-primary)]"
-                : "bg-[var(--color-bg-card)] text-[var(--color-text-secondary)] ring-[var(--color-border-light)] hover:text-[var(--color-primary)]"
-            }`}
-          >
-            {variable}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-function CapabilityToggleGroup({
-  title,
-  options,
-  selectedIds,
-  emptyText,
-  onChange,
-}: {
-  title: string;
-  options: WorkflowCapabilityOption[];
-  selectedIds: string[];
-  emptyText: string;
-  onChange: (values: string[]) => void;
-}) {
-  return (
-    <div>
-      <p className="mb-2 text-xs font-medium text-[var(--color-text-tertiary)]">{title}</p>
-      {options.length === 0 ? (
-        <p className="rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-light)] bg-[var(--color-bg-card)] px-3 py-2 text-xs text-[var(--color-text-tertiary)]">{emptyText}</p>
-      ) : null}
-      <div className="flex flex-wrap gap-2">
-        {options.map((option) => {
-          const active = selectedIds.includes(option.id);
-          return (
-            <button
-              key={option.id}
-              type="button"
-              onClick={() => onChange(active ? selectedIds.filter((item) => item !== option.id) : [...selectedIds, option.id])}
-              className={`workflow-capability-chip ${
-                active
-                  ? "workflow-capability-chip--active"
-                  : ""
-              }`}
-            >
-              <span>{option.name}</span>
-              <small>{formatAssetSource(option)} · {option.version}</small>
-            </button>
-          );
-        })}
-      </div>
-    </div>
   );
 }
 
@@ -1382,14 +1309,54 @@ function CapabilitySelectField({
   return (
     <label className="sys-field">
       <span className="sys-field-label">{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)} className="sys-field-input">
-        <option value={emptyValue}>{emptyLabel}</option>
-        {options.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.name} · {option.version} · {formatAssetSource(option)}
-          </option>
-        ))}
-      </select>
+      <Select
+        className="agent-admin-select w-full"
+        classNames={workflowSelectClassNames}
+        suffixIcon={workflowSelectSuffixIcon}
+        value={value}
+        options={[
+          { value: emptyValue, label: emptyLabel },
+          ...options.map((option) => ({
+            value: option.id,
+            label: `${option.name} · ${option.version} · ${formatAssetSource(option)}`,
+          })),
+        ]}
+        onChange={onChange}
+      />
+      {options.length === 0 ? <span className="sys-field-hint">暂无可选能力资产</span> : null}
+    </label>
+  );
+}
+
+function CapabilityMultiSelectField({
+  label,
+  options,
+  selectedIds,
+  placeholder,
+  onChange,
+}: {
+  label: string;
+  options: WorkflowCapabilityOption[];
+  selectedIds: string[];
+  placeholder: string;
+  onChange: (values: string[]) => void;
+}) {
+  return (
+    <label className="sys-field">
+      <span className="sys-field-label">{label}</span>
+      <Select
+        mode="multiple"
+        className="agent-admin-select w-full"
+        classNames={workflowSelectClassNames}
+        suffixIcon={workflowSelectSuffixIcon}
+        value={selectedIds}
+        placeholder={placeholder}
+        options={options.map((option) => ({
+          value: option.id,
+          label: `${option.name} · ${formatAssetSource(option)}`,
+        }))}
+        onChange={(values) => onChange(values)}
+      />
       {options.length === 0 ? <span className="sys-field-hint">暂无可选能力资产</span> : null}
     </label>
   );
@@ -1404,6 +1371,10 @@ function CapabilityStateBanner({ state }: { state: WorkflowCapabilityState }) {
     return <p className="workflow-capability-state workflow-capability-state--danger">{state.error}</p>;
   }
 
+  if (state.capabilities.length === 0) {
+    return <p className="workflow-capability-state">当前账号暂无可引用能力。请先在系统管理把能力放入租户能力池，再由租户管理分配给当前用户、部门或角色；也可以在能力资产中创建自己的智能体或提示词模板。</p>;
+  }
+
   return null;
 }
 
@@ -1415,35 +1386,388 @@ function SelectLikeField({
 }: {
   label: string;
   value: string;
-  options: string[];
+  options: Array<string | { value: string; label: string }>;
   onChange: (value: string) => void;
 }) {
+  const normalizedOptions = options.map((option) => typeof option === "string" ? { value: option, label: option } : option);
+  const effectiveOptions = value && !normalizedOptions.some((option) => option.value === value)
+    ? [{ value, label: value }, ...normalizedOptions]
+    : normalizedOptions;
+
   return (
     <label className="sys-field">
       <span className="sys-field-label">{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)} className="sys-field-input">
-        {options.map((option) => <option key={option} value={option}>{option}</option>)}
-      </select>
+      <Select
+        className="agent-admin-select w-full"
+        classNames={workflowSelectClassNames}
+        suffixIcon={workflowSelectSuffixIcon}
+        value={value}
+        options={effectiveOptions}
+        onChange={onChange}
+      />
     </label>
   );
 }
 
-function ConfigRows({ rows }: { rows: Array<[string, string]> }) {
+function PromptEditor({
+  label,
+  value,
+  availableVariables,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  availableVariables: WorkflowVariable[];
+  onChange: (value: string) => void;
+  placeholder?: string;
+}) {
   return (
-    <dl className="space-y-2">
-      {rows.map(([label, value]) => (
-        <div key={label} className="grid grid-cols-[88px_minmax(0,1fr)] gap-3 text-sm">
-          <dt className="text-[var(--color-text-tertiary)]">{label}</dt>
-          <dd className="min-w-0 font-medium text-[var(--color-text-primary)]">{value}</dd>
-        </div>
-      ))}
-    </dl>
+    <label className="sys-field">
+      <span className="sys-field-label">{label}</span>
+      <textarea
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="sys-field-textarea workflow-prompt-textarea"
+        placeholder={placeholder ?? "可以使用 {{输出内容标识}} 引用之前步骤内容"}
+      />
+      <VariableReferenceBar
+        variables={availableVariables}
+        onPick={(variable) => onChange(`${value}${value.endsWith(" ") || value.length === 0 ? "" : " "}{{${variable}}}`)}
+      />
+    </label>
   );
 }
 
-function PanelGroup({ title, children }: { title: string; children: ReactNode }) {
+function VariableReferenceBar({
+  variables,
+  onPick,
+}: {
+  variables: WorkflowVariable[];
+  onPick: (variable: string) => void;
+}) {
+  if (variables.length === 0) {
+    return null;
+  }
+
   return (
-    <section className="workflow-config-panel-group rounded-[var(--radius-md)] bg-[var(--color-bg-hover)] px-3 py-3">
+    <div className="workflow-variable-reference-bar">
+      {variables.map((variable) => (
+        <button key={`${variable.sourceNodeId}-${variable.name}`} type="button" onClick={() => onPick(variable.name)}>
+          {`{{${variable.name}}}`}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function InputFieldModal({
+  field,
+  availableVariables,
+  onClose,
+  onSave,
+}: {
+  field: InputFieldConfig;
+  availableVariables: WorkflowVariable[];
+  onClose: () => void;
+  onSave: (field: InputFieldConfig) => void;
+}) {
+  const [draft, setDraft] = useState<InputFieldConfig>(field);
+
+  return (
+    <div className="sys-modal-mask" onClick={onClose}>
+      <section className="sys-modal workflow-config-modal" aria-labelledby="input-field-modal-title" onClick={(event) => event.stopPropagation()}>
+        <div className="sys-modal-header">
+          <div>
+            <div className="sys-field-label" style={{ marginBottom: 4 }}>输入信息</div>
+            <span id="input-field-modal-title" className="sys-modal-title">配置输入框</span>
+          </div>
+          <button className="sys-modal-close" onClick={onClose} aria-label="关闭输入框配置"><X size={18} /></button>
+        </div>
+        <div className="sys-modal-body">
+          <label className="sys-field">
+            <span className="sys-field-label">显示名称</span>
+            <input value={draft.label} onChange={(event) => setDraft({ ...draft, label: event.target.value })} className="sys-field-input" />
+          </label>
+          <label className="sys-field">
+            <span className="sys-field-label">输出内容标识</span>
+            <input value={draft.variable} onChange={(event) => setDraft({ ...draft, variable: normalizeVariableName(event.target.value) })} className="sys-field-input" />
+          </label>
+          <label className="sys-field">
+            <span className="sys-field-label">占位提示</span>
+            <input value={draft.placeholder} onChange={(event) => setDraft({ ...draft, placeholder: event.target.value })} className="sys-field-input" />
+          </label>
+          <PromptEditor
+            label="默认内容"
+            value={draft.defaultValue}
+            availableVariables={availableVariables}
+            onChange={(value) => setDraft({ ...draft, defaultValue: value })}
+            placeholder="可用 {{输出内容标识}} 引用之前步骤内容"
+          />
+        </div>
+        <div className="sys-modal-footer">
+          <button type="button" className="sys-btn sys-btn--default" onClick={onClose}>取消</button>
+          <button type="button" className="sys-btn sys-btn--primary" onClick={() => onSave({ ...draft, variable: normalizeVariableName(draft.variable) || "input_value" })}>保存</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function SingleAgentConfigModal({
+  node,
+  availableVariables,
+  agentAssets,
+  promptAssets,
+  mcpAssets,
+  skillAssets,
+  onClose,
+  onSave,
+}: {
+  node: WorkflowEditorNode;
+  availableVariables: WorkflowVariable[];
+  agentAssets: WorkflowCapabilityOption[];
+  promptAssets: WorkflowCapabilityOption[];
+  mcpAssets: WorkflowCapabilityOption[];
+  skillAssets: WorkflowCapabilityOption[];
+  onClose: () => void;
+  onSave: (config: Record<string, unknown>, patch: Partial<EditorNodeData>) => void;
+}) {
+  const config = node.data.rawConfig ?? {};
+  const [draft, setDraft] = useState({
+    agentAssetId: readString(config.agentAssetId, "custom"),
+    systemPromptTemplateId: readString(config.systemPromptTemplateId, readString(config.promptTemplateId, "none")),
+    userPromptTemplateId: readString(config.userPromptTemplateId, "none"),
+    systemPrompt: readString(config.systemPrompt, "请配置这个智能体的角色、任务边界和输出要求。"),
+    userPrompt: readString(config.userPrompt, "请基于已产生的可引用内容完成本步骤任务。"),
+    mcpServices: readStringArray(config.mcpServices, []),
+    skills: readStringArray(config.skills, []),
+    outputMode: node.data.outputMode,
+    allowQuestion: node.data.allowQuestion,
+  });
+
+  return (
+    <div className="sys-modal-mask" onClick={onClose}>
+      <section className="sys-modal workflow-config-modal workflow-agent-modal" aria-labelledby="single-agent-modal-title" onClick={(event) => event.stopPropagation()}>
+        <div className="sys-modal-header">
+          <div>
+            <div className="sys-field-label" style={{ marginBottom: 4 }}>单智能体</div>
+            <span id="single-agent-modal-title" className="sys-modal-title">配置智能体</span>
+          </div>
+          <button className="sys-modal-close" onClick={onClose} aria-label="关闭智能体配置"><X size={18} /></button>
+        </div>
+        <div className="sys-modal-body">
+          <div className="grid gap-4 lg:grid-cols-2">
+            <CapabilitySelectField
+              label="智能体模板"
+              value={draft.agentAssetId}
+              emptyValue="custom"
+              emptyLabel="自定义智能体"
+              options={agentAssets}
+              onChange={(value) => setDraft({ ...draft, agentAssetId: value })}
+            />
+            <CapabilitySelectField
+              label="系统提示词模板"
+              value={draft.systemPromptTemplateId}
+              emptyValue="none"
+              emptyLabel="系统提示词自定义"
+              options={promptAssets}
+              onChange={(value) => setDraft({ ...draft, systemPromptTemplateId: value })}
+            />
+            <CapabilitySelectField
+              label="用户提示词模板"
+              value={draft.userPromptTemplateId}
+              emptyValue="none"
+              emptyLabel="用户提示词自定义"
+              options={promptAssets}
+              onChange={(value) => setDraft({ ...draft, userPromptTemplateId: value })}
+            />
+          </div>
+          <PromptEditor
+            label="系统提示词"
+            value={draft.systemPrompt}
+            availableVariables={availableVariables}
+            onChange={(value) => setDraft({ ...draft, systemPrompt: value })}
+          />
+          <PromptEditor
+            label="用户提示词"
+            value={draft.userPrompt}
+            availableVariables={availableVariables}
+            onChange={(value) => setDraft({ ...draft, userPrompt: value })}
+          />
+          <div className="grid gap-4 lg:grid-cols-2">
+            <CapabilityMultiSelectField
+              label="MCP"
+              options={mcpAssets}
+              selectedIds={draft.mcpServices}
+              placeholder="选择 MCP"
+              onChange={(values) => setDraft({ ...draft, mcpServices: values })}
+            />
+            <CapabilityMultiSelectField
+              label="Skill"
+              options={skillAssets}
+              selectedIds={draft.skills}
+              placeholder="选择 Skill"
+              onChange={(values) => setDraft({ ...draft, skills: values })}
+            />
+          </div>
+          <div className="grid gap-3 lg:grid-cols-2">
+            <label className="workflow-toggle-row">
+              <span>允许重新生成</span>
+              <input
+                type="checkbox"
+                checked={draft.outputMode === "追问确认"}
+                onChange={(event) => setDraft({ ...draft, outputMode: event.target.checked ? "追问确认" : "一次性输出" })}
+              />
+            </label>
+            <label className="workflow-toggle-row">
+              <span>允许追问修改</span>
+              <input
+                type="checkbox"
+                checked={draft.allowQuestion}
+                onChange={(event) => setDraft({ ...draft, allowQuestion: event.target.checked })}
+              />
+            </label>
+          </div>
+        </div>
+        <div className="sys-modal-footer">
+          <button type="button" className="sys-btn sys-btn--default" onClick={onClose}>取消</button>
+          <button
+            type="button"
+            className="sys-btn sys-btn--primary"
+            onClick={() => onSave({
+              agentAssetId: draft.agentAssetId,
+              agentSource: draft.agentAssetId === "custom" ? "custom" : "asset",
+              promptTemplateId: draft.systemPromptTemplateId,
+              systemPromptTemplateId: draft.systemPromptTemplateId,
+              userPromptTemplateId: draft.userPromptTemplateId,
+              systemPrompt: draft.systemPrompt,
+              userPrompt: draft.userPrompt,
+              mcpServices: draft.mcpServices,
+              skills: draft.skills,
+            }, {
+              toolCount: draft.mcpServices.length,
+              outputMode: draft.outputMode,
+              allowQuestion: draft.allowQuestion,
+            })}
+          >
+            保存
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ClusterAgentModal({
+  agent,
+  availableVariables,
+  agentAssets,
+  promptAssets,
+  mcpAssets,
+  skillAssets,
+  onClose,
+  onSave,
+}: {
+  agent: ClusterAgentConfig;
+  availableVariables: WorkflowVariable[];
+  agentAssets: WorkflowCapabilityOption[];
+  promptAssets: WorkflowCapabilityOption[];
+  mcpAssets: WorkflowCapabilityOption[];
+  skillAssets: WorkflowCapabilityOption[];
+  onClose: () => void;
+  onSave: (agent: ClusterAgentConfig) => void;
+}) {
+  const [draft, setDraft] = useState<ClusterAgentConfig>(agent);
+
+  return (
+    <div className="sys-modal-mask" onClick={onClose}>
+      <section className="sys-modal workflow-config-modal workflow-agent-modal" aria-labelledby="cluster-agent-modal-title" onClick={(event) => event.stopPropagation()}>
+        <div className="sys-modal-header">
+          <div>
+            <div className="sys-field-label" style={{ marginBottom: 4 }}>智能体集群</div>
+            <span id="cluster-agent-modal-title" className="sys-modal-title">配置集群智能体</span>
+          </div>
+          <button className="sys-modal-close" onClick={onClose} aria-label="关闭智能体配置"><X size={18} /></button>
+        </div>
+        <div className="sys-modal-body">
+          <div className="grid gap-4 lg:grid-cols-2">
+            <label className="sys-field">
+              <span className="sys-field-label">智能体名称</span>
+              <input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} className="sys-field-input" />
+            </label>
+            <OutcomeVariableField
+              label="输出内容标识"
+              value={draft.output}
+              placeholder="agent_output"
+              onChange={(value) => setDraft({ ...draft, output: normalizeVariableName(value) })}
+            />
+            <CapabilitySelectField
+              label="智能体模板"
+              value={draft.agentAssetId || "custom"}
+              emptyValue="custom"
+              emptyLabel="自定义智能体"
+              options={agentAssets}
+              onChange={(value) => setDraft({ ...draft, agentAssetId: value })}
+            />
+            <CapabilitySelectField
+              label="系统提示词模板"
+              value={draft.systemPromptTemplateId || draft.promptTemplateId || "none"}
+              emptyValue="none"
+              emptyLabel="系统提示词自定义"
+              options={promptAssets}
+              onChange={(value) => setDraft({ ...draft, systemPromptTemplateId: value, promptTemplateId: value })}
+            />
+            <CapabilitySelectField
+              label="用户提示词模板"
+              value={draft.userPromptTemplateId || "none"}
+              emptyValue="none"
+              emptyLabel="用户提示词自定义"
+              options={promptAssets}
+              onChange={(value) => setDraft({ ...draft, userPromptTemplateId: value })}
+            />
+          </div>
+          <PromptEditor
+            label="系统提示词"
+            value={draft.systemPrompt}
+            availableVariables={availableVariables}
+            onChange={(value) => setDraft({ ...draft, systemPrompt: value })}
+          />
+          <PromptEditor
+            label="用户提示词"
+            value={draft.userPrompt}
+            availableVariables={availableVariables}
+            onChange={(value) => setDraft({ ...draft, userPrompt: value })}
+          />
+          <div className="grid gap-4 lg:grid-cols-2">
+            <CapabilityMultiSelectField
+              label="Skill"
+              options={skillAssets}
+              selectedIds={draft.skillIds}
+              placeholder="选择 Skill"
+              onChange={(values) => setDraft({ ...draft, skillIds: values })}
+            />
+            <CapabilityMultiSelectField
+              label="MCP"
+              options={mcpAssets}
+              selectedIds={draft.mcpIds}
+              placeholder="选择 MCP"
+              onChange={(values) => setDraft({ ...draft, mcpIds: values })}
+            />
+          </div>
+        </div>
+        <div className="sys-modal-footer">
+          <button type="button" className="sys-btn sys-btn--default" onClick={onClose}>取消</button>
+          <button type="button" className="sys-btn sys-btn--primary" onClick={() => onSave({ ...draft, output: normalizeVariableName(draft.output) || "agent_output" })}>保存</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function PanelGroup({ title, children, className = "" }: { title: string; children: ReactNode; className?: string }) {
+  return (
+    <section className={`workflow-config-panel-group rounded-[var(--radius-md)] bg-[var(--color-bg-hover)] px-3 py-3 ${className}`}>
       <h4 className="mb-2 text-sm font-semibold text-[var(--color-text-primary)]">{title}</h4>
       {children}
     </section>
@@ -1630,12 +1954,32 @@ function formatAssetSource(option: WorkflowCapabilityOption) {
   return option.source === "system" ? "对我开放" : "我的能力";
 }
 
+function findCapabilityName(options: WorkflowCapabilityOption[], id: string, fallback: string) {
+  if (id === "custom" || id === "none") {
+    return fallback;
+  }
+  return options.find((option) => option.id === id)?.name ?? fallback;
+}
+
 function createNodeFromTemplate(template: WorkflowBrickTemplate, index: number, inputVariables: string[] = []): WorkflowEditorNode {
   const brickType = template.brickType;
   const id = brickType === "trigger" ? SYSTEM_TRIGGER_ID : `${brickType}_${Date.now().toString(36)}_${index}`;
-  const outputVariables = buildTemplateOutputVariables(template, index);
+  let outputVariables = buildTemplateOutputVariables(template, index);
   const rawConfig = cloneRecord(template.defaultConfig);
   const effectiveInputVariables = brickType === "trigger" ? template.defaultInputVariables : (inputVariables.length > 0 ? inputVariables : template.defaultInputVariables);
+
+  if (brickType === "input") {
+    const inputFields = readInputFields(rawConfig.inputFields, outputVariables);
+    rawConfig.inputFields = inputFields;
+    outputVariables = inputFields.map((field) => field.variable);
+  }
+
+  if (brickType === "cluster") {
+    const clusterAgents = readClusterAgents(rawConfig.clusterAgents);
+    rawConfig.clusterAgents = clusterAgents;
+    rawConfig.executionMode = readString(rawConfig.executionMode, "parallel");
+    outputVariables = clusterAgents.map((agent) => agent.output);
+  }
 
   if (brickType === "delivery") {
     rawConfig.artifactVariable = effectiveInputVariables[0] ?? readString(rawConfig.artifactVariable, "delivery_record");
@@ -1682,6 +2026,7 @@ function createInputField(index: number): InputFieldConfig {
     label: index === 0 ? "业务输入" : `输入字段 ${index + 1}`,
     variable: `input_${index + 1}`,
     placeholder: "请输入内容",
+    defaultValue: "",
   };
 }
 
@@ -1691,9 +2036,12 @@ function createClusterAgent(index: number): ClusterAgentConfig {
     name: `子智能体 ${index + 1}`,
     agentAssetId: "custom",
     promptTemplateId: "none",
+    systemPromptTemplateId: "none",
+    userPromptTemplateId: "none",
     skillIds: [],
     mcpIds: [],
-    prompt: "请补充该智能体的任务提示词。",
+    systemPrompt: "请配置这个智能体的角色、任务边界和输出要求。",
+    userPrompt: "请基于已产生的可引用内容完成本智能体任务。",
     output: `agent_${index + 1}_output`,
   };
 }
@@ -1886,14 +2234,44 @@ function orderNodesByEdges(nodes: WorkflowEditorNode[], edges: WorkflowEditorEdg
 }
 
 function normalizeVisibleNodeOrder(visibleNodes: WorkflowEditorNode[]) {
-  return visibleNodes.map((node, index) => ({
-    ...node,
-    position: { x: (index + 1) * 260, y: 0 },
-    data: {
-      ...node.data,
-      inputVariables: index === 0 ? ["starter"] : visibleNodes[index - 1]?.data.outputVariables ?? [],
-    },
-  }));
+  const previousVariables = new Set<string>();
+
+  return visibleNodes.map((node, index) => {
+    const inputVariables = collectReferencedVariables(node, previousVariables);
+    const normalizedNode = {
+      ...node,
+      position: { x: (index + 1) * 260, y: 0 },
+      data: {
+        ...node.data,
+        inputVariables,
+      },
+    };
+    node.data.outputVariables.forEach((variable) => {
+      if (variable) {
+        previousVariables.add(variable);
+      }
+    });
+    return normalizedNode;
+  });
+}
+
+function collectReferencedVariables(node: WorkflowEditorNode, previousVariables: Set<string>) {
+  const references = new Set<string>();
+  const allowed = previousVariables;
+  const serializedConfig = JSON.stringify(node.data.rawConfig ?? {});
+  for (const match of serializedConfig.matchAll(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g)) {
+    const variable = match[1];
+    if (allowed.has(variable)) {
+      references.add(variable);
+    }
+  }
+
+  const artifactVariable = node.data.rawConfig?.artifactVariable;
+  if (typeof artifactVariable === "string" && allowed.has(artifactVariable)) {
+    references.add(artifactVariable);
+  }
+
+  return [...references];
 }
 
 function rebuildSequentialEdges(visibleNodes: WorkflowEditorNode[]): WorkflowEditorEdge[] {
@@ -1945,7 +2323,7 @@ function readInputFields(value: unknown, outputVariables: string[]): InputFieldC
   if (Array.isArray(value)) {
     const fields = value.filter(isInputFieldConfig);
     if (fields.length > 0) {
-      return fields;
+      return fields.map((field) => ({ ...field, defaultValue: readString(field.defaultValue, "") }));
     }
   }
 
@@ -1955,6 +2333,7 @@ function readInputFields(value: unknown, outputVariables: string[]): InputFieldC
       label: index === 0 ? "业务输入" : `输入字段 ${index + 1}`,
       variable,
       placeholder: "请输入内容",
+      defaultValue: "",
     }))
     : [createInputField(0)];
 }
@@ -1967,17 +2346,17 @@ function readClusterAgents(value: unknown): ClusterAgentConfig[] {
         ...agent,
         agentAssetId: readString(agent.agentAssetId, "custom"),
         promptTemplateId: readString(agent.promptTemplateId, "none"),
+        systemPromptTemplateId: readString(agent.systemPromptTemplateId, readString(agent.promptTemplateId, "none")),
+        userPromptTemplateId: readString(agent.userPromptTemplateId, "none"),
         skillIds: readStringArray(agent.skillIds, []),
         mcpIds: readStringArray(agent.mcpIds, []),
+        systemPrompt: readString(agent.systemPrompt, "请配置这个智能体的角色、任务边界和输出要求。"),
+        userPrompt: readString(agent.userPrompt ?? (agent as unknown as { prompt?: unknown }).prompt, "请基于已产生的可引用内容完成本智能体任务。"),
       }));
     }
   }
 
   return [createClusterAgent(0), createClusterAgent(1)];
-}
-
-function parseVariableList(value: string) {
-  return value.split(",").map((item) => normalizeVariableName(item)).filter(Boolean);
 }
 
 function normalizeVariableName(value: string) {
@@ -2026,7 +2405,6 @@ function isClusterAgentConfig(value: unknown): value is ClusterAgentConfig {
     && value !== null
     && typeof (value as ClusterAgentConfig).id === "string"
     && typeof (value as ClusterAgentConfig).name === "string"
-    && typeof (value as ClusterAgentConfig).prompt === "string"
     && typeof (value as ClusterAgentConfig).output === "string";
 }
 

@@ -12,6 +12,7 @@ import com.agentum.shared.api.ApiException;
 import com.agentum.tenant.domain.TenantEntity;
 import com.agentum.tenant.infrastructure.TenantRepository;
 import com.agentum.workflow.domain.WorkflowDefinitionEntity;
+import com.agentum.workflow.domain.WorkflowNodeDefinitionEntity;
 import com.agentum.workflow.domain.WorkflowVersionEntity;
 import com.agentum.workflow.infrastructure.WorkflowDefinitionRepository;
 import com.agentum.workflow.infrastructure.WorkflowEdgeDefinitionRepository;
@@ -23,6 +24,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -122,6 +124,38 @@ class WorkflowDraftServicePublishTest {
 
         assertThat(definition.getPausePointCount()).isZero();
         assertThat(detail.draft().pausePointCount()).isZero();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void shouldPersistNodeJsonColumnsAsStructuredValues() {
+        WorkflowDefinitionEntity definition = draft();
+        stubDefinitionLookup(definition);
+        WorkflowDraftApi.SaveWorkflowDraftGraphRequest request = new WorkflowDraftApi.SaveWorkflowDraftGraphRequest(
+            List.of(new WorkflowDraftApi.WorkflowNodeDraft(
+                "agent_1",
+                "agent",
+                "风险识别",
+                0,
+                0,
+                List.of("company_name"),
+                List.of("risk_report"),
+                Map.of("summary", "识别授信风险", "toolCount", 2)
+            )),
+            List.of(),
+            List.of(variable("risk_report", "object", "agent_1"))
+        );
+
+        service().saveGraph(TENANT_ID, USER_ID, definition.getId(), request);
+
+        ArgumentCaptor<Iterable<WorkflowNodeDefinitionEntity>> nodeCaptor = ArgumentCaptor.forClass(Iterable.class);
+        verify(workflowNodeDefinitionRepository).saveAll(nodeCaptor.capture());
+        List<WorkflowNodeDefinitionEntity> savedNodes = new ArrayList<>();
+        nodeCaptor.getValue().forEach(savedNodes::add);
+        assertThat(savedNodes).hasSize(1);
+        assertThat(savedNodes.get(0).getInputVariables()).containsExactly("company_name");
+        assertThat(savedNodes.get(0).getOutputVariables()).containsExactly("risk_report");
+        assertThat(savedNodes.get(0).getConfig()).containsEntry("summary", "识别授信风险").containsEntry("toolCount", 2);
     }
 
     private void stubDefinitionLookup(WorkflowDefinitionEntity definition) {

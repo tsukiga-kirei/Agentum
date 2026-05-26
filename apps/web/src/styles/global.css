@@ -3092,13 +3092,6 @@ textarea:focus-visible {
   color: var(--color-text-tertiary);
 }
 
-.workflow-cluster-agent-card {
-  border: 1px solid color-mix(in srgb, var(--color-border-light) 74%, var(--color-primary) 26%);
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--color-bg-card) 92%, var(--color-primary) 8%);
-  padding: 12px;
-}
-
 .workflow-step-row {
   position: relative;
   overflow: hidden;
@@ -3195,6 +3188,147 @@ textarea:focus-visible {
   font-size: 10px;
 }
 
+.workflow-input-field-manager {
+  margin-top: 4px;
+}
+
+.workflow-input-field-row,
+.workflow-cluster-agent-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-card);
+  padding: 12px;
+}
+
+.workflow-config-list-box {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-bg-card) 86%, var(--color-bg-hover) 14%);
+  padding: 12px;
+}
+
+.workflow-config-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--color-text-primary);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.workflow-agent-summary-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-card);
+  padding: 10px 12px;
+}
+
+.workflow-agent-summary-main {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+
+.workflow-agent-summary-icon {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: var(--color-primary-bg);
+  color: var(--color-primary);
+}
+
+.workflow-toggle-row {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-card);
+  padding: 10px 12px;
+  color: var(--color-text-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.workflow-cluster-agent-list {
+  display: grid;
+  gap: 10px;
+}
+
+.workflow-cluster-agent-row {
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+}
+
+.workflow-cluster-agent-index {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: var(--color-primary-bg);
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.workflow-variable-reference-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.workflow-variable-reference-bar button {
+  border: 1px solid color-mix(in srgb, var(--color-border-light) 78%, var(--color-primary) 22%);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-bg-card) 82%, var(--color-primary-bg) 18%);
+  padding: 4px 8px;
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 650;
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.workflow-variable-reference-bar button:hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary-bg);
+  transform: translateY(-1px);
+}
+
+.workflow-prompt-textarea {
+  min-height: 132px;
+}
+
+.workflow-config-modal {
+  max-width: 680px;
+}
+
+.workflow-agent-modal {
+  max-width: 860px;
+}
+
 .workflow-editor-toolbar {
   border-color: color-mix(in srgb, var(--color-border-light) 62%, transparent) !important;
   background: var(--color-bg-page);
@@ -3226,6 +3360,21 @@ textarea:focus-visible {
 
   .workflow-detail-actions-grid {
     grid-template-columns: 1fr;
+  }
+
+  .workflow-input-field-row,
+  .workflow-cluster-agent-row,
+  .workflow-agent-summary-row {
+    grid-template-columns: 1fr;
+  }
+
+  .workflow-config-list-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .workflow-cluster-agent-index {
+    display: none;
   }
 }
 .tenant-member-table {
