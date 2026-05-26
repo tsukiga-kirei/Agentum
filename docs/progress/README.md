@@ -380,3 +380,5 @@
 | 2026-05-25 | `./gradlew :apps:api:test --tests 'com.agentum.workflow.application.*'` | 通过：工作流设计目录服务、草稿保存和发布相关测试复验 |
 | 2026-05-25 | `curl -I http://localhost:5173/` | 通过：本地前端开发服务返回 200 |
 | 2026-05-25 | `git diff --check` | 通过：流程设计后端化与进度文档更新后复验 |
+| 2026-05-26 | `./gradlew test` | 通过：修复工作流草稿保存时 Hibernate ActionQueue 导致唯一约束冲突，并修复单元测试中的 Mockito 桩方法与签名冲突 |
+| 2026-05-26 | `pnpm --filter @agentum/web build` | 通过：验证前端构建无类型错误 |

@@ -60,6 +60,8 @@ class WorkflowDraftServicePublishTest {
     private WorkflowVariableDeclarationValidator workflowVariableDeclarationValidator;
     @Mock
     private WorkflowPublishValidator workflowPublishValidator;
+    @Mock
+    private WorkflowNodeConfigValidator workflowNodeConfigValidator;
 
     @Test
     void shouldCreateImmutableVersionAndMarkDraftPublished() {
@@ -164,7 +166,7 @@ class WorkflowDraftServicePublishTest {
         when(workflowNodeDefinitionRepository.findByWorkflowIdOrderBySortOrderAsc(definition.getId())).thenReturn(List.of());
         when(workflowEdgeDefinitionRepository.findByWorkflowIdOrderBySortOrderAsc(definition.getId())).thenReturn(List.of());
         when(workflowVariableDefinitionRepository.findByWorkflowIdOrderBySortOrderAsc(definition.getId())).thenReturn(List.of());
-        when(userAccountRepository.findAll()).thenReturn(List.of());
+        when(userAccountRepository.findAllById(any())).thenReturn(List.of());
     }
 
     private WorkflowDraftService service() {
@@ -178,6 +180,7 @@ class WorkflowDraftServicePublishTest {
             workflowVersionRepository,
             workflowVariableDeclarationValidator,
             workflowPublishValidator,
+            workflowNodeConfigValidator,
             new ObjectMapper(),
             Clock.fixed(NOW, ZoneOffset.UTC)
         );

@@ -263,6 +263,11 @@ public class WorkflowDraftService {
         workflowEdgeDefinitionRepository.deleteByWorkflowId(workflowId);
         workflowVariableDefinitionRepository.deleteByWorkflowId(workflowId);
 
+        // 必须立即 flush 确保物理删除在插入新数据前执行，防止 Hibernate 默认 ActionQueue 插入优先导致唯一约束冲突 (uk_workflow_nodes_workflow_key)
+        workflowNodeDefinitionRepository.flush();
+        workflowEdgeDefinitionRepository.flush();
+        workflowVariableDefinitionRepository.flush();
+
         List<WorkflowNodeDefinitionEntity> nodeEntities = new ArrayList<>();
         for (int index = 0; index < nodes.size(); index++) {
             WorkflowDraftApi.WorkflowNodeDraft node = nodes.get(index);
@@ -316,8 +321,9 @@ public class WorkflowDraftService {
         }
         workflowVariableDefinitionRepository.saveAll(variableEntities);
 
-        // 设计态已取消“暂停点”概念，流程执行按照积木顺序推进；历史字段仅为兼容旧表结构保留为 0。
-        definition.updateGraphSummary(nodes.size(), 0, operatorUserId, now);
+        // 积木计数排除系统触发节点（trigger），与前端编辑器 visibleNodes 口径一致，用户只关心业务积木数量。
+        int userNodeCount = (int) nodes.stream().filter(n -> !"trigger".equals(n.nodeType())).count();
+        definition.updateGraphSummary(userNodeCount, 0, operatorUserId, now);
         workflowDefinitionRepository.save(definition);
         log.info(
             "工作流草稿图保存成功 tenantId={} operatorUserId={} workflowId={} nodeCount={} edgeCount={} variableCount={} requestId={}",

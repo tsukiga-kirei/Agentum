@@ -68,7 +68,7 @@ class AssetManagementServiceTest {
         when(userMembershipRoleRepository.findByMembershipIdInAndStatus(any(), any())).thenReturn(List.of(membershipRole));
         when(resourceGrantRepository.findByTenantIdOrderByCreatedAtDesc(TENANT_ID)).thenReturn(List.of(resourceGrant));
 
-        var page = service.listTenantSystemCapabilities(TENANT_ID, principal, 1, 10, "openedAt,desc");
+        var page = service.listTenantSystemCapabilities(TENANT_ID, principal, 1, 10, "openedAt,desc", null, null);
 
         assertThat(page.items()).hasSize(1);
         assertThat(page.items().get(0).assignedToMe()).isTrue();
@@ -87,7 +87,7 @@ class AssetManagementServiceTest {
         when(userMembershipRepository.findByUserIdAndTenantIdAndStatus(USER_ID, TENANT_ID, "active")).thenReturn(List.of());
         when(resourceGrantRepository.findByTenantIdOrderByCreatedAtDesc(TENANT_ID)).thenReturn(List.of());
 
-        var page = service.listTenantSystemCapabilities(TENANT_ID, businessPrincipal(), 1, 10, "openedAt,desc");
+        var page = service.listTenantSystemCapabilities(TENANT_ID, businessPrincipal(), 1, 10, "openedAt,desc", null, null);
         var summary = service.getSummary(TENANT_ID, businessPrincipal());
 
         assertThat(page.items()).isEmpty();
@@ -196,9 +196,9 @@ class AssetManagementServiceTest {
             NOW
         );
         when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", NOW)));
-        when(tenantAssetCapabilityRepository.searchMine(any(), any(), any(), any())).thenReturn(new PageImpl<>(List.of(asset)));
+        when(tenantAssetCapabilityRepository.searchMine(any(), any(), any(), any(), any(), any())).thenReturn(new PageImpl<>(List.of(asset)));
 
-        var page = service.listMyAssets(TENANT_ID, businessPrincipal(), "", 1, 10, "updatedAt,desc");
+        var page = service.listMyAssets(TENANT_ID, businessPrincipal(), "", 1, 10, "updatedAt,desc", null, null);
 
         assertThat(page.items()).hasSize(1);
         assertThat(page.items().get(0).code()).isEqualTo("prompt_draft");
