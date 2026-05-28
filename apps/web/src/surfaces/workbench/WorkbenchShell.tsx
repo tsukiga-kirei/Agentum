@@ -547,10 +547,13 @@ export function WorkbenchShell() {
                                 onKeyDown={(event) => {
                                   if (event.key === "Enter") handleSubmitKeyword();
                                 }}
-                                onBlur={handleSubmitKeyword}
                                 placeholder="按流程名称或描述搜索"
                               />
                             </label>
+                            <button type="button" className="sys-btn sys-btn--default" onClick={() => handleSubmitKeyword()}>
+                              <Search size={18} aria-hidden="true" />
+                              查询
+                            </button>
                           </div>
                         </div>
 
