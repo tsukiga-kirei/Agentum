@@ -3147,6 +3147,34 @@ textarea:focus-visible {
   background: color-mix(in srgb, var(--color-bg-hover) 82%, var(--color-bg-card) 18%);
 }
 
+.workflow-config-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  color: var(--color-text-primary);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.workflow-config-panel-title-icon,
+.workflow-inline-card-icon,
+.workflow-mini-card-icon,
+.workflow-overview-metric-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: var(--color-primary-bg);
+  color: var(--color-primary);
+}
+
+.workflow-config-panel-title-icon {
+  width: 28px;
+  height: 28px;
+}
+
 .workflow-node-config-surface {
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--color-border-light) 86%, var(--color-primary) 14%);
@@ -3238,6 +3266,42 @@ textarea:focus-visible {
   border-radius: var(--radius-md);
   background: var(--color-bg-card);
   padding: 12px;
+}
+
+.workflow-input-field-row {
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+}
+
+.workflow-inline-card-icon {
+  width: 32px;
+  height: 32px;
+}
+
+.workflow-mini-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.workflow-mini-card-icon {
+  width: 32px;
+  height: 32px;
+}
+
+.workflow-overview-metric {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid color-mix(in srgb, var(--color-border-light) 88%, var(--color-primary) 12%);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-hover);
+  padding: 10px 12px;
+}
+
+.workflow-overview-metric-icon {
+  width: 34px;
+  height: 34px;
 }
 
 .workflow-config-list-box {

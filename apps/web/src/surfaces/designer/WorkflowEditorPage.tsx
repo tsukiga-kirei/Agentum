@@ -6,17 +6,23 @@ import {
   ArrowDown,
   ArrowUp,
   Bot,
+  Boxes,
+  BrainCircuit,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
   Clock3,
+  FileText,
+  Hash,
   Layers3,
   ListChecks,
   PackageCheck,
   Plus,
   Save,
   Search,
+  ServerCog,
   Settings2,
+  Tag,
   TextCursorInput,
   Trash2,
   X,
@@ -118,6 +124,8 @@ type WorkflowCapabilityState = {
   loading: boolean;
   error: string;
 };
+
+type WorkflowIcon = typeof Zap;
 
 type WorkflowEditorPageProps = {
   workflow: WorkflowDraft;
@@ -867,11 +875,11 @@ function WorkflowOverviewPanel({
         <h3 id="workflow-selection-title" className="text-base font-semibold text-[var(--color-text-primary)]">选择左侧积木继续配置</h3>
       </div>
       <div className="grid grid-cols-3 gap-2">
-        <OverviewMetric label="步骤" value={String(nodes.length)} />
-        <OverviewMetric label="输出" value={String(variables.length)} />
-        <OverviewMetric label="待配" value={String(incompleteNodes.length)} />
+        <OverviewMetric icon={ListChecks} label="步骤" value={String(nodes.length)} />
+        <OverviewMetric icon={Zap} label="输出" value={String(variables.length)} />
+        <OverviewMetric icon={Settings2} label="待配" value={String(incompleteNodes.length)} />
       </div>
-      <PanelGroup title="待配置积木">
+      <PanelGroup title="待配置积木" icon={AlertTriangle}>
         {incompleteNodes.length === 0 ? (
           <p className="text-sm text-[var(--color-text-tertiary)]">当前没有待配置积木。</p>
         ) : (
@@ -885,7 +893,7 @@ function WorkflowOverviewPanel({
           </div>
         )}
       </PanelGroup>
-      <PanelGroup title="输出内容">
+      <PanelGroup title="输出内容" icon={Zap}>
         <VariableList variables={variables.map((variable) => variable.name)} emptyText="暂无输出内容" />
       </PanelGroup>
     </aside>
@@ -904,9 +912,9 @@ function EmptyWorkflowGuide({ onOpenAddBrick }: { onOpenAddBrick: () => void }) 
           推荐先添加输入节点收集业务资料，再接单智能体或智能体集群处理，最后用交付节点生成文档、邮件或 OA 结果。
         </p>
         <div className="mt-5 grid gap-3 text-left md:grid-cols-3">
-          <BuildGuideCard title="输入" detail="定义用户需要填写的字段和输出内容。" />
-          <BuildGuideCard title="处理" detail="选择智能体、Skill、MCP 和提示词模板。" />
-          <BuildGuideCard title="交付" detail="配置最终输出内容和交付方式。" />
+          <BuildGuideCard icon={TextCursorInput} title="输入" detail="定义用户需要填写的字段和输出内容。" />
+          <BuildGuideCard icon={Bot} title="处理" detail="选择智能体、Skill、MCP 和提示词模板。" />
+          <BuildGuideCard icon={PackageCheck} title="交付" detail="配置最终输出内容和交付方式。" />
         </div>
         <button type="button" onClick={onOpenAddBrick} className="agent-button agent-button-primary mt-6 h-9 px-4 text-sm">
           <Plus className="h-4 w-4" aria-hidden="true" />
@@ -917,10 +925,15 @@ function EmptyWorkflowGuide({ onOpenAddBrick }: { onOpenAddBrick: () => void }) 
   );
 }
 
-function BuildGuideCard({ title, detail }: { title: string; detail: string }) {
+function BuildGuideCard({ icon: Icon, title, detail }: { icon: WorkflowIcon; title: string; detail: string }) {
   return (
     <article className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-3">
-      <strong className="block text-sm text-[var(--color-text-primary)]">{title}</strong>
+      <div className="workflow-mini-card-head">
+        <span className="workflow-mini-card-icon">
+          <Icon className="h-4 w-4" aria-hidden="true" />
+        </span>
+        <strong className="block text-sm text-[var(--color-text-primary)]">{title}</strong>
+      </div>
       <span className="mt-1 block text-xs leading-5 text-[var(--color-text-secondary)]">{detail}</span>
     </article>
   );
@@ -940,15 +953,18 @@ function BasicInfoPanel({
   onUpdateConfig: (nextConfig: Record<string, unknown>) => void;
 }) {
   return (
-    <PanelGroup title="基础信息" className={brickType === "input" ? "xl:col-span-2" : undefined}>
+    <PanelGroup title="基础信息" icon={Settings2} className={brickType === "input" ? "xl:col-span-2" : undefined}>
       <label className="sys-field">
         <span className="sys-field-label">步骤名称</span>
-        <input
-          value={node.data.label}
-          onChange={(event) => onUpdateNode({ label: event.target.value })}
-          className="sys-field-input"
-          placeholder="请输入步骤名称"
-        />
+        <div className="sys-field-input-wrap">
+          <Tag size={16} className="sys-field-prefix" aria-hidden="true" />
+          <input
+            value={node.data.label}
+            onChange={(event) => onUpdateNode({ label: event.target.value })}
+            className="sys-field-input"
+            placeholder="请输入步骤名称"
+          />
+        </div>
       </label>
       <label className="sys-field">
         <span className="sys-field-label">步骤说明</span>
@@ -993,12 +1009,15 @@ function OutcomeVariableField({
   return (
     <label className="sys-field">
       <span className="sys-field-label">{label}</span>
-      <input
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="sys-field-input"
-        placeholder={placeholder}
-      />
+      <div className="sys-field-input-wrap">
+        <Hash size={16} className="sys-field-prefix" aria-hidden="true" />
+        <input
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className="sys-field-input"
+          placeholder={placeholder}
+        />
+      </div>
     </label>
   );
 }
@@ -1034,6 +1053,9 @@ function InputFieldsManager({
       <div className="space-y-3">
         {fields.map((field, index) => (
           <article key={field.id} className="workflow-input-field-row">
+            <span className="workflow-inline-card-icon">
+              <TextCursorInput className="h-4 w-4" aria-hidden="true" />
+            </span>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs font-medium text-[var(--color-text-tertiary)]">输入框 {index + 1}</span>
@@ -1094,7 +1116,7 @@ function SingleAgentBrickConfig({
   const userPromptName = findCapabilityName(promptAssets, readString(config.userPromptTemplateId, "none"), "用户提示词自定义");
 
   return (
-    <PanelGroup title="智能体配置" className="xl:col-span-2">
+    <PanelGroup title="智能体配置" icon={Bot} className="xl:col-span-2">
       <CapabilityStateBanner state={capabilityState} />
       <div className="workflow-config-list-box">
         <div className="workflow-config-list-header">
@@ -1181,7 +1203,7 @@ function AgentClusterBrickConfig({
   }
 
   return (
-    <PanelGroup title="智能体集群配置" className="xl:col-span-2">
+    <PanelGroup title="智能体集群配置" icon={Layers3} className="xl:col-span-2">
       <CapabilityStateBanner state={capabilityState} />
       <div className="workflow-config-list-box">
         <div className="workflow-config-list-header">
@@ -1193,6 +1215,7 @@ function AgentClusterBrickConfig({
         </div>
         <SelectLikeField
           label="执行方式"
+          icon={Layers3}
           value={readString(config.executionMode, "parallel")}
           options={[{ value: "parallel", label: "并行执行" }]}
           onChange={(value) => onUpdateConfig({ executionMode: value })}
@@ -1200,10 +1223,13 @@ function AgentClusterBrickConfig({
         <div className="workflow-cluster-agent-list">
           {agents.map((agent, index) => (
             <article key={agent.id} className="workflow-cluster-agent-row">
-              <div className="workflow-cluster-agent-index">{index + 1}</div>
+              <div className="workflow-cluster-agent-index">
+                <Bot className="h-4 w-4" aria-hidden="true" />
+              </div>
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{agent.name}</p>
                 <div className="mt-1 flex flex-wrap gap-1.5">
+                  <TinyBadge>智能体 {index + 1}</TinyBadge>
                   <TinyBadge>{agent.output}</TinyBadge>
                   <TinyBadge tone="info">Skill {agent.skillIds.length}</TinyBadge>
                   <TinyBadge tone="info">MCP {agent.mcpIds.length}</TinyBadge>
@@ -1256,11 +1282,12 @@ function DeliveryBrickConfig({
   const deliveryMode = readString(config.deliveryMode, "capability");
 
   return (
-    <PanelGroup title="交付配置" className="xl:col-span-2">
+    <PanelGroup title="交付配置" icon={PackageCheck} className="xl:col-span-2">
       <CapabilityStateBanner state={capabilityState} />
       <div className="grid gap-4 lg:grid-cols-2">
         <SelectLikeField
           label="交付模式"
+          icon={PackageCheck}
           value={deliveryMode}
           options={[
             { value: "capability", label: "使用交付能力" },
@@ -1269,11 +1296,12 @@ function DeliveryBrickConfig({
           onChange={(value) => onUpdateConfig({ deliveryMode: value })}
         />
         {deliveryMode === "capability" ? (
-          <CapabilitySelectField
-            label="交付能力"
-            value={readString(config.deliveryCapabilityId, "none")}
-            emptyValue="none"
-            emptyLabel="暂不绑定交付能力"
+        <CapabilitySelectField
+          label="交付能力"
+          icon={PackageCheck}
+          value={readString(config.deliveryCapabilityId, "none")}
+          emptyValue="none"
+          emptyLabel="暂不绑定交付能力"
             options={deliveryAssets}
             onChange={(value) => onUpdateConfig({ deliveryCapabilityId: value })}
           />
@@ -1281,6 +1309,7 @@ function DeliveryBrickConfig({
       </div>
       <SelectLikeField
         label="交付输出内容"
+        icon={Zap}
         value={readString(config.artifactVariable, workflowVariables[0]?.name ?? "delivery_content")}
         options={workflowVariables.map((variable) => ({ value: variable.name, label: `${variable.name} · ${variable.sourceNodeName}` }))}
         onChange={(value) => onUpdateConfig({ artifactVariable: value })}
@@ -1298,6 +1327,7 @@ function DeliveryBrickConfig({
 
 function CapabilitySelectField({
   label,
+  icon: Icon = Boxes,
   value,
   emptyValue,
   emptyLabel,
@@ -1305,6 +1335,7 @@ function CapabilitySelectField({
   onChange,
 }: {
   label: string;
+  icon?: WorkflowIcon;
   value: string;
   emptyValue: string;
   emptyLabel: string;
@@ -1317,6 +1348,7 @@ function CapabilitySelectField({
       <Select
         className="agent-admin-select w-full"
         classNames={workflowSelectClassNames}
+        prefix={<Icon className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
         suffixIcon={workflowSelectSuffixIcon}
         showSearch={false}
         value={value}
@@ -1336,12 +1368,14 @@ function CapabilitySelectField({
 
 function CapabilityMultiSelectField({
   label,
+  icon: Icon = Boxes,
   options,
   selectedIds,
   placeholder,
   onChange,
 }: {
   label: string;
+  icon?: WorkflowIcon;
   options: WorkflowCapabilityOption[];
   selectedIds: string[];
   placeholder: string;
@@ -1354,6 +1388,7 @@ function CapabilityMultiSelectField({
         mode="multiple"
         className="agent-admin-select w-full"
         classNames={workflowSelectClassNames}
+        prefix={<Icon className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
         suffixIcon={workflowSelectSuffixIcon}
         showSearch={false}
         value={selectedIds}
@@ -1387,11 +1422,13 @@ function CapabilityStateBanner({ state }: { state: WorkflowCapabilityState }) {
 
 function SelectLikeField({
   label,
+  icon: Icon,
   value,
   options,
   onChange,
 }: {
   label: string;
+  icon?: WorkflowIcon;
   value: string;
   options: Array<string | { value: string; label: string }>;
   onChange: (value: string) => void;
@@ -1407,6 +1444,7 @@ function SelectLikeField({
       <Select
         className="agent-admin-select w-full"
         classNames={workflowSelectClassNames}
+        prefix={Icon ? <Icon className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" /> : undefined}
         suffixIcon={workflowSelectSuffixIcon}
         showSearch={false}
         value={value}
@@ -1494,6 +1532,7 @@ function PromptTemplateEditor({
     <div className="workflow-prompt-section">
       <CapabilitySelectField
         label={templateLabel}
+        icon={FileText}
         value={templateValue}
         emptyValue="none"
         emptyLabel={templateEmptyLabel}
@@ -1536,15 +1575,24 @@ function InputFieldModal({
         <div className="sys-modal-body">
           <label className="sys-field">
             <span className="sys-field-label">显示名称</span>
-            <input value={draft.label} onChange={(event) => setDraft({ ...draft, label: event.target.value })} className="sys-field-input" />
+            <div className="sys-field-input-wrap">
+              <Tag size={16} className="sys-field-prefix" aria-hidden="true" />
+              <input value={draft.label} onChange={(event) => setDraft({ ...draft, label: event.target.value })} className="sys-field-input" />
+            </div>
           </label>
           <label className="sys-field">
             <span className="sys-field-label">输出内容标识</span>
-            <input value={draft.variable} onChange={(event) => setDraft({ ...draft, variable: normalizeVariableName(event.target.value) })} className="sys-field-input" />
+            <div className="sys-field-input-wrap">
+              <Hash size={16} className="sys-field-prefix" aria-hidden="true" />
+              <input value={draft.variable} onChange={(event) => setDraft({ ...draft, variable: normalizeVariableName(event.target.value) })} className="sys-field-input" />
+            </div>
           </label>
           <label className="sys-field">
             <span className="sys-field-label">占位提示</span>
-            <input value={draft.placeholder} onChange={(event) => setDraft({ ...draft, placeholder: event.target.value })} className="sys-field-input" />
+            <div className="sys-field-input-wrap">
+              <TextCursorInput size={16} className="sys-field-prefix" aria-hidden="true" />
+              <input value={draft.placeholder} onChange={(event) => setDraft({ ...draft, placeholder: event.target.value })} className="sys-field-input" />
+            </div>
           </label>
           <PromptEditor
             label="默认内容"
@@ -1609,6 +1657,7 @@ function SingleAgentConfigModal({
           <div className="grid gap-4 lg:grid-cols-2">
             <CapabilitySelectField
               label="智能体模板"
+              icon={Bot}
               value={draft.agentAssetId}
               emptyValue="custom"
               emptyLabel="自定义智能体"
@@ -1641,6 +1690,7 @@ function SingleAgentConfigModal({
           <div className="grid gap-4 lg:grid-cols-2">
             <CapabilityMultiSelectField
               label="MCP"
+              icon={ServerCog}
               options={mcpAssets}
               selectedIds={draft.mcpIds}
               placeholder="选择 MCP"
@@ -1648,6 +1698,7 @@ function SingleAgentConfigModal({
             />
             <CapabilityMultiSelectField
               label="Skill"
+              icon={BrainCircuit}
               options={skillAssets}
               selectedIds={draft.skillIds}
               placeholder="选择 Skill"
@@ -1737,7 +1788,10 @@ function ClusterAgentModal({
           <div className="grid gap-4 lg:grid-cols-2">
             <label className="sys-field">
               <span className="sys-field-label">智能体名称</span>
-              <input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} className="sys-field-input" />
+              <div className="sys-field-input-wrap">
+                <Tag size={16} className="sys-field-prefix" aria-hidden="true" />
+                <input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} className="sys-field-input" />
+              </div>
             </label>
             <OutcomeVariableField
               label="输出内容标识"
@@ -1747,6 +1801,7 @@ function ClusterAgentModal({
             />
             <CapabilitySelectField
               label="智能体模板"
+              icon={Bot}
               value={draft.agentAssetId || "custom"}
               emptyValue="custom"
               emptyLabel="自定义智能体"
@@ -1779,6 +1834,7 @@ function ClusterAgentModal({
           <div className="grid gap-4 lg:grid-cols-2">
             <CapabilityMultiSelectField
               label="Skill"
+              icon={BrainCircuit}
               options={skillAssets}
               selectedIds={draft.skillIds}
               placeholder="选择 Skill"
@@ -1786,6 +1842,7 @@ function ClusterAgentModal({
             />
             <CapabilityMultiSelectField
               label="MCP"
+              icon={ServerCog}
               options={mcpAssets}
               selectedIds={draft.mcpIds}
               placeholder="选择 MCP"
@@ -1802,10 +1859,17 @@ function ClusterAgentModal({
   );
 }
 
-function PanelGroup({ title, children, className = "" }: { title: string; children: ReactNode; className?: string }) {
+function PanelGroup({ title, icon: Icon, children, className = "" }: { title: string; icon?: WorkflowIcon; children: ReactNode; className?: string }) {
   return (
     <section className={`workflow-config-panel-group rounded-[var(--radius-md)] bg-[var(--color-bg-hover)] px-3 py-3 ${className}`}>
-      <h4 className="mb-2 text-sm font-semibold text-[var(--color-text-primary)]">{title}</h4>
+      <h4 className="workflow-config-panel-title">
+        {Icon ? (
+          <span className="workflow-config-panel-title-icon">
+            <Icon className="h-4 w-4" aria-hidden="true" />
+          </span>
+        ) : null}
+        <span>{title}</span>
+      </h4>
       {children}
     </section>
   );
@@ -1839,11 +1903,16 @@ function ToolbarMetric({ icon: Icon, label, value, tone = "default" }: { icon: t
   );
 }
 
-function OverviewMetric({ label, value }: { label: string; value: string }) {
+function OverviewMetric({ icon: Icon, label, value }: { icon: WorkflowIcon; label: string; value: string }) {
   return (
-    <div className="rounded-[var(--radius-md)] bg-[var(--color-bg-hover)] px-3 py-2 text-center">
-      <p className="text-xs text-[var(--color-text-tertiary)]">{label}</p>
-      <p className="mt-1 text-lg font-semibold text-[var(--color-text-primary)]">{value}</p>
+    <div className="workflow-overview-metric">
+      <span className="workflow-overview-metric-icon">
+        <Icon className="h-4 w-4" aria-hidden="true" />
+      </span>
+      <span className="min-w-0 text-left">
+        <p className="text-xs text-[var(--color-text-tertiary)]">{label}</p>
+        <p className="mt-1 text-lg font-semibold text-[var(--color-text-primary)]">{value}</p>
+      </span>
     </div>
   );
 }
