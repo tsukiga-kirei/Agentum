@@ -1567,6 +1567,9 @@ textarea:focus-visible {
   width: 100%;
   min-width: 0;
 }
+.sys-card-grid > .workflow-feature-card {
+  width: 100%;
+}
 
 /* 通用管理卡片 */
 .sys-card {
@@ -3068,6 +3071,19 @@ textarea:focus-visible {
   gap: 8px;
 }
 
+/* 列表/分区无数据：沿用页面底色，不额外包白卡片（对齐系统管理模型供应商空态） */
+.sys-surface-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 220px;
+  padding: 32px 16px;
+}
+.sys-surface-empty .ant-empty {
+  margin: 0;
+}
+
+/* 搜索/筛选无结果：无底色块，仅居中提示（对齐流程设计列表空态） */
 .workflow-definition-empty-state {
   display: flex;
   min-height: 168px;
@@ -3075,6 +3091,9 @@ textarea:focus-visible {
   align-items: center;
   justify-content: center;
   gap: 8px;
+  color: var(--color-text-tertiary);
+}
+.workflow-definition-empty-state > svg {
   color: var(--color-text-tertiary);
 }
 

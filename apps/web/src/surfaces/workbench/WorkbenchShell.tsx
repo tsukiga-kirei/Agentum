@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
+  AlertCircle,
   ArrowRight,
   Archive,
   CheckCircle2,
-  ClipboardList,
   GitBranch,
   History,
   LayoutDashboard,
@@ -24,7 +24,7 @@ import {
   UserRoundCheck,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { Empty, Input, Pagination, Segmented, message } from "antd";
+import { Empty, Pagination, Segmented, message } from "antd";
 import { TenantManagementPage } from "../admin/TenantManagementPage";
 import { SystemManagementPage } from "../admin/SystemManagementPage";
 import { AssetsPage } from "../assets/AssetsPage";
@@ -535,60 +535,64 @@ export function WorkbenchShell() {
                     ) : null}
 
                     {activeWorkbenchTab === "create" ? (
-                      <section className="sys-preview-card" aria-labelledby="create-task-title">
-                        <div className="flex items-center gap-2" id="create-task-title-row">
-                          <h2 id="create-task-title" className="sys-preview-card-title mb-0 flex-1"><ClipboardList size={16} /> 已发布智能体流程</h2>
-                          <Input
-                            allowClear
-                            value={availableKeywordInput}
-                            onChange={(event) => setAvailableKeywordInput(event.target.value)}
-                            onPressEnter={handleSubmitKeyword}
-                            onBlur={handleSubmitKeyword}
-                            placeholder="按流程名称或描述搜索"
-                            prefix={<Search size={14} aria-hidden="true" />}
-                            className="agent-admin-input max-w-[280px]"
-                          />
-                        </div>
-
-                        <div className="mt-4">
-                          {availableError ? (
-                            <Empty
-                              description={
-                                <div className="space-y-2 text-sm text-[var(--color-text-primary)]">
-                                  <p>{availableError}</p>
-                                  <button type="button" className="agent-button h-8 px-3 text-xs" onClick={() => void loadAvailableWorkflows(availablePage, availableKeyword)}>
-                                    重试
-                                  </button>
-                                </div>
-                              }
-                            />
-                          ) : availableLoading ? (
-                            <div className="flex h-48 items-center justify-center text-[var(--color-text-tertiary)]">
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-                              <span className="text-sm">加载已发布流程...</span>
-                            </div>
-                          ) : availableWorkflows.length === 0 ? (
-                            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={availableKeyword ? `未找到包含「${availableKeyword}」的流程` : "当前租户暂无已发布流程，可前往流程设计进行发布"} />
-                          ) : (
-                            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                              {availableWorkflows.map((workflow) => (
-                                <WorkflowLaunchCard key={workflow.id} workflow={workflow} onCreate={() => handleCreateTask(workflow)} />
-                              ))}
-                            </div>
-                          )}
-
-                          {availableTotal > AVAILABLE_PAGE_SIZE ? (
-                            <div className="mt-4 flex justify-end">
-                              <Pagination
-                                current={availablePage}
-                                total={availableTotal}
-                                pageSize={AVAILABLE_PAGE_SIZE}
-                                showSizeChanger={false}
-                                onChange={(page) => setAvailablePage(page)}
+                      <section className="sys-fade-in" aria-label="创建任务">
+                        <div className="workflow-library-toolbar">
+                          <div className="workflow-library-toolbar-actions">
+                            <label className="workflow-definition-search">
+                              <Search className="h-[18px] w-[18px]" aria-hidden="true" />
+                              <span className="sr-only">搜索流程</span>
+                              <input
+                                value={availableKeywordInput}
+                                onChange={(event) => setAvailableKeywordInput(event.target.value)}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter") handleSubmitKeyword();
+                                }}
+                                onBlur={handleSubmitKeyword}
+                                placeholder="按流程名称或描述搜索"
                               />
-                            </div>
-                          ) : null}
+                            </label>
+                          </div>
                         </div>
+
+                        {availableError ? (
+                          <div className="workflow-definition-empty-state">
+                            <AlertCircle className="h-8 w-8" aria-hidden="true" />
+                            <p>{availableError}</p>
+                            <button type="button" className="sys-btn sys-btn--default sys-btn--sm" onClick={() => void loadAvailableWorkflows(availablePage, availableKeyword)}>
+                              重试
+                            </button>
+                          </div>
+                        ) : availableLoading ? (
+                          <div className="workflow-definition-empty-state">
+                            <Loader2 className="h-8 w-8 animate-spin" aria-hidden="true" />
+                            <p>正在加载已发布流程</p>
+                          </div>
+                        ) : availableWorkflows.length === 0 ? (
+                          <div className="workflow-definition-empty-state">
+                            <AlertCircle className="h-8 w-8" aria-hidden="true" />
+                            <p>{availableKeyword ? `未找到包含「${availableKeyword}」的流程` : "当前租户暂无已发布流程"}</p>
+                            <span>{availableKeyword ? "可以调整搜索词后重试。" : "可前往流程设计进行发布。"}</span>
+                          </div>
+                        ) : (
+                          <div className="sys-card-grid">
+                            {availableWorkflows.map((workflow) => (
+                              <WorkflowLaunchCard key={workflow.id} workflow={workflow} onCreate={() => handleCreateTask(workflow)} />
+                            ))}
+                          </div>
+                        )}
+
+                        {availableTotal > AVAILABLE_PAGE_SIZE ? (
+                          <div className="agent-admin-pagination-wrap mt-4">
+                            <Pagination
+                              className="agent-admin-pagination"
+                              current={availablePage}
+                              total={availableTotal}
+                              pageSize={AVAILABLE_PAGE_SIZE}
+                              showSizeChanger={false}
+                              onChange={(page) => setAvailablePage(page)}
+                            />
+                          </div>
+                        ) : null}
                       </section>
                     ) : null}
 

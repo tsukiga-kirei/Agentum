@@ -466,8 +466,10 @@ export function AssetsPage() {
                 />
               </AssetFilterBar>
               {filteredSystemAssets.length === 0 ? (
-                <div className="sys-preview-card">
-                  <Empty description="当前暂无匹配的开放能力" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                <div className="workflow-definition-empty-state">
+                  <Search className="h-8 w-8 shrink-0" aria-hidden="true" />
+                  <p>当前暂无匹配的开放能力</p>
+                  <span>可以调整搜索词或能力类型筛选条件。</span>
                 </div>
               ) : (
                 <div className="sys-card-grid">
@@ -540,8 +542,10 @@ export function AssetsPage() {
                   </button>
               </AssetFilterBar>
               {filteredMyAssets.length === 0 ? (
-                <div className="sys-preview-card">
-                  <Empty description="当前暂无匹配的我的能力" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                <div className="workflow-definition-empty-state">
+                  <Search className="h-8 w-8 shrink-0" aria-hidden="true" />
+                  <p>当前暂无匹配的我的能力</p>
+                  <span>可以调整搜索词、类型或状态筛选条件。</span>
                 </div>
               ) : (
                 <div className="sys-card-grid">

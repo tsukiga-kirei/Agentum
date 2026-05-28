@@ -1559,7 +1559,7 @@ function ResourceAuthorizationPanel({
           </div>
         </div>
         {pageGrants.length === 0 && !loading ? (
-          <div className="sys-preview-card">
+          <div className="sys-surface-empty">
             <Empty description="暂无页签分配" image={Empty.PRESENTED_IMAGE_SIMPLE} />
           </div>
         ) : (
@@ -1613,7 +1613,7 @@ function ResourceAuthorizationPanel({
         </div>
 
         {!loading && grants.length === 0 ? (
-          <div className="sys-preview-card">
+          <div className="sys-surface-empty">
             <Empty description="暂无能力分配" image={Empty.PRESENTED_IMAGE_SIMPLE} />
           </div>
         ) : null}
