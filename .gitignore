@@ -47,6 +47,7 @@ pnpm-debug.log*
 .vite/
 .eslintcache
 *.tsbuildinfo
+.codegraph/
 
 # Editors
 .idea/
