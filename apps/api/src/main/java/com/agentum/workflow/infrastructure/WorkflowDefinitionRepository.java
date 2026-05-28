@@ -13,6 +13,8 @@ public interface WorkflowDefinitionRepository extends JpaRepository<WorkflowDefi
 
     Optional<WorkflowDefinitionEntity> findByIdAndTenantId(UUID id, UUID tenantId);
 
+    long countByTenantIdAndStatus(UUID tenantId, String status);
+
     @Query("""
         select definition from WorkflowDefinitionEntity definition
         where definition.tenantId = :tenantId

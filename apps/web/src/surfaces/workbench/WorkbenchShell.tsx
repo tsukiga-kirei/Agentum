@@ -1,29 +1,30 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   ArrowRight,
   Archive,
   CheckCircle2,
-  CircleAlert,
   ClipboardList,
   GitBranch,
   History,
   LayoutDashboard,
   Library,
   ListTodo,
-  Lock,
+  Loader2,
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
   PauseCircle,
   PlayCircle,
+  Search,
   Settings,
+  ShieldAlert,
   ShieldCheck,
   User,
   UserRoundCheck,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { Segmented, message } from "antd";
+import { Empty, Input, Pagination, Segmented, message } from "antd";
 import { TenantManagementPage } from "../admin/TenantManagementPage";
 import { SystemManagementPage } from "../admin/SystemManagementPage";
 import { AssetsPage } from "../assets/AssetsPage";
@@ -32,6 +33,13 @@ import { ThemeToggle } from "../../components/ThemeToggle";
 import { RoleSwitcher } from "../../components/RoleSwitcher";
 import { AgentumMark } from "../../components/brand/AgentumMark";
 import { useAuthStore } from "../../stores/authStore";
+import { AgentumApiError, workbenchApi } from "../../services/apiClient";
+import type {
+  WorkbenchAvailableWorkflowRow,
+  WorkbenchPendingTodoRow,
+  WorkbenchRecentRunRow,
+  WorkbenchSummary,
+} from "../../types/workbench";
 
 type SurfaceKey = "workbench" | "designer" | "assets" | "tenant" | "system";
 type WorkbenchTab = "overview" | "create" | "tasks";
@@ -46,43 +54,14 @@ const ICON_MAP: Record<string, typeof LayoutDashboard> = {
   Settings,
 };
 
-type Metric = {
+type MetricTone = "primary" | "success" | "info" | "cap";
+
+type MetricCard = {
   label: string;
   value: string;
-  tone: "primary" | "success" | "info" | "cap";
+  hint?: string;
+  tone: MetricTone;
   icon: LucideIcon;
-};
-
-type TodoItem = {
-  title: string;
-  workflow: string;
-  owner: string;
-  deadline: string;
-  status: string;
-  action: string;
-};
-
-type WorkflowTemplate = {
-  title: string;
-  description: string;
-  nodes: string;
-  tag: string;
-  startLabel: string;
-  agent: string;
-  flow: string[];
-  capabilityAssets: string[];
-  canCreate: boolean;
-  permissionScope: string;
-  blockedReason?: string;
-};
-
-type RunRecord = {
-  name: string;
-  state: string;
-  node: string;
-  owner: string;
-  updatedAt: string;
-  progress: string;
 };
 
 type WorkbenchTabMeta = {
@@ -92,153 +71,16 @@ type WorkbenchTabMeta = {
   description: string;
 };
 
-// 工作台数据当前用于撑起业务信息层级，后续由待办、运行记录和资产统计 API 替换。
-const metrics: Metric[] = [
-  {
-    label: "待处理事项",
-    value: "8",
-    tone: "primary",
-    icon: UserRoundCheck,
-  },
-  {
-    label: "今日运行",
-    value: "24",
-    tone: "info",
-    icon: Activity,
-  },
-  {
-    label: "已发布流程",
-    value: "12",
-    tone: "success",
-    icon: GitBranch,
-  },
-  {
-    label: "能力资产",
-    value: "36",
-    tone: "cap",
-    icon: Library,
-  },
+// 业务工作台运行态状态：第一阶段后端 runtimeAvailable 固定为 false，
+// 前端按此标记展示“运行态建设中”空态，等待运行实例 API 上线。
+
+const workbenchTabs: WorkbenchTabMeta[] = [
+  { key: "overview", label: "总览", icon: LayoutDashboard, description: "查看今日待办、可创建流程和运行态概况" },
+  { key: "create", label: "创建任务", icon: PlayCircle, description: "浏览全部开放智能体流程，有权限的流程可创建任务" },
+  { key: "tasks", label: "任务中心", icon: ListTodo, description: "合并查看待办、运行中、暂停和历史完成任务" },
 ];
 
-// 待办项模拟了三类暂停点：用户输入、人工审核和交付确认，便于验证业务区不暴露设计态编排也能完成处理。
-const todoItems: TodoItem[] = [
-  {
-    title: "确认合同风险分析结论",
-    workflow: "合同审查与交付流程",
-    owner: "法务组",
-    deadline: "今天 18:00",
-    status: "等待人工审核",
-    action: "审核结论",
-  },
-  {
-    title: "补充项目立项背景材料",
-    workflow: "立项材料生成流程",
-    owner: "项目经理",
-    deadline: "明天 10:00",
-    status: "等待用户输入",
-    action: "补充资料",
-  },
-  {
-    title: "复核月报交付邮件",
-    workflow: "经营月报汇总流程",
-    owner: "运营组",
-    deadline: "明天 16:00",
-    status: "等待交付确认",
-    action: "确认交付",
-  },
-];
-
-// 模板卡片先展示 MVP 场景，后续接入工作流模板库后应带上模板版本、运行入口和后端权限校验结果。
-const workflowTemplates: WorkflowTemplate[] = [
-  {
-    title: "需求分析闭环",
-    description: "输入需求材料，自动拆解要点，人工确认后生成评审文档。",
-    nodes: "7 个节点",
-    tag: "需求",
-    startLabel: "发起需求分析",
-    agent: "需求拆解智能体",
-    flow: ["资料输入", "智能体追问", "人工确认", "文档交付"],
-    capabilityAssets: ["需求分析 Skill", "评审文档模板", "Word 交付"],
-    canCreate: true,
-    permissionScope: "产品与项目组可创建",
-  },
-  {
-    title: "合同审查交付",
-    description: "识别风险条款，汇总修改建议，审核通过后生成交付记录。",
-    nodes: "8 个节点",
-    tag: "法务",
-    startLabel: "发起合同审查",
-    agent: "合同风险智能体",
-    flow: ["合同上传", "条款识别", "法务审核", "交付归档"],
-    capabilityAssets: ["合同审查 Skill", "条款抽取 MCP", "邮件交付"],
-    canCreate: true,
-    permissionScope: "法务与采购组可创建",
-  },
-  {
-    title: "经营报告组装",
-    description: "并行获取数据摘要，合并分析结论，输出报告草稿。",
-    nodes: "9 个节点",
-    tag: "经营",
-    startLabel: "发起报告流程",
-    agent: "经营分析智能体集群",
-    flow: ["选择周期", "并行取数", "章节生成", "报告组装"],
-    capabilityAssets: ["数据摘要 Skill", "经营数据库 MCP", "PDF 交付"],
-    canCreate: false,
-    permissionScope: "经营管理组可创建",
-    blockedReason: "当前角色只能查看流程，未获得经营报告创建权限",
-  },
-  {
-    title: "授信报告生成",
-    description: "工商、司法、财务和行业数据并行核验，组装授信报告初稿。",
-    nodes: "11 个节点",
-    tag: "授信",
-    startLabel: "发起授信报告",
-    agent: "授信分析智能体集群",
-    flow: ["企业名称输入", "外部数据核验", "章节并行生成", "报告审核"],
-    capabilityAssets: ["风险识别 Skill", "工商司法 MCP", "报告组装模板"],
-    canCreate: false,
-    permissionScope: "风控部门可创建",
-    blockedReason: "当前用户未被分配该智能体流程的创建范围",
-  },
-];
-
-// 运行态摘要暂时展示最近运行位置，后续应来自 WorkflowRun 和 NodeRun 的聚合结果。
-const runRecords: RunRecord[] = [
-  {
-    name: "客户续约风险评估",
-    state: "运行中",
-    node: "并行数据获取",
-    owner: "客户成功组",
-    updatedAt: "10 分钟前",
-    progress: "4/7",
-  },
-  {
-    name: "采购合同审查",
-    state: "已暂停",
-    node: "人工审核",
-    owner: "采购部",
-    updatedAt: "32 分钟前",
-    progress: "5/8",
-  },
-  {
-    name: "周报生成与发送",
-    state: "已完成",
-    node: "邮件交付",
-    owner: "运营组",
-    updatedAt: "昨天 17:40",
-    progress: "7/7",
-  },
-  {
-    name: "供应商准入评估",
-    state: "已暂停",
-    node: "补充资料",
-    owner: "采购部",
-    updatedAt: "今天 09:20",
-    progress: "2/6",
-  },
-];
-
-// 运行状态对应的颜色标记
+// 运行状态对应的颜色标记（保留供后续运行态接入后直接复用）
 const stateColors: Record<string, string> = {
   "运行中": "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300",
   "已暂停": "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
@@ -248,11 +90,7 @@ const stateColors: Record<string, string> = {
   "等待交付确认": "bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300",
 };
 
-const workbenchTabs: WorkbenchTabMeta[] = [
-  { key: "overview", label: "总览", icon: LayoutDashboard, description: "查看今日待办、可创建流程和运行态概况" },
-  { key: "create", label: "创建任务", icon: PlayCircle, description: "浏览全部开放智能体流程，有权限的流程可创建任务" },
-  { key: "tasks", label: "任务中心", icon: ListTodo, description: "合并查看待办、运行中、暂停和历史完成任务" },
-];
+const AVAILABLE_PAGE_SIZE = 12;
 
 export function WorkbenchShell() {
   // 菜单来自后端（通过 authStore.menus），不再前端硬编码 visibleFor。
@@ -260,7 +98,9 @@ export function WorkbenchShell() {
   const menus = useAuthStore((s) => s.menus);
   const themeMode = useAuthStore((s) => s.themeMode);
   const user = useAuthStore((s) => s.user);
+  const token = useAuthStore((s) => s.token);
   const logout = useAuthStore((s) => s.logout);
+  const tenantId = user?.tenantId ?? null;
   const isDarkMode = themeMode === "dark";
   const [messageApi, messageContextHolder] = message.useMessage();
 
@@ -302,11 +142,89 @@ export function WorkbenchShell() {
     };
   });
 
+  // 业务工作台真实数据：概览统计、待办、最近运行均由 /api/tenants/{tenantId}/workbench/summary 返回。
+  const [summary, setSummary] = useState<WorkbenchSummary | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+
+  // 可发起的已发布工作流来自后端分页查询，结合 keyword 在前端搜索。
+  const [availableWorkflows, setAvailableWorkflows] = useState<WorkbenchAvailableWorkflowRow[]>([]);
+  const [availableTotal, setAvailableTotal] = useState(0);
+  const [availablePage, setAvailablePage] = useState(1);
+  const [availableLoading, setAvailableLoading] = useState(false);
+  const [availableKeyword, setAvailableKeyword] = useState("");
+  const [availableKeywordInput, setAvailableKeywordInput] = useState("");
+  const [availableError, setAvailableError] = useState<string | null>(null);
+
   useEffect(() => () => {
     if (sidebarTransitionTimer.current !== null) {
       window.clearTimeout(sidebarTransitionTimer.current);
     }
   }, []);
+
+  // 仅当业务工作台 surface 处于激活态、并且已有有效 tenantId / token 时，才发起概览请求。
+  // 系统管理员入口没有 tenantId，业务工作台暂不为系统管理员渲染。
+  const loadSummary = useCallback(async () => {
+    if (!tenantId || !token) {
+      setSummary(null);
+      return;
+    }
+
+    setSummaryLoading(true);
+    setSummaryError(null);
+    try {
+      const data = await workbenchApi.summary(tenantId, token);
+      setSummary(data);
+    } catch (error) {
+      const reason = error instanceof AgentumApiError ? error.message : "业务工作台概览加载失败";
+      console.warn("[workbench] 概览加载失败", { code: error instanceof AgentumApiError ? error.code : "unknown" });
+      setSummaryError(reason);
+      setSummary(null);
+    } finally {
+      setSummaryLoading(false);
+    }
+  }, [tenantId, token]);
+
+  const loadAvailableWorkflows = useCallback(async (page: number, keyword: string) => {
+    if (!tenantId || !token) {
+      setAvailableWorkflows([]);
+      setAvailableTotal(0);
+      return;
+    }
+
+    setAvailableLoading(true);
+    setAvailableError(null);
+    try {
+      const data = await workbenchApi.listAvailableWorkflows(tenantId, token, keyword, page, AVAILABLE_PAGE_SIZE);
+      setAvailableWorkflows(data.items);
+      setAvailableTotal(data.total);
+      setAvailablePage(data.page);
+    } catch (error) {
+      const reason = error instanceof AgentumApiError ? error.message : "可发起流程加载失败";
+      console.warn("[workbench] 可发起流程加载失败", {
+        code: error instanceof AgentumApiError ? error.code : "unknown",
+      });
+      setAvailableError(reason);
+      setAvailableWorkflows([]);
+      setAvailableTotal(0);
+    } finally {
+      setAvailableLoading(false);
+    }
+  }, [tenantId, token]);
+
+  useEffect(() => {
+    if (activeSurface !== "workbench") {
+      return;
+    }
+    void loadSummary();
+  }, [activeSurface, loadSummary]);
+
+  useEffect(() => {
+    if (activeSurface !== "workbench") {
+      return;
+    }
+    void loadAvailableWorkflows(availablePage, availableKeyword);
+  }, [activeSurface, availableKeyword, availablePage, loadAvailableWorkflows]);
 
   function handleToggleSidebar() {
     if (sidebarTransitionTimer.current !== null) {
@@ -320,15 +238,57 @@ export function WorkbenchShell() {
     }, 320);
   }
 
-  function handleCreateTask(template: WorkflowTemplate) {
-    if (!template.canCreate) {
-      messageApi.warning(template.blockedReason ?? "当前账号暂无创建该任务的权限");
-      return;
-    }
-
-    // 任务运行 API 尚未接入，当前只在前端保留创建动作入口，后续替换为创建 WorkflowRun 后进入业务运行详情。
-    messageApi.success(`${template.title} 创建入口已就绪，后续将进入任务填写页`);
+  function handleCreateTask(workflow: WorkbenchAvailableWorkflowRow) {
+    // 第一阶段尚未接入运行实例 API，仅给出明确提示，避免误以为流程已经真正启动。
+    messageApi.info(`「${workflow.name}」 v${workflow.latestVersionNumber} 的运行态正在建设中，发起入口将与运行实例 API 一同上线`);
   }
+
+  function handleSubmitKeyword() {
+    const trimmed = availableKeywordInput.trim();
+    setAvailableKeyword(trimmed);
+    setAvailablePage(1);
+  }
+
+  // 概览指标卡片基于真实 summary.metrics 渲染；运行态相关指标在 runtimeAvailable=false 时显示“—”。
+  const metricCards: MetricCard[] = useMemo(() => {
+    const metrics = summary?.metrics;
+    const runtimeReady = summary?.runtimeAvailable ?? false;
+    return [
+      {
+        label: "我的待办",
+        value: runtimeReady ? String(metrics?.pendingTodoTotal ?? 0) : "—",
+        hint: runtimeReady ? "需要我处理的暂停点" : "运行态建设中",
+        tone: "primary",
+        icon: UserRoundCheck,
+      },
+      {
+        label: "进行中任务",
+        value: runtimeReady ? String(metrics?.runningRunTotal ?? 0) : "—",
+        hint: runtimeReady ? "我可以查看的运行实例" : "运行态建设中",
+        tone: "info",
+        icon: Activity,
+      },
+      {
+        label: "已发布流程",
+        value: metrics ? String(metrics.publishedWorkflowTotal) : "—",
+        hint: metrics ? `${metrics.availableWorkflowTotal} 个对当前账号开放` : "加载中",
+        tone: "success",
+        icon: GitBranch,
+      },
+      {
+        label: "可用能力",
+        value: metrics ? String(metrics.openedCapabilityTotal) : "—",
+        hint: metrics ? `我自建草稿 ${metrics.myAssetTotal} 个` : "加载中",
+        tone: "cap",
+        icon: Library,
+      },
+    ];
+  }, [summary]);
+
+  const pendingTodos = summary?.pendingTodos ?? [];
+  const recentRuns = summary?.recentRuns ?? [];
+  const runtimeAvailable = summary?.runtimeAvailable ?? false;
+  const runtimeStatusLabel = summary?.runtimeStatusLabel ?? "运行态建设中";
 
   return (
     <main className={`min-h-screen bg-[var(--color-bg-page)] text-[var(--color-text-primary)] transition-colors duration-300 ${isDarkMode ? "dark" : ""}`}>
@@ -486,116 +446,191 @@ export function WorkbenchShell() {
                   </div>
                 </div>
 
-              {activeWorkbenchTab === "overview" ? (
-                <>
-                  <section className="sys-overview-stats" aria-label="业务工作台概览">
-                    {metrics.map((metric) => (
-                      <WorkbenchOverviewStat key={metric.label} icon={metric.icon} label={metric.label} value={metric.value} tone={metric.tone} />
-                    ))}
+                {!tenantId ? (
+                  <section className="sys-preview-card" aria-label="业务工作台不可用">
+                    <div className="flex flex-col items-center gap-3 py-10 text-center">
+                      <ShieldAlert className="h-10 w-10 text-[var(--color-text-tertiary)]" aria-hidden="true" />
+                      <p className="text-sm font-semibold text-[var(--color-text-primary)]">业务工作台需要租户上下文</p>
+                      <p className="agent-muted text-xs">系统管理员入口不绑定租户，请切换到业务用户或租户管理员角色后访问。</p>
+                    </div>
                   </section>
+                ) : (
+                  <>
+                    {summaryError ? (
+                      <section className="sys-preview-card mb-4 border-rose-200 dark:border-rose-900/40" aria-label="业务工作台加载失败">
+                        <div className="flex items-start gap-3 text-sm text-[var(--color-text-primary)]">
+                          <ShieldAlert className="h-5 w-5 text-rose-500" aria-hidden="true" />
+                          <div>
+                            <p className="font-semibold">业务工作台数据暂时无法加载</p>
+                            <p className="agent-muted mt-1 text-xs">{summaryError}</p>
+                          </div>
+                          <button type="button" className="agent-button ml-auto h-8 px-3 text-xs" onClick={() => void loadSummary()}>
+                            重试
+                          </button>
+                        </div>
+                      </section>
+                    ) : null}
 
-                  <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]" aria-label="业务工作台总览">
-                    <section className="sys-preview-card">
-                      <div className="sys-preview-card-title"><LayoutDashboard size={16} /> 工作台功能入口</div>
-                      <div className="grid gap-3 md:grid-cols-2">
-                        <WorkbenchFeatureCard
-                          icon={PlayCircle}
-                          title="创建任务"
-                          description="查看全部开放智能体流程，按创建权限发起业务任务。"
-                          meta={`${workflowTemplates.filter((template) => template.canCreate).length} 个可创建流程`}
-                          onClick={() => setActiveWorkbenchTab("create")}
-                        />
-                        <WorkbenchFeatureCard
-                          icon={ListTodo}
-                          title="我的待办"
-                          description="处理需要我补充资料、确认结果、人工审核或交付确认的暂停点。"
-                          meta={`${todoItems.length} 个待办`}
-                          onClick={() => setActiveWorkbenchTab("tasks")}
-                        />
-                        <WorkbenchFeatureCard
-                          icon={PauseCircle}
-                          title="暂停续办"
-                          description="从正在进行和已暂停任务中恢复上下文，继续推进下一步。"
-                          meta={`${runRecords.filter((record) => record.state !== "已完成").length} 个可继续任务`}
-                          onClick={() => setActiveWorkbenchTab("tasks")}
-                        />
-                        <WorkbenchFeatureCard
-                          icon={Archive}
-                          title="历史完成"
-                          description="查看已完成任务与交付结果，后续可进入运行详情追溯过程。"
-                          meta={`${runRecords.filter((record) => record.state === "已完成").length} 个完成任务`}
-                          onClick={() => setActiveWorkbenchTab("tasks")}
-                        />
-                      </div>
-                    </section>
+                    {activeWorkbenchTab === "overview" ? (
+                      <>
+                        <section className="sys-overview-stats" aria-label="业务工作台概览">
+                          {metricCards.map((metric) => (
+                            <WorkbenchOverviewStat key={metric.label} icon={metric.icon} label={metric.label} value={metric.value} hint={metric.hint} tone={metric.tone} loading={summaryLoading} />
+                          ))}
+                        </section>
 
-                    <aside className="sys-preview-card">
-                      <div className="sys-preview-card-title"><History size={16} /> 最近任务</div>
-                      <div className="space-y-2">
-                        {runRecords.slice(0, 4).map((record) => (
-                          <WorkbenchPreviewItem
-                            key={record.name}
-                            title={record.name}
-                            description={`${record.node} · ${record.owner}`}
-                            meta={`${record.progress} · ${record.updatedAt}`}
-                            badge={record.state}
-                            icon={record.state === "已完成" ? CheckCircle2 : record.state === "已暂停" ? PauseCircle : Activity}
+                        <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]" aria-label="业务工作台总览">
+                          <section className="sys-preview-card">
+                            <div className="sys-preview-card-title"><LayoutDashboard size={16} /> 工作台功能入口</div>
+                            <div className="grid gap-3 md:grid-cols-2">
+                              <WorkbenchFeatureCard
+                                icon={PlayCircle}
+                                title="创建任务"
+                                description="浏览全部已发布智能体流程，按版本和创建权限发起业务任务。"
+                                meta={summary ? `${summary.metrics.availableWorkflowTotal} 个可发起流程` : "加载中..."}
+                                onClick={() => setActiveWorkbenchTab("create")}
+                              />
+                              <WorkbenchFeatureCard
+                                icon={ListTodo}
+                                title="我的待办"
+                                description="处理需要我补充资料、确认结果、人工审核或交付确认的暂停点。"
+                                meta={runtimeAvailable ? `${pendingTodos.length} 个待办` : runtimeStatusLabel}
+                                onClick={() => setActiveWorkbenchTab("tasks")}
+                              />
+                              <WorkbenchFeatureCard
+                                icon={PauseCircle}
+                                title="暂停续办"
+                                description="从正在进行和已暂停任务中恢复上下文，继续推进下一步。"
+                                meta={runtimeAvailable ? `${recentRuns.filter((record) => record.state !== "已完成").length} 个可继续任务` : runtimeStatusLabel}
+                                onClick={() => setActiveWorkbenchTab("tasks")}
+                              />
+                              <WorkbenchFeatureCard
+                                icon={Archive}
+                                title="历史完成"
+                                description="查看已完成任务与交付结果，后续可进入运行详情追溯过程。"
+                                meta={runtimeAvailable ? `${recentRuns.filter((record) => record.state === "已完成").length} 个完成任务` : runtimeStatusLabel}
+                                onClick={() => setActiveWorkbenchTab("tasks")}
+                              />
+                            </div>
+                          </section>
+
+                          <aside className="sys-preview-card">
+                            <div className="sys-preview-card-title"><History size={16} /> 最近任务</div>
+                            {runtimeAvailable ? (
+                              recentRuns.length === 0 ? (
+                                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无最近任务" />
+                              ) : (
+                                <div className="space-y-2">
+                                  {recentRuns.slice(0, 4).map((record) => (
+                                    <RecentRunListItem key={record.id} record={record} />
+                                  ))}
+                                </div>
+                              )
+                            ) : (
+                              <RuntimePlaceholder label={runtimeStatusLabel} hint="运行实例、节点运行和暂停事件将随运行态 API 一并上线。" />
+                            )}
+                          </aside>
+                        </section>
+                      </>
+                    ) : null}
+
+                    {activeWorkbenchTab === "create" ? (
+                      <section className="sys-preview-card" aria-labelledby="create-task-title">
+                        <div className="flex items-center gap-2" id="create-task-title-row">
+                          <h2 id="create-task-title" className="sys-preview-card-title mb-0 flex-1"><ClipboardList size={16} /> 已发布智能体流程</h2>
+                          <Input
+                            allowClear
+                            value={availableKeywordInput}
+                            onChange={(event) => setAvailableKeywordInput(event.target.value)}
+                            onPressEnter={handleSubmitKeyword}
+                            onBlur={handleSubmitKeyword}
+                            placeholder="按流程名称或描述搜索"
+                            prefix={<Search size={14} aria-hidden="true" />}
+                            className="agent-admin-input max-w-[280px]"
                           />
-                        ))}
-                      </div>
-                    </aside>
-                  </section>
-                </>
-              ) : null}
+                        </div>
 
-              {activeWorkbenchTab === "create" ? (
-                <section className="sys-preview-card" aria-labelledby="create-task-title">
-                  <div id="create-task-title" className="sys-preview-card-title"><ClipboardList size={16} /> 开放智能体流程</div>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {workflowTemplates.map((template) => (
-                      <WorkbenchFlowCard key={template.title} template={template} onCreate={() => handleCreateTask(template)} />
-                    ))}
-                  </div>
-                </section>
-              ) : null}
+                        <div className="mt-4">
+                          {availableError ? (
+                            <Empty
+                              description={
+                                <div className="space-y-2 text-sm text-[var(--color-text-primary)]">
+                                  <p>{availableError}</p>
+                                  <button type="button" className="agent-button h-8 px-3 text-xs" onClick={() => void loadAvailableWorkflows(availablePage, availableKeyword)}>
+                                    重试
+                                  </button>
+                                </div>
+                              }
+                            />
+                          ) : availableLoading ? (
+                            <div className="flex h-48 items-center justify-center text-[var(--color-text-tertiary)]">
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+                              <span className="text-sm">加载已发布流程...</span>
+                            </div>
+                          ) : availableWorkflows.length === 0 ? (
+                            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={availableKeyword ? `未找到包含「${availableKeyword}」的流程` : "当前租户暂无已发布流程，可前往流程设计进行发布"} />
+                          ) : (
+                            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                              {availableWorkflows.map((workflow) => (
+                                <WorkflowLaunchCard key={workflow.id} workflow={workflow} onCreate={() => handleCreateTask(workflow)} />
+                              ))}
+                            </div>
+                          )}
 
-              {activeWorkbenchTab === "tasks" ? (
-                <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]" aria-label="任务中心">
-                  <section className="sys-preview-card">
-                    <div className="sys-preview-card-title"><UserRoundCheck size={16} /> 我的待办</div>
-                    <div className="space-y-2">
-                      {todoItems.map((item) => (
-                        <WorkbenchPreviewItem
-                          key={item.title}
-                          title={item.title}
-                          description={`${item.workflow} · ${item.owner}`}
-                          meta={`${item.action} · ${item.deadline}`}
-                          badge={item.status}
-                          icon={UserRoundCheck}
-                          actionLabel="处理"
-                        />
-                      ))}
-                    </div>
-                  </section>
+                          {availableTotal > AVAILABLE_PAGE_SIZE ? (
+                            <div className="mt-4 flex justify-end">
+                              <Pagination
+                                current={availablePage}
+                                total={availableTotal}
+                                pageSize={AVAILABLE_PAGE_SIZE}
+                                showSizeChanger={false}
+                                onChange={(page) => setAvailablePage(page)}
+                              />
+                            </div>
+                          ) : null}
+                        </div>
+                      </section>
+                    ) : null}
 
-                  <section className="sys-preview-card">
-                    <div className="sys-preview-card-title"><History size={16} /> 任务记录</div>
-                    <div className="space-y-2">
-                      {runRecords.map((record) => (
-                        <WorkbenchPreviewItem
-                          key={record.name}
-                          title={record.name}
-                          description={`${record.node} · ${record.owner}`}
-                          meta={`${record.progress} · 更新于 ${record.updatedAt}`}
-                          badge={record.state}
-                          icon={record.state === "已完成" ? CheckCircle2 : record.state === "已暂停" ? PauseCircle : Activity}
-                          actionLabel={record.state === "已完成" ? "查看" : "继续"}
-                        />
-                      ))}
-                    </div>
-                  </section>
-                </section>
-              ) : null}
+                    {activeWorkbenchTab === "tasks" ? (
+                      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]" aria-label="任务中心">
+                        <section className="sys-preview-card">
+                          <div className="sys-preview-card-title"><UserRoundCheck size={16} /> 我的待办</div>
+                          {runtimeAvailable ? (
+                            pendingTodos.length === 0 ? (
+                              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无需要我处理的待办" />
+                            ) : (
+                              <div className="space-y-2">
+                                {pendingTodos.map((todo) => (
+                                  <PendingTodoListItem key={todo.id} todo={todo} />
+                                ))}
+                              </div>
+                            )
+                          ) : (
+                            <RuntimePlaceholder label={runtimeStatusLabel} hint="人工审核、用户输入、交付确认等待办来源都依赖运行态接入。" />
+                          )}
+                        </section>
+
+                        <section className="sys-preview-card">
+                          <div className="sys-preview-card-title"><History size={16} /> 任务记录</div>
+                          {runtimeAvailable ? (
+                            recentRuns.length === 0 ? (
+                              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无任务记录" />
+                            ) : (
+                              <div className="space-y-2">
+                                {recentRuns.map((record) => (
+                                  <RecentRunListItem key={record.id} record={record} actionLabel={record.state === "已完成" ? "查看" : "继续"} />
+                                ))}
+                              </div>
+                            )
+                          ) : (
+                            <RuntimePlaceholder label={runtimeStatusLabel} hint="任务运行实例的取消、重试、补偿会在运行监控模块单独承接。" />
+                          )}
+                        </section>
+                      </section>
+                    ) : null}
+                  </>
+                )}
               </div>
             </div>
           ) : null}
@@ -613,15 +648,32 @@ export function WorkbenchShell() {
   );
 }
 
-function WorkbenchOverviewStat({ icon: Icon, label, value, tone }: { icon: LucideIcon; label: string; value: string; tone: "primary" | "success" | "info" | "cap" }) {
+function WorkbenchOverviewStat({
+  icon: Icon,
+  label,
+  value,
+  hint,
+  tone,
+  loading,
+}: {
+  icon: LucideIcon;
+  label: string;
+  value: string;
+  hint?: string;
+  tone: MetricTone;
+  loading: boolean;
+}) {
   return (
     <div className="sys-overview-stat">
       <div className={`sys-overview-stat-icon sys-overview-stat-icon--${tone}`}>
         <Icon size={20} aria-hidden="true" />
       </div>
       <div>
-        <div className="sys-overview-stat-value">{value}</div>
+        <div className="sys-overview-stat-value">
+          {loading ? <Loader2 className="inline h-5 w-5 animate-spin" aria-hidden="true" /> : value}
+        </div>
         <div className="sys-overview-stat-label">{label}</div>
+        {hint ? <div className="mt-0.5 text-[11px] text-[var(--color-text-tertiary)]">{hint}</div> : null}
       </div>
     </div>
   );
@@ -657,62 +709,74 @@ function WorkbenchFeatureCard({
   );
 }
 
-function WorkbenchFlowCard({ template, onCreate }: { template: WorkflowTemplate; onCreate: () => void }) {
+function WorkflowLaunchCard({ workflow, onCreate }: { workflow: WorkbenchAvailableWorkflowRow; onCreate: () => void }) {
+  const publishedAt = workflow.publishedAt ? new Date(workflow.publishedAt) : null;
+  const publishedLabel = publishedAt ? publishedAt.toLocaleString("zh-CN", { hour12: false }) : "—";
   return (
     <button type="button" onClick={onCreate} className="workflow-feature-card">
       <span className="workflow-feature-card-head">
         <span className="workflow-feature-card-icon">
-          {template.canCreate ? <PlayCircle size={16} aria-hidden="true" /> : <Lock size={16} aria-hidden="true" />}
+          <PlayCircle size={16} aria-hidden="true" />
         </span>
         <span className="min-w-0">
-          <span className="workflow-feature-card-title block">{template.title}</span>
-          <span className="mt-1 block text-[11px] text-[var(--color-text-tertiary)]">{template.agent} · {template.nodes}</span>
+          <span className="workflow-feature-card-title block truncate">{workflow.name}</span>
+          <span className="mt-1 block text-[11px] text-[var(--color-text-tertiary)]">v{workflow.latestVersionNumber} · {workflow.nodeCount} 个节点</span>
         </span>
       </span>
-      <span className="workflow-feature-card-description">{template.description}</span>
-      <span className="mt-3 flex flex-wrap gap-1.5">
-        {template.flow.map((step) => (
-          <span key={step} className="rounded border border-[var(--color-border-light)] bg-[var(--color-bg-card)] px-2 py-1 text-[11px] text-[var(--color-text-secondary)]">
-            {step}
-          </span>
-        ))}
+      <span className="workflow-feature-card-description">
+        {workflow.description?.trim() ? workflow.description : "尚未填写流程说明，发起前请联系流程负责人或在流程设计中补充。"}
       </span>
-      <span className="mt-3 flex flex-wrap gap-1.5">
-        {template.capabilityAssets.map((asset) => (
-          <span key={asset} className="rounded bg-sky-50 px-2 py-1 text-[11px] text-sky-700 dark:bg-sky-950/30 dark:text-sky-300">
-            {asset}
-          </span>
-        ))}
+      <span className="mt-3 flex flex-wrap gap-1.5 text-[11px] text-[var(--color-text-tertiary)]">
+        <span className="rounded border border-[var(--color-border-light)] bg-[var(--color-bg-card)] px-2 py-1">发布人：{workflow.ownerName}</span>
+        <span className="rounded border border-[var(--color-border-light)] bg-[var(--color-bg-card)] px-2 py-1">发布于 {publishedLabel}</span>
       </span>
-      {template.blockedReason ? (
-        <span className="mt-3 flex items-center gap-1.5 text-xs text-[var(--color-warning)]">
-          <CircleAlert className="h-3.5 w-3.5" aria-hidden="true" />
-          {template.blockedReason}
-        </span>
-      ) : null}
       <span className="workflow-feature-card-meta">
-        {template.canCreate ? template.startLabel : "无权限创建"}
+        发起任务
         <ArrowRight size={14} aria-hidden="true" />
       </span>
     </button>
   );
 }
 
-function WorkbenchPreviewItem({
-  title,
-  description,
-  meta,
-  badge,
-  icon: Icon,
-  actionLabel,
-}: {
-  title: string;
-  description: string;
-  meta: string;
-  badge: string;
-  icon: LucideIcon;
-  actionLabel?: string;
-}) {
+function RuntimePlaceholder({ label, hint }: { label: string; hint: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed border-[var(--color-border-light)] bg-[var(--color-bg-page)] px-4 py-8 text-center">
+      <PauseCircle className="h-7 w-7 text-[var(--color-text-tertiary)]" aria-hidden="true" />
+      <p className="text-sm font-medium text-[var(--color-text-primary)]">{label}</p>
+      <p className="agent-muted max-w-sm text-xs leading-relaxed">{hint}</p>
+    </div>
+  );
+}
+
+function PendingTodoListItem({ todo }: { todo: WorkbenchPendingTodoRow }) {
+  const dueLabel = todo.dueAt ? new Date(todo.dueAt).toLocaleString("zh-CN", { hour12: false }) : "无截止";
+  return (
+    <div className="sys-preview-item">
+      <div className="sys-preview-item-left">
+        <span className="sys-preview-item-icon sys-card-avatar--cap">
+          <UserRoundCheck size={16} aria-hidden="true" />
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{todo.title}</p>
+          <p className="truncate text-xs text-[var(--color-text-secondary)]">{todo.workflowName} · {todo.waitingFor}</p>
+          <p className="truncate text-[11px] text-[var(--color-text-tertiary)]">{todo.action} · {dueLabel}</p>
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${stateColors[todo.waitingReason] ?? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"}`}>
+          {todo.waitingReason}
+        </span>
+        <button type="button" className="agent-button h-7 px-2 text-xs">
+          处理
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function RecentRunListItem({ record, actionLabel }: { record: WorkbenchRecentRunRow; actionLabel?: string }) {
+  const Icon = record.state === "已完成" ? CheckCircle2 : record.state === "已暂停" ? PauseCircle : Activity;
+  const updatedLabel = record.updatedAt ? new Date(record.updatedAt).toLocaleString("zh-CN", { hour12: false }) : "—";
   return (
     <div className="sys-preview-item">
       <div className="sys-preview-item-left">
@@ -720,14 +784,14 @@ function WorkbenchPreviewItem({
           <Icon size={16} aria-hidden="true" />
         </span>
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{title}</p>
-          <p className="truncate text-xs text-[var(--color-text-secondary)]">{description}</p>
-          <p className="truncate text-[11px] text-[var(--color-text-tertiary)]">{meta}</p>
+          <p className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{record.workflowName}</p>
+          <p className="truncate text-xs text-[var(--color-text-secondary)]">{record.currentNode} · {record.ownerName}</p>
+          <p className="truncate text-[11px] text-[var(--color-text-tertiary)]">{record.completedNodeCount}/{record.totalNodeCount} · 更新于 {updatedLabel}</p>
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${stateColors[badge] ?? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"}`}>
-          {badge}
+        <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${stateColors[record.state] ?? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"}`}>
+          {record.state}
         </span>
         {actionLabel ? (
           <button type="button" className="agent-button h-7 px-2 text-xs">

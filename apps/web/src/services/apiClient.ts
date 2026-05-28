@@ -54,6 +54,7 @@ import type {
   WorkflowPublishValidationResult,
   WorkflowVariableDraft,
 } from "../types/workflow-contract";
+import type { WorkbenchAvailableWorkflowPage, WorkbenchSummary } from "../types/workbench";
 
 type ApiEnvelope<T> = {
   success: boolean;
@@ -269,6 +270,27 @@ export const assetApi = {
     apiRequest<MyAssetDetail>(`/api/tenants/${tenantId}/assets/mine/${assetId}/publish`, { method: "POST", token }),
   deleteMine: (tenantId: string, token: string, assetId: string) =>
     apiRequest<void>(`/api/tenants/${tenantId}/assets/mine/${assetId}`, { method: "DELETE", token }),
+};
+
+export const workbenchApi = {
+  // 业务工作台概览：返回真实统计、运行态状态标识与（运行态上线前为空的）待办、运行记录。
+  summary: (tenantId: string, token: string) =>
+    apiRequest<WorkbenchSummary>(`/api/tenants/${tenantId}/workbench/summary`, { token }),
+  // 可发起的已发布工作流：当前阶段返回租户内所有已发布定义，后续按资源范围细化。
+  listAvailableWorkflows: (
+    tenantId: string,
+    token: string,
+    keyword = "",
+    page = 1,
+    size = 12,
+    sort = "updatedAt,desc",
+  ) => {
+    const params = new URLSearchParams({ keyword, page: String(page), size: String(size), sort });
+    return apiRequest<WorkbenchAvailableWorkflowPage>(
+      `/api/tenants/${tenantId}/workbench/available-workflows?${params.toString()}`,
+      { token },
+    );
+  },
 };
 
 export const workflowApi = {

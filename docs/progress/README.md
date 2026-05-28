@@ -1,6 +1,6 @@
 # 当前进度与后续计划
 
-更新时间：2026-05-25（流程设计模板后端化，能力资产引用接入流程积木）。
+更新时间：2026-05-28（业务工作台后端化：聚合统计、可发起的已发布工作流后端分页，运行态空态显式标识）。
 
 本文档只记录当前施工状态、阶段计划和下一步任务。长期规范、系统说明和架构设计分别维护在：
 
@@ -148,6 +148,7 @@
 - 系统管理页完成一轮可用性优化：平台概览新增模型提供商一览；模型供应商支持编辑、默认模型必填、API Key 填写与“测试连接”占位；全局能力支持编辑，测试结果只通过消息提示展示；租户模型分配支持取消和重新启用。
 - 能力资产页开始接入真实治理链路：新增租户自建能力资产表和租户侧能力资产 API，页面改为“总览 / 对我开放 / 我的能力”页签；“对我开放”只展示租户管理已分配给当前用户、部门或角色的能力，并支持搜索与能力类型筛选；“我的能力”支持能力类型和草稿 / 已发布筛选，总览待完善草稿可直接进入草稿筛选；底层仍复用系统管理的 `system_capabilities`、租户可用能力池 `tenant_capability_grants` 和租户管理分配 `resource_grants`，自建能力先以草稿形式沉淀到当前租户和创建人名下。
 - “我的能力”已收敛为草稿发布模型：入口文案改为“新建能力草稿”，业务用户只可创建提示词模板和智能体模板；草稿详情支持编辑、发布和删除，提示词模板保存提示词正文，智能体模板只能从当前主体已开放的 Skill/MCP 与系统提示词组合，发布前后端重新校验引用权限。Skill、MCP 和交付能力暂不开放用户自建；后续接入引用关系后，已被流程使用的能力必须禁止删除。
+- 业务工作台已完成后端化第一版：新增 `/api/tenants/{tenantId}/workbench/summary` 与 `/api/tenants/{tenantId}/workbench/available-workflows`，概览统计来自工作流定义、能力资产开放分配和我的能力草稿，可发起流程改为后端分页搜索；运行态尚未上线，待办与运行记录返回空列表并通过 `runtimeAvailable=false`、`runtimeStatusLabel` 在前端展示“运行态建设中”空态，移除前端工作台的所有模拟待办、运行记录和流程模板硬编码。
 
 ### 2.3 后端
 
@@ -185,6 +186,7 @@
 - 新增统一分页组件：`PageQuery`、`PageableFactory`、`SortWhitelist`，并补排序白名单和分页边界单元测试。
 - 系统管理租户、模型供应商、全局能力列表已改为分页接口，OpenAPI 同步分页参数与分页响应模型。
 - 系统管理 API 新增模型供应商编辑、系统能力编辑、租户模型分配状态更新接口；模型供应商新增 API Key 已配置状态，后端只记录密钥配置状态，避免在列表、日志和响应中回显明文。
+- 新增业务工作台 package（`workbench.application` / `workbench.interfaces`）：聚合租户内已发布工作流计数、对当前用户开放的能力资产计数、我的能力草稿计数，以及可发起的已发布工作流分页（含最新版本号、节点数、所有者）；运行态相关字段以空列表 + `runtimeAvailable=false` 返回，并补 `WorkbenchAccess` / `WorkbenchService` 单元测试覆盖访问校验、跨租户拒绝与最新版本号回填路径。
 
 需要继续推进：
 
@@ -207,6 +209,7 @@
 - OpenAPI 补充租户内自定义角色分页、新增和更新接口契约。
 - OpenAPI 修正 `/api/auth/me` 的响应结构，补充角色切换和工作流草稿接口契约。
 - 前端临时工作流契约补充 `WorkflowDesignerCatalog`、`WorkflowBrickTemplate` 和 `WorkflowVariableTemplate`，用于承接后端积木模板目录；后续仍需纳入 OpenAPI 统一生成。
+- OpenAPI 新增业务工作台路径与 `WorkbenchSummary` / `WorkbenchMetrics` / `WorkbenchPendingTodoRow` / `WorkbenchRecentRunRow` / `WorkbenchAvailableWorkflowRow` / `WorkbenchAvailableWorkflowPageResponse` Schema；前端新增 `apps/web/src/types/workbench.ts` 与 `workbenchApi`，与后端 DTO 字段保持一致。
 
 需要继续推进：
 
@@ -381,3 +384,8 @@
 | 2026-05-25 | `git diff --check` | 通过：流程设计后端化与进度文档更新后复验 |
 | 2026-05-26 | `./gradlew test` | 通过：修复工作流草稿保存时 Hibernate ActionQueue 导致唯一约束冲突，并修复单元测试中的 Mockito 桩方法与签名冲突 |
 | 2026-05-26 | `pnpm --filter @agentum/web build` | 通过：验证前端构建无类型错误 |
+| 2026-05-28 | `pnpm --filter @agentum/web lint` | 通过：业务工作台接入 `/workbench/*` 真实数据并移除模拟待办、运行记录和流程模板 |
+| 2026-05-28 | `pnpm --filter @agentum/web build` | 通过：业务工作台后端化后复验；Vite 提示 Ant Design vendor chunk 超过 500 kB |
+| 2026-05-28 | `./gradlew :apps:api:test --no-daemon --rerun-tasks` | 通过：新增 `WorkbenchAccess` / `WorkbenchService` 单元测试 + 既有套件全部通过 |
+| 2026-05-28 | OpenAPI YAML 解析检查 | 通过：业务工作台路径与 `WorkbenchSummary` / `WorkbenchAvailableWorkflowPageResponse` 等 Schema 补入契约后复验 |
+| 2026-05-28 | `git diff --check` | 通过：业务工作台后端化、契约和文档同步后复验 |

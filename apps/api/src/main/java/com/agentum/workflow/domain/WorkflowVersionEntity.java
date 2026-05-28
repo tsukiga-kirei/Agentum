@@ -68,8 +68,24 @@ public class WorkflowVersionEntity {
         return entity;
     }
 
+    public UUID getId() {
+        return id;
+    }
+
+    public UUID getWorkflowId() {
+        return workflowId;
+    }
+
+    public UUID getTenantId() {
+        return tenantId;
+    }
+
     public int getVersionNumber() {
         return versionNumber;
+    }
+
+    public int getNodeCount() {
+        return nodeCount;
     }
 
     public Instant getPublishedAt() {

@@ -388,6 +388,79 @@ paths:
                     properties:
                       data:
                         $ref: "#/components/schemas/MyAssetDetail"
+  /api/tenants/{tenantId}/workbench/summary:
+    get:
+      summary: 获取业务工作台概览
+      description: 业务工作台默认入口，聚合真实统计、当前用户的待办与最近任务。运行态尚未上线前，pendingTodos / recentRuns 固定为空，并通过 runtimeAvailable=false 标记状态。
+      tags:
+        - Workbench
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 业务工作台概览
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/WorkbenchSummary"
+  /api/tenants/{tenantId}/workbench/available-workflows:
+    get:
+      summary: 查询当前用户可发起的已发布工作流
+      description: 返回租户内 status=published 的工作流定义及其最新发布版本号。第一阶段不区分“可发起范围”，后续接入资源范围后再细化。
+      tags:
+        - Workbench
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: keyword
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 12
+        - name: sort
+          in: query
+          schema:
+            type: string
+            default: updatedAt,desc
+      responses:
+        "200":
+          description: 当前用户可发起的已发布工作流分页列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/WorkbenchAvailableWorkflowPageResponse"
   /api/tenants/{tenantId}/workflows/drafts:
     get:
       summary: 查询工作流草稿列表
@@ -3100,6 +3173,172 @@ components:
         - openedToMeSystemTotal
         - tenantSystemPoolTotal
         - myAssetTotal
+    WorkbenchMetrics:
+      type: object
+      properties:
+        pendingTodoTotal:
+          type: integer
+          format: int64
+        runningRunTotal:
+          type: integer
+          format: int64
+        publishedWorkflowTotal:
+          type: integer
+          format: int64
+        availableWorkflowTotal:
+          type: integer
+          format: int64
+        openedCapabilityTotal:
+          type: integer
+          format: int64
+        myAssetTotal:
+          type: integer
+          format: int64
+      required:
+        - pendingTodoTotal
+        - runningRunTotal
+        - publishedWorkflowTotal
+        - availableWorkflowTotal
+        - openedCapabilityTotal
+        - myAssetTotal
+    WorkbenchPendingTodoRow:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        workflowName:
+          type: string
+        waitingReason:
+          type: string
+        waitingFor:
+          type: string
+        action:
+          type: string
+        dueAt:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - id
+        - title
+        - workflowName
+        - waitingReason
+        - waitingFor
+        - action
+    WorkbenchRecentRunRow:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        workflowName:
+          type: string
+        state:
+          type: string
+        currentNode:
+          type: string
+        ownerName:
+          type: string
+        completedNodeCount:
+          type: integer
+        totalNodeCount:
+          type: integer
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - workflowName
+        - state
+        - currentNode
+        - ownerName
+        - completedNodeCount
+        - totalNodeCount
+        - updatedAt
+    WorkbenchSummary:
+      type: object
+      properties:
+        metrics:
+          $ref: "#/components/schemas/WorkbenchMetrics"
+        pendingTodos:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkbenchPendingTodoRow"
+        recentRuns:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkbenchRecentRunRow"
+        runtimeAvailable:
+          type: boolean
+          description: 运行态是否已上线。第一阶段固定为 false，前端据此展示运行态建设中空态。
+        runtimeStatusLabel:
+          type: string
+        generatedAt:
+          type: string
+          format: date-time
+      required:
+        - metrics
+        - pendingTodos
+        - recentRuns
+        - runtimeAvailable
+        - runtimeStatusLabel
+        - generatedAt
+    WorkbenchAvailableWorkflowRow:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        nodeCount:
+          type: integer
+        latestVersionNumber:
+          type: integer
+        publishedAt:
+          type: string
+          format: date-time
+        ownerId:
+          type: string
+          format: uuid
+          nullable: true
+        ownerName:
+          type: string
+      required:
+        - id
+        - name
+        - description
+        - nodeCount
+        - latestVersionNumber
+        - publishedAt
+        - ownerName
+    WorkbenchAvailableWorkflowPageResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkbenchAvailableWorkflowRow"
+        page:
+          type: integer
+        size:
+          type: integer
+        total:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+      required:
+        - items
+        - page
+        - size
+        - total
+        - totalPages
     SystemCapabilityAssetRow:
       type: object
       properties:
