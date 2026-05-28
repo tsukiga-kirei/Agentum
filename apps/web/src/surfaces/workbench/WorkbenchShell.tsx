@@ -27,14 +27,13 @@ import { Segmented, message } from "antd";
 import { TenantManagementPage } from "../admin/TenantManagementPage";
 import { SystemManagementPage } from "../admin/SystemManagementPage";
 import { AssetsPage } from "../assets/AssetsPage";
-import { RunAuditPage } from "../audit/RunAuditPage";
 import { WorkflowDraftsPage } from "../designer/WorkflowDraftsPage";
 import { ThemeToggle } from "../../components/ThemeToggle";
 import { RoleSwitcher } from "../../components/RoleSwitcher";
 import { AgentumMark } from "../../components/brand/AgentumMark";
 import { useAuthStore } from "../../stores/authStore";
 
-type SurfaceKey = "workbench" | "designer" | "assets" | "audit" | "tenant" | "system";
+type SurfaceKey = "workbench" | "designer" | "assets" | "tenant" | "system";
 type WorkbenchTab = "overview" | "create" | "tasks";
 
 // 图标映射：后端返回菜单 icon 字符串，前端映射为 lucide-react 组件
@@ -604,8 +603,6 @@ export function WorkbenchShell() {
           {activeSurface === "designer" ? <WorkflowDraftsPage /> : null}
 
           {activeSurface === "assets" ? <AssetsPage /> : null}
-
-          {activeSurface === "audit" ? <RunAuditPage /> : null}
 
           {activeSurface === "tenant" ? <TenantManagementPage /> : null}
 

@@ -10,7 +10,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 // 租户内自定义角色，用于第二层细粒度权限。
-// page_permissions 控制业务用户在租户内可见的页签（如 workbench、designer、assets、audit）。
+// page_permissions 控制业务用户在租户内可见的页签（如 workbench、designer、assets）。
 // resource_permissions 控制当前租户已启用的 MCP、Skill、提示词模板和交付能力可被哪些租户内角色使用。
 // 与 user_role_assignments 的系统角色（business/tenant_admin/system_admin）是不同层级。
 @Entity
@@ -28,7 +28,7 @@ public class TenantOrgRoleEntity {
 
     private String description;
 
-    // JSON 数组，如 ["workbench","designer","assets","audit"]
+    // JSON 数组，如 ["workbench","designer","assets"]
     @Column(name = "page_permissions", nullable = false, columnDefinition = "jsonb")
     @JdbcTypeCode(SqlTypes.JSON)
     private String pagePermissions;

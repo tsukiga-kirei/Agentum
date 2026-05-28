@@ -1182,7 +1182,7 @@ paths:
                           $ref: "#/components/schemas/PageGrant"
     post:
       summary: 新增租户页签分配卡片
-      description: 分配对象支持 role、department、user；页签范围仅限业务工作台、流程设计、能力资产和运行审计。
+      description: 分配对象支持 role、department、user；页签范围仅限业务工作台、流程设计和能力资产。
       tags:
         - Organization
       security:
@@ -2462,7 +2462,6 @@ components:
               - workbench
               - designer
               - assets
-              - audit
         resourcePermissions:
           type: array
           items:
@@ -2647,7 +2646,6 @@ components:
             - workbench
             - designer
             - assets
-            - audit
         pageName:
           type: string
       required:
@@ -2727,7 +2725,6 @@ components:
               - workbench
               - designer
               - assets
-              - audit
       required:
         - groupName
         - principals

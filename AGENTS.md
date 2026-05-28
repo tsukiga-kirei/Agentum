@@ -35,7 +35,32 @@
 
 - `docs/architecture.md`
 
-## 2. 开发约束
+## 2. 当前实现边界与常用路径
+
+当前项目处于阶段一：框架与基础治理。已有实现包括认证与角色切换、租户公开列表、租户组织管理、租户内页签和能力分配、系统管理、能力资产草稿发布、工作流草稿、变量声明、发布校验和不可变版本快照。工作流运行态、智能体真实执行、MCP 网关、模型调用、交付闭环和完整审计链路仍在建设中，修改时不要把这些能力误认为已经完整落地。
+
+常用代码路径：
+
+- 前端入口、路由和工作台：`apps/web/src/App.tsx`、`apps/web/src/surfaces/`、`apps/web/src/components/`
+- 前端 API、状态和类型：`apps/web/src/services/apiClient.ts`、`apps/web/src/stores/`、`apps/web/src/types/`
+- 认证与角色上下文：`apps/api/src/main/java/com/agentum/auth/`
+- 租户、组织和权限：`apps/api/src/main/java/com/agentum/tenant/`、`apps/api/src/main/java/com/agentum/organization/`、`apps/api/src/main/java/com/agentum/permission/`
+- 系统管理：`apps/api/src/main/java/com/agentum/system/`
+- 能力资产：`apps/api/src/main/java/com/agentum/asset/`
+- 工作流设计：`apps/api/src/main/java/com/agentum/workflow/`、`apps/web/src/surfaces/designer/`
+- 统一响应、错误和分页：`apps/api/src/main/java/com/agentum/shared/`
+- 数据库迁移：`apps/api/src/main/resources/db/migration/schema/`；本地演示数据放 `apps/api/src/main/resources/db/migration/devdata/`
+- 共享契约：`packages/shared-contract/`
+- 产品运行时能力源码：`capabilities/`
+
+常用验证命令：
+
+- 前端：`pnpm lint:web`、`pnpm build:web`
+- 后端：`./gradlew test`，必要时按模块或测试类缩小范围
+- 文档和空白检查：`git diff --check`
+- 本地基础设施：`make dev-infra`、`make down-infra`
+
+## 3. 开发约束
 
 - 遵守 `docs/development-standards.md` 中的命名、注释、接口、错误码、测试和格式化规范。
 - 注释、错误 message、产品文案和文档默认使用中文。
@@ -48,7 +73,7 @@
 - 前端应保持企业工作台风格，避免营销页式布局和无意义装饰。
 - 画布、节点卡片、右侧配置面板、运行态界面必须优先保证信息可读、状态稳定和长期可维护。
 
-## 3. 修改原则
+## 4. 修改原则
 
 - 先理解现有目录和局部实现，再修改。
 - 优先复用已有模式、类型、组件、工具函数和测试风格。
@@ -56,7 +81,7 @@
 - 不覆盖或回滚他人未说明的改动。
 - 新增文档时同步维护 `README.md` 中的入口索引；阶段进度类文档同步维护 `docs/progress/README.md`。
 
-## 4. 验证要求
+## 5. 验证要求
 
 完成修改后，根据影响范围运行对应验证：
 

@@ -8,7 +8,6 @@ import {
   Code2,
   Database,
   Edit,
-  Eye,
   Info,
   LockKeyhole,
   PlusCircle,
@@ -61,7 +60,6 @@ const pagePermissionOptions = [
   { value: "workbench", label: "业务工作台", description: "待办、发起流程和运行摘要", icon: ClipboardList },
   { value: "designer", label: "流程设计", description: "草稿、阶段积木和能力配置", icon: Code2 },
   { value: "assets", label: "能力资产", description: "智能体、Skill、MCP 和交付能力", icon: Database },
-  { value: "audit", label: "运行审计", description: "只读证据链、变量快照和交付记录", icon: Eye },
 ];
 
 const emptyMemberForm: CreateMemberRequest = {
