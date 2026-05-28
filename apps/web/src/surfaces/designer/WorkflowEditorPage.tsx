@@ -1653,8 +1653,8 @@ function SingleAgentConfigModal({
           </div>
           <button className="sys-modal-close" onClick={onClose} aria-label="关闭智能体配置"><X size={18} /></button>
         </div>
-        <div className="sys-modal-body">
-          <div className="grid gap-4 lg:grid-cols-2">
+        <div className="sys-modal-body workflow-agent-modal-body">
+          <div className="workflow-modal-section grid gap-4 lg:grid-cols-2">
             <CapabilitySelectField
               label="智能体模板"
               icon={Bot}
@@ -1687,7 +1687,7 @@ function SingleAgentConfigModal({
             onTemplateChange={(value) => setDraft({ ...draft, userPromptTemplateId: value })}
             onChange={(value) => setDraft({ ...draft, userPrompt: value })}
           />
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="workflow-modal-section workflow-modal-section--spacious grid gap-4 lg:grid-cols-2">
             <CapabilityMultiSelectField
               label="MCP"
               icon={ServerCog}
@@ -1705,7 +1705,7 @@ function SingleAgentConfigModal({
               onChange={(values) => setDraft({ ...draft, skillIds: values })}
             />
           </div>
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="workflow-modal-section grid gap-3 lg:grid-cols-2">
             <label className="workflow-toggle-row">
               <span>允许重新生成</span>
               <input
@@ -1784,8 +1784,8 @@ function ClusterAgentModal({
           </div>
           <button className="sys-modal-close" onClick={onClose} aria-label="关闭智能体配置"><X size={18} /></button>
         </div>
-        <div className="sys-modal-body">
-          <div className="grid gap-4 lg:grid-cols-2">
+        <div className="sys-modal-body workflow-agent-modal-body">
+          <div className="workflow-modal-section grid gap-4 lg:grid-cols-2">
             <label className="sys-field">
               <span className="sys-field-label">智能体名称</span>
               <div className="sys-field-input-wrap">
@@ -1831,7 +1831,7 @@ function ClusterAgentModal({
             onTemplateChange={(value) => setDraft({ ...draft, userPromptTemplateId: value })}
             onChange={(value) => setDraft({ ...draft, userPrompt: value })}
           />
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="workflow-modal-section workflow-modal-section--spacious grid gap-4 lg:grid-cols-2">
             <CapabilityMultiSelectField
               label="Skill"
               icon={BrainCircuit}

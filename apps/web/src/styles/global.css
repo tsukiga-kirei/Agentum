@@ -3418,16 +3418,16 @@ textarea:focus-visible {
 }
 
 .workflow-prompt-textarea {
-  min-height: 132px;
+  min-height: 112px;
 }
 
 .workflow-prompt-section {
   display: grid;
-  gap: 12px;
+  gap: 16px;
   border: 1px solid var(--color-border-light);
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--color-bg-card) 88%, var(--color-bg-hover) 12%);
-  padding: 12px;
+  padding: 16px;
 }
 
 .workflow-config-modal {
@@ -3436,6 +3436,19 @@ textarea:focus-visible {
 
 .workflow-agent-modal {
   max-width: 860px;
+}
+
+.workflow-agent-modal-body {
+  display: grid;
+  gap: 22px;
+}
+
+.workflow-modal-section {
+  min-width: 0;
+}
+
+.workflow-modal-section--spacious {
+  padding-top: 4px;
 }
 
 .workflow-editor-toolbar {
