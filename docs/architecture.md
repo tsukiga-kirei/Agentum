@@ -492,14 +492,16 @@ GET /api/.../xxx?page=1&size=20&sort=createdAt,desc
 
 规则：
 
-- 迁移文件放在 `apps/api/src/main/resources/db/migration/`。
+- 迁移文件放在 `apps/api/src/main/resources/db/migration/`，按用途拆为 `schema/` 和 `devdata/`。
+- `schema/` 只放真实表结构、索引、约束和结构性数据迁移；`devdata/` 只放本地开发账号、演示租户、演示能力和开发期兼容清理。
 - 文件命名使用 `VyyyyMMddHHmm__description.sql` 或项目统一递增版本。
+- Flyway 版本号在两个目录之间必须全局唯一，本地 profile 同时扫描 `schema` 和 `devdata`。
 - 每次数据库结构变更必须随代码提交迁移脚本。
 - 不允许只修改本地数据库而不提交迁移。
 - 表和关键字段必须写中文注释。
-- 向后兼容优先，删除字段必须先确认引用关系和迁移策略。
+- 当前仍处开发阶段，数据库模型优先服务功能清晰和长期可维护；确认引用关系和迁移策略后，可以删除不再需要的表和字段，不为早期本地演示数据长期保留兼容包袱。
 
-本地启动 API 时，Flyway 应自动执行迁移。生产环境部署前要先备份数据库，并在发布说明中标注迁移影响。
+默认配置只扫描 `schema`，本地启动 API 时 `local` profile 会同时扫描 `schema` 和 `devdata` 并自动执行迁移。生产环境部署前要先备份数据库，并在发布说明中标注迁移影响。
 
 ## 8. 共享契约
 

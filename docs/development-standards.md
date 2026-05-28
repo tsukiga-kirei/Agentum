@@ -312,6 +312,8 @@ API 返回结构统一：
 - PostgreSQL
 - Flyway 迁移脚本
 - 迁移文件随代码提交，不允许手工改库后不提交版本脚本。
+- 真实结构迁移放入 `apps/api/src/main/resources/db/migration/schema/`，本地演示和临时开发数据放入 `apps/api/src/main/resources/db/migration/devdata/`。
+- `schema` 与 `devdata` 的 Flyway 版本号必须全局唯一；开发期允许删表删字段，但必须说明业务原因、引用影响和后续替换方向。
 
 ## 12. 前端体验要求
 

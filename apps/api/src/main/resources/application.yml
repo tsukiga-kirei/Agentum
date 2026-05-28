@@ -3,6 +3,9 @@ spring:
     name: agentum-api
   profiles:
     active: local
+  flyway:
+    locations:
+      - classpath:db/migration/schema
 
 server:
   port: 8080

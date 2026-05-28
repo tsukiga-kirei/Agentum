@@ -3,6 +3,10 @@ spring:
     url: jdbc:postgresql://localhost:5432/agentum
     username: agentum
     password: agentum_dev_password
+  flyway:
+    locations:
+      - classpath:db/migration/schema
+      - classpath:db/migration/devdata
   jpa:
     hibernate:
       ddl-auto: none

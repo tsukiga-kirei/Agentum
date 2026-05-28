@@ -74,24 +74,3 @@ WHERE ura.role = 'tenant_admin'
         AND existing.tenant_id = ura.tenant_id
         AND existing.role = 'business'
   );
-
--- 4. 为每个租户创建默认组织角色（第二层权限模板）
-INSERT INTO tenant_org_roles (tenant_id, name, description, page_permissions, is_system)
-SELECT id, '默认成员', '租户默认业务角色，可查看业务工作台',
-    '["workbench"]'::jsonb, TRUE
-FROM tenants;
-
-INSERT INTO tenant_org_roles (tenant_id, name, description, page_permissions, is_system)
-SELECT id, '流程设计者', '可使用流程设计和能力资产功能',
-    '["workbench","designer","assets"]'::jsonb, TRUE
-FROM tenants;
-
-INSERT INTO tenant_org_roles (tenant_id, name, description, page_permissions, is_system)
-SELECT id, '审计员', '可查看运行审计记录',
-    '["workbench","audit"]'::jsonb, TRUE
-FROM tenants;
-
-INSERT INTO tenant_org_roles (tenant_id, name, description, page_permissions, is_system)
-SELECT id, '全功能用户', '可使用所有业务功能',
-    '["workbench","designer","assets","audit"]'::jsonb, TRUE
-FROM tenants;
