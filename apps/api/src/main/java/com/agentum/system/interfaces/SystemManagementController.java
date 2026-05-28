@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.UUID;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -122,6 +123,17 @@ public class SystemManagementController {
         return ApiResponse.success(systemManagementService.updateModelProvider(providerId, body), RequestIds.current(request));
     }
 
+    @DeleteMapping("/model-providers/{providerId}")
+    public ApiResponse<Void> deleteModelProvider(
+        @PathVariable UUID providerId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        systemAdminAccess.assertSystemAdmin(principal);
+        systemManagementService.deleteModelProvider(providerId);
+        return ApiResponse.success(RequestIds.current(request));
+    }
+
     @GetMapping("/capabilities")
     public ApiResponse<PageResponse<SystemManagementApi.CapabilityRow>> listCapabilities(
         @AuthenticationPrincipal CurrentUserPrincipal principal,
@@ -153,6 +165,17 @@ public class SystemManagementController {
     ) {
         systemAdminAccess.assertSystemAdmin(principal);
         return ApiResponse.success(systemManagementService.updateCapability(capabilityId, body), RequestIds.current(request));
+    }
+
+    @DeleteMapping("/capabilities/{capabilityId}")
+    public ApiResponse<Void> deleteCapability(
+        @PathVariable UUID capabilityId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        systemAdminAccess.assertSystemAdmin(principal);
+        systemManagementService.deleteCapability(capabilityId);
+        return ApiResponse.success(RequestIds.current(request));
     }
 
     @PostMapping("/capabilities/{capabilityId}/test")

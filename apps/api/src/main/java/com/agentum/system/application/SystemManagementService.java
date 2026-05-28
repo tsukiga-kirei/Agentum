@@ -265,6 +265,22 @@ public class SystemManagementService {
         return toModelRow(entity);
     }
 
+    @Transactional
+    public void deleteModelProvider(UUID providerId) {
+        ModelProviderEntity entity = modelProviderRepository.findById(providerId)
+            .orElseThrow(() -> {
+                log.warn("系统管理删除模型供应商失败：供应商不存在 providerId={} requestId={}", providerId, RequestIds.current());
+                return new ApiException(HttpStatus.NOT_FOUND, "SYSTEM_MODEL_PROVIDER_NOT_FOUND", "模型供应商不存在");
+            });
+        modelProviderRepository.delete(entity);
+        log.info(
+            "系统管理删除模型供应商成功 providerId={} name={} requestId={}",
+            entity.getId(),
+            entity.getName(),
+            RequestIds.current()
+        );
+    }
+
     @Transactional(readOnly = true)
     public PageResponse<SystemManagementApi.CapabilityRow> listCapabilities(int page, int size, String sort) {
         return PageResponse.from(systemCapabilityRepository.findAll(PageableFactory.from(PageQuery.of(page, size, sort), CAPABILITY_SORT))
@@ -349,6 +365,23 @@ public class SystemManagementService {
         systemCapabilityRepository.save(entity);
         log.info("系统管理更新全局能力成功 capabilityId={} code={} version={} requestId={}", entity.getId(), entity.getCode(), entity.getVersion(), RequestIds.current());
         return toCapabilityRow(entity);
+    }
+
+    @Transactional
+    public void deleteCapability(UUID capabilityId) {
+        SystemCapabilityEntity entity = systemCapabilityRepository.findById(capabilityId)
+            .orElseThrow(() -> {
+                log.warn("系统管理删除能力失败：能力不存在 capabilityId={} requestId={}", capabilityId, RequestIds.current());
+                return new ApiException(HttpStatus.NOT_FOUND, "SYSTEM_CAPABILITY_NOT_FOUND", "系统能力不存在");
+            });
+        systemCapabilityRepository.delete(entity);
+        log.info(
+            "系统管理删除全局能力成功 capabilityId={} code={} version={} requestId={}",
+            entity.getId(),
+            entity.getCode(),
+            entity.getVersion(),
+            RequestIds.current()
+        );
     }
 
     @Transactional(readOnly = true)

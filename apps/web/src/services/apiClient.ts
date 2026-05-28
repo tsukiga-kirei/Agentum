@@ -219,12 +219,16 @@ export const systemApi = {
     apiRequest<ModelProviderRow>("/api/system/model-providers", { method: "POST", token, body }),
   updateModelProvider: (token: string, providerId: string, body: UpdateModelProviderRequest) =>
     apiRequest<ModelProviderRow>(`/api/system/model-providers/${providerId}`, { method: "PATCH", token, body }),
+  deleteModelProvider: (token: string, providerId: string) =>
+    apiRequest<void>(`/api/system/model-providers/${providerId}`, { method: "DELETE", token }),
   listCapabilities: (token: string, page = 1, size = 10, sort = "createdAt,desc") =>
     apiRequest<SystemCapabilityPage>(`/api/system/capabilities?page=${page}&size=${size}&sort=${encodeURIComponent(sort)}`, { token }),
   createCapability: (token: string, body: CreateSystemCapabilityRequest) =>
     apiRequest<SystemCapabilityRow>("/api/system/capabilities", { method: "POST", token, body }),
   updateCapability: (token: string, capabilityId: string, body: UpdateSystemCapabilityRequest) =>
     apiRequest<SystemCapabilityRow>(`/api/system/capabilities/${capabilityId}`, { method: "PATCH", token, body }),
+  deleteCapability: (token: string, capabilityId: string) =>
+    apiRequest<void>(`/api/system/capabilities/${capabilityId}`, { method: "DELETE", token }),
   testCapability: (token: string, capabilityId: string) =>
     apiRequest<CapabilityTestResult>(`/api/system/capabilities/${capabilityId}/test`, { method: "POST", token }),
   listGrants: (token: string, tenantId?: string) => {

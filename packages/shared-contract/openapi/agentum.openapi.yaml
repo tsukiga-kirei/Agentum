@@ -1784,6 +1784,29 @@ paths:
           description: 当前账号不是系统管理员
         "404":
           description: 模型供应商不存在
+    delete:
+      summary: 删除模型供应商
+      description: 删除供应商及其租户模型分配记录。
+      tags:
+        - System
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: providerId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 已删除
+        "401":
+          description: 未登录或令牌无效
+        "403":
+          description: 当前账号不是系统管理员
+        "404":
+          description: 模型供应商不存在
   /api/system/capabilities:
     get:
       summary: 列出系统级能力
@@ -1895,6 +1918,29 @@ paths:
           description: 系统能力不存在
         "409":
           description: 能力编码与版本已存在
+    delete:
+      summary: 删除系统级能力
+      description: 删除能力及其租户授权记录；已派生的租户资产将解除系统能力关联。
+      tags:
+        - System
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: capabilityId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 已删除
+        "401":
+          description: 未登录或令牌无效
+        "403":
+          description: 当前账号不是系统管理员
+        "404":
+          description: 系统能力不存在
   /api/system/capabilities/{capabilityId}/test:
     post:
       summary: 测试系统级能力配置

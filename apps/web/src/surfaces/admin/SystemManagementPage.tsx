@@ -3,6 +3,7 @@ import {
   Boxes,
   Building2,
   Check,
+  CircleAlert,
   ChevronDown,
   Clock,
   Code2,
@@ -20,6 +21,7 @@ import {
   ShieldCheck,
   ShieldAlert,
   Tag,
+  Trash2,
   Type,
   User,
   Users,
@@ -56,6 +58,15 @@ function SysSelect({ options, value, defaultValue, placeholder, icon: Icon, onCh
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState(value ?? defaultValue ?? "");
   const ref = useRef<HTMLDivElement>(null);
+
+  // 非受控模式下把初始选中值同步给外层 ref，避免界面已显示选项但提交校验仍认为未填写。
+  useEffect(() => {
+    const initial = value ?? defaultValue ?? "";
+    if (initial) {
+      onChange?.(initial);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在挂载时同步一次初始值
+  }, []);
 
   // 点击外部关闭
   useEffect(() => {
@@ -170,6 +181,36 @@ function readConfigString(config: Record<string, unknown>, key: string): string 
   return typeof value === "string" ? value : "";
 }
 
+function buildModelFormValues(provider: ModelProviderRow): Record<string, string> {
+  return {
+    name: provider.name,
+    providerType: provider.providerType,
+    baseUrl: provider.baseUrl || "",
+    defaultModel: provider.defaultModel || "",
+    status: provider.status,
+  };
+}
+
+function buildCapabilityFormValues(capability: SystemCapabilityRow): Record<string, string> {
+  return {
+    capabilityType: capability.capabilityType,
+    name: capability.name,
+    code: capability.code,
+    version: capability.version,
+    riskLevel: capability.riskLevel,
+    status: capability.status,
+    transport: readConfigString(capability.config, "transport") || "stdio",
+    command: readConfigString(capability.config, "command"),
+    args: readConfigString(capability.config, "args"),
+    workingDir: readConfigString(capability.config, "workingDir"),
+    sseUrl: readConfigString(capability.config, "sseUrl"),
+    deliveryChannel: readConfigString(capability.config, "deliveryChannel"),
+    target: readConfigString(capability.config, "target"),
+    sourcePath: readConfigString(capability.config, "sourcePath"),
+    manifestPath: readConfigString(capability.config, "manifestPath"),
+  };
+}
+
 function AdminPagination({
   current,
   pageSize,
@@ -249,6 +290,14 @@ export function SystemManagementPage() {
   const [selectedMcpTransport, setSelectedMcpTransport] = useState("stdio");
   const modelRef = useRef<Record<string,string>>({});
   const capRef = useRef<Record<string,string>>({});
+  const [modelFormKey, setModelFormKey] = useState(0);
+  const [capFormKey, setCapFormKey] = useState(0);
+  const [deleteConfirm, setDeleteConfirm] = useState<
+    | { type: "model"; target: ModelProviderRow }
+    | { type: "capability"; target: SystemCapabilityRow }
+    | null
+  >(null);
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
 
   const handleApiError = useCallback(
     (err: unknown, fallback: string) => {
@@ -440,6 +489,68 @@ export function SystemManagementPage() {
     }
   };
 
+  const openModelModal = (provider: ModelProviderRow | null) => {
+    setEditingModelProvider(provider);
+    modelRef.current = provider ? buildModelFormValues(provider) : {};
+    setSelectedModelProviderType(provider?.providerType ?? "");
+    setModelFormKey((key) => key + 1);
+    setModelModalOpen(true);
+  };
+
+  const openCapabilityModal = (capability: SystemCapabilityRow | null) => {
+    setEditingCapability(capability);
+    capRef.current = capability ? buildCapabilityFormValues(capability) : {};
+    setSelectedCapabilityType(capability?.capabilityType ?? "");
+    setSelectedMcpTransport(capability ? (readConfigString(capability.config, "transport") || "stdio") : "");
+    setCapFormKey((key) => key + 1);
+    setCapModalOpen(true);
+  };
+
+  const confirmDeleteModelProvider = (provider: ModelProviderRow) => {
+    setDeleteConfirm({ type: "model", target: provider });
+  };
+
+  const confirmDeleteCapability = (capability: SystemCapabilityRow) => {
+    setDeleteConfirm({ type: "capability", target: capability });
+  };
+
+  const executeDelete = async () => {
+    if (!token || !deleteConfirm || deleteSubmitting) return;
+    setDeleteSubmitting(true);
+    try {
+      if (deleteConfirm.type === "model") {
+        const provider = deleteConfirm.target;
+        await systemApi.deleteModelProvider(token, provider.id);
+        messageApi.success("已删除模型供应商");
+        if (editingModelProvider?.id === provider.id) {
+          setModelModalOpen(false);
+          setEditingModelProvider(null);
+          modelRef.current = {};
+        }
+        void loadModels();
+      } else {
+        const capability = deleteConfirm.target;
+        await systemApi.deleteCapability(token, capability.id);
+        messageApi.success("已删除系统能力");
+        if (editingCapability?.id === capability.id) {
+          setCapModalOpen(false);
+          setEditingCapability(null);
+          capRef.current = {};
+        }
+        void loadCapabilities();
+      }
+      void loadSummary();
+      setDeleteConfirm(null);
+    } catch (e) {
+      handleApiError(
+        e,
+        deleteConfirm.type === "model" ? "删除模型供应商失败" : "删除系统能力失败",
+      );
+    } finally {
+      setDeleteSubmitting(false);
+    }
+  };
+
   const submitModel = async () => {
     if (!token) return;
     const d = modelRef.current;
@@ -448,10 +559,12 @@ export function SystemManagementPage() {
     if (!d.defaultModel?.trim()) { messageApi.warning("请输入默认模型"); return; }
     try {
       const request: CreateModelProviderRequest = {
-        name: d.name, providerType: d.providerType,
-        baseUrl: d.baseUrl || undefined, defaultModel: d.defaultModel,
-        apiKey: d.apiKey || undefined,
-        status: d.status || "draft",
+        name: d.name.trim(),
+        providerType: d.providerType.trim(),
+        baseUrl: d.baseUrl?.trim() || undefined,
+        defaultModel: d.defaultModel.trim(),
+        apiKey: d.apiKey?.trim() || undefined,
+        status: d.status?.trim() || "draft",
       };
       if (editingModelProvider) {
         await systemApi.updateModelProvider(token, editingModelProvider.id, request);
@@ -473,28 +586,41 @@ export function SystemManagementPage() {
   const submitCapability = async () => {
     if (!token) return;
     const d = capRef.current;
-    if (!d.capabilityType) { messageApi.warning("请选择能力类型"); return; }
+    if (!d.capabilityType?.trim()) { messageApi.warning("请选择能力类型"); return; }
     if (!d.name?.trim()) { messageApi.warning("请输入名称"); return; }
     if (!d.code?.trim()) { messageApi.warning("请输入编码"); return; }
+    const capabilityType = d.capabilityType.trim();
     const config: Record<string, unknown> = {};
-    if (d.capabilityType === "mcp") {
-      config.transport = d.transport || "stdio";
-      config.command = d.command || "";
-      config.args = d.args || "";
-      config.workingDir = d.workingDir || "";
-      config.sseUrl = d.sseUrl || "";
-    } else if (d.capabilityType === "delivery") {
-      config.deliveryChannel = d.deliveryChannel || "";
-      config.target = d.target || "";
+    if (capabilityType === "mcp") {
+      const transport = d.transport?.trim() || "stdio";
+      config.transport = transport;
+      config.command = d.command?.trim() || "";
+      config.args = d.args?.trim() || "";
+      config.workingDir = d.workingDir?.trim() || "";
+      config.sseUrl = d.sseUrl?.trim() || "";
+      if (transport === "sse" && !d.sseUrl?.trim()) {
+        messageApi.warning("请输入 SSE 地址");
+        return;
+      }
+      if (transport === "stdio" && !d.command?.trim()) {
+        messageApi.warning("请输入启动命令");
+        return;
+      }
+    } else if (capabilityType === "delivery") {
+      config.deliveryChannel = d.deliveryChannel?.trim() || "";
+      config.target = d.target?.trim() || "";
     } else {
-      config.sourcePath = d.sourcePath || "";
-      config.manifestPath = d.manifestPath || "";
+      config.sourcePath = d.sourcePath?.trim() || "";
+      config.manifestPath = d.manifestPath?.trim() || "";
     }
     try {
       const request: CreateSystemCapabilityRequest = {
-        capabilityType: d.capabilityType, name: d.name, code: d.code,
-        version: d.version || "v1", riskLevel: d.riskLevel || "low",
-        status: d.status || "draft",
+        capabilityType,
+        name: d.name.trim(),
+        code: d.code.trim(),
+        version: d.version?.trim() || "v1",
+        riskLevel: d.riskLevel?.trim() || "low",
+        status: d.status?.trim() || "draft",
         config,
       };
       if (editingCapability) {
@@ -604,11 +730,60 @@ export function SystemManagementPage() {
     };
   });
 
+  const deleteConfirmTitle = deleteConfirm?.type === "model" ? "删除模型供应商" : "删除系统能力";
+  const deleteConfirmMessage = deleteConfirm
+    ? deleteConfirm.type === "model"
+      ? `确定删除「${deleteConfirm.target.name}」吗？相关租户的模型分配将一并移除。`
+      : `确定删除「${deleteConfirm.target.name}」吗？相关租户能力授权将一并移除。`
+    : "";
+
   return (
     <>
       {messageContextHolder}
+      {deleteConfirm ? (
+        <div
+          className="sys-modal-mask agent-delete-confirm-mask"
+          onClick={() => !deleteSubmitting && setDeleteConfirm(null)}
+        >
+          <div
+            className="sys-modal agent-delete-confirm-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="system-delete-confirm-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="agent-delete-confirm-body">
+              <div className="agent-delete-confirm-icon">
+                <CircleAlert size={28} aria-hidden="true" />
+              </div>
+              <div className="agent-delete-confirm-content">
+                <h2 id="system-delete-confirm-title">{deleteConfirmTitle}</h2>
+                <p>{deleteConfirmMessage}</p>
+              </div>
+            </div>
+            <div className="agent-delete-confirm-footer">
+              <button
+                type="button"
+                className="sys-btn sys-btn--default"
+                disabled={deleteSubmitting}
+                onClick={() => setDeleteConfirm(null)}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="sys-btn sys-btn--danger"
+                disabled={deleteSubmitting}
+                onClick={() => void executeDelete()}
+              >
+                删除
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div className="min-h-[calc(100vh-4rem)] bg-[var(--color-bg-page)] pb-10 pt-1">
-        <div className="mx-auto max-w-[1400px] px-5 lg:px-6">
+        <div className="mx-auto min-w-0 max-w-[1400px] px-5 lg:px-6">
           {/* 页头 */}
           <header className="mb-5 flex flex-col gap-4 border-b border-[var(--color-border-light)] pb-5 sm:flex-row sm:items-end sm:justify-between">
             <div className="flex min-w-0 gap-4">
@@ -662,10 +837,14 @@ export function SystemManagementPage() {
                     </div>
                   );})}
                 </div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(280px, 1fr))",gap:20}}>
-                  <div className="sys-preview-card">
+                <div className="sys-preview-grid">
+                  <div className={`sys-preview-card${previewTenants.length === 0 ? " sys-preview-card--empty" : ""}`}>
                     <div className="sys-preview-card-title"><Building2 size={16}/> 最近入驻租户</div>
-                    {previewTenants.length === 0 ? <Empty description="暂无租户" image={Empty.PRESENTED_IMAGE_SIMPLE}/> : <>
+                    {previewTenants.length === 0 ? (
+                      <div className="sys-preview-card-body--empty">
+                        <Empty description="暂无租户" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                      </div>
+                    ) : (<>
                       {previewTenants.map(t=>(
                         <div key={t.id} className="sys-preview-item" style={{cursor:"pointer"}} onClick={()=>{setSection("tenants");setSelectedTenant(t);setTenantDrawerOpen(true);}}>
                           <div className="sys-preview-item-left">
@@ -676,24 +855,19 @@ export function SystemManagementPage() {
                         </div>
                       ))}
                       {(summary?.tenantTotal ?? 0)>4&&<button className="sys-btn sys-btn--link" onClick={()=>setSection("tenants")} style={{marginTop:8}}>查看全部 {summary?.tenantTotal ?? 0} 个租户 →</button>}
-                    </>}
+                    </>)}
                   </div>
-                  <div className="sys-preview-card">
+                  <div className={`sys-preview-card${previewModelProviders.length === 0 ? " sys-preview-card--empty" : ""}`}>
                     <div className="sys-preview-card-title"><DatabaseZap size={16}/> 模型提供商一览</div>
-                    {previewModelProviders.length === 0 ? <Empty description="暂无模型供应商" image={Empty.PRESENTED_IMAGE_SIMPLE}/> : <>
+                    {previewModelProviders.length === 0 ? (
+                      <div className="sys-preview-card-body--empty">
+                        <Empty description="暂无模型供应商" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                      </div>
+                    ) : (<>
                       {previewModelProviders.map(m=>(
                         <div key={m.id} className="sys-preview-item" style={{cursor:"pointer"}} onClick={()=>{
                           setSection("models");
-                          setEditingModelProvider(m);
-                          modelRef.current={
-                            name:m.name,
-                            providerType:m.providerType,
-                            baseUrl:m.baseUrl || "",
-                            defaultModel:m.defaultModel || "",
-                            status:m.status,
-                          };
-                          setSelectedModelProviderType(m.providerType);
-                          setModelModalOpen(true);
+                          openModelModal(m);
                         }}>
                           <div className="sys-preview-item-left">
                             <div className="sys-preview-item-icon sys-card-avatar--model"><DatabaseZap size={16}/></div>
@@ -703,35 +877,19 @@ export function SystemManagementPage() {
                         </div>
                       ))}
                       {(summary?.modelProviderTotal ?? 0)>4&&<button className="sys-btn sys-btn--link" onClick={()=>setSection("models")} style={{marginTop:8}}>查看全部 {summary?.modelProviderTotal ?? 0} 个供应商 →</button>}
-                    </>}
+                    </>)}
                   </div>
-                  <div className="sys-preview-card">
+                  <div className={`sys-preview-card${previewCapabilities.length === 0 ? " sys-preview-card--empty" : ""}`}>
                     <div className="sys-preview-card-title"><Boxes size={16}/> 核心能力一览</div>
-                    {previewCapabilities.length === 0 ? <Empty description="暂无能力" image={Empty.PRESENTED_IMAGE_SIMPLE}/> : <>
+                    {previewCapabilities.length === 0 ? (
+                      <div className="sys-preview-card-body--empty">
+                        <Empty description="暂无能力" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                      </div>
+                    ) : (<>
                       {previewCapabilities.map(c=>(
                         <div key={c.id} className="sys-preview-item" style={{cursor:"pointer"}} onClick={()=>{
                           setSection("capabilities");
-                          setEditingCapability(c);
-                          capRef.current={
-                            capabilityType:c.capabilityType,
-                            name:c.name,
-                            code:c.code,
-                            version:c.version,
-                            riskLevel:c.riskLevel,
-                            status:c.status,
-                            transport:readConfigString(c.config,"transport")||"stdio",
-                            command:readConfigString(c.config,"command"),
-                            args:readConfigString(c.config,"args"),
-                            workingDir:readConfigString(c.config,"workingDir"),
-                            sseUrl:readConfigString(c.config,"sseUrl"),
-                            deliveryChannel:readConfigString(c.config,"deliveryChannel"),
-                            target:readConfigString(c.config,"target"),
-                            sourcePath:readConfigString(c.config,"sourcePath"),
-                            manifestPath:readConfigString(c.config,"manifestPath")
-                          };
-                          setSelectedCapabilityType(c.capabilityType);
-                          setSelectedMcpTransport(readConfigString(c.config,"transport")||"stdio");
-                          setCapModalOpen(true);
+                          openCapabilityModal(c);
                         }}>
                           <div className="sys-preview-item-left">
                             <div className="sys-preview-item-icon sys-card-avatar--cap"><Boxes size={16}/></div>
@@ -741,7 +899,7 @@ export function SystemManagementPage() {
                         </div>
                       ))}
                       {(summary?.systemCapabilityTotal ?? 0)>4&&<button className="sys-btn sys-btn--link" onClick={()=>setSection("capabilities")} style={{marginTop:8}}>查看全部 {summary?.systemCapabilityTotal ?? 0} 项能力 →</button>}
-                    </>}
+                    </>)}
                   </div>
                 </div>
               </div>
@@ -792,24 +950,13 @@ export function SystemManagementPage() {
               <div className="sys-fade-in">
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
                   <p style={{fontSize:14,color:"var(--color-text-tertiary)",margin:0}}>注册和管理底层算力供应商及默认模型路由</p>
-                  <button className="sys-btn sys-btn--primary" onClick={()=>{setEditingModelProvider(null);modelRef.current={status:"draft"};setSelectedModelProviderType("");void loadModels();setModelModalOpen(true);}}><PlusCircle size={15}/> 注册供应商</button>
+                  <button className="sys-btn sys-btn--primary" onClick={()=>{void loadModels();openModelModal(null);}}><PlusCircle size={15}/> 注册供应商</button>
                 </div>
                 {modelProviders.length===0?<Empty description="暂无模型供应商" style={{marginTop:48}}/>:(
                   <>
                     <div className="sys-card-grid">
                       {modelProviders.map(m=>(
-                      <div key={m.id} className="sys-card" onClick={()=>{
-                        setEditingModelProvider(m);
-                        modelRef.current={
-                          name:m.name,
-                          providerType:m.providerType,
-                          baseUrl:m.baseUrl || "",
-                          defaultModel:m.defaultModel || "",
-                          status:m.status,
-                        };
-                        setSelectedModelProviderType(m.providerType);
-                        setModelModalOpen(true);
-                      }}>
+                      <div key={m.id} className="sys-card" onClick={()=>openModelModal(m)}>
                         <div className="sys-card-header">
                           <div className="sys-card-avatar sys-card-avatar--model"><DatabaseZap size={22}/></div>
                           <div className="sys-card-info"><div className="sys-card-name">{m.name}</div><div className="sys-card-code">{m.providerType}</div></div>
@@ -824,18 +971,8 @@ export function SystemManagementPage() {
                           <span className="sys-card-footer-time"><ShieldCheck size={12}/> {m.providerType}</span>
                           <div className="sys-card-footer-actions" onClick={e=>e.stopPropagation()}>
                             <button className="sys-btn sys-btn--default sys-btn--sm" onClick={()=>testModelProviderConnection()}><PlayCircle size={14}/> 测试连接</button>
-                            <button className="sys-btn sys-btn--text sys-btn--sm" onClick={()=>{
-                              setEditingModelProvider(m);
-                              modelRef.current={
-                                name:m.name,
-                                providerType:m.providerType,
-                                baseUrl:m.baseUrl || "",
-                                defaultModel:m.defaultModel || "",
-                                status:m.status,
-                              };
-                              setSelectedModelProviderType(m.providerType);
-                              setModelModalOpen(true);
-                            }}><Edit size={14}/> 编辑</button>
+                            <button className="sys-btn sys-btn--text sys-btn--sm" onClick={()=>openModelModal(m)}><Edit size={14}/> 编辑</button>
+                            <button className="sys-btn sys-btn--text sys-btn--sm sys-btn--danger" onClick={()=>confirmDeleteModelProvider(m)}><Trash2 size={14}/> 删除</button>
                           </div>
                         </div>
                       </div>
@@ -857,35 +994,13 @@ export function SystemManagementPage() {
               <div className="sys-fade-in">
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
                   <p style={{fontSize:14,color:"var(--color-text-tertiary)",margin:0}}>管理系统级 MCP、Skill、提示词模板和交付能力</p>
-                  <button className="sys-btn sys-btn--primary" onClick={()=>{setEditingCapability(null);capRef.current={capabilityType:"mcp",transport:"stdio",version:"v1",riskLevel:"low",status:"draft"};setSelectedCapabilityType("mcp");setSelectedMcpTransport("stdio");setCapModalOpen(true);}}><PlusCircle size={15}/> 注册能力</button>
+                  <button className="sys-btn sys-btn--primary" onClick={()=>openCapabilityModal(null)}><PlusCircle size={15}/> 注册能力</button>
                 </div>
                 {capabilities.length===0?<Empty description="暂无全局能力" style={{marginTop:48}}/>:(
                   <>
                     <div className="sys-card-grid">
                       {capabilities.map(c=>(
-                      <div key={c.id} className="sys-card" onClick={()=>{
-                        setEditingCapability(c);
-                        capRef.current={
-                          capabilityType:c.capabilityType,
-                          name:c.name,
-                          code:c.code,
-                          version:c.version,
-                          riskLevel:c.riskLevel,
-                          status:c.status,
-                          transport:readConfigString(c.config, "transport") || "stdio",
-                          command:readConfigString(c.config, "command"),
-                          args:readConfigString(c.config, "args"),
-                          workingDir:readConfigString(c.config, "workingDir"),
-                          sseUrl:readConfigString(c.config, "sseUrl"),
-                          deliveryChannel:readConfigString(c.config, "deliveryChannel"),
-                          target:readConfigString(c.config, "target"),
-                          sourcePath:readConfigString(c.config, "sourcePath"),
-                          manifestPath:readConfigString(c.config, "manifestPath"),
-                        };
-                        setSelectedCapabilityType(c.capabilityType);
-                        setSelectedMcpTransport(readConfigString(c.config, "transport") || "stdio");
-                        setCapModalOpen(true);
-                      }}>
+                      <div key={c.id} className="sys-card" onClick={()=>openCapabilityModal(c)}>
                         <div className="sys-card-header">
                           <div className="sys-card-avatar sys-card-avatar--cap"><Boxes size={22}/></div>
                           <div className="sys-card-info"><div className="sys-card-name">{c.name}</div><div className="sys-card-code">{c.code}</div></div>
@@ -900,29 +1015,8 @@ export function SystemManagementPage() {
                           <span className="sys-card-footer-time"><ShieldCheck size={12}/> {c.code}</span>
                           <div className="sys-card-footer-actions" onClick={e=>e.stopPropagation()}>
                             <button className="sys-btn sys-btn--default sys-btn--sm" onClick={()=>testCapabilityConnection(c.id)}><PlayCircle size={14}/> 测试连通性</button>
-                            <button className="sys-btn sys-btn--text sys-btn--sm" onClick={()=>{
-                              setEditingCapability(c);
-                              capRef.current={
-                                capabilityType:c.capabilityType,
-                                name:c.name,
-                                code:c.code,
-                                version:c.version,
-                                riskLevel:c.riskLevel,
-                                status:c.status,
-                                transport:readConfigString(c.config, "transport") || "stdio",
-                                command:readConfigString(c.config, "command"),
-                                args:readConfigString(c.config, "args"),
-                                workingDir:readConfigString(c.config, "workingDir"),
-                                sseUrl:readConfigString(c.config, "sseUrl"),
-                                deliveryChannel:readConfigString(c.config, "deliveryChannel"),
-                                target:readConfigString(c.config, "target"),
-                                sourcePath:readConfigString(c.config, "sourcePath"),
-                                manifestPath:readConfigString(c.config, "manifestPath"),
-                              };
-                              setSelectedCapabilityType(c.capabilityType);
-                              setSelectedMcpTransport(readConfigString(c.config, "transport") || "stdio");
-                              setCapModalOpen(true);
-                            }}><Edit size={14}/> 编辑</button>
+                            <button className="sys-btn sys-btn--text sys-btn--sm" onClick={()=>openCapabilityModal(c)}><Edit size={14}/> 编辑</button>
+                            <button className="sys-btn sys-btn--text sys-btn--sm sys-btn--danger" onClick={()=>confirmDeleteCapability(c)}><Trash2 size={14}/> 删除</button>
                           </div>
                         </div>
                       </div>
@@ -1153,16 +1247,16 @@ export function SystemManagementPage() {
         open={modelModalOpen}
         rootClassName={drawerRootClassName}
       >
-        <div className="sys-drawer-section">
+        <div className="sys-drawer-section" key={modelFormKey}>
           <div className="sys-field"><label className="sys-field-label sys-field-label--required">名称</label><div className="sys-field-input-wrap"><Tag size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如：通义千问" maxLength={160} defaultValue={modelRef.current.name || ""} onChange={e=>{modelRef.current.name=e.target.value;}}/></div></div>
           <div className="sys-field"><label className="sys-field-label sys-field-label--required">模型供应商</label><SysSelect icon={ServerCog} placeholder="请选择模型供应商" defaultValue={modelRef.current.providerType || ""} options={modelProviderTypes.map((type)=>({value:type.code,label:type.name}))} onChange={v=>{modelRef.current.providerType=v;setSelectedModelProviderType(v);}}/></div>
           {selectedModelProviderType && (
             <div className="sys-hint"><ServerCog size={14}/> {modelProviderTypes.find((type)=>type.code===selectedModelProviderType)?.description || "平台内置模型供应商类型"}</div>
           )}
-          <div className="sys-field"><label className="sys-field-label">基址 URL</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder={modelProviderTypes.find((type)=>type.code===selectedModelProviderType)?.defaultBaseUrl || "https://api.example.com"} maxLength={500} defaultValue={modelRef.current.baseUrl || ""} onChange={e=>{modelRef.current.baseUrl=e.target.value;}}/></div><div className="sys-field-hint">不填写时沿用供应商类型的默认基址</div></div>
+          <div className="sys-field"><label className="sys-field-label">基址 URL</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder={modelProviderTypes.find((type)=>type.code===selectedModelProviderType)?.defaultBaseUrl || "https://api.example.com/v1"} maxLength={500} defaultValue={modelRef.current.baseUrl || ""} onChange={e=>{modelRef.current.baseUrl=e.target.value;}}/></div><div className="sys-field-hint">不填写时沿用供应商类型的默认基址</div></div>
           <div className="sys-field"><label className="sys-field-label sys-field-label--required">默认模型</label><div className="sys-field-input-wrap"><DatabaseZap size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如 qwen-max" maxLength={160} defaultValue={modelRef.current.defaultModel || ""} onChange={e=>{modelRef.current.defaultModel=e.target.value;}}/></div></div>
           <div className="sys-field"><label className="sys-field-label">API Key</label><div className="sys-field-input-wrap"><KeyRound size={16} className="sys-field-prefix"/><input className="sys-field-input" type="password" placeholder={editingModelProvider?.apiKeyConfigured ? "已配置，留空则保持不变" : "部分供应商需要填写"} maxLength={2000} onChange={e=>{modelRef.current.apiKey=e.target.value;}}/></div><div className="sys-field-hint">密钥不会在列表中回显；当前阶段只记录已配置状态，后续接入凭证托管。</div></div>
-          <div className="sys-field"><label className="sys-field-label">状态</label><SysSelect icon={Check} defaultValue={modelRef.current.status || "draft"} options={[{value:"draft",label:"草稿"},{value:"active",label:"可用"}]} onChange={v=>{modelRef.current.status=v;}}/></div>
+          <div className="sys-field"><label className="sys-field-label">状态</label><SysSelect icon={Check} placeholder="请选择状态" defaultValue={modelRef.current.status || ""} options={[{value:"draft",label:"草稿"},{value:"active",label:"可用"}]} onChange={v=>{modelRef.current.status=v;}}/></div>
         </div>
         <div className="sys-drawer-footer">
           <div className="sys-drawer-footer-right">
@@ -1182,20 +1276,20 @@ export function SystemManagementPage() {
         open={capModalOpen}
         rootClassName={drawerRootClassName}
       >
-        <div className="sys-drawer-section">
-          <div className="sys-field"><label className="sys-field-label sys-field-label--required">能力类型</label><SysSelect icon={Boxes} defaultValue={capRef.current.capabilityType || "mcp"} options={capabilityTypeOptions} onChange={v=>{capRef.current.capabilityType=v;setSelectedCapabilityType(v);}}/></div>
+        <div className="sys-drawer-section" key={capFormKey}>
+          <div className="sys-field"><label className="sys-field-label sys-field-label--required">能力类型</label><SysSelect icon={Boxes} placeholder="请选择能力类型" defaultValue={capRef.current.capabilityType || ""} options={capabilityTypeOptions} onChange={v=>{capRef.current.capabilityType=v;setSelectedCapabilityType(v);}}/></div>
           <div className="sys-field-row">
             <div className="sys-field"><label className="sys-field-label sys-field-label--required">名称</label><div className="sys-field-input-wrap"><Tag size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如：文档解析器" maxLength={160} defaultValue={capRef.current.name || ""} onChange={e=>{capRef.current.name=e.target.value;}}/></div></div>
             <div className="sys-field"><label className="sys-field-label sys-field-label--required">编码</label><div className="sys-field-input-wrap"><Code2 size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如 doc_parser" maxLength={100} defaultValue={capRef.current.code || ""} onChange={e=>{capRef.current.code=e.target.value;}}/></div></div>
           </div>
           <div className="sys-field-row">
-            <div className="sys-field"><label className="sys-field-label">版本</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" defaultValue={capRef.current.version || "v1"} maxLength={40} onChange={e=>{capRef.current.version=e.target.value;}}/></div></div>
-            <div className="sys-field"><label className="sys-field-label">风险等级</label><SysSelect icon={ShieldAlert} defaultValue={capRef.current.riskLevel || "low"} options={[{value:"low",label:"低"},{value:"medium",label:"中"},{value:"high",label:"高"}]} onChange={v=>{capRef.current.riskLevel=v;}}/></div>
+            <div className="sys-field"><label className="sys-field-label">版本</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如 v1" maxLength={40} defaultValue={capRef.current.version || ""} onChange={e=>{capRef.current.version=e.target.value;}}/></div></div>
+            <div className="sys-field"><label className="sys-field-label">风险等级</label><SysSelect icon={ShieldAlert} placeholder="请选择风险等级" defaultValue={capRef.current.riskLevel || ""} options={[{value:"low",label:"低"},{value:"medium",label:"中"},{value:"high",label:"高"}]} onChange={v=>{capRef.current.riskLevel=v;}}/></div>
           </div>
-          <div className="sys-field"><label className="sys-field-label">状态</label><SysSelect icon={Check} defaultValue={capRef.current.status || "draft"} options={[{value:"draft",label:"草稿"},{value:"active",label:"启用"}]} onChange={v=>{capRef.current.status=v;}}/></div>
+          <div className="sys-field"><label className="sys-field-label">状态</label><SysSelect icon={Check} placeholder="请选择状态" defaultValue={capRef.current.status || ""} options={[{value:"draft",label:"草稿"},{value:"active",label:"启用"}]} onChange={v=>{capRef.current.status=v;}}/></div>
           {selectedCapabilityType === "mcp" && (
             <div className="sys-config-group">
-              <div className="sys-field"><label className="sys-field-label">MCP 传输方式</label><SysSelect icon={ServerCog} defaultValue={capRef.current.transport || "stdio"} options={[{value:"stdio",label:"stdio 命令"},{value:"sse",label:"SSE 地址"}]} onChange={v=>{capRef.current.transport=v;setSelectedMcpTransport(v);}}/></div>
+              <div className="sys-field"><label className="sys-field-label">MCP 传输方式</label><SysSelect icon={ServerCog} placeholder="请选择传输方式" defaultValue={capRef.current.transport || ""} options={[{value:"stdio",label:"stdio 命令"},{value:"sse",label:"SSE 地址"}]} onChange={v=>{capRef.current.transport=v;setSelectedMcpTransport(v);}}/></div>
               {selectedMcpTransport === "sse" ? (
                 <div className="sys-field"><label className="sys-field-label sys-field-label--required">SSE 地址</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="https://mcp.example.com/sse" maxLength={500} defaultValue={capRef.current.sseUrl || ""} onChange={e=>{capRef.current.sseUrl=e.target.value;}}/></div></div>
               ) : (
@@ -1217,7 +1311,7 @@ export function SystemManagementPage() {
           )}
           {selectedCapabilityType === "delivery" && (
             <div className="sys-field-row">
-              <div className="sys-field"><label className="sys-field-label">交付通道</label><SysSelect icon={Mail} defaultValue={capRef.current.deliveryChannel || ""} options={[{value:"document",label:"文档生成"},{value:"email",label:"邮件"},{value:"oa",label:"OA 流程"},{value:"webhook",label:"Webhook"}]} onChange={v=>{capRef.current.deliveryChannel=v;}}/></div>
+              <div className="sys-field"><label className="sys-field-label">交付通道</label><SysSelect icon={Mail} placeholder="请选择交付通道" defaultValue={capRef.current.deliveryChannel || ""} options={[{value:"document",label:"文档生成"},{value:"email",label:"邮件"},{value:"oa",label:"OA 流程"},{value:"webhook",label:"Webhook"}]} onChange={v=>{capRef.current.deliveryChannel=v;}}/></div>
               <div className="sys-field"><label className="sys-field-label">目标说明</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="通道标识或模板路径" maxLength={500} defaultValue={capRef.current.target || ""} onChange={e=>{capRef.current.target=e.target.value;}}/></div></div>
             </div>
           )}

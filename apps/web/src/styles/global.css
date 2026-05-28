@@ -1559,17 +1559,13 @@ textarea:focus-visible {
 
 /* ==================== 系统管理页（AuraOA 风格） ==================== */
 
-/* 卡片网格：租户 / 模型 / 能力共用 */
+/* 卡片网格：租户 / 模型 / 能力共用；列宽随容器自适应，避免底部操作按钮把整行撑出横向滚动 */
 .sys-card-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
   gap: 16px;
-}
-@media (max-width: 1200px) {
-  .sys-card-grid { grid-template-columns: repeat(2, 1fr); }
-}
-@media (max-width: 768px) {
-  .sys-card-grid { grid-template-columns: 1fr; }
+  width: 100%;
+  min-width: 0;
 }
 
 /* 通用管理卡片 */
@@ -1580,6 +1576,8 @@ textarea:focus-visible {
   padding: 18px;
   transition: all var(--transition-base);
   cursor: pointer;
+  min-width: 0;
+  max-width: 100%;
 }
 .sys-card:hover {
   box-shadow: var(--shadow-lg);
@@ -1673,20 +1671,26 @@ textarea:focus-visible {
 
 /* 卡片元数据 */
 .sys-card-meta {
-  display: flex; gap: 20px; flex-wrap: wrap;
+  display: flex; gap: 12px 16px; flex-wrap: wrap;
   padding: 10px 14px; margin-bottom: 12px;
   background: var(--color-bg-page); border-radius: var(--radius-md);
 }
-.sys-meta-item { display: flex; flex-direction: column; gap: 2px; }
+.sys-meta-item {
+  display: flex; flex-direction: column; gap: 2px;
+  flex: 1 1 88px;
+  min-width: 0;
+}
 .sys-meta-label { font-size: 11px; color: var(--color-text-tertiary); }
 .sys-meta-value {
   font-size: 13px; font-weight: 500; color: var(--color-text-primary);
-  max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
 /* 卡片底部操作栏 */
 .sys-card-footer {
-  display: flex; justify-content: space-between; align-items: center;
+  display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
+  gap: 8px;
   margin-top: 14px; padding-top: 14px;
   border-top: 1px solid var(--color-border-light);
 }
@@ -1694,9 +1698,13 @@ textarea:focus-visible {
   font-size: 12px; color: var(--color-text-tertiary);
   display: inline-flex; align-items: center; gap: 4px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  flex: 1; min-width: 0; margin-right: 8px;
+  flex: 1 1 120px; min-width: 0;
 }
-.sys-card-footer-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.sys-card-footer-actions {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  justify-content: flex-end;
+  margin-left: auto;
+}
 
 /* 概览统计卡片（顶部一排） */
 .sys-overview-stats {
@@ -1747,13 +1755,45 @@ textarea:focus-visible {
 }
 
 /* 概览预览列表卡片 */
+.sys-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 20px;
+  width: 100%;
+  min-width: 0;
+}
+
 .sys-preview-card {
+  display: flex;
+  flex-direction: column;
   background: var(--color-bg-card); border: 1px solid var(--color-border-light);
   border-radius: var(--radius-xl, 16px); padding: 20px 22px;
+  min-width: 0;
+}
+.sys-preview-card--empty {
+  min-height: 220px;
 }
 .sys-preview-card-title {
   font-size: 15px; font-weight: 600; color: var(--color-text-primary);
-  margin-bottom: 16px; display: flex; align-items: center; gap: 8px;
+  margin-bottom: 16px; display: flex; align-items: center; justify-content: center; gap: 8px;
+  text-align: center;
+}
+.sys-preview-card:not(.sys-preview-card--empty) .sys-preview-card-title {
+  justify-content: flex-start;
+  text-align: left;
+}
+.sys-preview-card-body--empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 140px;
+}
+.sys-preview-card-body--empty .ant-empty {
+  margin: 0;
+}
+.sys-preview-card-body--empty .ant-empty-image {
+  margin-inline: auto;
 }
 .sys-preview-item {
   display: flex; align-items: center; justify-content: space-between;
@@ -1833,7 +1873,11 @@ textarea:focus-visible {
 }
 
 /* 页面进入动画 */
-.sys-fade-in { animation: sysFadeIn 0.3s ease; }
+.sys-fade-in {
+  animation: sysFadeIn 0.3s ease;
+  min-width: 0;
+  max-width: 100%;
+}
 
 /* 自定义按钮（替代 Ant Button，与 AuraOA 风格统一） */
 .sys-btn {
