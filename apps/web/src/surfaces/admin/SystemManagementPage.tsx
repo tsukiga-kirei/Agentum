@@ -34,7 +34,6 @@ import { useAuthStore } from "../../stores/authStore";
 import type { TenantOrganizationOverview } from "../../types/organization";
 import type {
   CreateModelProviderRequest,
-  CreateSystemCapabilityRequest,
   CreateTenantRequest,
   CreateTenantCapabilityGrantRequest,
   ModelProviderRow,
@@ -197,6 +196,7 @@ function buildCapabilityFormValues(capability: SystemCapabilityRow): Record<stri
     name: capability.name,
     code: capability.code,
     version: capability.version,
+    description: capability.description ?? "",
     riskLevel: capability.riskLevel,
     status: capability.status,
     transport: readConfigString(capability.config, "transport") || "stdio",
@@ -208,6 +208,7 @@ function buildCapabilityFormValues(capability: SystemCapabilityRow): Record<stri
     target: readConfigString(capability.config, "target"),
     sourcePath: readConfigString(capability.config, "sourcePath"),
     manifestPath: readConfigString(capability.config, "manifestPath"),
+    promptContent: readConfigString(capability.config, "promptContent"),
   };
 }
 
@@ -588,7 +589,6 @@ export function SystemManagementPage() {
     const d = capRef.current;
     if (!d.capabilityType?.trim()) { messageApi.warning("请选择能力类型"); return; }
     if (!d.name?.trim()) { messageApi.warning("请输入名称"); return; }
-    if (!d.code?.trim()) { messageApi.warning("请输入编码"); return; }
     const capabilityType = d.capabilityType.trim();
     const config: Record<string, unknown> = {};
     if (capabilityType === "mcp") {
@@ -609,25 +609,31 @@ export function SystemManagementPage() {
     } else if (capabilityType === "delivery") {
       config.deliveryChannel = d.deliveryChannel?.trim() || "";
       config.target = d.target?.trim() || "";
+    } else if (capabilityType === "prompt_template") {
+      config.promptContent = d.promptContent?.trim() || "";
+      if (!config.promptContent) {
+        messageApi.warning("请输入提示词内容");
+        return;
+      }
     } else {
       config.sourcePath = d.sourcePath?.trim() || "";
       config.manifestPath = d.manifestPath?.trim() || "";
     }
     try {
-      const request: CreateSystemCapabilityRequest = {
+      const baseRequest = {
         capabilityType,
         name: d.name.trim(),
-        code: d.code.trim(),
         version: d.version?.trim() || "v1",
+        description: d.description?.trim() || "",
         riskLevel: d.riskLevel?.trim() || "low",
         status: d.status?.trim() || "draft",
         config,
       };
       if (editingCapability) {
-        await systemApi.updateCapability(token, editingCapability.id, request);
+        await systemApi.updateCapability(token, editingCapability.id, baseRequest);
         messageApi.success("已更新系统能力");
       } else {
-        await systemApi.createCapability(token, request);
+        await systemApi.createCapability(token, baseRequest);
         messageApi.success("已注册系统能力");
       }
       setCapModalOpen(false);
@@ -1280,13 +1286,24 @@ export function SystemManagementPage() {
           <div className="sys-field"><label className="sys-field-label sys-field-label--required">能力类型</label><SysSelect icon={Boxes} placeholder="请选择能力类型" defaultValue={capRef.current.capabilityType || ""} options={capabilityTypeOptions} onChange={v=>{capRef.current.capabilityType=v;setSelectedCapabilityType(v);}}/></div>
           <div className="sys-field-row">
             <div className="sys-field"><label className="sys-field-label sys-field-label--required">名称</label><div className="sys-field-input-wrap"><Tag size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如：文档解析器" maxLength={160} defaultValue={capRef.current.name || ""} onChange={e=>{capRef.current.name=e.target.value;}}/></div></div>
-            <div className="sys-field"><label className="sys-field-label sys-field-label--required">编码</label><div className="sys-field-input-wrap"><Code2 size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如 doc_parser" maxLength={100} defaultValue={capRef.current.code || ""} onChange={e=>{capRef.current.code=e.target.value;}}/></div></div>
+            <div className="sys-field">
+              <label className="sys-field-label">编码</label>
+              <div className="sys-field-input-wrap">
+                <Code2 size={16} className="sys-field-prefix"/>
+                <input className="sys-field-input" disabled placeholder={editingCapability ? "" : "保存后自动生成"} value={editingCapability ? (capRef.current.code || "") : ""} readOnly />
+              </div>
+              <div className="sys-field-hint">{editingCapability ? "编码创建后不可修改" : "根据名称自动生成，保证全局唯一"}</div>
+            </div>
           </div>
           <div className="sys-field-row">
             <div className="sys-field"><label className="sys-field-label">版本</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如 v1" maxLength={40} defaultValue={capRef.current.version || ""} onChange={e=>{capRef.current.version=e.target.value;}}/></div></div>
             <div className="sys-field"><label className="sys-field-label">风险等级</label><SysSelect icon={ShieldAlert} placeholder="请选择风险等级" defaultValue={capRef.current.riskLevel || ""} options={[{value:"low",label:"低"},{value:"medium",label:"中"},{value:"high",label:"高"}]} onChange={v=>{capRef.current.riskLevel=v;}}/></div>
           </div>
           <div className="sys-field"><label className="sys-field-label">状态</label><SysSelect icon={Check} placeholder="请选择状态" defaultValue={capRef.current.status || ""} options={[{value:"draft",label:"草稿"},{value:"active",label:"启用"}]} onChange={v=>{capRef.current.status=v;}}/></div>
+          <div className="sys-field">
+            <label className="sys-field-label">说明</label>
+            <textarea className="sys-field-textarea" placeholder="说明这项能力的业务用途、输入约束和后续接入方向" maxLength={1000} defaultValue={capRef.current.description || ""} onChange={e=>{capRef.current.description=e.target.value;}} />
+          </div>
           {selectedCapabilityType === "mcp" && (
             <div className="sys-config-group">
               <div className="sys-field"><label className="sys-field-label">MCP 传输方式</label><SysSelect icon={ServerCog} placeholder="请选择传输方式" defaultValue={capRef.current.transport || ""} options={[{value:"stdio",label:"stdio 命令"},{value:"sse",label:"SSE 地址"}]} onChange={v=>{capRef.current.transport=v;setSelectedMcpTransport(v);}}/></div>
@@ -1303,10 +1320,24 @@ export function SystemManagementPage() {
               )}
             </div>
           )}
-          {(selectedCapabilityType === "skill" || selectedCapabilityType === "prompt_template") && (
-            <div className="sys-field-row">
-              <div className="sys-field"><label className="sys-field-label">源码路径</label><div className="sys-field-input-wrap"><Code2 size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder={selectedCapabilityType === "skill" ? "capabilities/skills/..." : "capabilities/prompt-templates/..."} maxLength={500} defaultValue={capRef.current.sourcePath || ""} onChange={e=>{capRef.current.sourcePath=e.target.value;}}/></div></div>
-              <div className="sys-field"><label className="sys-field-label">Manifest 路径</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="manifest.yaml / skill.yaml" maxLength={500} defaultValue={capRef.current.manifestPath || ""} onChange={e=>{capRef.current.manifestPath=e.target.value;}}/></div></div>
+          {selectedCapabilityType === "skill" && (
+            <div className="sys-config-group">
+              <div className="sys-field">
+                <label className="sys-field-label">源码路径</label>
+                <div className="sys-field-input-wrap"><Code2 size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="capabilities/skills/requirement-breakdown/SKILL.md" maxLength={500} defaultValue={capRef.current.sourcePath || ""} onChange={e=>{capRef.current.sourcePath=e.target.value;}}/></div>
+                <div className="sys-field-hint">Skill 正文或实现文件在仓库中的路径，供运行时加载指令与工具说明</div>
+              </div>
+              <div className="sys-field">
+                <label className="sys-field-label">Manifest 路径</label>
+                <div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="capabilities/skills/requirement-breakdown/skill.yaml" maxLength={500} defaultValue={capRef.current.manifestPath || ""} onChange={e=>{capRef.current.manifestPath=e.target.value;}}/></div>
+                <div className="sys-field-hint">Skill 元数据清单路径，描述名称、版本、入口和依赖，用于发布校验与能力发现</div>
+              </div>
+            </div>
+          )}
+          {selectedCapabilityType === "prompt_template" && (
+            <div className="sys-field">
+              <label className="sys-field-label sys-field-label--required">提示词内容</label>
+              <textarea className="sys-field-textarea min-h-[220px]" placeholder="直接输入提示词正文，支持后续在工作流节点中引用" maxLength={10000} defaultValue={capRef.current.promptContent || ""} onChange={e=>{capRef.current.promptContent=e.target.value;}} />
             </div>
           )}
           {selectedCapabilityType === "delivery" && (

@@ -64,6 +64,7 @@ export type SystemCapabilityRow = {
   name: string;
   code: string;
   version: string;
+  description: string;
   riskLevel: string;
   status: string;
   config: Record<string, unknown>;
@@ -72,8 +73,8 @@ export type SystemCapabilityRow = {
 export type CreateSystemCapabilityRequest = {
   capabilityType: string;
   name: string;
-  code: string;
   version?: string;
+  description?: string;
   riskLevel?: string;
   status?: string;
   config?: Record<string, unknown>;

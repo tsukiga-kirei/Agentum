@@ -6,6 +6,7 @@ import com.agentum.shared.pagination.PageQuery;
 import com.agentum.shared.pagination.PageResponse;
 import com.agentum.shared.pagination.PageableFactory;
 import com.agentum.shared.pagination.SortWhitelist;
+import com.agentum.shared.util.CapabilityCodeGenerator;
 import com.agentum.system.domain.ModelProviderEntity;
 import com.agentum.system.domain.ModelProviderTypeEntity;
 import com.agentum.system.domain.SystemCapabilityEntity;
@@ -289,27 +290,25 @@ public class SystemManagementService {
 
     @Transactional
     public SystemManagementApi.CapabilityRow createCapability(SystemManagementApi.CreateCapabilityRequest request) {
-        String version = request.version() == null ? "v1" : request.version().trim();
+        String version = normalizeVersion(request.version());
         String capabilityType = request.capabilityType().trim();
+        String name = request.name().trim();
         if (!CAPABILITY_TYPES.contains(capabilityType)) {
             log.warn("系统管理注册能力失败：能力类型不在全局能力范围 capabilityType={} requestId={}", capabilityType, RequestIds.current());
             throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_CAPABILITY_TYPE_INVALID", "全局能力类型只能是 MCP、Skill、提示词模板或交付能力");
         }
-        if (systemCapabilityRepository.findByCodeAndVersion(request.code().trim(), version).isPresent()) {
-            log.warn(
-                "系统管理注册能力失败：编码与版本已存在 code={} version={} requestId={}",
-                request.code(),
-                version,
-                RequestIds.current()
-            );
-            throw new ApiException(HttpStatus.CONFLICT, "SYSTEM_CAPABILITY_DUPLICATE", "同一能力编码与版本已存在");
-        }
+        String code = CapabilityCodeGenerator.resolveUniqueCode(
+            name,
+            version,
+            (candidate, candidateVersion) -> systemCapabilityRepository.findByCodeAndVersion(candidate, candidateVersion).isPresent()
+        );
 
         SystemCapabilityEntity entity = SystemCapabilityEntity.create(
             capabilityType,
-            request.name().trim(),
-            request.code().trim(),
+            name,
+            code,
             version,
+            normalizeOptional(request.description()),
             request.riskLevel() == null ? null : request.riskLevel().trim(),
             request.status() == null ? null : request.status().trim(),
             sanitizeCapabilityConfig(capabilityType, request.config()),
@@ -328,7 +327,7 @@ public class SystemManagementService {
 
     @Transactional
     public SystemManagementApi.CapabilityRow updateCapability(UUID capabilityId, SystemManagementApi.UpdateCapabilityRequest request) {
-        String version = request.version() == null ? "v1" : request.version().trim();
+        String version = normalizeVersion(request.version());
         String capabilityType = request.capabilityType().trim();
         if (!CAPABILITY_TYPES.contains(capabilityType)) {
             log.warn("系统管理更新能力失败：能力类型不在全局能力范围 capabilityId={} capabilityType={} requestId={}", capabilityId, capabilityType, RequestIds.current());
@@ -339,14 +338,14 @@ public class SystemManagementService {
                 log.warn("系统管理更新能力失败：能力不存在 capabilityId={} requestId={}", capabilityId, RequestIds.current());
                 return new ApiException(HttpStatus.NOT_FOUND, "SYSTEM_CAPABILITY_NOT_FOUND", "系统能力不存在");
             });
-        systemCapabilityRepository.findByCodeAndVersion(request.code().trim(), version)
+        systemCapabilityRepository.findByCodeAndVersion(entity.getCode(), version)
             .filter(existing -> !existing.getId().equals(capabilityId))
             .ifPresent(existing -> {
                 log.warn(
                     "系统管理更新能力失败：编码与版本已存在 capabilityId={} duplicatedCapabilityId={} code={} version={} requestId={}",
                     capabilityId,
                     existing.getId(),
-                    request.code(),
+                    entity.getCode(),
                     version,
                     RequestIds.current()
                 );
@@ -355,8 +354,8 @@ public class SystemManagementService {
         entity.updateProfile(
             capabilityType,
             request.name().trim(),
-            request.code().trim(),
             version,
+            normalizeOptional(request.description()),
             request.riskLevel() == null ? null : request.riskLevel().trim(),
             request.status() == null ? null : request.status().trim(),
             sanitizeCapabilityConfig(capabilityType, request.config()),
@@ -397,7 +396,7 @@ public class SystemManagementService {
         SystemManagementApi.CapabilityTestResult result = switch (capability.getCapabilityType()) {
             case "mcp" -> testMcpConfig(capability);
             case "skill" -> testSourceConfig(capability, "Skill 源配置检查通过，后续接入 Skill manifest 校验与样例运行");
-            case "prompt_template" -> testSourceConfig(capability, "提示词模板配置检查通过，后续接入模板变量解析与渲染测试");
+            case "prompt_template" -> testPromptTemplateConfig(capability);
             case "delivery" -> testDeliveryConfig(capability);
             default -> new SystemManagementApi.CapabilityTestResult(capability.getId(), "failed", "能力类型不在平台全局能力范围", List.of(), clock.instant());
         };
@@ -613,9 +612,22 @@ public class SystemManagementService {
     private SystemManagementApi.CapabilityTestResult testSourceConfig(SystemCapabilityEntity capability, String successSummary) {
         Map<String, Object> config = capability.getConfig();
         if (stringValue(config.get("sourcePath")) == null && stringValue(config.get("manifestPath")) == null) {
-            return new SystemManagementApi.CapabilityTestResult(capability.getId(), "failed", "请配置 sourcePath 或 manifestPath，便于后续发布和测试", List.of(), clock.instant());
+            return new SystemManagementApi.CapabilityTestResult(capability.getId(), "failed", "请配置 Skill 源码路径或 Manifest 路径，便于后续发布和测试", List.of(), clock.instant());
         }
         return new SystemManagementApi.CapabilityTestResult(capability.getId(), "success", successSummary, List.of(), clock.instant());
+    }
+
+    private SystemManagementApi.CapabilityTestResult testPromptTemplateConfig(SystemCapabilityEntity capability) {
+        if (stringValue(capability.getConfig().get("promptContent")) == null) {
+            return new SystemManagementApi.CapabilityTestResult(capability.getId(), "failed", "请填写提示词内容，便于后续模板变量解析与渲染测试", List.of(), clock.instant());
+        }
+        return new SystemManagementApi.CapabilityTestResult(
+            capability.getId(),
+            "success",
+            "提示词模板配置检查通过，后续接入模板变量解析与渲染测试",
+            List.of(),
+            clock.instant()
+        );
     }
 
     private SystemManagementApi.CapabilityTestResult testDeliveryConfig(SystemCapabilityEntity capability) {
@@ -640,10 +652,22 @@ public class SystemManagementService {
         if ("delivery".equals(capabilityType)) {
             return Map.of("deliveryChannel", nullableString(config.get("deliveryChannel")), "target", nullableString(config.get("target")));
         }
+        if ("prompt_template".equals(capabilityType)) {
+            return Map.of("promptContent", nullableString(config.get("promptContent")));
+        }
         return Map.of(
             "sourcePath", nullableString(config.get("sourcePath")),
             "manifestPath", nullableString(config.get("manifestPath"))
         );
+    }
+
+    private static String normalizeVersion(String version) {
+        String normalized = normalizeOptional(version);
+        return normalized.isBlank() ? "v1" : normalized;
+    }
+
+    private static String normalizeOptional(String value) {
+        return value == null ? "" : value.trim();
     }
 
     private static String firstNonBlank(String value, String fallback) {
@@ -704,6 +728,7 @@ public class SystemManagementService {
             entity.getName(),
             entity.getCode(),
             entity.getVersion(),
+            entity.getDescription(),
             entity.getRiskLevel(),
             entity.getStatus(),
             entity.getConfig()

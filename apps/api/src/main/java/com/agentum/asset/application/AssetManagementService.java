@@ -12,6 +12,7 @@ import com.agentum.permission.domain.ResourceGrantEntity;
 import com.agentum.permission.infrastructure.ResourceGrantRepository;
 import com.agentum.shared.api.ApiException;
 import com.agentum.shared.api.RequestIds;
+import com.agentum.shared.util.CapabilityCodeGenerator;
 import com.agentum.shared.pagination.PageQuery;
 import com.agentum.shared.pagination.PageResponse;
 import com.agentum.shared.pagination.PageableFactory;
@@ -151,8 +152,12 @@ public class AssetManagementService {
         ensureActiveTenant(tenantId);
         String assetType = normalizeAssetType(request.assetType());
         String name = normalizeRequired(request.name(), "ASSET_NAME_REQUIRED", "请输入能力名称");
-        String code = normalizeCode(request.code());
         String version = normalizeVersion(request.version());
+        String code = CapabilityCodeGenerator.resolveUniqueCode(
+            name,
+            version,
+            (candidate, candidateVersion) -> tenantAssetCapabilityRepository.existsByTenantIdAndCodeAndVersion(tenantId, candidate, candidateVersion)
+        );
         String riskLevel = normalizeRiskLevel(request.riskLevel());
         String visibility = normalizeVisibility(request.visibility());
         if (request.baseSystemCapabilityId() != null) {
@@ -227,7 +232,7 @@ public class AssetManagementService {
         }
 
         String name = normalizeRequired(request.name(), "ASSET_NAME_REQUIRED", "请输入能力名称");
-        String code = normalizeCode(request.code());
+        String code = asset.getCode();
         String version = normalizeVersion(request.version());
         String riskLevel = normalizeRiskLevel(request.riskLevel());
         String visibility = normalizeVisibility(request.visibility());
@@ -294,12 +299,19 @@ public class AssetManagementService {
 
     private AssetManagementApi.SystemCapabilityAssetRow toSystemCapabilityRow(SystemCapabilityAsset asset, boolean assignedToMe, boolean manager) {
         SystemCapabilityEntity capability = asset.capability();
+        String promptContent = "";
+        if ("prompt_template".equals(capability.getCapabilityType())) {
+            Object rawPrompt = capability.getConfig().get("promptContent");
+            promptContent = rawPrompt == null ? "" : rawPrompt.toString();
+        }
         return new AssetManagementApi.SystemCapabilityAssetRow(
             capability.getId(),
             capability.getCapabilityType(),
             capability.getName(),
             capability.getCode(),
             capability.getVersion(),
+            capability.getDescription() == null ? "" : capability.getDescription(),
+            promptContent,
             capability.getRiskLevel(),
             capability.getStatus(),
             assignedToMe,
@@ -546,14 +558,6 @@ public class AssetManagementService {
         }
         if (!ALLOWED_VISIBILITY.contains(normalized)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "ASSET_VISIBILITY_INVALID", "可见范围不受支持");
-        }
-        return normalized;
-    }
-
-    private String normalizeCode(String code) {
-        String normalized = normalizeRequired(code, "ASSET_CODE_REQUIRED", "请输入能力编码");
-        if (!normalized.matches("[a-z][a-z0-9_\\-]{1,99}")) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "ASSET_CODE_INVALID", "能力编码需以小写字母开头，仅包含小写字母、数字、下划线或短横线");
         }
         return normalized;
     }

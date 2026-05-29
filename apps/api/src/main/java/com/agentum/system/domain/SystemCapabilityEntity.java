@@ -36,6 +36,9 @@ public class SystemCapabilityEntity {
     @Column(nullable = false, length = 30)
     private String status;
 
+    @Column(nullable = false, columnDefinition = "TEXT")
+    private String description;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(nullable = false, columnDefinition = "jsonb")
     private Map<String, Object> config;
@@ -54,6 +57,7 @@ public class SystemCapabilityEntity {
         String name,
         String code,
         String version,
+        String description,
         String riskLevel,
         String status,
         Map<String, Object> config,
@@ -65,6 +69,7 @@ public class SystemCapabilityEntity {
         entity.name = name;
         entity.code = code;
         entity.version = version == null ? "v1" : version;
+        entity.description = description == null ? "" : description;
         entity.riskLevel = riskLevel == null ? "low" : riskLevel;
         entity.status = status == null ? "draft" : status;
         entity.config = config == null ? new HashMap<>() : new HashMap<>(config);
@@ -76,8 +81,8 @@ public class SystemCapabilityEntity {
     public void updateProfile(
         String capabilityType,
         String name,
-        String code,
         String version,
+        String description,
         String riskLevel,
         String status,
         Map<String, Object> config,
@@ -85,8 +90,8 @@ public class SystemCapabilityEntity {
     ) {
         this.capabilityType = capabilityType;
         this.name = name;
-        this.code = code;
         this.version = version == null ? "v1" : version;
+        this.description = description == null ? "" : description;
         this.riskLevel = riskLevel == null ? "low" : riskLevel;
         this.status = status == null ? "draft" : status;
         this.config = config == null ? new HashMap<>() : new HashMap<>(config);
@@ -119,6 +124,10 @@ public class SystemCapabilityEntity {
 
     public String getStatus() {
         return status;
+    }
+
+    public String getDescription() {
+        return description;
     }
 
     public Map<String, Object> getConfig() {

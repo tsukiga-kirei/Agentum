@@ -58,7 +58,7 @@ class WorkbenchServiceTest {
     void shouldReturnSummaryWithRealStatistics() {
         WorkbenchService service = newService();
         SystemCapabilityEntity capability = SystemCapabilityEntity.create(
-            "skill", "合同解析", "contract_parse", "v1", "low", "active", Map.of(), NOW
+            "skill", "合同解析", "contract_parse", "v1", "", "low", "active", Map.of(), NOW
         );
         TenantCapabilityGrantEntity tenantGrant = TenantCapabilityGrantEntity.create(TENANT_ID, capability.getId(), "enabled", NOW);
 
@@ -122,7 +122,7 @@ class WorkbenchServiceTest {
     void shouldReportZeroCapabilityWhenBusinessUserHasNoGrant() {
         WorkbenchService service = newService();
         SystemCapabilityEntity capability = SystemCapabilityEntity.create(
-            "skill", "合同解析", "contract_parse", "v1", "low", "active", Map.of(), NOW
+            "skill", "合同解析", "contract_parse", "v1", "", "low", "active", Map.of(), NOW
         );
         TenantCapabilityGrantEntity tenantGrant = TenantCapabilityGrantEntity.create(TENANT_ID, capability.getId(), "enabled", NOW);
 

@@ -90,6 +90,7 @@ public final class SystemManagementApi {
         String name,
         String code,
         String version,
+        String description,
         String riskLevel,
         String status,
         Map<String, Object> config
@@ -99,8 +100,9 @@ public final class SystemManagementApi {
     public record CreateCapabilityRequest(
         @NotBlank @Size(max = 40) String capabilityType,
         @NotBlank @Size(max = 160) String name,
-        @NotBlank @Size(max = 100) String code,
+        @Size(max = 100) String code,
         @Size(max = 40) String version,
+        @Size(max = 1000) String description,
         @Size(max = 20) String riskLevel,
         @Size(max = 30) String status,
         Map<String, Object> config
@@ -110,8 +112,8 @@ public final class SystemManagementApi {
     public record UpdateCapabilityRequest(
         @NotBlank @Size(max = 40) String capabilityType,
         @NotBlank @Size(max = 160) String name,
-        @NotBlank @Size(max = 100) String code,
         @Size(max = 40) String version,
+        @Size(max = 1000) String description,
         @Size(max = 20) String riskLevel,
         @Size(max = 30) String status,
         Map<String, Object> config

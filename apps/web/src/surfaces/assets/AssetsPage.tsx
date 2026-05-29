@@ -93,7 +93,6 @@ export function AssetsPage() {
   const [draft, setDraft] = useState<CreateMyAssetRequest>({
     assetType: "prompt_template",
     name: "",
-    code: "",
     version: "v1",
     description: "",
     riskLevel: "low",
@@ -102,7 +101,6 @@ export function AssetsPage() {
   });
   const [editDraft, setEditDraft] = useState<UpdateMyAssetRequest>({
     name: "",
-    code: "",
     version: "v1",
     description: "",
     riskLevel: "low",
@@ -217,8 +215,12 @@ export function AssetsPage() {
       messageApi.warning("请先进入有效租户后再创建能力草稿");
       return;
     }
-    if (!draft.name.trim() || !draft.code.trim()) {
-      messageApi.warning("请输入能力名称和编码");
+    if (!draft.name.trim()) {
+      messageApi.warning("请输入能力名称");
+      return;
+    }
+    if (draft.assetType === "prompt_template" && !getConfigString(draft.config, "promptContent").trim()) {
+      messageApi.warning("请输入提示词内容");
       return;
     }
 
@@ -227,13 +229,12 @@ export function AssetsPage() {
       await assetApi.createMine(tenantId, token, {
         ...draft,
         name: draft.name.trim(),
-        code: draft.code.trim(),
         version: draft.version?.trim() || "v1",
         description: draft.description?.trim(),
       });
       messageApi.success("能力草稿已创建");
       setCreateOpen(false);
-      setDraft({ assetType: "prompt_template", name: "", code: "", version: "v1", description: "", riskLevel: "low", visibility: "private", config: { promptContent: "" } });
+      setDraft({ assetType: "prompt_template", name: "", version: "v1", description: "", riskLevel: "low", visibility: "private", config: { promptContent: "" } });
       await Promise.all([loadSummary(), loadMyAssets(1, minePage.size, keyword)]);
       setActiveTab("mine");
     } catch (error) {
@@ -251,7 +252,6 @@ export function AssetsPage() {
       setCurrentAsset(detail);
       setEditDraft({
         name: detail.name,
-        code: detail.code,
         version: detail.version,
         description: detail.description,
         riskLevel: detail.riskLevel,
@@ -268,8 +268,8 @@ export function AssetsPage() {
 
   const handleUpdate = async () => {
     if (!token || !tenantId || !currentAsset) return;
-    if (!editDraft.name.trim() || !editDraft.code.trim()) {
-      messageApi.warning("请输入能力名称和编码");
+    if (!editDraft.name.trim()) {
+      messageApi.warning("请输入能力名称");
       return;
     }
 
@@ -589,11 +589,12 @@ export function AssetsPage() {
               </div>
             </div>
             <div className="sys-field">
-              <label className="sys-field-label sys-field-label--required">能力编码</label>
+              <label className="sys-field-label">编码</label>
               <div className="sys-field-input-wrap">
                 <Hash size={16} className="sys-field-prefix" aria-hidden="true" />
-                <input className="sys-field-input" value={draft.code} placeholder="renewal_risk_prompt" onChange={(event) => setDraft((current) => ({ ...current, code: event.target.value }))} />
+                <input className="sys-field-input" disabled placeholder="保存后自动生成" readOnly />
               </div>
+              <div className="sys-field-hint">根据名称自动生成，同一租户内保证唯一</div>
             </div>
           </div>
           <div className="sys-field-row">
@@ -633,6 +634,17 @@ export function AssetsPage() {
             <label className="sys-field-label">说明</label>
             <textarea className="sys-field-textarea" value={draft.description ?? ""} placeholder="说明这项能力的业务用途、输入约束和后续发布方向" onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} />
           </div>
+          {draft.assetType === "prompt_template" ? (
+            <div className="sys-field">
+              <label className="sys-field-label sys-field-label--required">提示词内容</label>
+              <textarea
+                className="sys-field-textarea min-h-[220px]"
+                value={getConfigString(draft.config, "promptContent")}
+                placeholder="直接输入提示词正文"
+                onChange={(event) => setDraft((current) => ({ ...current, config: { ...(current.config ?? {}), promptContent: event.target.value } }))}
+              />
+            </div>
+          ) : null}
         </div>
         <div className="sys-drawer-footer">
           <div className="sys-drawer-footer-right">
@@ -669,11 +681,12 @@ export function AssetsPage() {
                   </div>
                 </div>
                 <div className="sys-field">
-                  <label className="sys-field-label sys-field-label--required">能力编码</label>
+                  <label className="sys-field-label">能力编码</label>
                   <div className="sys-field-input-wrap">
                     <Hash size={16} className="sys-field-prefix" aria-hidden="true" />
-                    <input className="sys-field-input" value={editDraft.code} onChange={(event) => setEditDraft((current) => ({ ...current, code: event.target.value }))} />
+                    <input className="sys-field-input" disabled value={currentAsset.code} readOnly />
                   </div>
+                  <div className="sys-field-hint">编码创建后不可修改</div>
                 </div>
               </div>
               <div className="sys-field-row">
@@ -859,8 +872,14 @@ export function AssetsPage() {
             </div>
             <div className="sys-field">
               <label className="sys-field-label">说明</label>
-              <textarea className="sys-field-textarea" disabled value="系统开放的通用能力，可用于编排智能体模板或在流程节点中进行引用。" />
+              <textarea className="sys-field-textarea" disabled value={selectedSystemAsset.description || "暂无说明"} />
             </div>
+            {selectedSystemAsset.assetType === "prompt_template" && selectedSystemAsset.promptContent ? (
+              <div className="sys-field">
+                <label className="sys-field-label">提示词内容</label>
+                <textarea className="sys-field-textarea min-h-[220px]" disabled value={selectedSystemAsset.promptContent} />
+              </div>
+            ) : null}
           </div>
         ) : null}
         <div className="sys-drawer-footer">
@@ -1003,6 +1022,7 @@ function SystemAssetCard({ asset, onView }: { asset: SystemCapabilityAssetRow; o
         <span className="sys-info-tag sys-info-tag--primary">{formatAssetType(asset.assetType)}</span>
         <RiskTag level={asset.riskLevel} />
       </div>
+      <p className="agent-muted min-h-12 text-sm leading-6">{asset.description || "暂无说明"}</p>
       <div className="sys-card-meta">
         <div className="sys-meta-item">
           <span className="sys-meta-label">分配状态</span>
@@ -1161,7 +1181,6 @@ function normalizeEditDraft(draft: UpdateMyAssetRequest, assetType: AssetType): 
   const base = {
     ...draft,
     name: draft.name.trim(),
-    code: draft.code.trim(),
     version: draft.version?.trim() || "v1",
     description: draft.description?.trim(),
   };

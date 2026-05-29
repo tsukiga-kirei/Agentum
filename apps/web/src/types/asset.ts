@@ -15,6 +15,8 @@ export type SystemCapabilityAssetRow = {
   name: string;
   code: string;
   version: string;
+  description: string;
+  promptContent: string;
   riskLevel: string;
   status: string;
   assignedToMe: boolean;
@@ -51,7 +53,7 @@ export type MyAssetDetail = MyAssetRow & {
 export type CreateMyAssetRequest = {
   assetType: CreatableAssetType;
   name: string;
-  code: string;
+  code?: string;
   version?: string;
   description?: string;
   riskLevel?: string;
@@ -60,7 +62,7 @@ export type CreateMyAssetRequest = {
   config?: Record<string, unknown>;
 };
 
-export type UpdateMyAssetRequest = Omit<CreateMyAssetRequest, "assetType" | "baseSystemCapabilityId">;
+export type UpdateMyAssetRequest = Omit<CreateMyAssetRequest, "assetType" | "baseSystemCapabilityId" | "code">;
 
 export type SystemCapabilityAssetPage = PageResponse<SystemCapabilityAssetRow>;
 export type MyAssetPage = PageResponse<MyAssetRow>;

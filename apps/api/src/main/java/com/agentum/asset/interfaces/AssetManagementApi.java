@@ -24,6 +24,8 @@ public final class AssetManagementApi {
         String name,
         String code,
         String version,
+        String description,
+        String promptContent,
         String riskLevel,
         String status,
         boolean assignedToMe,
@@ -72,7 +74,7 @@ public final class AssetManagementApi {
     public record CreateMyAssetRequest(
         @NotBlank @Size(max = 40) String assetType,
         @NotBlank @Size(max = 160) String name,
-        @NotBlank @Size(max = 100) String code,
+        @Size(max = 100) String code,
         @Size(max = 40) String version,
         @Size(max = 1000) String description,
         @Size(max = 20) String riskLevel,
@@ -84,7 +86,6 @@ public final class AssetManagementApi {
 
     public record UpdateMyAssetRequest(
         @NotBlank @Size(max = 160) String name,
-        @NotBlank @Size(max = 100) String code,
         @Size(max = 40) String version,
         @Size(max = 1000) String description,
         @Size(max = 20) String riskLevel,

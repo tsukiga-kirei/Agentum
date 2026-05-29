@@ -55,8 +55,8 @@ class AssetManagementServiceTest {
         CurrentUserPrincipal principal = businessPrincipal();
         UserMembershipEntity membership = UserMembershipEntity.create(TENANT_ID, USER_ID, null, "默认空间");
         UserMembershipRoleEntity membershipRole = UserMembershipRoleEntity.create(membership.getId(), ROLE_ID);
-        SystemCapabilityEntity capability = SystemCapabilityEntity.create("skill", "合同解析 Skill", "contract_parse", "v1", "low", "active", Map.of(), NOW);
-        SystemCapabilityEntity unassignedCapability = SystemCapabilityEntity.create("mcp", "未分配 MCP", "unassigned_mcp", "v1", "medium", "active", Map.of(), NOW);
+        SystemCapabilityEntity capability = SystemCapabilityEntity.create("skill", "合同解析 Skill", "contract_parse", "v1", "", "low", "active", Map.of(), NOW);
+        SystemCapabilityEntity unassignedCapability = SystemCapabilityEntity.create("mcp", "未分配 MCP", "unassigned_mcp", "v1", "", "medium", "active", Map.of(), NOW);
         TenantCapabilityGrantEntity tenantGrant = TenantCapabilityGrantEntity.create(TENANT_ID, capability.getId(), "enabled", NOW);
         TenantCapabilityGrantEntity unassignedTenantGrant = TenantCapabilityGrantEntity.create(TENANT_ID, unassignedCapability.getId(), "enabled", NOW);
         ResourceGrantEntity resourceGrant = ResourceGrantEntity.create(TENANT_ID, UUID.randomUUID(), "合同能力", "skill", capability.getId(), "role", ROLE_ID, new String[] { "use" });
@@ -78,7 +78,7 @@ class AssetManagementServiceTest {
     @Test
     void shouldHideTenantPoolCapabilityWithoutSubjectGrant() {
         AssetManagementService service = newService();
-        SystemCapabilityEntity capability = SystemCapabilityEntity.create("skill", "合同解析 Skill", "contract_parse", "v1", "low", "active", Map.of(), NOW);
+        SystemCapabilityEntity capability = SystemCapabilityEntity.create("skill", "合同解析 Skill", "contract_parse", "v1", "", "low", "active", Map.of(), NOW);
         TenantCapabilityGrantEntity tenantGrant = TenantCapabilityGrantEntity.create(TENANT_ID, capability.getId(), "enabled", NOW);
 
         when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", NOW)));
@@ -101,7 +101,7 @@ class AssetManagementServiceTest {
         TenantAssetCapabilityEntity saved = TenantAssetCapabilityEntity.create(
             TENANT_ID,
             "prompt_template",
-            "续约追问模板",
+            "Renewal Question",
             "renewal_question",
             "v1",
             "用于客户续约流程",
@@ -121,10 +121,10 @@ class AssetManagementServiceTest {
         AssetManagementApi.MyAssetRow row = service.createMyAsset(
             TENANT_ID,
             businessPrincipal(),
-            new AssetManagementApi.CreateMyAssetRequest("prompt_template", "续约追问模板", "renewal_question", "v1", "用于客户续约流程", "low", "private", null, Map.of())
+            new AssetManagementApi.CreateMyAssetRequest("prompt_template", "Renewal Question", null, "v1", "用于客户续约流程", "low", "private", null, Map.of())
         );
 
-        assertThat(row.name()).isEqualTo("续约追问模板");
+        assertThat(row.name()).isEqualTo("Renewal Question");
         assertThat(row.status()).isEqualTo("draft");
         assertThat(row.visibility()).isEqualTo("private");
     }
@@ -139,7 +139,7 @@ class AssetManagementServiceTest {
         assertThatThrownBy(() -> service.createMyAsset(
             TENANT_ID,
             businessPrincipal(),
-            new AssetManagementApi.CreateMyAssetRequest("agent_template", "合同解析智能体", "contract_parse_agent", "v1", "", "low", "private", baseCapabilityId, Map.of())
+            new AssetManagementApi.CreateMyAssetRequest("agent_template", "合同解析智能体", null, "v1", "", "low", "private", baseCapabilityId, Map.of())
         ))
             .isInstanceOf(ApiException.class)
             .extracting("code")
@@ -154,7 +154,7 @@ class AssetManagementServiceTest {
         assertThatThrownBy(() -> service.createMyAsset(
             TENANT_ID,
             businessPrincipal(),
-            new AssetManagementApi.CreateMyAssetRequest("skill", "风险核对 Skill", "risk_check", "v1", "", "low", "private", null, Map.of())
+            new AssetManagementApi.CreateMyAssetRequest("skill", "风险核对 Skill", null, "v1", "", "low", "private", null, Map.of())
         ))
             .isInstanceOf(ApiException.class)
             .extracting("code")
@@ -162,19 +162,36 @@ class AssetManagementServiceTest {
     }
 
     @Test
-    void shouldRejectDuplicatedCodeAndVersion() {
+    void shouldGenerateUniqueCodeWhenBaseCodeExists() {
         AssetManagementService service = newService();
+        TenantAssetCapabilityEntity saved = TenantAssetCapabilityEntity.create(
+            TENANT_ID,
+            "prompt_template",
+            "Renewal Question",
+            "renewal_question_2",
+            "v1",
+            "",
+            "low",
+            "draft",
+            "private",
+            null,
+            Map.of(),
+            USER_ID,
+            NOW
+        );
+
         when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", NOW)));
         when(tenantAssetCapabilityRepository.existsByTenantIdAndCodeAndVersion(TENANT_ID, "renewal_question", "v1")).thenReturn(true);
+        when(tenantAssetCapabilityRepository.existsByTenantIdAndCodeAndVersion(TENANT_ID, "renewal_question_2", "v1")).thenReturn(false);
+        when(tenantAssetCapabilityRepository.save(any(TenantAssetCapabilityEntity.class))).thenReturn(saved);
 
-        assertThatThrownBy(() -> service.createMyAsset(
+        AssetManagementApi.MyAssetRow row = service.createMyAsset(
             TENANT_ID,
             businessPrincipal(),
-            new AssetManagementApi.CreateMyAssetRequest("prompt_template", "续约追问模板", "renewal_question", "v1", "", "low", "private", null, Map.of())
-        ))
-            .isInstanceOf(ApiException.class)
-            .extracting("code")
-            .isEqualTo("ASSET_CODE_VERSION_EXISTS");
+            new AssetManagementApi.CreateMyAssetRequest("prompt_template", "Renewal Question", null, "v1", "", "low", "private", null, Map.of())
+        );
+
+        assertThat(row.code()).isEqualTo("renewal_question_2");
     }
 
     @Test
@@ -231,7 +248,7 @@ class AssetManagementServiceTest {
             TENANT_ID,
             asset.getId(),
             businessPrincipal(),
-            new AssetManagementApi.UpdateMyAssetRequest("续约追问模板", "renewal_question", "v1", "用于客户续约流程", "low", "private", Map.of("promptContent", "请识别客户续约风险。"))
+            new AssetManagementApi.UpdateMyAssetRequest("续约追问模板", "v1", "用于客户续约流程", "low", "private", Map.of("promptContent", "请识别客户续约风险。"))
         );
         var published = service.publishMyAsset(TENANT_ID, asset.getId(), businessPrincipal());
 
@@ -244,7 +261,7 @@ class AssetManagementServiceTest {
     @Test
     void shouldRejectAgentPublishWhenReferencedSkillIsNotAssignedToSubject() {
         AssetManagementService service = newService();
-        SystemCapabilityEntity capability = SystemCapabilityEntity.create("skill", "合同解析 Skill", "contract_parse", "v1", "low", "active", Map.of(), NOW);
+        SystemCapabilityEntity capability = SystemCapabilityEntity.create("skill", "合同解析 Skill", "contract_parse", "v1", "", "low", "active", Map.of(), NOW);
         TenantCapabilityGrantEntity tenantGrant = TenantCapabilityGrantEntity.create(TENANT_ID, capability.getId(), "enabled", NOW);
         TenantAssetCapabilityEntity asset = TenantAssetCapabilityEntity.create(
             TENANT_ID,

@@ -83,7 +83,7 @@ class TenantOrganizationResourceGrantTest {
     void shouldCreateGrantForEnabledCapabilityAndRolePrincipal() {
         TenantOrganizationService service = newService();
         RoleEntity role = RoleEntity.create(TENANT_ID, "executor", "执行人", "business", "流程执行角色");
-        SystemCapabilityEntity capability = SystemCapabilityEntity.create("skill", "合同解析", "contract_parse", "v1", "medium", "active", Map.of(), Instant.now());
+        SystemCapabilityEntity capability = SystemCapabilityEntity.create("skill", "合同解析", "contract_parse", "v1", "", "medium", "active", Map.of(), Instant.now());
         TenantCapabilityGrantEntity capabilityGrant = TenantCapabilityGrantEntity.create(TENANT_ID, capability.getId(), "enabled", Instant.now());
 
         when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", Instant.now())));
