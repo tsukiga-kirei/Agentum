@@ -3613,12 +3613,13 @@ textarea:focus-visible {
   min-height: 0;
   max-width: 1400px;
   margin: 0 auto;
-  padding: 4px 20px 0;
+  padding: 4px 20px 20px;
 }
 
 @media (min-width: 1024px) {
   .workbench-task-run-host-inner {
     padding-inline: 24px;
+    padding-bottom: 20px;
   }
 }
 
@@ -3823,7 +3824,7 @@ textarea:focus-visible {
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
-  padding: 16px;
+  padding: 16px 16px 20px;
   overscroll-behavior: contain;
 }
 
@@ -4275,6 +4276,14 @@ textarea:focus-visible {
 
 .workbench-run-meta-grid--compact {
   margin-top: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.workbench-run-meta-grid--compact .workbench-run-meta-card strong {
+  overflow: visible;
+  text-overflow: unset;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .workbench-input-card,

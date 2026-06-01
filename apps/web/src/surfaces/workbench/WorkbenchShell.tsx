@@ -17,7 +17,6 @@ import {
   ListTodo,
   Loader2,
   LogOut,
-  MessageSquareText,
   PanelLeftClose,
   PanelLeftOpen,
   PauseCircle,
@@ -1285,10 +1284,6 @@ function RunOverviewPanel({ workflow, preview }: { workflow: WorkbenchAvailableW
           <RunMetaCard icon={UserRoundCheck} label="发起人" value={preview.ownerName} />
           <RunMetaCard icon={Clock3} label="开始时间" value={preview.startedAt} />
         </div>
-      </section>
-      <section className="workbench-run-note">
-        <MessageSquareText size={16} aria-hidden="true" />
-        <span>业务处理页只承接当前用户有权限的恢复动作；真实提交、暂停、回退和交付确认仍需后端按租户、角色、资源范围与运行安全策略复核。</span>
       </section>
     </div>
   );
