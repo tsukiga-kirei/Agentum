@@ -412,14 +412,16 @@ export function WorkbenchShell() {
       <div className="flex min-h-screen">
         {/* ===== 侧边栏 ===== */}
         <aside className={`hidden shrink-0 sticky top-0 h-screen max-h-screen overflow-hidden bg-[var(--color-bg-sidebar)] text-[var(--color-text-sidebar)] transition-[width,background-color] duration-300 lg:flex lg:flex-col ${isSidebarCollapsed ? "w-[var(--sidebar-collapsed-width)]" : "w-[var(--sidebar-width)]"}`}>
-          {/* Logo 区 */}
-          <div className={`flex h-[var(--header-height)] items-center gap-3 px-5 ${isSidebarCompact ? "justify-center px-0" : ""}`}>
-            <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg shadow-sm">
-              <AgentumMark className="h-9 w-9" />
+          {/* Logo 区：收起时必须占满侧栏宽度并居中，避免图标贴左上角 */}
+          <div className={`flex h-[var(--header-height)] w-full shrink-0 items-center ${isSidebarCompact ? "justify-center px-0" : "gap-3 px-5"}`}>
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg shadow-sm">
+              <AgentumMark className="h-9 w-9 shrink-0 object-contain" />
             </div>
-            <div className={`workbench-sidebar-text ${showSidebarText ? "workbench-sidebar-text--visible" : ""}`}>
-              <p className="text-lg font-bold text-[var(--color-sidebar-logo-text)]">Agentum</p>
-            </div>
+            {showSidebarText ? (
+              <div className="workbench-sidebar-text workbench-sidebar-text--visible">
+                <p className="text-lg font-bold text-[var(--color-sidebar-logo-text)]">Agentum</p>
+              </div>
+            ) : null}
           </div>
 
           {/* 导航菜单 —— 由后端 menus 驱动，不再硬编码 visibleFor */}
