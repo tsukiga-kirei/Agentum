@@ -2348,11 +2348,6 @@ function collectReferencedVariables(node: WorkflowEditorNode, previousVariables:
     }
   }
 
-  const artifactVariable = node.data.rawConfig?.artifactVariable;
-  if (typeof artifactVariable === "string" && allowed.has(artifactVariable)) {
-    references.add(artifactVariable);
-  }
-
   return [...references];
 }
 
