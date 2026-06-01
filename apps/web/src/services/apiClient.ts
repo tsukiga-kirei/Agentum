@@ -14,6 +14,7 @@ import type {
   TenantOrganizationOverview,
   TenantResourceOption,
   UpdateMembershipDepartmentRequest,
+  UpdateMemberProfileRequest,
   UpdateMembershipRoleRequest,
   UpdateMembershipStatusRequest,
   UpdateDepartmentRequest,
@@ -186,6 +187,12 @@ export const organizationApi = {
     apiRequest<TenantOrgRole>(`/api/admin/tenants/${tenantId}/organization/org-roles/${roleId}`, { method: "PATCH", token, body: request }),
   updateMembershipRole: (tenantId: string, membershipId: string, token: string, request: UpdateMembershipRoleRequest) =>
     apiRequest<TenantOrganizationOverview>(`/api/admin/tenants/${tenantId}/organization/memberships/${membershipId}/role`, {
+      method: "PATCH",
+      token,
+      body: request,
+    }),
+  updateMemberProfile: (tenantId: string, membershipId: string, token: string, request: UpdateMemberProfileRequest) =>
+    apiRequest<TenantOrganizationOverview>(`/api/admin/tenants/${tenantId}/organization/memberships/${membershipId}/profile`, {
       method: "PATCH",
       token,
       body: request,

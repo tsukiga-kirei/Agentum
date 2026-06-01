@@ -21,4 +21,6 @@ public interface ResourceGrantRepository extends JpaRepository<ResourceGrantEnti
         String resourceType,
         UUID resourceId
     );
+
+    long countByTenantIdAndPrincipalTypeAndPrincipalId(UUID tenantId, String principalType, UUID principalId);
 }

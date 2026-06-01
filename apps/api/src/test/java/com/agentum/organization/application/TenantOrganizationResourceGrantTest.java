@@ -3,8 +3,10 @@ package com.agentum.organization.application;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.agentum.auth.domain.UserAccount;
 import com.agentum.auth.infrastructure.UserAccountRepository;
 import com.agentum.auth.infrastructure.UserRoleAssignmentRepository;
 import com.agentum.organization.domain.UserMembershipEntity;
@@ -19,6 +21,7 @@ import com.agentum.organization.interfaces.GrantPrincipalRequest;
 import com.agentum.organization.interfaces.PageGrantResponse;
 import com.agentum.organization.interfaces.ResourceGrantItemRequest;
 import com.agentum.organization.interfaces.ResourceGrantResponse;
+import com.agentum.organization.interfaces.UpdateMemberProfileRequest;
 import com.agentum.organization.interfaces.UpdateTenantRoleRequest;
 import com.agentum.permission.domain.PageGrantEntity;
 import com.agentum.permission.domain.RoleEntity;
@@ -237,6 +240,65 @@ class TenantOrganizationResourceGrantTest {
             .isInstanceOf(ApiException.class)
             .extracting("code")
             .isEqualTo("ORG_ROLE_DISABLE_WITH_MEMBERS");
+    }
+
+    @Test
+    void shouldRejectDeletingRoleWithActiveMembers() {
+        TenantOrganizationService service = newService();
+        RoleEntity reviewerRole = RoleEntity.create(TENANT_ID, "reviewer", "合同审核员", "business", "审核合同");
+
+        when(roleRepository.findByIdAndTenantId(reviewerRole.getId(), TENANT_ID)).thenReturn(Optional.of(reviewerRole));
+        when(userMembershipRoleRepository.countActiveMembershipsByTenantIdAndRoleId(TENANT_ID, reviewerRole.getId(), "active", "active")).thenReturn(1L);
+
+        assertThatThrownBy(() -> service.deleteTenantRole(TENANT_ID, OPERATOR_USER_ID, reviewerRole.getId()))
+            .isInstanceOf(ApiException.class)
+            .extracting("code")
+            .isEqualTo("ORG_ROLE_HAS_MEMBERS");
+    }
+
+    @Test
+    void shouldDeleteRoleWhenNoMemberOrGrantReferenceExists() {
+        TenantOrganizationService service = newService();
+        RoleEntity reviewerRole = RoleEntity.create(TENANT_ID, "reviewer", "合同审核员", "business", "审核合同");
+
+        when(roleRepository.findByIdAndTenantId(reviewerRole.getId(), TENANT_ID)).thenReturn(Optional.of(reviewerRole));
+        when(userMembershipRoleRepository.countActiveMembershipsByTenantIdAndRoleId(TENANT_ID, reviewerRole.getId(), "active", "active")).thenReturn(0L);
+        when(pageGrantRepository.countByTenantIdAndPrincipalTypeAndPrincipalId(TENANT_ID, "role", reviewerRole.getId())).thenReturn(0L);
+        when(resourceGrantRepository.countByTenantIdAndPrincipalTypeAndPrincipalId(TENANT_ID, "role", reviewerRole.getId())).thenReturn(0L);
+
+        service.deleteTenantRole(TENANT_ID, OPERATOR_USER_ID, reviewerRole.getId());
+
+        verify(userMembershipRoleRepository).deleteByRoleId(reviewerRole.getId());
+        verify(roleRepository).delete(reviewerRole);
+    }
+
+    @Test
+    void shouldUpdateMemberProfileForTenantMembership() {
+        TenantOrganizationService service = newService();
+        UserMembershipEntity membership = UserMembershipEntity.create(TENANT_ID, USER_ID, null, "默认空间");
+        UserAccount account = UserAccount.create("old_operator", "hash", "旧姓名", "old@example.com");
+
+        when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", Instant.now())));
+        when(userMembershipRepository.findByIdAndTenantId(membership.getId(), TENANT_ID)).thenReturn(Optional.of(membership));
+        when(userAccountRepository.findById(membership.getUserId())).thenReturn(Optional.of(account));
+        when(userAccountRepository.existsByUsernameAndIdNot("new_operator", account.getId())).thenReturn(false);
+        when(userAccountRepository.findAllById(any())).thenReturn(List.of(account));
+        when(departmentRepository.findByTenantIdAndStatusOrderBySortOrderAscNameAsc(TENANT_ID, "active")).thenReturn(List.of());
+        when(roleRepository.findByTenantIdAndStatusOrderByNameAsc(TENANT_ID, "active")).thenReturn(List.of());
+        when(userMembershipRepository.findByTenantId(TENANT_ID)).thenReturn(List.of(membership));
+        when(userMembershipRoleRepository.findByMembershipIdInAndStatus(any(), any())).thenReturn(List.of());
+
+        service.updateMemberProfile(
+            TENANT_ID,
+            OPERATOR_USER_ID,
+            membership.getId(),
+            new UpdateMemberProfileRequest("new_operator", "新姓名", "new@example.com")
+        );
+
+        assertThat(account.getUsername()).isEqualTo("new_operator");
+        assertThat(account.getDisplayName()).isEqualTo("新姓名");
+        assertThat(account.getEmail()).isEqualTo("new@example.com");
+        verify(userAccountRepository).save(account);
     }
 
     private TenantOrganizationService newService() {

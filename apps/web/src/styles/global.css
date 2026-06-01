@@ -499,6 +499,21 @@ textarea:focus-visible {
   color: var(--color-text-tertiary);
 }
 
+.agent-admin-select-dropdown {
+  scrollbar-width: none;
+}
+
+.agent-admin-select-dropdown::-webkit-scrollbar,
+.agent-admin-select-dropdown .rc-virtual-list-scrollbar,
+.agent-admin-select-dropdown .rc-virtual-list-holder::-webkit-scrollbar {
+  width: 0 !important;
+  display: none !important;
+}
+
+.agent-admin-select-dropdown .rc-virtual-list-holder {
+  scrollbar-width: none;
+}
+
 /* Ant Design 6：Select 根节点即输入框（无 .ant-select-selector），多选根节点默认 align-items: flex-start */
 .agent-admin-select.ant-select {
   --agent-field-height: 44px;
@@ -1870,6 +1885,18 @@ textarea:focus-visible {
   background: var(--color-bg-page); border-radius: var(--radius-lg);
   padding: 16px 20px; margin-bottom: 16px;
 }
+.tenant-role-members-group {
+  background: transparent;
+  padding: 0;
+  margin-top: 4px;
+}
+.tenant-drawer-option-group {
+  background: transparent;
+  padding: 0;
+}
+.tenant-member-profile-group {
+  margin-bottom: 16px;
+}
 .sys-config-group-title {
   font-size: 13px; font-weight: 600; color: var(--color-text-secondary);
   margin-bottom: 12px;
@@ -2075,7 +2102,6 @@ textarea:focus-visible {
   border: 1px solid var(--color-border-light);
   border-radius: var(--radius-md);
   background: var(--color-bg-input, var(--color-bg-page));
-  padding-right: 12px;
   transition:
     border-color var(--transition-fast),
     box-shadow var(--transition-fast);
@@ -2099,6 +2125,10 @@ textarea:focus-visible {
   min-height: calc(var(--agent-field-height, 44px) - 2px) !important;
 }
 
+.sys-field-input-wrap--select .agent-principal-select.ant-select {
+  min-height: 52px !important;
+}
+
 .sys-field-input-wrap--select .agent-admin-select.ant-select-multiple {
   --ant-select-multi-padding-vertical: 0px;
   --ant-select-multi-padding-base: 0px;
@@ -2115,7 +2145,9 @@ textarea:focus-visible {
   align-items: center !important;
   align-self: center !important;
   flex: 1;
+  gap: 6px !important;
   min-width: 0;
+  min-height: 32px;
   line-height: 1.4 !important;
 }
 
@@ -2132,6 +2164,12 @@ textarea:focus-visible {
   top: auto !important;
   transform: none !important;
   line-height: 1.4 !important;
+}
+
+.sys-field-input-wrap--select .agent-principal-select .ant-select-placeholder {
+  display: inline-flex !important;
+  align-items: center !important;
+  min-height: 32px;
 }
 
 .sys-field-input-wrap--select .agent-admin-select .ant-select-input {

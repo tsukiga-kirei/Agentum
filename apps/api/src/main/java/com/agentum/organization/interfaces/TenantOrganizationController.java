@@ -123,7 +123,7 @@ public class TenantOrganizationController {
         HttpServletRequest request
     ) {
         tenantOrganizationAccess.assertCanManageTenant(principal, tenantId);
-        tenantOrganizationService.disableTenantRole(tenantId, principal.userId(), roleId);
+        tenantOrganizationService.deleteTenantRole(tenantId, principal.userId(), roleId);
         return ApiResponse.success(null, RequestIds.current(request));
     }
 
@@ -285,6 +285,22 @@ public class TenantOrganizationController {
         // 角色调整会直接影响成员可执行动作和页面可见范围，必须保留操作上下文用于审计追踪。
         return ApiResponse.success(
             tenantOrganizationService.updateMembershipRole(tenantId, principal.userId(), membershipId, updateMembershipRoleRequest),
+            RequestIds.current(request)
+        );
+    }
+
+    @PatchMapping("/memberships/{membershipId}/profile")
+    public ApiResponse<TenantOrganizationOverviewResponse> updateMemberProfile(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID membershipId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @Valid @RequestBody UpdateMemberProfileRequest updateMemberProfileRequest,
+        HttpServletRequest request
+    ) {
+        tenantOrganizationAccess.assertCanManageTenant(principal, tenantId);
+        // 基本信息与权限、状态分开提交，便于后续审计区分“账号资料变更”和“授权变更”。
+        return ApiResponse.success(
+            tenantOrganizationService.updateMemberProfile(tenantId, principal.userId(), membershipId, updateMemberProfileRequest),
             RequestIds.current(request)
         );
     }

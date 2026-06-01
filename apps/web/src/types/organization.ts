@@ -150,6 +150,12 @@ export type UpdateMembershipRoleRequest = {
   roleIds: string[];
 };
 
+export type UpdateMemberProfileRequest = {
+  username: string;
+  displayName: string;
+  email?: string;
+};
+
 export type UpdateMembershipDepartmentRequest = {
   departmentId?: string;
 };

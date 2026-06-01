@@ -87,4 +87,10 @@ public class UserAccount {
     public void markLoggedIn(Instant loginTime) {
         this.lastLoginAt = loginTime;
     }
+
+    public void updateProfile(String username, String displayName, String email) {
+        this.username = username;
+        this.displayName = displayName;
+        this.email = email;
+    }
 }

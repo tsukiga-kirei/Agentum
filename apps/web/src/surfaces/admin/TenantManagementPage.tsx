@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Empty, Segmented, Select, message, Pagination, Drawer } from "antd";
 import {
+  AlertTriangle,
   Building2,
   CheckCircle2,
   ChevronDown,
@@ -101,6 +102,9 @@ const adminPrincipalSelectStyles = {
 };
 
 type MemberEditDraft = {
+  username: string;
+  displayName: string;
+  email: string;
   departmentId?: string;
   roleIds: string[];
   status: "active" | "disabled";
@@ -203,10 +207,11 @@ export function TenantManagementPage() {
   const [editingRole, setEditingRole] = useState<OrganizationRole | null>(null);
   const [roleDraft, setRoleDraft] = useState<RoleDraft>(emptyRoleForm);
   const [roleSubmitting, setRoleSubmitting] = useState(false);
+  const [roleDeleteTarget, setRoleDeleteTarget] = useState<OrganizationRole | null>(null);
   const [membershipUpdatingId, setMembershipUpdatingId] = useState<string | null>(null);
   const [editMemberOpen, setEditMemberOpen] = useState(false);
   const [editingMembership, setEditingMembership] = useState<OrganizationMembership | null>(null);
-  const [memberEditDraft, setMemberEditDraft] = useState<MemberEditDraft>({ departmentId: undefined, roleIds: [], status: "active" });
+  const [memberEditDraft, setMemberEditDraft] = useState<MemberEditDraft>({ username: "", displayName: "", email: "", departmentId: undefined, roleIds: [], status: "active" });
   const [memberEditSubmitting, setMemberEditSubmitting] = useState(false);
   const [resourceOptions, setResourceOptions] = useState<TenantResourceOption[]>([]);
   const [authorizationLoading, setAuthorizationLoading] = useState(false);
@@ -330,7 +335,7 @@ export function TenantManagementPage() {
   async function handleCreateMember(values: CreateMemberRequest) {
     if (!token || !user?.tenantId) {
       console.warn("[tenant-management] 新增成员失败：缺少租户上下文", { hasToken: Boolean(token), userId: user?.id });
-      setOrganizationError("当前账号缺少租户上下文，无法新增成员");
+      messageApi.error("当前账号缺少租户上下文，无法新增成员");
       return;
     }
 
@@ -345,7 +350,7 @@ export function TenantManagementPage() {
       setMemberDraft(emptyMemberForm);
     } catch (error) {
       console.warn("[tenant-management] 新增成员失败", getTenantManagementErrorContext(error, user.tenantId, { username: values.username, roleId: values.roleId, departmentId: values.departmentId }));
-      setOrganizationError(error instanceof AgentumApiError ? error.message : "新增成员失败，请稍后重试");
+      messageApi.error(error instanceof AgentumApiError ? error.message : "新增成员失败，请稍后重试");
     } finally {
       setCreateMemberSubmitting(false);
     }
@@ -359,7 +364,7 @@ export function TenantManagementPage() {
 
   async function handleSubmitDepartment() {
     if (!token || !user?.tenantId) {
-      setOrganizationError("当前账号缺少租户上下文，无法保存部门");
+      messageApi.error("当前账号缺少租户上下文，无法保存部门");
       return;
     }
     setDepartmentSubmitting(true);
@@ -383,7 +388,7 @@ export function TenantManagementPage() {
       setDepartmentDraft(emptyDepartmentForm);
     } catch (error) {
       console.warn("[tenant-management] 部门保存失败", getTenantManagementErrorContext(error, user.tenantId, { departmentId: editingDepartment?.id }));
-      setOrganizationError(error instanceof AgentumApiError ? error.message : "部门保存失败，请稍后重试");
+      messageApi.error(error instanceof AgentumApiError ? error.message : "部门保存失败，请稍后重试");
     } finally {
       setDepartmentSubmitting(false);
     }
@@ -399,7 +404,7 @@ export function TenantManagementPage() {
       messageApi.success("部门已停用");
     } catch (error) {
       console.warn("[tenant-management] 部门停用失败", getTenantManagementErrorContext(error, user.tenantId, { departmentId: department.id }));
-      setOrganizationError(error instanceof AgentumApiError ? error.message : "部门停用失败，请先确认部门下没有启用成员");
+      messageApi.error(error instanceof AgentumApiError ? error.message : "部门停用失败，请先确认部门下没有启用成员");
     }
   }
 
@@ -440,29 +445,38 @@ export function TenantManagementPage() {
       messageApi.success(editingRole ? "角色已更新" : "角色已新增");
     } catch (error) {
       console.warn("[tenant-management] 角色保存失败", getTenantManagementErrorContext(error, user?.tenantId, { roleId: editingRole?.id }));
-      setOrganizationError(error instanceof AgentumApiError ? error.message : "角色保存失败，请稍后重试");
+      messageApi.error(error instanceof AgentumApiError ? error.message : "角色保存失败，请稍后重试");
     } finally {
       setRoleSubmitting(false);
     }
   }
 
-  async function handleDeleteRole(role: OrganizationRole) {
-    if (!token || !user?.tenantId) return;
+  async function handleConfirmDeleteRole() {
+    if (!roleDeleteTarget || !token || !user?.tenantId) return;
+    const role = roleDeleteTarget;
+    setRoleSubmitting(true);
     try {
       await organizationApi.deleteRole(user.tenantId, role.id, token);
       setOrganizationOverview(await organizationApi.overview(user.tenantId, token));
       setRoleModalOpen(false);
       setEditingRole(null);
-      messageApi.success("角色已停用");
+      setRoleDeleteTarget(null);
+      messageApi.success("角色已删除");
     } catch (error) {
-      console.warn("[tenant-management] 角色停用失败", getTenantManagementErrorContext(error, user.tenantId, { roleId: role.id }));
-      setOrganizationError(error instanceof AgentumApiError ? error.message : "角色停用失败，请先确认没有启用成员使用该角色");
+      console.warn("[tenant-management] 角色删除失败", getTenantManagementErrorContext(error, user.tenantId, { roleId: role.id }));
+      messageApi.error(error instanceof AgentumApiError ? error.message : "角色删除失败，请先确认没有启用成员或分配引用");
+    } finally {
+      setRoleSubmitting(false);
     }
   }
 
   function openEditMemberModal(membership: OrganizationMembership) {
+    const member = organizationOverview?.members.find((item) => item.id === membership.userId);
     setEditingMembership(membership);
     setMemberEditDraft({
+      username: member?.username ?? "",
+      displayName: member?.displayName ?? membership.userDisplayName,
+      email: member?.email ?? "",
       departmentId: membership.departmentId ?? undefined,
       roleIds: membership.roles.map((role) => role.id),
       status: membership.status === "disabled" ? "disabled" : "active",
@@ -475,24 +489,34 @@ export function TenantManagementPage() {
       return;
     }
 
+    if (!memberEditDraft.displayName.trim() || !memberEditDraft.username.trim()) {
+      messageApi.warning("请填写成员姓名和用户名");
+      return;
+    }
+
     if (memberEditDraft.roleIds.length === 0) {
       messageApi.warning("请选择成员角色");
       return;
     }
 
     if (!token || !user?.tenantId) {
-      setOrganizationError("当前账号缺少租户上下文，无法编辑成员");
+      messageApi.error("当前账号缺少租户上下文，无法编辑成员");
       return;
     }
 
     const originalDepartmentId = editingMembership.departmentId ?? undefined;
+    const originalMember = organizationOverview?.members.find((member) => member.id === editingMembership.userId);
+    const profileChanged =
+      (originalMember?.username ?? "") !== memberEditDraft.username.trim()
+      || (originalMember?.displayName ?? editingMembership.userDisplayName) !== memberEditDraft.displayName.trim()
+      || (originalMember?.email ?? "") !== memberEditDraft.email.trim();
     const departmentChanged = originalDepartmentId !== memberEditDraft.departmentId;
     const originalRoleIds = editingMembership.roles.map((role) => role.id).sort().join(",");
     const nextRoleIds = [...memberEditDraft.roleIds].sort().join(",");
     const roleChanged = originalRoleIds !== nextRoleIds;
     const statusChanged = editingMembership.status !== memberEditDraft.status;
 
-    if (!departmentChanged && !roleChanged && !statusChanged) {
+    if (!profileChanged && !departmentChanged && !roleChanged && !statusChanged) {
       setEditMemberOpen(false);
       setEditingMembership(null);
       return;
@@ -506,6 +530,20 @@ export function TenantManagementPage() {
       let nextOverview = organizationOverview;
 
       // 成员编辑是租户内权限动作；前端拆成部门和角色两个已有接口提交，后端仍按租户重新校验归属。
+      if (profileChanged) {
+        nextOverview = await organizationApi.updateMemberProfile(
+          user.tenantId,
+          editingMembership.id,
+          token,
+          {
+            username: memberEditDraft.username.trim(),
+            displayName: memberEditDraft.displayName.trim(),
+            email: memberEditDraft.email.trim(),
+          }
+        );
+        setOrganizationOverview(nextOverview);
+      }
+
       if (departmentChanged) {
         nextOverview = await organizationApi.updateMembershipDepartment(
           user.tenantId,
@@ -549,7 +587,7 @@ export function TenantManagementPage() {
           status: memberEditDraft.status,
         })
       );
-      setOrganizationError(error instanceof AgentumApiError ? error.message : "成员编辑失败，请稍后重试");
+      messageApi.error(error instanceof AgentumApiError ? error.message : "成员编辑失败，请稍后重试");
     } finally {
       setMemberEditSubmitting(false);
       setMembershipUpdatingId(null);
@@ -864,8 +902,51 @@ export function TenantManagementPage() {
               <div className="tenant-member-edit-summary">
                 <span className="tenant-member-avatar">{editingMembership.userDisplayName.slice(0, 1)}</span>
                 <div>
-                  <strong>{editingMembership.userDisplayName}</strong>
-                  <span>{organizationOverview?.members.find((member) => member.id === editingMembership.userId)?.username ?? "未找到账号"}</span>
+                  <strong>{memberEditDraft.displayName || editingMembership.userDisplayName}</strong>
+                  <span>{memberEditDraft.username || organizationOverview?.members.find((member) => member.id === editingMembership.userId)?.username || "未找到账号"}</span>
+                </div>
+              </div>
+              <div className="sys-config-group tenant-member-profile-group">
+                <div className="sys-config-group-title">人员基本信息</div>
+                <div className="sys-field-row">
+                  <div className="sys-field">
+                    <label className="sys-field-label sys-field-label--required">成员姓名</label>
+                    <div className="sys-field-input-wrap">
+                      <Type size={16} className="sys-field-prefix" />
+                      <input
+                        className="sys-field-input"
+                        value={memberEditDraft.displayName}
+                        maxLength={100}
+                        onChange={(event) => setMemberEditDraft((draft) => ({ ...draft, displayName: event.target.value }))}
+                      />
+                    </div>
+                  </div>
+                  <div className="sys-field">
+                    <label className="sys-field-label sys-field-label--required">用户名</label>
+                    <div className="sys-field-input-wrap">
+                      <Tag size={16} className="sys-field-prefix" />
+                      <input
+                        className="sys-field-input"
+                        value={memberEditDraft.username}
+                        maxLength={100}
+                        autoComplete="off"
+                        onChange={(event) => setMemberEditDraft((draft) => ({ ...draft, username: event.target.value }))}
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="sys-field">
+                  <label className="sys-field-label">邮箱</label>
+                  <div className="sys-field-input-wrap">
+                    <UserPlus size={16} className="sys-field-prefix" />
+                    <input
+                      className="sys-field-input"
+                      value={memberEditDraft.email}
+                      maxLength={255}
+                      placeholder="name@example.com"
+                      onChange={(event) => setMemberEditDraft((draft) => ({ ...draft, email: event.target.value }))}
+                    />
+                  </div>
                 </div>
               </div>
               <div className="sys-field-row">
@@ -994,7 +1075,7 @@ export function TenantManagementPage() {
             </div>
           ) : null}
           {editingRole ? (
-            <div className="sys-config-group">
+            <div className="sys-config-group tenant-role-members-group">
               <div className="sys-config-group-title">角色成员</div>
               <div className="sys-field">
                 <label className="sys-field-label">包含成员</label>
@@ -1019,7 +1100,7 @@ export function TenantManagementPage() {
         </div>
         <div className="sys-drawer-footer">
           {editingRole ? (
-            <button className="sys-btn sys-btn--danger" style={{ marginRight: "auto" }} disabled={roleSubmitting} onClick={() => void handleDeleteRole(editingRole)}><X size={14} /> 停用角色</button>
+            <button className="sys-btn sys-btn--danger-text" style={{ marginRight: "auto" }} disabled={roleSubmitting} onClick={() => setRoleDeleteTarget(editingRole)}><X size={14} /> 删除角色</button>
           ) : null}
           <div className="sys-drawer-footer-right">
             <button className="sys-btn sys-btn--default" onClick={() => setRoleModalOpen(false)}><X size={14} /> 取消</button>
@@ -1027,6 +1108,26 @@ export function TenantManagementPage() {
           </div>
         </div>
       </Drawer>
+
+      {roleDeleteTarget ? (
+        <div className="sys-modal-mask agent-delete-confirm-mask" onClick={() => !roleSubmitting && setRoleDeleteTarget(null)}>
+          <div className="sys-modal agent-delete-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="tenant-role-delete-confirm-title" onClick={(event) => event.stopPropagation()}>
+            <div className="agent-delete-confirm-body">
+              <div className="agent-delete-confirm-icon">
+                <AlertTriangle size={24} aria-hidden="true" />
+              </div>
+              <div className="agent-delete-confirm-content">
+                <h2 id="tenant-role-delete-confirm-title">确认删除角色</h2>
+                <p>确认删除“{roleDeleteTarget.name}”？删除前必须先移出启用成员，并移除该角色关联的页签或能力分配。</p>
+              </div>
+            </div>
+            <div className="agent-delete-confirm-footer">
+              <button type="button" className="sys-btn sys-btn--default" disabled={roleSubmitting} onClick={() => setRoleDeleteTarget(null)}>取消</button>
+              <button type="button" className="sys-btn sys-btn--danger" disabled={roleSubmitting} onClick={() => void handleConfirmDeleteRole()}>确认删除</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* 页签分配抽屉 */}
       <Drawer
@@ -1057,9 +1158,10 @@ export function TenantManagementPage() {
               <UserRoundCog size={16} className="sys-field-prefix" aria-hidden="true" />
               <Select
                 mode="multiple"
-                className="agent-admin-select w-full"
+                className="agent-admin-select agent-principal-select w-full"
                 classNames={adminSelectClassNames}
                 styles={adminPrincipalSelectStyles}
+                popupMatchSelectWidth
                 showSearch
                 suffixIcon={adminSelectSuffixIcon}
                 maxTagCount="responsive"
@@ -1071,7 +1173,7 @@ export function TenantManagementPage() {
               />
             </div>
           </div>
-          <div className="sys-config-group">
+          <div className="sys-config-group tenant-drawer-option-group">
             <div className="sys-config-group-title">可访问页签</div>
             <div className="tenant-permission-grid">
               {pagePermissionOptions.map((option) => {
@@ -1133,9 +1235,10 @@ export function TenantManagementPage() {
               <UserRoundCog size={16} className="sys-field-prefix" aria-hidden="true" />
               <Select
                 mode="multiple"
-                className="agent-admin-select w-full"
+                className="agent-admin-select agent-principal-select w-full"
                 classNames={adminSelectClassNames}
                 styles={adminPrincipalSelectStyles}
+                popupMatchSelectWidth
                 showSearch
                 suffixIcon={adminSelectSuffixIcon}
                 maxTagCount="responsive"
@@ -1147,7 +1250,7 @@ export function TenantManagementPage() {
               />
             </div>
           </div>
-          <div className="sys-config-group">
+          <div className="sys-config-group tenant-drawer-option-group">
             <div className="sys-config-group-title">能力资源</div>
             {resourceOptions.length === 0 ? (
               <div className="sys-hint">

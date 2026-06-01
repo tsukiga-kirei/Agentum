@@ -38,6 +38,7 @@ import com.agentum.organization.interfaces.TenantResourcePermissionResponse;
 import com.agentum.organization.interfaces.UpdateMembershipDepartmentRequest;
 import com.agentum.organization.interfaces.UpdateMembershipRoleRequest;
 import com.agentum.organization.interfaces.UpdateMembershipStatusRequest;
+import com.agentum.organization.interfaces.UpdateMemberProfileRequest;
 import com.agentum.organization.interfaces.UpdateDepartmentRequest;
 import com.agentum.organization.interfaces.UpdateTenantOrgRoleRequest;
 import com.agentum.organization.interfaces.UpdateTenantRoleRequest;
@@ -354,6 +355,37 @@ public class TenantOrganizationService {
     }
 
     @Transactional
+    public void deleteTenantRole(UUID tenantId, UUID operatorUserId, UUID roleId) {
+        RoleEntity role = roleRepository.findByIdAndTenantId(roleId, tenantId)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ORG_ROLE_NOT_FOUND", "角色不存在"));
+        long activeMembers = userMembershipRoleRepository.countActiveMembershipsByTenantIdAndRoleId(tenantId, roleId, ACTIVE_STATUS, ACTIVE_STATUS);
+        if (activeMembers > 0) {
+            log.warn("租户业务角色删除失败：仍有启用成员 tenantId={} operatorUserId={} roleId={} activeMembers={} requestId={}", tenantId, operatorUserId, roleId, activeMembers, RequestIds.current());
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_ROLE_HAS_MEMBERS", "角色下仍有启用成员，请先调整成员角色");
+        }
+
+        long pageGrantCount = pageGrantRepository.countByTenantIdAndPrincipalTypeAndPrincipalId(tenantId, "role", roleId);
+        long resourceGrantCount = resourceGrantRepository.countByTenantIdAndPrincipalTypeAndPrincipalId(tenantId, "role", roleId);
+        if (pageGrantCount + resourceGrantCount > 0) {
+            log.warn(
+                "租户业务角色删除失败：仍被授权卡片引用 tenantId={} operatorUserId={} roleId={} pageGrantCount={} resourceGrantCount={} requestId={}",
+                tenantId,
+                operatorUserId,
+                roleId,
+                pageGrantCount,
+                resourceGrantCount,
+                RequestIds.current()
+            );
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_ROLE_HAS_GRANTS", "角色仍被页签或能力分配引用，请先调整分配对象");
+        }
+
+        // user_membership_roles 对 roles 使用 RESTRICT；删除角色前先清理历史停用关系，避免外键阻止租户管理员删除空角色。
+        userMembershipRoleRepository.deleteByRoleId(roleId);
+        roleRepository.delete(role);
+        log.info("租户业务角色删除成功 tenantId={} operatorUserId={} roleId={} requestId={}", tenantId, operatorUserId, roleId, RequestIds.current());
+    }
+
+    @Transactional
     public TenantOrganizationOverviewResponse updateMembershipRole(
         UUID tenantId,
         UUID operatorUserId,
@@ -388,6 +420,44 @@ public class TenantOrganizationService {
             roles.stream().map(RoleEntity::getId).toList(),
             RequestIds.current()
         );
+        return getOverview(tenantId);
+    }
+
+    @Transactional
+    public TenantOrganizationOverviewResponse updateMemberProfile(
+        UUID tenantId,
+        UUID operatorUserId,
+        UUID membershipId,
+        UpdateMemberProfileRequest request
+    ) {
+        tenantRepository.findByIdAndStatus(tenantId, ACTIVE_STATUS)
+            .orElseThrow(() -> {
+                log.warn("成员基本信息更新失败：租户不可用 tenantId={} operatorUserId={} membershipId={} requestId={}", tenantId, operatorUserId, membershipId, RequestIds.current());
+                return new ApiException(HttpStatus.NOT_FOUND, "TENANT_NOT_FOUND", "租户不存在或已停用");
+            });
+
+        UserMembershipEntity membership = userMembershipRepository.findByIdAndTenantId(membershipId, tenantId)
+            .orElseThrow(() -> {
+                log.warn("成员基本信息更新失败：成员关系不存在 tenantId={} operatorUserId={} membershipId={} requestId={}", tenantId, operatorUserId, membershipId, RequestIds.current());
+                return new ApiException(HttpStatus.NOT_FOUND, "ORG_MEMBERSHIP_NOT_FOUND", "成员关系不存在");
+            });
+
+        UserAccount account = userAccountRepository.findById(membership.getUserId())
+            .orElseThrow(() -> {
+                log.warn("成员基本信息更新失败：账号不存在 tenantId={} operatorUserId={} membershipId={} userId={} requestId={}", tenantId, operatorUserId, membershipId, membership.getUserId(), RequestIds.current());
+                return new ApiException(HttpStatus.NOT_FOUND, "ORG_MEMBER_ACCOUNT_NOT_FOUND", "成员账号不存在");
+            });
+
+        String username = normalizeRequired(request.username());
+        if (userAccountRepository.existsByUsernameAndIdNot(username, account.getId())) {
+            log.warn("成员基本信息更新失败：用户名已存在 tenantId={} operatorUserId={} membershipId={} username={} requestId={}", tenantId, operatorUserId, membershipId, username, RequestIds.current());
+            throw new ApiException(HttpStatus.CONFLICT, "ORG_USER_USERNAME_EXISTS", "用户名已存在，请换一个用户名");
+        }
+
+        // 租户管理员只能维护人员展示信息和登录名；密码、状态与租户权限分别走独立动作，便于审计和后续安全策略拆分。
+        account.updateProfile(username, normalizeRequired(request.displayName()), normalizeOptional(request.email()));
+        userAccountRepository.save(account);
+        log.info("成员基本信息更新成功 tenantId={} operatorUserId={} membershipId={} userId={} requestId={}", tenantId, operatorUserId, membershipId, account.getId(), RequestIds.current());
         return getOverview(tenantId);
     }
 

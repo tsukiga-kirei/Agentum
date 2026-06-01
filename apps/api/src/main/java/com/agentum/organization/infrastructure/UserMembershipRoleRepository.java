@@ -32,4 +32,6 @@ public interface UserMembershipRoleRepository extends JpaRepository<UserMembersh
         @Param("membershipStatus") String membershipStatus,
         @Param("roleStatus") String roleStatus
     );
+
+    void deleteByRoleId(UUID roleId);
 }
