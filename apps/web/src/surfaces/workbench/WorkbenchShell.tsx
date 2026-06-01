@@ -51,7 +51,7 @@ import type {
 
 type SurfaceKey = "workbench" | "designer" | "assets" | "tenant" | "system";
 type WorkbenchTab = "overview" | "create" | "tasks";
-type RunWorkspaceTab = "overview" | "current" | "trace" | "variables" | "deliveries";
+type RunWorkspaceTab = "overview" | "current" | "trace" | "deliveries";
 
 // 图标映射：后端返回菜单 icon 字符串，前端映射为 lucide-react 组件
 const ICON_MAP: Record<string, typeof LayoutDashboard> = {
@@ -81,11 +81,23 @@ type WorkbenchTabMeta = {
 };
 
 type RuntimeStepState = "done" | "running" | "waiting" | "pending";
+type RuntimeNodeKind = "launch" | "input" | "agent" | "multiAgent" | "approval" | "delivery";
+
+type RuntimeNodeField = {
+  label: string;
+  value: string;
+  sensitive?: boolean;
+};
 
 type RuntimePreviewStep = {
   title: string;
   subtitle: string;
   state: RuntimeStepState;
+  kind: RuntimeNodeKind;
+  description: string;
+  inputs?: RuntimeNodeField[];
+  outputs?: RuntimeNodeField[];
+  completedAt?: string;
 };
 
 type RuntimePreviewAgent = {
@@ -102,6 +114,7 @@ type RuntimePreviewEvent = {
   title: string;
   description: string;
   tone: "info" | "success" | "warning";
+  stepTitle: string;
 };
 
 type RuntimePreview = {
@@ -115,7 +128,6 @@ type RuntimePreview = {
   steps: RuntimePreviewStep[];
   agents: RuntimePreviewAgent[];
   events: RuntimePreviewEvent[];
-  variables: Array<{ label: string; value: string; sensitive?: boolean }>;
   deliveries: Array<{ name: string; status: string; meta: string }>;
 };
 
@@ -132,7 +144,6 @@ const runWorkspaceTabs: Array<{ key: RunWorkspaceTab; label: string; icon: Lucid
   { key: "overview", label: "概览", icon: LayoutDashboard },
   { key: "current", label: "当前处理", icon: Sparkles },
   { key: "trace", label: "执行链路", icon: History },
-  { key: "variables", label: "变量快照", icon: DatabaseZap },
   { key: "deliveries", label: "交付物", icon: Send },
 ];
 
@@ -498,10 +509,6 @@ export function WorkbenchShell() {
                     onBack={() => {
                       setOpenedTaskWorkflow(null);
                       setActiveWorkbenchTab("tasks");
-                    }}
-                    onCreateAnother={() => {
-                      setOpenedTaskWorkflow(null);
-                      setActiveWorkbenchTab("create");
                     }}
                     onSaveToTodo={handleSaveTaskToTodo}
                     onAction={(label) => messageApi.info(`${label} 将在运行态 API 上线后写入真实任务`)}
@@ -922,7 +929,7 @@ function WorkflowLaunchDrawer({
             <span>输入节点</span>
             <span>智能体集群</span>
             <span>MCP 审批</span>
-            <span>变量快照</span>
+            <span>节点输入输出</span>
             <span>交付物生成</span>
           </div>
         </section>
@@ -951,13 +958,80 @@ function buildRuntimePreview(workflow: WorkbenchAvailableWorkflowRow, ownerName:
     ownerName,
     workflowVersion: workflow.latestVersionNumber,
     steps: [
-      { title: "创建任务", subtitle: "流程版本已冻结", state: "done" },
-      { title: "补充资料", subtitle: "授信主体与附件已提交", state: "done" },
-      { title: "智能体追问", subtitle: "缺失口径已确认", state: "done" },
-      { title: "外部数据核验", subtitle: "多智能体并行执行中", state: "running" },
-      { title: "报告组装", subtitle: "等待核验结果汇总", state: "pending" },
-      { title: "人工审核", subtitle: "风控经理复核", state: "pending" },
-      { title: "文档交付", subtitle: "生成 Word / PDF", state: "pending" },
+      {
+        title: "创建任务",
+        subtitle: "流程版本已冻结",
+        state: "done",
+        kind: "launch",
+        description: "发起人确认流程版本、任务名称和处理范围，系统生成不可变运行快照。",
+        outputs: [
+          { label: "运行编号", value: "RUN-20260601-018" },
+          { label: "流程版本", value: `v${workflow.latestVersionNumber}` },
+        ],
+        completedAt: "09:42",
+      },
+      {
+        title: "补充资料",
+        subtitle: "授信主体与附件已提交",
+        state: "done",
+        kind: "input",
+        description: "业务人员补充授信主体、报告用途和附件材料，后续节点只能读取快照数据。",
+        inputs: [
+          { label: "授信主体", value: "云程科技有限公司" },
+          { label: "报告用途", value: "年度授信复核" },
+          { label: "补充材料", value: "征信授权书、近三年财务报表" },
+        ],
+        outputs: [
+          { label: "主体信息快照", value: "已固化" },
+          { label: "附件校验", value: "3 份材料可读" },
+        ],
+        completedAt: "09:47",
+      },
+      {
+        title: "智能体追问",
+        subtitle: "缺失口径已确认",
+        state: "done",
+        kind: "agent",
+        description: "智能体发现报告口径缺失后向处理人追问，并将确认结果写入后续上下文。",
+        inputs: [{ label: "追问", value: "本次报告用于新增授信还是年度复核？" }],
+        outputs: [
+          { label: "确认口径", value: "年度授信复核" },
+          { label: "补充担保资料", value: "无需追加" },
+        ],
+        completedAt: "09:51",
+      },
+      {
+        title: "外部数据核验",
+        subtitle: "多智能体并行执行中",
+        state: "running",
+        kind: "multiAgent",
+        description: "当前节点由多个支撑智能体并行执行，处理人可以查看实时回复、审批 MCP 调用、追问或要求重新生成。",
+        inputs: [
+          { label: "主体信息", value: "云程科技有限公司" },
+          { label: "报告口径", value: "年度授信复核" },
+        ],
+      },
+      {
+        title: "报告组装",
+        subtitle: "等待核验结果汇总",
+        state: "pending",
+        kind: "agent",
+        description: "等待外部数据核验完成后，将事实结果和模型分析组装为报告草稿。",
+      },
+      {
+        title: "人工审核",
+        subtitle: "风控经理复核",
+        state: "pending",
+        kind: "approval",
+        description: "风控经理复核报告草稿、事实来源和高风险调用审批记录。",
+      },
+      {
+        title: "文档交付",
+        subtitle: "生成 Word / PDF",
+        state: "pending",
+        kind: "delivery",
+        description: "审核通过后生成交付物并进入归档或下游系统推送。",
+      },
     ],
     agents: [
       { name: "工商信息核验", capability: "企查 MCP · 只读查询", status: "执行中", statusTone: "running", output: "已获取主体登记、股东和经营状态，正在比对统一社会信用代码。", duration: "01:48" },
@@ -966,16 +1040,10 @@ function buildRuntimePreview(workflow: WorkbenchAvailableWorkflowRow, ownerName:
       { name: "行业补充分析", capability: "行业研究智能体", status: "执行中", statusTone: "running", output: "正在生成同业区间、政策风险和行业景气度补充段落。", duration: "02:13" },
     ],
     events: [
-      { time: "09:42", title: "任务已创建", description: `${workflow.name} v${workflow.latestVersionNumber} 生成运行实例快照。`, tone: "success" },
-      { time: "09:47", title: "用户补充资料", description: "补充授信主体名称、征信授权附件和报告用途。", tone: "success" },
-      { time: "09:51", title: "智能体完成追问", description: "确认报告口径为“年度授信复核”，无需追加担保人资料。", tone: "info" },
-      { time: "09:56", title: "触发高风险调用审批", description: "司法风险检索需要审批后继续，审批记录将写入审计链路。", tone: "warning" },
-    ],
-    variables: [
-      { label: "授信主体", value: "云程科技有限公司" },
-      { label: "报告用途", value: "年度授信复核" },
-      { label: "风险等级", value: "中风险" },
-      { label: "司法查询凭证", value: "已脱敏", sensitive: true },
+      { time: "09:42", title: "任务已创建", description: `${workflow.name} v${workflow.latestVersionNumber} 生成运行实例快照。`, tone: "success", stepTitle: "创建任务" },
+      { time: "09:47", title: "用户补充资料", description: "补充授信主体名称、征信授权附件和报告用途。", tone: "success", stepTitle: "补充资料" },
+      { time: "09:51", title: "智能体完成追问", description: "确认报告口径为“年度授信复核”，无需追加担保人资料。", tone: "info", stepTitle: "智能体追问" },
+      { time: "09:56", title: "触发高风险调用审批", description: "司法风险检索需要审批后继续，审批记录将写入审计链路。", tone: "warning", stepTitle: "外部数据核验" },
     ],
     deliveries: [
       { name: "授信分析报告.docx", status: "待生成", meta: "报告组装节点完成后生成" },
@@ -990,7 +1058,6 @@ function WorkbenchTaskRunDetail({
   preview,
   runtimeStatusLabel,
   onBack,
-  onCreateAnother,
   onSaveToTodo,
   onAction,
 }: {
@@ -998,12 +1065,33 @@ function WorkbenchTaskRunDetail({
   preview: RuntimePreview;
   runtimeStatusLabel: string;
   onBack: () => void;
-  onCreateAnother: () => void;
   onSaveToTodo: () => void;
   onAction: (label: string) => void;
 }) {
   const [activeRunTab, setActiveRunTab] = useState<RunWorkspaceTab>("current");
-  const activeStep = preview.steps.find((step) => step.state === "running" || step.state === "waiting") ?? preview.steps[0];
+  const currentStepIndex = Math.max(0, preview.steps.findIndex((step) => step.state === "running" || step.state === "waiting"));
+  const activeStep = preview.steps[currentStepIndex] ?? preview.steps[0];
+  const [selectedTraceStepIndex, setSelectedTraceStepIndex] = useState<number | null>(null);
+
+  function handleTabChange(tab: RunWorkspaceTab) {
+    setActiveRunTab(tab);
+    if (tab === "trace") {
+      setSelectedTraceStepIndex(null);
+    }
+  }
+
+  function handleStepSelect(step: RuntimePreviewStep, index: number) {
+    if (step.state === "done") {
+      setSelectedTraceStepIndex(index);
+      setActiveRunTab("trace");
+      return;
+    }
+
+    if (step.state === "running" || step.state === "waiting") {
+      setSelectedTraceStepIndex(index);
+      setActiveRunTab("current");
+    }
+  }
 
   return (
     <section className="workbench-task-workspace sys-fade-in" aria-label="任务处理工作区">
@@ -1035,10 +1123,6 @@ function WorkbenchTaskRunDetail({
             <History size={16} aria-hidden="true" />
             返回任务中心
           </button>
-          <button type="button" className="sys-btn sys-btn--primary" onClick={onCreateAnother}>
-            <PlayCircle size={16} aria-hidden="true" />
-            新建任务
-          </button>
         </div>
       </header>
 
@@ -1053,7 +1137,18 @@ function WorkbenchTaskRunDetail({
           </div>
           <div className="workbench-node-rail">
             {preview.steps.map((step, index) => (
-              <button key={step.title} type="button" className={`workbench-node-step workbench-node-step--${step.state}`}>
+              <button
+                key={step.title}
+                type="button"
+                className={[
+                  "workbench-node-step",
+                  `workbench-node-step--${step.state}`,
+                  selectedTraceStepIndex === index || (activeRunTab === "current" && activeStep.title === step.title) ? "workbench-node-step--selected" : "",
+                  step.state === "pending" ? "workbench-node-step--disabled" : "",
+                ].filter(Boolean).join(" ")}
+                onClick={() => handleStepSelect(step, index)}
+                disabled={step.state === "pending"}
+              >
                 <span className="workbench-node-step-index">{index + 1}</span>
                 <span className="workbench-node-step-text">
                   <strong>{step.title}</strong>
@@ -1073,7 +1168,7 @@ function WorkbenchTaskRunDetail({
                   key={tab.key}
                   type="button"
                   className={activeRunTab === tab.key ? "workbench-runtime-tab workbench-runtime-tab--active" : "workbench-runtime-tab"}
-                  onClick={() => setActiveRunTab(tab.key)}
+                  onClick={() => handleTabChange(tab.key)}
                 >
                   <Icon size={16} aria-hidden="true" />
                   {tab.label}
@@ -1083,9 +1178,8 @@ function WorkbenchTaskRunDetail({
           </nav>
 
           {activeRunTab === "overview" ? <RunOverviewPanel workflow={workflow} preview={preview} /> : null}
-          {activeRunTab === "current" ? <RunCurrentPanel preview={preview} onSaveToTodo={onSaveToTodo} onAction={onAction} /> : null}
-          {activeRunTab === "trace" ? <RunTracePanel preview={preview} /> : null}
-          {activeRunTab === "variables" ? <RunVariablesPanel preview={preview} /> : null}
+          {activeRunTab === "current" ? <RunCurrentPanel preview={preview} activeStep={activeStep} onSaveToTodo={onSaveToTodo} onAction={onAction} /> : null}
+          {activeRunTab === "trace" ? <RunTracePanel preview={preview} selectedStepIndex={selectedTraceStepIndex} /> : null}
           {activeRunTab === "deliveries" ? <RunDeliveriesPanel preview={preview} onAction={onAction} /> : null}
         </section>
       </div>
@@ -1116,45 +1210,81 @@ function RunOverviewPanel({ workflow, preview }: { workflow: WorkbenchAvailableW
 
 function RunCurrentPanel({
   preview,
+  activeStep,
   onSaveToTodo,
   onAction,
 }: {
   preview: RuntimePreview;
+  activeStep: RuntimePreviewStep;
   onSaveToTodo: () => void;
   onAction: (label: string) => void;
 }) {
+  if (activeStep.kind === "input") {
+    return (
+      <div className="workbench-panel-grid">
+        <section className="sys-preview-card workbench-run-section">
+          <div className="workbench-run-section-head">
+            <div>
+              <div className="sys-preview-card-title"><FileText size={16} /> 当前输入节点：{activeStep.title}</div>
+              <p>{activeStep.description}</p>
+            </div>
+            <span className="workbench-run-pill workbench-run-pill--running">等待填写</span>
+          </div>
+          <div className="workbench-input-grid">
+            {(activeStep.inputs ?? [
+              { label: "授信主体", value: "" },
+              { label: "报告用途", value: "" },
+              { label: "补充材料", value: "" },
+              { label: "处理说明", value: "" },
+            ]).map((field) => (
+              <label key={field.label}>
+                <span>{field.label}</span>
+                <input defaultValue={field.value} placeholder={`请输入${field.label}`} />
+              </label>
+            ))}
+          </div>
+          <div className="workbench-current-actions">
+            <button type="button" className="sys-btn sys-btn--primary" onClick={() => onAction("提交当前输入")}>
+              <Send size={16} aria-hidden="true" />
+              提交输入
+            </button>
+            <button type="button" className="sys-btn sys-btn--default" onClick={onSaveToTodo}>
+              <Archive size={16} aria-hidden="true" />
+              保存输入
+            </button>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
+  if (activeStep.kind !== "multiAgent") {
+    return (
+      <div className="workbench-panel-grid">
+        <section className="sys-preview-card workbench-run-section">
+          <div className="workbench-run-section-head">
+            <div>
+              <div className="sys-preview-card-title"><Sparkles size={16} /> 当前节点：{activeStep.title}</div>
+              <p>{activeStep.description}</p>
+            </div>
+            <span className="workbench-run-pill workbench-run-pill--running">处理中</span>
+          </div>
+          <NodeIoSummary step={activeStep} />
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="workbench-current-layout">
       <div className="workbench-current-main">
         <section className="sys-preview-card workbench-run-section">
           <div className="workbench-run-section-head">
             <div>
-              <div className="sys-preview-card-title"><Sparkles size={16} /> 当前处理：外部数据核验</div>
-              <p>当前节点是智能体集群节点，系统并行调用 MCP 与 Skill 获取事实数据，并实时展示智能体回复。</p>
+              <div className="sys-preview-card-title"><Sparkles size={16} /> 当前处理：{activeStep.title}</div>
+              <p>{activeStep.description}</p>
             </div>
             <span className="workbench-run-pill workbench-run-pill--running">实时执行中</span>
-          </div>
-
-          <div className="workbench-input-card">
-            <div className="workbench-subsection-title"><FileText size={15} /> 输入节点已提交信息</div>
-            <div className="workbench-input-grid">
-              <label>
-                <span>授信主体</span>
-                <input value="云程科技有限公司" readOnly />
-              </label>
-              <label>
-                <span>报告用途</span>
-                <input value="年度授信复核" readOnly />
-              </label>
-              <label>
-                <span>补充材料</span>
-                <input value="征信授权书、近三年财务报表" readOnly />
-              </label>
-              <label>
-                <span>处理人意见</span>
-                <input placeholder="可填写审批意见或补充说明" />
-              </label>
-            </div>
           </div>
 
           <div className="workbench-ai-console">
@@ -1166,6 +1296,16 @@ function RunCurrentPanel({
             <div className="workbench-ai-message workbench-ai-message--assistant">
               <strong>行业研究智能体</strong>
               <p>正在补充行业景气度和政策影响。当前生成内容只作为模型文本，可由处理人追问、改写或要求重新生成。</p>
+            </div>
+            <div className="workbench-ai-toolbar">
+              <button type="button" className="sys-btn sys-btn--default sys-btn--sm" onClick={() => onAction("重新生成当前节点输出")}>
+                <RefreshCcw size={14} aria-hidden="true" />
+                重新生成
+              </button>
+              <button type="button" className="sys-btn sys-btn--default sys-btn--sm" onClick={() => onAction("查看事实来源")}>
+                <FileText size={14} aria-hidden="true" />
+                查看来源
+              </button>
             </div>
             <div className="workbench-ai-compose">
               <input placeholder="追问智能体，例如：补充现金流压力分析，并标注事实来源" />
@@ -1186,6 +1326,10 @@ function RunCurrentPanel({
                   <strong>{agent.name}</strong>
                   <small>{agent.capability}</small>
                   <p>{agent.output}</p>
+                  <div className="workbench-call-actions">
+                    <button type="button" onClick={() => onAction(`查看${agent.name}调用明细`)}>调用明细</button>
+                    <button type="button" onClick={() => onAction(`重试${agent.name}`)}>重试</button>
+                  </div>
                 </div>
                 <span className={`workbench-run-pill workbench-run-pill--${agent.statusTone}`}>{agent.status}</span>
               </div>
@@ -1234,38 +1378,73 @@ function RunCurrentPanel({
   );
 }
 
-function RunTracePanel({ preview }: { preview: RuntimePreview }) {
+function NodeIoSummary({ step }: { step: RuntimePreviewStep }) {
+  const inputs = step.inputs ?? [];
+  const outputs = step.outputs ?? [];
+
+  if (inputs.length === 0 && outputs.length === 0) {
+    return <p className="workbench-panel-copy">该节点暂无可展示的输入输出快照，真实运行态接入后会按节点类型展示结构化数据。</p>;
+  }
+
   return (
-    <section className="sys-preview-card workbench-run-section">
-      <div className="sys-preview-card-title"><History size={16} /> 执行链路</div>
-      <div className="workbench-event-timeline">
-        {preview.events.map((event) => (
-          <div key={`${event.time}-${event.title}`} className={`workbench-event-item workbench-event-item--${event.tone}`}>
-            <span>{event.time}</span>
-            <div>
-              <strong>{event.title}</strong>
-              <p>{event.description}</p>
-            </div>
+    <div className="workbench-node-io-grid">
+      <div className="workbench-node-field-list">
+        <div className="workbench-subsection-title"><FileText size={15} /> 节点输入</div>
+        {inputs.length > 0 ? inputs.map((field) => (
+          <div key={field.label} className="workbench-node-field">
+            <span>{field.label}</span>
+            <strong>{field.sensitive ? "******" : field.value}</strong>
           </div>
-        ))}
+        )) : <p>无额外输入</p>}
       </div>
-    </section>
+      <div className="workbench-node-field-list">
+        <div className="workbench-subsection-title"><CheckCircle2 size={15} /> 节点输出</div>
+        {outputs.length > 0 ? outputs.map((field) => (
+          <div key={field.label} className="workbench-node-field">
+            <span>{field.label}</span>
+            <strong>{field.sensitive ? "******" : field.value}</strong>
+          </div>
+        )) : <p>等待节点完成后生成</p>}
+      </div>
+    </div>
   );
 }
 
-function RunVariablesPanel({ preview }: { preview: RuntimePreview }) {
+function RunTracePanel({ preview, selectedStepIndex }: { preview: RuntimePreview; selectedStepIndex: number | null }) {
+  const selectedStep = selectedStepIndex === null ? null : preview.steps[selectedStepIndex] ?? null;
+  const relatedEvents = selectedStep ? preview.events.filter((event) => event.stepTitle === selectedStep.title) : preview.events;
+
   return (
-    <section className="sys-preview-card workbench-run-section">
-      <div className="sys-preview-card-title"><DatabaseZap size={16} /> 变量快照</div>
-      <div className="workbench-variable-list">
-        {preview.variables.map((variable) => (
-          <div key={variable.label} className="workbench-variable-row">
-            <span>{variable.label}</span>
-            <strong>{variable.sensitive ? "******" : variable.value}</strong>
+    <div className="workbench-trace-layout">
+      <section className="sys-preview-card workbench-run-section">
+        <div className="workbench-run-section-head">
+          <div>
+            <div className="sys-preview-card-title"><History size={16} /> {selectedStep ? `执行链路：${selectedStep.title}` : "执行链路"}</div>
+            <p>{selectedStep ? "已定位到左侧选中的完成节点，可查看该步骤的输入、输出和审计事件。" : "按时间展示任务运行中的关键事件，变量快照已并入各节点的输入输出记录。"}</p>
           </div>
-        ))}
-      </div>
-    </section>
+          {selectedStep ? <span className="workbench-run-pill workbench-run-pill--done">已完成</span> : null}
+        </div>
+        <div className="workbench-event-timeline">
+          {relatedEvents.map((event) => (
+            <div key={`${event.time}-${event.title}`} className={`workbench-event-item workbench-event-item--${event.tone}`}>
+              <span>{event.time}</span>
+              <div>
+                <strong>{event.title}</strong>
+                <p>{event.description}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {selectedStep ? (
+        <section className="sys-preview-card workbench-run-section workbench-node-detail-card">
+          <div className="sys-preview-card-title"><FileText size={16} /> 节点输入输出</div>
+          <p>{selectedStep.description}</p>
+          <NodeIoSummary step={selectedStep} />
+        </section>
+      ) : null}
+    </div>
   );
 }
 

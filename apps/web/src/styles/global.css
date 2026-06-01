@@ -3387,6 +3387,72 @@ textarea:focus-visible {
   white-space: nowrap;
 }
 
+.workbench-trace-layout {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+}
+
+.workbench-node-detail-card > p {
+  margin: 0 0 14px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.75;
+}
+
+.workbench-node-io-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.workbench-node-field-list {
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-hover);
+  padding: 14px;
+}
+
+.workbench-node-field-list > p {
+  margin: 0;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+
+.workbench-node-field {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--color-border-light);
+  padding: 9px 0;
+}
+
+.workbench-node-field:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+.workbench-node-field:last-child {
+  padding-bottom: 0;
+}
+
+.workbench-node-field span {
+  flex-shrink: 0;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.workbench-node-field strong {
+  min-width: 0;
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: right;
+  word-break: break-word;
+}
+
 .workbench-delivery-row {
   display: flex;
   min-width: 0;
@@ -3526,9 +3592,20 @@ textarea:focus-visible {
     box-shadow var(--transition-fast);
 }
 
-.workbench-node-step:hover {
+.workbench-node-step:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--color-primary) 34%, var(--color-border-light));
   background: var(--color-bg-hover);
+}
+
+.workbench-node-step--selected {
+  border-color: color-mix(in srgb, var(--color-primary) 44%, var(--color-border-light));
+  background: color-mix(in srgb, var(--color-primary) 7%, var(--color-bg-card));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 8%, transparent);
+}
+
+.workbench-node-step--disabled {
+  cursor: default;
+  opacity: 0.72;
 }
 
 .workbench-node-step-index {
@@ -3602,24 +3679,30 @@ textarea:focus-visible {
 
 .workbench-runtime-tabs {
   display: flex;
-  gap: 6px;
-  overflow-x: auto;
+  gap: 20px;
+  overflow: visible;
   border-bottom: 1px solid var(--color-border-light);
-  padding: 0 16px;
+  padding: 0 22px;
+  scrollbar-width: none;
+}
+
+.workbench-runtime-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .workbench-runtime-tab {
   position: relative;
   display: inline-flex;
-  min-height: 50px;
+  min-height: 58px;
   flex-shrink: 0;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   border: none;
   background: transparent;
   color: var(--color-text-secondary);
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0;
   transition: color var(--transition-fast);
 }
 
@@ -3682,6 +3765,14 @@ textarea:focus-visible {
 
 .workbench-input-card + .workbench-ai-console,
 .workbench-ai-console + .workbench-call-grid {
+  margin-top: 14px;
+}
+
+.workbench-current-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
   margin-top: 14px;
 }
 
@@ -3767,6 +3858,13 @@ textarea:focus-visible {
   line-height: 1.75;
 }
 
+.workbench-ai-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 .workbench-ai-compose {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -3816,6 +3914,26 @@ textarea:focus-visible {
   color: var(--color-text-secondary);
   font-size: 12px;
   line-height: 1.65;
+}
+
+.workbench-call-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.workbench-call-actions button {
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.workbench-call-actions button:hover {
+  color: var(--color-primary-dark);
 }
 
 .workbench-approval-textarea {
@@ -4785,17 +4903,8 @@ textarea:focus-visible {
 }
 
 @media (max-width: 1180px) {
-  .workbench-task-layout,
   .workbench-current-layout {
     grid-template-columns: 1fr;
-  }
-
-  .workbench-task-rail {
-    position: static;
-  }
-
-  .workbench-node-rail {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .workbench-run-meta-grid {
@@ -4820,6 +4929,18 @@ textarea:focus-visible {
 }
 
 @media (max-width: 900px) {
+  .workbench-task-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .workbench-task-rail {
+    position: static;
+  }
+
+  .workbench-node-rail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .workbench-task-topbar {
     flex-direction: column;
   }
