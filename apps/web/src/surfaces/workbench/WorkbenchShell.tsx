@@ -32,7 +32,7 @@ import {
   UserRoundCheck,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { Empty, Pagination, Segmented, message } from "antd";
+import { Drawer, Empty, Pagination, Segmented, message } from "antd";
 import { TenantManagementPage } from "../admin/TenantManagementPage";
 import { SystemManagementPage } from "../admin/SystemManagementPage";
 import { AssetsPage } from "../assets/AssetsPage";
@@ -200,6 +200,7 @@ export function WorkbenchShell() {
   const [availableError, setAvailableError] = useState<string | null>(null);
   const [createdTaskWorkflow, setCreatedTaskWorkflow] = useState<WorkbenchAvailableWorkflowRow | null>(null);
   const [openedTaskWorkflow, setOpenedTaskWorkflow] = useState<WorkbenchAvailableWorkflowRow | null>(null);
+  const [workflowDrawer, setWorkflowDrawer] = useState<WorkbenchAvailableWorkflowRow | null>(null);
   const activeWorkbenchTabMeta = workbenchTabs.find((tab) => tab.key === activeWorkbenchTab) ?? workbenchTabs[0];
   const workbenchSegmentedOptions = workbenchTabs.map((tab) => {
     const Icon = tab.icon;
@@ -296,13 +297,21 @@ export function WorkbenchShell() {
     }, 320);
   }
 
-  function handleCreateTask(workflow: WorkbenchAvailableWorkflowRow) {
-    // 第一阶段尚未接入运行实例创建 API，这里先把发起结果放入待办预览。
-    // 后续替换为 POST 创建 WorkflowRun 后刷新真实 pendingTodos，再从待办进入任务处理页。
-    setCreatedTaskWorkflow(workflow);
+  function handleLaunchTask(workflow: WorkbenchAvailableWorkflowRow) {
+    // 第一阶段尚未接入运行实例创建 API，这里先直接进入任务处理页。
+    // 后续替换为 POST 创建 WorkflowRun 成功后，按 runId 打开真实任务详情；只有保存/暂停后才刷新待办。
     setOpenedTaskWorkflow(null);
-    setActiveWorkbenchTab("tasks");
-    messageApi.info(`「${workflow.name}」已生成待办预览，真实任务创建将随运行实例 API 上线`);
+    window.setTimeout(() => setOpenedTaskWorkflow(workflow), 0);
+    setWorkflowDrawer(null);
+    messageApi.info(`已进入「${workflow.name}」任务处理页，保存后会出现在待办中`);
+  }
+
+  function handleSaveTaskToTodo() {
+    if (!openedTaskWorkflow) {
+      return;
+    }
+    setCreatedTaskWorkflow(openedTaskWorkflow);
+    messageApi.info(`「${openedTaskWorkflow.name}」已保存到待办预览，真实保存将写入 WaitingEvent / WorkflowRun`);
   }
 
   function handleSubmitKeyword() {
@@ -494,6 +503,7 @@ export function WorkbenchShell() {
                       setOpenedTaskWorkflow(null);
                       setActiveWorkbenchTab("create");
                     }}
+                    onSaveToTodo={handleSaveTaskToTodo}
                     onAction={(label) => messageApi.info(`${label} 将在运行态 API 上线后写入真实任务`)}
                   />
                 ) : (
@@ -666,7 +676,7 @@ export function WorkbenchShell() {
                         ) : (
                           <div className="sys-card-grid">
                             {availableWorkflows.map((workflow) => (
-                              <WorkflowLaunchCard key={workflow.id} workflow={workflow} onCreate={() => handleCreateTask(workflow)} />
+                              <WorkflowLaunchCard key={workflow.id} workflow={workflow} onOpen={() => setWorkflowDrawer(workflow)} />
                             ))}
                           </div>
                         )}
@@ -735,6 +745,12 @@ export function WorkbenchShell() {
                 )}
                   </>
                 )}
+                <WorkflowLaunchDrawer
+                  workflow={workflowDrawer}
+                  rootClassName={isDarkMode ? "agent-admin-drawer agent-admin-drawer--dark" : "agent-admin-drawer"}
+                  onClose={() => setWorkflowDrawer(null)}
+                  onLaunch={handleLaunchTask}
+                />
               </div>
             </div>
           ) : null}
@@ -813,32 +829,115 @@ function WorkbenchFeatureCard({
   );
 }
 
-function WorkflowLaunchCard({ workflow, onCreate }: { workflow: WorkbenchAvailableWorkflowRow; onCreate: () => void }) {
+function WorkflowLaunchCard({ workflow, onOpen }: { workflow: WorkbenchAvailableWorkflowRow; onOpen: () => void }) {
   const publishedAt = workflow.publishedAt ? new Date(workflow.publishedAt) : null;
   const publishedLabel = publishedAt ? publishedAt.toLocaleString("zh-CN", { hour12: false }) : "—";
   return (
-    <button type="button" onClick={onCreate} className="workflow-feature-card workflow-launch-card">
+    <button type="button" onClick={onOpen} className="workflow-launch-card">
       <span className="workflow-feature-card-head">
-        <span className="workflow-feature-card-icon">
-          <PlayCircle size={16} aria-hidden="true" />
+        <span className="workflow-launch-card-icon">
+          <PlayCircle size={18} aria-hidden="true" />
         </span>
         <span className="min-w-0">
-          <span className="workflow-feature-card-title block truncate">{workflow.name}</span>
-          <span className="mt-1 block text-[11px] text-[var(--color-text-tertiary)]">v{workflow.latestVersionNumber} · {workflow.nodeCount} 个节点</span>
+          <span className="workflow-launch-card-title block truncate">{workflow.name}</span>
+          <span className="workflow-launch-card-version">v{workflow.latestVersionNumber} · {workflow.nodeCount} 个节点</span>
         </span>
       </span>
-      <span className="workflow-feature-card-description">
+      <span className="workflow-launch-card-description">
         {workflow.description?.trim() ? workflow.description : "尚未填写流程说明，发起前请联系流程负责人或在流程设计中补充。"}
       </span>
-      <span className="mt-3 flex flex-wrap gap-1.5 text-[11px] text-[var(--color-text-tertiary)]">
-        <span className="rounded border border-[var(--color-border-light)] bg-[var(--color-bg-card)] px-2 py-1">发布人：{workflow.ownerName}</span>
-        <span className="rounded border border-[var(--color-border-light)] bg-[var(--color-bg-card)] px-2 py-1">发布于 {publishedLabel}</span>
+      <span className="workflow-launch-card-tags">
+        <span className="workflow-launch-card-tag workflow-launch-card-tag--owner">发布人：{workflow.ownerName}</span>
+        <span className="workflow-launch-card-tag workflow-launch-card-tag--time">发布于 {publishedLabel}</span>
       </span>
-      <span className="workflow-feature-card-meta">
-        发起任务
+      <span className="workflow-launch-card-meta">
+        查看详情
         <ArrowRight size={14} aria-hidden="true" />
       </span>
     </button>
+  );
+}
+
+function WorkflowLaunchDrawer({
+  workflow,
+  rootClassName,
+  onClose,
+  onLaunch,
+}: {
+  workflow: WorkbenchAvailableWorkflowRow | null;
+  rootClassName: string;
+  onClose: () => void;
+  onLaunch: (workflow: WorkbenchAvailableWorkflowRow) => void;
+}) {
+  if (!workflow) {
+    return null;
+  }
+
+  const publishedAt = workflow.publishedAt ? new Date(workflow.publishedAt) : null;
+  const publishedLabel = publishedAt ? publishedAt.toLocaleString("zh-CN", { hour12: false }) : "—";
+  const preview = buildRuntimePreview(workflow, workflow.ownerName);
+
+  return (
+    <Drawer
+      title="可发起流程详情"
+      width={560}
+      open
+      onClose={onClose}
+      rootClassName={rootClassName}
+    >
+      <div className="workbench-launch-drawer">
+        <section className="workbench-launch-drawer-hero">
+          <span className="workflow-launch-card-icon">
+            <PlayCircle size={18} aria-hidden="true" />
+          </span>
+          <div>
+            <h2>{workflow.name}</h2>
+            <p>v{workflow.latestVersionNumber} · {workflow.nodeCount} 个节点 · 发布于 {publishedLabel}</p>
+          </div>
+        </section>
+
+        <section className="workbench-launch-drawer-section">
+          <h3>流程说明</h3>
+          <p>{workflow.description?.trim() ? workflow.description : "尚未填写流程说明，发起前请联系流程负责人或在流程设计中补充。"}</p>
+        </section>
+
+        <section className="workbench-launch-drawer-section">
+          <h3>发起后将进入的处理链路</h3>
+          <div className="workbench-launch-drawer-steps">
+            {preview.steps.slice(0, 5).map((step, index) => (
+              <div key={step.title}>
+                <span>{index + 1}</span>
+                <div>
+                  <strong>{step.title}</strong>
+                  <small>{step.subtitle}</small>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="workbench-launch-drawer-section">
+          <h3>运行能力</h3>
+          <div className="workbench-capability-stack">
+            <span>输入节点</span>
+            <span>智能体集群</span>
+            <span>MCP 审批</span>
+            <span>变量快照</span>
+            <span>交付物生成</span>
+          </div>
+        </section>
+
+        <div className="workbench-launch-drawer-footer">
+          <button type="button" className="sys-btn sys-btn--default" onClick={onClose}>
+            取消
+          </button>
+          <button type="button" className="sys-btn sys-btn--primary" onClick={() => onLaunch(workflow)}>
+            <PlayCircle size={16} aria-hidden="true" />
+            发起任务
+          </button>
+        </div>
+      </div>
+    </Drawer>
   );
 }
 
@@ -892,6 +991,7 @@ function WorkbenchTaskRunDetail({
   runtimeStatusLabel,
   onBack,
   onCreateAnother,
+  onSaveToTodo,
   onAction,
 }: {
   workflow: WorkbenchAvailableWorkflowRow;
@@ -899,6 +999,7 @@ function WorkbenchTaskRunDetail({
   runtimeStatusLabel: string;
   onBack: () => void;
   onCreateAnother: () => void;
+  onSaveToTodo: () => void;
   onAction: (label: string) => void;
 }) {
   const [activeRunTab, setActiveRunTab] = useState<RunWorkspaceTab>("current");
@@ -922,7 +1023,7 @@ function WorkbenchTaskRunDetail({
           <p>运行编号 {preview.runId} · v{preview.workflowVersion} · 当前节点：{activeStep.title}</p>
         </div>
         <div className="workbench-run-actions">
-          <button type="button" className="sys-btn sys-btn--default" onClick={() => onAction("保存当前任务")}>
+          <button type="button" className="sys-btn sys-btn--default" onClick={onSaveToTodo}>
             <Archive size={16} aria-hidden="true" />
             保存
           </button>
@@ -982,7 +1083,7 @@ function WorkbenchTaskRunDetail({
           </nav>
 
           {activeRunTab === "overview" ? <RunOverviewPanel workflow={workflow} preview={preview} /> : null}
-          {activeRunTab === "current" ? <RunCurrentPanel preview={preview} onAction={onAction} /> : null}
+          {activeRunTab === "current" ? <RunCurrentPanel preview={preview} onSaveToTodo={onSaveToTodo} onAction={onAction} /> : null}
           {activeRunTab === "trace" ? <RunTracePanel preview={preview} /> : null}
           {activeRunTab === "variables" ? <RunVariablesPanel preview={preview} /> : null}
           {activeRunTab === "deliveries" ? <RunDeliveriesPanel preview={preview} onAction={onAction} /> : null}
@@ -1013,7 +1114,15 @@ function RunOverviewPanel({ workflow, preview }: { workflow: WorkbenchAvailableW
   );
 }
 
-function RunCurrentPanel({ preview, onAction }: { preview: RuntimePreview; onAction: (label: string) => void }) {
+function RunCurrentPanel({
+  preview,
+  onSaveToTodo,
+  onAction,
+}: {
+  preview: RuntimePreview;
+  onSaveToTodo: () => void;
+  onAction: (label: string) => void;
+}) {
   return (
     <div className="workbench-current-layout">
       <div className="workbench-current-main">
@@ -1096,7 +1205,7 @@ function RunCurrentPanel({ preview, onAction }: { preview: RuntimePreview; onAct
               <ShieldCheck size={16} aria-hidden="true" />
               通过并继续
             </button>
-            <button type="button" className="sys-btn sys-btn--default" onClick={() => onAction("保存当前输入")}>
+            <button type="button" className="sys-btn sys-btn--default" onClick={onSaveToTodo}>
               <Archive size={16} aria-hidden="true" />
               保存输入
             </button>
