@@ -3,6 +3,7 @@ import {
   Activity,
   AlertCircle,
   ArrowRight,
+  ChevronLeft,
   Archive,
   Bot,
   CheckCircle2,
@@ -1179,7 +1180,14 @@ function WorkbenchTaskRunDetail({
 
           {activeRunTab === "overview" ? <RunOverviewPanel workflow={workflow} preview={preview} /> : null}
           {activeRunTab === "current" ? <RunCurrentPanel preview={preview} activeStep={activeStep} onSaveToTodo={onSaveToTodo} onAction={onAction} /> : null}
-          {activeRunTab === "trace" ? <RunTracePanel preview={preview} selectedStepIndex={selectedTraceStepIndex} /> : null}
+          {activeRunTab === "trace" ? (
+            <RunTracePanel
+              preview={preview}
+              selectedStepIndex={selectedTraceStepIndex}
+              onSelectStep={setSelectedTraceStepIndex}
+              onClearStep={() => setSelectedTraceStepIndex(null)}
+            />
+          ) : null}
           {activeRunTab === "deliveries" ? <RunDeliveriesPanel preview={preview} onAction={onAction} /> : null}
         </section>
       </div>
@@ -1410,40 +1418,111 @@ function NodeIoSummary({ step }: { step: RuntimePreviewStep }) {
   );
 }
 
-function RunTracePanel({ preview, selectedStepIndex }: { preview: RuntimePreview; selectedStepIndex: number | null }) {
+function traceStepPillLabel(state: RuntimeStepState): string {
+  if (state === "done") {
+    return "已完成";
+  }
+  if (state === "running") {
+    return "执行中";
+  }
+  if (state === "waiting") {
+    return "等待处理";
+  }
+  return "待执行";
+}
+
+function RunTracePanel({
+  preview,
+  selectedStepIndex,
+  onSelectStep,
+  onClearStep,
+}: {
+  preview: RuntimePreview;
+  selectedStepIndex: number | null;
+  onSelectStep: (index: number) => void;
+  onClearStep: () => void;
+}) {
   const selectedStep = selectedStepIndex === null ? null : preview.steps[selectedStepIndex] ?? null;
-  const relatedEvents = selectedStep ? preview.events.filter((event) => event.stepTitle === selectedStep.title) : preview.events;
+  const traceableSteps = preview.steps
+    .map((step, index) => ({ step, index }))
+    .filter(({ step }) => step.state !== "pending");
+
+  if (selectedStep && selectedStepIndex !== null) {
+    const relatedEvents = preview.events.filter((event) => event.stepTitle === selectedStep.title);
+
+    return (
+      <div className="workbench-trace-layout">
+        <section className="sys-preview-card workbench-run-section">
+          <div className="workbench-run-section-head">
+            <div>
+              <button type="button" className="workbench-trace-back" onClick={onClearStep}>
+                <ChevronLeft size={16} aria-hidden="true" />
+                返回总览链路
+              </button>
+              <div className="sys-preview-card-title"><History size={16} /> 链路详情：{selectedStep.title}</div>
+              <p>{selectedStep.description}</p>
+            </div>
+            <span className={`workbench-run-pill workbench-run-pill--${selectedStep.state === "done" ? "done" : selectedStep.state === "waiting" ? "waiting" : "running"}`}>
+              {traceStepPillLabel(selectedStep.state)}
+            </span>
+          </div>
+          {selectedStep.completedAt ? (
+            <p className="workbench-trace-step-meta">完成时间 {selectedStep.completedAt}</p>
+          ) : null}
+          <div className="workbench-subsection-title"><FileText size={15} /> 审计事件</div>
+          <div className="workbench-event-timeline">
+            {relatedEvents.length > 0 ? relatedEvents.map((event) => (
+              <div key={`${event.time}-${event.title}`} className={`workbench-event-item workbench-event-item--${event.tone}`}>
+                <span>{event.time}</span>
+                <div>
+                  <strong>{event.title}</strong>
+                  <p>{event.description}</p>
+                </div>
+              </div>
+            )) : (
+              <p className="workbench-panel-copy">该步骤暂无审计事件，真实运行态接入后会按节点写入调用与审批记录。</p>
+            )}
+          </div>
+        </section>
+
+        <section className="sys-preview-card workbench-run-section workbench-node-detail-card">
+          <div className="sys-preview-card-title"><FileText size={16} /> 节点输入输出</div>
+          <NodeIoSummary step={selectedStep} />
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="workbench-trace-layout">
       <section className="sys-preview-card workbench-run-section">
         <div className="workbench-run-section-head">
           <div>
-            <div className="sys-preview-card-title"><History size={16} /> {selectedStep ? `执行链路：${selectedStep.title}` : "执行链路"}</div>
-            <p>{selectedStep ? "已定位到左侧选中的完成节点，可查看该步骤的输入、输出和审计事件。" : "按时间展示任务运行中的关键事件，变量快照已并入各节点的输入输出记录。"}</p>
+            <div className="sys-preview-card-title"><History size={16} /> 执行链路</div>
+            <p>按流程顺序展示已发生或进行中的节点，点击任一链路可查看该步骤的输入、输出和审计事件。</p>
           </div>
-          {selectedStep ? <span className="workbench-run-pill workbench-run-pill--done">已完成</span> : null}
         </div>
-        <div className="workbench-event-timeline">
-          {relatedEvents.map((event) => (
-            <div key={`${event.time}-${event.title}`} className={`workbench-event-item workbench-event-item--${event.tone}`}>
-              <span>{event.time}</span>
-              <div>
-                <strong>{event.title}</strong>
-                <p>{event.description}</p>
-              </div>
-            </div>
+        <div className="workbench-trace-step-list">
+          {traceableSteps.map(({ step, index }) => (
+            <button
+              key={step.title}
+              type="button"
+              className={`workbench-trace-step-link workbench-trace-step-link--${step.state}`}
+              onClick={() => onSelectStep(index)}
+            >
+              <span className="workbench-trace-step-link-index">{index + 1}</span>
+              <span className="workbench-trace-step-link-main">
+                <strong>{step.title}</strong>
+                <small>{step.subtitle}{step.completedAt ? ` · ${step.completedAt} 完成` : ""}</small>
+              </span>
+              <span className={`workbench-run-pill workbench-run-pill--${step.state === "done" ? "done" : step.state === "waiting" ? "waiting" : "running"}`}>
+                {traceStepPillLabel(step.state)}
+              </span>
+              <ArrowRight size={14} aria-hidden="true" />
+            </button>
           ))}
         </div>
       </section>
-
-      {selectedStep ? (
-        <section className="sys-preview-card workbench-run-section workbench-node-detail-card">
-          <div className="sys-preview-card-title"><FileText size={16} /> 节点输入输出</div>
-          <p>{selectedStep.description}</p>
-          <NodeIoSummary step={selectedStep} />
-        </section>
-      ) : null}
     </div>
   );
 }

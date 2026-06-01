@@ -3393,6 +3393,112 @@ textarea:focus-visible {
   padding: 16px;
 }
 
+.workbench-trace-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 10px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.workbench-trace-back:hover {
+  color: var(--color-primary);
+}
+
+.workbench-trace-step-meta {
+  margin: 0 0 14px;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+
+.workbench-trace-step-list {
+  display: grid;
+  gap: 10px;
+}
+
+.workbench-trace-step-link {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-card);
+  padding: 12px 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.workbench-trace-step-link:hover {
+  border-color: color-mix(in srgb, var(--color-primary) 34%, var(--color-border-light));
+  background: var(--color-bg-hover);
+}
+
+.workbench-trace-step-link-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--color-bg-hover);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.workbench-trace-step-link--done .workbench-trace-step-link-index {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+
+.workbench-trace-step-link--running .workbench-trace-step-link-index {
+  background: rgba(14, 165, 233, 0.12);
+  color: #0284c7;
+}
+
+.workbench-trace-step-link--waiting .workbench-trace-step-link-index {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+.workbench-trace-step-link-main {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.workbench-trace-step-link-main strong {
+  overflow: hidden;
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench-trace-step-link-main small {
+  overflow: hidden;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench-trace-step-link > svg:last-child {
+  flex-shrink: 0;
+  color: var(--color-text-tertiary);
+}
+
 .workbench-node-detail-card > p {
   margin: 0 0 14px;
   color: var(--color-text-secondary);
