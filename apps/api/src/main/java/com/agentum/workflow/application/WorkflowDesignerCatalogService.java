@@ -121,7 +121,7 @@ public class WorkflowDesignerCatalogService {
         return new WorkflowDraftApi.WorkflowBrickTemplate(
             "delivery",
             "交付节点",
-            "绑定权限内交付能力并配置交付内容变量。",
+            "绑定权限内交付能力并配置交付内容。",
             "delivery",
             "交付结果",
             "配置最终交付方式和交付内容。",
@@ -131,8 +131,8 @@ public class WorkflowDesignerCatalogService {
             List.of("delivery_record"),
             Map.of(
                 "brickType", "delivery",
+                "deliveryMode", "capability",
                 "deliveryCapabilityId", "none",
-                "artifactVariable", "cluster_result",
                 "deliveryTarget", "说明交付目标、模板和确认方式。"
             ),
             "待配置",

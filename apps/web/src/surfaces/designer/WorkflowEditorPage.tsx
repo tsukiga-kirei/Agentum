@@ -981,11 +981,11 @@ function BasicInfoPanel({
           onUpdateNode={onUpdateNode}
         />
       ) : null}
-      {brickType === "agent" || brickType === "delivery" ? (
+      {brickType === "agent" ? (
         <OutcomeVariableField
-          label={brickType === "delivery" ? "交付输出内容" : "智能体输出内容"}
+          label="智能体输出内容"
           value={node.data.outputVariables[0] ?? ""}
-          placeholder={brickType === "delivery" ? "delivery_record" : "agent_output"}
+          placeholder="agent_output"
           onChange={(value) => onUpdateNode({ outputVariables: value ? [normalizeVariableName(value)] : [] })}
         />
       ) : null}
@@ -1278,6 +1278,11 @@ function DeliveryBrickConfig({
   const config = node.data.rawConfig ?? {};
   const deliveryAssets = filterCapabilities(capabilityState.capabilities, "delivery");
   const deliveryMode = readString(config.deliveryMode, "capability");
+  const isDirectDelivery = deliveryMode === "direct";
+  const deliveryTargetDefault = "说明交付目标、模板和确认方式。";
+  const deliveryTargetPlaceholder = isDirectDelivery
+    ? "配置交付正文，运行时将作为文本直接返回。"
+    : "配置交付目标、模板和确认方式，运行时将作为交付输出。";
 
   return (
     <PanelGroup title="交付配置" icon={PackageCheck} className="xl:col-span-2">
@@ -1305,19 +1310,12 @@ function DeliveryBrickConfig({
           />
         ) : null}
       </div>
-      <SelectLikeField
-        label="交付输出内容"
-        icon={Zap}
-        value={readString(config.artifactVariable, workflowVariables[0]?.name ?? "delivery_content")}
-        options={workflowVariables.map((variable) => ({ value: variable.name, label: `${variable.name} · ${variable.sourceNodeName}` }))}
-        onChange={(value) => onUpdateConfig({ artifactVariable: value })}
-      />
       <PromptEditor
         label="交付配置"
-        value={readString(config.deliveryTarget, "请基于 {{输出内容}} 生成交付内容，并说明目标、模板和确认方式。")}
+        value={readString(config.deliveryTarget, deliveryTargetDefault)}
         availableVariables={workflowVariables}
         onChange={(value) => onUpdateConfig({ deliveryTarget: value })}
-        placeholder="配置交付目标、模板、正文或回调参数"
+        placeholder={deliveryTargetPlaceholder}
       />
     </PanelGroup>
   );
@@ -2067,10 +2065,6 @@ function createNodeFromTemplate(template: WorkflowBrickTemplate, index: number, 
     rawConfig.clusterAgents = clusterAgents;
     rawConfig.executionMode = readString(rawConfig.executionMode, "parallel");
     outputVariables = clusterAgents.map((agent) => agent.output);
-  }
-
-  if (brickType === "delivery") {
-    rawConfig.artifactVariable = effectiveInputVariables[0] ?? readString(rawConfig.artifactVariable, "delivery_record");
   }
 
   return {
