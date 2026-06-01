@@ -278,7 +278,7 @@ export function WorkbenchShell() {
       {
         label: "可用能力",
         value: metrics ? String(metrics.openedCapabilityTotal) : "—",
-        hint: metrics ? `我自建草稿 ${metrics.myAssetTotal} 个` : "加载中",
+        hint: metrics ? `我创建能力 ${metrics.myAssetTotal} 项` : "加载中",
         tone: "cap",
         icon: Library,
       },

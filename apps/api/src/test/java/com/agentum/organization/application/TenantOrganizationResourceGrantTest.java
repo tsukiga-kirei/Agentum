@@ -124,6 +124,21 @@ class TenantOrganizationResourceGrantTest {
     }
 
     @Test
+    void shouldHideTenantEnabledDraftCapabilityFromResourceOptions() {
+        TenantOrganizationService service = newService();
+        SystemCapabilityEntity capability = SystemCapabilityEntity.create("prompt_template", "测试", "test_prompt", "v1", "", "low", "draft", Map.of(), Instant.now());
+        TenantCapabilityGrantEntity capabilityGrant = TenantCapabilityGrantEntity.create(TENANT_ID, capability.getId(), "enabled", Instant.now());
+
+        when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", Instant.now())));
+        when(tenantCapabilityGrantRepository.findByTenantIdOrderByCreatedAtDesc(TENANT_ID)).thenReturn(List.of(capabilityGrant));
+        when(systemCapabilityRepository.findAllById(any())).thenReturn(List.of(capability));
+
+        var options = service.listTenantResourceOptions(TENANT_ID);
+
+        assertThat(options).isEmpty();
+    }
+
+    @Test
     void shouldRejectUserPrincipalOutsideCurrentTenant() {
         TenantOrganizationService service = newService();
 

@@ -17,7 +17,7 @@ import {
   X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { Drawer, Pagination, Segmented, Select } from "antd";
+import { Drawer, Pagination, Segmented, Select, message } from "antd";
 import { AgentumApiError, workflowApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import type {
@@ -85,12 +85,12 @@ export function WorkflowDraftsPage() {
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
   const themeMode = useAuthStore((s) => s.themeMode);
+  const [messageApi, messageContextHolder] = message.useMessage();
   const [workflows, setWorkflows] = useState<WorkflowDraft[]>([]);
   const [searchValue, setSearchValue] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [draftName, setDraftName] = useState("");
   const [draftDescription, setDraftDescription] = useState("");
-  const [formError, setFormError] = useState("");
   const [editingWorkflow, setEditingWorkflow] = useState<WorkflowDraft | null>(null);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
@@ -103,9 +103,7 @@ export function WorkflowDraftsPage() {
     workflow: WorkflowDraft;
     result: WorkflowPublishValidationResult;
   } | null>(null);
-  const [validationError, setValidationError] = useState("");
   const [publishingWorkflowId, setPublishingWorkflowId] = useState("");
-  const [publishSuccess, setPublishSuccess] = useState("");
   const [activeTab, setActiveTab] = useState<WorkflowDesignerTab>("overview");
   const [detailWorkflow, setDetailWorkflow] = useState<WorkflowDraft | null>(null);
   const [drawerDetail, setDrawerDetail] = useState<WorkflowDraftDetail | null>(null);
@@ -239,7 +237,7 @@ export function WorkflowDraftsPage() {
   async function handleCreateDraft(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!token || !user?.tenantId) {
-      setFormError("当前账号缺少租户上下文，无法保存草稿");
+      messageApi.error("当前账号缺少租户上下文，无法保存草稿");
       return;
     }
 
@@ -247,12 +245,11 @@ export function WorkflowDraftsPage() {
     const description = draftDescription.trim();
 
     if (!name) {
-      setFormError("请输入工作流名称");
+      messageApi.warning("请输入工作流名称");
       return;
     }
 
     setSubmitting(true);
-    setFormError("");
 
     try {
       await workflowApi.createDraft(user.tenantId, token, { name, description });
@@ -260,9 +257,10 @@ export function WorkflowDraftsPage() {
       setDraftDescription("");
       setIsCreating(false);
       await loadDrafts(1, searchValue);
+      messageApi.success("工作流草稿已保存");
     } catch (error) {
       console.warn("[workflow] 工作流草稿创建失败", getWorkflowErrorContext(error, user.tenantId, { name }));
-      setFormError(error instanceof AgentumApiError ? error.message : "保存草稿失败，请稍后重试");
+      messageApi.error(error instanceof AgentumApiError ? error.message : "保存草稿失败，请稍后重试");
     } finally {
       setSubmitting(false);
     }
@@ -270,20 +268,22 @@ export function WorkflowDraftsPage() {
 
   async function handleValidateForPublish(workflow: WorkflowDraft) {
     if (!token || !user?.tenantId) {
-      setValidationError("当前账号缺少租户上下文，无法执行发布校验");
+      messageApi.error("当前账号缺少租户上下文，无法执行发布校验");
+      return;
+    }
+    if (workflow.status === "published") {
+      messageApi.warning("当前草稿没有待发布变更");
       return;
     }
 
     setValidatingWorkflowId(workflow.id);
-    setValidationError("");
-    setPublishSuccess("");
 
     try {
       const result = await workflowApi.validateForPublish(user.tenantId, workflow.id, token);
       setValidationModal({ workflow, result });
     } catch (error) {
       console.warn("[workflow] 工作流发布校验失败", getWorkflowErrorContext(error, user.tenantId, { workflowId: workflow.id }));
-      setValidationError(error instanceof AgentumApiError ? error.message : "发布校验失败，请稍后重试");
+      messageApi.error(error instanceof AgentumApiError ? error.message : "发布校验失败，请稍后重试");
     } finally {
       setValidatingWorkflowId("");
     }
@@ -291,22 +291,25 @@ export function WorkflowDraftsPage() {
 
   async function handlePublish(workflow: WorkflowDraft) {
     if (!token || !user?.tenantId) {
-      setValidationError("当前账号缺少租户上下文，无法正式发布");
+      messageApi.error("当前账号缺少租户上下文，无法正式发布");
       return;
     }
 
     setPublishingWorkflowId(workflow.id);
-    setValidationError("");
 
     try {
       const result = await workflowApi.publish(user.tenantId, workflow.id, token);
       setWorkflows((currentWorkflows) => currentWorkflows.map((item) => item.id === workflow.id ? result.draft : item));
       setDetailWorkflow((current) => current?.id === workflow.id ? result.draft : current);
       setValidationModal(null);
-      setPublishSuccess(`“${result.draft.name}”已发布为 v${result.versionNumber}`);
+      messageApi.success(`“${result.draft.name}”已发布为 v${result.versionNumber}`);
     } catch (error) {
       console.warn("[workflow] 工作流正式发布失败", getWorkflowErrorContext(error, user.tenantId, { workflowId: workflow.id }));
-      setValidationError(error instanceof AgentumApiError ? error.message : "正式发布失败，请稍后重试");
+      if (error instanceof AgentumApiError && error.code === "WORKFLOW_ALREADY_PUBLISHED") {
+        messageApi.warning(error.message);
+      } else {
+        messageApi.error(error instanceof AgentumApiError ? error.message : "正式发布失败，请稍后重试");
+      }
     } finally {
       setPublishingWorkflowId("");
     }
@@ -347,6 +350,7 @@ export function WorkflowDraftsPage() {
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-[var(--color-bg-page)] pb-10 pt-1">
+      {messageContextHolder}
       <div className="mx-auto max-w-[1400px] px-5 lg:px-6">
         <header className="mb-5 flex flex-col gap-4 border-b border-[var(--color-border-light)] pb-5 sm:flex-row sm:items-end sm:justify-between">
           <div className="flex min-w-0 gap-4">
@@ -485,8 +489,6 @@ export function WorkflowDraftsPage() {
             </div>
 
             {loadError ? <div className="workflow-feedback workflow-feedback--danger">{loadError}</div> : null}
-            {validationError ? <div className="workflow-feedback workflow-feedback--danger">{validationError}</div> : null}
-            {publishSuccess ? <div className="workflow-feedback workflow-feedback--success">{publishSuccess}</div> : null}
 
             <div className="sys-card-grid">
               {filteredWorkflows.map((workflow) => (
@@ -618,17 +620,16 @@ export function WorkflowDraftsPage() {
                   <span className="sys-field-label sys-field-label--required">工作流名称</span>
                   <div className="sys-field-input-wrap">
                     <GitBranch size={16} className="sys-field-prefix" aria-hidden="true" />
-                    <input value={draftName} onChange={(event) => { setDraftName(event.target.value); setFormError(""); }} className="sys-field-input" placeholder="例如：客户续约风险评估流程" />
+                    <input value={draftName} onChange={(event) => setDraftName(event.target.value)} className="sys-field-input" placeholder="例如：客户续约风险评估流程" />
                   </div>
                 </label>
                 <label className="sys-field">
                   <span className="sys-field-label">说明</span>
                   <textarea value={draftDescription} onChange={(event) => setDraftDescription(event.target.value)} className="sys-field-textarea" placeholder="描述流程适用场景、输入材料和最终交付物" />
                 </label>
-                {formError ? <p className="workflow-feedback workflow-feedback--danger">{formError}</p> : null}
               </div>
               <div className="sys-modal-footer">
-                <button type="button" onClick={() => { setIsCreating(false); setFormError(""); }} className="sys-btn sys-btn--default">取消</button>
+                <button type="button" onClick={() => setIsCreating(false)} className="sys-btn sys-btn--default">取消</button>
                 <button type="submit" disabled={submitting} className="sys-btn sys-btn--primary">
                   <FilePlus2 size={14} aria-hidden="true" />
                   {submitting ? "保存中" : "保存草稿"}

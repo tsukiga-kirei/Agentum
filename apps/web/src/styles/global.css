@@ -3043,12 +3043,6 @@ textarea:focus-visible {
   color: var(--color-danger);
 }
 
-.workflow-feedback--success {
-  border: 1px solid color-mix(in srgb, var(--color-success) 28%, var(--color-border-light));
-  background: var(--color-success-bg);
-  color: var(--color-success);
-}
-
 .workflow-definition-table-wrap {
   overflow-x: auto;
 }
@@ -3161,6 +3155,10 @@ textarea:focus-visible {
   display: block;
   margin-top: 4px;
   font-size: 13px;
+}
+
+.workflow-validation-summary + .sys-hint {
+  margin-top: 16px;
 }
 
 .workflow-validation-summary--success {

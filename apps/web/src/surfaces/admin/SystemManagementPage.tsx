@@ -663,10 +663,14 @@ export function SystemManagementPage() {
     messageApi.info("模型供应商测试连接待接入真实供应商 API");
   };
 
-  const grantCapabilityToTenant = async (capabilityId: string) => {
+  const grantCapabilityToTenant = async (capability: SystemCapabilityRow) => {
     if (!token || !selectedTenant) return;
+    if (capability.status !== "active") {
+      messageApi.warning("全局能力仍是草稿，请先在全局能力中将状态改为启用");
+      return;
+    }
     try {
-      await systemApi.createGrant(token, { tenantId: selectedTenant.id, capabilityId, status: "enabled" } as CreateTenantCapabilityGrantRequest);
+      await systemApi.createGrant(token, { tenantId: selectedTenant.id, capabilityId: capability.id, status: "enabled" } as CreateTenantCapabilityGrantRequest);
       messageApi.success("已启用租户能力");
       void loadTenantCapabilityGrants(selectedTenant.id);
       void loadSummary();
@@ -1099,13 +1103,15 @@ export function SystemManagementPage() {
                   {configCapabilities.map((cap) => {
                     const grant = tenantCapabilityGrants.find((g) => g.capabilityId === cap.id);
                     const granted = grant?.grantStatus === "enabled";
+                    const activeCapability = cap.status === "active";
                     return (
                       <div key={cap.id} className="sys-form-row">
                         <span className="sys-form-label">{cap.name}</span>
                         <div style={{display:"flex",alignItems:"center",gap:10}}>
                           <span className="sys-info-tag sys-info-tag--primary">{formatCapabilityType(cap.capabilityType)}</span>
-                          <span className={`sys-status sys-status--${granted ? "active" : "inactive"}`}><span className="sys-status-dot"/>{granted ? "已启用" : "未启用"}</span>
-                          <button className="sys-btn sys-btn--default sys-btn--sm" onClick={()=> grant ? void updateTenantCapabilityGrant(grant.id, granted ? "disabled" : "enabled") : void grantCapabilityToTenant(cap.id)}>
+                          <span className={`sys-status sys-status--${activeCapability ? "active" : "inactive"}`}><span className="sys-status-dot"/>{activeCapability ? "全局已启用" : "草稿不可分配"}</span>
+                          <span className={`sys-status sys-status--${granted ? "active" : "inactive"}`}><span className="sys-status-dot"/>{granted ? "租户已启用" : "租户未启用"}</span>
+                          <button className="sys-btn sys-btn--default sys-btn--sm" disabled={!activeCapability && !granted} onClick={()=> grant ? void updateTenantCapabilityGrant(grant.id, granted ? "disabled" : "enabled") : void grantCapabilityToTenant(cap)}>
                             {granted ? "取消启用" : "启用"}
                           </button>
                         </div>

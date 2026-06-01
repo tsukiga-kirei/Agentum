@@ -647,7 +647,7 @@ export function TenantManagementPage() {
       messageApi.success(editingPageGrantGroup ? "页签分配已更新" : "页签分配已新增");
     } catch (error) {
       console.warn("[tenant-management] 页签分配保存失败", getTenantManagementErrorContext(error, user.tenantId, { principalId: pageGrantPrincipalKeys.join(","), pageKey: selectedPageKeys.join(",") }));
-      setAuthorizationError(error instanceof AgentumApiError ? error.message : "页签分配保存失败，请稍后重试");
+      messageApi.error(error instanceof AgentumApiError ? error.message : "页签分配保存失败，请稍后重试");
     } finally {
       setPageGrantSubmitting(false);
     }
@@ -661,7 +661,7 @@ export function TenantManagementPage() {
       messageApi.success("页签分配已删除");
     } catch (error) {
       console.warn("[tenant-management] 页签分配删除失败", getTenantManagementErrorContext(error, user.tenantId, { grantId: group.id }));
-      setAuthorizationError(error instanceof AgentumApiError ? error.message : "页签分配删除失败，请稍后重试");
+      messageApi.error(error instanceof AgentumApiError ? error.message : "页签分配删除失败，请稍后重试");
     }
   }
 
@@ -720,7 +720,7 @@ export function TenantManagementPage() {
       messageApi.success(editingGrantGroup ? "能力分配已更新" : "能力分配已新增");
     } catch (error) {
       console.warn("[tenant-management] 能力分配保存失败", getTenantManagementErrorContext(error, user.tenantId, { principalId: grantPrincipalKeys.join(","), resourceId: grantResourceIds.join(",") }));
-      setAuthorizationError(error instanceof AgentumApiError ? error.message : "能力分配保存失败，请稍后重试");
+      messageApi.error(error instanceof AgentumApiError ? error.message : "能力分配保存失败，请稍后重试");
     } finally {
       setGrantSubmitting(false);
     }
@@ -734,7 +734,7 @@ export function TenantManagementPage() {
       messageApi.success("能力分配已删除");
     } catch (error) {
       console.warn("[tenant-management] 能力分配删除失败", getTenantManagementErrorContext(error, user.tenantId, { grantId: group.id }));
-      setAuthorizationError(error instanceof AgentumApiError ? error.message : "能力分配删除失败，请稍后重试");
+      messageApi.error(error instanceof AgentumApiError ? error.message : "能力分配删除失败，请稍后重试");
     }
   }
 

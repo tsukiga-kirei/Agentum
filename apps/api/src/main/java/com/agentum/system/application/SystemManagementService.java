@@ -433,11 +433,22 @@ public class SystemManagementService {
                 log.warn("系统管理授权失败：能力不存在 capabilityId={} requestId={}", request.capabilityId(), RequestIds.current());
                 return new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_CAPABILITY_NOT_FOUND", "系统能力不存在");
             });
+        String targetStatus = request.status() == null ? "enabled" : request.status().trim();
+        if ("enabled".equals(targetStatus) && !"active".equals(capability.getStatus())) {
+            log.warn(
+                "系统管理授权失败：草稿能力不能进入租户可用能力池 tenantId={} capabilityId={} capabilityStatus={} requestId={}",
+                tenant.getId(),
+                capability.getId(),
+                capability.getStatus(),
+                RequestIds.current()
+            );
+            throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_CAPABILITY_NOT_ACTIVE", "全局能力仍是草稿，请先将能力状态改为启用");
+        }
 
         TenantCapabilityGrantEntity existing = tenantCapabilityGrantRepository.findByTenantIdAndCapabilityId(tenant.getId(), capability.getId()).orElse(null);
         if (existing != null) {
             // 单租户能力配置是开关型配置。已存在记录时允许从 disabled 重新启用，避免前端取消后无法再次启用。
-            existing.updateStatus(request.status() == null ? "enabled" : request.status().trim());
+            existing.updateStatus(targetStatus);
             tenantCapabilityGrantRepository.save(existing);
             log.info("系统管理更新租户能力配置成功 grantId={} tenantId={} capabilityId={} requestId={}", existing.getId(), tenant.getId(), capability.getId(), RequestIds.current());
             return toGrantRow(existing);
@@ -446,7 +457,7 @@ public class SystemManagementService {
         TenantCapabilityGrantEntity entity = TenantCapabilityGrantEntity.create(
             tenant.getId(),
             capability.getId(),
-            request.status() == null ? null : request.status().trim(),
+            targetStatus,
             clock.instant()
         );
         tenantCapabilityGrantRepository.save(entity);
@@ -472,6 +483,20 @@ public class SystemManagementService {
                 log.warn("系统管理更新租户能力配置失败：配置不存在 grantId={} requestId={}", grantId, RequestIds.current());
                 return new ApiException(HttpStatus.NOT_FOUND, "SYSTEM_GRANT_NOT_FOUND", "租户能力配置不存在");
             });
+        if ("enabled".equals(status)) {
+            SystemCapabilityEntity capability = systemCapabilityRepository.findById(entity.getCapabilityId())
+                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_CAPABILITY_NOT_FOUND", "系统能力不存在"));
+            if (!"active".equals(capability.getStatus())) {
+                log.warn(
+                    "系统管理更新租户能力配置失败：草稿能力不能启用 grantId={} capabilityId={} capabilityStatus={} requestId={}",
+                    grantId,
+                    capability.getId(),
+                    capability.getStatus(),
+                    RequestIds.current()
+                );
+                throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_CAPABILITY_NOT_ACTIVE", "全局能力仍是草稿，请先将能力状态改为启用");
+            }
+        }
         entity.updateStatus(status);
         tenantCapabilityGrantRepository.save(entity);
         log.info("系统管理更新租户能力配置状态成功 grantId={} status={} requestId={}", grantId, status, RequestIds.current());

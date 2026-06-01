@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Select } from "antd";
+import { Select, message } from "antd";
 import {
   AlertTriangle,
   ArrowDown,
@@ -195,7 +195,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState("");
-  const [saveFeedback, setSaveFeedback] = useState<{ tone: "success" | "error" | "info"; message: string } | null>(null);
+  const [messageApi, messageContextHolder] = message.useMessage();
   const [designerCatalog, setDesignerCatalog] = useState<WorkflowDesignerCatalog | null>(null);
   const [capabilityOptions, setCapabilityOptions] = useState<WorkflowCapabilityOption[]>([]);
   const [capabilitiesLoading, setCapabilitiesLoading] = useState(false);
@@ -215,7 +215,6 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
     let cancelled = false;
     setLoading(true);
     setLoadError("");
-    setSaveFeedback(null);
 
     // 设计态模板由后端统一下发；前端加载草稿后只负责映射成可编辑状态。
     void Promise.all([
@@ -336,11 +335,11 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
 
   const persistGraph = useCallback(async (nextNodes: WorkflowEditorNode[], nextEdges: WorkflowEditorEdge[]) => {
     if (!token || !user?.tenantId) {
-      setSaveFeedback({ tone: "error", message: "当前账号缺少租户上下文，无法保存工作流草稿" });
+      messageApi.error("当前账号缺少租户上下文，无法保存工作流草稿");
       return;
     }
     if (!designerCatalog) {
-      setSaveFeedback({ tone: "error", message: "流程设计模板尚未加载完成，暂时不能保存工作流草稿" });
+      messageApi.error("流程设计模板尚未加载完成，暂时不能保存工作流草稿");
       return;
     }
     // 防止同一渲染帧内双击保存触发并发请求
@@ -350,7 +349,6 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
     saveLockRef.current = true;
 
     setSaving(true);
-    setSaveFeedback(null);
 
     try {
       const nextVariables = buildWorkflowVariables(nextNodes, designerCatalog.variableMetadata);
@@ -364,20 +362,20 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
       );
       applyPersistedDetail(detail, designerCatalog, setNodes, setEdges, setSelectedNodeId);
       setDeclaredVariables(toWorkflowVariables(detail.variables, detail.nodes.map(toEditorNode)));
-      setSaveFeedback({ tone: "success", message: "流程设计已保存" });
+      messageApi.success("流程设计已保存");
       onDraftSaved(detail.draft);
     } catch (error) {
       console.warn("[workflow] 工作流草稿保存失败", getWorkflowEditorErrorContext(error, user.tenantId, workflow.id));
-      setSaveFeedback({ tone: "error", message: error instanceof AgentumApiError ? error.message : "保存工作流草稿失败" });
+      messageApi.error(error instanceof AgentumApiError ? error.message : "保存工作流草稿失败");
     } finally {
       setSaving(false);
       saveLockRef.current = false;
     }
-  }, [designerCatalog, onDraftSaved, token, user?.tenantId, workflow.id]);
+  }, [designerCatalog, messageApi, onDraftSaved, token, user?.tenantId, workflow.id]);
 
   function commitVisibleNodes(nextVisibleNodes: WorkflowEditorNode[], nextSelectedNodeId = selectedNodeId) {
     if (!designerCatalog) {
-      setSaveFeedback({ tone: "error", message: "流程设计模板尚未加载完成，暂时不能更新编排" });
+      messageApi.error("流程设计模板尚未加载完成，暂时不能更新编排");
       return;
     }
     const systemTrigger = nodes.find((node) => node.id === SYSTEM_TRIGGER_ID) ?? createNodeFromTemplate(designerCatalog.systemTrigger, 0, []);
@@ -388,17 +386,17 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
     setEdges(nextEdges);
     setDeclaredVariables(buildWorkflowVariables(nextNodes, designerCatalog.variableMetadata));
     setSelectedNodeId(nextSelectedNodeId);
-    setSaveFeedback({ tone: "info", message: "本地编排已更新，保存后写入草稿。" });
+    messageApi.info("本地编排已更新，保存后写入草稿");
   }
 
   function handleAddBrick(brickType: VisibleWorkflowBrickType) {
     if (!designerCatalog) {
-      setSaveFeedback({ tone: "error", message: "流程设计模板尚未加载完成，暂时不能添加积木" });
+      messageApi.error("流程设计模板尚未加载完成，暂时不能添加积木");
       return;
     }
     const template = designerCatalog.brickTemplates.find((item) => item.brickType === brickType);
     if (!template) {
-      setSaveFeedback({ tone: "error", message: "当前积木模板不存在，请刷新后重试" });
+      messageApi.error("当前积木模板不存在，请刷新后重试");
       return;
     }
     const previousOutputs = visibleNodes.length > 0 ? visibleNodes[visibleNodes.length - 1].data.outputVariables : [];
@@ -470,7 +468,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
 
   async function handleSaveAll() {
     if (!designerCatalog) {
-      setSaveFeedback({ tone: "error", message: "流程设计模板尚未加载完成，暂时不能保存流程" });
+      messageApi.error("流程设计模板尚未加载完成，暂时不能保存流程");
       return;
     }
     const normalizedVisibleNodes = normalizeVisibleNodeOrder(visibleNodes);
@@ -517,6 +515,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
 
   return (
     <div className="flex h-[calc(100vh-var(--header-height))] flex-col bg-[var(--color-bg-layout)]">
+      {messageContextHolder}
       <div className="workflow-editor-toolbar flex flex-wrap items-center gap-3 border-b border-[var(--color-border-light)] px-4 py-2">
         <button type="button" onClick={onBack} className="agent-button h-7 px-2 text-xs">
           <ChevronLeft className="h-3.5 w-3.5" aria-hidden="true" />
@@ -527,7 +526,6 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
         </div>
         <ToolbarMetric icon={ListChecks} label="积木" value={visibleNodes.length.toString()} />
         <ToolbarMetric icon={Settings2} label="待配" value={incompleteNodes.length.toString()} tone={incompleteNodes.length > 0 ? "warning" : "default"} />
-        {saveFeedback ? <SaveFeedback feedback={saveFeedback} /> : null}
         <label className="relative block w-52">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--color-text-tertiary)]" aria-hidden="true" />
           <span className="sr-only">搜索积木</span>
@@ -1914,22 +1912,6 @@ function OverviewMetric({ icon: Icon, label, value }: { icon: WorkflowIcon; labe
         <p className="mt-1 text-lg font-semibold text-[var(--color-text-primary)]">{value}</p>
       </span>
     </div>
-  );
-}
-
-function SaveFeedback({ feedback }: { feedback: { tone: "success" | "error" | "info"; message: string } }) {
-  return (
-    <span
-      className={`rounded px-2 py-1 text-xs font-medium ${
-        feedback.tone === "success"
-          ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
-          : feedback.tone === "error"
-            ? "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300"
-            : "border border-[var(--color-border-light)] bg-[var(--color-bg-card)] text-[var(--color-text-secondary)] shadow-[var(--shadow-xs)]"
-      }`}
-    >
-      {feedback.message}
-    </span>
   );
 }
 
