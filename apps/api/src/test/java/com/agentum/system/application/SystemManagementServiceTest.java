@@ -283,6 +283,9 @@ class SystemManagementServiceTest {
         SystemManagementApi.ModelProviderTestResult result = service.testModelProvider(providerId);
 
         assertThat(result.status()).isEqualTo("success");
+        assertThat(result.connectivityStatus()).isEqualTo("online");
+        assertThat(provider.getConnectivityStatus()).isEqualTo("online");
+        verify(modelProviderRepository).save(provider);
         org.mockito.ArgumentCaptor<ModelProviderTestRequest> captor = org.mockito.ArgumentCaptor.forClass(ModelProviderTestRequest.class);
         verify(connectionTester).test(captor.capture());
         assertThat(captor.getValue().apiKey()).isNull();
@@ -326,6 +329,8 @@ class SystemManagementServiceTest {
         SystemManagementApi.ModelProviderTestResult result = service.testModelProvider(providerId);
 
         assertThat(result.status()).isEqualTo("success");
+        assertThat(result.connectivityStatus()).isEqualTo("online");
+        verify(modelProviderRepository).save(provider);
         org.mockito.ArgumentCaptor<ModelProviderTestRequest> captor = org.mockito.ArgumentCaptor.forClass(ModelProviderTestRequest.class);
         verify(connectionTester).test(captor.capture());
         assertThat(captor.getValue().apiKey()).isEqualTo("sk-test-secret");

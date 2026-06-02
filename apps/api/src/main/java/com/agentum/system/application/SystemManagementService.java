@@ -38,6 +38,7 @@ import com.agentum.delivery.application.EmailDeliveryConnectionTester;
 import com.agentum.delivery.application.EmailDeliveryTestOutcome;
 import com.agentum.delivery.application.EmailDeliveryTestRequest;
 import java.time.Clock;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -291,7 +292,7 @@ public class SystemManagementService {
         return toModelRow(entity);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public SystemManagementApi.ModelProviderTestResult testModelProvider(UUID providerId) {
         ModelProviderEntity provider = modelProviderRepository.findById(providerId)
             .orElseThrow(() -> {
@@ -309,7 +310,18 @@ public class SystemManagementService {
                 return new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_MODEL_PROVIDER_TYPE_INVALID", "模型供应商类型不存在或已停用");
             });
         if (stringValue(provider.getBaseUrl()) == null) {
-            return new SystemManagementApi.ModelProviderTestResult(provider.getId(), "failed", "模型供应商基址 URL 未配置", List.of(), 0, clock.instant());
+            Instant checkedAt = clock.instant();
+            provider.recordConnectivityCheck("offline", checkedAt, checkedAt);
+            modelProviderRepository.save(provider);
+            return new SystemManagementApi.ModelProviderTestResult(
+                provider.getId(),
+                "failed",
+                "模型供应商基址 URL 未配置",
+                List.of(),
+                0,
+                checkedAt,
+                provider.getConnectivityStatus()
+            );
         }
         String encryptedApiKey = provider.getEncryptedApiKey();
 
@@ -324,14 +336,25 @@ public class SystemManagementService {
             providerType.getAuthScheme(),
             encryptedApiKey == null ? null : fieldEncryptionService.decrypt(encryptedApiKey)
         ));
-        log.info("系统管理测试模型供应商完成 providerId={} type={} status={} requestId={}", provider.getId(), provider.getProviderType(), outcome.status(), RequestIds.current());
+        Instant checkedAt = clock.instant();
+        provider.recordConnectivityCheck(mapTestStatusToConnectivity(outcome.status()), checkedAt, checkedAt);
+        modelProviderRepository.save(provider);
+        log.info(
+            "系统管理测试模型供应商完成 providerId={} type={} status={} connectivityStatus={} requestId={}",
+            provider.getId(),
+            provider.getProviderType(),
+            outcome.status(),
+            provider.getConnectivityStatus(),
+            RequestIds.current()
+        );
         return new SystemManagementApi.ModelProviderTestResult(
             provider.getId(),
             outcome.status(),
             outcome.summary(),
             outcome.availableModels(),
             outcome.latencyMs(),
-            clock.instant()
+            checkedAt,
+            provider.getConnectivityStatus()
         );
     }
 
@@ -462,7 +485,7 @@ public class SystemManagementService {
         );
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public SystemManagementApi.CapabilityTestResult testCapability(UUID capabilityId) {
         SystemCapabilityEntity capability = systemCapabilityRepository.findById(capabilityId)
             .orElseThrow(() -> {
@@ -477,17 +500,28 @@ public class SystemManagementService {
             case "skill" -> testSkillConfig(capability);
             case "prompt_template" -> testPromptTemplateConfig(capability);
             case "delivery" -> testDeliveryConfig(capability);
-            default -> new SystemManagementApi.CapabilityTestResult(capability.getId(), "failed", "能力类型不在平台全局能力范围", List.of(), clock.instant());
+            default -> capabilityProbeResult(capability.getId(), "failed", "能力类型不在平台全局能力范围", List.of(), clock.instant());
         };
 
+        Instant checkedAt = clock.instant();
+        capability.recordConnectivityCheck(mapTestStatusToConnectivity(result.status()), checkedAt, checkedAt);
+        systemCapabilityRepository.save(capability);
         log.info(
-            "系统管理测试全局能力完成 capabilityId={} type={} status={} requestId={}",
+            "系统管理测试全局能力完成 capabilityId={} type={} status={} connectivityStatus={} requestId={}",
             capability.getId(),
             capability.getCapabilityType(),
             result.status(),
+            capability.getConnectivityStatus(),
             RequestIds.current()
         );
-        return result;
+        return new SystemManagementApi.CapabilityTestResult(
+            result.capabilityId(),
+            result.status(),
+            result.summary(),
+            result.tools(),
+            checkedAt,
+            capability.getConnectivityStatus()
+        );
     }
 
     @Transactional(readOnly = true)
@@ -712,11 +746,32 @@ public class SystemManagementService {
         );
     }
 
+    private static String mapTestStatusToConnectivity(String testStatus) {
+        return "success".equals(testStatus) ? "online" : "offline";
+    }
+
+    private static SystemManagementApi.CapabilityTestResult capabilityProbeResult(
+        UUID capabilityId,
+        String status,
+        String summary,
+        List<SystemManagementApi.CapabilityToolRow> tools,
+        Instant checkedAt
+    ) {
+        return new SystemManagementApi.CapabilityTestResult(
+            capabilityId,
+            status,
+            summary,
+            tools,
+            checkedAt,
+            mapTestStatusToConnectivity(status)
+        );
+    }
+
     private SystemManagementApi.CapabilityTestResult testMcpConfig(SystemCapabilityEntity capability) {
         Map<String, Object> config = capability.getConfig();
         String sseUrl = stringValue(config.get("sseUrl"));
         if (sseUrl == null) {
-            return new SystemManagementApi.CapabilityTestResult(capability.getId(), "failed", "SSE 类型 MCP 必须配置 sseUrl", List.of(), clock.instant());
+            return capabilityProbeResult(capability.getId(), "failed", "SSE 类型 MCP 必须配置 sseUrl", List.of(), clock.instant());
         }
 
         // 系统管理阶段按 MCP 标准协议探测：SSE 建连后执行 initialize 与 tools/list，避免依赖各服务自定义 REST 预览接口。
@@ -724,13 +779,7 @@ public class SystemManagementService {
         List<SystemManagementApi.CapabilityToolRow> tools = outcome.tools().stream()
             .map(this::toCapabilityToolRow)
             .toList();
-        return new SystemManagementApi.CapabilityTestResult(
-            capability.getId(),
-            outcome.status(),
-            outcome.summary(),
-            tools,
-            clock.instant()
-        );
+        return capabilityProbeResult(capability.getId(), outcome.status(), outcome.summary(), tools, clock.instant());
     }
 
     private SystemManagementApi.CapabilityToolRow toCapabilityToolRow(McpToolDescriptor tool) {
@@ -747,13 +796,7 @@ public class SystemManagementService {
         List<SystemManagementApi.CapabilityToolRow> tools = outcome.tools().stream()
             .map(tool -> new SystemManagementApi.CapabilityToolRow(tool.name(), tool.description(), tool.inputSchema()))
             .toList();
-        return new SystemManagementApi.CapabilityTestResult(
-            capability.getId(),
-            outcome.status(),
-            outcome.summary(),
-            tools,
-            clock.instant()
-        );
+        return capabilityProbeResult(capability.getId(), outcome.status(), outcome.summary(), tools, clock.instant());
     }
 
     private SystemManagementApi.CapabilityTestResult testDeliveryConfig(SystemCapabilityEntity capability) {
@@ -772,10 +815,10 @@ public class SystemManagementService {
                     )
                 )
             ));
-            return new SystemManagementApi.CapabilityTestResult(capability.getId(), "success", "自定义交付适配器配置检查通过，后续按统一协议调用并写入审计", tools, clock.instant());
+            return capabilityProbeResult(capability.getId(), "success", "自定义交付适配器配置检查通过，后续按统一协议调用并写入审计", tools, clock.instant());
         }
         if (!"email".equals(stringValue(config.get("deliveryChannel")))) {
-            return new SystemManagementApi.CapabilityTestResult(capability.getId(), "failed", "系统内置交付当前只支持邮箱通道", List.of(), clock.instant());
+            return capabilityProbeResult(capability.getId(), "failed", "系统内置交付当前只支持邮箱通道", List.of(), clock.instant());
         }
         EmailDeliveryTestOutcome outcome = emailDeliveryConnectionTester.test(
             new EmailDeliveryTestRequest(capability.getId(), capability.getConfig())
@@ -794,7 +837,7 @@ public class SystemManagementService {
                 )
             )
         ));
-        return new SystemManagementApi.CapabilityTestResult(
+        return capabilityProbeResult(
             capability.getId(),
             outcome.status(),
             outcome.summary(),
@@ -805,9 +848,9 @@ public class SystemManagementService {
 
     private SystemManagementApi.CapabilityTestResult testPromptTemplateConfig(SystemCapabilityEntity capability) {
         if (stringValue(capability.getConfig().get("promptContent")) == null) {
-            return new SystemManagementApi.CapabilityTestResult(capability.getId(), "failed", "请填写提示词内容，便于后续模板变量解析与渲染测试", List.of(), clock.instant());
+            return capabilityProbeResult(capability.getId(), "failed", "请填写提示词内容，便于后续模板变量解析与渲染测试", List.of(), clock.instant());
         }
-        return new SystemManagementApi.CapabilityTestResult(
+        return capabilityProbeResult(
             capability.getId(),
             "success",
             "提示词模板配置检查通过，后续接入模板变量解析与渲染测试",
@@ -962,7 +1005,9 @@ public class SystemManagementService {
             entity.getBaseUrl(),
             entity.getDefaultModel(),
             entity.hasCredentialRef(),
-            entity.getStatus()
+            entity.getStatus(),
+            entity.getConnectivityStatus(),
+            entity.getConnectivityCheckedAt()
         );
     }
 
@@ -987,7 +1032,9 @@ public class SystemManagementService {
             entity.getDescription(),
             entity.getRiskLevel(),
             entity.getStatus(),
-            publicCapabilityConfig(entity.getCapabilityType(), entity.getConfig())
+            publicCapabilityConfig(entity.getCapabilityType(), entity.getConfig()),
+            entity.getConnectivityStatus(),
+            entity.getConnectivityCheckedAt()
         );
     }
 

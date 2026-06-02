@@ -170,6 +170,38 @@ function formatCapabilityType(t: string): string {
   return found ? found.label : t;
 }
 
+type ReachabilityStatus = "online" | "offline";
+
+/** 提示词模板为静态配置，无需连通性探测。 */
+function capabilitySupportsConnectivityTest(capabilityType: string): boolean {
+  return capabilityType !== "prompt_template";
+}
+
+function getCapabilityTestDetailTitle(capabilityType: string): string {
+  if (capabilityType === "mcp") return "可用工具";
+  if (capabilityType === "skill") return "Skill 校验项";
+  if (capabilityType === "delivery") return "交付能力";
+  return "探测详情";
+}
+
+function resolveConnectivityStatus(status?: string | null): ReachabilityStatus {
+  return status === "online" ? "online" : "offline";
+}
+
+function CardStatusStack({ children }: { children: React.ReactNode }) {
+  return <div className="sys-card-status-stack">{children}</div>;
+}
+
+function ReachabilityBadge({ status }: { status: ReachabilityStatus }) {
+  const online = status === "online";
+  return (
+    <div className={`sys-status sys-status--${online ? "active" : "inactive"}`}>
+      <span className="sys-status-dot" />
+      {online ? "在线" : "离线"}
+    </div>
+  );
+}
+
 function RiskTag({ level }: { level: string }) {
   const label = `${formatRisk(level)}风险`;
   const cls = level === "high" ? "sys-info-tag--danger" : level === "medium" ? "sys-info-tag--warn" : "sys-info-tag--success";
@@ -584,7 +616,8 @@ export function SystemManagementPage() {
         status: d.status?.trim() || "draft",
       };
       if (editingModelProvider) {
-        await systemApi.updateModelProvider(token, editingModelProvider.id, request);
+        const updated = await systemApi.updateModelProvider(token, editingModelProvider.id, request);
+        setEditingModelProvider(updated);
         messageApi.success("已更新模型供应商");
       } else {
         await systemApi.createModelProvider(token, request);
@@ -677,7 +710,8 @@ export function SystemManagementPage() {
         config,
       };
       if (editingCapability) {
-        await systemApi.updateCapability(token, editingCapability.id, baseRequest);
+        const updated = await systemApi.updateCapability(token, editingCapability.id, baseRequest);
+        setEditingCapability(updated);
         messageApi.success("已更新系统能力");
       } else {
         await systemApi.createCapability(token, baseRequest);
@@ -699,6 +733,12 @@ export function SystemManagementPage() {
     try {
       const result = await systemApi.testCapability(token, capId);
       setCapabilityTestResult(result);
+      const mergeCapabilityConnectivity = (items: SystemCapabilityRow[]) =>
+        items.map((item) => (item.id === capId ? { ...item, connectivityStatus: result.connectivityStatus } : item));
+      setCapabilities(mergeCapabilityConnectivity);
+      setPreviewCapabilities(mergeCapabilityConnectivity);
+      setConfigCapabilities(mergeCapabilityConnectivity);
+      setEditingCapability((prev) => (prev?.id === capId ? { ...prev, connectivityStatus: result.connectivityStatus } : prev));
       const content = result.status === "success" ? result.summary : `测试未通过：${result.summary}`;
       if (result.status === "success") messageApi.success({ content, key: `test_conn_${capId}` });
       else messageApi.warning({ content, key: `test_conn_${capId}` });
@@ -717,6 +757,11 @@ export function SystemManagementPage() {
     messageApi.loading({ content: "正在测试模型供应商连接...", key: `test_model_${target.id}` });
     try {
       const result = await systemApi.testModelProvider(token, target.id);
+      const mergeProviderConnectivity = (items: ModelProviderRow[]) =>
+        items.map((item) => (item.id === target.id ? { ...item, connectivityStatus: result.connectivityStatus } : item));
+      setModelProviders(mergeProviderConnectivity);
+      setPreviewModelProviders(mergeProviderConnectivity);
+      setEditingModelProvider((prev) => (prev?.id === target.id ? { ...prev, connectivityStatus: result.connectivityStatus } : prev));
       const modelPreview = result.availableModels.length > 0 ? `；模型：${result.availableModels.slice(0, 3).join("、")}` : "";
       const content = `${result.summary}${modelPreview}`;
       if (result.status === "success") {
@@ -862,54 +907,56 @@ export function SystemManagementPage() {
           </div>
         </div>
       ) : null}
-      {capabilityTestResult ? (
+      {capabilityTestResult ? (() => {
+        const testedCapability = capabilities.find((c) => c.id === capabilityTestResult.capabilityId)
+          ?? previewCapabilities.find((c) => c.id === capabilityTestResult.capabilityId);
+        const testedCapabilityType = testedCapability?.capabilityType ?? "";
+        const detailTitle = getCapabilityTestDetailTitle(testedCapabilityType);
+        const reachability = resolveConnectivityStatus(capabilityTestResult.connectivityStatus);
+        return (
         <div className="sys-modal-mask" onClick={() => setCapabilityTestResult(null)}>
-          <div className="sys-modal" style={{ maxWidth: 720 }} onClick={(event) => event.stopPropagation()}>
+          <div className="sys-modal" style={{ maxWidth: 640 }} onClick={(event) => event.stopPropagation()}>
             <div className="sys-modal-header">
-              <span className="sys-modal-title">能力连通性测试结果</span>
+              <span className="sys-modal-title">连通性测试结果</span>
               <button className="sys-modal-close" onClick={() => setCapabilityTestResult(null)}><X size={18}/></button>
             </div>
             <div className="sys-modal-body">
               <div className="sys-config-group">
                 <div className="sys-form-row">
-                  <span className="sys-form-label">测试状态</span>
-                  <span className={`sys-status sys-status--${capabilityTestResult.status === "success" ? "active" : "inactive"}`}>
-                    <span className="sys-status-dot" />{capabilityTestResult.status === "success" ? "连接成功" : "连接失败"}
-                  </span>
+                  <span className="sys-form-label">连通状态</span>
+                  <ReachabilityBadge status={reachability} />
                 </div>
                 <div className="sys-form-row">
                   <span className="sys-form-label">结果摘要</span>
                   <span className="sys-form-value">{capabilityTestResult.summary}</span>
                 </div>
               </div>
-              <div className="sys-section-header" style={{ marginTop: 18 }}><Boxes size={18}/> 可用工具能力</div>
-              {capabilityTestResult.tools.length === 0 ? (
-                <Empty description="暂无工具清单" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-              ) : (
-                <div className="sys-config-group">
-                  {capabilityTestResult.tools.map((tool) => (
-                    <div key={tool.name} className="sys-preview-item" style={{ alignItems: "flex-start" }}>
-                      <div className="sys-preview-item-left" style={{ minWidth: 0 }}>
-                        <div className="sys-preview-item-icon sys-card-avatar--cap"><Boxes size={16}/></div>
-                        <div style={{ minWidth: 0 }}>
-                          <div className="sys-preview-item-name">{tool.name}</div>
-                          <div className="sys-preview-item-sub">{tool.description || "未提供说明"}</div>
-                          <pre className="mt-2 max-h-40 overflow-auto rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-3 text-xs text-[var(--color-text-secondary)]">
-                            {JSON.stringify(tool.inputSchema, null, 2)}
-                          </pre>
+              {capabilityTestResult.tools.length > 0 ? (
+                <>
+                  <div className="sys-section-header" style={{ marginTop: 18 }}><Boxes size={18}/> {detailTitle}</div>
+                  <div className="sys-config-group">
+                    {capabilityTestResult.tools.map((tool) => (
+                      <div key={tool.name} className="sys-preview-item">
+                        <div className="sys-preview-item-left" style={{ minWidth: 0 }}>
+                          <div className="sys-preview-item-icon sys-card-avatar--cap"><Boxes size={16}/></div>
+                          <div style={{ minWidth: 0 }}>
+                            <div className="sys-preview-item-name">{tool.name}</div>
+                            <div className="sys-preview-item-sub">{tool.description || "未提供说明"}</div>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+                    ))}
+                  </div>
+                </>
+              ) : null}
             </div>
             <div className="sys-modal-footer">
               <button className="sys-btn sys-btn--default" onClick={() => setCapabilityTestResult(null)}><X size={14}/> 关闭</button>
             </div>
           </div>
         </div>
-      ) : null}
+        );
+      })() : null}
       <div className="min-h-[calc(100vh-4rem)] bg-[var(--color-bg-page)] pb-10 pt-1">
         <div className="mx-auto min-w-0 max-w-[1400px] px-5 lg:px-6">
           {/* 页头 */}
@@ -1001,7 +1048,10 @@ export function SystemManagementPage() {
                             <div className="sys-preview-item-icon sys-card-avatar--model"><DatabaseZap size={16}/></div>
                             <div><div className="sys-preview-item-name">{m.name}</div><div className="sys-preview-item-sub">{m.providerType} · {m.defaultModel || "未配置默认模型"}</div></div>
                           </div>
-                          <div className={`sys-status sys-status--${m.status==='active'?'active':'inactive'}`}><span className="sys-status-dot"/>{formatModelStatus(m.status)}</div>
+                          <CardStatusStack>
+                            <div className={`sys-status sys-status--${m.status==='active'?'active':'inactive'}`}><span className="sys-status-dot"/>{formatModelStatus(m.status)}</div>
+                            <ReachabilityBadge status={resolveConnectivityStatus(m.connectivityStatus)} />
+                          </CardStatusStack>
                         </div>
                       ))}
                       {(summary?.modelProviderTotal ?? 0)>4&&<button className="sys-btn sys-btn--link" onClick={()=>setSection("models")} style={{marginTop:8}}>查看全部 {summary?.modelProviderTotal ?? 0} 个供应商 →</button>}
@@ -1088,7 +1138,10 @@ export function SystemManagementPage() {
                         <div className="sys-card-header">
                           <div className="sys-card-avatar sys-card-avatar--model"><DatabaseZap size={22}/></div>
                           <div className="sys-card-info"><div className="sys-card-name">{m.name}</div><div className="sys-card-code">{m.providerType}</div></div>
-                          <div className={`sys-status sys-status--${m.status==='active'?'active':'inactive'}`}><span className="sys-status-dot"/>{formatModelStatus(m.status)}</div>
+                          <CardStatusStack>
+                            <div className={`sys-status sys-status--${m.status==='active'?'active':'inactive'}`}><span className="sys-status-dot"/>{formatModelStatus(m.status)}</div>
+                            <ReachabilityBadge status={resolveConnectivityStatus(m.connectivityStatus)} />
+                          </CardStatusStack>
                         </div>
                         <div className="sys-card-meta">
                           <div className="sys-meta-item"><span className="sys-meta-label">基址</span><span className="sys-meta-value">{m.baseUrl||"未配置"}</span></div>
@@ -1132,7 +1185,14 @@ export function SystemManagementPage() {
                         <div className="sys-card-header">
                           <div className="sys-card-avatar sys-card-avatar--cap"><Boxes size={22}/></div>
                           <div className="sys-card-info"><div className="sys-card-name">{c.name}</div><div className="sys-card-code">{c.code}</div></div>
-                          <div className={`sys-status sys-status--${c.status==='active'?'active':'inactive'}`}><span className="sys-status-dot"/>{c.status==='active'?'启用':'草稿'}</div>
+                          <CardStatusStack>
+                            <div className={`sys-status sys-status--${c.status==='active'?'active':'inactive'}`}><span className="sys-status-dot"/>{c.status==='active'?'启用':'草稿'}</div>
+                            {capabilitySupportsConnectivityTest(c.capabilityType) ? (
+                              <ReachabilityBadge status={resolveConnectivityStatus(c.connectivityStatus)} />
+                            ) : (
+                              <span className="sys-card-status-placeholder" aria-hidden="true" />
+                            )}
+                          </CardStatusStack>
                         </div>
                         <div className="sys-info-tags">
                           <span className="sys-info-tag sys-info-tag--primary">{formatCapabilityType(c.capabilityType)}</span>
@@ -1142,7 +1202,9 @@ export function SystemManagementPage() {
                         <div className="sys-card-footer">
                           <span className="sys-card-footer-time"><ShieldCheck size={12}/> {c.code}</span>
                           <div className="sys-card-footer-actions" onClick={e=>e.stopPropagation()}>
-                            <button className="sys-btn sys-btn--default sys-btn--sm" onClick={()=>testCapabilityConnection(c.id)}><PlayCircle size={14}/> 测试连通性</button>
+                            {capabilitySupportsConnectivityTest(c.capabilityType) ? (
+                              <button className="sys-btn sys-btn--default sys-btn--sm" onClick={()=>void testCapabilityConnection(c.id)}><PlayCircle size={14}/> 测试连通性</button>
+                            ) : null}
                             <button className="sys-btn sys-btn--text sys-btn--sm" onClick={()=>openCapabilityModal(c)}><Edit size={14}/> 编辑</button>
                             <button className="sys-btn sys-btn--text sys-btn--sm sys-btn--danger" onClick={()=>confirmDeleteCapability(c)}><Trash2 size={14}/> 删除</button>
                           </div>
@@ -1389,6 +1451,15 @@ export function SystemManagementPage() {
           <div className="sys-field"><label className="sys-field-label sys-field-label--required">默认模型</label><div className="sys-field-input-wrap"><DatabaseZap size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如 qwen-max" maxLength={160} defaultValue={modelRef.current.defaultModel || ""} onChange={e=>{modelRef.current.defaultModel=e.target.value;}}/></div></div>
           <div className="sys-field"><label className="sys-field-label">API Key</label><div className="sys-field-input-wrap"><KeyRound size={16} className="sys-field-prefix"/><input className="sys-field-input" type="password" placeholder={editingModelProvider?.apiKeyConfigured ? "已配置，留空则保持不变" : "部分供应商需要填写"} maxLength={2000} onChange={e=>{modelRef.current.apiKey=e.target.value;}}/></div><div className="sys-field-hint">密钥由后端加密保存，不会在列表、日志或响应中回显；后续可替换为凭证托管。</div></div>
           <div className="sys-field"><label className="sys-field-label">状态</label><SysSelect icon={Check} placeholder="请选择状态" defaultValue={modelRef.current.status || ""} options={[{value:"draft",label:"草稿"},{value:"active",label:"可用"}]} onChange={v=>{modelRef.current.status=v;}}/></div>
+          {editingModelProvider ? (
+            <div className="sys-field">
+              <label className="sys-field-label">连通状态</label>
+              <div className="sys-field-static">
+                <ReachabilityBadge status={resolveConnectivityStatus(editingModelProvider.connectivityStatus)} />
+              </div>
+              <div className="sys-field-hint">保存配置或修改密钥后需重新测试连接</div>
+            </div>
+          ) : null}
         </div>
         <div className="sys-drawer-footer">
           <div className="sys-drawer-footer-right">
@@ -1430,19 +1501,23 @@ export function SystemManagementPage() {
             <label className="sys-field-label">说明</label>
             <textarea className="sys-field-textarea" placeholder="说明这项能力的业务用途、输入约束和后续接入方向" maxLength={1000} defaultValue={capRef.current.description || ""} onChange={e=>{capRef.current.description=e.target.value;}} />
           </div>
-          {selectedCapabilityType === "mcp" && (
-            <div className="sys-config-group">
-              <div className="sys-hint"><ServerCog size={14}/> MCP 统一通过 SSE 接入；测试连通性时会按标准协议执行 initialize 与 tools/list。运行时仍由后端网关负责鉴权、凭证注入、脱敏和审计。</div>
-              <div className="sys-field"><label className="sys-field-label sys-field-label--required">SSE 地址</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="http://localhost:18080/sse" maxLength={500} defaultValue={capRef.current.sseUrl || ""} onChange={e=>{capRef.current.sseUrl=e.target.value;}}/></div></div>
+          {editingCapability && capabilitySupportsConnectivityTest(editingCapability.capabilityType) ? (
+            <div className="sys-field">
+              <label className="sys-field-label">连通状态</label>
+              <div className="sys-field-static">
+                <ReachabilityBadge status={resolveConnectivityStatus(editingCapability.connectivityStatus)} />
+              </div>
+              <div className="sys-field-hint">保存配置后需重新测试连通性</div>
             </div>
+          ) : null}
+          {selectedCapabilityType === "mcp" && (
+            <div className="sys-field"><label className="sys-field-label sys-field-label--required">SSE 地址</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="http://localhost:18080/sse" maxLength={500} defaultValue={capRef.current.sseUrl || ""} onChange={e=>{capRef.current.sseUrl=e.target.value;}}/></div></div>
           )}
           {selectedCapabilityType === "skill" && (
-            <div className="sys-config-group">
-              <div className="sys-field">
-                <label className="sys-field-label sys-field-label--required">Skill 路径</label>
-                <div className="sys-field-input-wrap"><Code2 size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="capabilities/skills/agentum-connectivity-check/SKILL.md" maxLength={500} defaultValue={capRef.current.sourcePath || ""} onChange={e=>{capRef.current.sourcePath=e.target.value;}}/></div>
-                <div className="sys-field-hint">指向 SKILL.md；同目录下的 skill.yaml 会自动用于发布元数据校验与连通性测试</div>
-              </div>
+            <div className="sys-field">
+              <label className="sys-field-label sys-field-label--required">Skill 路径</label>
+              <div className="sys-field-input-wrap"><Code2 size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="capabilities/skills/agentum-connectivity-check/SKILL.md" maxLength={500} defaultValue={capRef.current.sourcePath || ""} onChange={e=>{capRef.current.sourcePath=e.target.value;}}/></div>
+              <div className="sys-field-hint">指向 SKILL.md；同目录下的 skill.yaml 会自动用于发布元数据校验与连通性测试</div>
             </div>
           )}
           {selectedCapabilityType === "prompt_template" && (
@@ -1452,11 +1527,10 @@ export function SystemManagementPage() {
             </div>
           )}
           {selectedCapabilityType === "delivery" && (
-            <div className="sys-config-group">
+            <>
               <div className="sys-field"><label className="sys-field-label">交付来源</label><SysSelect icon={Mail} placeholder="请选择交付来源" defaultValue={capRef.current.sourceType || "builtin"} options={[{value:"builtin",label:"系统内置"},{value:"custom",label:"自定义适配器"}]} onChange={v=>{capRef.current.sourceType=v;setSelectedDeliverySourceType(v);}}/></div>
               {selectedDeliverySourceType === "custom" ? (
                 <>
-                  <div className="sys-hint"><Code2 size={14}/> 自定义交付能力来自 <code>capabilities/delivery</code>，必须按统一协议声明配置、输入、输出和调用入口。</div>
                   <div className="sys-field-row">
                     <div className="sys-field"><label className="sys-field-label sys-field-label--required">实现标识</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="custom-oa-delivery" maxLength={120} defaultValue={capRef.current.implementationKey || ""} onChange={e=>{capRef.current.implementationKey=e.target.value;}}/></div></div>
                     <div className="sys-field"><label className="sys-field-label">协议</label><SysSelect icon={ServerCog} placeholder="请选择协议" defaultValue={capRef.current.protocol || "http"} options={[{value:"http",label:"HTTP 适配器"}]} onChange={v=>{capRef.current.protocol=v;}}/></div>
@@ -1466,7 +1540,6 @@ export function SystemManagementPage() {
                 </>
               ) : (
                 <>
-                  <div className="sys-hint"><Mail size={14}/> 系统内置邮箱交付由 Agentum API 原生执行；密码由后端加密保存，不会在列表、日志或响应中回显。测试连通性仅做 TCP 端口探测（类似 nc），不校验 TLS 证书与 SMTP 认证；真正发信时仍按下方 TLS 与账号配置执行。</div>
                   <div className="sys-field-row">
                     <div className="sys-field"><label className="sys-field-label sys-field-label--required">SMTP 主机</label><div className="sys-field-input-wrap"><ServerCog size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="localhost" maxLength={200} defaultValue={capRef.current.smtpHost || ""} onChange={e=>{capRef.current.smtpHost=e.target.value;}}/></div></div>
                     <div className="sys-field"><label className="sys-field-label sys-field-label--required">SMTP 端口</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="1025" maxLength={10} defaultValue={capRef.current.smtpPort || ""} onChange={e=>{capRef.current.smtpPort=e.target.value;}}/></div></div>
@@ -1481,11 +1554,14 @@ export function SystemManagementPage() {
                   </div>
                 </>
               )}
-            </div>
+            </>
           )}
         </div>
         <div className="sys-drawer-footer">
           <div className="sys-drawer-footer-right">
+            {editingCapability && capabilitySupportsConnectivityTest(editingCapability.capabilityType) ? (
+              <button className="sys-btn sys-btn--default" onClick={()=>void testCapabilityConnection(editingCapability.id)}><PlayCircle size={14}/> 测试连通性</button>
+            ) : null}
             <button className="sys-btn sys-btn--default" onClick={()=>{setCapModalOpen(false);setEditingCapability(null);}}><X size={14}/> 取消</button>
             <button className="sys-btn sys-btn--primary" onClick={()=>void submitCapability()}><PlusCircle size={14}/> {editingCapability ? "保存修改" : "确认注册"}</button>
           </div>

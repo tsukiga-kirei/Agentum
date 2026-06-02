@@ -46,6 +46,12 @@ public class ModelProviderEntity {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Column(name = "connectivity_status", nullable = false, length = 30)
+    private String connectivityStatus;
+
+    @Column(name = "connectivity_checked_at")
+    private Instant connectivityCheckedAt;
+
     protected ModelProviderEntity() {
     }
 
@@ -65,6 +71,8 @@ public class ModelProviderEntity {
         entity.defaultModel = defaultModel;
         entity.status = status == null ? "draft" : status;
         entity.settings = new HashMap<>();
+        entity.connectivityStatus = "offline";
+        entity.connectivityCheckedAt = null;
         entity.createdAt = now;
         entity.updatedAt = now;
         return entity;
@@ -76,7 +84,7 @@ public class ModelProviderEntity {
         this.baseUrl = baseUrl;
         this.defaultModel = defaultModel;
         this.status = status == null ? "draft" : status;
-        this.updatedAt = now;
+        resetConnectivity(now);
     }
 
     public void markApiKeyConfigured(Instant now) {
@@ -140,5 +148,25 @@ public class ModelProviderEntity {
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    public void recordConnectivityCheck(String status, Instant checkedAt, Instant now) {
+        this.connectivityStatus = "online".equals(status) ? "online" : "offline";
+        this.connectivityCheckedAt = checkedAt;
+        this.updatedAt = now;
+    }
+
+    public void resetConnectivity(Instant now) {
+        this.connectivityStatus = "offline";
+        this.connectivityCheckedAt = null;
+        this.updatedAt = now;
+    }
+
+    public String getConnectivityStatus() {
+        return connectivityStatus;
+    }
+
+    public Instant getConnectivityCheckedAt() {
+        return connectivityCheckedAt;
     }
 }

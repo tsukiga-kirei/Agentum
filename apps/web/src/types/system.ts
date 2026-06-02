@@ -36,6 +36,8 @@ export type ModelProviderRow = {
   defaultModel: string | null;
   apiKeyConfigured: boolean;
   status: string;
+  connectivityStatus: string;
+  connectivityCheckedAt: string | null;
 };
 
 export type ModelProviderTypeRow = {
@@ -54,6 +56,7 @@ export type ModelProviderTestResult = {
   availableModels: string[];
   latencyMs: number;
   checkedAt: string;
+  connectivityStatus: string;
 };
 
 export type CreateModelProviderRequest = {
@@ -77,6 +80,8 @@ export type SystemCapabilityRow = {
   riskLevel: string;
   status: string;
   config: Record<string, unknown>;
+  connectivityStatus: string;
+  connectivityCheckedAt: string | null;
 };
 
 export type CreateSystemCapabilityRequest = {
@@ -103,6 +108,7 @@ export type CapabilityTestResult = {
   summary: string;
   tools: CapabilityToolRow[];
   checkedAt: string;
+  connectivityStatus: string;
 };
 
 export type TenantCapabilityGrantRow = {

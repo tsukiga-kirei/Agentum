@@ -49,6 +49,12 @@ public class SystemCapabilityEntity {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Column(name = "connectivity_status", nullable = false, length = 30)
+    private String connectivityStatus;
+
+    @Column(name = "connectivity_checked_at")
+    private Instant connectivityCheckedAt;
+
     protected SystemCapabilityEntity() {
     }
 
@@ -73,6 +79,8 @@ public class SystemCapabilityEntity {
         entity.riskLevel = riskLevel == null ? "low" : riskLevel;
         entity.status = status == null ? "draft" : status;
         entity.config = config == null ? new HashMap<>() : new HashMap<>(config);
+        entity.connectivityStatus = "offline";
+        entity.connectivityCheckedAt = null;
         entity.createdAt = now;
         entity.updatedAt = now;
         return entity;
@@ -95,6 +103,18 @@ public class SystemCapabilityEntity {
         this.riskLevel = riskLevel == null ? "low" : riskLevel;
         this.status = status == null ? "draft" : status;
         this.config = config == null ? new HashMap<>() : new HashMap<>(config);
+        resetConnectivity(now);
+    }
+
+    public void recordConnectivityCheck(String status, Instant checkedAt, Instant now) {
+        this.connectivityStatus = "online".equals(status) ? "online" : "offline";
+        this.connectivityCheckedAt = checkedAt;
+        this.updatedAt = now;
+    }
+
+    public void resetConnectivity(Instant now) {
+        this.connectivityStatus = "offline";
+        this.connectivityCheckedAt = null;
         this.updatedAt = now;
     }
 
@@ -140,5 +160,13 @@ public class SystemCapabilityEntity {
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    public String getConnectivityStatus() {
+        return connectivityStatus;
+    }
+
+    public Instant getConnectivityCheckedAt() {
+        return connectivityCheckedAt;
     }
 }

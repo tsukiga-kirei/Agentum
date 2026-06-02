@@ -50,7 +50,9 @@ public final class SystemManagementApi {
         String baseUrl,
         String defaultModel,
         boolean apiKeyConfigured,
-        String status
+        String status,
+        String connectivityStatus,
+        Instant connectivityCheckedAt
     ) {
     }
 
@@ -70,7 +72,8 @@ public final class SystemManagementApi {
         String summary,
         List<String> availableModels,
         long latencyMs,
-        Instant checkedAt
+        Instant checkedAt,
+        String connectivityStatus
     ) {
     }
 
@@ -103,7 +106,9 @@ public final class SystemManagementApi {
         String description,
         String riskLevel,
         String status,
-        Map<String, Object> config
+        Map<String, Object> config,
+        String connectivityStatus,
+        Instant connectivityCheckedAt
     ) {
     }
 
@@ -142,7 +147,8 @@ public final class SystemManagementApi {
         String status,
         String summary,
         List<CapabilityToolRow> tools,
-        Instant checkedAt
+        Instant checkedAt,
+        String connectivityStatus
     ) {
     }
 

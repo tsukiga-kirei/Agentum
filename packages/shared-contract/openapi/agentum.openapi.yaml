@@ -3165,12 +3165,22 @@ components:
           type: boolean
         status:
           type: string
+        connectivityStatus:
+          type: string
+          enum:
+            - online
+            - offline
+        connectivityCheckedAt:
+          type: string
+          format: date-time
+          nullable: true
       required:
         - id
         - name
         - providerType
         - apiKeyConfigured
         - status
+        - connectivityStatus
     ModelProviderPageResponse:
       type: object
       properties:
@@ -3216,12 +3226,18 @@ components:
         checkedAt:
           type: string
           format: date-time
+        connectivityStatus:
+          type: string
+          enum:
+            - online
+            - offline
       required:
         - providerId
         - status
         - summary
         - availableModels
         - latencyMs
+        - connectivityStatus
         - checkedAt
     ModelProviderTypeRow:
       type: object
@@ -3667,6 +3683,15 @@ components:
         config:
           type: object
           additionalProperties: true
+        connectivityStatus:
+          type: string
+          enum:
+            - online
+            - offline
+        connectivityCheckedAt:
+          type: string
+          format: date-time
+          nullable: true
       required:
         - id
         - capabilityType
@@ -3675,6 +3700,7 @@ components:
         - version
         - riskLevel
         - status
+        - connectivityStatus
     SystemCapabilityPageResponse:
       type: object
       properties:
@@ -3753,12 +3779,18 @@ components:
         checkedAt:
           type: string
           format: date-time
+        connectivityStatus:
+          type: string
+          enum:
+            - online
+            - offline
       required:
         - capabilityId
         - status
         - summary
         - tools
         - checkedAt
+        - connectivityStatus
     TenantCapabilityGrantRow:
       type: object
       properties:

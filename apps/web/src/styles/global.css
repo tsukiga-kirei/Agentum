@@ -1608,9 +1608,22 @@ textarea:focus-visible {
 /* 卡片头：图标 + 信息 + 状态 */
 .sys-card-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
   margin-bottom: 16px;
+}
+.sys-card-status-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  min-height: 52px;
+  flex-shrink: 0;
+  justify-content: flex-start;
+}
+.sys-card-status-placeholder {
+  display: block;
+  height: 22px;
 }
 .sys-card-avatar {
   width: 42px; height: 42px;
@@ -2078,6 +2091,11 @@ textarea:focus-visible {
   color: var(--color-text-secondary); margin-bottom: 6px;
 }
 .sys-field-label--required::after { content: " *"; color: #ef4444; }
+.sys-field-static {
+  display: flex;
+  align-items: center;
+  min-height: var(--agent-field-height, 44px);
+}
 
 /* 输入框包装器（支持前缀图标） */
 .sys-field-input-wrap {
