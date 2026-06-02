@@ -11,12 +11,13 @@
 默认地址：
 
 - MCP SSE：`http://localhost:18080/sse`
-- 工具预览：`http://localhost:18080/agentum/tools`
 
 系统管理中登记 MCP 时填写：
 
 - 能力类型：`MCP`
 - SSE 地址：`http://localhost:18080/sse`
+
+测试连通性时会按 MCP 标准协议执行 `initialize` 与 `tools/list`，并在结果弹窗展示工具清单。
 
 ## 工具
 

@@ -83,6 +83,7 @@ class SystemManagementServiceTest {
             passwordEncoder,
             FIELD_ENCRYPTION,
             mock(ModelProviderConnectionTester.class),
+            mock(McpSseConnectionTester.class),
             Clock.fixed(Instant.parse("2026-05-15T08:00:00Z"), ZoneOffset.UTC)
         );
 
@@ -611,12 +612,14 @@ class SystemManagementServiceTest {
         ModelProviderConnectionTester modelProviderConnectionTester
     ) {
         return buildService(
+            mock(TenantRepository.class),
             modelProviderRepository,
             modelProviderTypeRepository,
             systemCapabilityRepository,
             mock(TenantCapabilityGrantRepository.class),
             mock(TenantModelAssignmentRepository.class),
-            modelProviderConnectionTester
+            modelProviderConnectionTester,
+            mock(McpSseConnectionTester.class)
         );
     }
 
@@ -635,7 +638,8 @@ class SystemManagementServiceTest {
             systemCapabilityRepository,
             tenantCapabilityGrantRepository,
             tenantModelAssignmentRepository,
-            modelProviderConnectionTester
+            modelProviderConnectionTester,
+            mock(McpSseConnectionTester.class)
         );
     }
 
@@ -647,6 +651,28 @@ class SystemManagementServiceTest {
         TenantCapabilityGrantRepository tenantCapabilityGrantRepository,
         TenantModelAssignmentRepository tenantModelAssignmentRepository,
         ModelProviderConnectionTester modelProviderConnectionTester
+    ) {
+        return buildService(
+            tenantRepository,
+            modelProviderRepository,
+            modelProviderTypeRepository,
+            systemCapabilityRepository,
+            tenantCapabilityGrantRepository,
+            tenantModelAssignmentRepository,
+            modelProviderConnectionTester,
+            mock(McpSseConnectionTester.class)
+        );
+    }
+
+    private static SystemManagementService buildService(
+        TenantRepository tenantRepository,
+        ModelProviderRepository modelProviderRepository,
+        ModelProviderTypeRepository modelProviderTypeRepository,
+        SystemCapabilityRepository systemCapabilityRepository,
+        TenantCapabilityGrantRepository tenantCapabilityGrantRepository,
+        TenantModelAssignmentRepository tenantModelAssignmentRepository,
+        ModelProviderConnectionTester modelProviderConnectionTester,
+        McpSseConnectionTester mcpSseConnectionTester
     ) {
         return new SystemManagementService(
             tenantRepository,
@@ -664,6 +690,7 @@ class SystemManagementServiceTest {
             mock(PasswordEncoder.class),
             FIELD_ENCRYPTION,
             modelProviderConnectionTester,
+            mcpSseConnectionTester,
             Clock.fixed(Instant.parse("2026-05-15T08:00:00Z"), ZoneOffset.UTC)
         );
     }

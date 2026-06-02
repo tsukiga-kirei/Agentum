@@ -18,9 +18,8 @@ import com.agentum.system.infrastructure.ModelProviderTypeRepository;
 import com.agentum.system.infrastructure.SystemCapabilityRepository;
 import com.agentum.system.infrastructure.TenantCapabilityGrantRepository;
 import com.agentum.system.infrastructure.TenantModelAssignmentRepository;
+import com.agentum.system.application.McpSseTestOutcome.McpToolDescriptor;
 import com.agentum.system.interfaces.SystemManagementApi;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.agentum.auth.domain.UserAccount;
 import com.agentum.auth.domain.UserRoleAssignmentEntity;
 import com.agentum.auth.infrastructure.UserAccountRepository;
@@ -36,12 +35,6 @@ import com.agentum.permission.infrastructure.RoleRepository;
 import com.agentum.tenant.domain.TenantEntity;
 import com.agentum.tenant.infrastructure.TenantRepository;
 import java.time.Clock;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -58,7 +51,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class SystemManagementService {
 
     private static final Logger log = LoggerFactory.getLogger(SystemManagementService.class);
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final String ACTIVE = "active";
     private static final String SUSPENDED = "suspended";
     private static final Set<String> CAPABILITY_TYPES = Set.of("mcp", "skill", "prompt_template", "delivery");
@@ -91,7 +83,7 @@ public class SystemManagementService {
     private final PasswordEncoder passwordEncoder;
     private final FieldEncryptionService fieldEncryptionService;
     private final ModelProviderConnectionTester modelProviderConnectionTester;
-    private final HttpClient httpClient;
+    private final McpSseConnectionTester mcpSseConnectionTester;
     private final Clock clock;
 
     public SystemManagementService(
@@ -110,6 +102,7 @@ public class SystemManagementService {
         PasswordEncoder passwordEncoder,
         FieldEncryptionService fieldEncryptionService,
         ModelProviderConnectionTester modelProviderConnectionTester,
+        McpSseConnectionTester mcpSseConnectionTester,
         Clock clock
     ) {
         this.tenantRepository = tenantRepository;
@@ -127,10 +120,7 @@ public class SystemManagementService {
         this.passwordEncoder = passwordEncoder;
         this.fieldEncryptionService = fieldEncryptionService;
         this.modelProviderConnectionTester = modelProviderConnectionTester;
-        this.httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(3))
-            .followRedirects(HttpClient.Redirect.NORMAL)
-            .build();
+        this.mcpSseConnectionTester = mcpSseConnectionTester;
         this.clock = clock;
     }
 
@@ -720,43 +710,22 @@ public class SystemManagementService {
             return new SystemManagementApi.CapabilityTestResult(capability.getId(), "failed", "SSE 类型 MCP 必须配置 sseUrl", List.of(), clock.instant());
         }
 
-        try {
-            HttpRequest request = HttpRequest.newBuilder(URI.create(sseUrl))
-                .timeout(Duration.ofSeconds(5))
-                .header("Accept", "text/event-stream")
-                .GET()
-                .build();
-            HttpResponse<java.io.InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
-            try (java.io.InputStream ignored = response.body()) {
-                if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                    return new SystemManagementApi.CapabilityTestResult(
-                        capability.getId(),
-                        "failed",
-                        "MCP SSE 地址返回非成功状态：" + response.statusCode(),
-                        List.of(),
-                        clock.instant()
-                    );
-                }
-            }
-        } catch (Exception ex) {
-            log.warn("系统管理测试 MCP SSE 失败 capabilityId={} sseUrl={} requestId={}", capability.getId(), sseUrl, RequestIds.current());
-            return new SystemManagementApi.CapabilityTestResult(
-                capability.getId(),
-                "failed",
-                "MCP SSE 连接失败：" + ex.getMessage(),
-                List.of(),
-                clock.instant()
-            );
-        }
-
-        List<SystemManagementApi.CapabilityToolRow> tools = loadMcpTools(capability);
+        // 系统管理阶段按 MCP 标准协议探测：SSE 建连后执行 initialize 与 tools/list，避免依赖各服务自定义 REST 预览接口。
+        McpSseTestOutcome outcome = mcpSseConnectionTester.test(new McpSseTestRequest(capability.getId(), sseUrl));
+        List<SystemManagementApi.CapabilityToolRow> tools = outcome.tools().stream()
+            .map(this::toCapabilityToolRow)
+            .toList();
         return new SystemManagementApi.CapabilityTestResult(
             capability.getId(),
-            "success",
-            "MCP SSE 连接成功，可在弹窗中查看当前登记的工具能力",
+            outcome.status(),
+            outcome.summary(),
             tools,
             clock.instant()
         );
+    }
+
+    private SystemManagementApi.CapabilityToolRow toCapabilityToolRow(McpToolDescriptor tool) {
+        return new SystemManagementApi.CapabilityToolRow(tool.name(), tool.description(), tool.inputSchema());
     }
 
     private SystemManagementApi.CapabilityTestResult testSourceConfig(SystemCapabilityEntity capability, String successSummary) {
@@ -818,70 +787,6 @@ public class SystemManagementService {
         );
     }
 
-    private List<SystemManagementApi.CapabilityToolRow> configuredTools(SystemCapabilityEntity capability) {
-        Object toolsValue = capability.getConfig().get("tools");
-        if (toolsValue instanceof List<?> rawTools && !rawTools.isEmpty()) {
-            List<SystemManagementApi.CapabilityToolRow> tools = new ArrayList<>();
-            for (Object rawTool : rawTools) {
-                if (rawTool instanceof Map<?, ?> rawMap) {
-                    String name = stringValue(rawMap.get("name"));
-                    if (name == null) {
-                        continue;
-                    }
-                    String description = stringValue(rawMap.get("description"));
-                    Object schema = rawMap.get("inputSchema");
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> inputSchema = schema instanceof Map<?, ?> ? (Map<String, Object>) schema : Map.of("type", "object", "properties", Map.of());
-                    tools.add(new SystemManagementApi.CapabilityToolRow(name, description == null ? "" : description, inputSchema));
-                }
-            }
-            if (!tools.isEmpty()) {
-                return tools;
-            }
-        }
-        return List.of(new SystemManagementApi.CapabilityToolRow(
-            capability.getCode() + ".health_check",
-            "MCP 服务连通性检查工具",
-            Map.of("type", "object", "properties", Map.of())
-        ));
-    }
-
-    private List<SystemManagementApi.CapabilityToolRow> loadMcpTools(SystemCapabilityEntity capability) {
-        String toolCatalogUrl = stringValue(capability.getConfig().get("toolCatalogUrl"));
-        if (toolCatalogUrl != null) {
-            try {
-                HttpRequest request = HttpRequest.newBuilder(URI.create(toolCatalogUrl))
-                    .timeout(Duration.ofSeconds(5))
-                    .header("Accept", "application/json")
-                    .GET()
-                    .build();
-                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-                if (response.statusCode() >= 200 && response.statusCode() < 300) {
-                    Map<String, Object> payload = OBJECT_MAPPER.readValue(response.body(), new TypeReference<>() {
-                    });
-                    Object tools = payload.get("tools");
-                    if (tools instanceof List<?>) {
-                        SystemCapabilityEntity catalogCapability = SystemCapabilityEntity.create(
-                            capability.getCapabilityType(),
-                            capability.getName(),
-                            capability.getCode(),
-                            capability.getVersion(),
-                            capability.getDescription(),
-                            capability.getRiskLevel(),
-                            capability.getStatus(),
-                            Map.of("tools", tools),
-                            clock.instant()
-                        );
-                        return configuredTools(catalogCapability);
-                    }
-                }
-            } catch (Exception ex) {
-                log.warn("系统管理读取 MCP 工具预览失败 capabilityId={} toolCatalogUrl={} requestId={}", capability.getId(), toolCatalogUrl, RequestIds.current());
-            }
-        }
-        return configuredTools(capability);
-    }
-
     private Map<String, Object> sanitizeCapabilityConfig(String capabilityType, Map<String, Object> rawConfig, Map<String, Object> existingConfig) {
         Map<String, Object> config = rawConfig == null ? Map.of() : rawConfig;
         if ("mcp".equals(capabilityType)) {
@@ -892,10 +797,6 @@ public class SystemManagementService {
             Map<String, Object> result = new HashMap<>();
             result.put("transport", "sse");
             result.put("sseUrl", sseUrl);
-            String toolCatalogUrl = stringValue(config.get("toolCatalogUrl"));
-            if (toolCatalogUrl != null) {
-                result.put("toolCatalogUrl", toolCatalogUrl);
-            }
             Object tools = config.get("tools");
             if (tools instanceof List<?>) {
                 result.put("tools", tools);

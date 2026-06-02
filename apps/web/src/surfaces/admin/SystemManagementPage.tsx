@@ -210,7 +210,6 @@ function buildCapabilityFormValues(capability: SystemCapabilityRow): Record<stri
     status: capability.status,
     transport: "sse",
     sseUrl: readConfigString(capability.config, "sseUrl"),
-    toolCatalogUrl: readConfigString(capability.config, "toolCatalogUrl"),
     sourceType: readConfigString(capability.config, "sourceType") || "builtin",
     deliveryChannel: readConfigString(capability.config, "deliveryChannel") || "email",
     implementationKey: readConfigString(capability.config, "implementationKey"),
@@ -611,7 +610,6 @@ export function SystemManagementPage() {
     if (capabilityType === "mcp") {
       config.transport = "sse";
       config.sseUrl = d.sseUrl?.trim() || "";
-      config.toolCatalogUrl = d.toolCatalogUrl?.trim() || "";
       if (!d.sseUrl?.trim()) {
         messageApi.warning("请输入 SSE 地址");
         return;
@@ -1428,9 +1426,8 @@ export function SystemManagementPage() {
           </div>
           {selectedCapabilityType === "mcp" && (
             <div className="sys-config-group">
-              <div className="sys-hint"><ServerCog size={14}/> MCP 统一通过 SSE 接入，运行时由后端网关负责鉴权、凭证注入、脱敏和审计。</div>
+              <div className="sys-hint"><ServerCog size={14}/> MCP 统一通过 SSE 接入；测试连通性时会按标准协议执行 initialize 与 tools/list。运行时仍由后端网关负责鉴权、凭证注入、脱敏和审计。</div>
               <div className="sys-field"><label className="sys-field-label sys-field-label--required">SSE 地址</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="http://localhost:18080/sse" maxLength={500} defaultValue={capRef.current.sseUrl || ""} onChange={e=>{capRef.current.sseUrl=e.target.value;}}/></div></div>
-              <div className="sys-field"><label className="sys-field-label">工具预览地址</label><div className="sys-field-input-wrap"><Boxes size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="http://localhost:18080/agentum/tools" maxLength={500} defaultValue={capRef.current.toolCatalogUrl || ""} onChange={e=>{capRef.current.toolCatalogUrl=e.target.value;}}/></div><div className="sys-field-hint">可选；填写后测试连通性会读取工具清单并展示在结果弹窗中。</div></div>
             </div>
           )}
           {selectedCapabilityType === "skill" && (

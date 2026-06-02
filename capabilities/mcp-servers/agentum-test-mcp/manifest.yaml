@@ -3,7 +3,6 @@ name: Agentum 测试 MCP
 version: v1
 transport: sse
 sseUrl: http://localhost:18080/sse
-toolCatalogUrl: http://localhost:18080/agentum/tools
 riskLevel: low
 tools:
   - name: agentum.health_check
