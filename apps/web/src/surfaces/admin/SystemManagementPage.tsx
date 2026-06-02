@@ -1466,7 +1466,7 @@ export function SystemManagementPage() {
                 </>
               ) : (
                 <>
-                  <div className="sys-hint"><Mail size={14}/> 系统内置邮箱交付由 Agentum API 原生执行；密码由后端加密保存，不会在列表、日志或响应中回显。TLS 由下方开关控制：远程 465 端口请启用 TLS（SMTPS），587 端口通常也需启用 TLS（STARTTLS）。</div>
+                  <div className="sys-hint"><Mail size={14}/> 系统内置邮箱交付由 Agentum API 原生执行；密码由后端加密保存，不会在列表、日志或响应中回显。测试连通性仅做 TCP 端口探测（类似 nc），不校验 TLS 证书与 SMTP 认证；真正发信时仍按下方 TLS 与账号配置执行。</div>
                   <div className="sys-field-row">
                     <div className="sys-field"><label className="sys-field-label sys-field-label--required">SMTP 主机</label><div className="sys-field-input-wrap"><ServerCog size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="localhost" maxLength={200} defaultValue={capRef.current.smtpHost || ""} onChange={e=>{capRef.current.smtpHost=e.target.value;}}/></div></div>
                     <div className="sys-field"><label className="sys-field-label sys-field-label--required">SMTP 端口</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="1025" maxLength={10} defaultValue={capRef.current.smtpPort || ""} onChange={e=>{capRef.current.smtpPort=e.target.value;}}/></div></div>
