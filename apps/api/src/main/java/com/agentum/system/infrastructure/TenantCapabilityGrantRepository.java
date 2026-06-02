@@ -13,4 +13,6 @@ public interface TenantCapabilityGrantRepository extends JpaRepository<TenantCap
     List<TenantCapabilityGrantEntity> findByTenantIdOrderByCreatedAtDesc(UUID tenantId);
 
     Optional<TenantCapabilityGrantEntity> findByTenantIdAndCapabilityId(UUID tenantId, UUID capabilityId);
+
+    boolean existsByCapabilityIdAndStatus(UUID capabilityId, String status);
 }

@@ -711,6 +711,10 @@ export function SystemManagementPage() {
 
   const assignModelToTenant = async (provider: ModelProviderRow) => {
     if (!token || !selectedTenant) return;
+    if (provider.status !== "active") {
+      messageApi.warning("模型供应商仍是草稿，请先在模型供应商中将状态改为可用");
+      return;
+    }
     try {
       await systemApi.createTenantModelAssignment(token, {
         tenantId: selectedTenant.id,
@@ -1197,14 +1201,16 @@ export function SystemManagementPage() {
                   {modelProviders.map((provider) => {
                     const assigned = tenantModelAssignments.find((item) => item.providerId === provider.id);
                     const enabled = assigned?.assignmentStatus === "enabled";
+                    const activeProvider = provider.status === "active";
                     return (
                       <div key={provider.id} className="sys-form-row">
                         <span className="sys-form-label">{provider.name}</span>
                         <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",justifyContent:"flex-end"}}>
                           <span className="sys-info-tag sys-info-tag--info">{provider.providerType}</span>
                           <span className="sys-form-value">{assigned?.defaultModel || provider.defaultModel || "未配置默认模型"}</span>
-                          <span className={`sys-status sys-status--${enabled ? "active" : "inactive"}`}><span className="sys-status-dot"/>{enabled ? "已分配" : "未分配"}</span>
-                          <button className="sys-btn sys-btn--default sys-btn--sm" onClick={()=> assigned ? void updateTenantModelAssignmentStatus(assigned.id, enabled ? "disabled" : "enabled") : void assignModelToTenant(provider)}>
+                          <span className={`sys-status sys-status--${activeProvider ? "active" : "inactive"}`}><span className="sys-status-dot"/>{activeProvider ? "全局已启用" : "草稿不可分配"}</span>
+                          <span className={`sys-status sys-status--${enabled ? "active" : "inactive"}`}><span className="sys-status-dot"/>{enabled ? "租户已分配" : "租户未分配"}</span>
+                          <button className="sys-btn sys-btn--default sys-btn--sm" disabled={!activeProvider && !enabled} onClick={()=> assigned ? void updateTenantModelAssignmentStatus(assigned.id, enabled ? "disabled" : "enabled") : void assignModelToTenant(provider)}>
                             {enabled ? "取消分配" : "分配"}
                           </button>
                         </div>

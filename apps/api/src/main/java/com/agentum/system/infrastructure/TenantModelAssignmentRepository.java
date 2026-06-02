@@ -11,4 +11,6 @@ public interface TenantModelAssignmentRepository extends JpaRepository<TenantMod
     List<TenantModelAssignmentEntity> findByTenantIdOrderByCreatedAtDesc(UUID tenantId);
 
     Optional<TenantModelAssignmentEntity> findByTenantIdAndProviderId(UUID tenantId, UUID providerId);
+
+    boolean existsByProviderIdAndStatus(UUID providerId, String status);
 }

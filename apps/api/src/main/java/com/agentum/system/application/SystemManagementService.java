@@ -258,12 +258,14 @@ public class SystemManagementService {
                 log.warn("系统管理更新模型供应商失败：供应商类型不可用 providerId={} providerType={} requestId={}", providerId, request.providerType(), RequestIds.current());
                 return new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_MODEL_PROVIDER_TYPE_INVALID", "模型供应商类型不存在或已停用");
             });
+        String targetStatus = request.status() == null ? "draft" : request.status().trim();
+        ensureModelProviderCanEnterStatus(providerId, targetStatus);
         entity.updateProfile(
             request.name().trim(),
             providerType.getCode(),
             firstNonBlank(request.baseUrl(), providerType.getDefaultBaseUrl()),
             requireDefaultModel(request.defaultModel()),
-            request.status() == null ? null : request.status().trim(),
+            targetStatus,
             clock.instant()
         );
         String apiKey = stringValue(request.apiKey());
@@ -326,6 +328,10 @@ public class SystemManagementService {
                 log.warn("系统管理删除模型供应商失败：供应商不存在 providerId={} requestId={}", providerId, RequestIds.current());
                 return new ApiException(HttpStatus.NOT_FOUND, "SYSTEM_MODEL_PROVIDER_NOT_FOUND", "模型供应商不存在");
             });
+        if (tenantModelAssignmentRepository.existsByProviderIdAndStatus(providerId, "enabled")) {
+            log.warn("系统管理删除模型供应商失败：供应商仍被租户启用 providerId={} requestId={}", providerId, RequestIds.current());
+            throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_MODEL_PROVIDER_IN_USE", "模型供应商已被租户启用，请先取消租户模型分配");
+        }
         modelProviderRepository.delete(entity);
         log.info(
             "系统管理删除模型供应商成功 providerId={} name={} requestId={}",
@@ -391,6 +397,8 @@ public class SystemManagementService {
                 log.warn("系统管理更新能力失败：能力不存在 capabilityId={} requestId={}", capabilityId, RequestIds.current());
                 return new ApiException(HttpStatus.NOT_FOUND, "SYSTEM_CAPABILITY_NOT_FOUND", "系统能力不存在");
             });
+        String targetStatus = request.status() == null ? "draft" : request.status().trim();
+        ensureCapabilityCanEnterStatus(capabilityId, targetStatus);
         systemCapabilityRepository.findByCodeAndVersion(entity.getCode(), version)
             .filter(existing -> !existing.getId().equals(capabilityId))
             .ifPresent(existing -> {
@@ -410,7 +418,7 @@ public class SystemManagementService {
             version,
             normalizeOptional(request.description()),
             request.riskLevel() == null ? null : request.riskLevel().trim(),
-            request.status() == null ? null : request.status().trim(),
+            targetStatus,
             sanitizeCapabilityConfig(capabilityType, request.config()),
             clock.instant()
         );
@@ -426,6 +434,10 @@ public class SystemManagementService {
                 log.warn("系统管理删除能力失败：能力不存在 capabilityId={} requestId={}", capabilityId, RequestIds.current());
                 return new ApiException(HttpStatus.NOT_FOUND, "SYSTEM_CAPABILITY_NOT_FOUND", "系统能力不存在");
             });
+        if (tenantCapabilityGrantRepository.existsByCapabilityIdAndStatus(capabilityId, "enabled")) {
+            log.warn("系统管理删除能力失败：能力仍被租户启用 capabilityId={} requestId={}", capabilityId, RequestIds.current());
+            throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_CAPABILITY_IN_USE", "全局能力已被租户启用，请先取消租户能力配置");
+        }
         systemCapabilityRepository.delete(entity);
         log.info(
             "系统管理删除全局能力成功 capabilityId={} code={} version={} requestId={}",
@@ -572,12 +584,14 @@ public class SystemManagementService {
                 log.warn("系统管理模型分配失败：供应商不存在 tenantId={} providerId={} requestId={}", request.tenantId(), request.providerId(), RequestIds.current());
                 return new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_MODEL_PROVIDER_NOT_FOUND", "模型供应商不存在");
             });
+        String targetStatus = request.status() == null ? "enabled" : request.status().trim();
+        ensureModelProviderCanBeEnabled(provider, targetStatus);
 
         TenantModelAssignmentEntity existing = tenantModelAssignmentRepository.findByTenantIdAndProviderId(tenant.getId(), provider.getId()).orElse(null);
         if (existing != null) {
             // 模型分配是租户可用能力池的一部分，前端允许取消后再次启用，因此已有记录应复用并切回 enabled。
             existing.updateDefaultModel(firstNonBlank(request.defaultModel(), provider.getDefaultModel()), clock.instant());
-            existing.updateStatus(request.status() == null ? "enabled" : request.status().trim(), clock.instant());
+            existing.updateStatus(targetStatus, clock.instant());
             tenantModelAssignmentRepository.save(existing);
             log.info("系统管理更新租户模型分配成功 tenantId={} providerId={} assignmentId={} requestId={}", tenant.getId(), provider.getId(), existing.getId(), RequestIds.current());
             return toTenantModelAssignmentRow(existing);
@@ -587,7 +601,7 @@ public class SystemManagementService {
             tenant.getId(),
             provider.getId(),
             firstNonBlank(request.defaultModel(), provider.getDefaultModel()),
-            request.status() == null ? null : request.status().trim(),
+            targetStatus,
             clock.instant()
         );
         tenantModelAssignmentRepository.save(entity);
@@ -606,6 +620,11 @@ public class SystemManagementService {
                 log.warn("系统管理更新租户模型分配失败：分配记录不存在 assignmentId={} requestId={}", assignmentId, RequestIds.current());
                 return new ApiException(HttpStatus.NOT_FOUND, "SYSTEM_MODEL_ASSIGNMENT_NOT_FOUND", "租户模型分配不存在");
             });
+        if ("enabled".equals(status)) {
+            ModelProviderEntity provider = modelProviderRepository.findById(entity.getProviderId())
+                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_MODEL_PROVIDER_NOT_FOUND", "模型供应商不存在"));
+            ensureModelProviderCanBeEnabled(provider, status);
+        }
         entity.updateStatus(status, clock.instant());
         tenantModelAssignmentRepository.save(entity);
         log.info("系统管理更新租户模型分配状态成功 assignmentId={} status={} requestId={}", assignmentId, status, RequestIds.current());
@@ -618,6 +637,32 @@ public class SystemManagementService {
                 log.warn("系统管理查询租户配置失败：租户不存在 tenantId={} requestId={}", tenantId, RequestIds.current());
                 return new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_TENANT_NOT_FOUND", "租户不存在");
             });
+    }
+
+    private void ensureModelProviderCanEnterStatus(UUID providerId, String targetStatus) {
+        if ("draft".equals(targetStatus) && tenantModelAssignmentRepository.existsByProviderIdAndStatus(providerId, "enabled")) {
+            log.warn("系统管理更新模型供应商失败：供应商仍被租户启用 providerId={} targetStatus={} requestId={}", providerId, targetStatus, RequestIds.current());
+            throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_MODEL_PROVIDER_IN_USE", "模型供应商已被租户启用，请先取消租户模型分配");
+        }
+    }
+
+    private void ensureCapabilityCanEnterStatus(UUID capabilityId, String targetStatus) {
+        if ("draft".equals(targetStatus) && tenantCapabilityGrantRepository.existsByCapabilityIdAndStatus(capabilityId, "enabled")) {
+            log.warn("系统管理更新能力失败：能力仍被租户启用 capabilityId={} targetStatus={} requestId={}", capabilityId, targetStatus, RequestIds.current());
+            throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_CAPABILITY_IN_USE", "全局能力已被租户启用，请先取消租户能力配置");
+        }
+    }
+
+    private void ensureModelProviderCanBeEnabled(ModelProviderEntity provider, String targetStatus) {
+        if ("enabled".equals(targetStatus) && !"active".equals(provider.getStatus())) {
+            log.warn(
+                "系统管理模型分配失败：草稿模型供应商不能启用 providerId={} providerStatus={} requestId={}",
+                provider.getId(),
+                provider.getStatus(),
+                RequestIds.current()
+            );
+            throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_MODEL_PROVIDER_NOT_ACTIVE", "模型供应商仍是草稿，请先将供应商状态改为可用");
+        }
     }
 
     private SystemManagementApi.GrantRow toGrantRow(TenantCapabilityGrantEntity entity) {

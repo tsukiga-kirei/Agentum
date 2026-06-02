@@ -25,6 +25,7 @@ import com.agentum.system.infrastructure.SystemCapabilityRepository;
 import com.agentum.system.infrastructure.TenantCapabilityGrantRepository;
 import com.agentum.system.infrastructure.TenantModelAssignmentRepository;
 import com.agentum.system.interfaces.SystemManagementApi;
+import com.agentum.tenant.domain.TenantEntity;
 import com.agentum.tenant.infrastructure.TenantRepository;
 import java.time.Clock;
 import java.time.Instant;
@@ -133,6 +134,72 @@ class SystemManagementServiceTest {
         assertThatThrownBy(() -> service.deleteModelProvider(providerId))
             .isInstanceOf(ApiException.class)
             .hasMessageContaining("模型供应商不存在");
+    }
+
+    @Test
+    void shouldRejectDeleteModelProviderWhenEnabledByTenant() {
+        ModelProviderRepository modelProviderRepository = mock(ModelProviderRepository.class);
+        TenantModelAssignmentRepository tenantModelAssignmentRepository = mock(TenantModelAssignmentRepository.class);
+        UUID providerId = UUID.randomUUID();
+        ModelProviderEntity entity = mock(ModelProviderEntity.class);
+        when(modelProviderRepository.findById(providerId)).thenReturn(Optional.of(entity));
+        when(entity.getId()).thenReturn(providerId);
+        when(tenantModelAssignmentRepository.existsByProviderIdAndStatus(providerId, "enabled")).thenReturn(true);
+
+        SystemManagementService service = buildService(
+            modelProviderRepository,
+            mock(ModelProviderTypeRepository.class),
+            mock(SystemCapabilityRepository.class),
+            mock(TenantCapabilityGrantRepository.class),
+            tenantModelAssignmentRepository,
+            mock(ModelProviderConnectionTester.class)
+        );
+
+        assertThatThrownBy(() -> service.deleteModelProvider(providerId))
+            .isInstanceOf(ApiException.class)
+            .hasMessageContaining("已被租户启用");
+    }
+
+    @Test
+    void shouldRejectDraftModelProviderWhenEnabledByTenant() {
+        ModelProviderRepository modelProviderRepository = mock(ModelProviderRepository.class);
+        ModelProviderTypeRepository modelProviderTypeRepository = mock(ModelProviderTypeRepository.class);
+        TenantModelAssignmentRepository tenantModelAssignmentRepository = mock(TenantModelAssignmentRepository.class);
+        UUID providerId = UUID.randomUUID();
+        ModelProviderEntity entity = ModelProviderEntity.create(
+            "OpenAI 兼容测试",
+            "openai-compatible",
+            "https://api.example.com/v1",
+            "gpt-4o-mini",
+            "active",
+            Instant.parse("2026-05-15T08:00:00Z")
+        );
+        ModelProviderTypeEntity providerType = mock(ModelProviderTypeEntity.class);
+        when(providerType.getCode()).thenReturn("openai-compatible");
+        when(providerType.getDefaultBaseUrl()).thenReturn("https://api.example.com/v1");
+        when(modelProviderRepository.findById(providerId)).thenReturn(Optional.of(entity));
+        when(modelProviderTypeRepository.findByCodeAndStatus("openai-compatible", "active")).thenReturn(Optional.of(providerType));
+        when(tenantModelAssignmentRepository.existsByProviderIdAndStatus(providerId, "enabled")).thenReturn(true);
+
+        SystemManagementService service = buildService(
+            modelProviderRepository,
+            modelProviderTypeRepository,
+            mock(SystemCapabilityRepository.class),
+            mock(TenantCapabilityGrantRepository.class),
+            tenantModelAssignmentRepository,
+            mock(ModelProviderConnectionTester.class)
+        );
+
+        assertThatThrownBy(() -> service.updateModelProvider(providerId, new SystemManagementApi.UpdateModelProviderRequest(
+            "OpenAI 兼容测试",
+            "openai-compatible",
+            "https://api.example.com/v1",
+            "gpt-4o-mini",
+            null,
+            "draft"
+        )))
+            .isInstanceOf(ApiException.class)
+            .hasMessageContaining("已被租户启用");
     }
 
     @Test
@@ -279,6 +346,106 @@ class SystemManagementServiceTest {
         verify(systemCapabilityRepository).delete(entity);
     }
 
+    @Test
+    void shouldRejectDeleteCapabilityWhenEnabledByTenant() {
+        SystemCapabilityRepository systemCapabilityRepository = mock(SystemCapabilityRepository.class);
+        TenantCapabilityGrantRepository tenantCapabilityGrantRepository = mock(TenantCapabilityGrantRepository.class);
+        UUID capabilityId = UUID.randomUUID();
+        SystemCapabilityEntity entity = mock(SystemCapabilityEntity.class);
+        when(systemCapabilityRepository.findById(capabilityId)).thenReturn(Optional.of(entity));
+        when(entity.getId()).thenReturn(capabilityId);
+        when(tenantCapabilityGrantRepository.existsByCapabilityIdAndStatus(capabilityId, "enabled")).thenReturn(true);
+
+        SystemManagementService service = buildService(
+            mock(ModelProviderRepository.class),
+            mock(ModelProviderTypeRepository.class),
+            systemCapabilityRepository,
+            tenantCapabilityGrantRepository,
+            mock(TenantModelAssignmentRepository.class),
+            mock(ModelProviderConnectionTester.class)
+        );
+
+        assertThatThrownBy(() -> service.deleteCapability(capabilityId))
+            .isInstanceOf(ApiException.class)
+            .hasMessageContaining("已被租户启用");
+    }
+
+    @Test
+    void shouldRejectDraftCapabilityWhenEnabledByTenant() {
+        SystemCapabilityRepository systemCapabilityRepository = mock(SystemCapabilityRepository.class);
+        TenantCapabilityGrantRepository tenantCapabilityGrantRepository = mock(TenantCapabilityGrantRepository.class);
+        UUID capabilityId = UUID.randomUUID();
+        SystemCapabilityEntity entity = SystemCapabilityEntity.create(
+            "mcp",
+            "文件读取 MCP",
+            "file_read_mcp",
+            "v1",
+            "",
+            "medium",
+            "active",
+            java.util.Map.of("transport", "stdio", "command", "node server.js"),
+            Instant.parse("2026-05-15T08:00:00Z")
+        );
+        when(systemCapabilityRepository.findById(capabilityId)).thenReturn(Optional.of(entity));
+        when(tenantCapabilityGrantRepository.existsByCapabilityIdAndStatus(capabilityId, "enabled")).thenReturn(true);
+
+        SystemManagementService service = buildService(
+            mock(ModelProviderRepository.class),
+            mock(ModelProviderTypeRepository.class),
+            systemCapabilityRepository,
+            tenantCapabilityGrantRepository,
+            mock(TenantModelAssignmentRepository.class),
+            mock(ModelProviderConnectionTester.class)
+        );
+
+        assertThatThrownBy(() -> service.updateCapability(capabilityId, new SystemManagementApi.UpdateCapabilityRequest(
+            "mcp",
+            "文件读取 MCP",
+            "v1",
+            "",
+            "medium",
+            "draft",
+            java.util.Map.of("transport", "stdio", "command", "node server.js")
+        )))
+            .isInstanceOf(ApiException.class)
+            .hasMessageContaining("已被租户启用");
+    }
+
+    @Test
+    void shouldRejectEnableDraftModelProviderForTenant() {
+        TenantRepository tenantRepository = mock(TenantRepository.class);
+        ModelProviderRepository modelProviderRepository = mock(ModelProviderRepository.class);
+        TenantModelAssignmentRepository tenantModelAssignmentRepository = mock(TenantModelAssignmentRepository.class);
+        UUID tenantId = UUID.randomUUID();
+        UUID providerId = UUID.randomUUID();
+        TenantEntity tenant = mock(TenantEntity.class);
+        ModelProviderEntity provider = mock(ModelProviderEntity.class);
+        when(tenantRepository.findById(tenantId)).thenReturn(Optional.of(tenant));
+        when(tenant.getId()).thenReturn(tenantId);
+        when(modelProviderRepository.findById(providerId)).thenReturn(Optional.of(provider));
+        when(provider.getId()).thenReturn(providerId);
+        when(provider.getStatus()).thenReturn("draft");
+
+        SystemManagementService service = buildService(
+            tenantRepository,
+            modelProviderRepository,
+            mock(ModelProviderTypeRepository.class),
+            mock(SystemCapabilityRepository.class),
+            mock(TenantCapabilityGrantRepository.class),
+            tenantModelAssignmentRepository,
+            mock(ModelProviderConnectionTester.class)
+        );
+
+        assertThatThrownBy(() -> service.createTenantModelAssignment(new SystemManagementApi.CreateTenantModelAssignmentRequest(
+            tenantId,
+            providerId,
+            null,
+            "enabled"
+        )))
+            .isInstanceOf(ApiException.class)
+            .hasMessageContaining("草稿");
+    }
+
     private static SystemManagementService buildService(
         ModelProviderRepository modelProviderRepository,
         SystemCapabilityRepository systemCapabilityRepository
@@ -297,13 +464,51 @@ class SystemManagementServiceTest {
         SystemCapabilityRepository systemCapabilityRepository,
         ModelProviderConnectionTester modelProviderConnectionTester
     ) {
-        return new SystemManagementService(
-            mock(TenantRepository.class),
+        return buildService(
             modelProviderRepository,
             modelProviderTypeRepository,
             systemCapabilityRepository,
             mock(TenantCapabilityGrantRepository.class),
             mock(TenantModelAssignmentRepository.class),
+            modelProviderConnectionTester
+        );
+    }
+
+    private static SystemManagementService buildService(
+        ModelProviderRepository modelProviderRepository,
+        ModelProviderTypeRepository modelProviderTypeRepository,
+        SystemCapabilityRepository systemCapabilityRepository,
+        TenantCapabilityGrantRepository tenantCapabilityGrantRepository,
+        TenantModelAssignmentRepository tenantModelAssignmentRepository,
+        ModelProviderConnectionTester modelProviderConnectionTester
+    ) {
+        return buildService(
+            mock(TenantRepository.class),
+            modelProviderRepository,
+            modelProviderTypeRepository,
+            systemCapabilityRepository,
+            tenantCapabilityGrantRepository,
+            tenantModelAssignmentRepository,
+            modelProviderConnectionTester
+        );
+    }
+
+    private static SystemManagementService buildService(
+        TenantRepository tenantRepository,
+        ModelProviderRepository modelProviderRepository,
+        ModelProviderTypeRepository modelProviderTypeRepository,
+        SystemCapabilityRepository systemCapabilityRepository,
+        TenantCapabilityGrantRepository tenantCapabilityGrantRepository,
+        TenantModelAssignmentRepository tenantModelAssignmentRepository,
+        ModelProviderConnectionTester modelProviderConnectionTester
+    ) {
+        return new SystemManagementService(
+            tenantRepository,
+            modelProviderRepository,
+            modelProviderTypeRepository,
+            systemCapabilityRepository,
+            tenantCapabilityGrantRepository,
+            tenantModelAssignmentRepository,
             mock(UserAccountRepository.class),
             mock(UserRoleAssignmentRepository.class),
             mock(RoleRepository.class),
