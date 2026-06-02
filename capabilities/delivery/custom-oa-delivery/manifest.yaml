@@ -1,0 +1,56 @@
+key: custom-oa-delivery
+name: 自定义 OA 流程交付
+version: v1
+sourceType: custom
+runtime: http
+riskLevel: high
+entry:
+  method: POST
+  url: http://localhost:19090/delivery
+configSchema:
+  type: object
+  required:
+    - endpointUrl
+    - appCode
+  properties:
+    endpointUrl:
+      type: string
+      description: OA 适配器调用入口
+    appCode:
+      type: string
+      description: 目标 OA 应用编码
+    credentialRef:
+      type: string
+      description: 后续凭证托管引用，不保存明文凭证
+inputSchema:
+  type: object
+  required:
+    - title
+    - content
+  properties:
+    title:
+      type: string
+      description: 流程标题
+    content:
+      type: string
+      description: 交付正文
+    attachments:
+      type: array
+      items:
+        type: string
+      description: 附件路径或对象存储引用
+outputSchema:
+  type: object
+  required:
+    - externalId
+    - status
+  properties:
+    externalId:
+      type: string
+      description: 外部 OA 流程 ID
+    status:
+      type: string
+      description: 外部系统返回状态
+    receiptUrl:
+      type: string
+      description: 可选回执地址

@@ -13,6 +13,7 @@ class EmailDeliverySmtpConfigTest {
         FieldEncryptionService encryption = new FieldEncryptionService("test-master-key-with-enough-length");
 
         EmailDeliverySmtpConfig config = EmailDeliverySmtpConfig.fromCapabilityConfig(Map.of(
+            "sourceType", "builtin",
             "deliveryChannel", "email",
             "smtpHost", "localhost",
             "smtpPort", 1025,

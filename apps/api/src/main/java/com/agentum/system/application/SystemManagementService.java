@@ -769,8 +769,24 @@ public class SystemManagementService {
 
     private SystemManagementApi.CapabilityTestResult testDeliveryConfig(SystemCapabilityEntity capability) {
         Map<String, Object> config = capability.getConfig();
+        String sourceType = firstNonBlank(stringValue(config.get("sourceType")), "builtin");
+        if ("custom".equals(sourceType)) {
+            List<SystemManagementApi.CapabilityToolRow> tools = List.of(new SystemManagementApi.CapabilityToolRow(
+                capability.getCode() + ".deliver",
+                "调用自定义交付适配器，运行时必须经过权限、审批和审计链路",
+                Map.of(
+                    "type", "object",
+                    "required", List.of("payload"),
+                    "properties", Map.of(
+                        "payload", Map.of("type", "object"),
+                        "attachments", Map.of("type", "array", "items", Map.of("type", "string"))
+                    )
+                )
+            ));
+            return new SystemManagementApi.CapabilityTestResult(capability.getId(), "success", "自定义交付适配器配置检查通过，后续按统一协议调用并写入审计", tools, clock.instant());
+        }
         if (!"email".equals(stringValue(config.get("deliveryChannel")))) {
-            return new SystemManagementApi.CapabilityTestResult(capability.getId(), "failed", "当前阶段交付能力只支持邮箱通道", List.of(), clock.instant());
+            return new SystemManagementApi.CapabilityTestResult(capability.getId(), "failed", "系统内置交付当前只支持邮箱通道", List.of(), clock.instant());
         }
         List<SystemManagementApi.CapabilityToolRow> tools = List.of(new SystemManagementApi.CapabilityToolRow(
             capability.getCode() + ".send_email",
@@ -887,13 +903,31 @@ public class SystemManagementService {
             return result;
         }
         if ("delivery".equals(capabilityType)) {
+            String sourceType = firstNonBlank(stringValue(config.get("sourceType")), "builtin");
+            if (!"builtin".equals(sourceType) && !"custom".equals(sourceType)) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_DELIVERY_SOURCE_TYPE_INVALID", "交付能力来源只能是 builtin 或 custom");
+            }
+            if ("custom".equals(sourceType)) {
+                String implementationKey = requireConfig(config, "implementationKey", "自定义交付实现标识不能为空");
+                String manifestPath = requireConfig(config, "manifestPath", "自定义交付 Manifest 路径不能为空");
+                String protocol = firstNonBlank(stringValue(config.get("protocol")), "http");
+                String endpointUrl = nullableString(config.get("endpointUrl"));
+                Map<String, Object> result = new HashMap<>();
+                result.put("sourceType", "custom");
+                result.put("implementationKey", implementationKey);
+                result.put("manifestPath", manifestPath);
+                result.put("protocol", protocol);
+                result.put("endpointUrl", endpointUrl);
+                return result;
+            }
             if (!"email".equals(stringValue(config.get("deliveryChannel")))) {
-                throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_DELIVERY_CHANNEL_INVALID", "当前阶段交付能力只支持邮箱通道");
+                throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_DELIVERY_CHANNEL_INVALID", "系统内置交付当前只支持邮箱通道");
             }
             String smtpHost = requireConfig(config, "smtpHost", "SMTP 主机不能为空");
             int smtpPort = parsePort(config.get("smtpPort"));
             String fromAddress = requireConfig(config, "fromAddress", "发件邮箱不能为空");
             Map<String, Object> result = new HashMap<>();
+            result.put("sourceType", "builtin");
             result.put("deliveryChannel", "email");
             result.put("smtpHost", smtpHost);
             result.put("smtpPort", smtpPort);

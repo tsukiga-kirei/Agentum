@@ -126,7 +126,7 @@ apps/api/src/main/java/com/agentum/
 
 - `capabilities/skills/`：产品运行时 Skill 的说明、提示词片段、输入输出约束、测试样例和发布材料。
 - `capabilities/mcp-servers/`：自研 MCP Server 的源码、manifest、启动说明、测试和部署配置。
-- `capabilities/delivery/`：交付能力适配器、文档模板、脚本和本地验证材料。
+- `capabilities/delivery/`：自定义交付适配器的 Manifest、源码、脚本和本地验证材料；系统内置交付能力（如邮箱）由后端原生实现，不放在本目录。
 
 提示词模板功能仍作为能力资产、前端配置和流程节点引用能力保留；当前不再维护独立的提示词模板源码目录。
 

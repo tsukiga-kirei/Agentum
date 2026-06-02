@@ -501,6 +501,7 @@ class SystemManagementServiceTest {
         assertThat(savedCapabilities).hasSize(1);
         java.util.Map<String, Object> storedConfig = savedCapabilities.getFirst().getConfig();
         assertThat(storedConfig)
+            .containsEntry("sourceType", "builtin")
             .containsEntry("deliveryChannel", "email")
             .containsEntry("smtpHost", "localhost")
             .containsEntry("smtpPort", 1025)
@@ -510,9 +511,50 @@ class SystemManagementServiceTest {
         assertThat(storedConfig.get("encryptedSmtpPassword").toString()).doesNotContain("smtp-secret");
         assertThat(FIELD_ENCRYPTION.decrypt(storedConfig.get("encryptedSmtpPassword").toString())).isEqualTo("smtp-secret");
         assertThat(row.config())
+            .containsEntry("sourceType", "builtin")
             .containsEntry("deliveryChannel", "email")
             .containsEntry("smtpPasswordConfigured", true)
             .doesNotContainKeys("smtpPassword", "encryptedSmtpPassword");
+    }
+
+    @Test
+    void shouldPersistCustomDeliveryAdapterProtocolConfig() {
+        SystemCapabilityRepository systemCapabilityRepository = mock(SystemCapabilityRepository.class);
+        List<SystemCapabilityEntity> savedCapabilities = new ArrayList<>();
+        when(systemCapabilityRepository.findByCodeAndVersion(any(), any())).thenReturn(Optional.empty());
+        when(systemCapabilityRepository.save(any(SystemCapabilityEntity.class))).thenAnswer(invocation -> {
+            SystemCapabilityEntity entity = invocation.getArgument(0);
+            savedCapabilities.add(entity);
+            return entity;
+        });
+        SystemManagementService service = buildService(mock(ModelProviderRepository.class), systemCapabilityRepository);
+
+        SystemManagementApi.CapabilityRow row = service.createCapability(new SystemManagementApi.CreateCapabilityRequest(
+            "delivery",
+            "OA 自定义交付",
+            null,
+            "v1",
+            "通过外部适配器创建 OA 流程",
+            "high",
+            "active",
+            java.util.Map.of(
+                "sourceType", "custom",
+                "implementationKey", "custom-oa-delivery",
+                "manifestPath", "capabilities/delivery/custom-oa-delivery/manifest.yaml",
+                "protocol", "http",
+                "endpointUrl", "http://localhost:19090/delivery"
+            )
+        ));
+
+        assertThat(savedCapabilities).hasSize(1);
+        assertThat(savedCapabilities.getFirst().getConfig())
+            .containsEntry("sourceType", "custom")
+            .containsEntry("implementationKey", "custom-oa-delivery")
+            .containsEntry("manifestPath", "capabilities/delivery/custom-oa-delivery/manifest.yaml")
+            .containsEntry("protocol", "http")
+            .containsEntry("endpointUrl", "http://localhost:19090/delivery")
+            .doesNotContainKeys("smtpHost", "smtpPort", "encryptedSmtpPassword");
+        assertThat(row.config()).containsEntry("sourceType", "custom");
     }
 
     @Test

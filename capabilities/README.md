@@ -10,7 +10,7 @@
 capabilities/
   skills/            产品运行时 Skill 定义、说明、样例和测试
   mcp-servers/       自研 MCP Server 源码、manifest、测试和部署说明
-  delivery/          交付适配器、文档模板和本地验证材料
+  delivery/          自定义交付适配器 Manifest、源码和本地验证材料
 ```
 
 不要把 `.codex/skills/` 里的开发辅助技能直接当作产品运行时 Skill 发布。两者服务对象不同：前者辅助本仓库开发，后者会被 Agentum 智能体运行时引用。

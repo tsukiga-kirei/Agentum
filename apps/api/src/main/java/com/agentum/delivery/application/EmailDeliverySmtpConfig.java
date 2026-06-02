@@ -15,6 +15,10 @@ public record EmailDeliverySmtpConfig(
 ) {
 
     public static EmailDeliverySmtpConfig fromCapabilityConfig(Map<String, Object> config, FieldEncryptionService fieldEncryptionService) {
+        String sourceType = stringValue(config.get("sourceType"));
+        if (sourceType != null && !"builtin".equals(sourceType)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "DELIVERY_CHANNEL_INVALID", "当前交付能力不是系统内置邮箱通道");
+        }
         if (!"email".equals(stringValue(config.get("deliveryChannel")))) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "DELIVERY_CHANNEL_INVALID", "当前交付能力不是邮箱通道");
         }

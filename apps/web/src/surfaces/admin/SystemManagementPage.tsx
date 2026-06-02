@@ -211,7 +211,11 @@ function buildCapabilityFormValues(capability: SystemCapabilityRow): Record<stri
     transport: "sse",
     sseUrl: readConfigString(capability.config, "sseUrl"),
     toolCatalogUrl: readConfigString(capability.config, "toolCatalogUrl"),
+    sourceType: readConfigString(capability.config, "sourceType") || "builtin",
     deliveryChannel: readConfigString(capability.config, "deliveryChannel") || "email",
+    implementationKey: readConfigString(capability.config, "implementationKey"),
+    protocol: readConfigString(capability.config, "protocol") || "http",
+    endpointUrl: readConfigString(capability.config, "endpointUrl"),
     smtpHost: readConfigString(capability.config, "smtpHost"),
     smtpPort: readConfigString(capability.config, "smtpPort"),
     smtpUsername: readConfigString(capability.config, "smtpUsername"),
@@ -300,6 +304,7 @@ export function SystemManagementPage() {
   const [editingCapability, setEditingCapability] = useState<SystemCapabilityRow | null>(null);
   const [selectedModelProviderType, setSelectedModelProviderType] = useState("");
   const [selectedCapabilityType, setSelectedCapabilityType] = useState("mcp");
+  const [selectedDeliverySourceType, setSelectedDeliverySourceType] = useState("builtin");
   const modelRef = useRef<Record<string,string>>({});
   const capRef = useRef<Record<string,string>>({});
   const [modelFormKey, setModelFormKey] = useState(0);
@@ -514,6 +519,7 @@ export function SystemManagementPage() {
     setEditingCapability(capability);
     capRef.current = capability ? buildCapabilityFormValues(capability) : { capabilityType: "mcp", transport: "sse" };
     setSelectedCapabilityType(capability?.capabilityType ?? "mcp");
+    setSelectedDeliverySourceType(capability ? (readConfigString(capability.config, "sourceType") || "builtin") : "builtin");
     setCapFormKey((key) => key + 1);
     setCapModalOpen(true);
   };
@@ -611,24 +617,40 @@ export function SystemManagementPage() {
         return;
       }
     } else if (capabilityType === "delivery") {
-      config.deliveryChannel = "email";
-      config.smtpHost = d.smtpHost?.trim() || "";
-      config.smtpPort = d.smtpPort?.trim() || "";
-      config.smtpUsername = d.smtpUsername?.trim() || "";
-      config.smtpPassword = d.smtpPassword?.trim() || "";
-      config.fromAddress = d.fromAddress?.trim() || "";
-      config.useTls = d.useTls === "true";
-      if (!config.smtpHost) {
-        messageApi.warning("请输入 SMTP 主机");
-        return;
-      }
-      if (!config.smtpPort) {
-        messageApi.warning("请输入 SMTP 端口");
-        return;
-      }
-      if (!config.fromAddress) {
-        messageApi.warning("请输入发件邮箱");
-        return;
+      config.sourceType = d.sourceType?.trim() || "builtin";
+      if (config.sourceType === "custom") {
+        config.implementationKey = d.implementationKey?.trim() || "";
+        config.manifestPath = d.manifestPath?.trim() || "";
+        config.protocol = d.protocol?.trim() || "http";
+        config.endpointUrl = d.endpointUrl?.trim() || "";
+        if (!config.implementationKey) {
+          messageApi.warning("请输入自定义交付实现标识");
+          return;
+        }
+        if (!config.manifestPath) {
+          messageApi.warning("请输入 Manifest 路径");
+          return;
+        }
+      } else {
+        config.deliveryChannel = "email";
+        config.smtpHost = d.smtpHost?.trim() || "";
+        config.smtpPort = d.smtpPort?.trim() || "";
+        config.smtpUsername = d.smtpUsername?.trim() || "";
+        config.smtpPassword = d.smtpPassword?.trim() || "";
+        config.fromAddress = d.fromAddress?.trim() || "";
+        config.useTls = d.useTls === "true";
+        if (!config.smtpHost) {
+          messageApi.warning("请输入 SMTP 主机");
+          return;
+        }
+        if (!config.smtpPort) {
+          messageApi.warning("请输入 SMTP 端口");
+          return;
+        }
+        if (!config.fromAddress) {
+          messageApi.warning("请输入发件邮箱");
+          return;
+        }
       }
     } else if (capabilityType === "prompt_template") {
       config.promptContent = d.promptContent?.trim() || "";
@@ -1383,7 +1405,7 @@ export function SystemManagementPage() {
         rootClassName={drawerRootClassName}
       >
         <div className="sys-drawer-section" key={capFormKey}>
-          <div className="sys-field"><label className="sys-field-label sys-field-label--required">能力类型</label><SysSelect icon={Boxes} placeholder="请选择能力类型" defaultValue={capRef.current.capabilityType || ""} options={capabilityTypeOptions} onChange={v=>{capRef.current.capabilityType=v;setSelectedCapabilityType(v);}}/></div>
+          <div className="sys-field"><label className="sys-field-label sys-field-label--required">能力类型</label><SysSelect icon={Boxes} placeholder="请选择能力类型" defaultValue={capRef.current.capabilityType || ""} options={capabilityTypeOptions} onChange={v=>{capRef.current.capabilityType=v;setSelectedCapabilityType(v);if(v==="delivery"&&!capRef.current.sourceType){capRef.current.sourceType="builtin";setSelectedDeliverySourceType("builtin");}}}/></div>
           <div className="sys-field-row">
             <div className="sys-field"><label className="sys-field-label sys-field-label--required">名称</label><div className="sys-field-input-wrap"><Tag size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如：文档解析器" maxLength={160} defaultValue={capRef.current.name || ""} onChange={e=>{capRef.current.name=e.target.value;}}/></div></div>
             <div className="sys-field">
@@ -1433,19 +1455,34 @@ export function SystemManagementPage() {
           )}
           {selectedCapabilityType === "delivery" && (
             <div className="sys-config-group">
-              <div className="sys-hint"><Mail size={14}/> 当前阶段仅保留邮箱交付；密码由后端加密保存，不会在列表、日志或响应中回显。</div>
-              <div className="sys-field-row">
-                <div className="sys-field"><label className="sys-field-label sys-field-label--required">SMTP 主机</label><div className="sys-field-input-wrap"><ServerCog size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="localhost" maxLength={200} defaultValue={capRef.current.smtpHost || ""} onChange={e=>{capRef.current.smtpHost=e.target.value;}}/></div></div>
-                <div className="sys-field"><label className="sys-field-label sys-field-label--required">SMTP 端口</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="1025" maxLength={10} defaultValue={capRef.current.smtpPort || ""} onChange={e=>{capRef.current.smtpPort=e.target.value;}}/></div></div>
-              </div>
-              <div className="sys-field-row">
-                <div className="sys-field"><label className="sys-field-label">SMTP 账号</label><div className="sys-field-input-wrap"><User size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="可选" maxLength={200} defaultValue={capRef.current.smtpUsername || ""} onChange={e=>{capRef.current.smtpUsername=e.target.value;}}/></div></div>
-                <div className="sys-field"><label className="sys-field-label">SMTP 密码</label><div className="sys-field-input-wrap"><KeyRound size={16} className="sys-field-prefix"/><input className="sys-field-input" type="password" placeholder={capRef.current.smtpPasswordConfigured === "true" ? "已配置，留空则保持不变" : "可选"} maxLength={1000} onChange={e=>{capRef.current.smtpPassword=e.target.value;}}/></div></div>
-              </div>
-              <div className="sys-field-row">
-                <div className="sys-field"><label className="sys-field-label sys-field-label--required">发件邮箱</label><div className="sys-field-input-wrap"><Mail size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="agentum@example.test" maxLength={320} defaultValue={capRef.current.fromAddress || ""} onChange={e=>{capRef.current.fromAddress=e.target.value;}}/></div></div>
-                <div className="sys-field"><label className="sys-field-label">TLS</label><SysSelect icon={ShieldCheck} placeholder="请选择 TLS 设置" defaultValue={capRef.current.useTls || "false"} options={[{value:"false",label:"关闭"},{value:"true",label:"启用"}]} onChange={v=>{capRef.current.useTls=v;}}/></div>
-              </div>
+              <div className="sys-field"><label className="sys-field-label">交付来源</label><SysSelect icon={Mail} placeholder="请选择交付来源" defaultValue={capRef.current.sourceType || "builtin"} options={[{value:"builtin",label:"系统内置"},{value:"custom",label:"自定义适配器"}]} onChange={v=>{capRef.current.sourceType=v;setSelectedDeliverySourceType(v);}}/></div>
+              {selectedDeliverySourceType === "custom" ? (
+                <>
+                  <div className="sys-hint"><Code2 size={14}/> 自定义交付能力来自 <code>capabilities/delivery</code>，必须按统一协议声明配置、输入、输出和调用入口。</div>
+                  <div className="sys-field-row">
+                    <div className="sys-field"><label className="sys-field-label sys-field-label--required">实现标识</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="custom-oa-delivery" maxLength={120} defaultValue={capRef.current.implementationKey || ""} onChange={e=>{capRef.current.implementationKey=e.target.value;}}/></div></div>
+                    <div className="sys-field"><label className="sys-field-label">协议</label><SysSelect icon={ServerCog} placeholder="请选择协议" defaultValue={capRef.current.protocol || "http"} options={[{value:"http",label:"HTTP 适配器"}]} onChange={v=>{capRef.current.protocol=v;}}/></div>
+                  </div>
+                  <div className="sys-field"><label className="sys-field-label sys-field-label--required">Manifest 路径</label><div className="sys-field-input-wrap"><Code2 size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="capabilities/delivery/custom-oa-delivery/manifest.yaml" maxLength={500} defaultValue={capRef.current.manifestPath || ""} onChange={e=>{capRef.current.manifestPath=e.target.value;}}/></div></div>
+                  <div className="sys-field"><label className="sys-field-label">调用入口</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="http://localhost:19090/delivery" maxLength={500} defaultValue={capRef.current.endpointUrl || ""} onChange={e=>{capRef.current.endpointUrl=e.target.value;}}/></div><div className="sys-field-hint">后续运行网关会基于 Manifest 协议和此入口调用外部适配器。</div></div>
+                </>
+              ) : (
+                <>
+                  <div className="sys-hint"><Mail size={14}/> 系统内置邮箱交付由 Agentum API 原生执行；密码由后端加密保存，不会在列表、日志或响应中回显。</div>
+                  <div className="sys-field-row">
+                    <div className="sys-field"><label className="sys-field-label sys-field-label--required">SMTP 主机</label><div className="sys-field-input-wrap"><ServerCog size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="localhost" maxLength={200} defaultValue={capRef.current.smtpHost || ""} onChange={e=>{capRef.current.smtpHost=e.target.value;}}/></div></div>
+                    <div className="sys-field"><label className="sys-field-label sys-field-label--required">SMTP 端口</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="1025" maxLength={10} defaultValue={capRef.current.smtpPort || ""} onChange={e=>{capRef.current.smtpPort=e.target.value;}}/></div></div>
+                  </div>
+                  <div className="sys-field-row">
+                    <div className="sys-field"><label className="sys-field-label">SMTP 账号</label><div className="sys-field-input-wrap"><User size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="可选" maxLength={200} defaultValue={capRef.current.smtpUsername || ""} onChange={e=>{capRef.current.smtpUsername=e.target.value;}}/></div></div>
+                    <div className="sys-field"><label className="sys-field-label">SMTP 密码</label><div className="sys-field-input-wrap"><KeyRound size={16} className="sys-field-prefix"/><input className="sys-field-input" type="password" placeholder={capRef.current.smtpPasswordConfigured === "true" ? "已配置，留空则保持不变" : "可选"} maxLength={1000} onChange={e=>{capRef.current.smtpPassword=e.target.value;}}/></div></div>
+                  </div>
+                  <div className="sys-field-row">
+                    <div className="sys-field"><label className="sys-field-label sys-field-label--required">发件邮箱</label><div className="sys-field-input-wrap"><Mail size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="agentum@example.test" maxLength={320} defaultValue={capRef.current.fromAddress || ""} onChange={e=>{capRef.current.fromAddress=e.target.value;}}/></div></div>
+                    <div className="sys-field"><label className="sys-field-label">TLS</label><SysSelect icon={ShieldCheck} placeholder="请选择 TLS 设置" defaultValue={capRef.current.useTls || "false"} options={[{value:"false",label:"关闭"},{value:"true",label:"启用"}]} onChange={v=>{capRef.current.useTls=v;}}/></div>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>
