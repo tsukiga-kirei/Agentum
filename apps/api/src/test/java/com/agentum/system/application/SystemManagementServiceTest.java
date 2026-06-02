@@ -7,6 +7,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.agentum.delivery.application.EmailDeliveryConnectionTester;
 import com.agentum.auth.domain.UserRoleAssignmentEntity;
 import com.agentum.auth.infrastructure.UserAccountRepository;
 import com.agentum.auth.infrastructure.UserRoleAssignmentRepository;
@@ -85,6 +86,7 @@ class SystemManagementServiceTest {
             mock(ModelProviderConnectionTester.class),
             mock(McpSseConnectionTester.class),
             mock(SkillManifestProbe.class),
+            mock(EmailDeliveryConnectionTester.class),
             Clock.fixed(Instant.parse("2026-05-15T08:00:00Z"), ZoneOffset.UTC)
         );
 
@@ -621,7 +623,8 @@ class SystemManagementServiceTest {
             mock(TenantModelAssignmentRepository.class),
             modelProviderConnectionTester,
             mock(McpSseConnectionTester.class),
-            mock(SkillManifestProbe.class)
+            mock(SkillManifestProbe.class),
+            mock(EmailDeliveryConnectionTester.class)
         );
     }
 
@@ -642,7 +645,8 @@ class SystemManagementServiceTest {
             tenantModelAssignmentRepository,
             modelProviderConnectionTester,
             mock(McpSseConnectionTester.class),
-            mock(SkillManifestProbe.class)
+            mock(SkillManifestProbe.class),
+            mock(EmailDeliveryConnectionTester.class)
         );
     }
 
@@ -664,7 +668,8 @@ class SystemManagementServiceTest {
             tenantModelAssignmentRepository,
             modelProviderConnectionTester,
             mock(McpSseConnectionTester.class),
-            mock(SkillManifestProbe.class)
+            mock(SkillManifestProbe.class),
+            mock(EmailDeliveryConnectionTester.class)
         );
     }
 
@@ -677,7 +682,8 @@ class SystemManagementServiceTest {
         TenantModelAssignmentRepository tenantModelAssignmentRepository,
         ModelProviderConnectionTester modelProviderConnectionTester,
         McpSseConnectionTester mcpSseConnectionTester,
-        SkillManifestProbe skillManifestProbe
+        SkillManifestProbe skillManifestProbe,
+        EmailDeliveryConnectionTester emailDeliveryConnectionTester
     ) {
         return new SystemManagementService(
             tenantRepository,
@@ -697,6 +703,7 @@ class SystemManagementServiceTest {
             modelProviderConnectionTester,
             mcpSseConnectionTester,
             skillManifestProbe,
+            emailDeliveryConnectionTester,
             Clock.fixed(Instant.parse("2026-05-15T08:00:00Z"), ZoneOffset.UTC)
         );
     }

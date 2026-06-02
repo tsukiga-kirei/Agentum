@@ -14,6 +14,16 @@ public record EmailDeliverySmtpConfig(
     boolean useTls
 ) {
 
+    public EmailDeliveryTransportMode transportMode() {
+        if (!useTls) {
+            return EmailDeliveryTransportMode.PLAIN;
+        }
+        if (port == 465) {
+            return EmailDeliveryTransportMode.SMTPS;
+        }
+        return EmailDeliveryTransportMode.STARTTLS;
+    }
+
     public static EmailDeliverySmtpConfig fromCapabilityConfig(Map<String, Object> config, FieldEncryptionService fieldEncryptionService) {
         String sourceType = stringValue(config.get("sourceType"));
         if (sourceType != null && !"builtin".equals(sourceType)) {

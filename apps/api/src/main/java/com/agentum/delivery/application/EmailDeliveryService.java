@@ -9,7 +9,6 @@ import jakarta.mail.internet.MimeMessage;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Properties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -31,7 +30,7 @@ public class EmailDeliveryService {
     public void send(SystemCapabilityEntity capability, EmailDeliveryMessage message) {
         EmailDeliverySmtpConfig smtp = EmailDeliverySmtpConfig.fromCapabilityConfig(capability.getConfig(), fieldEncryptionService);
         validateMessage(message);
-        JavaMailSenderImpl sender = buildSender(smtp);
+        JavaMailSenderImpl sender = EmailDeliveryMailSenderFactory.create(smtp);
         try {
             MimeMessage mimeMessage = sender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, "UTF-8");
@@ -62,25 +61,6 @@ public class EmailDeliveryService {
             log.warn("邮箱交付发送失败 capabilityId={} host={} port={} requestId={}", capability.getId(), smtp.host(), smtp.port(), RequestIds.current());
             throw new ApiException(HttpStatus.BAD_GATEWAY, "DELIVERY_EMAIL_SEND_FAILED", "邮件发送失败，请检查 SMTP 配置或网络连通性");
         }
-    }
-
-    private static JavaMailSenderImpl buildSender(EmailDeliverySmtpConfig smtp) {
-        JavaMailSenderImpl sender = new JavaMailSenderImpl();
-        sender.setHost(smtp.host());
-        sender.setPort(smtp.port());
-        if (smtp.username() != null && !smtp.username().isBlank()) {
-            sender.setUsername(smtp.username());
-        }
-        if (smtp.password() != null && !smtp.password().isBlank()) {
-            sender.setPassword(smtp.password());
-        }
-        Properties properties = sender.getJavaMailProperties();
-        properties.put("mail.smtp.auth", String.valueOf(smtp.username() != null && !smtp.username().isBlank() && smtp.password() != null && !smtp.password().isBlank()));
-        properties.put("mail.smtp.starttls.enable", String.valueOf(smtp.useTls()));
-        properties.put("mail.smtp.connectiontimeout", "5000");
-        properties.put("mail.smtp.timeout", "10000");
-        properties.put("mail.smtp.writetimeout", "10000");
-        return sender;
     }
 
     private static void attachFiles(MimeMessageHelper helper, List<Path> attachmentPaths) throws MessagingException {

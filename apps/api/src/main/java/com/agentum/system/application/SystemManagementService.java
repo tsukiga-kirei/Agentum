@@ -34,6 +34,9 @@ import com.agentum.permission.domain.RoleEntity;
 import com.agentum.permission.infrastructure.RoleRepository;
 import com.agentum.tenant.domain.TenantEntity;
 import com.agentum.tenant.infrastructure.TenantRepository;
+import com.agentum.delivery.application.EmailDeliveryConnectionTester;
+import com.agentum.delivery.application.EmailDeliveryTestOutcome;
+import com.agentum.delivery.application.EmailDeliveryTestRequest;
 import java.time.Clock;
 import java.util.HashMap;
 import java.util.List;
@@ -85,6 +88,7 @@ public class SystemManagementService {
     private final ModelProviderConnectionTester modelProviderConnectionTester;
     private final McpSseConnectionTester mcpSseConnectionTester;
     private final SkillManifestProbe skillManifestProbe;
+    private final EmailDeliveryConnectionTester emailDeliveryConnectionTester;
     private final Clock clock;
 
     public SystemManagementService(
@@ -105,6 +109,7 @@ public class SystemManagementService {
         ModelProviderConnectionTester modelProviderConnectionTester,
         McpSseConnectionTester mcpSseConnectionTester,
         SkillManifestProbe skillManifestProbe,
+        EmailDeliveryConnectionTester emailDeliveryConnectionTester,
         Clock clock
     ) {
         this.tenantRepository = tenantRepository;
@@ -124,6 +129,7 @@ public class SystemManagementService {
         this.modelProviderConnectionTester = modelProviderConnectionTester;
         this.mcpSseConnectionTester = mcpSseConnectionTester;
         this.skillManifestProbe = skillManifestProbe;
+        this.emailDeliveryConnectionTester = emailDeliveryConnectionTester;
         this.clock = clock;
     }
 
@@ -771,6 +777,9 @@ public class SystemManagementService {
         if (!"email".equals(stringValue(config.get("deliveryChannel")))) {
             return new SystemManagementApi.CapabilityTestResult(capability.getId(), "failed", "系统内置交付当前只支持邮箱通道", List.of(), clock.instant());
         }
+        EmailDeliveryTestOutcome outcome = emailDeliveryConnectionTester.test(
+            new EmailDeliveryTestRequest(capability.getId(), capability.getConfig())
+        );
         List<SystemManagementApi.CapabilityToolRow> tools = List.of(new SystemManagementApi.CapabilityToolRow(
             capability.getCode() + ".send_email",
             "发送邮件正文与附件，运行时必须写入交付记录和审计日志",
@@ -785,7 +794,13 @@ public class SystemManagementService {
                 )
             )
         ));
-        return new SystemManagementApi.CapabilityTestResult(capability.getId(), "success", "邮箱交付配置检查通过，可用于本地 Mailpit 或 SMTP 服务验证发件", tools, clock.instant());
+        return new SystemManagementApi.CapabilityTestResult(
+            capability.getId(),
+            outcome.status(),
+            outcome.summary(),
+            "success".equals(outcome.status()) ? tools : List.of(),
+            clock.instant()
+        );
     }
 
     private SystemManagementApi.CapabilityTestResult testPromptTemplateConfig(SystemCapabilityEntity capability) {
