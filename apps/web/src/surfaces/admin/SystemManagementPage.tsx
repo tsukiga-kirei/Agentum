@@ -1203,10 +1203,12 @@ export function SystemManagementPage() {
                           <span className="sys-card-footer-time"><ShieldCheck size={12}/> {c.code}</span>
                           <div className="sys-card-footer-actions" onClick={e=>e.stopPropagation()}>
                             {capabilitySupportsConnectivityTest(c.capabilityType) ? (
-                              <button className="sys-btn sys-btn--default sys-btn--sm" onClick={()=>void testCapabilityConnection(c.id)}><PlayCircle size={14}/> 测试连通性</button>
-                            ) : null}
-                            <button className="sys-btn sys-btn--text sys-btn--sm" onClick={()=>openCapabilityModal(c)}><Edit size={14}/> 编辑</button>
-                            <button className="sys-btn sys-btn--text sys-btn--sm sys-btn--danger" onClick={()=>confirmDeleteCapability(c)}><Trash2 size={14}/> 删除</button>
+                              <button type="button" className="sys-btn sys-btn--default sys-btn--sm" onClick={()=>void testCapabilityConnection(c.id)}><PlayCircle size={14}/> 测试连通性</button>
+                            ) : (
+                              <button type="button" className="sys-btn sys-btn--default sys-btn--sm sys-card-footer-action-placeholder" tabIndex={-1} disabled aria-hidden="true"><PlayCircle size={14}/> 测试连通性</button>
+                            )}
+                            <button type="button" className="sys-btn sys-btn--text sys-btn--sm" onClick={()=>openCapabilityModal(c)}><Edit size={14}/> 编辑</button>
+                            <button type="button" className="sys-btn sys-btn--text sys-btn--sm sys-btn--danger" onClick={()=>confirmDeleteCapability(c)}><Trash2 size={14}/> 删除</button>
                           </div>
                         </div>
                       </div>

@@ -1581,9 +1581,19 @@ textarea:focus-visible {
   gap: 16px;
   width: 100%;
   min-width: 0;
+  align-items: stretch;
 }
 .sys-card-grid > .workflow-feature-card {
   width: 100%;
+}
+/* 网格内卡片等高，操作栏贴底对齐，避免内容高度不同导致底部按钮上下错位 */
+.sys-card-grid > .sys-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.sys-card-grid > .sys-card > .sys-card-footer {
+  margin-top: auto;
 }
 
 /* 通用管理卡片 */
@@ -1733,8 +1743,15 @@ textarea:focus-visible {
 }
 .sys-card-footer-actions {
   display: flex; flex-wrap: wrap; gap: 4px;
+  align-items: center;
   justify-content: flex-end;
   margin-left: auto;
+  min-height: 28px;
+}
+.sys-card-footer-action-placeholder {
+  visibility: hidden;
+  pointer-events: none;
+  flex-shrink: 0;
 }
 
 /* 概览统计卡片（顶部一排） */
