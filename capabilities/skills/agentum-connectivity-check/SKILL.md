@@ -1,3 +1,8 @@
+---
+name: agentum-connectivity-check
+description: 用于验证 Agentum 产品运行时 Skill 登记、分配和引用链路是否连通。
+---
+
 # Agentum 连通性检查 Skill
 
 ## 用途

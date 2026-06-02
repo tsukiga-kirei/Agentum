@@ -84,6 +84,7 @@ public class SystemManagementService {
     private final FieldEncryptionService fieldEncryptionService;
     private final ModelProviderConnectionTester modelProviderConnectionTester;
     private final McpSseConnectionTester mcpSseConnectionTester;
+    private final SkillManifestProbe skillManifestProbe;
     private final Clock clock;
 
     public SystemManagementService(
@@ -103,6 +104,7 @@ public class SystemManagementService {
         FieldEncryptionService fieldEncryptionService,
         ModelProviderConnectionTester modelProviderConnectionTester,
         McpSseConnectionTester mcpSseConnectionTester,
+        SkillManifestProbe skillManifestProbe,
         Clock clock
     ) {
         this.tenantRepository = tenantRepository;
@@ -121,6 +123,7 @@ public class SystemManagementService {
         this.fieldEncryptionService = fieldEncryptionService;
         this.modelProviderConnectionTester = modelProviderConnectionTester;
         this.mcpSseConnectionTester = mcpSseConnectionTester;
+        this.skillManifestProbe = skillManifestProbe;
         this.clock = clock;
     }
 
@@ -465,7 +468,7 @@ public class SystemManagementService {
         // 真正运行时仍要经过后续 MCP 网关、Skill 沙箱和交付审计链路重新校验。
         SystemManagementApi.CapabilityTestResult result = switch (capability.getCapabilityType()) {
             case "mcp" -> testMcpConfig(capability);
-            case "skill" -> testSourceConfig(capability, "Skill 源配置检查通过，后续接入 Skill manifest 校验与样例运行");
+            case "skill" -> testSkillConfig(capability);
             case "prompt_template" -> testPromptTemplateConfig(capability);
             case "delivery" -> testDeliveryConfig(capability);
             default -> new SystemManagementApi.CapabilityTestResult(capability.getId(), "failed", "能力类型不在平台全局能力范围", List.of(), clock.instant());
@@ -728,12 +731,23 @@ public class SystemManagementService {
         return new SystemManagementApi.CapabilityToolRow(tool.name(), tool.description(), tool.inputSchema());
     }
 
-    private SystemManagementApi.CapabilityTestResult testSourceConfig(SystemCapabilityEntity capability, String successSummary) {
+    private SystemManagementApi.CapabilityTestResult testSkillConfig(SystemCapabilityEntity capability) {
         Map<String, Object> config = capability.getConfig();
-        if (stringValue(config.get("sourcePath")) == null && stringValue(config.get("manifestPath")) == null) {
-            return new SystemManagementApi.CapabilityTestResult(capability.getId(), "failed", "请配置 Skill 源码路径或 Manifest 路径，便于后续发布和测试", List.of(), clock.instant());
-        }
-        return new SystemManagementApi.CapabilityTestResult(capability.getId(), "success", successSummary, List.of(), clock.instant());
+        SkillProbeOutcome outcome = skillManifestProbe.probe(new SkillProbeRequest(
+            capability.getId(),
+            stringValue(config.get("sourcePath")),
+            stringValue(config.get("manifestPath"))
+        ));
+        List<SystemManagementApi.CapabilityToolRow> tools = outcome.tools().stream()
+            .map(tool -> new SystemManagementApi.CapabilityToolRow(tool.name(), tool.description(), tool.inputSchema()))
+            .toList();
+        return new SystemManagementApi.CapabilityTestResult(
+            capability.getId(),
+            outcome.status(),
+            outcome.summary(),
+            tools,
+            clock.instant()
+        );
     }
 
     private SystemManagementApi.CapabilityTestResult testDeliveryConfig(SystemCapabilityEntity capability) {
@@ -845,6 +859,10 @@ public class SystemManagementService {
         }
         if ("prompt_template".equals(capabilityType)) {
             return Map.of("promptContent", nullableString(config.get("promptContent")));
+        }
+        if ("skill".equals(capabilityType)) {
+            String sourcePath = requireConfig(config, "sourcePath", "Skill 源码路径不能为空");
+            return Map.of("sourcePath", sourcePath);
         }
         return Map.of(
             "sourcePath", nullableString(config.get("sourcePath")),

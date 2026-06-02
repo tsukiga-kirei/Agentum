@@ -84,6 +84,7 @@ class SystemManagementServiceTest {
             FIELD_ENCRYPTION,
             mock(ModelProviderConnectionTester.class),
             mock(McpSseConnectionTester.class),
+            mock(SkillManifestProbe.class),
             Clock.fixed(Instant.parse("2026-05-15T08:00:00Z"), ZoneOffset.UTC)
         );
 
@@ -619,7 +620,8 @@ class SystemManagementServiceTest {
             mock(TenantCapabilityGrantRepository.class),
             mock(TenantModelAssignmentRepository.class),
             modelProviderConnectionTester,
-            mock(McpSseConnectionTester.class)
+            mock(McpSseConnectionTester.class),
+            mock(SkillManifestProbe.class)
         );
     }
 
@@ -639,7 +641,8 @@ class SystemManagementServiceTest {
             tenantCapabilityGrantRepository,
             tenantModelAssignmentRepository,
             modelProviderConnectionTester,
-            mock(McpSseConnectionTester.class)
+            mock(McpSseConnectionTester.class),
+            mock(SkillManifestProbe.class)
         );
     }
 
@@ -660,7 +663,8 @@ class SystemManagementServiceTest {
             tenantCapabilityGrantRepository,
             tenantModelAssignmentRepository,
             modelProviderConnectionTester,
-            mock(McpSseConnectionTester.class)
+            mock(McpSseConnectionTester.class),
+            mock(SkillManifestProbe.class)
         );
     }
 
@@ -672,7 +676,8 @@ class SystemManagementServiceTest {
         TenantCapabilityGrantRepository tenantCapabilityGrantRepository,
         TenantModelAssignmentRepository tenantModelAssignmentRepository,
         ModelProviderConnectionTester modelProviderConnectionTester,
-        McpSseConnectionTester mcpSseConnectionTester
+        McpSseConnectionTester mcpSseConnectionTester,
+        SkillManifestProbe skillManifestProbe
     ) {
         return new SystemManagementService(
             tenantRepository,
@@ -691,6 +696,7 @@ class SystemManagementServiceTest {
             FIELD_ENCRYPTION,
             modelProviderConnectionTester,
             mcpSseConnectionTester,
+            skillManifestProbe,
             Clock.fixed(Instant.parse("2026-05-15T08:00:00Z"), ZoneOffset.UTC)
         );
     }

@@ -3,7 +3,7 @@ name: Agentum 连通性检查 Skill
 version: v1
 riskLevel: low
 entry: SKILL.md
-description: 用于验证 Agentum 产品运行时 Skill 登记、分配和引用链路。
+description: 用于验证 Agentum 产品运行时 Skill 登记、分配和引用链路是否连通。
 inputs:
   - name: topic
     type: string
@@ -22,9 +22,12 @@ outputs:
   properties:
     summary:
       type: string
+      description: 检查结论摘要
     missingInformation:
       type: array
       items:
         type: string
+      description: 仍需补充的信息
     nextAction:
       type: string
+      description: 建议下一步动作

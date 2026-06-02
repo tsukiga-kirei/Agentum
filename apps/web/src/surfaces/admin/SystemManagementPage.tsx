@@ -650,6 +650,12 @@ export function SystemManagementPage() {
           return;
         }
       }
+    } else if (capabilityType === "skill") {
+      config.sourcePath = d.sourcePath?.trim() || "";
+      if (!config.sourcePath) {
+        messageApi.warning("请输入 Skill 路径");
+        return;
+      }
     } else if (capabilityType === "prompt_template") {
       config.promptContent = d.promptContent?.trim() || "";
       if (!config.promptContent) {
@@ -1433,14 +1439,9 @@ export function SystemManagementPage() {
           {selectedCapabilityType === "skill" && (
             <div className="sys-config-group">
               <div className="sys-field">
-                <label className="sys-field-label">源码路径</label>
-                <div className="sys-field-input-wrap"><Code2 size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="capabilities/skills/requirement-breakdown/SKILL.md" maxLength={500} defaultValue={capRef.current.sourcePath || ""} onChange={e=>{capRef.current.sourcePath=e.target.value;}}/></div>
-                <div className="sys-field-hint">Skill 正文或实现文件在仓库中的路径，供运行时加载指令与工具说明</div>
-              </div>
-              <div className="sys-field">
-                <label className="sys-field-label">Manifest 路径</label>
-                <div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="capabilities/skills/requirement-breakdown/skill.yaml" maxLength={500} defaultValue={capRef.current.manifestPath || ""} onChange={e=>{capRef.current.manifestPath=e.target.value;}}/></div>
-                <div className="sys-field-hint">Skill 元数据清单路径，描述名称、版本、入口和依赖，用于发布校验与能力发现</div>
+                <label className="sys-field-label sys-field-label--required">Skill 路径</label>
+                <div className="sys-field-input-wrap"><Code2 size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="capabilities/skills/agentum-connectivity-check/SKILL.md" maxLength={500} defaultValue={capRef.current.sourcePath || ""} onChange={e=>{capRef.current.sourcePath=e.target.value;}}/></div>
+                <div className="sys-field-hint">指向 SKILL.md；同目录下的 skill.yaml 会自动用于发布元数据校验与连通性测试</div>
               </div>
             </div>
           )}
