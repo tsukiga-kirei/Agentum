@@ -19,6 +19,8 @@ import com.agentum.system.infrastructure.SystemCapabilityRepository;
 import com.agentum.system.infrastructure.TenantCapabilityGrantRepository;
 import com.agentum.system.infrastructure.TenantModelAssignmentRepository;
 import com.agentum.system.interfaces.SystemManagementApi;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.agentum.auth.domain.UserAccount;
 import com.agentum.auth.domain.UserRoleAssignmentEntity;
 import com.agentum.auth.infrastructure.UserAccountRepository;
@@ -34,6 +36,13 @@ import com.agentum.permission.infrastructure.RoleRepository;
 import com.agentum.tenant.domain.TenantEntity;
 import com.agentum.tenant.infrastructure.TenantRepository;
 import java.time.Clock;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -49,6 +58,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class SystemManagementService {
 
     private static final Logger log = LoggerFactory.getLogger(SystemManagementService.class);
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final String ACTIVE = "active";
     private static final String SUSPENDED = "suspended";
     private static final Set<String> CAPABILITY_TYPES = Set.of("mcp", "skill", "prompt_template", "delivery");
@@ -81,6 +91,7 @@ public class SystemManagementService {
     private final PasswordEncoder passwordEncoder;
     private final FieldEncryptionService fieldEncryptionService;
     private final ModelProviderConnectionTester modelProviderConnectionTester;
+    private final HttpClient httpClient;
     private final Clock clock;
 
     public SystemManagementService(
@@ -116,6 +127,10 @@ public class SystemManagementService {
         this.passwordEncoder = passwordEncoder;
         this.fieldEncryptionService = fieldEncryptionService;
         this.modelProviderConnectionTester = modelProviderConnectionTester;
+        this.httpClient = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(3))
+            .followRedirects(HttpClient.Redirect.NORMAL)
+            .build();
         this.clock = clock;
     }
 
@@ -370,7 +385,7 @@ public class SystemManagementService {
             normalizeOptional(request.description()),
             request.riskLevel() == null ? null : request.riskLevel().trim(),
             request.status() == null ? null : request.status().trim(),
-            sanitizeCapabilityConfig(capabilityType, request.config()),
+            sanitizeCapabilityConfig(capabilityType, request.config(), Map.of()),
             clock.instant()
         );
         systemCapabilityRepository.save(entity);
@@ -419,7 +434,7 @@ public class SystemManagementService {
             normalizeOptional(request.description()),
             request.riskLevel() == null ? null : request.riskLevel().trim(),
             targetStatus,
-            sanitizeCapabilityConfig(capabilityType, request.config()),
+            sanitizeCapabilityConfig(capabilityType, request.config(), entity.getConfig()),
             clock.instant()
         );
         systemCapabilityRepository.save(entity);
@@ -456,8 +471,8 @@ public class SystemManagementService {
                 return new ApiException(HttpStatus.NOT_FOUND, "SYSTEM_CAPABILITY_NOT_FOUND", "系统能力不存在");
             });
 
-        // 当前阶段尚未接入真实 MCP 网关和 Skill 运行沙箱。这里先做配置形态校验，并返回可展示的接口发现占位；
-        // 后续替换为 MCP initialize + tools/list、Skill manifest 校验和交付适配器健康检查。
+        // 当前阶段系统管理先负责“底层能力是否可连接、是否可展示工具清单”的平台侧测试；
+        // 真正运行时仍要经过后续 MCP 网关、Skill 沙箱和交付审计链路重新校验。
         SystemManagementApi.CapabilityTestResult result = switch (capability.getCapabilityType()) {
             case "mcp" -> testMcpConfig(capability);
             case "skill" -> testSourceConfig(capability, "Skill 源配置检查通过，后续接入 Skill manifest 校验与样例运行");
@@ -700,33 +715,45 @@ public class SystemManagementService {
 
     private SystemManagementApi.CapabilityTestResult testMcpConfig(SystemCapabilityEntity capability) {
         Map<String, Object> config = capability.getConfig();
-        String transport = stringValue(config.get("transport"));
-        if (transport == null) {
-            transport = "stdio";
-        }
-        if ("sse".equals(transport)) {
-            String sseUrl = stringValue(config.get("sseUrl"));
-            if (sseUrl == null) {
-                return new SystemManagementApi.CapabilityTestResult(capability.getId(), "failed", "SSE 类型 MCP 必须配置 sseUrl", List.of(), clock.instant());
-            }
-        } else {
-            String command = stringValue(config.get("command"));
-            if (command == null) {
-                return new SystemManagementApi.CapabilityTestResult(capability.getId(), "failed", "stdio 类型 MCP 必须配置启动命令", List.of(), clock.instant());
-            }
+        String sseUrl = stringValue(config.get("sseUrl"));
+        if (sseUrl == null) {
+            return new SystemManagementApi.CapabilityTestResult(capability.getId(), "failed", "SSE 类型 MCP 必须配置 sseUrl", List.of(), clock.instant());
         }
 
-        List<SystemManagementApi.CapabilityToolRow> tools = List.of(
-            new SystemManagementApi.CapabilityToolRow(
-                capability.getCode() + ".health_check",
-                "连通性检查占位接口，后续由真实 MCP tools/list 结果替换",
-                Map.of("type", "object", "properties", Map.of())
-            )
-        );
+        try {
+            HttpRequest request = HttpRequest.newBuilder(URI.create(sseUrl))
+                .timeout(Duration.ofSeconds(5))
+                .header("Accept", "text/event-stream")
+                .GET()
+                .build();
+            HttpResponse<java.io.InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
+            try (java.io.InputStream ignored = response.body()) {
+                if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                    return new SystemManagementApi.CapabilityTestResult(
+                        capability.getId(),
+                        "failed",
+                        "MCP SSE 地址返回非成功状态：" + response.statusCode(),
+                        List.of(),
+                        clock.instant()
+                    );
+                }
+            }
+        } catch (Exception ex) {
+            log.warn("系统管理测试 MCP SSE 失败 capabilityId={} sseUrl={} requestId={}", capability.getId(), sseUrl, RequestIds.current());
+            return new SystemManagementApi.CapabilityTestResult(
+                capability.getId(),
+                "failed",
+                "MCP SSE 连接失败：" + ex.getMessage(),
+                List.of(),
+                clock.instant()
+            );
+        }
+
+        List<SystemManagementApi.CapabilityToolRow> tools = loadMcpTools(capability);
         return new SystemManagementApi.CapabilityTestResult(
             capability.getId(),
             "success",
-            "MCP 配置检查通过；真实工具列表将在接入 MCP 网关后由 initialize 与 tools/list 返回",
+            "MCP SSE 连接成功，可在弹窗中查看当前登记的工具能力",
             tools,
             clock.instant()
         );
@@ -738,6 +765,28 @@ public class SystemManagementService {
             return new SystemManagementApi.CapabilityTestResult(capability.getId(), "failed", "请配置 Skill 源码路径或 Manifest 路径，便于后续发布和测试", List.of(), clock.instant());
         }
         return new SystemManagementApi.CapabilityTestResult(capability.getId(), "success", successSummary, List.of(), clock.instant());
+    }
+
+    private SystemManagementApi.CapabilityTestResult testDeliveryConfig(SystemCapabilityEntity capability) {
+        Map<String, Object> config = capability.getConfig();
+        if (!"email".equals(stringValue(config.get("deliveryChannel")))) {
+            return new SystemManagementApi.CapabilityTestResult(capability.getId(), "failed", "当前阶段交付能力只支持邮箱通道", List.of(), clock.instant());
+        }
+        List<SystemManagementApi.CapabilityToolRow> tools = List.of(new SystemManagementApi.CapabilityToolRow(
+            capability.getCode() + ".send_email",
+            "发送邮件正文与附件，运行时必须写入交付记录和审计日志",
+            Map.of(
+                "type", "object",
+                "required", List.of("to", "subject", "body"),
+                "properties", Map.of(
+                    "to", Map.of("type", "array", "items", Map.of("type", "string")),
+                    "subject", Map.of("type", "string"),
+                    "body", Map.of("type", "string"),
+                    "attachmentPaths", Map.of("type", "array", "items", Map.of("type", "string"))
+                )
+            )
+        ));
+        return new SystemManagementApi.CapabilityTestResult(capability.getId(), "success", "邮箱交付配置检查通过，可用于本地 Mailpit 或 SMTP 服务验证发件", tools, clock.instant());
     }
 
     private SystemManagementApi.CapabilityTestResult testPromptTemplateConfig(SystemCapabilityEntity capability) {
@@ -753,27 +802,111 @@ public class SystemManagementService {
         );
     }
 
-    private SystemManagementApi.CapabilityTestResult testDeliveryConfig(SystemCapabilityEntity capability) {
-        if (stringValue(capability.getConfig().get("deliveryChannel")) == null) {
-            return new SystemManagementApi.CapabilityTestResult(capability.getId(), "failed", "交付能力必须配置 deliveryChannel", List.of(), clock.instant());
+    private List<SystemManagementApi.CapabilityToolRow> configuredTools(SystemCapabilityEntity capability) {
+        Object toolsValue = capability.getConfig().get("tools");
+        if (toolsValue instanceof List<?> rawTools && !rawTools.isEmpty()) {
+            List<SystemManagementApi.CapabilityToolRow> tools = new ArrayList<>();
+            for (Object rawTool : rawTools) {
+                if (rawTool instanceof Map<?, ?> rawMap) {
+                    String name = stringValue(rawMap.get("name"));
+                    if (name == null) {
+                        continue;
+                    }
+                    String description = stringValue(rawMap.get("description"));
+                    Object schema = rawMap.get("inputSchema");
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> inputSchema = schema instanceof Map<?, ?> ? (Map<String, Object>) schema : Map.of("type", "object", "properties", Map.of());
+                    tools.add(new SystemManagementApi.CapabilityToolRow(name, description == null ? "" : description, inputSchema));
+                }
+            }
+            if (!tools.isEmpty()) {
+                return tools;
+            }
         }
-        return new SystemManagementApi.CapabilityTestResult(capability.getId(), "success", "交付能力配置检查通过，后续接入通道健康检查和脱敏回执", List.of(), clock.instant());
+        return List.of(new SystemManagementApi.CapabilityToolRow(
+            capability.getCode() + ".health_check",
+            "MCP 服务连通性检查工具",
+            Map.of("type", "object", "properties", Map.of())
+        ));
     }
 
-    private static Map<String, Object> sanitizeCapabilityConfig(String capabilityType, Map<String, Object> rawConfig) {
+    private List<SystemManagementApi.CapabilityToolRow> loadMcpTools(SystemCapabilityEntity capability) {
+        String toolCatalogUrl = stringValue(capability.getConfig().get("toolCatalogUrl"));
+        if (toolCatalogUrl != null) {
+            try {
+                HttpRequest request = HttpRequest.newBuilder(URI.create(toolCatalogUrl))
+                    .timeout(Duration.ofSeconds(5))
+                    .header("Accept", "application/json")
+                    .GET()
+                    .build();
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                    Map<String, Object> payload = OBJECT_MAPPER.readValue(response.body(), new TypeReference<>() {
+                    });
+                    Object tools = payload.get("tools");
+                    if (tools instanceof List<?>) {
+                        SystemCapabilityEntity catalogCapability = SystemCapabilityEntity.create(
+                            capability.getCapabilityType(),
+                            capability.getName(),
+                            capability.getCode(),
+                            capability.getVersion(),
+                            capability.getDescription(),
+                            capability.getRiskLevel(),
+                            capability.getStatus(),
+                            Map.of("tools", tools),
+                            clock.instant()
+                        );
+                        return configuredTools(catalogCapability);
+                    }
+                }
+            } catch (Exception ex) {
+                log.warn("系统管理读取 MCP 工具预览失败 capabilityId={} toolCatalogUrl={} requestId={}", capability.getId(), toolCatalogUrl, RequestIds.current());
+            }
+        }
+        return configuredTools(capability);
+    }
+
+    private Map<String, Object> sanitizeCapabilityConfig(String capabilityType, Map<String, Object> rawConfig, Map<String, Object> existingConfig) {
         Map<String, Object> config = rawConfig == null ? Map.of() : rawConfig;
         if ("mcp".equals(capabilityType)) {
-            String transport = stringValue(config.get("transport"));
-            return Map.of(
-                "transport", transport == null ? "stdio" : transport,
-                "command", nullableString(config.get("command")),
-                "args", nullableString(config.get("args")),
-                "workingDir", nullableString(config.get("workingDir")),
-                "sseUrl", nullableString(config.get("sseUrl"))
-            );
+            String sseUrl = stringValue(config.get("sseUrl"));
+            if (sseUrl == null) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_MCP_SSE_URL_REQUIRED", "MCP SSE 地址不能为空");
+            }
+            Map<String, Object> result = new HashMap<>();
+            result.put("transport", "sse");
+            result.put("sseUrl", sseUrl);
+            String toolCatalogUrl = stringValue(config.get("toolCatalogUrl"));
+            if (toolCatalogUrl != null) {
+                result.put("toolCatalogUrl", toolCatalogUrl);
+            }
+            Object tools = config.get("tools");
+            if (tools instanceof List<?>) {
+                result.put("tools", tools);
+            }
+            return result;
         }
         if ("delivery".equals(capabilityType)) {
-            return Map.of("deliveryChannel", nullableString(config.get("deliveryChannel")), "target", nullableString(config.get("target")));
+            if (!"email".equals(stringValue(config.get("deliveryChannel")))) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_DELIVERY_CHANNEL_INVALID", "当前阶段交付能力只支持邮箱通道");
+            }
+            String smtpHost = requireConfig(config, "smtpHost", "SMTP 主机不能为空");
+            int smtpPort = parsePort(config.get("smtpPort"));
+            String fromAddress = requireConfig(config, "fromAddress", "发件邮箱不能为空");
+            Map<String, Object> result = new HashMap<>();
+            result.put("deliveryChannel", "email");
+            result.put("smtpHost", smtpHost);
+            result.put("smtpPort", smtpPort);
+            result.put("smtpUsername", nullableString(config.get("smtpUsername")));
+            result.put("fromAddress", fromAddress);
+            result.put("useTls", booleanValue(config.get("useTls")));
+            String smtpPassword = stringValue(config.get("smtpPassword"));
+            if (smtpPassword != null) {
+                result.put("encryptedSmtpPassword", fieldEncryptionService.encrypt(smtpPassword));
+            } else if (existingConfig != null && existingConfig.get("encryptedSmtpPassword") != null) {
+                result.put("encryptedSmtpPassword", existingConfig.get("encryptedSmtpPassword"));
+            }
+            return result;
         }
         if ("prompt_template".equals(capabilityType)) {
             return Map.of("promptContent", nullableString(config.get("promptContent")));
@@ -806,6 +939,38 @@ public class SystemManagementService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_MODEL_DEFAULT_MODEL_REQUIRED", "默认模型不能为空");
         }
         return value;
+    }
+
+    private static String requireConfig(Map<String, Object> config, String key, String message) {
+        String value = stringValue(config.get(key));
+        if (value == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_CAPABILITY_CONFIG_REQUIRED", message);
+        }
+        return value;
+    }
+
+    private static int parsePort(Object value) {
+        String text = stringValue(value);
+        if (text == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_DELIVERY_SMTP_PORT_REQUIRED", "SMTP 端口不能为空");
+        }
+        try {
+            int port = Integer.parseInt(text);
+            if (port <= 0 || port > 65535) {
+                throw new NumberFormatException("out of range");
+            }
+            return port;
+        } catch (NumberFormatException ex) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_DELIVERY_SMTP_PORT_INVALID", "SMTP 端口必须是 1 到 65535 之间的数字");
+        }
+    }
+
+    private static boolean booleanValue(Object value) {
+        if (value instanceof Boolean b) {
+            return b;
+        }
+        String text = stringValue(value);
+        return text != null && ("true".equalsIgnoreCase(text) || "1".equals(text) || "yes".equalsIgnoreCase(text));
     }
 
     private static String nullableString(Object value) {
@@ -854,7 +1019,18 @@ public class SystemManagementService {
             entity.getDescription(),
             entity.getRiskLevel(),
             entity.getStatus(),
-            entity.getConfig()
+            publicCapabilityConfig(entity.getCapabilityType(), entity.getConfig())
         );
+    }
+
+    private static Map<String, Object> publicCapabilityConfig(String capabilityType, Map<String, Object> config) {
+        if (!"delivery".equals(capabilityType)) {
+            return config;
+        }
+        Map<String, Object> publicConfig = new HashMap<>(config);
+        boolean passwordConfigured = publicConfig.remove("encryptedSmtpPassword") != null;
+        publicConfig.remove("smtpPassword");
+        publicConfig.put("smtpPasswordConfigured", passwordConfigured);
+        return publicConfig;
     }
 }

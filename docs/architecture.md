@@ -69,7 +69,7 @@ Worker
 
 ### 3.1 能力源码与治理边界
 
-Agentum 需要同时管理“能力资产记录”和“能力可执行实现”。资产记录解决资产是什么、版本是什么、是否进入租户可用能力池、分配给哪些用户 / 部门 / 角色；可执行实现解决 Skill、MCP Server、提示词模板和交付适配器到底如何开发、测试、部署。
+Agentum 需要同时管理“能力资产记录”和“能力可执行实现”。资产记录解决资产是什么、版本是什么、是否进入租户可用能力池、分配给哪些用户 / 部门 / 角色；可执行实现解决 Skill、MCP Server 和交付适配器到底如何开发、测试、部署。提示词模板仍作为资产记录和前端配置保留，当前不再维护独立源码目录。
 
 推荐仓库目录：
 
@@ -89,9 +89,6 @@ capabilities/
       src/
       tests/
       README.md
-  prompt-templates/
-    README.md
-    <template-key>.prompt.md
   delivery/
     README.md
     <delivery-key>/
@@ -105,8 +102,8 @@ capabilities/
 - `apps/api` 是控制面和治理面，负责能力登记、租户可用能力池、租户内能力分配、凭证注入、调用审计和版本发布。
 - `capabilities/skills/` 保存产品运行时 Skill 源文件，发布后在数据库 `skills` 或资产表里形成版本记录。
 - `capabilities/mcp-servers/` 保存自研 MCP Server 源码。每个 Server 应能独立启动、测试和部署，API 的 MCP 网关只通过注册信息调用它，不把具体业务连接逻辑写进网关。
-- `capabilities/prompt-templates/` 保存提示词模板源码，发布后再作为提示词模板资产被智能体模板或节点引用。
 - `capabilities/delivery/` 保存交付适配器、文档模板和本地验证材料，发布后再登记为交付能力资产。
+- 提示词模板功能保留在能力资产、系统管理登记和前端配置链路中；当前不再维护独立的提示词模板源码目录。
 - `packages/shared-contract` 保存 MCP、Skill、智能体、工作流和事件的共享 Schema，不保存具体能力实现。
 - 数据库中的 `skills`、`mcp_services`、`prompt_templates`、`delivery_capabilities` 更像资产注册表，不应直接承担源码仓库职责。
 - `.codex/skills/` 是本仓库开发辅助技能目录，不进入 Agentum 产品运行时能力发布链路。

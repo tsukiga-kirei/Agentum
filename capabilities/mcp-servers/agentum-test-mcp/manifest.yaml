@@ -1,0 +1,26 @@
+key: agentum-test-mcp
+name: Agentum 测试 MCP
+version: v1
+transport: sse
+sseUrl: http://localhost:18080/sse
+toolCatalogUrl: http://localhost:18080/agentum/tools
+riskLevel: low
+tools:
+  - name: agentum.health_check
+    description: 返回测试 MCP 服务状态，用于系统管理连通性验证
+    inputSchema:
+      type: object
+      properties: {}
+  - name: agentum.echo_context
+    description: 回显一段业务上下文，验证参数传入和工具返回格式
+    inputSchema:
+      type: object
+      required:
+        - text
+      properties:
+        text:
+          type: string
+          description: 业务上下文或测试文本
+        caller:
+          type: string
+          description: 可选调用方标识

@@ -36,6 +36,7 @@ import type {
   CreateModelProviderRequest,
   CreateTenantRequest,
   CreateTenantCapabilityGrantRequest,
+  CapabilityTestResult,
   ModelProviderRow,
   ModelProviderTypeRow,
   SystemCapabilityRow,
@@ -177,7 +178,15 @@ function RiskTag({ level }: { level: string }) {
 
 function readConfigString(config: Record<string, unknown>, key: string): string {
   const value = config[key];
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
   return typeof value === "string" ? value : "";
+}
+
+function readConfigBoolean(config: Record<string, unknown>, key: string): boolean {
+  const value = config[key];
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") return value === "true" || value === "1";
+  return false;
 }
 
 function buildModelFormValues(provider: ModelProviderRow): Record<string, string> {
@@ -199,13 +208,16 @@ function buildCapabilityFormValues(capability: SystemCapabilityRow): Record<stri
     description: capability.description ?? "",
     riskLevel: capability.riskLevel,
     status: capability.status,
-    transport: readConfigString(capability.config, "transport") || "stdio",
-    command: readConfigString(capability.config, "command"),
-    args: readConfigString(capability.config, "args"),
-    workingDir: readConfigString(capability.config, "workingDir"),
+    transport: "sse",
     sseUrl: readConfigString(capability.config, "sseUrl"),
-    deliveryChannel: readConfigString(capability.config, "deliveryChannel"),
-    target: readConfigString(capability.config, "target"),
+    toolCatalogUrl: readConfigString(capability.config, "toolCatalogUrl"),
+    deliveryChannel: readConfigString(capability.config, "deliveryChannel") || "email",
+    smtpHost: readConfigString(capability.config, "smtpHost"),
+    smtpPort: readConfigString(capability.config, "smtpPort"),
+    smtpUsername: readConfigString(capability.config, "smtpUsername"),
+    fromAddress: readConfigString(capability.config, "fromAddress"),
+    useTls: readConfigBoolean(capability.config, "useTls") ? "true" : "false",
+    smtpPasswordConfigured: readConfigBoolean(capability.config, "smtpPasswordConfigured") ? "true" : "false",
     sourcePath: readConfigString(capability.config, "sourcePath"),
     manifestPath: readConfigString(capability.config, "manifestPath"),
     promptContent: readConfigString(capability.config, "promptContent"),
@@ -288,11 +300,11 @@ export function SystemManagementPage() {
   const [editingCapability, setEditingCapability] = useState<SystemCapabilityRow | null>(null);
   const [selectedModelProviderType, setSelectedModelProviderType] = useState("");
   const [selectedCapabilityType, setSelectedCapabilityType] = useState("mcp");
-  const [selectedMcpTransport, setSelectedMcpTransport] = useState("stdio");
   const modelRef = useRef<Record<string,string>>({});
   const capRef = useRef<Record<string,string>>({});
   const [modelFormKey, setModelFormKey] = useState(0);
   const [capFormKey, setCapFormKey] = useState(0);
+  const [capabilityTestResult, setCapabilityTestResult] = useState<CapabilityTestResult | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<
     | { type: "model"; target: ModelProviderRow }
     | { type: "capability"; target: SystemCapabilityRow }
@@ -500,9 +512,8 @@ export function SystemManagementPage() {
 
   const openCapabilityModal = (capability: SystemCapabilityRow | null) => {
     setEditingCapability(capability);
-    capRef.current = capability ? buildCapabilityFormValues(capability) : {};
-    setSelectedCapabilityType(capability?.capabilityType ?? "");
-    setSelectedMcpTransport(capability ? (readConfigString(capability.config, "transport") || "stdio") : "");
+    capRef.current = capability ? buildCapabilityFormValues(capability) : { capabilityType: "mcp", transport: "sse" };
+    setSelectedCapabilityType(capability?.capabilityType ?? "mcp");
     setCapFormKey((key) => key + 1);
     setCapModalOpen(true);
   };
@@ -592,23 +603,33 @@ export function SystemManagementPage() {
     const capabilityType = d.capabilityType.trim();
     const config: Record<string, unknown> = {};
     if (capabilityType === "mcp") {
-      const transport = d.transport?.trim() || "stdio";
-      config.transport = transport;
-      config.command = d.command?.trim() || "";
-      config.args = d.args?.trim() || "";
-      config.workingDir = d.workingDir?.trim() || "";
+      config.transport = "sse";
       config.sseUrl = d.sseUrl?.trim() || "";
-      if (transport === "sse" && !d.sseUrl?.trim()) {
+      config.toolCatalogUrl = d.toolCatalogUrl?.trim() || "";
+      if (!d.sseUrl?.trim()) {
         messageApi.warning("请输入 SSE 地址");
         return;
       }
-      if (transport === "stdio" && !d.command?.trim()) {
-        messageApi.warning("请输入启动命令");
+    } else if (capabilityType === "delivery") {
+      config.deliveryChannel = "email";
+      config.smtpHost = d.smtpHost?.trim() || "";
+      config.smtpPort = d.smtpPort?.trim() || "";
+      config.smtpUsername = d.smtpUsername?.trim() || "";
+      config.smtpPassword = d.smtpPassword?.trim() || "";
+      config.fromAddress = d.fromAddress?.trim() || "";
+      config.useTls = d.useTls === "true";
+      if (!config.smtpHost) {
+        messageApi.warning("请输入 SMTP 主机");
         return;
       }
-    } else if (capabilityType === "delivery") {
-      config.deliveryChannel = d.deliveryChannel?.trim() || "";
-      config.target = d.target?.trim() || "";
+      if (!config.smtpPort) {
+        messageApi.warning("请输入 SMTP 端口");
+        return;
+      }
+      if (!config.fromAddress) {
+        messageApi.warning("请输入发件邮箱");
+        return;
+      }
     } else if (capabilityType === "prompt_template") {
       config.promptContent = d.promptContent?.trim() || "";
       if (!config.promptContent) {
@@ -651,6 +672,7 @@ export function SystemManagementPage() {
     messageApi.loading({ content: "正在测试连通性...", key: `test_conn_${capId}` });
     try {
       const result = await systemApi.testCapability(token, capId);
+      setCapabilityTestResult(result);
       const content = result.status === "success" ? result.summary : `测试未通过：${result.summary}`;
       if (result.status === "success") messageApi.success({ content, key: `test_conn_${capId}` });
       else messageApi.warning({ content, key: `test_conn_${capId}` });
@@ -810,6 +832,54 @@ export function SystemManagementPage() {
               >
                 删除
               </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {capabilityTestResult ? (
+        <div className="sys-modal-mask" onClick={() => setCapabilityTestResult(null)}>
+          <div className="sys-modal" style={{ maxWidth: 720 }} onClick={(event) => event.stopPropagation()}>
+            <div className="sys-modal-header">
+              <span className="sys-modal-title">能力连通性测试结果</span>
+              <button className="sys-modal-close" onClick={() => setCapabilityTestResult(null)}><X size={18}/></button>
+            </div>
+            <div className="sys-modal-body">
+              <div className="sys-config-group">
+                <div className="sys-form-row">
+                  <span className="sys-form-label">测试状态</span>
+                  <span className={`sys-status sys-status--${capabilityTestResult.status === "success" ? "active" : "inactive"}`}>
+                    <span className="sys-status-dot" />{capabilityTestResult.status === "success" ? "连接成功" : "连接失败"}
+                  </span>
+                </div>
+                <div className="sys-form-row">
+                  <span className="sys-form-label">结果摘要</span>
+                  <span className="sys-form-value">{capabilityTestResult.summary}</span>
+                </div>
+              </div>
+              <div className="sys-section-header" style={{ marginTop: 18 }}><Boxes size={18}/> 可用工具能力</div>
+              {capabilityTestResult.tools.length === 0 ? (
+                <Empty description="暂无工具清单" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              ) : (
+                <div className="sys-config-group">
+                  {capabilityTestResult.tools.map((tool) => (
+                    <div key={tool.name} className="sys-preview-item" style={{ alignItems: "flex-start" }}>
+                      <div className="sys-preview-item-left" style={{ minWidth: 0 }}>
+                        <div className="sys-preview-item-icon sys-card-avatar--cap"><Boxes size={16}/></div>
+                        <div style={{ minWidth: 0 }}>
+                          <div className="sys-preview-item-name">{tool.name}</div>
+                          <div className="sys-preview-item-sub">{tool.description || "未提供说明"}</div>
+                          <pre className="mt-2 max-h-40 overflow-auto rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-3 text-xs text-[var(--color-text-secondary)]">
+                            {JSON.stringify(tool.inputSchema, null, 2)}
+                          </pre>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="sys-modal-footer">
+              <button className="sys-btn sys-btn--default" onClick={() => setCapabilityTestResult(null)}><X size={14}/> 关闭</button>
             </div>
           </div>
         </div>
@@ -1025,7 +1095,7 @@ export function SystemManagementPage() {
             {section === "capabilities" && (
               <div className="sys-fade-in">
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-                  <p style={{fontSize:14,color:"var(--color-text-tertiary)",margin:0}}>管理系统级 MCP、Skill、提示词模板和交付能力</p>
+                  <p style={{fontSize:14,color:"var(--color-text-tertiary)",margin:0}}>管理系统级 MCP、Skill、提示词模板和邮箱交付能力</p>
                   <button className="sys-btn sys-btn--primary" onClick={()=>openCapabilityModal(null)}><PlusCircle size={15}/> 注册能力</button>
                 </div>
                 {capabilities.length===0?<Empty description="暂无全局能力" style={{marginTop:48}}/>:(
@@ -1336,18 +1406,9 @@ export function SystemManagementPage() {
           </div>
           {selectedCapabilityType === "mcp" && (
             <div className="sys-config-group">
-              <div className="sys-field"><label className="sys-field-label">MCP 传输方式</label><SysSelect icon={ServerCog} placeholder="请选择传输方式" defaultValue={capRef.current.transport || ""} options={[{value:"stdio",label:"stdio 命令"},{value:"sse",label:"SSE 地址"}]} onChange={v=>{capRef.current.transport=v;setSelectedMcpTransport(v);}}/></div>
-              {selectedMcpTransport === "sse" ? (
-                <div className="sys-field"><label className="sys-field-label sys-field-label--required">SSE 地址</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="https://mcp.example.com/sse" maxLength={500} defaultValue={capRef.current.sseUrl || ""} onChange={e=>{capRef.current.sseUrl=e.target.value;}}/></div></div>
-              ) : (
-                <>
-                  <div className="sys-field"><label className="sys-field-label sys-field-label--required">启动命令</label><div className="sys-field-input-wrap"><ServerCog size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="node /opt/mcp/server.js" maxLength={500} defaultValue={capRef.current.command || ""} onChange={e=>{capRef.current.command=e.target.value;}}/></div></div>
-                  <div className="sys-field-row">
-                    <div className="sys-field"><label className="sys-field-label">命令参数</label><div className="sys-field-input-wrap"><Code2 size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="--readonly --tenant-safe" maxLength={500} defaultValue={capRef.current.args || ""} onChange={e=>{capRef.current.args=e.target.value;}}/></div></div>
-                    <div className="sys-field"><label className="sys-field-label">工作目录</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="/opt/agentum/mcp/file-read" maxLength={500} defaultValue={capRef.current.workingDir || ""} onChange={e=>{capRef.current.workingDir=e.target.value;}}/></div></div>
-                  </div>
-                </>
-              )}
+              <div className="sys-hint"><ServerCog size={14}/> MCP 统一通过 SSE 接入，运行时由后端网关负责鉴权、凭证注入、脱敏和审计。</div>
+              <div className="sys-field"><label className="sys-field-label sys-field-label--required">SSE 地址</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="http://localhost:18080/sse" maxLength={500} defaultValue={capRef.current.sseUrl || ""} onChange={e=>{capRef.current.sseUrl=e.target.value;}}/></div></div>
+              <div className="sys-field"><label className="sys-field-label">工具预览地址</label><div className="sys-field-input-wrap"><Boxes size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="http://localhost:18080/agentum/tools" maxLength={500} defaultValue={capRef.current.toolCatalogUrl || ""} onChange={e=>{capRef.current.toolCatalogUrl=e.target.value;}}/></div><div className="sys-field-hint">可选；填写后测试连通性会读取工具清单并展示在结果弹窗中。</div></div>
             </div>
           )}
           {selectedCapabilityType === "skill" && (
@@ -1371,9 +1432,20 @@ export function SystemManagementPage() {
             </div>
           )}
           {selectedCapabilityType === "delivery" && (
-            <div className="sys-field-row">
-              <div className="sys-field"><label className="sys-field-label">交付通道</label><SysSelect icon={Mail} placeholder="请选择交付通道" defaultValue={capRef.current.deliveryChannel || ""} options={[{value:"document",label:"文档生成"},{value:"email",label:"邮件"},{value:"oa",label:"OA 流程"},{value:"webhook",label:"Webhook"}]} onChange={v=>{capRef.current.deliveryChannel=v;}}/></div>
-              <div className="sys-field"><label className="sys-field-label">目标说明</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="通道标识或模板路径" maxLength={500} defaultValue={capRef.current.target || ""} onChange={e=>{capRef.current.target=e.target.value;}}/></div></div>
+            <div className="sys-config-group">
+              <div className="sys-hint"><Mail size={14}/> 当前阶段仅保留邮箱交付；密码由后端加密保存，不会在列表、日志或响应中回显。</div>
+              <div className="sys-field-row">
+                <div className="sys-field"><label className="sys-field-label sys-field-label--required">SMTP 主机</label><div className="sys-field-input-wrap"><ServerCog size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="localhost" maxLength={200} defaultValue={capRef.current.smtpHost || ""} onChange={e=>{capRef.current.smtpHost=e.target.value;}}/></div></div>
+                <div className="sys-field"><label className="sys-field-label sys-field-label--required">SMTP 端口</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="1025" maxLength={10} defaultValue={capRef.current.smtpPort || ""} onChange={e=>{capRef.current.smtpPort=e.target.value;}}/></div></div>
+              </div>
+              <div className="sys-field-row">
+                <div className="sys-field"><label className="sys-field-label">SMTP 账号</label><div className="sys-field-input-wrap"><User size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="可选" maxLength={200} defaultValue={capRef.current.smtpUsername || ""} onChange={e=>{capRef.current.smtpUsername=e.target.value;}}/></div></div>
+                <div className="sys-field"><label className="sys-field-label">SMTP 密码</label><div className="sys-field-input-wrap"><KeyRound size={16} className="sys-field-prefix"/><input className="sys-field-input" type="password" placeholder={capRef.current.smtpPasswordConfigured === "true" ? "已配置，留空则保持不变" : "可选"} maxLength={1000} onChange={e=>{capRef.current.smtpPassword=e.target.value;}}/></div></div>
+              </div>
+              <div className="sys-field-row">
+                <div className="sys-field"><label className="sys-field-label sys-field-label--required">发件邮箱</label><div className="sys-field-input-wrap"><Mail size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="agentum@example.test" maxLength={320} defaultValue={capRef.current.fromAddress || ""} onChange={e=>{capRef.current.fromAddress=e.target.value;}}/></div></div>
+                <div className="sys-field"><label className="sys-field-label">TLS</label><SysSelect icon={ShieldCheck} placeholder="请选择 TLS 设置" defaultValue={capRef.current.useTls || "false"} options={[{value:"false",label:"关闭"},{value:"true",label:"启用"}]} onChange={v=>{capRef.current.useTls=v;}}/></div>
+              </div>
             </div>
           )}
         </div>

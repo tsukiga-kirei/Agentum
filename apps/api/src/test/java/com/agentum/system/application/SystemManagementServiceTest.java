@@ -412,6 +412,110 @@ class SystemManagementServiceTest {
     }
 
     @Test
+    void shouldPersistMcpCapabilityWithSseTransportOnly() {
+        SystemCapabilityRepository systemCapabilityRepository = mock(SystemCapabilityRepository.class);
+        List<SystemCapabilityEntity> savedCapabilities = new ArrayList<>();
+        when(systemCapabilityRepository.findByCodeAndVersion(any(), any())).thenReturn(Optional.empty());
+        when(systemCapabilityRepository.save(any(SystemCapabilityEntity.class))).thenAnswer(invocation -> {
+            SystemCapabilityEntity entity = invocation.getArgument(0);
+            savedCapabilities.add(entity);
+            return entity;
+        });
+        SystemManagementService service = buildService(mock(ModelProviderRepository.class), systemCapabilityRepository);
+
+        SystemManagementApi.CapabilityRow row = service.createCapability(new SystemManagementApi.CreateCapabilityRequest(
+            "mcp",
+            "连通性 MCP",
+            null,
+            "v1",
+            "只通过 SSE 接入的测试 MCP",
+            "medium",
+            "active",
+            java.util.Map.of(
+                "transport", "stdio",
+                "command", "node server.js",
+                "sseUrl", "http://localhost:18080/sse"
+            )
+        ));
+
+        assertThat(savedCapabilities).hasSize(1);
+        assertThat(savedCapabilities.getFirst().getConfig())
+            .containsEntry("transport", "sse")
+            .containsEntry("sseUrl", "http://localhost:18080/sse")
+            .doesNotContainKeys("command", "args", "workingDir");
+        assertThat(row.config())
+            .containsEntry("transport", "sse")
+            .containsEntry("sseUrl", "http://localhost:18080/sse")
+            .doesNotContainKeys("command", "args", "workingDir");
+    }
+
+    @Test
+    void shouldRejectMcpCapabilityWithoutSseUrl() {
+        SystemManagementService service = buildService(mock(ModelProviderRepository.class), mock(SystemCapabilityRepository.class));
+
+        assertThatThrownBy(() -> service.createCapability(new SystemManagementApi.CreateCapabilityRequest(
+            "mcp",
+            "缺少地址的 MCP",
+            null,
+            "v1",
+            "",
+            "medium",
+            "active",
+            java.util.Map.of()
+        )))
+            .isInstanceOf(ApiException.class)
+            .hasMessageContaining("SSE 地址不能为空");
+    }
+
+    @Test
+    void shouldEncryptEmailDeliveryPasswordAndHideSecretFromResponse() {
+        SystemCapabilityRepository systemCapabilityRepository = mock(SystemCapabilityRepository.class);
+        List<SystemCapabilityEntity> savedCapabilities = new ArrayList<>();
+        when(systemCapabilityRepository.findByCodeAndVersion(any(), any())).thenReturn(Optional.empty());
+        when(systemCapabilityRepository.save(any(SystemCapabilityEntity.class))).thenAnswer(invocation -> {
+            SystemCapabilityEntity entity = invocation.getArgument(0);
+            savedCapabilities.add(entity);
+            return entity;
+        });
+        SystemManagementService service = buildService(mock(ModelProviderRepository.class), systemCapabilityRepository);
+
+        SystemManagementApi.CapabilityRow row = service.createCapability(new SystemManagementApi.CreateCapabilityRequest(
+            "delivery",
+            "本地邮箱交付",
+            null,
+            "v1",
+            "通过 Mailpit 验证邮箱交付",
+            "high",
+            "active",
+            java.util.Map.of(
+                "deliveryChannel", "email",
+                "smtpHost", "localhost",
+                "smtpPort", "1025",
+                "smtpUsername", "mailpit-user",
+                "smtpPassword", "smtp-secret",
+                "fromAddress", "agentum@example.test",
+                "useTls", "false"
+            )
+        ));
+
+        assertThat(savedCapabilities).hasSize(1);
+        java.util.Map<String, Object> storedConfig = savedCapabilities.getFirst().getConfig();
+        assertThat(storedConfig)
+            .containsEntry("deliveryChannel", "email")
+            .containsEntry("smtpHost", "localhost")
+            .containsEntry("smtpPort", 1025)
+            .containsEntry("smtpUsername", "mailpit-user")
+            .containsEntry("fromAddress", "agentum@example.test")
+            .containsEntry("useTls", false);
+        assertThat(storedConfig.get("encryptedSmtpPassword").toString()).doesNotContain("smtp-secret");
+        assertThat(FIELD_ENCRYPTION.decrypt(storedConfig.get("encryptedSmtpPassword").toString())).isEqualTo("smtp-secret");
+        assertThat(row.config())
+            .containsEntry("deliveryChannel", "email")
+            .containsEntry("smtpPasswordConfigured", true)
+            .doesNotContainKeys("smtpPassword", "encryptedSmtpPassword");
+    }
+
+    @Test
     void shouldRejectEnableDraftModelProviderForTenant() {
         TenantRepository tenantRepository = mock(TenantRepository.class);
         ModelProviderRepository modelProviderRepository = mock(ModelProviderRepository.class);

@@ -1,0 +1,19 @@
+server:
+  port: 18080
+
+spring:
+  application:
+    name: agentum-test-mcp
+  ai:
+    mcp:
+      server:
+        name: agentum-test-mcp
+        version: 0.1.0
+        protocol: SSE
+        type: SYNC
+        annotation-scanner:
+          enabled: true
+
+logging:
+  level:
+    root: INFO

@@ -10,8 +10,9 @@
 capabilities/
   skills/            产品运行时 Skill 定义、说明、样例和测试
   mcp-servers/       自研 MCP Server 源码、manifest、测试和部署说明
-  prompt-templates/  提示词模板源码
   delivery/          交付适配器、文档模板和本地验证材料
 ```
 
 不要把 `.codex/skills/` 里的开发辅助技能直接当作产品运行时 Skill 发布。两者服务对象不同：前者辅助本仓库开发，后者会被 Agentum 智能体运行时引用。
+
+提示词模板功能仍保留在前端配置、能力资产草稿和系统管理资产登记链路中；当前不再维护独立的提示词模板源码目录。

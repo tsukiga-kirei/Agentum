@@ -1,0 +1,30 @@
+key: agentum-connectivity-check
+name: Agentum 连通性检查 Skill
+version: v1
+riskLevel: low
+entry: SKILL.md
+description: 用于验证 Agentum 产品运行时 Skill 登记、分配和引用链路。
+inputs:
+  - name: topic
+    type: string
+    required: true
+    description: 需要检查或总结的业务主题
+  - name: context
+    type: string
+    required: false
+    description: 可选业务上下文
+outputs:
+  type: object
+  required:
+    - summary
+    - missingInformation
+    - nextAction
+  properties:
+    summary:
+      type: string
+    missingInformation:
+      type: array
+      items:
+        type: string
+    nextAction:
+      type: string
