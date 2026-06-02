@@ -659,8 +659,26 @@ export function SystemManagementPage() {
     }
   };
 
-  const testModelProviderConnection = () => {
-    messageApi.info("模型供应商测试连接待接入真实供应商 API");
+  const testModelProviderConnection = async (provider?: ModelProviderRow | null) => {
+    if (!token) return;
+    const target = provider ?? editingModelProvider;
+    if (!target) {
+      messageApi.warning("请先保存模型供应商后再测试连接");
+      return;
+    }
+    messageApi.loading({ content: "正在测试模型供应商连接...", key: `test_model_${target.id}` });
+    try {
+      const result = await systemApi.testModelProvider(token, target.id);
+      const modelPreview = result.availableModels.length > 0 ? `；模型：${result.availableModels.slice(0, 3).join("、")}` : "";
+      const content = `${result.summary}${modelPreview}`;
+      if (result.status === "success") {
+        messageApi.success({ content, key: `test_model_${target.id}` });
+      } else {
+        messageApi.warning({ content, key: `test_model_${target.id}` });
+      }
+    } catch (e) {
+      handleApiError(e, "模型供应商测试失败");
+    }
   };
 
   const grantCapabilityToTenant = async (capability: SystemCapabilityRow) => {
@@ -980,7 +998,7 @@ export function SystemManagementPage() {
                         <div className="sys-card-footer">
                           <span className="sys-card-footer-time"><ShieldCheck size={12}/> {m.providerType}</span>
                           <div className="sys-card-footer-actions" onClick={e=>e.stopPropagation()}>
-                            <button className="sys-btn sys-btn--default sys-btn--sm" onClick={()=>testModelProviderConnection()}><PlayCircle size={14}/> 测试连接</button>
+                            <button className="sys-btn sys-btn--default sys-btn--sm" onClick={()=>void testModelProviderConnection(m)}><PlayCircle size={14}/> 测试连接</button>
                             <button className="sys-btn sys-btn--text sys-btn--sm" onClick={()=>openModelModal(m)}><Edit size={14}/> 编辑</button>
                             <button className="sys-btn sys-btn--text sys-btn--sm sys-btn--danger" onClick={()=>confirmDeleteModelProvider(m)}><Trash2 size={14}/> 删除</button>
                           </div>
@@ -1267,12 +1285,12 @@ export function SystemManagementPage() {
           )}
           <div className="sys-field"><label className="sys-field-label">基址 URL</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder={modelProviderTypes.find((type)=>type.code===selectedModelProviderType)?.defaultBaseUrl || "https://api.example.com/v1"} maxLength={500} defaultValue={modelRef.current.baseUrl || ""} onChange={e=>{modelRef.current.baseUrl=e.target.value;}}/></div><div className="sys-field-hint">不填写时沿用供应商类型的默认基址</div></div>
           <div className="sys-field"><label className="sys-field-label sys-field-label--required">默认模型</label><div className="sys-field-input-wrap"><DatabaseZap size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如 qwen-max" maxLength={160} defaultValue={modelRef.current.defaultModel || ""} onChange={e=>{modelRef.current.defaultModel=e.target.value;}}/></div></div>
-          <div className="sys-field"><label className="sys-field-label">API Key</label><div className="sys-field-input-wrap"><KeyRound size={16} className="sys-field-prefix"/><input className="sys-field-input" type="password" placeholder={editingModelProvider?.apiKeyConfigured ? "已配置，留空则保持不变" : "部分供应商需要填写"} maxLength={2000} onChange={e=>{modelRef.current.apiKey=e.target.value;}}/></div><div className="sys-field-hint">密钥不会在列表中回显；当前阶段只记录已配置状态，后续接入凭证托管。</div></div>
+          <div className="sys-field"><label className="sys-field-label">API Key</label><div className="sys-field-input-wrap"><KeyRound size={16} className="sys-field-prefix"/><input className="sys-field-input" type="password" placeholder={editingModelProvider?.apiKeyConfigured ? "已配置，留空则保持不变" : "部分供应商需要填写"} maxLength={2000} onChange={e=>{modelRef.current.apiKey=e.target.value;}}/></div><div className="sys-field-hint">密钥由后端加密保存，不会在列表、日志或响应中回显；后续可替换为凭证托管。</div></div>
           <div className="sys-field"><label className="sys-field-label">状态</label><SysSelect icon={Check} placeholder="请选择状态" defaultValue={modelRef.current.status || ""} options={[{value:"draft",label:"草稿"},{value:"active",label:"可用"}]} onChange={v=>{modelRef.current.status=v;}}/></div>
         </div>
         <div className="sys-drawer-footer">
           <div className="sys-drawer-footer-right">
-            <button className="sys-btn sys-btn--default" onClick={()=>testModelProviderConnection()}><PlayCircle size={14}/> 测试连接</button>
+            <button className="sys-btn sys-btn--default" onClick={()=>void testModelProviderConnection()}><PlayCircle size={14}/> 测试连接</button>
             <button className="sys-btn sys-btn--default" onClick={()=>{setModelModalOpen(false);setEditingModelProvider(null);}}><X size={14}/> 取消</button>
             <button className="sys-btn sys-btn--primary" onClick={()=>void submitModel()}><PlusCircle size={14}/> {editingModelProvider ? "保存修改" : "确认注册"}</button>
           </div>

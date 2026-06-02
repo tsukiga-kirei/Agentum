@@ -80,9 +80,22 @@ public class ModelProviderEntity {
     }
 
     public void markApiKeyConfigured(Instant now) {
-        // 当前阶段只记录“已配置密钥”的引用状态，避免把 API Key 明文落入响应、日志或后续列表查询。
+        // 当前阶段只记录“已配置密钥”的引用状态；密钥密文放在 settings，列表和日志都不能回显明文。
         this.credentialRef = "inline-api-key";
         this.updatedAt = now;
+    }
+
+    public void storeEncryptedApiKey(String encryptedApiKey, Instant now) {
+        if (encryptedApiKey == null || encryptedApiKey.isBlank()) {
+            return;
+        }
+        this.settings.put("encryptedApiKey", encryptedApiKey);
+        markApiKeyConfigured(now);
+    }
+
+    public String getEncryptedApiKey() {
+        Object value = settings.get("encryptedApiKey");
+        return value instanceof String text && !text.isBlank() ? text : null;
     }
 
     public UUID getId() {

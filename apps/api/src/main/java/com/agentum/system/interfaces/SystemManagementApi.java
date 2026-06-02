@@ -64,6 +64,16 @@ public final class SystemManagementApi {
     ) {
     }
 
+    public record ModelProviderTestResult(
+        UUID providerId,
+        String status,
+        String summary,
+        List<String> availableModels,
+        long latencyMs,
+        Instant checkedAt
+    ) {
+    }
+
     public record CreateModelProviderRequest(
         @NotBlank @Size(max = 160) String name,
         @NotBlank @Size(max = 80) String providerType,

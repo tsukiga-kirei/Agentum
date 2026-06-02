@@ -30,6 +30,7 @@ import type {
   CapabilityTestResult,
   ModelProviderRow,
   ModelProviderPage,
+  ModelProviderTestResult,
   ModelProviderTypeRow,
   SystemCapabilityPage,
   SystemCapabilityRow,
@@ -228,6 +229,8 @@ export const systemApi = {
     apiRequest<ModelProviderRow>(`/api/system/model-providers/${providerId}`, { method: "PATCH", token, body }),
   deleteModelProvider: (token: string, providerId: string) =>
     apiRequest<void>(`/api/system/model-providers/${providerId}`, { method: "DELETE", token }),
+  testModelProvider: (token: string, providerId: string) =>
+    apiRequest<ModelProviderTestResult>(`/api/system/model-providers/${providerId}/test`, { method: "POST", token }),
   listCapabilities: (token: string, page = 1, size = 10, sort = "createdAt,desc") =>
     apiRequest<SystemCapabilityPage>(`/api/system/capabilities?page=${page}&size=${size}&sort=${encodeURIComponent(sort)}`, { token }),
   createCapability: (token: string, body: CreateSystemCapabilityRequest) =>

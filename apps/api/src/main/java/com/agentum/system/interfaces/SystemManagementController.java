@@ -134,6 +134,16 @@ public class SystemManagementController {
         return ApiResponse.success(RequestIds.current(request));
     }
 
+    @PostMapping("/model-providers/{providerId}/test")
+    public ApiResponse<SystemManagementApi.ModelProviderTestResult> testModelProvider(
+        @PathVariable UUID providerId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        systemAdminAccess.assertSystemAdmin(principal);
+        return ApiResponse.success(systemManagementService.testModelProvider(providerId), RequestIds.current(request));
+    }
+
     @GetMapping("/capabilities")
     public ApiResponse<PageResponse<SystemManagementApi.CapabilityRow>> listCapabilities(
         @AuthenticationPrincipal CurrentUserPrincipal principal,

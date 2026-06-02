@@ -1807,6 +1807,41 @@ paths:
           description: 当前账号不是系统管理员
         "404":
           description: 模型供应商不存在
+  /api/system/model-providers/{providerId}/test:
+    post:
+      summary: 测试模型供应商连接
+      description: 使用后端已加密保存的模型密钥访问供应商模型列表接口，响应只返回脱敏测试摘要和可用模型 ID 预览。
+      tags:
+        - System
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: providerId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 模型供应商测试结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/ModelProviderTestResult"
+        "400":
+          description: 模型供应商类型不可用或配置缺失
+        "401":
+          description: 未登录或令牌无效
+        "403":
+          description: 当前账号不是系统管理员
+        "404":
+          description: 模型供应商不存在
   /api/system/capabilities:
     get:
       summary: 列出系统级能力
@@ -3158,6 +3193,36 @@ components:
         - size
         - total
         - totalPages
+    ModelProviderTestResult:
+      type: object
+      properties:
+        providerId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - success
+            - failed
+        summary:
+          type: string
+        availableModels:
+          type: array
+          items:
+            type: string
+        latencyMs:
+          type: integer
+          format: int64
+        checkedAt:
+          type: string
+          format: date-time
+      required:
+        - providerId
+        - status
+        - summary
+        - availableModels
+        - latencyMs
+        - checkedAt
     ModelProviderTypeRow:
       type: object
       properties:

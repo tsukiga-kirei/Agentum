@@ -47,6 +47,15 @@ export type ModelProviderTypeRow = {
   modelListEndpoint: string | null;
 };
 
+export type ModelProviderTestResult = {
+  providerId: string;
+  status: string;
+  summary: string;
+  availableModels: string[];
+  latencyMs: number;
+  checkedAt: string;
+};
+
 export type CreateModelProviderRequest = {
   name: string;
   providerType: string;

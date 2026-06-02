@@ -16,3 +16,6 @@ agentum:
   auth:
     token-secret: agentum-local-development-secret-change-before-production
     token-ttl-minutes: 480
+  security:
+    field-encryption:
+      master-key: agentum-local-field-encryption-secret-change-before-production

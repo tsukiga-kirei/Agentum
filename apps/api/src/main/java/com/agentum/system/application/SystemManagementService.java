@@ -6,6 +6,7 @@ import com.agentum.shared.pagination.PageQuery;
 import com.agentum.shared.pagination.PageResponse;
 import com.agentum.shared.pagination.PageableFactory;
 import com.agentum.shared.pagination.SortWhitelist;
+import com.agentum.shared.security.FieldEncryptionService;
 import com.agentum.shared.util.CapabilityCodeGenerator;
 import com.agentum.system.domain.ModelProviderEntity;
 import com.agentum.system.domain.ModelProviderTypeEntity;
@@ -78,6 +79,8 @@ public class SystemManagementService {
     private final UserMembershipRepository userMembershipRepository;
     private final UserMembershipRoleRepository userMembershipRoleRepository;
     private final PasswordEncoder passwordEncoder;
+    private final FieldEncryptionService fieldEncryptionService;
+    private final ModelProviderConnectionTester modelProviderConnectionTester;
     private final Clock clock;
 
     public SystemManagementService(
@@ -94,6 +97,8 @@ public class SystemManagementService {
         UserMembershipRepository userMembershipRepository,
         UserMembershipRoleRepository userMembershipRoleRepository,
         PasswordEncoder passwordEncoder,
+        FieldEncryptionService fieldEncryptionService,
+        ModelProviderConnectionTester modelProviderConnectionTester,
         Clock clock
     ) {
         this.tenantRepository = tenantRepository;
@@ -109,6 +114,8 @@ public class SystemManagementService {
         this.userMembershipRepository = userMembershipRepository;
         this.userMembershipRoleRepository = userMembershipRoleRepository;
         this.passwordEncoder = passwordEncoder;
+        this.fieldEncryptionService = fieldEncryptionService;
+        this.modelProviderConnectionTester = modelProviderConnectionTester;
         this.clock = clock;
     }
 
@@ -224,8 +231,9 @@ public class SystemManagementService {
             request.status() == null ? null : request.status().trim(),
             clock.instant()
         );
-        if (stringValue(request.apiKey()) != null) {
-            entity.markApiKeyConfigured(clock.instant());
+        String apiKey = stringValue(request.apiKey());
+        if (apiKey != null) {
+            entity.storeEncryptedApiKey(fieldEncryptionService.encrypt(apiKey), clock.instant());
         }
         modelProviderRepository.save(entity);
         log.info(
@@ -258,12 +266,57 @@ public class SystemManagementService {
             request.status() == null ? null : request.status().trim(),
             clock.instant()
         );
-        if (stringValue(request.apiKey()) != null) {
-            entity.markApiKeyConfigured(clock.instant());
+        String apiKey = stringValue(request.apiKey());
+        if (apiKey != null) {
+            entity.storeEncryptedApiKey(fieldEncryptionService.encrypt(apiKey), clock.instant());
         }
         modelProviderRepository.save(entity);
         log.info("系统管理更新模型供应商成功 providerId={} type={} requestId={}", entity.getId(), entity.getProviderType(), RequestIds.current());
         return toModelRow(entity);
+    }
+
+    @Transactional(readOnly = true)
+    public SystemManagementApi.ModelProviderTestResult testModelProvider(UUID providerId) {
+        ModelProviderEntity provider = modelProviderRepository.findById(providerId)
+            .orElseThrow(() -> {
+                log.warn("系统管理测试模型供应商失败：供应商不存在 providerId={} requestId={}", providerId, RequestIds.current());
+                return new ApiException(HttpStatus.NOT_FOUND, "SYSTEM_MODEL_PROVIDER_NOT_FOUND", "模型供应商不存在");
+            });
+        ModelProviderTypeEntity providerType = modelProviderTypeRepository.findByCodeAndStatus(provider.getProviderType(), ACTIVE)
+            .orElseThrow(() -> {
+                log.warn(
+                    "系统管理测试模型供应商失败：供应商类型不可用 providerId={} providerType={} requestId={}",
+                    provider.getId(),
+                    provider.getProviderType(),
+                    RequestIds.current()
+                );
+                return new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_MODEL_PROVIDER_TYPE_INVALID", "模型供应商类型不存在或已停用");
+            });
+        if (stringValue(provider.getBaseUrl()) == null) {
+            return new SystemManagementApi.ModelProviderTestResult(provider.getId(), "failed", "模型供应商基址 URL 未配置", List.of(), 0, clock.instant());
+        }
+        String encryptedApiKey = provider.getEncryptedApiKey();
+
+        // API Key 是可选字段：本地模型网关或内网代理可能不需要认证；有密钥时才在服务端解密后传入测试器。
+        // 日志和响应均不得包含明文或完整供应商原始响应。
+        ModelProviderTestOutcome outcome = modelProviderConnectionTester.test(new ModelProviderTestRequest(
+            provider.getId(),
+            provider.getProviderType(),
+            provider.getBaseUrl(),
+            firstNonBlank(providerType.getModelListEndpoint(), "/models"),
+            provider.getDefaultModel(),
+            providerType.getAuthScheme(),
+            encryptedApiKey == null ? null : fieldEncryptionService.decrypt(encryptedApiKey)
+        ));
+        log.info("系统管理测试模型供应商完成 providerId={} type={} status={} requestId={}", provider.getId(), provider.getProviderType(), outcome.status(), RequestIds.current());
+        return new SystemManagementApi.ModelProviderTestResult(
+            provider.getId(),
+            outcome.status(),
+            outcome.summary(),
+            outcome.availableModels(),
+            outcome.latencyMs(),
+            clock.instant()
+        );
     }
 
     @Transactional
