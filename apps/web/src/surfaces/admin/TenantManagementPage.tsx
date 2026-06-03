@@ -1862,7 +1862,7 @@ function ResourceAuthorizationPanel({
                   </div>
                 </div>
                 <div className="sys-card-footer">
-                  <span className="sys-card-footer-time">创建于 {formatDateTime(grant.createdAt)}</span>
+                  <span className="sys-card-footer-time">更新于 {formatDateTime(grant.createdAt)}</span>
                   <div className="sys-card-footer-actions" onClick={(e) => e.stopPropagation()}>
                     <button className="sys-btn sys-btn--text sys-btn--sm" onClick={() => onEditPageGrant(grant)}><Edit size={14} /> 编辑</button>
                     <button className="sys-btn sys-btn--text sys-btn--sm" onClick={() => onDeletePageGrant(grant)}><X size={14} /> 删除</button>
@@ -1924,7 +1924,7 @@ function ResourceAuthorizationPanel({
                   </div>
                 </div>
                 <div className="sys-card-footer">
-                  <span className="sys-card-footer-time">创建于 {formatDateTime(grant.createdAt)}</span>
+                  <span className="sys-card-footer-time">更新于 {formatDateTime(grant.createdAt)}</span>
                   <div className="sys-card-footer-actions" onClick={(e) => e.stopPropagation()}>
                     <button className="sys-btn sys-btn--text sys-btn--sm" onClick={() => onEditGrant(grant)}><Edit size={14} /> 编辑</button>
                     <button className="sys-btn sys-btn--text sys-btn--sm" onClick={() => onDeleteGrant(grant)}><X size={14} /> 删除</button>
