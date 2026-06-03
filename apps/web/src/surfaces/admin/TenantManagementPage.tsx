@@ -209,6 +209,7 @@ export function TenantManagementPage() {
   const [createDepartmentOpen, setCreateDepartmentOpen] = useState(false);
   const [departmentDraft, setDepartmentDraft] = useState<CreateDepartmentRequest>(emptyDepartmentForm);
   const [editingDepartment, setEditingDepartment] = useState<OrganizationDepartment | null>(null);
+  const [departmentDeleteTarget, setDepartmentDeleteTarget] = useState<OrganizationDepartment | null>(null);
   const [departmentSubmitting, setDepartmentSubmitting] = useState(false);
   const [roleModalOpen, setRoleModalOpen] = useState(false);
   const [editingRole, setEditingRole] = useState<OrganizationRole | null>(null);
@@ -428,17 +429,16 @@ export function TenantManagementPage() {
     }
   }
 
-  async function handleDeleteDepartment(department: OrganizationDepartment) {
-    if (!token || !user?.tenantId) return;
-    if (!window.confirm(`确认彻底删除部门“${department.name}”？删除后不会再出现在组织树中。`)) {
-      return;
-    }
+  async function handleConfirmDeleteDepartment() {
+    if (!departmentDeleteTarget || !token || !user?.tenantId) return;
+    const department = departmentDeleteTarget;
     setDepartmentSubmitting(true);
     try {
       await organizationApi.deleteDepartment(user.tenantId, department.id, token);
       setOrganizationOverview(await organizationApi.overview(user.tenantId, token));
       setCreateDepartmentOpen(false);
       setEditingDepartment(null);
+      setDepartmentDeleteTarget(null);
       messageApi.success("部门已删除");
     } catch (error) {
       console.warn("[tenant-management] 部门删除失败", getTenantManagementErrorContext(error, user.tenantId, { departmentId: department.id }));
@@ -1091,7 +1091,7 @@ export function TenantManagementPage() {
                   >
                     <CheckCircle2 size={14} /> {editingDepartment.status === "active" ? "停用部门" : "启用部门"}
                   </button>
-                  <button className="sys-btn sys-btn--danger" disabled={departmentSubmitting} onClick={() => void handleDeleteDepartment(editingDepartment)}><X size={14} /> 删除部门</button>
+                  <button className="sys-btn sys-btn--danger" disabled={departmentSubmitting} onClick={() => setDepartmentDeleteTarget(editingDepartment)}><X size={14} /> 删除部门</button>
                 </div>
               ) : null}
               <button className="sys-btn sys-btn--default" onClick={() => setCreateDepartmentOpen(false)}><X size={14} /> 取消</button>
@@ -1100,6 +1100,26 @@ export function TenantManagementPage() {
           </div>
         </div>
       )}
+
+      {departmentDeleteTarget ? (
+        <div className="sys-modal-mask agent-delete-confirm-mask" onClick={() => !departmentSubmitting && setDepartmentDeleteTarget(null)}>
+          <div className="sys-modal agent-delete-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="tenant-department-delete-confirm-title" onClick={(event) => event.stopPropagation()}>
+            <div className="agent-delete-confirm-body">
+              <div className="agent-delete-confirm-icon">
+                <AlertTriangle size={24} aria-hidden="true" />
+              </div>
+              <div className="agent-delete-confirm-content">
+                <h2 id="tenant-department-delete-confirm-title">确认删除部门</h2>
+                <p>确认彻底删除“{departmentDeleteTarget.name}”？删除后不会再出现在组织树中。</p>
+              </div>
+            </div>
+            <div className="agent-delete-confirm-footer">
+              <button type="button" className="sys-btn sys-btn--default" disabled={departmentSubmitting} onClick={() => setDepartmentDeleteTarget(null)}>取消</button>
+              <button type="button" className="sys-btn sys-btn--danger" disabled={departmentSubmitting} onClick={() => void handleConfirmDeleteDepartment()}>确认删除</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* 角色编辑抽屉 */}
       <Drawer
