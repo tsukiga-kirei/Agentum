@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button, Checkbox, ConfigProvider, Form, Input, Select, Segmented, message, theme as antdTheme } from "antd";
 import { Building2, KeyRound, LayoutDashboard, Settings, Shield, User } from "lucide-react";
 import { useAuthStore } from "../../stores/authStore";
+import { readLoginPrefs, saveLoginPrefs } from "../../stores/authSession";
 import { ThemeToggle } from "../../components/ThemeToggle";
 import { AgentumMark } from "../../components/brand/AgentumMark";
 import type { PortalType } from "../../types/auth";
@@ -111,7 +112,32 @@ export function LoginPage() {
     };
   }, [fetchTenants, showLoginError]);
 
+  // 恢复上次登录页偏好（入口、租户、用户名、记住我）；不恢复密码。
   useEffect(() => {
+    const prefs = readLoginPrefs();
+
+    if (!prefs) {
+      return;
+    }
+
+    setActivePortal(prefs.portal);
+    form.setFieldsValue({
+      rememberMe: prefs.rememberMe,
+      username: prefs.username ?? "",
+      tenantId: prefs.tenantId,
+    });
+  }, [form]);
+
+  useEffect(() => {
+    const prefs = readLoginPrefs();
+    const preferredTenantId = prefs?.tenantId;
+    const matchedTenant = preferredTenantId ? tenants.find((tenant) => tenant.id === preferredTenantId) : undefined;
+
+    if (matchedTenant) {
+      form.setFieldValue("tenantId", matchedTenant.id);
+      return;
+    }
+
     if (!form.getFieldValue("tenantId") && tenants[0]) {
       form.setFieldValue("tenantId", tenants[0].id);
     }
@@ -146,12 +172,22 @@ export function LoginPage() {
 
     setLoading(true);
 
+    const rememberMe = values.rememberMe ?? false;
+
     try {
-      const result = await login(username, password, activePortal, shouldSelectTenant ? tenantId : undefined);
+      const result = await login(username, password, activePortal, shouldSelectTenant ? tenantId : undefined, rememberMe);
 
       if (!result.success) {
         showLoginError(result.message ?? (shouldSelectTenant ? "租户、用户名或密码不正确" : "用户名或密码不正确"));
+        return;
       }
+
+      saveLoginPrefs({
+        rememberMe,
+        portal: activePortal,
+        tenantId: shouldSelectTenant ? tenantId : undefined,
+        username,
+      });
     } finally {
       setLoading(false);
     }

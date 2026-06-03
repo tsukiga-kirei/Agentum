@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { AgentumApiError, authApi } from "../services/apiClient";
 import type { AuthUser, MenuItem, PortalType, RoleInfo, TenantOption, ThemeMode } from "../types/auth";
+import { clearAuthToken, persistAuthToken, readStoredAuthToken } from "./authSession";
 
 // 认证状态管理负责前端会话缓存，真实身份、租户和角色上下文全部以后端 auth API 为准。
 // 参照 AuraOA，登录后保存完整角色列表和菜单，角色切换通过 switchRole API 完成。
@@ -22,8 +23,10 @@ type AuthState = {
   tenants: TenantOption[];
   /** 租户列表是否正在加载 */
   tenantsLoading: boolean;
-  /** 是否已完成初始化检查（例如从 localStorage 恢复） */
+  /** 是否已完成初始化检查（例如从本地缓存恢复） */
   initialized: boolean;
+  /** 当前 token 是否写入 localStorage（记住我）；否则仅 sessionStorage */
+  sessionPersist: boolean;
   /** 当前主题模式 */
   themeMode: ThemeMode;
 };
@@ -31,11 +34,17 @@ type AuthState = {
 type AuthActions = {
   /** 从后端加载登录页可见租户 */
   fetchTenants: () => Promise<void>;
-  /** 登录并保存后端返回的 token、角色列表和菜单 */
-  login: (username: string, password: string, portal: PortalType, tenantId?: string) => Promise<{ success: boolean; message?: string }>;
+  /** 登录并保存后端返回的 token、角色列表和菜单；rememberMe 决定 token 存 localStorage 或 sessionStorage */
+  login: (
+    username: string,
+    password: string,
+    portal: PortalType,
+    tenantId?: string,
+    rememberMe?: boolean,
+  ) => Promise<{ success: boolean; message?: string }>;
   /** 退出登录 */
   logout: () => Promise<void>;
-  /** 从 localStorage 恢复会话（调用 /api/auth/me 获取完整角色和菜单上下文） */
+  /** 从本地缓存恢复会话（调用 /api/auth/me 获取完整角色和菜单上下文） */
   restoreSession: () => void;
   /** 切换角色（参照 AuraOA switch-role） */
   switchRole: (roleId: string) => Promise<{ success: boolean; message?: string }>;
@@ -45,7 +54,6 @@ type AuthActions = {
   toggleTheme: () => void;
 };
 
-const STORAGE_KEY = "agentum_auth";
 const THEME_KEY = "agentum_theme_mode";
 
 export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
@@ -58,6 +66,7 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   tenants: [],
   tenantsLoading: false,
   initialized: false,
+  sessionPersist: false,
   themeMode: "light",
 
   fetchTenants: async () => {
@@ -73,7 +82,7 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     }
   },
 
-  login: async (username, password, portal, tenantId) => {
+  login: async (username, password, portal, tenantId, rememberMe = false) => {
     if (!username || !password) {
       return { success: false, message: "请输入用户名和密码" };
     }
@@ -91,8 +100,8 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         tenantId: portal === "system_admin" ? undefined : tenantId,
       });
 
-      // 缓存 token，刷新后通过 /me 重新获取角色和菜单上下文
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ token: response.token }));
+      // 记住我：token 进 localStorage；否则仅 sessionStorage，关闭浏览器后需重新登录
+      persistAuthToken(response.token, rememberMe);
       set({
         user: response.user,
         token: response.token,
@@ -101,6 +110,7 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         permissions: response.permissions,
         menus: response.menus,
         initialized: true,
+        sessionPersist: rememberMe,
       });
       return { success: true };
     } catch (error) {
@@ -125,50 +135,54 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       }
     }
 
-    window.localStorage.removeItem(STORAGE_KEY);
-    set({ user: null, token: null, roles: [], activeRole: null, permissions: [], menus: [] });
+    clearAuthToken();
+    set({ user: null, token: null, roles: [], activeRole: null, permissions: [], menus: [], sessionPersist: false });
   },
 
   restoreSession: () => {
     restoreTheme(set);
 
     try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
+      const stored = readStoredAuthToken();
 
-      if (raw) {
-        const saved = JSON.parse(raw) as { token?: string };
+      if (stored?.token) {
+        set({ token: stored.token, sessionPersist: stored.persist });
 
-        if (saved.token) {
-          set({ token: saved.token });
-
-          // /me 返回与登录相同的结构（含 roles、activeRole、menus），前端可完整恢复会话状态。
-          void authApi.me(saved.token)
-            .then((meResponse) => {
-              set({
-                user: meResponse.user,
-                token: saved.token ?? null,
-                roles: meResponse.roles,
-                activeRole: meResponse.activeRole,
-                permissions: meResponse.permissions,
-                menus: meResponse.menus,
-                initialized: true,
-              });
-            })
-            .catch((error) => {
-              console.warn("[auth] 会话恢复失败，已清理本地凭据", getErrorLogContext(error));
-              window.localStorage.removeItem(STORAGE_KEY);
-              set({ user: null, token: null, roles: [], activeRole: null, permissions: [], menus: [], initialized: true });
+        // /me 返回与登录相同的结构（含 roles、activeRole、menus），前端可完整恢复会话状态。
+        void authApi.me(stored.token)
+          .then((meResponse) => {
+            set({
+              user: meResponse.user,
+              token: stored.token,
+              roles: meResponse.roles,
+              activeRole: meResponse.activeRole,
+              permissions: meResponse.permissions,
+              menus: meResponse.menus,
+              initialized: true,
+              sessionPersist: stored.persist,
             });
-          return;
-        } else {
-          window.localStorage.removeItem(STORAGE_KEY);
-          set({ initialized: true });
-        }
-      } else {
-        set({ initialized: true });
+          })
+          .catch((error) => {
+            console.warn("[auth] 会话恢复失败，已清理本地凭据", getErrorLogContext(error));
+            clearAuthToken();
+            set({
+              user: null,
+              token: null,
+              roles: [],
+              activeRole: null,
+              permissions: [],
+              menus: [],
+              sessionPersist: false,
+              initialized: true,
+            });
+          });
+        return;
       }
+
+      set({ initialized: true });
     } catch (error) {
       console.warn("[auth] 本地会话缓存损坏，已忽略", getErrorLogContext(error));
+      clearAuthToken();
       set({ initialized: true });
     }
   },
@@ -184,7 +198,7 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       // 角色切换请求后端重签 token，返回新的活跃角色和菜单
       const response = await authApi.switchRole(token, { roleId });
 
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ token: response.token }));
+      persistAuthToken(response.token, get().sessionPersist);
       set({
         user: response.user,
         token: response.token,

@@ -487,7 +487,7 @@ textarea:focus-visible {
 .surface-page-chrome--actions-only {
   justify-content: flex-end;
   border-bottom: none;
-  margin-bottom: 0;
+  /* 仅含全局操作时不压扁与主内容区的间距；具体留白由页面用 margin/padding 类控制，勿在此写死 margin-bottom: 0 */
   padding-bottom: 0;
 }
 
