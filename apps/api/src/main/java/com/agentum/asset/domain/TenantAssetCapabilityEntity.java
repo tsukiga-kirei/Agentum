@@ -134,7 +134,6 @@ public class TenantAssetCapabilityEntity {
 
     public void publish(UUID operatorUserId, Instant now) {
         this.status = "published";
-        this.visibility = "tenant";
         this.updatedBy = operatorUserId;
         this.updatedAt = now;
         this.publishedAt = now;
@@ -144,6 +143,12 @@ public class TenantAssetCapabilityEntity {
         this.status = "draft";
         this.visibility = "private";
         this.publishedAt = null;
+        this.updatedBy = operatorUserId;
+        this.updatedAt = now;
+    }
+
+    public void updateSharing(String visibility, UUID operatorUserId, Instant now) {
+        this.visibility = visibility;
         this.updatedBy = operatorUserId;
         this.updatedAt = now;
     }

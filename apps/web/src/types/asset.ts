@@ -21,6 +21,8 @@ export type SystemCapabilityAssetRow = {
   status: string;
   assignedToMe: boolean;
   assignmentScope: string;
+  openSource: "tenant_admin" | "user_shared";
+  ownerDisplayName: string;
   openedAt: string;
 };
 
@@ -33,12 +35,18 @@ export type MyAssetRow = {
   description: string;
   riskLevel: string;
   status: string;
-  visibility: "private" | "tenant";
+  visibility: "private" | "shared";
   sourceType: string;
   baseSystemCapabilityId: string | null;
   createdAt: string;
   updatedAt: string;
   publishedAt: string | null;
+};
+
+export type ShareableMemberRow = {
+  userId: string;
+  username: string;
+  displayName: string;
 };
 
 export type MyAssetDetail = MyAssetRow & {
@@ -49,6 +57,12 @@ export type MyAssetDetail = MyAssetRow & {
     skillIds?: string[];
     mcpIds?: string[];
   };
+  sharedUserIds: string[];
+};
+
+export type UpdateMyAssetSharingRequest = {
+  visibility: "private" | "shared";
+  sharedUserIds?: string[];
 };
 
 export type CreateMyAssetRequest = {
@@ -58,9 +72,10 @@ export type CreateMyAssetRequest = {
   version?: string;
   description?: string;
   riskLevel?: string;
-  visibility?: "private" | "tenant";
+  visibility?: "private" | "shared";
   baseSystemCapabilityId?: string;
   config?: Record<string, unknown>;
+  sharedUserIds?: string[];
 };
 
 export type UpdateMyAssetRequest = Omit<CreateMyAssetRequest, "assetType" | "baseSystemCapabilityId" | "code">;

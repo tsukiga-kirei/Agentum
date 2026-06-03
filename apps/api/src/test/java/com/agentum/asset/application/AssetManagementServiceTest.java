@@ -48,6 +48,8 @@ class AssetManagementServiceTest {
     private final UserMembershipRepository userMembershipRepository = mock(UserMembershipRepository.class);
     private final UserMembershipRoleRepository userMembershipRoleRepository = mock(UserMembershipRoleRepository.class);
     private final TenantAssetCapabilityRepository tenantAssetCapabilityRepository = mock(TenantAssetCapabilityRepository.class);
+    private final com.agentum.asset.infrastructure.TenantAssetShareRepository tenantAssetShareRepository = mock(com.agentum.asset.infrastructure.TenantAssetShareRepository.class);
+    private final com.agentum.auth.infrastructure.UserAccountRepository userAccountRepository = mock(com.agentum.auth.infrastructure.UserAccountRepository.class);
 
     @Test
     void shouldMarkTenantSystemCapabilityAssignedByResourceGrant() {
@@ -254,7 +256,7 @@ class AssetManagementServiceTest {
 
         assertThat(updated.config()).containsEntry("promptContent", "请识别客户续约风险。");
         assertThat(published.status()).isEqualTo("published");
-        assertThat(published.visibility()).isEqualTo("tenant");
+        assertThat(published.visibility()).isEqualTo("private");
         assertThat(published.publishedAt()).isEqualTo(NOW);
     }
 
@@ -457,6 +459,9 @@ class AssetManagementServiceTest {
     }
 
     private AssetManagementService newService() {
+        when(tenantAssetShareRepository.findByAssetId(any())).thenReturn(List.of());
+        when(tenantAssetShareRepository.findByTenantIdAndGranteeUserIdOrderByCreatedAtDesc(any(), any())).thenReturn(List.of());
+        when(tenantAssetShareRepository.countByAssetId(any())).thenReturn(0L);
         return new AssetManagementService(
             tenantRepository,
             tenantCapabilityGrantRepository,
@@ -465,6 +470,8 @@ class AssetManagementServiceTest {
             userMembershipRepository,
             userMembershipRoleRepository,
             tenantAssetCapabilityRepository,
+            tenantAssetShareRepository,
+            userAccountRepository,
             Clock.fixed(NOW, ZoneOffset.UTC)
         );
     }

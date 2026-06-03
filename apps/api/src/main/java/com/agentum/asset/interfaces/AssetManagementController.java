@@ -131,6 +131,28 @@ public class AssetManagementController {
         return ApiResponse.success(assetManagementService.revertMyAssetToDraft(tenantId, assetId, principal), RequestIds.current(request));
     }
 
+    @GetMapping("/shareable-members")
+    public ApiResponse<java.util.List<AssetManagementApi.ShareableMemberRow>> listShareableMembers(
+        @PathVariable UUID tenantId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        assetAccess.assertCanUseAssets(principal, tenantId);
+        return ApiResponse.success(assetManagementService.listShareableMembers(tenantId, principal), RequestIds.current(request));
+    }
+
+    @PatchMapping("/mine/{assetId}/sharing")
+    public ApiResponse<AssetManagementApi.MyAssetDetail> updateMineSharing(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID assetId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @Valid @RequestBody AssetManagementApi.UpdateMyAssetSharingRequest body,
+        HttpServletRequest request
+    ) {
+        assetAccess.assertCanUseAssets(principal, tenantId);
+        return ApiResponse.success(assetManagementService.updateMyAssetSharing(tenantId, assetId, principal, body), RequestIds.current(request));
+    }
+
     @DeleteMapping("/mine/{assetId}")
     public ApiResponse<Void> deleteMine(
         @PathVariable UUID tenantId,

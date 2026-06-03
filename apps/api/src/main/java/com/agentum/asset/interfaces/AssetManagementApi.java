@@ -30,6 +30,8 @@ public final class AssetManagementApi {
         String status,
         boolean assignedToMe,
         String assignmentScope,
+        String openSource,
+        String ownerDisplayName,
         Instant openedAt
     ) {
     }
@@ -65,9 +67,17 @@ public final class AssetManagementApi {
         String sourceType,
         UUID baseSystemCapabilityId,
         Map<String, Object> config,
+        java.util.List<UUID> sharedUserIds,
         Instant createdAt,
         Instant updatedAt,
         Instant publishedAt
+    ) {
+    }
+
+    public record ShareableMemberRow(
+        UUID userId,
+        String username,
+        String displayName
     ) {
     }
 
@@ -80,7 +90,8 @@ public final class AssetManagementApi {
         @Size(max = 20) String riskLevel,
         @Size(max = 30) String visibility,
         UUID baseSystemCapabilityId,
-        Map<String, Object> config
+        Map<String, Object> config,
+        java.util.List<UUID> sharedUserIds
     ) {
     }
 
@@ -90,7 +101,14 @@ public final class AssetManagementApi {
         @Size(max = 1000) String description,
         @Size(max = 20) String riskLevel,
         @Size(max = 30) String visibility,
-        Map<String, Object> config
+        Map<String, Object> config,
+        java.util.List<UUID> sharedUserIds
+    ) {
+    }
+
+    public record UpdateMyAssetSharingRequest(
+        @NotBlank @Size(max = 30) String visibility,
+        java.util.List<UUID> sharedUserIds
     ) {
     }
 }

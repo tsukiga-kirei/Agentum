@@ -116,7 +116,7 @@ type WorkflowCapabilityOption = {
   code: string;
   version: string;
   status: string;
-  source: "system" | "mine";
+  source: "system" | "mine" | "shared";
   scope: string;
 };
 
@@ -2010,7 +2010,7 @@ function buildCapabilityOptions(systemAssets: SystemCapabilityAssetRow[], myAsse
     code: asset.code,
     version: asset.version,
     status: asset.status,
-    source: "system" as const,
+    source: asset.openSource === "user_shared" ? ("shared" as const) : ("system" as const),
     scope: asset.assignmentScope,
   }));
   const myOptions = myAssets
@@ -2023,7 +2023,7 @@ function buildCapabilityOptions(systemAssets: SystemCapabilityAssetRow[], myAsse
       version: asset.version,
       status: asset.status,
       source: "mine" as const,
-      scope: asset.visibility === "tenant" ? "租户内复用" : "本人维护",
+      scope: asset.visibility === "shared" ? "已共享" : "本人维护",
     }));
 
   return [...systemOptions, ...myOptions].sort((left, right) => {
@@ -2039,7 +2039,8 @@ function filterCapabilities(capabilities: WorkflowCapabilityOption[], assetType:
 }
 
 function formatAssetSource(option: WorkflowCapabilityOption) {
-  return option.source === "system" ? "对我开放" : "我的能力";
+  if (option.source === "shared") return "同事共享";
+  return option.source === "system" ? "租户管理分配" : "我的能力";
 }
 
 function findCapabilityName(options: WorkflowCapabilityOption[], id: string, fallback: string) {

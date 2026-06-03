@@ -1,5 +1,5 @@
 import type { LoginRequest, LoginResponse, MeResponse, SwitchRoleRequest, SwitchRoleResponse, TenantOption } from "../types/auth";
-import type { AssetSummary, CreateMyAssetRequest, MyAssetDetail, MyAssetPage, MyAssetRow, SystemCapabilityAssetPage, UpdateMyAssetRequest } from "../types/asset";
+import type { AssetSummary, CreateMyAssetRequest, MyAssetDetail, MyAssetPage, MyAssetRow, ShareableMemberRow, SystemCapabilityAssetPage, UpdateMyAssetRequest, UpdateMyAssetSharingRequest } from "../types/asset";
 import type {
   CreateDepartmentRequest,
   CreateMemberRequest,
@@ -280,6 +280,8 @@ export const systemApi = {
 
 export const assetApi = {
   summary: (tenantId: string, token: string) => apiRequest<AssetSummary>(`/api/tenants/${tenantId}/assets/summary`, { token }),
+  listShareableMembers: (tenantId: string, token: string) =>
+    apiRequest<ShareableMemberRow[]>(`/api/tenants/${tenantId}/assets/shareable-members`, { token }),
   listSystemCapabilities: (tenantId: string, token: string, page = 1, size = 10, sort = "openedAt,desc", assetType = "", keyword = "") => {
     const params = new URLSearchParams({ page: String(page), size: String(size), sort });
     if (assetType) params.set("assetType", assetType);
@@ -305,6 +307,8 @@ export const assetApi = {
     apiRequest<MyAssetDetail>(`/api/tenants/${tenantId}/assets/mine/${assetId}/publish`, { method: "POST", token }),
   revertMineToDraft: (tenantId: string, token: string, assetId: string) =>
     apiRequest<MyAssetDetail>(`/api/tenants/${tenantId}/assets/mine/${assetId}/revert-to-draft`, { method: "POST", token }),
+  updateMineSharing: (tenantId: string, token: string, assetId: string, body: UpdateMyAssetSharingRequest) =>
+    apiRequest<MyAssetDetail>(`/api/tenants/${tenantId}/assets/mine/${assetId}/sharing`, { method: "PATCH", token, body }),
   deleteMine: (tenantId: string, token: string, assetId: string) =>
     apiRequest<void>(`/api/tenants/${tenantId}/assets/mine/${assetId}`, { method: "DELETE", token }),
 };

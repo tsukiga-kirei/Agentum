@@ -6,7 +6,7 @@ import { Empty, Pagination, Segmented, Select, Spin, message, Drawer } from "ant
 import { SurfacePageLayout } from "../../components/workbench/SurfacePageLayout";
 import { AgentumApiError, assetApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
-import type { AssetSummary, AssetType, CreatableAssetType, CreateMyAssetRequest, MyAssetDetail, MyAssetRow, SystemCapabilityAssetRow, UpdateMyAssetRequest } from "../../types/asset";
+import type { AssetSummary, AssetType, CreatableAssetType, CreateMyAssetRequest, MyAssetDetail, MyAssetRow, ShareableMemberRow, SystemCapabilityAssetRow, UpdateMyAssetRequest } from "../../types/asset";
 
 type AssetTab = "overview" | "system" | "mine";
 
@@ -42,8 +42,8 @@ const riskOptions = [
 ];
 
 const visibilityOptions = [
-  { value: "private", label: "仅自己维护" },
-  { value: "tenant", label: "租户内复用" },
+  { value: "private", label: "仅自己使用" },
+  { value: "shared", label: "共享给指定同事" },
 ];
 
 const paginationLocale = {
@@ -64,7 +64,7 @@ const defaultAgentConfig = (): Record<string, unknown> => ({
 
 const assetTabs: Array<{ key: AssetTab; label: string; icon: LucideIcon; description: string }> = [
   { key: "overview", label: "总览", icon: Library, description: "查看系统能力、租户分配和自建资产的整体勾稽" },
-  { key: "system", label: "对我开放", icon: Boxes, description: "查看租户管理已分配给当前用户、部门或角色的系统能力及当前版本" },
+  { key: "system", label: "对我开放", icon: Boxes, description: "查看租户管理分配的系统能力，以及同事共享给你的已发布能力" },
   { key: "mine", label: "我的能力", icon: Bot, description: "管理我创建的提示词模板草稿、智能体模板草稿和已发布能力" },
 ];
 
@@ -107,6 +107,8 @@ export function AssetsPage() {
     visibility: "private",
     config: { promptContent: "" },
   });
+  const [shareableMembers, setShareableMembers] = useState<ShareableMemberRow[]>([]);
+  const [sharingDraft, setSharingDraft] = useState<{ visibility: "private" | "shared"; sharedUserIds: string[] }>({ visibility: "private", sharedUserIds: [] });
   const [editDraft, setEditDraft] = useState<UpdateMyAssetRequest>({
     name: "",
     version: "v1",
@@ -114,6 +116,7 @@ export function AssetsPage() {
     riskLevel: "low",
     visibility: "private",
     config: {},
+    sharedUserIds: [],
   });
 
   const tenantId = user?.tenantId ?? "";
@@ -204,6 +207,15 @@ export function AssetsPage() {
     }
   }, [activeTab, loadMyAssets, loadSystemAssets]);
 
+  useEffect(() => {
+    if (!token || !tenantId) return;
+    void assetApi.listShareableMembers(tenantId, token)
+      .then(setShareableMembers)
+      .catch((error) => {
+        console.warn("[assets] 加载可共享成员失败", { tenantId, message: error instanceof Error ? error.message : "unknown" });
+      });
+  }, [tenantId, token]);
+
   const assignedSystemAssets = useMemo(() => systemAssets.filter((asset) => asset.assignedToMe), [systemAssets]);
   // 能力类型和关键字过滤已经在服务端执行，前端直接使用服务端返回结果，避免客户端在已分页数据上再次过滤导致显示不一致。
   const filteredSystemAssets = systemAssets;
@@ -217,25 +229,32 @@ export function AssetsPage() {
     () => assignedSystemAssets.filter((asset) => asset.assetType === "mcp").map((asset) => ({ value: asset.id, label: `${asset.name} · ${asset.version}` })),
     [assignedSystemAssets],
   );
+  const shareableMemberOptions = useMemo(
+    () => shareableMembers.map((member) => ({ value: member.userId, label: `${member.displayName} · ${member.username}` })),
+    [shareableMembers],
+  );
   const promptTemplateOptions = useMemo(() => {
     const systemOptions = assignedSystemAssets
-      .filter((asset) => asset.assetType === "prompt_template")
-      .map((asset) => ({ value: asset.id, label: `${asset.name} · ${asset.version}（对我开放）` }));
+      .filter((asset) => asset.assetType === "prompt_template" && asset.openSource === "tenant_admin")
+      .map((asset) => ({ value: asset.id, label: `${asset.name} · ${asset.version}（租户管理分配）` }));
+    const sharedOptions = systemAssets
+      .filter((asset) => asset.assetType === "prompt_template" && asset.openSource === "user_shared")
+      .map((asset) => ({ value: asset.id, label: `${asset.name} · ${asset.version}（${asset.ownerDisplayName || "同事"}共享）` }));
     const myOptions = myAssets
       .filter((asset) => asset.assetType === "prompt_template" && asset.status === "published")
       .map((asset) => ({
         value: asset.id,
         label: `${asset.name} · ${asset.version}（我的能力·已发布）`,
       }));
-    return [{ value: "none", label: "自定义系统提示词" }, ...systemOptions, ...myOptions];
-  }, [assignedSystemAssets, myAssets]);
+    return [{ value: "none", label: "自定义系统提示词" }, ...systemOptions, ...sharedOptions, ...myOptions];
+  }, [assignedSystemAssets, myAssets, systemAssets]);
 
   const resolvePromptTemplateContent = useCallback(
     async (templateId: string) => {
       if (templateId === "none" || !templateId) {
         return "";
       }
-      const systemAsset = assignedSystemAssets.find((asset) => asset.id === templateId);
+      const systemAsset = systemAssets.find((asset) => asset.id === templateId);
       if (systemAsset?.promptContent) {
         return systemAsset.promptContent;
       }
@@ -251,7 +270,7 @@ export function AssetsPage() {
         return "";
       }
     },
-    [assignedSystemAssets, myAssets, tenantId, token],
+    [systemAssets, myAssets, tenantId, token],
   );
 
   const applyPromptTemplateSelection = useCallback(
@@ -290,6 +309,7 @@ export function AssetsPage() {
         name: draft.name.trim(),
         version: draft.version?.trim() || "v1",
         description: draft.description?.trim(),
+        sharedUserIds: draft.visibility === "shared" ? draft.sharedUserIds ?? [] : [],
       });
       messageApi.success("能力草稿已创建");
       setCreateOpen(false);
@@ -316,6 +336,11 @@ export function AssetsPage() {
         riskLevel: detail.riskLevel,
         visibility: detail.visibility,
         config: detail.config ?? {},
+        sharedUserIds: detail.sharedUserIds ?? [],
+      });
+      setSharingDraft({
+        visibility: detail.visibility,
+        sharedUserIds: detail.sharedUserIds ?? [],
       });
       setEditOpen(true);
     } catch (error) {
@@ -375,6 +400,11 @@ export function AssetsPage() {
         riskLevel: reverted.riskLevel,
         visibility: reverted.visibility,
         config: reverted.config ?? {},
+        sharedUserIds: reverted.sharedUserIds ?? [],
+      });
+      setSharingDraft({
+        visibility: reverted.visibility,
+        sharedUserIds: reverted.sharedUserIds ?? [],
       });
       messageApi.success("已改回草稿，可继续编辑");
       await Promise.all([loadSummary(), loadMyAssets(minePage.page, minePage.size, keyword)]);
@@ -399,6 +429,28 @@ export function AssetsPage() {
       await Promise.all([loadSummary(), loadMyAssets(1, minePage.size, keyword)]);
     } catch (error) {
       handleApiError(error, "删除能力失败");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleUpdateSharing = async () => {
+    if (!token || !tenantId || !currentAsset) return;
+    setSubmitting(true);
+    try {
+      const updated = await assetApi.updateMineSharing(tenantId, token, currentAsset.id, {
+        visibility: sharingDraft.visibility,
+        sharedUserIds: sharingDraft.visibility === "shared" ? sharingDraft.sharedUserIds : [],
+      });
+      setCurrentAsset(updated);
+      setSharingDraft({
+        visibility: updated.visibility,
+        sharedUserIds: updated.sharedUserIds ?? [],
+      });
+      messageApi.success("共享范围已更新");
+      await Promise.all([loadSummary(), loadSystemAssets(systemPage.page, systemPage.size), loadMyAssets(minePage.page, minePage.size, keyword)]);
+    } catch (error) {
+      handleApiError(error, "更新共享范围失败");
     } finally {
       setSubmitting(false);
     }
@@ -677,18 +729,17 @@ export function AssetsPage() {
               />
             </div>
           </div>
-          <div className="sys-field">
-            <label className="sys-field-label">可见范围</label>
-            <Select
-              className="agent-admin-select w-full"
-              classNames={adminSelectClassNames}
-              prefix={<Eye className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
-              suffixIcon={adminSelectSuffixIcon}
-              value={draft.visibility}
-              options={visibilityOptions}
-              onChange={(visibility) => setDraft((current) => ({ ...current, visibility }))}
-            />
-          </div>
+          <ShareSettingsFields
+            visibility={draft.visibility ?? "private"}
+            sharedUserIds={draft.sharedUserIds ?? []}
+            memberOptions={shareableMemberOptions}
+            onVisibilityChange={(visibility) => setDraft((current) => ({
+              ...current,
+              visibility,
+              sharedUserIds: visibility === "shared" ? current.sharedUserIds ?? [] : [],
+            }))}
+            onSharedUserIdsChange={(sharedUserIds) => setDraft((current) => ({ ...current, sharedUserIds }))}
+          />
           <div className="sys-field">
             <label className="sys-field-label">说明</label>
             <textarea className="sys-field-textarea" value={draft.description ?? ""} placeholder="说明这项能力的业务用途、输入约束和后续发布方向" onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} />
@@ -792,6 +843,33 @@ export function AssetsPage() {
                 <textarea className="sys-field-textarea" disabled={currentAsset.status !== "draft"} value={editDraft.description ?? ""} onChange={(event) => setEditDraft((current) => ({ ...current, description: event.target.value }))} />
               </div>
 
+              {currentAsset.status === "draft" ? (
+                <ShareSettingsFields
+                  visibility={editDraft.visibility ?? "private"}
+                  sharedUserIds={editDraft.sharedUserIds ?? []}
+                  memberOptions={shareableMemberOptions}
+                  onVisibilityChange={(visibility) => setEditDraft((current) => ({
+                    ...current,
+                    visibility,
+                    sharedUserIds: visibility === "shared" ? current.sharedUserIds ?? [] : [],
+                  }))}
+                  onSharedUserIdsChange={(sharedUserIds) => setEditDraft((current) => ({ ...current, sharedUserIds }))}
+                />
+              ) : (
+                <ShareSettingsFields
+                  readOnly={false}
+                  visibility={sharingDraft.visibility}
+                  sharedUserIds={sharingDraft.sharedUserIds}
+                  memberOptions={shareableMemberOptions}
+                  onVisibilityChange={(visibility) => setSharingDraft((current) => ({
+                    ...current,
+                    visibility,
+                    sharedUserIds: visibility === "shared" ? current.sharedUserIds : [],
+                  }))}
+                  onSharedUserIdsChange={(sharedUserIds) => setSharingDraft((current) => ({ ...current, sharedUserIds }))}
+                />
+              )}
+
               {currentAsset.assetType === "prompt_template" ? (
                 <div className="sys-field">
                   <label className="sys-field-label sys-field-label--required">提示词内容</label>
@@ -853,6 +931,10 @@ export function AssetsPage() {
                     <button type="button" className="sys-btn sys-btn--default" onClick={() => setEditOpen(false)}>
                       <X size={14} />
                       关闭
+                    </button>
+                    <button type="button" className="sys-btn sys-btn--default" disabled={submitting} onClick={() => void handleUpdateSharing()}>
+                      <Eye size={14} />
+                      保存共享
                     </button>
                     <button type="button" className="sys-btn sys-btn--primary" disabled={submitting} onClick={() => void handleRevertToDraft()}>
                       <RotateCcw size={14} />
@@ -1073,12 +1155,13 @@ function SystemAssetCard({ asset, onView }: { asset: SystemCapabilityAssetRow; o
       </div>
       <div className="sys-info-tags">
         <span className="sys-info-tag sys-info-tag--primary">{formatAssetType(asset.assetType)}</span>
+        <span className="sys-info-tag">{asset.openSource === "user_shared" ? "同事共享" : "租户管理分配"}</span>
         <RiskTag level={asset.riskLevel} />
       </div>
       <p className="agent-muted min-h-12 text-sm leading-6">{asset.description || "暂无说明"}</p>
       <div className="sys-card-meta">
         <div className="sys-meta-item">
-          <span className="sys-meta-label">分配范围</span>
+          <span className="sys-meta-label">开放来源</span>
           <span className="sys-meta-value">{asset.assignmentScope}</span>
         </div>
         <div className="sys-meta-item">
@@ -1110,7 +1193,7 @@ function MyAssetCard({ asset, onEdit, onDelete }: { asset: MyAssetRow; onEdit: (
       <div className="sys-info-tags">
         <span className="sys-info-tag sys-info-tag--primary">{formatAssetType(asset.assetType)}</span>
         <RiskTag level={asset.riskLevel} />
-        <span className="sys-info-tag">{asset.visibility === "tenant" ? "租户内复用" : "仅自己维护"}</span>
+        <span className="sys-info-tag">{formatAssetVisibility(asset.visibility)}</span>
       </div>
       <p className="agent-muted min-h-12 text-sm leading-6">{asset.description || "暂无说明"}</p>
       <div className="sys-card-footer">
@@ -1227,6 +1310,58 @@ function RiskTag({ level }: { level: string }) {
   return <span className={`sys-info-tag ${cls}`}>{formatRisk(level)}</span>;
 }
 
+function ShareSettingsFields({
+  visibility,
+  sharedUserIds,
+  memberOptions,
+  readOnly = false,
+  onVisibilityChange,
+  onSharedUserIdsChange,
+}: {
+  visibility: "private" | "shared";
+  sharedUserIds: string[];
+  memberOptions: Array<{ value: string; label: string }>;
+  readOnly?: boolean;
+  onVisibilityChange: (visibility: "private" | "shared") => void;
+  onSharedUserIdsChange: (sharedUserIds: string[]) => void;
+}) {
+  return (
+    <>
+      <div className="sys-field">
+        <label className="sys-field-label">使用范围</label>
+        <Select
+          className="agent-admin-select w-full"
+          classNames={adminSelectClassNames}
+          prefix={<Eye className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+          suffixIcon={adminSelectSuffixIcon}
+          disabled={readOnly}
+          value={visibility}
+          options={visibilityOptions}
+          onChange={(value) => onVisibilityChange(value as "private" | "shared")}
+        />
+        <div className="sys-field-hint">发布只代表能力定稿；是否共享给其他同事需单独配置，与发布状态无关。</div>
+      </div>
+      {visibility === "shared" ? (
+        <div className="sys-field">
+          <label className="sys-field-label sys-field-label--required">共享给</label>
+          <Select
+            mode="multiple"
+            className="agent-admin-select w-full"
+            classNames={adminSelectClassNames}
+            prefix={<UserRoundCog className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+            suffixIcon={adminSelectSuffixIcon}
+            disabled={readOnly}
+            value={sharedUserIds}
+            options={memberOptions}
+            placeholder="选择可使用的同事"
+            onChange={(values) => onSharedUserIdsChange(values)}
+          />
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 function AgentTemplateConfigFields({
   config,
   promptTemplateOptions,
@@ -1307,11 +1442,14 @@ function AgentTemplateConfigFields({
 }
 
 function normalizeEditDraft(draft: UpdateMyAssetRequest, assetType: AssetType): UpdateMyAssetRequest {
+  const visibility = draft.visibility === "shared" ? "shared" : "private";
   const base = {
     ...draft,
     name: draft.name.trim(),
     version: draft.version?.trim() || "v1",
     description: draft.description?.trim(),
+    visibility,
+    sharedUserIds: visibility === "shared" ? (draft.sharedUserIds ?? []) : [],
   };
   if (assetType === "prompt_template") {
     return { ...base, config: { promptContent: getConfigString(draft.config, "promptContent") } };
@@ -1349,6 +1487,11 @@ function formatRisk(level: string): string {
   if (level === "medium") return "中风险";
   if (level === "low") return "低风险";
   return level;
+}
+
+function formatAssetVisibility(visibility: string): string {
+  if (visibility === "shared") return "已共享";
+  return "仅自己使用";
 }
 
 function formatStatus(status: string): string {

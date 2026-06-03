@@ -1,9 +1,13 @@
 package com.agentum.asset.application;
 
+import com.agentum.asset.domain.TenantAssetShareEntity;
 import com.agentum.asset.domain.TenantAssetCapabilityEntity;
 import com.agentum.asset.infrastructure.TenantAssetCapabilityRepository;
+import com.agentum.asset.infrastructure.TenantAssetShareRepository;
 import com.agentum.asset.interfaces.AssetManagementApi;
 import com.agentum.auth.application.CurrentUserPrincipal;
+import com.agentum.auth.domain.UserAccount;
+import com.agentum.auth.infrastructure.UserAccountRepository;
 import com.agentum.organization.domain.UserMembershipEntity;
 import com.agentum.organization.domain.UserMembershipRoleEntity;
 import com.agentum.organization.infrastructure.UserMembershipRepository;
@@ -52,7 +56,7 @@ public class AssetManagementService {
     private static final Set<String> USER_CREATABLE_ASSET_TYPES = Set.of("agent_template", "prompt_template");
     private static final Set<String> SYSTEM_CAPABILITY_TYPES = Set.of("skill", "mcp", "prompt_template", "delivery");
     private static final Set<String> ALLOWED_RISK_LEVELS = Set.of("low", "medium", "high");
-    private static final Set<String> ALLOWED_VISIBILITY = Set.of("private", "tenant");
+    private static final Set<String> ALLOWED_VISIBILITY = Set.of("private", "shared");
     private static final SortWhitelist SYSTEM_CAPABILITY_SORT = SortWhitelist.of("openedAt", "name", "assetType", "riskLevel", "openedAt");
     private static final SortWhitelist MY_ASSET_SORT = SortWhitelist.of("updatedAt", "name", "assetType", "status", "createdAt", "updatedAt");
 
@@ -63,6 +67,8 @@ public class AssetManagementService {
     private final UserMembershipRepository userMembershipRepository;
     private final UserMembershipRoleRepository userMembershipRoleRepository;
     private final TenantAssetCapabilityRepository tenantAssetCapabilityRepository;
+    private final TenantAssetShareRepository tenantAssetShareRepository;
+    private final UserAccountRepository userAccountRepository;
     private final Clock clock;
 
     public AssetManagementService(
@@ -73,6 +79,8 @@ public class AssetManagementService {
         UserMembershipRepository userMembershipRepository,
         UserMembershipRoleRepository userMembershipRoleRepository,
         TenantAssetCapabilityRepository tenantAssetCapabilityRepository,
+        TenantAssetShareRepository tenantAssetShareRepository,
+        UserAccountRepository userAccountRepository,
         Clock clock
     ) {
         this.tenantRepository = tenantRepository;
@@ -82,6 +90,8 @@ public class AssetManagementService {
         this.userMembershipRepository = userMembershipRepository;
         this.userMembershipRoleRepository = userMembershipRoleRepository;
         this.tenantAssetCapabilityRepository = tenantAssetCapabilityRepository;
+        this.tenantAssetShareRepository = tenantAssetShareRepository;
+        this.userAccountRepository = userAccountRepository;
         this.clock = clock;
     }
 
@@ -90,12 +100,28 @@ public class AssetManagementService {
         ensureActiveTenant(tenantId);
         List<SystemCapabilityAsset> tenantOpenCapabilities = loadTenantOpenCapabilities(tenantId);
         List<SystemCapabilityAsset> visibleCapabilities = filterVisibleCapabilities(tenantId, principal, tenantOpenCapabilities);
+        List<SharedTenantAsset> sharedAssets = loadSharedTenantAssetsForUser(tenantId, principal.userId());
 
         return new AssetManagementApi.AssetSummary(
-            visibleCapabilities.size(),
+            visibleCapabilities.size() + sharedAssets.size(),
             tenantOpenCapabilities.size(),
             tenantAssetCapabilityRepository.countByTenantIdAndCreatedBy(tenantId, principal.userId())
         );
+    }
+
+    @Transactional(readOnly = true)
+    public List<AssetManagementApi.ShareableMemberRow> listShareableMembers(UUID tenantId, CurrentUserPrincipal principal) {
+        ensureActiveTenant(tenantId);
+        return userMembershipRepository.findByTenantIdAndStatus(tenantId, ACTIVE_STATUS)
+            .stream()
+            .map(UserMembershipEntity::getUserId)
+            .filter(userId -> principal != null && !userId.equals(principal.userId()))
+            .distinct()
+            .map(userId -> userAccountRepository.findById(userId).orElse(null))
+            .filter(user -> user != null && ACTIVE_STATUS.equals(user.getStatus()))
+            .sorted(Comparator.comparing(UserAccount::getDisplayName))
+            .map(user -> new AssetManagementApi.ShareableMemberRow(user.getId(), user.getUsername(), user.getDisplayName()))
+            .toList();
     }
 
     @Transactional(readOnly = true)
@@ -113,16 +139,30 @@ public class AssetManagementService {
         Pageable pageable = PageableFactory.from(query, SYSTEM_CAPABILITY_SORT);
         boolean manager = isTenantManager(principal);
         List<SystemCapabilityAsset> assets = filterVisibleCapabilities(tenantId, principal, loadTenantOpenCapabilities(tenantId));
+        List<SharedTenantAsset> sharedAssets = loadSharedTenantAssetsForUser(tenantId, principal.userId());
+        Map<UUID, String> ownerNames = loadUserDisplayNames(sharedAssets.stream().map(SharedTenantAsset::ownerUserId).collect(Collectors.toSet()));
         // 服务端按能力类型和关键字过滤，避免客户端在已分页结果上再过滤导致显示不一致。
         String normalizedAssetType = assetType == null || assetType.isBlank() || "all".equals(assetType) ? null : assetType.trim();
         String normalizedKeyword = keyword == null ? "" : keyword.trim().toLowerCase();
-        List<AssetManagementApi.SystemCapabilityAssetRow> rows = assets.stream()
+        List<AssetManagementApi.SystemCapabilityAssetRow> systemRows = assets.stream()
             .filter(asset -> normalizedAssetType == null || normalizedAssetType.equals(asset.capability().getCapabilityType()))
             .filter(asset -> normalizedKeyword.isEmpty() || asset.capability().getName().toLowerCase().contains(normalizedKeyword)
                 || asset.capability().getCode().toLowerCase().contains(normalizedKeyword)
                 || asset.capability().getVersion().toLowerCase().contains(normalizedKeyword))
             .map(asset -> toSystemCapabilityRow(asset, true, manager))
             .toList();
+        List<AssetManagementApi.SystemCapabilityAssetRow> sharedRows = sharedAssets.stream()
+            .filter(item -> normalizedAssetType == null || normalizedAssetType.equals(item.asset().getAssetType()))
+            .filter(item -> normalizedKeyword.isEmpty() || item.asset().getName().toLowerCase().contains(normalizedKeyword)
+                || item.asset().getCode().toLowerCase().contains(normalizedKeyword)
+                || item.asset().getVersion().toLowerCase().contains(normalizedKeyword))
+            .map(item -> toSharedTenantAssetRow(item, ownerNames.getOrDefault(item.ownerUserId(), "")))
+            .toList();
+        List<AssetManagementApi.SystemCapabilityAssetRow> rows = new ArrayList<>(systemRows.size() + sharedRows.size());
+        rows.addAll(systemRows);
+        rows.addAll(sharedRows);
+        rows.sort(Comparator.comparing(AssetManagementApi.SystemCapabilityAssetRow::openedAt, Comparator.nullsLast(Comparator.reverseOrder()))
+            .thenComparing(AssetManagementApi.SystemCapabilityAssetRow::name));
 
         return PageResponse.from(slice(rows, pageable));
     }
@@ -188,6 +228,7 @@ public class AssetManagementService {
 
         try {
             TenantAssetCapabilityEntity saved = tenantAssetCapabilityRepository.save(entity);
+            replaceAssetShares(tenantId, saved, principal, visibility, request.sharedUserIds(), false);
             log.info(
                 "租户自建能力资产已创建 tenantId={} userId={} assetId={} assetType={} requestId={}",
                 tenantId,
@@ -242,6 +283,7 @@ public class AssetManagementService {
 
         Map<String, Object> config = normalizeAssetConfig(tenantId, principal, asset.getAssetType(), request.config(), false);
         asset.updateDraft(name, code, version, normalizeOptional(request.description()), riskLevel, visibility, config, principal.userId(), clock.instant());
+        replaceAssetShares(tenantId, asset, principal, visibility, request.sharedUserIds(), false);
         log.info(
             "租户能力草稿已更新 tenantId={} userId={} assetId={} assetType={} requestId={}",
             tenantId,
@@ -266,6 +308,7 @@ public class AssetManagementService {
 
         // 发布前重新校验配置引用，避免草稿期间权限变化后仍把未授权 Skill/MCP 固化进智能体模板。
         normalizeAssetConfig(tenantId, principal, asset.getAssetType(), asset.getConfig(), true);
+        validateSharingBeforePublish(asset);
         asset.publish(principal.userId(), clock.instant());
         log.info(
             "租户能力草稿已发布 tenantId={} userId={} assetId={} assetType={} requestId={}",
@@ -291,6 +334,7 @@ public class AssetManagementService {
 
         // 已发布能力改回草稿后重新进入编辑态；后续接入引用关系索引后，被其他已发布资产或流程引用的能力应禁止回退。
         asset.revertToDraft(principal.userId(), clock.instant());
+        tenantAssetShareRepository.deleteByAssetId(asset.getId());
         log.info(
             "租户能力已改回草稿 tenantId={} userId={} assetId={} assetType={} requestId={}",
             tenantId,
@@ -303,12 +347,39 @@ public class AssetManagementService {
     }
 
     @Transactional
+    public AssetManagementApi.MyAssetDetail updateMyAssetSharing(
+        UUID tenantId,
+        UUID assetId,
+        CurrentUserPrincipal principal,
+        AssetManagementApi.UpdateMyAssetSharingRequest request
+    ) {
+        ensureActiveTenant(tenantId);
+        TenantAssetCapabilityEntity asset = loadMyAssetForOwner(tenantId, assetId, principal);
+        if (!"published".equals(asset.getStatus())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ASSET_ONLY_PUBLISHED_SHARABLE", "只有已发布能力可以调整共享范围");
+        }
+        String visibility = normalizeVisibility(request.visibility());
+        asset.updateSharing(visibility, principal.userId(), clock.instant());
+        replaceAssetShares(tenantId, asset, principal, visibility, request.sharedUserIds(), true);
+        log.info(
+            "租户能力共享范围已更新 tenantId={} userId={} assetId={} visibility={} requestId={}",
+            tenantId,
+            principal.userId(),
+            assetId,
+            visibility,
+            RequestIds.current()
+        );
+        return toMyAssetDetail(asset);
+    }
+
+    @Transactional
     public void deleteMyAsset(UUID tenantId, UUID assetId, CurrentUserPrincipal principal) {
         ensureActiveTenant(tenantId);
         TenantAssetCapabilityEntity asset = loadMyAssetForOwner(tenantId, assetId, principal);
 
         // 当前阶段流程节点尚未落完整资产引用表，因此只能校验创建者边界。
         // 后续接入 workflow_versions / node 配置引用索引后，应先判断是否被草稿、已发布流程或运行快照引用，被使用时禁止删除。
+        tenantAssetShareRepository.deleteByAssetId(asset.getId());
         tenantAssetCapabilityRepository.delete(asset);
         log.info(
             "租户我的能力已删除 tenantId={} userId={} assetId={} assetType={} status={} requestId={}",
@@ -340,7 +411,35 @@ public class AssetManagementService {
             capability.getStatus(),
             assignedToMe,
             assignedToMe ? (manager ? "管理入口可用" : "租户管理已分配") : "待租户管理分配",
+            "tenant_admin",
+            "",
             asset.openedAt()
+        );
+    }
+
+    private AssetManagementApi.SystemCapabilityAssetRow toSharedTenantAssetRow(SharedTenantAsset sharedAsset, String ownerDisplayName) {
+        TenantAssetCapabilityEntity asset = sharedAsset.asset();
+        String promptContent = "";
+        if ("prompt_template".equals(asset.getAssetType())) {
+            Object rawPrompt = asset.getConfig().get("promptContent");
+            promptContent = rawPrompt == null ? "" : rawPrompt.toString();
+        }
+        String ownerLabel = ownerDisplayName.isBlank() ? "同事" : ownerDisplayName;
+        return new AssetManagementApi.SystemCapabilityAssetRow(
+            asset.getId(),
+            asset.getAssetType(),
+            asset.getName(),
+            asset.getCode(),
+            asset.getVersion(),
+            asset.getDescription() == null ? "" : asset.getDescription(),
+            promptContent,
+            asset.getRiskLevel(),
+            asset.getStatus(),
+            true,
+            ownerLabel + " 共享",
+            "user_shared",
+            ownerDisplayName,
+            sharedAsset.openedAt()
         );
     }
 
@@ -377,10 +476,95 @@ public class AssetManagementService {
             asset.getSourceType(),
             asset.getBaseSystemCapabilityId(),
             asset.getConfig(),
+            loadSharedUserIds(asset.getId()),
             asset.getCreatedAt(),
             asset.getUpdatedAt(),
             asset.getPublishedAt()
         );
+    }
+
+    private List<UUID> loadSharedUserIds(UUID assetId) {
+        return tenantAssetShareRepository.findByAssetId(assetId).stream().map(TenantAssetShareEntity::getGranteeUserId).toList();
+    }
+
+    private List<SharedTenantAsset> loadSharedTenantAssetsForUser(UUID tenantId, UUID userId) {
+        if (userId == null) {
+            return List.of();
+        }
+        return tenantAssetShareRepository.findByTenantIdAndGranteeUserIdOrderByCreatedAtDesc(tenantId, userId)
+            .stream()
+            .map(TenantAssetShareEntity::getAssetId)
+            .distinct()
+            .map(assetId -> tenantAssetCapabilityRepository.findByIdAndTenantId(assetId, tenantId).orElse(null))
+            .filter(asset -> asset != null
+                && "published".equals(asset.getStatus())
+                && "shared".equals(asset.getVisibility())
+                && USER_CREATABLE_ASSET_TYPES.contains(asset.getAssetType())
+                && asset.getCreatedBy() != null
+                && !asset.getCreatedBy().equals(userId))
+            .map(asset -> new SharedTenantAsset(asset, asset.getPublishedAt() == null ? asset.getUpdatedAt() : asset.getPublishedAt(), asset.getCreatedBy()))
+            .toList();
+    }
+
+    private Map<UUID, String> loadUserDisplayNames(Set<UUID> userIds) {
+        if (userIds.isEmpty()) {
+            return Map.of();
+        }
+        return userAccountRepository.findAllById(userIds)
+            .stream()
+            .collect(Collectors.toMap(UserAccount::getId, UserAccount::getDisplayName, (left, right) -> left));
+    }
+
+    private void replaceAssetShares(
+        UUID tenantId,
+        TenantAssetCapabilityEntity asset,
+        CurrentUserPrincipal principal,
+        String visibility,
+        List<UUID> sharedUserIds,
+        boolean publishingOrPublished
+    ) {
+        tenantAssetShareRepository.deleteByAssetId(asset.getId());
+        if (!"shared".equals(visibility)) {
+            return;
+        }
+        List<UUID> normalizedUserIds = normalizeSharedUserIds(tenantId, principal, sharedUserIds);
+        if (publishingOrPublished && normalizedUserIds.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ASSET_SHARED_USERS_REQUIRED", "选择共享时必须至少指定一名同事");
+        }
+        Instant now = clock.instant();
+        for (UUID granteeUserId : normalizedUserIds) {
+            tenantAssetShareRepository.save(TenantAssetShareEntity.create(tenantId, asset.getId(), granteeUserId, principal.userId(), now));
+        }
+    }
+
+    private void validateSharingBeforePublish(TenantAssetCapabilityEntity asset) {
+        if (!"shared".equals(asset.getVisibility())) {
+            return;
+        }
+        if (tenantAssetShareRepository.countByAssetId(asset.getId()) == 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ASSET_SHARED_USERS_REQUIRED", "选择共享时必须至少指定一名同事");
+        }
+    }
+
+    private List<UUID> normalizeSharedUserIds(UUID tenantId, CurrentUserPrincipal principal, List<UUID> sharedUserIds) {
+        if (sharedUserIds == null || sharedUserIds.isEmpty()) {
+            return List.of();
+        }
+        Set<UUID> activeMemberIds = userMembershipRepository.findByTenantIdAndStatus(tenantId, ACTIVE_STATUS)
+            .stream()
+            .map(UserMembershipEntity::getUserId)
+            .collect(Collectors.toSet());
+        LinkedHashSet<UUID> normalized = new LinkedHashSet<>();
+        for (UUID userId : sharedUserIds) {
+            if (userId == null || principal.userId().equals(userId)) {
+                continue;
+            }
+            if (!activeMemberIds.contains(userId)) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "ASSET_SHARED_USER_INVALID", "共享对象必须是当前租户内的有效成员");
+            }
+            normalized.add(userId);
+        }
+        return new ArrayList<>(normalized);
     }
 
     private List<SystemCapabilityAsset> loadTenantOpenCapabilities(UUID tenantId) {
@@ -546,12 +730,17 @@ public class AssetManagementService {
             && "prompt_template".equals(tenantAsset.getAssetType())
             && "published".equals(tenantAsset.getStatus())
             && principal != null
-            && principal.userId() != null
-            && principal.userId().equals(tenantAsset.getCreatedBy())) {
-            return;
+            && principal.userId() != null) {
+            if (principal.userId().equals(tenantAsset.getCreatedBy())) {
+                return;
+            }
+            if ("shared".equals(tenantAsset.getVisibility())
+                && tenantAssetShareRepository.existsByAssetIdAndGranteeUserId(templateId, principal.userId())) {
+                return;
+            }
         }
 
-        // 智能体模板只能引用当前主体已开放的系统提示词，或本人已发布的提示词模板；草稿不能被其他能力引用。
+        // 智能体模板只能引用当前主体已开放的系统提示词，或已发布且对当前主体可见的提示词模板。
         throw new ApiException(HttpStatus.BAD_REQUEST, "ASSET_AGENT_PROMPT_TEMPLATE_NOT_AVAILABLE", "智能体模板只能引用已发布的提示词模板或已对当前主体开放的系统提示词");
     }
 
@@ -622,6 +811,9 @@ public class AssetManagementService {
         if (normalized.isBlank()) {
             return "private";
         }
+        if ("tenant".equals(normalized)) {
+            return "shared";
+        }
         if (!ALLOWED_VISIBILITY.contains(normalized)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "ASSET_VISIBILITY_INVALID", "可见范围不受支持");
         }
@@ -652,5 +844,8 @@ public class AssetManagementService {
     }
 
     private record SystemCapabilityAsset(SystemCapabilityEntity capability, Instant openedAt) {
+    }
+
+    private record SharedTenantAsset(TenantAssetCapabilityEntity asset, Instant openedAt, UUID ownerUserId) {
     }
 }
