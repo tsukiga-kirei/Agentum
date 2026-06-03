@@ -290,6 +290,195 @@ textarea:focus-visible {
   white-space: nowrap;
 }
 
+/* 工作台侧栏：收起/展开控件放在侧栏内，交互参考 ChatGPT / Gemini */
+.workbench-sidebar {
+  overflow: visible;
+}
+
+.workbench-sidebar > nav {
+  overflow-x: hidden;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.workbench-sidebar-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: var(--header-height);
+  width: 100%;
+}
+
+.workbench-sidebar-header--expanded {
+  gap: 8px;
+  padding: 0 12px 0 16px;
+}
+
+.workbench-sidebar-header--compact {
+  justify-content: center;
+  padding: 0;
+}
+
+.workbench-sidebar-brand {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 12px;
+}
+
+/* 收起态：同一槽位在悬停/聚焦时用侧栏图标替换 Logo，不再叠出第二个图标 */
+.workbench-sidebar-compact-brand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.workbench-sidebar-mark-slot {
+  position: relative;
+  display: flex;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+}
+
+.workbench-sidebar-mark-logo,
+.workbench-sidebar-mark-toggle {
+  transition:
+    opacity var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.workbench-sidebar-mark-toggle {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+  opacity: 0;
+  transform: scale(0.92);
+  pointer-events: none;
+}
+
+.workbench-sidebar-header--compact:hover .workbench-sidebar-mark-logo,
+.workbench-sidebar-header--compact:focus-within .workbench-sidebar-mark-logo {
+  opacity: 0;
+  transform: scale(0.92);
+}
+
+.workbench-sidebar-header--compact:hover .workbench-sidebar-mark-toggle,
+.workbench-sidebar-header--compact:focus-within .workbench-sidebar-mark-toggle {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.workbench-sidebar-expand-hint {
+  position: absolute;
+  left: calc(100% + 6px);
+  top: 50%;
+  z-index: 30;
+  padding: 6px 12px;
+  border-radius: var(--radius-full);
+  background: #0f172a;
+  color: #f8fafc;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  box-shadow: var(--shadow-sm);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-4px, -50%);
+  transition:
+    opacity var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.dark .workbench-sidebar-expand-hint {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.workbench-sidebar-header--compact:hover .workbench-sidebar-expand-hint,
+.workbench-sidebar-header--compact:focus-within .workbench-sidebar-expand-hint {
+  opacity: 1;
+  transform: translate(0, -50%);
+}
+
+.workbench-sidebar-compact-brand:focus-visible {
+  outline: 2px solid rgba(79, 70, 229, 0.35);
+  outline-offset: 2px;
+  border-radius: var(--radius-md);
+}
+
+.workbench-sidebar-toggle {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.workbench-sidebar-toggle:hover {
+  background: var(--color-bg-sidebar-hover);
+  color: var(--color-text-primary);
+}
+
+/* 展开态收起按钮：悬停/聚焦显示下方提示（对齐 ChatGPT 黑底白字 tooltip） */
+.workbench-sidebar-hint-below::after {
+  content: attr(data-hint);
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  z-index: 40;
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  background: #0f172a;
+  color: #f8fafc;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  box-shadow: var(--shadow-sm);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -4px);
+  transition:
+    opacity var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.dark .workbench-sidebar-hint-below::after {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.workbench-sidebar-hint-below {
+  position: relative;
+}
+
+.workbench-sidebar-hint-below:hover::after,
+.workbench-sidebar-hint-below:focus-visible::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
 /* Ant Design 组件桥接层：组件库负责复杂交互，Agentum 继续用本地 token 统一视觉。 */
 
 /* 系统管理页内表格：与卡片背景融合，表头弱化、行 hover 使用主题 hover 色 */

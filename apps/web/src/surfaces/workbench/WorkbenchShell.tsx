@@ -17,8 +17,7 @@ import {
   ListTodo,
   Loader2,
   LogOut,
-  PanelLeftClose,
-  PanelLeftOpen,
+  PanelLeft,
   PauseCircle,
   PlayCircle,
   Plug,
@@ -411,17 +410,55 @@ export function WorkbenchShell() {
       {messageContextHolder}
       <div className="flex min-h-screen">
         {/* ===== 侧边栏 ===== */}
-        <aside className={`hidden shrink-0 sticky top-0 h-screen max-h-screen overflow-hidden bg-[var(--color-bg-sidebar)] text-[var(--color-text-sidebar)] transition-[width,background-color] duration-300 lg:flex lg:flex-col ${isSidebarCollapsed ? "w-[var(--sidebar-collapsed-width)]" : "w-[var(--sidebar-width)]"}`}>
-          {/* Logo 区：收起时必须占满侧栏宽度并居中，避免图标贴左上角 */}
-          <div className={`flex h-[var(--header-height)] w-full shrink-0 items-center ${isSidebarCompact ? "justify-center px-0" : "gap-3 px-5"}`}>
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg shadow-sm">
-              <AgentumMark className="h-9 w-9 shrink-0 object-contain" />
-            </div>
-            {showSidebarText ? (
-              <div className="workbench-sidebar-text workbench-sidebar-text--visible">
-                <p className="text-lg font-bold text-[var(--color-sidebar-logo-text)]">Agentum</p>
-              </div>
-            ) : null}
+        <aside
+          className={`workbench-sidebar hidden shrink-0 sticky top-0 z-20 h-screen max-h-screen border-r border-[var(--color-sidebar-border)] bg-[var(--color-bg-sidebar)] text-[var(--color-text-sidebar)] transition-[width,background-color] duration-300 lg:flex lg:flex-col ${isSidebarCollapsed ? "workbench-sidebar--collapsed w-[var(--sidebar-collapsed-width)]" : "w-[var(--sidebar-width)]"}`}
+        >
+          {/* 侧栏头：展开时右侧收起并悬停提示；收起时 Logo 位悬停/聚焦替换为侧栏图标，右侧浮出「打开边栏」 */}
+          <div
+            className={`workbench-sidebar-header shrink-0 ${isSidebarCollapsed ? "workbench-sidebar-header--compact" : "workbench-sidebar-header--expanded"}`}
+          >
+            {isSidebarCollapsed ? (
+              <>
+                <button
+                  type="button"
+                  onClick={handleToggleSidebar}
+                  className="workbench-sidebar-compact-brand"
+                  aria-label="打开边栏"
+                >
+                  <span className="workbench-sidebar-mark-slot overflow-hidden rounded-lg shadow-sm">
+                    <AgentumMark className="workbench-sidebar-mark-logo h-9 w-9 shrink-0 object-contain" />
+                    <span className="workbench-sidebar-mark-toggle" aria-hidden="true">
+                      <PanelLeft className="h-4 w-4" />
+                    </span>
+                  </span>
+                </button>
+                <span className="workbench-sidebar-expand-hint" aria-hidden="true">
+                  打开边栏
+                </span>
+              </>
+            ) : (
+              <>
+                <div className="workbench-sidebar-brand">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg shadow-sm">
+                    <AgentumMark className="h-9 w-9 shrink-0 object-contain" />
+                  </div>
+                  {showSidebarText ? (
+                    <div className="workbench-sidebar-text workbench-sidebar-text--visible">
+                      <p className="text-lg font-bold text-[var(--color-sidebar-logo-text)]">Agentum</p>
+                    </div>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleToggleSidebar}
+                  className="workbench-sidebar-toggle workbench-sidebar-hint-below"
+                  aria-label="关闭边栏"
+                  data-hint="关闭边栏"
+                >
+                  <PanelLeft className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </>
+            )}
           </div>
 
           {/* 导航菜单 —— 由后端 menus 驱动，不再硬编码 visibleFor */}
@@ -493,17 +530,7 @@ export function WorkbenchShell() {
         <section className={`min-w-0 flex-1${activeSurface === "workbench" && tenantId && openedTaskWorkflow ? " overflow-hidden" : ""}`}>
           {/* 顶部操作栏 —— 右侧替换为角色切换器 + 主题切换 */}
           <header className="bg-[var(--color-bg-page)]">
-            <div className="mx-auto flex min-h-[var(--header-height)] max-w-[1400px] items-center justify-between gap-3 px-5 lg:px-6">
-              <div className="flex min-w-0 items-center gap-3">
-                <button
-                  type="button"
-                  onClick={handleToggleSidebar}
-                  className="agent-button hidden h-8 w-8 shrink-0 px-0 lg:inline-flex"
-                  aria-label={isSidebarCollapsed ? "展开左侧导航" : "收起左侧导航"}
-                >
-                  {isSidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" aria-hidden="true" /> : <PanelLeftClose className="h-4 w-4" aria-hidden="true" />}
-                </button>
-              </div>
+            <div className="mx-auto flex min-h-[var(--header-height)] max-w-[1400px] items-center justify-end gap-3 px-5 lg:px-6">
               <div className="flex items-center gap-2">
                 {/* 主题切换药丸（与 AuraOA 一致） */}
                 <ThemeToggle />
