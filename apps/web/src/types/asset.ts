@@ -45,6 +45,7 @@ export type MyAssetDetail = MyAssetRow & {
   config: {
     promptContent?: string;
     systemPrompt?: string;
+    systemPromptTemplateId?: string;
     skillIds?: string[];
     mcpIds?: string[];
   };

@@ -279,6 +279,30 @@ public class AssetManagementService {
     }
 
     @Transactional
+    public AssetManagementApi.MyAssetDetail revertMyAssetToDraft(UUID tenantId, UUID assetId, CurrentUserPrincipal principal) {
+        ensureActiveTenant(tenantId);
+        TenantAssetCapabilityEntity asset = loadMyAssetForOwner(tenantId, assetId, principal);
+        if ("draft".equals(asset.getStatus())) {
+            return toMyAssetDetail(asset);
+        }
+        if (!"published".equals(asset.getStatus())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ASSET_STATUS_NOT_REVERTIBLE", "当前能力状态不能改回草稿");
+        }
+
+        // 已发布能力改回草稿后重新进入编辑态；后续接入引用关系索引后，被其他已发布资产或流程引用的能力应禁止回退。
+        asset.revertToDraft(principal.userId(), clock.instant());
+        log.info(
+            "租户能力已改回草稿 tenantId={} userId={} assetId={} assetType={} requestId={}",
+            tenantId,
+            principal.userId(),
+            assetId,
+            asset.getAssetType(),
+            RequestIds.current()
+        );
+        return toMyAssetDetail(asset);
+    }
+
+    @Transactional
     public void deleteMyAsset(UUID tenantId, UUID assetId, CurrentUserPrincipal principal) {
         ensureActiveTenant(tenantId);
         TenantAssetCapabilityEntity asset = loadMyAssetForOwner(tenantId, assetId, principal);
@@ -469,14 +493,20 @@ public class AssetManagementService {
         }
         if ("agent_template".equals(assetType)) {
             String systemPrompt = valueAsString(source.get("systemPrompt"));
-            if (publishing && systemPrompt.isBlank()) {
-                throw new ApiException(HttpStatus.BAD_REQUEST, "ASSET_AGENT_SYSTEM_PROMPT_REQUIRED", "发布智能体模板前必须填写系统提示词");
+            String systemPromptTemplateId = normalizePromptTemplateReference(source.get("systemPromptTemplateId"));
+            boolean hasPromptTemplateReference = !"none".equals(systemPromptTemplateId);
+            if (publishing && systemPrompt.isBlank() && !hasPromptTemplateReference) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "ASSET_AGENT_SYSTEM_PROMPT_REQUIRED", "发布智能体模板前必须填写系统提示词或选择提示词模板");
             }
             List<UUID> skillIds = normalizeUuidList(source.get("skillIds"), "ASSET_AGENT_SKILL_REFERENCE_INVALID", "智能体模板引用的 Skill 不合法");
             List<UUID> mcpIds = normalizeUuidList(source.get("mcpIds"), "ASSET_AGENT_MCP_REFERENCE_INVALID", "智能体模板引用的 MCP 不合法");
             validateAgentCapabilityReferences(tenantId, principal, skillIds, "skill");
             validateAgentCapabilityReferences(tenantId, principal, mcpIds, "mcp");
+            if (hasPromptTemplateReference) {
+                validateSystemPromptTemplateReference(tenantId, principal, UUID.fromString(systemPromptTemplateId));
+            }
             normalized.put("systemPrompt", systemPrompt);
+            normalized.put("systemPromptTemplateId", systemPromptTemplateId);
             normalized.put("skillIds", skillIds.stream().map(UUID::toString).toList());
             normalized.put("mcpIds", mcpIds.stream().map(UUID::toString).toList());
             return normalized;
@@ -498,6 +528,42 @@ public class AssetManagementService {
                 // 智能体草稿只能引用当前主体已开放的 Skill/MCP，不能通过手写 ID 绕过租户能力池和分配边界。
                 throw new ApiException(HttpStatus.BAD_REQUEST, "ASSET_AGENT_CAPABILITY_NOT_AVAILABLE", "智能体模板只能引用已对当前主体开放的 Skill 或 MCP");
             }
+        }
+    }
+
+    private void validateSystemPromptTemplateReference(UUID tenantId, CurrentUserPrincipal principal, UUID templateId) {
+        Map<UUID, SystemCapabilityEntity> visibleCapabilities = filterVisibleCapabilities(tenantId, principal, loadTenantOpenCapabilities(tenantId))
+            .stream()
+            .map(SystemCapabilityAsset::capability)
+            .collect(Collectors.toMap(SystemCapabilityEntity::getId, Function.identity()));
+        SystemCapabilityEntity capability = visibleCapabilities.get(templateId);
+        if (capability != null && "prompt_template".equals(capability.getCapabilityType())) {
+            return;
+        }
+
+        TenantAssetCapabilityEntity tenantAsset = tenantAssetCapabilityRepository.findByIdAndTenantId(templateId, tenantId).orElse(null);
+        if (tenantAsset != null
+            && "prompt_template".equals(tenantAsset.getAssetType())
+            && "published".equals(tenantAsset.getStatus())
+            && principal != null
+            && principal.userId() != null
+            && principal.userId().equals(tenantAsset.getCreatedBy())) {
+            return;
+        }
+
+        // 智能体模板只能引用当前主体已开放的系统提示词，或本人已发布的提示词模板；草稿不能被其他能力引用。
+        throw new ApiException(HttpStatus.BAD_REQUEST, "ASSET_AGENT_PROMPT_TEMPLATE_NOT_AVAILABLE", "智能体模板只能引用已发布的提示词模板或已对当前主体开放的系统提示词");
+    }
+
+    private String normalizePromptTemplateReference(Object value) {
+        String normalized = valueAsString(value);
+        if (normalized.isBlank() || "none".equals(normalized)) {
+            return "none";
+        }
+        try {
+            return UUID.fromString(normalized).toString();
+        } catch (IllegalArgumentException exception) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ASSET_AGENT_PROMPT_TEMPLATE_REFERENCE_INVALID", "智能体模板引用的提示词模板不合法");
         }
     }
 

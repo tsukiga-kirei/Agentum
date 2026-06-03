@@ -296,7 +296,7 @@ paths:
                         $ref: "#/components/schemas/MyAssetDetail"
     patch:
       summary: 编辑我的能力草稿
-      description: 只有草稿状态可以编辑；提示词模板保存 promptContent，智能体模板保存 systemPrompt、skillIds、mcpIds。
+      description: 只有草稿状态可以编辑；提示词模板保存 promptContent，智能体模板保存 systemPrompt、systemPromptTemplateId、skillIds、mcpIds。
       tags:
         - Asset
       security:
@@ -379,6 +379,39 @@ paths:
       responses:
         "200":
           description: 发布成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/MyAssetDetail"
+  /api/tenants/{tenantId}/assets/mine/{assetId}/revert-to-draft:
+    post:
+      summary: 将已发布能力改回草稿
+      description: 仅创建人可将已发布能力改回草稿后继续编辑；后续接入引用关系后，已被其他已发布资产或流程引用的能力应禁止回退。
+      tags:
+        - Asset
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 改回草稿成功
           content:
             application/json:
               schema:

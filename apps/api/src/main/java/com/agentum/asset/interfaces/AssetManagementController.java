@@ -120,6 +120,17 @@ public class AssetManagementController {
         return ApiResponse.success(assetManagementService.publishMyAsset(tenantId, assetId, principal), RequestIds.current(request));
     }
 
+    @PostMapping("/mine/{assetId}/revert-to-draft")
+    public ApiResponse<AssetManagementApi.MyAssetDetail> revertMineToDraft(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID assetId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        assetAccess.assertCanUseAssets(principal, tenantId);
+        return ApiResponse.success(assetManagementService.revertMyAssetToDraft(tenantId, assetId, principal), RequestIds.current(request));
+    }
+
     @DeleteMapping("/mine/{assetId}")
     public ApiResponse<Void> deleteMine(
         @PathVariable UUID tenantId,

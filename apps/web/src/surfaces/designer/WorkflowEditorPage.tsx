@@ -2014,7 +2014,7 @@ function buildCapabilityOptions(systemAssets: SystemCapabilityAssetRow[], myAsse
     scope: asset.assignmentScope,
   }));
   const myOptions = myAssets
-    .filter((asset) => asset.assetType === "agent_template" || asset.assetType === "prompt_template")
+    .filter((asset) => (asset.assetType === "agent_template" || asset.assetType === "prompt_template") && asset.status === "published")
     .map((asset) => ({
       id: asset.id,
       assetType: asset.assetType,

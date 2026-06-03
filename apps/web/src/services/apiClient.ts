@@ -303,6 +303,8 @@ export const assetApi = {
     apiRequest<MyAssetDetail>(`/api/tenants/${tenantId}/assets/mine/${assetId}`, { method: "PATCH", token, body }),
   publishMine: (tenantId: string, token: string, assetId: string) =>
     apiRequest<MyAssetDetail>(`/api/tenants/${tenantId}/assets/mine/${assetId}/publish`, { method: "POST", token }),
+  revertMineToDraft: (tenantId: string, token: string, assetId: string) =>
+    apiRequest<MyAssetDetail>(`/api/tenants/${tenantId}/assets/mine/${assetId}/revert-to-draft`, { method: "POST", token }),
   deleteMine: (tenantId: string, token: string, assetId: string) =>
     apiRequest<void>(`/api/tenants/${tenantId}/assets/mine/${assetId}`, { method: "DELETE", token }),
 };

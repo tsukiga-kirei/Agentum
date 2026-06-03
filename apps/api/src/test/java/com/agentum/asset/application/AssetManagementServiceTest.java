@@ -259,6 +259,143 @@ class AssetManagementServiceTest {
     }
 
     @Test
+    void shouldRejectAgentDraftWhenPromptTemplateReferenceIsStillDraft() {
+        AssetManagementService service = newService();
+        UUID promptTemplateId = UUID.randomUUID();
+        TenantAssetCapabilityEntity promptDraft = TenantAssetCapabilityEntity.create(
+            TENANT_ID,
+            "prompt_template",
+            "续约追问模板",
+            "renewal_question",
+            "v1",
+            "",
+            "low",
+            "draft",
+            "private",
+            null,
+            Map.of("promptContent", "请识别客户续约风险。"),
+            USER_ID,
+            NOW
+        );
+        TenantAssetCapabilityEntity agentDraft = TenantAssetCapabilityEntity.create(
+            TENANT_ID,
+            "agent_template",
+            "合同解析智能体",
+            "contract_agent",
+            "v1",
+            "",
+            "medium",
+            "draft",
+            "private",
+            null,
+            Map.of(
+                "systemPrompt", "你是合同解析智能体。",
+                "systemPromptTemplateId", promptTemplateId.toString(),
+                "skillIds", List.of(),
+                "mcpIds", List.of()
+            ),
+            USER_ID,
+            NOW
+        );
+
+        when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", NOW)));
+        when(tenantAssetCapabilityRepository.findByIdAndTenantId(agentDraft.getId(), TENANT_ID)).thenReturn(Optional.of(agentDraft));
+        when(tenantAssetCapabilityRepository.existsByTenantIdAndCodeAndVersionAndIdNot(TENANT_ID, "contract_agent", "v1", agentDraft.getId())).thenReturn(false);
+        when(tenantCapabilityGrantRepository.findByTenantIdOrderByCreatedAtDesc(TENANT_ID)).thenReturn(List.of());
+        when(tenantAssetCapabilityRepository.findByIdAndTenantId(promptTemplateId, TENANT_ID)).thenReturn(Optional.of(promptDraft));
+
+        assertThatThrownBy(() -> service.updateMyAsset(
+            TENANT_ID,
+            agentDraft.getId(),
+            businessPrincipal(),
+            new AssetManagementApi.UpdateMyAssetRequest(
+                "合同解析智能体",
+                "v1",
+                "",
+                "medium",
+                "private",
+                Map.of(
+                    "systemPrompt", "你是合同解析智能体。",
+                    "systemPromptTemplateId", promptTemplateId.toString(),
+                    "skillIds", List.of(),
+                    "mcpIds", List.of()
+                )
+            )
+        ))
+            .isInstanceOf(ApiException.class)
+            .extracting("code")
+            .isEqualTo("ASSET_AGENT_PROMPT_TEMPLATE_NOT_AVAILABLE");
+    }
+
+    @Test
+    void shouldRevertPublishedAssetToDraft() {
+        AssetManagementService service = newService();
+        TenantAssetCapabilityEntity asset = TenantAssetCapabilityEntity.create(
+            TENANT_ID,
+            "prompt_template",
+            "续约追问模板",
+            "renewal_question",
+            "v1",
+            "",
+            "low",
+            "published",
+            "tenant",
+            null,
+            Map.of("promptContent", "请识别客户续约风险。"),
+            USER_ID,
+            NOW
+        );
+        asset.publish(USER_ID, NOW);
+
+        when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", NOW)));
+        when(tenantAssetCapabilityRepository.findByIdAndTenantId(asset.getId(), TENANT_ID)).thenReturn(Optional.of(asset));
+
+        var reverted = service.revertMyAssetToDraft(TENANT_ID, asset.getId(), businessPrincipal());
+
+        assertThat(reverted.status()).isEqualTo("draft");
+        assertThat(reverted.visibility()).isEqualTo("private");
+        assertThat(reverted.publishedAt()).isNull();
+    }
+
+    @Test
+    void shouldRejectAgentPublishWhenPromptTemplateIsNotAvailable() {
+        AssetManagementService service = newService();
+        UUID promptTemplateId = UUID.randomUUID();
+        TenantAssetCapabilityEntity asset = TenantAssetCapabilityEntity.create(
+            TENANT_ID,
+            "agent_template",
+            "合同解析智能体",
+            "contract_agent",
+            "v1",
+            "",
+            "medium",
+            "draft",
+            "private",
+            null,
+            Map.of(
+                "systemPrompt", "",
+                "systemPromptTemplateId", promptTemplateId.toString(),
+                "skillIds", List.of(),
+                "mcpIds", List.of()
+            ),
+            USER_ID,
+            NOW
+        );
+
+        when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", NOW)));
+        when(tenantAssetCapabilityRepository.findByIdAndTenantId(asset.getId(), TENANT_ID)).thenReturn(Optional.of(asset));
+        when(tenantCapabilityGrantRepository.findByTenantIdOrderByCreatedAtDesc(TENANT_ID)).thenReturn(List.of());
+        when(userMembershipRepository.findByUserIdAndTenantIdAndStatus(USER_ID, TENANT_ID, "active")).thenReturn(List.of());
+        when(resourceGrantRepository.findByTenantIdOrderByCreatedAtDesc(TENANT_ID)).thenReturn(List.of());
+        when(tenantAssetCapabilityRepository.findByIdAndTenantId(promptTemplateId, TENANT_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.publishMyAsset(TENANT_ID, asset.getId(), businessPrincipal()))
+            .isInstanceOf(ApiException.class)
+            .extracting("code")
+            .isEqualTo("ASSET_AGENT_PROMPT_TEMPLATE_NOT_AVAILABLE");
+    }
+
+    @Test
     void shouldRejectAgentPublishWhenReferencedSkillIsNotAssignedToSubject() {
         AssetManagementService service = newService();
         SystemCapabilityEntity capability = SystemCapabilityEntity.create("skill", "合同解析 Skill", "contract_parse", "v1", "", "low", "active", Map.of(), NOW);

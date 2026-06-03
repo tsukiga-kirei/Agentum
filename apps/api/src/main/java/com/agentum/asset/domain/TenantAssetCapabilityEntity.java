@@ -140,6 +140,14 @@ public class TenantAssetCapabilityEntity {
         this.publishedAt = now;
     }
 
+    public void revertToDraft(UUID operatorUserId, Instant now) {
+        this.status = "draft";
+        this.visibility = "private";
+        this.publishedAt = null;
+        this.updatedBy = operatorUserId;
+        this.updatedAt = now;
+    }
+
     public UUID getId() {
         return id;
     }

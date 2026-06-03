@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { ArrowRight, Bot, Boxes, BrainCircuit, CheckCircle2, ChevronDown, CircleAlert, Clock, Edit3, Eye, FileText, Hash, Library, PlusCircle, Search, Send, ShieldCheck, Tag, Trash2, UserRoundCog, X } from "lucide-react";
+import { ArrowRight, Bot, Boxes, BrainCircuit, CheckCircle2, ChevronDown, CircleAlert, Clock, Edit3, Eye, FileText, Hash, Library, PlusCircle, RotateCcw, Search, Send, ShieldCheck, Tag, Trash2, UserRoundCog, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Empty, Pagination, Segmented, Select, Spin, message, Drawer } from "antd";
 import { SurfacePageLayout } from "../../components/workbench/SurfacePageLayout";
@@ -54,6 +54,13 @@ const paginationLocale = {
   prev_page: "上一页",
   next_page: "下一页",
 };
+
+const defaultAgentConfig = (): Record<string, unknown> => ({
+  systemPrompt: "",
+  systemPromptTemplateId: "none",
+  skillIds: [],
+  mcpIds: [],
+});
 
 const assetTabs: Array<{ key: AssetTab; label: string; icon: LucideIcon; description: string }> = [
   { key: "overview", label: "总览", icon: Library, description: "查看系统能力、租户分配和自建资产的整体勾稽" },
@@ -210,6 +217,57 @@ export function AssetsPage() {
     () => assignedSystemAssets.filter((asset) => asset.assetType === "mcp").map((asset) => ({ value: asset.id, label: `${asset.name} · ${asset.version}` })),
     [assignedSystemAssets],
   );
+  const promptTemplateOptions = useMemo(() => {
+    const systemOptions = assignedSystemAssets
+      .filter((asset) => asset.assetType === "prompt_template")
+      .map((asset) => ({ value: asset.id, label: `${asset.name} · ${asset.version}（对我开放）` }));
+    const myOptions = myAssets
+      .filter((asset) => asset.assetType === "prompt_template" && asset.status === "published")
+      .map((asset) => ({
+        value: asset.id,
+        label: `${asset.name} · ${asset.version}（我的能力·已发布）`,
+      }));
+    return [{ value: "none", label: "自定义系统提示词" }, ...systemOptions, ...myOptions];
+  }, [assignedSystemAssets, myAssets]);
+
+  const resolvePromptTemplateContent = useCallback(
+    async (templateId: string) => {
+      if (templateId === "none" || !templateId) {
+        return "";
+      }
+      const systemAsset = assignedSystemAssets.find((asset) => asset.id === templateId);
+      if (systemAsset?.promptContent) {
+        return systemAsset.promptContent;
+      }
+      const mineAsset = myAssets.find((asset) => asset.id === templateId);
+      if (!mineAsset || !token || !tenantId) {
+        return "";
+      }
+      try {
+        const detail = await assetApi.getMine(tenantId, token, mineAsset.id);
+        return getConfigString(detail.config, "promptContent");
+      } catch (error) {
+        console.warn("[assets] 加载提示词模板正文失败", { templateId, tenantId });
+        return "";
+      }
+    },
+    [assignedSystemAssets, myAssets, tenantId, token],
+  );
+
+  const applyPromptTemplateSelection = useCallback(
+    async (config: Record<string, unknown> | undefined, templateId: string) => {
+      const nextConfig = { ...(config ?? {}), systemPromptTemplateId: templateId };
+      if (templateId === "none") {
+        return nextConfig;
+      }
+      const promptContent = await resolvePromptTemplateContent(templateId);
+      if (promptContent) {
+        nextConfig.systemPrompt = promptContent;
+      }
+      return nextConfig;
+    },
+    [resolvePromptTemplateContent],
+  );
 
   const handleCreate = async () => {
     if (!token || !tenantId) {
@@ -299,6 +357,29 @@ export function AssetsPage() {
       await Promise.all([loadSummary(), loadMyAssets(1, minePage.size, keyword)]);
     } catch (error) {
       handleApiError(error, "发布能力失败");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleRevertToDraft = async () => {
+    if (!token || !tenantId || !currentAsset) return;
+    setSubmitting(true);
+    try {
+      const reverted = await assetApi.revertMineToDraft(tenantId, token, currentAsset.id);
+      setCurrentAsset(reverted);
+      setEditDraft({
+        name: reverted.name,
+        version: reverted.version,
+        description: reverted.description,
+        riskLevel: reverted.riskLevel,
+        visibility: reverted.visibility,
+        config: reverted.config ?? {},
+      });
+      messageApi.success("已改回草稿，可继续编辑");
+      await Promise.all([loadSummary(), loadMyAssets(minePage.page, minePage.size, keyword)]);
+    } catch (error) {
+      handleApiError(error, "改回草稿失败");
     } finally {
       setSubmitting(false);
     }
@@ -551,7 +632,11 @@ export function AssetsPage() {
               suffixIcon={adminSelectSuffixIcon}
               value={draft.assetType}
               options={creatableAssetTypeOptions}
-              onChange={(assetType) => setDraft((current) => ({ ...current, assetType, config: assetType === "prompt_template" ? { promptContent: "" } : { systemPrompt: "", skillIds: [], mcpIds: [] } }))}
+              onChange={(assetType) => setDraft((current) => ({
+                ...current,
+                assetType,
+                config: assetType === "prompt_template" ? { promptContent: "" } : defaultAgentConfig(),
+              }))}
             />
           </div>
           <div className="sys-field-row">
@@ -619,6 +704,20 @@ export function AssetsPage() {
               />
             </div>
           ) : null}
+          {draft.assetType === "agent_template" ? (
+            <AgentTemplateConfigFields
+              config={draft.config}
+              promptTemplateOptions={promptTemplateOptions}
+              skillOptions={skillOptions}
+              mcpOptions={mcpOptions}
+              onChange={(config) => setDraft((current) => ({ ...current, config }))}
+              onPromptTemplateChange={(templateId) => {
+                void applyPromptTemplateSelection(draft.config, templateId).then((config) => {
+                  setDraft((current) => ({ ...current, config }));
+                });
+              }}
+            />
+          ) : null}
         </div>
         <div className="sys-drawer-footer">
           <div className="sys-drawer-footer-right">
@@ -646,12 +745,15 @@ export function AssetsPage() {
         {currentAsset ? (
           <>
             <div className="sys-drawer-section">
+              {currentAsset.status === "published" ? (
+                <div className="sys-hint"><ShieldCheck size={14} /> 已发布能力当前为只读查看；如需修改，请先改回草稿。</div>
+              ) : null}
               <div className="sys-field-row">
                 <div className="sys-field">
                   <label className="sys-field-label sys-field-label--required">能力名称</label>
                   <div className="sys-field-input-wrap">
                     <Tag size={16} className="sys-field-prefix" aria-hidden="true" />
-                    <input className="sys-field-input" value={editDraft.name} onChange={(event) => setEditDraft((current) => ({ ...current, name: event.target.value }))} />
+                    <input className="sys-field-input" disabled={currentAsset.status !== "draft"} value={editDraft.name} onChange={(event) => setEditDraft((current) => ({ ...current, name: event.target.value }))} />
                   </div>
                 </div>
                 <div className="sys-field">
@@ -668,7 +770,7 @@ export function AssetsPage() {
                   <label className="sys-field-label">版本</label>
                   <div className="sys-field-input-wrap">
                     <FileText size={16} className="sys-field-prefix" aria-hidden="true" />
-                    <input className="sys-field-input" value={editDraft.version ?? "v1"} onChange={(event) => setEditDraft((current) => ({ ...current, version: event.target.value }))} />
+                    <input className="sys-field-input" disabled={currentAsset.status !== "draft"} value={editDraft.version ?? "v1"} onChange={(event) => setEditDraft((current) => ({ ...current, version: event.target.value }))} />
                   </div>
                 </div>
                 <div className="sys-field">
@@ -678,6 +780,7 @@ export function AssetsPage() {
                     classNames={adminSelectClassNames}
                     prefix={<ShieldCheck className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
                     suffixIcon={adminSelectSuffixIcon}
+                    disabled={currentAsset.status !== "draft"}
                     value={editDraft.riskLevel}
                     options={riskOptions}
                     onChange={(riskLevel) => setEditDraft((current) => ({ ...current, riskLevel }))}
@@ -686,7 +789,7 @@ export function AssetsPage() {
               </div>
               <div className="sys-field">
                 <label className="sys-field-label">说明</label>
-                <textarea className="sys-field-textarea" value={editDraft.description ?? ""} onChange={(event) => setEditDraft((current) => ({ ...current, description: event.target.value }))} />
+                <textarea className="sys-field-textarea" disabled={currentAsset.status !== "draft"} value={editDraft.description ?? ""} onChange={(event) => setEditDraft((current) => ({ ...current, description: event.target.value }))} />
               </div>
 
               {currentAsset.assetType === "prompt_template" ? (
@@ -694,6 +797,7 @@ export function AssetsPage() {
                   <label className="sys-field-label sys-field-label--required">提示词内容</label>
                   <textarea
                     className="sys-field-textarea min-h-[220px]"
+                    disabled={currentAsset.status !== "draft"}
                     value={getConfigString(editDraft.config, "promptContent")}
                     onChange={(event) => setEditDraft((current) => ({ ...current, config: { ...(current.config ?? {}), promptContent: event.target.value } }))}
                   />
@@ -701,44 +805,19 @@ export function AssetsPage() {
               ) : null}
 
               {currentAsset.assetType === "agent_template" ? (
-                <>
-                  <div className="sys-field">
-                    <label className="sys-field-label sys-field-label--required">系统提示词</label>
-                    <textarea
-                      className="sys-field-textarea min-h-[180px]"
-                      value={getConfigString(editDraft.config, "systemPrompt")}
-                      onChange={(event) => setEditDraft((current) => ({ ...current, config: { ...(current.config ?? {}), systemPrompt: event.target.value } }))}
-                    />
-                  </div>
-                  <div className="sys-field-row">
-                    <div className="sys-field">
-                      <label className="sys-field-label">可用 Skill</label>
-                      <Select
-                        mode="multiple"
-                        className="agent-admin-select w-full"
-                        classNames={adminSelectClassNames}
-                        prefix={<BrainCircuit className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
-                        suffixIcon={adminSelectSuffixIcon}
-                        value={getConfigIds(editDraft.config, "skillIds")}
-                        options={skillOptions}
-                        onChange={(skillIds) => setEditDraft((current) => ({ ...current, config: { ...(current.config ?? {}), skillIds } }))}
-                      />
-                    </div>
-                    <div className="sys-field">
-                      <label className="sys-field-label">可用 MCP</label>
-                      <Select
-                        mode="multiple"
-                        className="agent-admin-select w-full"
-                        classNames={adminSelectClassNames}
-                        prefix={<Boxes className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
-                        suffixIcon={adminSelectSuffixIcon}
-                        value={getConfigIds(editDraft.config, "mcpIds")}
-                        options={mcpOptions}
-                        onChange={(mcpIds) => setEditDraft((current) => ({ ...current, config: { ...(current.config ?? {}), mcpIds } }))}
-                      />
-                    </div>
-                  </div>
-                </>
+                <AgentTemplateConfigFields
+                  readOnly={currentAsset.status !== "draft"}
+                  config={editDraft.config}
+                  promptTemplateOptions={promptTemplateOptions}
+                  skillOptions={skillOptions}
+                  mcpOptions={mcpOptions}
+                  onChange={(config) => setEditDraft((current) => ({ ...current, config }))}
+                  onPromptTemplateChange={(templateId) => {
+                    void applyPromptTemplateSelection(editDraft.config, templateId).then((config) => {
+                      setEditDraft((current) => ({ ...current, config }));
+                    });
+                  }}
+                />
               ) : null}
             </div>
 
@@ -773,11 +852,11 @@ export function AssetsPage() {
                   <div className="sys-drawer-footer-right">
                     <button type="button" className="sys-btn sys-btn--default" onClick={() => setEditOpen(false)}>
                       <X size={14} />
-                      取消
+                      关闭
                     </button>
-                    <button type="button" className="sys-btn sys-btn--primary" disabled={submitting} onClick={() => void handleUpdate()}>
-                      <Edit3 size={14} />
-                      保存修改
+                    <button type="button" className="sys-btn sys-btn--primary" disabled={submitting} onClick={() => void handleRevertToDraft()}>
+                      <RotateCcw size={14} />
+                      改回草稿
                     </button>
                   </div>
                 </>
@@ -1148,6 +1227,85 @@ function RiskTag({ level }: { level: string }) {
   return <span className={`sys-info-tag ${cls}`}>{formatRisk(level)}</span>;
 }
 
+function AgentTemplateConfigFields({
+  config,
+  promptTemplateOptions,
+  skillOptions,
+  mcpOptions,
+  readOnly = false,
+  onChange,
+  onPromptTemplateChange,
+}: {
+  config: Record<string, unknown> | undefined;
+  promptTemplateOptions: Array<{ value: string; label: string }>;
+  skillOptions: Array<{ value: string; label: string }>;
+  mcpOptions: Array<{ value: string; label: string }>;
+  readOnly?: boolean;
+  onChange: (config: Record<string, unknown>) => void;
+  onPromptTemplateChange: (templateId: string) => void;
+}) {
+  const systemPromptTemplateId = getConfigString(config, "systemPromptTemplateId") || "none";
+
+  return (
+    <>
+      <div className="sys-field">
+        <label className="sys-field-label">系统提示词模板</label>
+        <Select
+          className="agent-admin-select w-full"
+          classNames={adminSelectClassNames}
+          prefix={<FileText className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+          suffixIcon={adminSelectSuffixIcon}
+          disabled={readOnly}
+          value={systemPromptTemplateId}
+          options={promptTemplateOptions}
+          onChange={onPromptTemplateChange}
+        />
+        <div className="sys-field-hint">只能引用已发布的提示词模板或「对我开放」的系统提示词；也可保持自定义后自行编写。</div>
+      </div>
+      <div className="sys-field">
+        <label className="sys-field-label sys-field-label--required">系统提示词</label>
+        <textarea
+          className="sys-field-textarea min-h-[180px]"
+          disabled={readOnly}
+          value={getConfigString(config, "systemPrompt")}
+          placeholder="可直接编写系统提示词，或先选择上方模板后在此继续调整"
+          onChange={(event) => onChange({ ...(config ?? {}), systemPrompt: event.target.value })}
+        />
+      </div>
+      <div className="sys-field-row">
+        <div className="sys-field">
+          <label className="sys-field-label">可用 Skill</label>
+          <Select
+            mode="multiple"
+            className="agent-admin-select w-full"
+            classNames={adminSelectClassNames}
+            prefix={<BrainCircuit className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+            suffixIcon={adminSelectSuffixIcon}
+            disabled={readOnly}
+            value={getConfigIds(config, "skillIds")}
+            options={skillOptions}
+            onChange={(skillIds) => onChange({ ...(config ?? {}), skillIds })}
+          />
+        </div>
+        <div className="sys-field">
+          <label className="sys-field-label">可用 MCP</label>
+          <Select
+            mode="multiple"
+            className="agent-admin-select w-full"
+            classNames={adminSelectClassNames}
+            prefix={<Boxes className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+            suffixIcon={adminSelectSuffixIcon}
+            disabled={readOnly}
+            value={getConfigIds(config, "mcpIds")}
+            options={mcpOptions}
+            onChange={(mcpIds) => onChange({ ...(config ?? {}), mcpIds })}
+          />
+        </div>
+      </div>
+    </>
+  );
+}
+
 function normalizeEditDraft(draft: UpdateMyAssetRequest, assetType: AssetType): UpdateMyAssetRequest {
   const base = {
     ...draft,
@@ -1163,6 +1321,7 @@ function normalizeEditDraft(draft: UpdateMyAssetRequest, assetType: AssetType): 
       ...base,
       config: {
         systemPrompt: getConfigString(draft.config, "systemPrompt"),
+        systemPromptTemplateId: getConfigString(draft.config, "systemPromptTemplateId") || "none",
         skillIds: getConfigIds(draft.config, "skillIds"),
         mcpIds: getConfigIds(draft.config, "mcpIds"),
       },

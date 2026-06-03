@@ -341,7 +341,7 @@ pending -> running -> paused -> resumed -> running -> completed
 
 资产管理的界面抽象不应产生额外资源层级。每类资产独立维护创建入口和生命周期；如果页面需要右侧辅助区，优先展示引用概览、能力池缺口、高风险待审批、草稿待发布和版本漂移等治理信息。
 
-“我的能力”采用草稿发布模型。业务用户只能创建 `prompt_template` 和 `agent_template` 两类租户内草稿：提示词模板草稿保存 `promptContent`；智能体模板草稿保存 `systemPrompt`、`skillIds` 和 `mcpIds`。`skillIds` / `mcpIds` 必须引用当前主体已开放的系统能力，发布时再次校验租户能力池和主体分配，防止草稿保存后权限变化或手写 ID 绕过安全边界。Skill、MCP 和交付能力仍属于系统管理登记和运行网关治理范围，不进入用户自建能力的创建类型。
+“我的能力”采用草稿发布模型。业务用户只能创建 `prompt_template` 和 `agent_template` 两类租户内草稿：提示词模板草稿保存 `promptContent`；智能体模板草稿保存 `systemPrompt`、`systemPromptTemplateId`、`skillIds` 和 `mcpIds`。`systemPromptTemplateId` 只能引用已发布的本人提示词模板或当前主体已开放的系统提示词；`skillIds` / `mcpIds` 必须引用当前主体已开放的系统能力。已发布能力可由创建人改回草稿继续编辑；租户内相互引用只允许指向已发布版本。发布与保存时再次校验租户能力池和主体分配，防止草稿保存后权限变化或手写 ID 绕过安全边界。Skill、MCP 和交付能力仍属于系统管理登记和运行网关治理范围，不进入用户自建能力的创建类型。
 
 数据库上 `tenant_asset_capabilities` 先承接草稿与发布外壳，`config` 保存类型相关配置，并通过 Flyway 逐步增加发布状态和约束。删除能力时当前先校验创建者边界；后续必须补资产引用索引，凡是被工作流草稿、发布版本、运行快照或审计证据链引用的能力都不能物理删除。后续如果智能体模板、提示词模板出现复杂版本比较、引用关系或审核流，再从该表拆分到专门资产表，但运行时引用仍应指向不可变发布版本。
 
