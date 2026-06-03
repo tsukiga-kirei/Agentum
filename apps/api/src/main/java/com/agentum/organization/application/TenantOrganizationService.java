@@ -279,18 +279,66 @@ public class TenantOrganizationService {
     }
 
     @Transactional
-    public TenantOrganizationOverviewResponse disableDepartment(UUID tenantId, UUID operatorUserId, UUID departmentId) {
+    public TenantOrganizationOverviewResponse updateDepartmentStatus(UUID tenantId, UUID operatorUserId, UUID departmentId, String status) {
         DepartmentEntity department = departmentRepository.findByIdAndTenantId(departmentId, tenantId)
             .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ORG_DEPARTMENT_NOT_FOUND", "部门不存在"));
+        String normalizedStatus = normalizeRequired(status);
+
+        if (ACTIVE_STATUS.equals(normalizedStatus)) {
+            department.enable();
+            departmentRepository.save(department);
+            log.info("部门启用成功 tenantId={} operatorUserId={} departmentId={} requestId={}", tenantId, operatorUserId, departmentId, RequestIds.current());
+            return getOverview(tenantId);
+        }
+
+        if (!"disabled".equals(normalizedStatus)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_DEPARTMENT_STATUS_INVALID", "部门状态只能为启用或停用");
+        }
+
         long activeMembers = userMembershipRepository.countByTenantIdAndDepartmentIdAndStatus(tenantId, departmentId, ACTIVE_STATUS);
-        if (activeMembers > 0) {
-            log.warn("部门停用失败：仍有成员 tenantId={} operatorUserId={} departmentId={} activeMembers={} requestId={}", tenantId, operatorUserId, departmentId, activeMembers, RequestIds.current());
-            throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_DEPARTMENT_HAS_MEMBERS", "部门下仍有启用成员，请先调整成员部门");
+        long activeChildren = departmentRepository.countByTenantIdAndParentIdAndStatus(tenantId, departmentId, ACTIVE_STATUS);
+        if (activeMembers > 0 || activeChildren > 0) {
+            log.warn(
+                "部门停用失败：仍有关联启用资源 tenantId={} operatorUserId={} departmentId={} activeMembers={} activeChildren={} requestId={}",
+                tenantId,
+                operatorUserId,
+                departmentId,
+                activeMembers,
+                activeChildren,
+                RequestIds.current()
+            );
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_DEPARTMENT_IN_USE", "部门下仍有启用成员或启用下级部门，请先调整后再停用");
         }
         department.disable();
         departmentRepository.save(department);
         log.info("部门停用成功 tenantId={} operatorUserId={} departmentId={} requestId={}", tenantId, operatorUserId, departmentId, RequestIds.current());
         return getOverview(tenantId);
+    }
+
+    @Transactional
+    public void deleteDepartment(UUID tenantId, UUID operatorUserId, UUID departmentId) {
+        DepartmentEntity department = departmentRepository.findByIdAndTenantId(departmentId, tenantId)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ORG_DEPARTMENT_NOT_FOUND", "部门不存在"));
+        long members = userMembershipRepository.countByTenantIdAndDepartmentId(tenantId, departmentId);
+        long children = departmentRepository.countByTenantIdAndParentId(tenantId, departmentId);
+        long pageGrants = pageGrantRepository.countByTenantIdAndPrincipalTypeAndPrincipalId(tenantId, "department", departmentId);
+        long resourceGrants = resourceGrantRepository.countByTenantIdAndPrincipalTypeAndPrincipalId(tenantId, "department", departmentId);
+        if (members > 0 || children > 0 || pageGrants > 0 || resourceGrants > 0) {
+            log.warn(
+                "部门删除失败：仍有关联数据 tenantId={} operatorUserId={} departmentId={} members={} children={} pageGrants={} resourceGrants={} requestId={}",
+                tenantId,
+                operatorUserId,
+                departmentId,
+                members,
+                children,
+                pageGrants,
+                resourceGrants,
+                RequestIds.current()
+            );
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_DEPARTMENT_DELETE_BLOCKED", "部门仍有关联成员、下级部门或授权记录，不能彻底删除");
+        }
+        departmentRepository.delete(department);
+        log.info("部门已彻底删除 tenantId={} operatorUserId={} departmentId={} requestId={}", tenantId, operatorUserId, departmentId, RequestIds.current());
     }
 
     @Transactional
@@ -992,7 +1040,7 @@ public class TenantOrganizationService {
             )
             .stream()
             .collect(Collectors.toMap(UserAccount::getId, Function.identity()));
-        Map<UUID, DepartmentEntity> departmentsById = departmentRepository.findByTenantIdAndStatusOrderBySortOrderAscNameAsc(tenantId, ACTIVE_STATUS)
+        Map<UUID, DepartmentEntity> departmentsById = departmentRepository.findByTenantIdOrderBySortOrderAscNameAsc(tenantId)
             .stream()
             .collect(Collectors.toMap(DepartmentEntity::getId, Function.identity()));
         Map<UUID, RoleEntity> rolesById = roleRepository.findByTenantIdAndStatusOrderByNameAsc(tenantId, ACTIVE_STATUS)

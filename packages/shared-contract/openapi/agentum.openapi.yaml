@@ -845,8 +845,8 @@ paths:
         "404":
           description: 部门不存在
     delete:
-      summary: 停用租户部门
-      description: 仅当部门下没有启用成员时允许停用。
+      summary: 删除租户部门
+      description: 仅当部门没有成员关系、下级部门和授权记录时允许彻底删除。停用部门请使用状态接口，停用后的部门仍会在组织树中展示用于追溯。
       tags:
         - Organization
       security:
@@ -865,10 +865,57 @@ paths:
             type: string
             format: uuid
       responses:
-        "204":
-          description: 停用成功
+        "200":
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
         "400":
-          description: 部门下仍有启用成员
+          description: 部门仍有关联成员、下级部门或授权记录
+        "404":
+          description: 部门不存在
+  /api/admin/tenants/{tenantId}/organization/departments/{departmentId}/status:
+    patch:
+      summary: 更新租户部门状态
+      description: 启用或停用当前租户内部门。停用只关闭部门作为分派入口的可用性，部门仍保留在组织树中；彻底移除请调用删除接口。
+      tags:
+        - Organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: departmentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDepartmentStatusRequest"
+      responses:
+        "200":
+          description: 状态更新成功并返回最新人员组织概览
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/TenantOrganizationOverview"
+        "400":
+          description: 状态非法，或部门下仍有启用成员、启用下级部门
         "404":
           description: 部门不存在
   /api/admin/tenants/{tenantId}/organization/roles:
@@ -2509,6 +2556,16 @@ components:
           type: integer
       required:
         - name
+    UpdateDepartmentStatusRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - active
+            - disabled
+      required:
+        - status
     CreateTenantRoleRequest:
       type: object
       properties:

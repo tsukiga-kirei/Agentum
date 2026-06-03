@@ -60,9 +60,14 @@ public class DepartmentEntity {
         this.updatedAt = Instant.now();
     }
 
-    // 部门删除采用停用，避免历史成员、待办和审计记录失去组织上下文。
+    // 停用只关闭部门作为分派和筛选入口的可用性，历史成员关系仍保留用于追溯。
     public void disable() {
         this.status = "disabled";
+        this.updatedAt = Instant.now();
+    }
+
+    public void enable() {
+        this.status = "active";
         this.updatedAt = Instant.now();
     }
 

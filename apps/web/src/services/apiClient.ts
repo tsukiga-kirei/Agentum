@@ -18,6 +18,7 @@ import type {
   UpdateMembershipRoleRequest,
   UpdateMembershipStatusRequest,
   UpdateDepartmentRequest,
+  UpdateDepartmentStatusRequest,
   UpdateTenantOrgRoleRequest,
   UpdateTenantRoleRequest,
 } from "../types/organization";
@@ -166,6 +167,8 @@ export const organizationApi = {
     apiRequest<TenantOrganizationOverview>(`/api/admin/tenants/${tenantId}/organization/departments`, { method: "POST", token, body: request }),
   updateDepartment: (tenantId: string, departmentId: string, token: string, request: UpdateDepartmentRequest) =>
     apiRequest<TenantOrganizationOverview>(`/api/admin/tenants/${tenantId}/organization/departments/${departmentId}`, { method: "PATCH", token, body: request }),
+  updateDepartmentStatus: (tenantId: string, departmentId: string, token: string, request: UpdateDepartmentStatusRequest) =>
+    apiRequest<TenantOrganizationOverview>(`/api/admin/tenants/${tenantId}/organization/departments/${departmentId}/status`, { method: "PATCH", token, body: request }),
   deleteDepartment: (tenantId: string, departmentId: string, token: string) =>
     apiRequest<void>(`/api/admin/tenants/${tenantId}/organization/departments/${departmentId}`, { method: "DELETE", token }),
   createRole: (tenantId: string, token: string, request: CreateTenantRoleRequest) =>

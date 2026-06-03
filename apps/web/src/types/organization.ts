@@ -132,6 +132,10 @@ export type UpdateDepartmentRequest = {
   sortOrder?: number;
 };
 
+export type UpdateDepartmentStatusRequest = {
+  status: "active" | "disabled";
+};
+
 export type CreateTenantRoleRequest = {
   name: string;
   description?: string;

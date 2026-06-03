@@ -238,6 +238,12 @@ export function TenantManagementPage() {
   const [grantResourceIds, setGrantResourceIds] = useState<string[]>([]);
   const [grantSubmitting, setGrantSubmitting] = useState(false);
   const activeTabMeta = tenantManagementTabs.find((tab) => tab.key === activeTab) ?? tenantManagementTabs[0];
+  const activeDepartmentOptions = useMemo(
+    () => (organizationOverview?.departments ?? [])
+      .filter((department) => department.status === "active")
+      .map((department) => ({ value: department.id, label: department.name })),
+    [organizationOverview?.departments]
+  );
   const roleMemberOptions = useMemo(
     () => (organizationOverview?.memberships ?? [])
       .filter((membership) => membership.status === "active")
@@ -405,17 +411,40 @@ export function TenantManagementPage() {
     }
   }
 
+  async function handleUpdateDepartmentStatus(department: OrganizationDepartment, status: "active" | "disabled") {
+    if (!token || !user?.tenantId) return;
+    setDepartmentSubmitting(true);
+    try {
+      const overview = await organizationApi.updateDepartmentStatus(user.tenantId, department.id, token, { status });
+      setOrganizationOverview(overview);
+      setCreateDepartmentOpen(false);
+      setEditingDepartment(null);
+      messageApi.success(status === "active" ? "部门已启用" : "部门已停用");
+    } catch (error) {
+      console.warn("[tenant-management] 部门状态更新失败", getTenantManagementErrorContext(error, user.tenantId, { departmentId: department.id, status }));
+      messageApi.error(error instanceof AgentumApiError ? error.message : "部门状态更新失败，请先确认部门下没有启用成员或启用下级部门");
+    } finally {
+      setDepartmentSubmitting(false);
+    }
+  }
+
   async function handleDeleteDepartment(department: OrganizationDepartment) {
     if (!token || !user?.tenantId) return;
+    if (!window.confirm(`确认彻底删除部门“${department.name}”？删除后不会再出现在组织树中。`)) {
+      return;
+    }
+    setDepartmentSubmitting(true);
     try {
       await organizationApi.deleteDepartment(user.tenantId, department.id, token);
       setOrganizationOverview(await organizationApi.overview(user.tenantId, token));
       setCreateDepartmentOpen(false);
       setEditingDepartment(null);
-      messageApi.success("部门已停用");
+      messageApi.success("部门已删除");
     } catch (error) {
-      console.warn("[tenant-management] 部门停用失败", getTenantManagementErrorContext(error, user.tenantId, { departmentId: department.id }));
-      messageApi.error(error instanceof AgentumApiError ? error.message : "部门停用失败，请先确认部门下没有启用成员");
+      console.warn("[tenant-management] 部门删除失败", getTenantManagementErrorContext(error, user.tenantId, { departmentId: department.id }));
+      messageApi.error(error instanceof AgentumApiError ? error.message : "部门删除失败，请先确认部门没有成员关系、下级部门和授权记录");
+    } finally {
+      setDepartmentSubmitting(false);
     }
   }
 
@@ -870,7 +899,7 @@ export function TenantManagementPage() {
                     suffixIcon={adminSelectSuffixIcon}
                     placeholder="请选择部门"
                     value={memberDraft.departmentId}
-                    options={(organizationOverview?.departments ?? []).map((department) => ({ value: department.id, label: department.name }))}
+                    options={activeDepartmentOptions}
                     onChange={(departmentId) => setMemberDraft((draft) => ({ ...draft, departmentId }))}
                   />
                 </div>
@@ -966,7 +995,7 @@ export function TenantManagementPage() {
                     suffixIcon={adminSelectSuffixIcon}
                     placeholder="未分配部门"
                     value={memberEditDraft.departmentId}
-                    options={(organizationOverview?.departments ?? []).map((department) => ({ value: department.id, label: department.name }))}
+                    options={activeDepartmentOptions}
                     onChange={(departmentId) => setMemberEditDraft((draft) => ({ ...draft, departmentId }))}
                   />
                 </div>
@@ -1015,6 +1044,16 @@ export function TenantManagementPage() {
             </div>
             <div className="sys-modal-body">
               <div className="sys-hint"><Info size={14} /> 部门编码由后端自动生成，页面只维护业务名称、层级和排序。</div>
+              {editingDepartment ? (
+                <div className="sys-field">
+                  <label className="sys-field-label">当前状态</label>
+                  <div className="sys-readonly-field">
+                    <span className={`sys-status sys-status--${editingDepartment.status === "active" ? "active" : "inactive"}`}>
+                      <span className="sys-status-dot" />{editingDepartment.status === "active" ? "启用" : "停用"}
+                    </span>
+                  </div>
+                </div>
+              ) : null}
               <div className="sys-field">
                 <label className="sys-field-label sys-field-label--required">部门名称</label>
                 <div className="sys-field-input-wrap"><Building2 size={16} className="sys-field-prefix" /><input className="sys-field-input" value={departmentDraft.name} placeholder="例如：风控部" onChange={(event) => setDepartmentDraft((draft) => ({ ...draft, name: event.target.value }))} /></div>
@@ -1030,7 +1069,9 @@ export function TenantManagementPage() {
                     suffixIcon={adminSelectSuffixIcon}
                     placeholder="不选择则为一级部门"
                     value={departmentDraft.parentId}
-                    options={(organizationOverview?.departments ?? []).map((department) => ({ value: department.id, label: department.name }))}
+                    options={(organizationOverview?.departments ?? [])
+                      .filter((department) => department.status === "active" && department.id !== editingDepartment?.id)
+                      .map((department) => ({ value: department.id, label: department.name }))}
                     onChange={(parentId) => setDepartmentDraft((draft) => ({ ...draft, parentId }))}
                   />
                 </div>
@@ -1042,7 +1083,16 @@ export function TenantManagementPage() {
             </div>
             <div className="sys-modal-footer">
               {editingDepartment ? (
-                <button className="sys-btn sys-btn--danger" style={{ marginRight: "auto" }} disabled={departmentSubmitting} onClick={() => void handleDeleteDepartment(editingDepartment)}><X size={14} /> 停用部门</button>
+                <div className="tenant-department-danger-actions">
+                  <button
+                    className="sys-btn sys-btn--default"
+                    disabled={departmentSubmitting}
+                    onClick={() => void handleUpdateDepartmentStatus(editingDepartment, editingDepartment.status === "active" ? "disabled" : "active")}
+                  >
+                    <CheckCircle2 size={14} /> {editingDepartment.status === "active" ? "停用部门" : "启用部门"}
+                  </button>
+                  <button className="sys-btn sys-btn--danger" disabled={departmentSubmitting} onClick={() => void handleDeleteDepartment(editingDepartment)}><X size={14} /> 删除部门</button>
+                </div>
               ) : null}
               <button className="sys-btn sys-btn--default" onClick={() => setCreateDepartmentOpen(false)}><X size={14} /> 取消</button>
               <button className="sys-btn sys-btn--primary" disabled={departmentSubmitting} onClick={() => void handleSubmitDepartment()}><PlusCircle size={14} /> {editingDepartment ? "保存部门" : "创建部门"}</button>
@@ -1459,7 +1509,7 @@ function OrganizationPanel({
                 <button
                   key={department.id}
                   type="button"
-                  className={`tenant-dept-tree-item ${selectedDepartmentId === department.id ? "tenant-dept-tree-item--active" : ""}`}
+                  className={`tenant-dept-tree-item ${selectedDepartmentId === department.id ? "tenant-dept-tree-item--active" : ""} ${department.status !== "active" ? "tenant-dept-tree-item--disabled" : ""}`}
                   style={{ paddingLeft: 12 + level * 18 }}
                   aria-expanded={hasChildren ? expandedDepartmentIds.has(department.id) : undefined}
                   onClick={() => {
@@ -1480,6 +1530,7 @@ function OrganizationPanel({
                     <Building2 size={15} />
                   </span>
                   <span className="tenant-dept-tree-name">{department.name}</span>
+                  {department.status !== "active" ? <span className="tenant-dept-tree-status">停用</span> : null}
                   <span className="tenant-dept-tree-count">{memberCount}</span>
                 </button>
               ))}

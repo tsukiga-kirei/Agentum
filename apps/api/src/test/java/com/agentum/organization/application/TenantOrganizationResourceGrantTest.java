@@ -101,9 +101,6 @@ class TenantOrganizationResourceGrantTest {
             capability.getId()
         )).thenReturn(false);
         when(roleRepository.findByTenantIdAndStatusOrderByNameAsc(TENANT_ID, "active")).thenReturn(List.of(role));
-        when(departmentRepository.findByTenantIdAndStatusOrderBySortOrderAscNameAsc(TENANT_ID, "active")).thenReturn(List.of());
-        when(userMembershipRepository.findByTenantIdAndStatus(TENANT_ID, "active")).thenReturn(List.of());
-        when(userAccountRepository.findAllById(any())).thenReturn(List.of());
 
         ResourceGrantResponse response = service.createResourceGrant(
             TENANT_ID,
@@ -175,9 +172,6 @@ class TenantOrganizationResourceGrantTest {
             return grants;
         });
         when(roleRepository.findByTenantIdAndStatusOrderByNameAsc(TENANT_ID, "active")).thenReturn(List.of(role));
-        when(departmentRepository.findByTenantIdAndStatusOrderBySortOrderAscNameAsc(TENANT_ID, "active")).thenReturn(List.of());
-        when(userMembershipRepository.findByTenantIdAndStatus(TENANT_ID, "active")).thenReturn(List.of());
-        when(userAccountRepository.findAllById(any())).thenReturn(List.of());
 
         PageGrantResponse response = service.createPageGrant(
             TENANT_ID,
@@ -220,7 +214,7 @@ class TenantOrganizationResourceGrantTest {
         when(userRoleAssignmentRepository.findByUserIdAndRoleAndTenantId(any(), any(), any()))
             .thenReturn(Optional.of(com.agentum.auth.domain.UserRoleAssignmentEntity.create(USER_ID, "business", TENANT_ID, "业务用户", true)));
         when(userAccountRepository.findAllById(any())).thenReturn(List.of());
-        when(departmentRepository.findByTenantIdAndStatusOrderBySortOrderAscNameAsc(TENANT_ID, "active")).thenReturn(List.of());
+        when(departmentRepository.findByTenantIdOrderBySortOrderAscNameAsc(TENANT_ID)).thenReturn(List.of());
         when(roleRepository.findByTenantIdAndStatusOrderByNameAsc(TENANT_ID, "active")).thenReturn(List.of(reviewerRole, executorRole));
 
         service.updateTenantRole(
@@ -298,7 +292,7 @@ class TenantOrganizationResourceGrantTest {
         when(userAccountRepository.findById(membership.getUserId())).thenReturn(Optional.of(account));
         when(userAccountRepository.existsByUsernameAndIdNot("new_operator", account.getId())).thenReturn(false);
         when(userAccountRepository.findAllById(any())).thenReturn(List.of(account));
-        when(departmentRepository.findByTenantIdAndStatusOrderBySortOrderAscNameAsc(TENANT_ID, "active")).thenReturn(List.of());
+        when(departmentRepository.findByTenantIdOrderBySortOrderAscNameAsc(TENANT_ID)).thenReturn(List.of());
         when(roleRepository.findByTenantIdAndStatusOrderByNameAsc(TENANT_ID, "active")).thenReturn(List.of());
         when(userMembershipRepository.findByTenantId(TENANT_ID)).thenReturn(List.of(membership));
         when(userMembershipRoleRepository.findByMembershipIdInAndStatus(any(), any())).thenReturn(List.of());

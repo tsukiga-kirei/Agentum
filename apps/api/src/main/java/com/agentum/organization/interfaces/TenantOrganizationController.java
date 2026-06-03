@@ -80,6 +80,21 @@ public class TenantOrganizationController {
         return ApiResponse.success(tenantOrganizationService.updateDepartment(tenantId, principal.userId(), departmentId, updateDepartmentRequest), RequestIds.current(request));
     }
 
+    @PatchMapping("/departments/{departmentId}/status")
+    public ApiResponse<TenantOrganizationOverviewResponse> updateDepartmentStatus(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID departmentId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @Valid @RequestBody UpdateDepartmentStatusRequest updateDepartmentStatusRequest,
+        HttpServletRequest request
+    ) {
+        tenantOrganizationAccess.assertCanManageTenant(principal, tenantId);
+        return ApiResponse.success(
+            tenantOrganizationService.updateDepartmentStatus(tenantId, principal.userId(), departmentId, updateDepartmentStatusRequest.status()),
+            RequestIds.current(request)
+        );
+    }
+
     @DeleteMapping("/departments/{departmentId}")
     public ApiResponse<Void> deleteDepartment(
         @PathVariable UUID tenantId,
@@ -88,7 +103,7 @@ public class TenantOrganizationController {
         HttpServletRequest request
     ) {
         tenantOrganizationAccess.assertCanManageTenant(principal, tenantId);
-        tenantOrganizationService.disableDepartment(tenantId, principal.userId(), departmentId);
+        tenantOrganizationService.deleteDepartment(tenantId, principal.userId(), departmentId);
         return ApiResponse.success(null, RequestIds.current(request));
     }
 
