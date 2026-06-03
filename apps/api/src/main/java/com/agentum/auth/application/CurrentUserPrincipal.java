@@ -10,7 +10,6 @@ public record CurrentUserPrincipal(
     UUID tenantId,
     String role,
     String portal,
-    String spaceCode,
     UUID roleAssignmentId
 ) {
 }

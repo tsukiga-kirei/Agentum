@@ -60,6 +60,6 @@ class WorkbenchAccessTest {
     }
 
     private static CurrentUserPrincipal newPrincipal(String role, UUID tenantId) {
-        return new CurrentUserPrincipal(USER_ID, "demo", tenantId, role, role, "默认空间", ROLE_ASSIGNMENT_ID);
+        return new CurrentUserPrincipal(USER_ID, "demo", tenantId, role, role, ROLE_ASSIGNMENT_ID);
     }
 }

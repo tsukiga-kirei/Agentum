@@ -37,7 +37,6 @@ export type OrganizationMembership = {
     code: string;
     name: string;
   }>;
-  spaceCode: string;
   defaultMembership: boolean;
   status: string;
 };
@@ -118,7 +117,6 @@ export type CreateMemberRequest = {
   email?: string;
   departmentId?: string;
   roleId: string;
-  spaceCode?: string;
 };
 
 // 部门新增只表达层级和排序意图；上级部门归属必须由后端按租户再次校验。

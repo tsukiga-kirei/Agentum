@@ -20,7 +20,6 @@ class TenantOrganizationAccessTest {
             null,
             "system_admin",
             "system_admin",
-            "system",
             UUID.fromString("00000000-0000-0000-0000-000000000401")
         );
 
@@ -37,7 +36,6 @@ class TenantOrganizationAccessTest {
             tenantId,
             "tenant_admin",
             "tenant_admin",
-            "默认空间",
             UUID.fromString("00000000-0000-0000-0000-000000000503")
         );
 
@@ -54,7 +52,6 @@ class TenantOrganizationAccessTest {
             tenantId,
             "business",
             "business",
-            "默认空间",
             UUID.fromString("00000000-0000-0000-0000-000000000501")
         );
 
@@ -72,7 +69,6 @@ class TenantOrganizationAccessTest {
             UUID.fromString("00000000-0000-0000-0000-000000000101"),
             "tenant_admin",
             "tenant_admin",
-            "默认空间",
             UUID.fromString("00000000-0000-0000-0000-000000000503")
         );
 

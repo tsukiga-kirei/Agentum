@@ -190,8 +190,7 @@ public class TenantOrganizationService {
         UserMembershipEntity membership = UserMembershipEntity.create(
             tenantId,
             user.getId(),
-            departmentId,
-            normalizeSpaceCode(request.spaceCode())
+            departmentId
         );
         userMembershipRepository.save(membership);
         userMembershipRoleRepository.save(UserMembershipRoleEntity.create(membership.getId(), roleId));
@@ -1063,7 +1062,6 @@ public class TenantOrganizationService {
                     membership.getDepartmentId() == null ? null : membership.getDepartmentId().toString(),
                     department == null ? "" : department.getName(),
                     membershipRoles,
-                    membership.getSpaceCode(),
                     membership.isDefaultMembership(),
                     membership.getStatus()
                 );
@@ -1087,11 +1085,6 @@ public class TenantOrganizationService {
 
     private static String normalizeOptional(String value) {
         return value == null ? "" : value.trim();
-    }
-
-    private static String normalizeSpaceCode(String value) {
-        String normalized = normalizeOptional(value);
-        return normalized.isBlank() ? "默认空间" : normalized;
     }
 
     private TenantOrgRoleResponse toTenantOrgRoleResponse(TenantOrgRoleEntity role) {

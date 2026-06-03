@@ -20,7 +20,6 @@ class SystemAdminAccessTest {
             null,
             "system_admin",
             "system_admin",
-            "system",
             UUID.fromString("00000000-0000-0000-0000-000000000401")
         );
 
@@ -35,7 +34,6 @@ class SystemAdminAccessTest {
             UUID.fromString("00000000-0000-0000-0000-000000000101"),
             "tenant_admin",
             "tenant_admin",
-            "默认空间",
             UUID.fromString("00000000-0000-0000-0000-000000000503")
         );
 

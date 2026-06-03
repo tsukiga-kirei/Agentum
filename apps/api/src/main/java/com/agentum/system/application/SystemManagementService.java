@@ -186,7 +186,7 @@ public class SystemManagementService {
         userAccountRepository.save(adminUser);
 
         // 5. 绑定成员关系，并同步写入统一登录角色分配表；否则新管理员只能出现在组织关系里，无法通过新认证模型登录。
-        UserMembershipEntity membership = UserMembershipEntity.create(tenant.getId(), adminUser.getId(), defaultDept.getId(), "默认空间");
+        UserMembershipEntity membership = UserMembershipEntity.create(tenant.getId(), adminUser.getId(), defaultDept.getId());
         userMembershipRepository.save(membership);
         userMembershipRoleRepository.save(UserMembershipRoleEntity.create(membership.getId(), tenantAdminRole.getId()));
         userRoleAssignmentRepository.save(UserRoleAssignmentEntity.create(adminUser.getId(), "tenant_admin", tenant.getId(), tenant.getName() + " - 租户管理", true));

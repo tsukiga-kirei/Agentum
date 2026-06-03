@@ -2571,15 +2571,32 @@ textarea:focus-visible {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
   gap: 16px;
+  min-height: min(620px, calc(100vh - 310px));
+  max-height: calc(100vh - 280px);
 }
 .tenant-dept-tree,
 .tenant-member-table-card {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--color-border-light);
   border-radius: var(--radius-lg);
   background: var(--color-bg-card);
   overflow: hidden;
 }
+.tenant-org-actionbar {
+  display: flex;
+  justify-content: flex-end;
+  min-height: 38px;
+}
+.tenant-org-actionbar-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
 .tenant-dept-tree-header {
+  flex-shrink: 0;
   padding: 14px 16px;
   border-bottom: 1px solid var(--color-border-light);
   background: var(--color-bg-hover);
@@ -2598,7 +2615,9 @@ textarea:focus-visible {
   color: var(--color-text-tertiary);
 }
 .tenant-dept-tree-list {
-  max-height: 520px;
+  flex: 1;
+  min-height: 0;
+  max-height: calc(100% - 68px);
   overflow: auto;
   padding: 8px;
 }
@@ -2617,6 +2636,35 @@ textarea:focus-visible {
   font-size: 13px;
   text-align: left;
   transition: background var(--transition-fast), color var(--transition-fast);
+}
+.tenant-dept-tree-leading {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 34px;
+}
+.tenant-dept-tree-toggle {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  color: var(--color-text-tertiary);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.tenant-dept-tree-toggle:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+.tenant-dept-tree-item--active .tenant-dept-tree-toggle {
+  color: var(--color-primary);
+}
+.tenant-dept-tree-toggle--placeholder {
+  pointer-events: none;
+}
+.tenant-dept-tree-item--overview {
+  margin-bottom: 6px;
 }
 .tenant-dept-tree-item:hover {
   background: var(--color-bg-hover);
@@ -2645,7 +2693,14 @@ textarea:focus-visible {
   background: var(--color-bg-card);
   color: var(--color-primary);
 }
+.tenant-dept-tree-empty {
+  padding: 22px 10px;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  text-align: center;
+}
 .tenant-member-toolbar {
+  flex-shrink: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -2674,9 +2729,14 @@ textarea:focus-visible {
   font-size: 13px;
 }
 .tenant-member-table-wrap {
+  flex: 1;
+  min-height: 0;
+  max-height: calc(100% - 128px);
   overflow-x: auto;
+  overflow-y: auto;
 }
 .tenant-member-table-card .agent-admin-pagination-wrap {
+  flex-shrink: 0;
   padding: 18px 16px 16px;
 }
 
@@ -5611,12 +5671,12 @@ textarea:focus-visible {
   color: var(--color-text-secondary);
   vertical-align: middle;
 }
-.tenant-member-table th:nth-child(5),
-.tenant-member-table td:nth-child(5) {
+.tenant-member-table th:nth-child(4),
+.tenant-member-table td:nth-child(4) {
   min-width: 96px;
 }
-.tenant-member-table th:nth-child(6),
-.tenant-member-table td:nth-child(6) {
+.tenant-member-table th:nth-child(5),
+.tenant-member-table td:nth-child(5) {
   min-width: 92px;
   white-space: nowrap;
 }

@@ -159,10 +159,10 @@ class WorkbenchServiceTest {
     }
 
     private static CurrentUserPrincipal tenantAdminPrincipal() {
-        return new CurrentUserPrincipal(USER_ID, "tenantadmin", TENANT_ID, "tenant_admin", "tenant_admin", "默认空间", ROLE_ASSIGNMENT_ID);
+        return new CurrentUserPrincipal(USER_ID, "tenantadmin", TENANT_ID, "tenant_admin", "tenant_admin", ROLE_ASSIGNMENT_ID);
     }
 
     private static CurrentUserPrincipal businessPrincipal() {
-        return new CurrentUserPrincipal(USER_ID, "operator", TENANT_ID, "business", "business", "默认空间", ROLE_ASSIGNMENT_ID);
+        return new CurrentUserPrincipal(USER_ID, "operator", TENANT_ID, "business", "business", ROLE_ASSIGNMENT_ID);
     }
 }

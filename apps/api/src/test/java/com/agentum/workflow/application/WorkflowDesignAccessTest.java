@@ -50,7 +50,7 @@ class WorkflowDesignAccessTest {
         WorkflowDesignAccess access = new WorkflowDesignAccess(userMembershipRepository, userMembershipRoleRepository, roleRepository);
         RoleEntity role = RoleEntity.create(TENANT_ID, "workflow_designer", "流程设计者", "business", "维护工作流草稿");
         UUID roleId = role.getId();
-        UserMembershipEntity membership = UserMembershipEntity.create(TENANT_ID, USER_ID, null, "默认空间");
+        UserMembershipEntity membership = UserMembershipEntity.create(TENANT_ID, USER_ID, null);
         UserMembershipRoleEntity membershipRole = UserMembershipRoleEntity.create(membership.getId(), roleId);
 
         when(userMembershipRepository.findByUserIdAndTenantIdAndStatus(USER_ID, TENANT_ID, "active")).thenReturn(List.of(membership));
@@ -66,7 +66,7 @@ class WorkflowDesignAccessTest {
         WorkflowDesignAccess access = new WorkflowDesignAccess(userMembershipRepository, userMembershipRoleRepository, roleRepository);
         RoleEntity role = RoleEntity.create(TENANT_ID, "executor", "执行人", "business", "发起流程");
         UUID roleId = role.getId();
-        UserMembershipEntity membership = UserMembershipEntity.create(TENANT_ID, USER_ID, null, "默认空间");
+        UserMembershipEntity membership = UserMembershipEntity.create(TENANT_ID, USER_ID, null);
         UserMembershipRoleEntity membershipRole = UserMembershipRoleEntity.create(membership.getId(), roleId);
 
         when(userMembershipRepository.findByUserIdAndTenantIdAndStatus(USER_ID, TENANT_ID, "active")).thenReturn(List.of(membership));
@@ -90,6 +90,6 @@ class WorkflowDesignAccessTest {
     }
 
     private static CurrentUserPrincipal newPrincipal(String role, UUID tenantId) {
-        return new CurrentUserPrincipal(USER_ID, "designer", tenantId, role, role, "默认空间", ROLE_ASSIGNMENT_ID);
+        return new CurrentUserPrincipal(USER_ID, "designer", tenantId, role, role, ROLE_ASSIGNMENT_ID);
     }
 }

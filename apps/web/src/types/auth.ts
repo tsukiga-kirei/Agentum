@@ -70,7 +70,6 @@ export type AuthUser = {
   tenantName: string;
   tenantCode: string;
   organization: string;
-  space: string;
   lastLoginAt: string;
 };
 
@@ -118,7 +117,6 @@ export type UserProfile = {
   avatar: string;
   role: UserRole;
   organization: string;
-  space: string;
   timezone: string;
   language: string;
   theme: "light" | "dark" | "system";

@@ -67,7 +67,6 @@ public class AuthTokenService {
         payload.put("tenantId", principal.tenantId() == null ? null : principal.tenantId().toString());
         payload.put("role", principal.role());
         payload.put("portal", principal.portal());
-        payload.put("spaceCode", principal.spaceCode());
         payload.put("raId", principal.roleAssignmentId() == null ? null : principal.roleAssignmentId().toString());
         payload.put("iat", issuedAt.getEpochSecond());
         payload.put("exp", expiresAt.getEpochSecond());
@@ -110,7 +109,6 @@ public class AuthTokenService {
                 tenantId,
                 payload.path("role").asText(),
                 payload.path("portal").asText(),
-                payload.path("spaceCode").asText("default"),
                 roleAssignmentId,
                 issuedAt,
                 expiresAt

@@ -201,8 +201,8 @@ class TenantOrganizationResourceGrantTest {
         TenantOrganizationService service = newService();
         RoleEntity reviewerRole = RoleEntity.create(TENANT_ID, "reviewer", "合同审核员", "business", "审核合同");
         RoleEntity executorRole = RoleEntity.create(TENANT_ID, "executor", "执行人", "business", "执行流程");
-        UserMembershipEntity currentReviewer = UserMembershipEntity.create(TENANT_ID, USER_ID, null, "默认空间");
-        UserMembershipEntity currentExecutor = UserMembershipEntity.create(TENANT_ID, UUID.randomUUID(), null, "默认空间");
+        UserMembershipEntity currentReviewer = UserMembershipEntity.create(TENANT_ID, USER_ID, null);
+        UserMembershipEntity currentExecutor = UserMembershipEntity.create(TENANT_ID, UUID.randomUUID(), null);
         UserMembershipRoleEntity reviewerLink = UserMembershipRoleEntity.create(currentReviewer.getId(), reviewerRole.getId());
         AtomicReference<UserMembershipRoleEntity> addedLink = new AtomicReference<>();
 
@@ -241,7 +241,7 @@ class TenantOrganizationResourceGrantTest {
     void shouldRejectDisablingRoleWithSelectedMembers() {
         TenantOrganizationService service = newService();
         RoleEntity reviewerRole = RoleEntity.create(TENANT_ID, "reviewer", "合同审核员", "business", "审核合同");
-        UserMembershipEntity currentReviewer = UserMembershipEntity.create(TENANT_ID, USER_ID, null, "默认空间");
+        UserMembershipEntity currentReviewer = UserMembershipEntity.create(TENANT_ID, USER_ID, null);
 
         when(roleRepository.findByIdAndTenantId(reviewerRole.getId(), TENANT_ID)).thenReturn(Optional.of(reviewerRole));
         when(userMembershipRepository.findByTenantId(TENANT_ID)).thenReturn(List.of(currentReviewer));
@@ -290,7 +290,7 @@ class TenantOrganizationResourceGrantTest {
     @Test
     void shouldUpdateMemberProfileForTenantMembership() {
         TenantOrganizationService service = newService();
-        UserMembershipEntity membership = UserMembershipEntity.create(TENANT_ID, USER_ID, null, "默认空间");
+        UserMembershipEntity membership = UserMembershipEntity.create(TENANT_ID, USER_ID, null);
         UserAccount account = UserAccount.create("old_operator", "hash", "旧姓名", "old@example.com");
 
         when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", Instant.now())));

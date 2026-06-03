@@ -724,7 +724,7 @@ paths:
   /api/admin/tenants/{tenantId}/organization/members:
     post:
       summary: 新增租户成员
-      description: 创建用户账号并分配当前租户内部门、角色和空间。后端会校验租户、部门、角色归属。
+      description: 创建用户账号并分配当前租户内部门和角色。后端会校验租户、部门、角色归属。
       tags:
         - Organization
       security:
@@ -2405,8 +2405,6 @@ components:
           type: string
         organization:
           type: string
-        space:
-          type: string
         lastLoginAt:
           type: string
       required:
@@ -2420,7 +2418,6 @@ components:
         - tenantName
         - tenantCode
         - organization
-        - space
         - lastLoginAt
     TenantOrganizationOverview:
       type: object
@@ -2479,9 +2476,6 @@ components:
         roleId:
           type: string
           format: uuid
-        spaceCode:
-          type: string
-          maxLength: 80
       required:
         - username
         - password
@@ -3016,8 +3010,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/MembershipRole"
-        spaceCode:
-          type: string
         defaultMembership:
           type: boolean
         status:
@@ -3029,7 +3021,6 @@ components:
         - departmentId
         - departmentName
         - roles
-        - spaceCode
         - defaultMembership
         - status
     MembershipRole:

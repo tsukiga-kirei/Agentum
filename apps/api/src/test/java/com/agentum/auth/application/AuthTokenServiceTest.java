@@ -29,7 +29,6 @@ class AuthTokenServiceTest {
             tenantId,
             "business",
             "business",
-            "默认空间",
             UUID.fromString("00000000-0000-0000-0000-000000000501")
         ));
 
@@ -39,7 +38,6 @@ class AuthTokenServiceTest {
         assertThat(claims.tenantId()).isEqualTo(tenantId);
         assertThat(claims.role()).isEqualTo("business");
         assertThat(claims.portal()).isEqualTo("business");
-        assertThat(claims.spaceCode()).isEqualTo("默认空间");
         assertThat(claims.roleAssignmentId()).isEqualTo(UUID.fromString("00000000-0000-0000-0000-000000000501"));
         assertThat(claims.expiresAt()).isEqualTo(NOW.plus(Duration.ofHours(8)));
     }
@@ -55,7 +53,6 @@ class AuthTokenServiceTest {
             null,
             "system_admin",
             "system_admin",
-            "system",
             UUID.fromString("00000000-0000-0000-0000-000000000401")
         ));
 
@@ -75,7 +72,6 @@ class AuthTokenServiceTest {
             null,
             "system_admin",
             "system_admin",
-            "system",
             UUID.fromString("00000000-0000-0000-0000-000000000401")
         ));
 

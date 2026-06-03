@@ -36,7 +36,7 @@ class MenuServiceTest {
     @Test
     void shouldFilterBusinessMenusByTenantPageGrants() {
         MenuService menuService = newService();
-        UserMembershipEntity membership = UserMembershipEntity.create(TENANT_ID, USER_ID, DEPARTMENT_ID, "默认空间");
+        UserMembershipEntity membership = UserMembershipEntity.create(TENANT_ID, USER_ID, DEPARTMENT_ID);
         UserMembershipRoleEntity membershipRole = UserMembershipRoleEntity.create(membership.getId(), ROLE_ID);
 
         when(userMembershipRepository.findByUserIdAndTenantIdAndStatus(USER_ID, TENANT_ID, "active")).thenReturn(List.of(membership));
@@ -55,7 +55,7 @@ class MenuServiceTest {
     @Test
     void shouldReturnEmptyBusinessMenusWhenNoPageGrantsExist() {
         MenuService menuService = newService();
-        UserMembershipEntity membership = UserMembershipEntity.create(TENANT_ID, USER_ID, null, "默认空间");
+        UserMembershipEntity membership = UserMembershipEntity.create(TENANT_ID, USER_ID, null);
 
         when(userMembershipRepository.findByUserIdAndTenantIdAndStatus(USER_ID, TENANT_ID, "active")).thenReturn(List.of(membership));
         when(userMembershipRoleRepository.findByMembershipIdInAndStatus(any(), eq("active"))).thenReturn(List.of());
@@ -67,7 +67,7 @@ class MenuServiceTest {
     @Test
     void shouldNotExposeDeprecatedAuditMenuEvenWhenPageGrantExists() {
         MenuService menuService = newService();
-        UserMembershipEntity membership = UserMembershipEntity.create(TENANT_ID, USER_ID, null, "默认空间");
+        UserMembershipEntity membership = UserMembershipEntity.create(TENANT_ID, USER_ID, null);
 
         when(userMembershipRepository.findByUserIdAndTenantIdAndStatus(USER_ID, TENANT_ID, "active")).thenReturn(List.of(membership));
         when(userMembershipRoleRepository.findByMembershipIdInAndStatus(any(), eq("active"))).thenReturn(List.of());

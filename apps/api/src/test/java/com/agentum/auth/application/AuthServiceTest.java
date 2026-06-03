@@ -49,7 +49,6 @@ class AuthServiceTest {
             TENANT_ID,
             "business",
             "business",
-            "默认空间",
             assignment.getId()
         );
 

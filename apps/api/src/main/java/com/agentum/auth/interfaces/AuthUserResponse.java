@@ -11,7 +11,6 @@ public record AuthUserResponse(
     String tenantName,
     String tenantCode,
     String organization,
-    String space,
     String lastLoginAt
 ) {
 }

@@ -11,7 +11,6 @@ public record AuthTokenClaims(
     UUID tenantId,
     String role,
     String portal,
-    String spaceCode,
     UUID roleAssignmentId,
     Instant issuedAt,
     Instant expiresAt

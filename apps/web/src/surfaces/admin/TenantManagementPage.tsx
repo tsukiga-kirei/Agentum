@@ -5,6 +5,7 @@ import {
   Building2,
   CheckCircle2,
   ChevronDown,
+  ChevronRight,
   ClipboardList,
   Code2,
   Database,
@@ -52,7 +53,7 @@ type TenantManagementTab = {
 };
 
 const tenantManagementTabs: TenantManagementTab[] = [
-  { key: "organization", label: "人员组织", description: "用户、部门和空间成员关系", icon: UsersRound },
+  { key: "organization", label: "人员组织", description: "用户、部门和成员关系", icon: UsersRound },
   { key: "roles", label: "角色维护", description: "租户内角色新增、编辑和停用", icon: ShieldCheck },
   { key: "resources", label: "资源分配", description: "分配模块入口和可用能力池", icon: UserRoundCog },
 ];
@@ -66,11 +67,10 @@ const pagePermissionOptions = [
 const emptyMemberForm: CreateMemberRequest = {
   displayName: "",
   username: "",
-  password: "",
+  password: "agentum123",
   email: "",
   roleId: "",
   departmentId: undefined,
-  spaceCode: "默认空间",
 };
 
 const emptyDepartmentForm: CreateDepartmentRequest = {
@@ -111,6 +111,13 @@ type MemberEditDraft = {
 };
 
 type PrincipalSelectionKey = `${PrincipalType}:${string}`;
+
+type DepartmentTreeItem = {
+  department: OrganizationDepartment;
+  level: number;
+  memberCount: number;
+  hasChildren: boolean;
+};
 
 const adminPaginationLocale = {
   items_per_page: "条/页",
@@ -343,6 +350,10 @@ export function TenantManagementPage() {
     setOrganizationError("");
 
     try {
+      if (!values.departmentId) {
+        messageApi.warning("请选择成员所属部门");
+        return;
+      }
       // 初始密码只随创建请求提交，禁止进入日志、localStorage、URL 或错误详情；诊断日志只记录脱敏字段。
       const overview = await organizationApi.createMember(user.tenantId, token, values);
       setOrganizationOverview(overview);
@@ -828,7 +839,6 @@ export function TenantManagementPage() {
               <button className="sys-modal-close" onClick={() => setCreateMemberOpen(false)}><X size={18} /></button>
             </div>
             <div className="sys-modal-body">
-              <div className="sys-hint"><Info size={14} /> 初始密码只随本次请求提交，前端不会写入日志、URL 或本地缓存。</div>
               <div className="sys-field-row">
                 <div className="sys-field">
                   <label className="sys-field-label sys-field-label--required">成员姓名</label>
@@ -843,6 +853,7 @@ export function TenantManagementPage() {
                 <div className="sys-field">
                   <label className="sys-field-label sys-field-label--required">初始密码</label>
                   <div className="sys-field-input-wrap"><LockKeyhole size={16} className="sys-field-prefix" /><input className="sys-field-input" type="password" value={memberDraft.password} placeholder="至少 8 位" autoComplete="new-password" onChange={(event) => setMemberDraft((draft) => ({ ...draft, password: event.target.value }))} /></div>
+                  <p className="sys-field-hint">默认密码为 agentum123，可按需要修改后再创建成员。</p>
                 </div>
                 <div className="sys-field">
                   <label className="sys-field-label">邮箱</label>
@@ -851,14 +862,13 @@ export function TenantManagementPage() {
               </div>
               <div className="sys-field-row">
                 <div className="sys-field">
-                  <label className="sys-field-label">部门</label>
+                  <label className="sys-field-label sys-field-label--required">部门</label>
                   <Select
-                    allowClear
                     className="agent-admin-select w-full"
                     classNames={adminSelectClassNames}
                     prefix={<Building2 className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
                     suffixIcon={adminSelectSuffixIcon}
-                    placeholder="可选"
+                    placeholder="请选择部门"
                     value={memberDraft.departmentId}
                     options={(organizationOverview?.departments ?? []).map((department) => ({ value: department.id, label: department.name }))}
                     onChange={(departmentId) => setMemberDraft((draft) => ({ ...draft, departmentId }))}
@@ -877,10 +887,6 @@ export function TenantManagementPage() {
                     onChange={(roleId) => setMemberDraft((draft) => ({ ...draft, roleId }))}
                   />
                 </div>
-              </div>
-              <div className="sys-field">
-                <label className="sys-field-label">空间</label>
-                <div className="sys-field-input-wrap"><Building2 size={16} className="sys-field-prefix" /><input className="sys-field-input" value={memberDraft.spaceCode ?? ""} placeholder="默认空间" onChange={(event) => setMemberDraft((draft) => ({ ...draft, spaceCode: event.target.value }))} /></div>
               </div>
             </div>
             <div className="sys-modal-footer">
@@ -978,10 +984,6 @@ export function TenantManagementPage() {
                     onChange={(roleIds) => setMemberEditDraft((draft) => ({ ...draft, roleIds }))}
                   />
                 </div>
-              </div>
-              <div className="sys-field">
-                <label className="sys-field-label">空间</label>
-                <div className="sys-readonly-field">{editingMembership.spaceCode}</div>
               </div>
               <div className="sys-field">
                 <label className="sys-field-label">状态</label>
@@ -1315,55 +1317,87 @@ function OrganizationPanel({
 }) {
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<string>("all");
   const [memberKeyword, setMemberKeyword] = useState("");
+  const [expandedDepartmentIds, setExpandedDepartmentIds] = useState<Set<string>>(() => new Set());
 
-  const departmentTree = useMemo(() => {
-    if (!overview) return [];
+  const departmentTreeState = useMemo(() => {
+    const emptyState = { items: [] as DepartmentTreeItem[], descendantIdsByDepartment: new Map<string, Set<string>>() };
+    if (!overview) return emptyState;
     const memberships = overview.memberships;
-    return [
-      {
-        id: "all",
-        name: "全部部门",
-        code: overview.tenantCode,
-        memberCount: memberships.length,
-        level: 0,
-      },
-      ...overview.departments.map((department) => ({
-        id: department.id,
-        name: department.name,
-        code: department.code,
-        memberCount: memberships.filter((membership) => membership.departmentId === department.id).length,
-        level: department.parentId ? 1 : 0,
-      })),
-      {
-        id: "unassigned",
-        name: "未分配部门",
-        code: "",
-        memberCount: memberships.filter((membership) => !membership.departmentId).length,
-        level: 0,
-      },
-    ];
-  }, [overview]);
+    const childrenByParent = new Map<string, OrganizationDepartment[]>();
+
+    // 部门树只渲染真实部门；“全部成员”仅作为筛选入口，避免伪部门影响新增下级部门后的层级展示。
+    overview.departments.forEach((department) => {
+      const parentKey = department.parentId ?? "root";
+      const siblings = childrenByParent.get(parentKey) ?? [];
+      siblings.push(department);
+      childrenByParent.set(parentKey, siblings);
+    });
+
+    childrenByParent.forEach((departments) => {
+      departments.sort((left, right) => {
+        const sortDiff = (left.sortOrder ?? 0) - (right.sortOrder ?? 0);
+        return sortDiff !== 0 ? sortDiff : left.name.localeCompare(right.name, "zh-Hans-CN");
+      });
+    });
+
+    const collectDepartmentIds = (departmentId: string): Set<string> => {
+      const ids = new Set<string>([departmentId]);
+      (childrenByParent.get(departmentId) ?? []).forEach((child) => {
+        collectDepartmentIds(child.id).forEach((id) => ids.add(id));
+      });
+      return ids;
+    };
+
+    const descendantIdsByDepartment = new Map<string, Set<string>>();
+    overview.departments.forEach((department) => {
+      descendantIdsByDepartment.set(department.id, collectDepartmentIds(department.id));
+    });
+
+    const walk = (parentId: string, level: number): DepartmentTreeItem[] =>
+      (childrenByParent.get(parentId) ?? []).flatMap((department) => {
+        const departmentIds = descendantIdsByDepartment.get(department.id) ?? new Set([department.id]);
+        const memberCount = memberships.filter((membership) => membership.departmentId ? departmentIds.has(membership.departmentId) : false).length;
+        const hasChildren = (childrenByParent.get(department.id) ?? []).length > 0;
+        return [
+          { department, level, memberCount, hasChildren },
+          ...(expandedDepartmentIds.has(department.id) ? walk(department.id, level + 1) : []),
+        ];
+      });
+
+    return { items: walk("root", 0), descendantIdsByDepartment };
+  }, [expandedDepartmentIds, overview]);
 
   const visibleMemberships = useMemo(() => {
     if (!overview) return [];
     const keyword = memberKeyword.trim().toLowerCase();
+    const selectedDepartmentIds = selectedDepartmentId === "all" ? null : departmentTreeState.descendantIdsByDepartment.get(selectedDepartmentId) ?? new Set<string>();
 
     return overview.memberships.filter((membership) => {
       const matchDepartment =
         selectedDepartmentId === "all"
-        || (selectedDepartmentId === "unassigned" && !membership.departmentId)
-        || membership.departmentId === selectedDepartmentId;
+        || (membership.departmentId ? selectedDepartmentIds?.has(membership.departmentId) : false);
       const matchKeyword =
         !keyword
         || membership.userDisplayName.toLowerCase().includes(keyword)
         || membership.roles.some((role) => role.name.toLowerCase().includes(keyword) || role.code.toLowerCase().includes(keyword))
-        || membership.departmentName.toLowerCase().includes(keyword);
+        || (membership.departmentName ?? "").toLowerCase().includes(keyword);
       return matchDepartment && matchKeyword;
     });
-  }, [memberKeyword, overview, selectedDepartmentId]);
+  }, [departmentTreeState.descendantIdsByDepartment, memberKeyword, overview, selectedDepartmentId]);
   const membershipPagination = useClientPagination(visibleMemberships, 10);
 
   const selectedDepartment = overview?.departments.find((department) => department.id === selectedDepartmentId) ?? null;
+  const toggleDepartmentExpanded = useCallback((departmentId: string) => {
+    setExpandedDepartmentIds((current) => {
+      const next = new Set(current);
+      if (next.has(departmentId)) {
+        next.delete(departmentId);
+      } else {
+        next.add(departmentId);
+      }
+      return next;
+    });
+  }, []);
 
   if (!hasTenantContext) {
     return (
@@ -1375,11 +1409,8 @@ function OrganizationPanel({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] px-4 py-3">
-        <div>
-          <h3 className="text-sm font-semibold">人员组织维护</h3>
-        </div>
-        <div className="flex flex-wrap gap-2">
+      <div className="tenant-org-actionbar">
+        <div className="tenant-org-actionbar-buttons">
           {selectedDepartment ? (
             <button className="sys-btn sys-btn--default" onClick={() => onEditDepartment(selectedDepartment)} disabled={!overview}>
               <Edit size={14} />
@@ -1415,19 +1446,46 @@ function OrganizationPanel({
               </div>
             </div>
             <div className="tenant-dept-tree-list">
-              {departmentTree.map((department) => (
+              <button
+                type="button"
+                className={`tenant-dept-tree-item tenant-dept-tree-item--overview ${selectedDepartmentId === "all" ? "tenant-dept-tree-item--active" : ""}`}
+                onClick={() => setSelectedDepartmentId("all")}
+              >
+                <UsersRound size={15} />
+                <span className="tenant-dept-tree-name">全部成员</span>
+                <span className="tenant-dept-tree-count">{overview.memberships.length}</span>
+              </button>
+              {departmentTreeState.items.map(({ department, level, memberCount, hasChildren }) => (
                 <button
                   key={department.id}
                   type="button"
                   className={`tenant-dept-tree-item ${selectedDepartmentId === department.id ? "tenant-dept-tree-item--active" : ""}`}
-                  style={{ paddingLeft: 12 + department.level * 18 }}
-                  onClick={() => setSelectedDepartmentId(department.id)}
+                  style={{ paddingLeft: 12 + level * 18 }}
+                  aria-expanded={hasChildren ? expandedDepartmentIds.has(department.id) : undefined}
+                  onClick={() => {
+                    setSelectedDepartmentId(department.id);
+                    if (hasChildren) {
+                      toggleDepartmentExpanded(department.id);
+                    }
+                  }}
                 >
-                  <Building2 size={15} />
+                  <span className="tenant-dept-tree-leading">
+                    {hasChildren ? (
+                      <span className="tenant-dept-tree-toggle" aria-hidden="true">
+                        {expandedDepartmentIds.has(department.id) ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                      </span>
+                    ) : (
+                      <span className="tenant-dept-tree-toggle tenant-dept-tree-toggle--placeholder" />
+                    )}
+                    <Building2 size={15} />
+                  </span>
                   <span className="tenant-dept-tree-name">{department.name}</span>
-                  <span className="tenant-dept-tree-count">{department.memberCount}</span>
+                  <span className="tenant-dept-tree-count">{memberCount}</span>
                 </button>
               ))}
+              {departmentTreeState.items.length === 0 ? (
+                <div className="tenant-dept-tree-empty">暂无部门，请先新增部门</div>
+              ) : null}
             </div>
           </aside>
 
@@ -1453,7 +1511,6 @@ function OrganizationPanel({
                     <th>成员</th>
                     <th>部门</th>
                     <th>角色</th>
-                    <th>空间</th>
                     <th>状态</th>
                     <th>操作</th>
                   </tr>
@@ -1480,7 +1537,6 @@ function OrganizationPanel({
                           ))}
                         </div>
                       </td>
-                      <td>{membership.spaceCode}</td>
                       <td>
                         <span className={`sys-status sys-status--${membership.status === "active" ? "active" : "inactive"}`}>
                           <span className="sys-status-dot" />{membership.status === "active" ? "启用" : "停用"}
@@ -1501,7 +1557,7 @@ function OrganizationPanel({
                   ))}
                   {visibleMemberships.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="tenant-member-empty">暂无符合条件的成员</td>
+                      <td colSpan={5} className="tenant-member-empty">暂无符合条件的成员</td>
                     </tr>
                   ) : null}
                 </tbody>

@@ -53,7 +53,7 @@ class AssetManagementServiceTest {
     void shouldMarkTenantSystemCapabilityAssignedByResourceGrant() {
         AssetManagementService service = newService();
         CurrentUserPrincipal principal = businessPrincipal();
-        UserMembershipEntity membership = UserMembershipEntity.create(TENANT_ID, USER_ID, null, "默认空间");
+        UserMembershipEntity membership = UserMembershipEntity.create(TENANT_ID, USER_ID, null);
         UserMembershipRoleEntity membershipRole = UserMembershipRoleEntity.create(membership.getId(), ROLE_ID);
         SystemCapabilityEntity capability = SystemCapabilityEntity.create("skill", "合同解析 Skill", "contract_parse", "v1", "", "low", "active", Map.of(), NOW);
         SystemCapabilityEntity unassignedCapability = SystemCapabilityEntity.create("mcp", "未分配 MCP", "unassigned_mcp", "v1", "", "medium", "active", Map.of(), NOW);
@@ -333,6 +333,6 @@ class AssetManagementServiceTest {
     }
 
     private static CurrentUserPrincipal businessPrincipal() {
-        return new CurrentUserPrincipal(USER_ID, "designer", TENANT_ID, "business", "business", "默认空间", UUID.randomUUID());
+        return new CurrentUserPrincipal(USER_ID, "designer", TENANT_ID, "business", "business", UUID.randomUUID());
     }
 }

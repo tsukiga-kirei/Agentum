@@ -7,7 +7,7 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
 
-// 用户账号只描述登录主体，具体在某个租户/空间能做什么由成员关系和角色授权决定。
+// 用户账号只描述登录主体，具体在某个租户和部门能做什么由成员关系和角色授权决定。
 @Entity
 @Table(name = "users")
 public class UserAccount {

@@ -338,7 +338,6 @@ public class AuthService {
         String tenantName = tenant == null ? "平台管理" : tenant.getName();
         String tenantCode = tenant == null ? "SYSTEM" : tenant.getCode();
         String organization = tenant == null ? "Agentum 平台" : tenant.getName();
-        String space = tenant == null ? "全局系统管理" : "默认空间";
 
         return new AuthUserResponse(
             user.getId().toString(),
@@ -351,7 +350,6 @@ public class AuthService {
             tenantName,
             tenantCode,
             organization,
-            space,
             user.getLastLoginAt() == null ? "" : user.getLastLoginAt().toString()
         );
     }
@@ -363,7 +361,6 @@ public class AuthService {
             assignment.getTenantId(),
             assignment.getRole(),
             portalCode,
-            assignment.getTenantId() == null ? "system" : "default",
             assignment.getId()
         );
     }

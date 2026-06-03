@@ -9,7 +9,6 @@ public record MembershipResponse(
     String departmentId,
     String departmentName,
     List<MembershipRoleResponse> roles,
-    String spaceCode,
     boolean defaultMembership,
     String status
 ) {

@@ -6,7 +6,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.util.UUID;
 
-// 用户租户成员关系负责把用户、租户、部门和空间绑定起来；多角色关系由 user_membership_roles 单独维护。
+// 用户租户成员关系负责把用户、租户和部门绑定起来；多角色关系由 user_membership_roles 单独维护。
 @Entity
 @Table(name = "user_memberships")
 public class UserMembershipEntity {
@@ -23,9 +23,6 @@ public class UserMembershipEntity {
     @Column(name = "department_id")
     private UUID departmentId;
 
-    @Column(name = "space_code", nullable = false, length = 80)
-    private String spaceCode;
-
     @Column(name = "is_default", nullable = false)
     private boolean defaultMembership;
 
@@ -35,18 +32,17 @@ public class UserMembershipEntity {
     protected UserMembershipEntity() {
     }
 
-    // 当前新增成员默认成为该空间的默认成员；角色绑定由中间表维护，避免一个人多个角色时被展示成多个人。
-    public static UserMembershipEntity create(UUID tenantId, UUID userId, UUID departmentId, String spaceCode) {
-        return create(tenantId, userId, departmentId, spaceCode, true);
+    // 当前新增成员默认成为该租户内的默认成员；角色绑定由中间表维护，避免一个人多个角色时被展示成多个人。
+    public static UserMembershipEntity create(UUID tenantId, UUID userId, UUID departmentId) {
+        return create(tenantId, userId, departmentId, true);
     }
 
-    private static UserMembershipEntity create(UUID tenantId, UUID userId, UUID departmentId, String spaceCode, boolean defaultMembership) {
+    private static UserMembershipEntity create(UUID tenantId, UUID userId, UUID departmentId, boolean defaultMembership) {
         UserMembershipEntity membership = new UserMembershipEntity();
         membership.id = UUID.randomUUID();
         membership.tenantId = tenantId;
         membership.userId = userId;
         membership.departmentId = departmentId;
-        membership.spaceCode = spaceCode;
         membership.defaultMembership = defaultMembership;
         membership.status = "active";
         return membership;
@@ -66,10 +62,6 @@ public class UserMembershipEntity {
 
     public UUID getDepartmentId() {
         return departmentId;
-    }
-
-    public String getSpaceCode() {
-        return spaceCode;
     }
 
     public boolean isDefaultMembership() {
