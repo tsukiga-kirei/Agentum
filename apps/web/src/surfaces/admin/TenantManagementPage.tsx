@@ -1698,12 +1698,13 @@ function RoleManagementPanel({
 
   return (
     <div className="space-y-4">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <p style={{ fontSize: 14, color: "var(--color-text-tertiary)", margin: 0 }}>租户内角色新增、编辑和停用</p>
-        <button className="sys-btn sys-btn--primary" onClick={onCreateRole} disabled={!overview}>
-          <PlusCircle size={14} />
-          新增角色
-        </button>
+      <div className="tenant-org-actionbar">
+        <div className="tenant-org-actionbar-buttons">
+          <button className="sys-btn sys-btn--primary" onClick={onCreateRole} disabled={!overview}>
+            <PlusCircle size={14} />
+            新增角色
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -1730,13 +1731,10 @@ function RoleManagementPanel({
                 <span className={`sys-info-tag ${role.status === "active" ? "sys-info-tag--primary" : ""}`}>{role.status === "active" ? "启用" : "停用"}</span>
                 <span className="sys-info-tag">{roleMemberCount(role.id)} 名成员</span>
               </div>
-              {role.description ? (
-                <p className="agent-muted text-sm leading-6">{role.description}</p>
-              ) : null}
-              <div className="sys-card-footer">
-                <span className="sys-card-footer-time">成员分配请在人员组织中编辑成员</span>
+              <div className="sys-card-footer tenant-role-card-footer">
+                <p className="tenant-role-card-description">{role.description?.trim() || "暂无说明"}</p>
                 <div className="sys-card-footer-actions" onClick={(e) => e.stopPropagation()}>
-                  <button className="sys-btn sys-btn--text sys-btn--sm" onClick={() => onEditRole(role)}><Edit size={14} /> 编辑</button>
+                  <button type="button" className="sys-btn sys-btn--text sys-btn--sm" onClick={() => onEditRole(role)}><Edit size={14} /> 编辑</button>
                 </div>
               </div>
               </article>

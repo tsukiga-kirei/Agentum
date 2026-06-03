@@ -2600,6 +2600,21 @@ textarea:focus-visible {
   justify-content: flex-end;
   gap: 8px;
 }
+.tenant-role-card-footer {
+  align-items: flex-start;
+}
+.tenant-role-card-description {
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--color-text-secondary);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
 .tenant-dept-tree-header {
   flex-shrink: 0;
   padding: 14px 16px;
