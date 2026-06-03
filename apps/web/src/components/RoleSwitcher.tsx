@@ -12,6 +12,14 @@ const ROLE_LABELS: Record<string, { label: string; icon: typeof Shield }> = {
   business: { label: "业务用户", icon: LayoutDashboard },
 };
 
+/** 触发器收起态仅展示图标，展开态再显示角色简称。 */
+function getRoleShortLabel(role: RoleInfo | null | undefined): string {
+  if (!role) {
+    return "未知角色";
+  }
+  return ROLE_LABELS[role.role]?.label ?? role.label;
+}
+
 export function RoleSwitcher() {
   const roles = useAuthStore((s) => s.roles);
   const activeRole = useAuthStore((s) => s.activeRole);
@@ -19,14 +27,26 @@ export function RoleSwitcher() {
   const [open, setOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
 
+  const shortLabel = getRoleShortLabel(activeRole);
+  const fullLabel = activeRole?.label ?? shortLabel;
+
   if (roles.length <= 1) {
-    // 只有一个角色时不展示切换器，仅显示当前角色标签
+    // 只有一个角色时不展示切换器，仅显示当前角色标签；悬停/聚焦时内联展开角色名。
     const info = ROLE_LABELS[activeRole?.role ?? "business"];
     const Icon = info?.icon ?? LayoutDashboard;
     return (
-      <div className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-[var(--color-text-secondary)]">
-        <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-        <span>{activeRole?.label ?? info?.label ?? "未知角色"}</span>
+      <div
+        className="role-switcher-pill role-switcher-pill--static"
+        tabIndex={0}
+        aria-label={`当前角色：${fullLabel}`}
+      >
+        <span className="role-switcher-pill-icon">
+          <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+        </span>
+        <span className="role-switcher-pill-text">
+          <span className="role-switcher-pill-role">{shortLabel}</span>
+          {activeRole?.tenantName ? <span className="role-switcher-pill-tenant">{activeRole.tenantName}</span> : null}
+        </span>
       </div>
     );
   }
@@ -43,56 +63,62 @@ export function RoleSwitcher() {
   }
 
   return (
-    <div className="relative">
+    <div className={`relative ${open ? "role-switcher--open" : ""}`}>
       <button
         type="button"
         onClick={() => setOpen(!open)}
         disabled={switching}
-        className="agent-button flex h-8 items-center gap-1.5 px-2.5 text-[13px]"
-        aria-label="切换角色"
+        className="role-switcher-pill role-switcher-pill--button"
+        aria-label={`切换角色，当前：${fullLabel}`}
+        aria-expanded={open}
       >
-        <CurrentIcon className="h-3.5 w-3.5" aria-hidden="true" />
-        <span className="max-w-[120px] truncate">{activeRole?.label ?? currentInfo?.label}</span>
-        <ChevronDown className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`} aria-hidden="true" />
+        <span className="role-switcher-pill-icon">
+          <CurrentIcon className="h-3.5 w-3.5" aria-hidden="true" />
+        </span>
+        <span className="role-switcher-pill-text">
+          <span className="role-switcher-pill-role">{shortLabel}</span>
+          {activeRole?.tenantName ? <span className="role-switcher-pill-tenant">{activeRole.tenantName}</span> : null}
+        </span>
+        <ChevronDown className={`role-switcher-pill-chevron ${open ? "role-switcher-pill-chevron--open" : ""}`} aria-hidden="true" />
       </button>
 
       {open ? (
         <>
           {/* 点击外部关闭 */}
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full z-50 mt-1.5 w-72 overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-lg">
-            <div className="px-3 py-2">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">切换角色</p>
-            </div>
-            <div className="max-h-64 overflow-y-auto">
+          <div className="role-switcher-menu" role="menu" aria-label="切换角色">
+            <p className="role-switcher-menu-title">切换角色</p>
+            <div className="role-switcher-menu-list">
               {roles.map((role) => {
                 const isActive = role.id === activeRole?.id;
                 const info = ROLE_LABELS[role.role];
                 const Icon = info?.icon ?? LayoutDashboard;
+                const itemShortLabel = getRoleShortLabel(role);
 
                 return (
                   <button
                     key={role.id}
                     type="button"
+                    role="menuitemradio"
+                    aria-checked={isActive}
                     onClick={() => handleSwitch(role)}
                     disabled={isActive || switching}
-                    className={`flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors ${
-                      isActive
-                        ? "bg-[var(--color-primary-bg)] text-[var(--color-primary)]"
-                        : "hover:bg-[var(--color-bg-hover)] text-[var(--color-text-primary)]"
-                    }`}
+                    title={role.label}
+                    className={`role-switcher-menu-item ${isActive ? "role-switcher-menu-item--active" : ""}`}
                   >
-                    <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    <span className="role-switcher-menu-item-icon">
+                      <Icon className="h-4 w-4" aria-hidden="true" />
+                    </span>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{info?.label ?? role.role}</p>
+                      <p className="role-switcher-menu-role">{itemShortLabel}</p>
                       {role.tenantName ? (
-                        <p className="flex items-center gap-1 truncate text-xs text-[var(--color-text-tertiary)]">
+                        <p className="role-switcher-menu-tenant">
                           <Building2 className="h-3 w-3 shrink-0" aria-hidden="true" />
-                          {role.tenantName}
+                          <span className="truncate">{role.tenantName}</span>
                         </p>
                       ) : null}
                     </div>
-                    {isActive ? <Check className="h-4 w-4 shrink-0 text-[var(--color-primary)]" aria-hidden="true" /> : null}
+                    {isActive ? <Check className="role-switcher-menu-check h-4 w-4 shrink-0" aria-hidden="true" /> : null}
                   </button>
                 );
               })}
