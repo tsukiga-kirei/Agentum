@@ -123,7 +123,7 @@ class AssetManagementServiceTest {
         AssetManagementApi.MyAssetRow row = service.createMyAsset(
             TENANT_ID,
             businessPrincipal(),
-            new AssetManagementApi.CreateMyAssetRequest("prompt_template", "Renewal Question", null, "v1", "用于客户续约流程", "low", "private", null, Map.of())
+            new AssetManagementApi.CreateMyAssetRequest("prompt_template", "Renewal Question", null, "v1", "用于客户续约流程", "low", "private", null, Map.of(), List.of())
         );
 
         assertThat(row.name()).isEqualTo("Renewal Question");
@@ -141,7 +141,7 @@ class AssetManagementServiceTest {
         assertThatThrownBy(() -> service.createMyAsset(
             TENANT_ID,
             businessPrincipal(),
-            new AssetManagementApi.CreateMyAssetRequest("agent_template", "合同解析智能体", null, "v1", "", "low", "private", baseCapabilityId, Map.of())
+            new AssetManagementApi.CreateMyAssetRequest("agent_template", "合同解析智能体", null, "v1", "", "low", "private", baseCapabilityId, Map.of(), List.of())
         ))
             .isInstanceOf(ApiException.class)
             .extracting("code")
@@ -156,7 +156,7 @@ class AssetManagementServiceTest {
         assertThatThrownBy(() -> service.createMyAsset(
             TENANT_ID,
             businessPrincipal(),
-            new AssetManagementApi.CreateMyAssetRequest("skill", "风险核对 Skill", null, "v1", "", "low", "private", null, Map.of())
+            new AssetManagementApi.CreateMyAssetRequest("skill", "风险核对 Skill", null, "v1", "", "low", "private", null, Map.of(), List.of())
         ))
             .isInstanceOf(ApiException.class)
             .extracting("code")
@@ -190,7 +190,7 @@ class AssetManagementServiceTest {
         AssetManagementApi.MyAssetRow row = service.createMyAsset(
             TENANT_ID,
             businessPrincipal(),
-            new AssetManagementApi.CreateMyAssetRequest("prompt_template", "Renewal Question", null, "v1", "", "low", "private", null, Map.of())
+            new AssetManagementApi.CreateMyAssetRequest("prompt_template", "Renewal Question", null, "v1", "", "low", "private", null, Map.of(), List.of())
         );
 
         assertThat(row.code()).isEqualTo("renewal_question_2");
@@ -250,7 +250,7 @@ class AssetManagementServiceTest {
             TENANT_ID,
             asset.getId(),
             businessPrincipal(),
-            new AssetManagementApi.UpdateMyAssetRequest("续约追问模板", "v1", "用于客户续约流程", "low", "private", Map.of("promptContent", "请识别客户续约风险。"))
+            new AssetManagementApi.UpdateMyAssetRequest("续约追问模板", "v1", "用于客户续约流程", "low", "private", Map.of("promptContent", "请识别客户续约风险。"), List.of())
         );
         var published = service.publishMyAsset(TENANT_ID, asset.getId(), businessPrincipal());
 
@@ -321,7 +321,8 @@ class AssetManagementServiceTest {
                     "systemPromptTemplateId", promptTemplateId.toString(),
                     "skillIds", List.of(),
                     "mcpIds", List.of()
-                )
+                ),
+                List.of()
             )
         ))
             .isInstanceOf(ApiException.class)
