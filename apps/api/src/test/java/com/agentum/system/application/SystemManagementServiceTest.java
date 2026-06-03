@@ -383,7 +383,6 @@ class SystemManagementServiceTest {
     void shouldRejectDraftCapabilityWhenEnabledByTenant() {
         SystemCapabilityRepository systemCapabilityRepository = mock(SystemCapabilityRepository.class);
         TenantCapabilityGrantRepository tenantCapabilityGrantRepository = mock(TenantCapabilityGrantRepository.class);
-        UUID capabilityId = UUID.randomUUID();
         SystemCapabilityEntity entity = SystemCapabilityEntity.create(
             "mcp",
             "文件读取 MCP",
@@ -395,6 +394,7 @@ class SystemManagementServiceTest {
             java.util.Map.of("transport", "stdio", "command", "node server.js"),
             Instant.parse("2026-05-15T08:00:00Z")
         );
+        UUID capabilityId = entity.getId();
         when(systemCapabilityRepository.findById(capabilityId)).thenReturn(Optional.of(entity));
         when(tenantCapabilityGrantRepository.existsByCapabilityIdAndStatus(capabilityId, "enabled")).thenReturn(true);
 
@@ -418,6 +418,78 @@ class SystemManagementServiceTest {
         )))
             .isInstanceOf(ApiException.class)
             .hasMessageContaining("已被租户启用");
+    }
+
+    @Test
+    void shouldKeepCapabilityConnectivityWhenOnlyGovernanceStatusChanges() {
+        SystemCapabilityRepository systemCapabilityRepository = mock(SystemCapabilityRepository.class);
+        SystemCapabilityEntity entity = SystemCapabilityEntity.create(
+            "mcp",
+            "文件读取 MCP",
+            "file_read_mcp",
+            "v1",
+            "",
+            "medium",
+            "draft",
+            java.util.Map.of("transport", "sse", "sseUrl", "http://localhost:18080/sse"),
+            Instant.parse("2026-05-15T08:00:00Z")
+        );
+        UUID capabilityId = entity.getId();
+        entity.recordConnectivityCheck("online", Instant.parse("2026-05-15T08:10:00Z"), Instant.parse("2026-05-15T08:10:00Z"));
+        when(systemCapabilityRepository.findById(capabilityId)).thenReturn(Optional.of(entity));
+        when(systemCapabilityRepository.findByCodeAndVersion(any(), any())).thenReturn(Optional.of(entity));
+
+        SystemManagementService service = buildService(mock(ModelProviderRepository.class), systemCapabilityRepository);
+
+        SystemManagementApi.CapabilityRow row = service.updateCapability(capabilityId, new SystemManagementApi.UpdateCapabilityRequest(
+            "mcp",
+            "文件读取 MCP",
+            "v1",
+            "",
+            "medium",
+            "active",
+            java.util.Map.of("transport", "sse", "sseUrl", "http://localhost:18080/sse")
+        ));
+
+        assertThat(row.connectivityStatus()).isEqualTo("online");
+        assertThat(entity.getConnectivityStatus()).isEqualTo("online");
+        assertThat(entity.getConnectivityCheckedAt()).isEqualTo(Instant.parse("2026-05-15T08:10:00Z"));
+    }
+
+    @Test
+    void shouldMarkCapabilityConnectivityStaleWhenRuntimeConfigChanges() {
+        SystemCapabilityRepository systemCapabilityRepository = mock(SystemCapabilityRepository.class);
+        SystemCapabilityEntity entity = SystemCapabilityEntity.create(
+            "mcp",
+            "文件读取 MCP",
+            "file_read_mcp",
+            "v1",
+            "",
+            "medium",
+            "active",
+            java.util.Map.of("transport", "sse", "sseUrl", "http://localhost:18080/sse"),
+            Instant.parse("2026-05-15T08:00:00Z")
+        );
+        UUID capabilityId = entity.getId();
+        entity.recordConnectivityCheck("online", Instant.parse("2026-05-15T08:10:00Z"), Instant.parse("2026-05-15T08:10:00Z"));
+        when(systemCapabilityRepository.findById(capabilityId)).thenReturn(Optional.of(entity));
+        when(systemCapabilityRepository.findByCodeAndVersion(any(), any())).thenReturn(Optional.of(entity));
+
+        SystemManagementService service = buildService(mock(ModelProviderRepository.class), systemCapabilityRepository);
+
+        SystemManagementApi.CapabilityRow row = service.updateCapability(capabilityId, new SystemManagementApi.UpdateCapabilityRequest(
+            "mcp",
+            "文件读取 MCP",
+            "v1",
+            "",
+            "medium",
+            "active",
+            java.util.Map.of("transport", "sse", "sseUrl", "http://localhost:18081/sse")
+        ));
+
+        assertThat(row.connectivityStatus()).isEqualTo("stale");
+        assertThat(entity.getConnectivityStatus()).isEqualTo("stale");
+        assertThat(entity.getConnectivityCheckedAt()).isNull();
     }
 
     @Test

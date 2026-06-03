@@ -449,6 +449,10 @@ public class SystemManagementService {
                 );
                 throw new ApiException(HttpStatus.CONFLICT, "SYSTEM_CAPABILITY_DUPLICATE", "同一能力编码与版本已存在");
             });
+        Map<String, Object> sanitizedConfig = sanitizeCapabilityConfig(capabilityType, request.config(), entity.getConfig());
+        // 连通性测试只证明某一组运行配置在测试时可用。系统治理状态、名称或说明变化不应抹掉测试结果；
+        // 只有 MCP 地址、Skill 路径、交付通道等真实运行配置变化时，才标记为“待重新测试”。
+        boolean runtimeConfigChanged = !entity.getConfig().equals(sanitizedConfig);
         entity.updateProfile(
             capabilityType,
             request.name().trim(),
@@ -456,7 +460,8 @@ public class SystemManagementService {
             normalizeOptional(request.description()),
             request.riskLevel() == null ? null : request.riskLevel().trim(),
             targetStatus,
-            sanitizeCapabilityConfig(capabilityType, request.config(), entity.getConfig()),
+            sanitizedConfig,
+            runtimeConfigChanged,
             clock.instant()
         );
         systemCapabilityRepository.save(entity);

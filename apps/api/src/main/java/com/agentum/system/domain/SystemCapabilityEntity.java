@@ -94,6 +94,7 @@ public class SystemCapabilityEntity {
         String riskLevel,
         String status,
         Map<String, Object> config,
+        boolean runtimeConfigChanged,
         Instant now
     ) {
         this.capabilityType = capabilityType;
@@ -103,7 +104,11 @@ public class SystemCapabilityEntity {
         this.riskLevel = riskLevel == null ? "low" : riskLevel;
         this.status = status == null ? "draft" : status;
         this.config = config == null ? new HashMap<>() : new HashMap<>(config);
-        resetConnectivity(now);
+        if (runtimeConfigChanged) {
+            markConnectivityStale(now);
+        } else {
+            this.updatedAt = now;
+        }
     }
 
     public void recordConnectivityCheck(String status, Instant checkedAt, Instant now) {
@@ -114,6 +119,12 @@ public class SystemCapabilityEntity {
 
     public void resetConnectivity(Instant now) {
         this.connectivityStatus = "offline";
+        this.connectivityCheckedAt = null;
+        this.updatedAt = now;
+    }
+
+    public void markConnectivityStale(Instant now) {
+        this.connectivityStatus = "stale";
         this.connectivityCheckedAt = null;
         this.updatedAt = now;
     }

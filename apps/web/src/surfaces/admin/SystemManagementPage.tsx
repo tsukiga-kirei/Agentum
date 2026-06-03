@@ -170,7 +170,7 @@ function formatCapabilityType(t: string): string {
   return found ? found.label : t;
 }
 
-type ReachabilityStatus = "online" | "offline";
+type ReachabilityStatus = "online" | "offline" | "stale";
 
 /** 提示词模板为静态配置，无需连通性探测。 */
 function capabilitySupportsConnectivityTest(capabilityType: string): boolean {
@@ -185,6 +185,7 @@ function getCapabilityTestDetailTitle(capabilityType: string): string {
 }
 
 function resolveConnectivityStatus(status?: string | null): ReachabilityStatus {
+  if (status === "stale") return "stale";
   return status === "online" ? "online" : "offline";
 }
 
@@ -194,10 +195,11 @@ function CardStatusStack({ children }: { children: React.ReactNode }) {
 
 function ReachabilityBadge({ status }: { status: ReachabilityStatus }) {
   const online = status === "online";
+  const label = status === "online" ? "在线" : status === "stale" ? "待重新测试" : "离线";
   return (
     <div className={`sys-status sys-status--${online ? "active" : "inactive"}`}>
       <span className="sys-status-dot" />
-      {online ? "在线" : "离线"}
+      {label}
     </div>
   );
 }
