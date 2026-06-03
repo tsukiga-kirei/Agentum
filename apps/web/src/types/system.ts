@@ -28,6 +28,24 @@ export type CreateTenantRequest = {
   adminEmail?: string;
 };
 
+export type CreateTenantAdminRequest = {
+  username: string;
+  displayName: string;
+  password: string;
+  email?: string;
+  departmentId?: string;
+};
+
+export type UpdateTenantAdminProfileRequest = {
+  username: string;
+  displayName: string;
+  email?: string;
+};
+
+export type UpdateTenantAdminStatusRequest = {
+  status: "active" | "disabled";
+};
+
 export type ModelProviderRow = {
   id: string;
   name: string;

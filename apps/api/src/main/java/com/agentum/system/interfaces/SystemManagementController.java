@@ -81,6 +81,44 @@ public class SystemManagementController {
         return ApiResponse.success(systemManagementService.updateTenantStatus(tenantId, body), RequestIds.current(request));
     }
 
+    @PostMapping("/tenants/{tenantId}/admins")
+    public ApiResponse<Void> createTenantAdmin(
+        @PathVariable UUID tenantId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @Valid @RequestBody SystemManagementApi.CreateTenantAdminRequest body,
+        HttpServletRequest request
+    ) {
+        systemAdminAccess.assertSystemAdmin(principal);
+        systemManagementService.createTenantAdmin(tenantId, body);
+        return ApiResponse.success(null, RequestIds.current(request));
+    }
+
+    @PatchMapping("/tenants/{tenantId}/admins/{membershipId}/profile")
+    public ApiResponse<Void> updateTenantAdminProfile(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID membershipId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @Valid @RequestBody SystemManagementApi.UpdateTenantAdminProfileRequest body,
+        HttpServletRequest request
+    ) {
+        systemAdminAccess.assertSystemAdmin(principal);
+        systemManagementService.updateTenantAdminProfile(tenantId, membershipId, body);
+        return ApiResponse.success(null, RequestIds.current(request));
+    }
+
+    @PatchMapping("/tenants/{tenantId}/admins/{membershipId}/status")
+    public ApiResponse<Void> updateTenantAdminStatus(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID membershipId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @Valid @RequestBody SystemManagementApi.UpdateTenantAdminStatusRequest body,
+        HttpServletRequest request
+    ) {
+        systemAdminAccess.assertSystemAdmin(principal);
+        systemManagementService.updateTenantAdminStatus(tenantId, membershipId, body);
+        return ApiResponse.success(null, RequestIds.current(request));
+    }
+
     @GetMapping("/model-providers")
     public ApiResponse<PageResponse<SystemManagementApi.ModelProviderRow>> listModelProviders(
         @AuthenticationPrincipal CurrentUserPrincipal principal,

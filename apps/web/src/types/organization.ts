@@ -38,6 +38,7 @@ export type OrganizationMembership = {
     name: string;
   }>;
   defaultMembership: boolean;
+  tenantAdmin: boolean;
   status: string;
 };
 

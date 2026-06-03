@@ -10,6 +10,7 @@ public record MembershipResponse(
     String departmentName,
     List<MembershipRoleResponse> roles,
     boolean defaultMembership,
+    boolean tenantAdmin,
     String status
 ) {
 }

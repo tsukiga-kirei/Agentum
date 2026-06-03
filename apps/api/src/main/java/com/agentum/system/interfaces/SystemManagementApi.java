@@ -43,6 +43,27 @@ public final class SystemManagementApi {
     ) {
     }
 
+    public record CreateTenantAdminRequest(
+        @NotBlank @Size(max = 50) String username,
+        @NotBlank @Size(max = 50) String displayName,
+        @NotBlank @Size(max = 100) String password,
+        @Size(max = 100) String email,
+        UUID departmentId
+    ) {
+    }
+
+    public record UpdateTenantAdminProfileRequest(
+        @NotBlank @Size(max = 50) String username,
+        @NotBlank @Size(max = 50) String displayName,
+        @Size(max = 100) String email
+    ) {
+    }
+
+    public record UpdateTenantAdminStatusRequest(
+        @NotBlank @Size(max = 30) String status
+    ) {
+    }
+
     public record ModelProviderRow(
         UUID id,
         String name,

@@ -23,11 +23,13 @@ function getRoleShortLabel(role: RoleInfo | null | undefined): string {
 export function RoleSwitcher() {
   const roles = useAuthStore((s) => s.roles);
   const activeRole = useAuthStore((s) => s.activeRole);
+  const menus = useAuthStore((s) => s.menus);
   const switchRole = useAuthStore((s) => s.switchRole);
   const [open, setOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
 
   const shortLabel = getRoleShortLabel(activeRole);
+  const activeBusinessWithoutEntry = activeRole?.role === "business" && menus.length === 0;
   const fullLabel = activeRole?.label ?? shortLabel;
 
   if (roles.length <= 1) {
@@ -45,6 +47,7 @@ export function RoleSwitcher() {
         </span>
         <span className="role-switcher-pill-text">
           <span className="role-switcher-pill-role">{shortLabel}</span>
+          {activeBusinessWithoutEntry ? <span className="role-switcher-pill-tenant">未配置入口</span> : null}
           {activeRole?.tenantName ? <span className="role-switcher-pill-tenant">{activeRole.tenantName}</span> : null}
         </span>
       </div>
@@ -77,6 +80,7 @@ export function RoleSwitcher() {
         </span>
         <span className="role-switcher-pill-text">
           <span className="role-switcher-pill-role">{shortLabel}</span>
+          {activeBusinessWithoutEntry ? <span className="role-switcher-pill-tenant">未配置入口</span> : null}
           {activeRole?.tenantName ? <span className="role-switcher-pill-tenant">{activeRole.tenantName}</span> : null}
         </span>
         <ChevronDown className={`role-switcher-pill-chevron ${open ? "role-switcher-pill-chevron--open" : ""}`} aria-hidden="true" />

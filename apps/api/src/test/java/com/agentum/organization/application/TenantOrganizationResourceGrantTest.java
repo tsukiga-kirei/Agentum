@@ -16,6 +16,7 @@ import com.agentum.organization.infrastructure.DepartmentRepository;
 import com.agentum.organization.infrastructure.TenantOrgRoleRepository;
 import com.agentum.organization.infrastructure.UserMembershipRepository;
 import com.agentum.organization.infrastructure.UserMembershipRoleRepository;
+import com.agentum.organization.interfaces.CreateMemberRequest;
 import com.agentum.organization.interfaces.CreateResourceGrantRequest;
 import com.agentum.organization.interfaces.CreatePageGrantRequest;
 import com.agentum.organization.interfaces.GrantPrincipalRequest;
@@ -332,6 +333,113 @@ class TenantOrganizationResourceGrantTest {
         assertThat(account.getDisplayName()).isEqualTo("新姓名");
         assertThat(account.getEmail()).isEqualTo("new@example.com");
         verify(userAccountRepository).save(account);
+    }
+
+    @Test
+    void shouldRejectInvalidUsernameWhenCreatingMember() {
+        TenantOrganizationService service = newService();
+
+        when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", Instant.now())));
+
+        assertThatThrownBy(() -> service.createMember(
+            TENANT_ID,
+            OPERATOR_USER_ID,
+            new CreateMemberRequest("张三", "张三", "change-me-123", "zhangsan@example.com", null, UUID.randomUUID())
+        ))
+            .isInstanceOf(ApiException.class)
+            .extracting("code")
+            .isEqualTo("ORG_USER_USERNAME_INVALID");
+    }
+
+    @Test
+    void shouldRejectInvalidUsernameWhenUpdatingMemberProfile() {
+        TenantOrganizationService service = newService();
+        UserMembershipEntity membership = UserMembershipEntity.create(TENANT_ID, USER_ID, null);
+        UserAccount account = UserAccount.create("old_operator", "hash", "旧姓名", "old@example.com");
+
+        when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", Instant.now())));
+        when(userMembershipRepository.findByIdAndTenantId(membership.getId(), TENANT_ID)).thenReturn(Optional.of(membership));
+        when(userAccountRepository.findById(membership.getUserId())).thenReturn(Optional.of(account));
+
+        assertThatThrownBy(() -> service.updateMemberProfile(
+            TENANT_ID,
+            OPERATOR_USER_ID,
+            membership.getId(),
+            new UpdateMemberProfileRequest("operator name", "新姓名", "new@example.com")
+        ))
+            .isInstanceOf(ApiException.class)
+            .extracting("code")
+            .isEqualTo("ORG_USER_USERNAME_INVALID");
+    }
+
+    @Test
+    void shouldRejectTenantAdminRoleChangeFromTenantManagement() {
+        TenantOrganizationService service = newService();
+        RoleEntity tenantAdminRole = RoleEntity.create(TENANT_ID, "tenant_admin", "租户管理员", "管理租户");
+        RoleEntity businessRole = RoleEntity.create(TENANT_ID, "executor", "执行人", "执行流程");
+        UserMembershipEntity membership = UserMembershipEntity.create(TENANT_ID, USER_ID, null);
+        UserMembershipRoleEntity adminLink = UserMembershipRoleEntity.create(membership.getId(), tenantAdminRole.getId());
+
+        when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", Instant.now())));
+        when(userMembershipRepository.findByIdAndTenantId(membership.getId(), TENANT_ID)).thenReturn(Optional.of(membership));
+        when(userMembershipRoleRepository.findByMembershipIdAndStatus(membership.getId(), "active")).thenReturn(List.of(adminLink));
+        when(roleRepository.findAllById(any())).thenReturn(List.of(tenantAdminRole, businessRole));
+
+        assertThatThrownBy(() -> service.updateMembershipRole(
+            TENANT_ID,
+            OPERATOR_USER_ID,
+            membership.getId(),
+            new com.agentum.organization.interfaces.UpdateMembershipRoleRequest(List.of(businessRole.getId()))
+        ))
+            .isInstanceOf(ApiException.class)
+            .extracting("code")
+            .isEqualTo("ORG_TENANT_ADMIN_MANAGED_BY_SYSTEM");
+    }
+
+    @Test
+    void shouldRejectTenantAdminDepartmentChangeFromTenantManagement() {
+        TenantOrganizationService service = newService();
+        RoleEntity tenantAdminRole = RoleEntity.create(TENANT_ID, "tenant_admin", "租户管理员", "管理租户");
+        UserMembershipEntity membership = UserMembershipEntity.create(TENANT_ID, USER_ID, null);
+        UserMembershipRoleEntity adminLink = UserMembershipRoleEntity.create(membership.getId(), tenantAdminRole.getId());
+
+        when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", Instant.now())));
+        when(userMembershipRepository.findByIdAndTenantId(membership.getId(), TENANT_ID)).thenReturn(Optional.of(membership));
+        when(userMembershipRoleRepository.findByMembershipIdAndStatus(membership.getId(), "active")).thenReturn(List.of(adminLink));
+        when(roleRepository.findAllById(any())).thenReturn(List.of(tenantAdminRole));
+
+        assertThatThrownBy(() -> service.updateMembershipDepartment(
+            TENANT_ID,
+            OPERATOR_USER_ID,
+            membership.getId(),
+            new com.agentum.organization.interfaces.UpdateMembershipDepartmentRequest(UUID.randomUUID())
+        ))
+            .isInstanceOf(ApiException.class)
+            .extracting("code")
+            .isEqualTo("ORG_TENANT_ADMIN_MANAGED_BY_SYSTEM");
+    }
+
+    @Test
+    void shouldRejectTenantAdminStatusChangeFromTenantManagement() {
+        TenantOrganizationService service = newService();
+        RoleEntity tenantAdminRole = RoleEntity.create(TENANT_ID, "tenant_admin", "租户管理员", "管理租户");
+        UserMembershipEntity membership = UserMembershipEntity.create(TENANT_ID, USER_ID, null);
+        UserMembershipRoleEntity adminLink = UserMembershipRoleEntity.create(membership.getId(), tenantAdminRole.getId());
+
+        when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", Instant.now())));
+        when(userMembershipRepository.findByIdAndTenantId(membership.getId(), TENANT_ID)).thenReturn(Optional.of(membership));
+        when(userMembershipRoleRepository.findByMembershipIdAndStatus(membership.getId(), "active")).thenReturn(List.of(adminLink));
+        when(roleRepository.findAllById(any())).thenReturn(List.of(tenantAdminRole));
+
+        assertThatThrownBy(() -> service.updateMembershipStatus(
+            TENANT_ID,
+            OPERATOR_USER_ID,
+            membership.getId(),
+            new com.agentum.organization.interfaces.UpdateMembershipStatusRequest("disabled")
+        ))
+            .isInstanceOf(ApiException.class)
+            .extracting("code")
+            .isEqualTo("ORG_TENANT_ADMIN_MANAGED_BY_SYSTEM");
     }
 
     private TenantOrganizationService newService() {

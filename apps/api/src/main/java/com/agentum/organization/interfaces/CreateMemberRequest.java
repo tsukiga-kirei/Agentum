@@ -6,7 +6,7 @@ import java.util.UUID;
 
 // 当前成员创建使用初始密码直传，只用于本地治理闭环；后续应改为邀请链接和首次登录改密流程。
 public record CreateMemberRequest(
-    @NotBlank(message = "请输入用户名") @Size(max = 100, message = "用户名不能超过 100 个字符") String username,
+    @NotBlank(message = "请输入用户名") @Size(max = 50, message = "用户名不能超过 50 个字符") String username,
     @NotBlank(message = "请输入初始密码") @Size(min = 8, max = 80, message = "初始密码长度应为 8 到 80 个字符") String password,
     @NotBlank(message = "请输入成员姓名") @Size(max = 100, message = "成员姓名不能超过 100 个字符") String displayName,
     @Size(max = 255, message = "邮箱不能超过 255 个字符") String email,

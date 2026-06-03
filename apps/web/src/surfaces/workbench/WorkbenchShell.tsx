@@ -187,12 +187,16 @@ export function WorkbenchShell() {
   // 菜单来自后端（通过 authStore.menus），不再前端硬编码 visibleFor。
   // 切换角色后后端返回新的 menus，前端自动更新导航。
   const menus = useAuthStore((s) => s.menus);
+  const activeRole = useAuthStore((s) => s.activeRole);
+  const roles = useAuthStore((s) => s.roles);
   const themeMode = useAuthStore((s) => s.themeMode);
   const user = useAuthStore((s) => s.user);
   const token = useAuthStore((s) => s.token);
   const logout = useAuthStore((s) => s.logout);
   const tenantId = user?.tenantId ?? null;
   const isDarkMode = themeMode === "dark";
+  const currentBusinessRoleHasNoEntry = activeRole?.role === "business" && menus.length === 0;
+  const hasTenantAdminRoleForCurrentTenant = roles.some((role) => role.role === "tenant_admin" && role.tenantId === activeRole?.tenantId);
   const [messageApi, messageContextHolder] = message.useMessage();
 
   // 根据菜单列表确定初始页面（第一个菜单项）
@@ -536,8 +540,12 @@ export function WorkbenchShell() {
               <section className="agent-card flex min-h-[360px] items-center justify-center p-8 text-center" aria-label="无可访问页签">
                 <div>
                   <ShieldCheck className="mx-auto h-10 w-10 text-[var(--color-text-tertiary)]" aria-hidden="true" />
-                  <h2 className="mt-4 text-base font-semibold text-[var(--color-text-primary)]">暂无可访问页签</h2>
-                  <p className="agent-muted mt-2 text-sm">当前账号尚未获得租户内页签分配，请联系租户管理员配置业务入口。</p>
+                  <h2 className="mt-4 text-base font-semibold text-[var(--color-text-primary)]">{currentBusinessRoleHasNoEntry ? "业务入口尚未配置" : "暂无可访问页签"}</h2>
+                  <p className="agent-muted mt-2 text-sm">
+                    {currentBusinessRoleHasNoEntry && hasTenantAdminRoleForCurrentTenant
+                      ? "当前业务用户身份尚未获得页签分配，请切回租户管理，在资源分配中为人员、部门或角色配置业务入口。"
+                      : "当前账号尚未获得租户内页签分配，请联系租户管理员配置业务入口。"}
+                  </p>
                 </div>
               </section>
               </div>

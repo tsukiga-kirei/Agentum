@@ -8,12 +8,16 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.agentum.delivery.application.EmailDeliveryConnectionTester;
+import com.agentum.auth.domain.UserAccount;
 import com.agentum.auth.domain.UserRoleAssignmentEntity;
 import com.agentum.auth.infrastructure.UserAccountRepository;
 import com.agentum.auth.infrastructure.UserRoleAssignmentRepository;
+import com.agentum.organization.domain.UserMembershipEntity;
+import com.agentum.organization.domain.UserMembershipRoleEntity;
 import com.agentum.organization.infrastructure.DepartmentRepository;
 import com.agentum.organization.infrastructure.UserMembershipRepository;
 import com.agentum.organization.infrastructure.UserMembershipRoleRepository;
+import com.agentum.permission.domain.RoleEntity;
 import com.agentum.permission.infrastructure.RoleRepository;
 import com.agentum.shared.api.ApiException;
 import com.agentum.shared.security.FieldEncryptionService;
@@ -41,6 +45,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 class SystemManagementServiceTest {
 
     private static final FieldEncryptionService FIELD_ENCRYPTION = new FieldEncryptionService("test-master-key-with-enough-length");
+
+    private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000101");
 
     @Test
     void shouldCreateTenantAdminWithBusinessLoginAssignment() {
@@ -109,6 +115,186 @@ class SystemManagementServiceTest {
         assertThat(savedAssignments)
             .filteredOn(assignment -> "business".equals(assignment.getRole()))
             .allSatisfy(assignment -> assertThat(assignment.isDefaultAssignment()).isFalse());
+    }
+
+    @Test
+    void shouldCreateAdditionalTenantAdminFromSystemManagement() {
+        TenantRepository tenantRepository = mock(TenantRepository.class);
+        UserAccountRepository userAccountRepository = mock(UserAccountRepository.class);
+        UserRoleAssignmentRepository userRoleAssignmentRepository = mock(UserRoleAssignmentRepository.class);
+        RoleRepository roleRepository = mock(RoleRepository.class);
+        UserMembershipRepository userMembershipRepository = mock(UserMembershipRepository.class);
+        UserMembershipRoleRepository userMembershipRoleRepository = mock(UserMembershipRoleRepository.class);
+        PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
+        RoleEntity tenantAdminRole = RoleEntity.create(TENANT_ID, "tenant_admin", "租户管理员", "管理租户");
+        List<UserRoleAssignmentEntity> savedAssignments = new ArrayList<>();
+        List<UserMembershipRoleEntity> savedLinks = new ArrayList<>();
+
+        when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", Instant.now())));
+        when(roleRepository.findByTenantIdAndCodeAndStatus(TENANT_ID, "tenant_admin", "active")).thenReturn(Optional.of(tenantAdminRole));
+        when(userAccountRepository.existsByUsername("new_tenant_admin")).thenReturn(false);
+        when(passwordEncoder.encode("change-me-123")).thenReturn("encoded-password");
+        when(userRoleAssignmentRepository.save(any(UserRoleAssignmentEntity.class))).thenAnswer(invocation -> {
+            UserRoleAssignmentEntity assignment = invocation.getArgument(0);
+            savedAssignments.add(assignment);
+            return assignment;
+        });
+        when(userMembershipRoleRepository.save(any(UserMembershipRoleEntity.class))).thenAnswer(invocation -> {
+            UserMembershipRoleEntity link = invocation.getArgument(0);
+            savedLinks.add(link);
+            return link;
+        });
+
+        SystemManagementService service = buildService(
+            tenantRepository,
+            mock(ModelProviderRepository.class),
+            mock(ModelProviderTypeRepository.class),
+            mock(SystemCapabilityRepository.class),
+            mock(TenantCapabilityGrantRepository.class),
+            mock(TenantModelAssignmentRepository.class),
+            userAccountRepository,
+            userRoleAssignmentRepository,
+            roleRepository,
+            mock(DepartmentRepository.class),
+            userMembershipRepository,
+            userMembershipRoleRepository,
+            passwordEncoder
+        );
+
+        service.createTenantAdmin(TENANT_ID, new SystemManagementApi.CreateTenantAdminRequest(
+            "new_tenant_admin",
+            "新增管理员",
+            "change-me-123",
+            "admin@example.com",
+            null
+        ));
+
+        assertThat(savedLinks).hasSize(1);
+        assertThat(savedLinks.getFirst().getRoleId()).isEqualTo(tenantAdminRole.getId());
+        assertThat(savedAssignments)
+            .extracting(UserRoleAssignmentEntity::getRole)
+            .containsExactlyInAnyOrder("tenant_admin", "business");
+    }
+
+    @Test
+    void shouldRejectInvalidTenantAdminUsernameFromSystemManagement() {
+        TenantRepository tenantRepository = mock(TenantRepository.class);
+        RoleRepository roleRepository = mock(RoleRepository.class);
+        RoleEntity tenantAdminRole = RoleEntity.create(TENANT_ID, "tenant_admin", "租户管理员", "管理租户");
+
+        when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", Instant.now())));
+        when(roleRepository.findByTenantIdAndCodeAndStatus(TENANT_ID, "tenant_admin", "active")).thenReturn(Optional.of(tenantAdminRole));
+
+        SystemManagementService service = buildService(
+            tenantRepository,
+            mock(ModelProviderRepository.class),
+            mock(ModelProviderTypeRepository.class),
+            mock(SystemCapabilityRepository.class),
+            mock(TenantCapabilityGrantRepository.class),
+            mock(TenantModelAssignmentRepository.class),
+            mock(UserAccountRepository.class),
+            mock(UserRoleAssignmentRepository.class),
+            roleRepository,
+            mock(DepartmentRepository.class),
+            mock(UserMembershipRepository.class),
+            mock(UserMembershipRoleRepository.class),
+            mock(PasswordEncoder.class)
+        );
+
+        assertThatThrownBy(() -> service.createTenantAdmin(TENANT_ID, new SystemManagementApi.CreateTenantAdminRequest(
+            "管理员",
+            "新增管理员",
+            "change-me-123",
+            "admin@example.com",
+            null
+        )))
+            .isInstanceOf(ApiException.class)
+            .extracting("code")
+            .isEqualTo("SYSTEM_TENANT_ADMIN_USERNAME_INVALID");
+    }
+
+    @Test
+    void shouldRejectInvalidTenantAdminUsernameWhenUpdatingProfile() {
+        TenantRepository tenantRepository = mock(TenantRepository.class);
+        UserAccountRepository userAccountRepository = mock(UserAccountRepository.class);
+        UserMembershipRepository userMembershipRepository = mock(UserMembershipRepository.class);
+        UserMembershipRoleRepository userMembershipRoleRepository = mock(UserMembershipRoleRepository.class);
+        RoleRepository roleRepository = mock(RoleRepository.class);
+        RoleEntity tenantAdminRole = RoleEntity.create(TENANT_ID, "tenant_admin", "租户管理员", "管理租户");
+        UserMembershipEntity adminMembership = UserMembershipEntity.create(TENANT_ID, UUID.randomUUID(), null);
+        UserAccount account = UserAccount.create("tenantadmin", "hash", "租户管理员", "admin@example.com");
+
+        when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", Instant.now())));
+        when(roleRepository.findByTenantIdAndCodeAndStatus(TENANT_ID, "tenant_admin", "active")).thenReturn(Optional.of(tenantAdminRole));
+        when(userMembershipRepository.findByIdAndTenantId(adminMembership.getId(), TENANT_ID)).thenReturn(Optional.of(adminMembership));
+        when(userMembershipRoleRepository.existsByMembershipIdAndRoleIdAndStatus(adminMembership.getId(), tenantAdminRole.getId(), "active")).thenReturn(true);
+        when(userAccountRepository.findById(adminMembership.getUserId())).thenReturn(Optional.of(account));
+
+        SystemManagementService service = buildService(
+            tenantRepository,
+            mock(ModelProviderRepository.class),
+            mock(ModelProviderTypeRepository.class),
+            mock(SystemCapabilityRepository.class),
+            mock(TenantCapabilityGrantRepository.class),
+            mock(TenantModelAssignmentRepository.class),
+            userAccountRepository,
+            mock(UserRoleAssignmentRepository.class),
+            roleRepository,
+            mock(DepartmentRepository.class),
+            userMembershipRepository,
+            userMembershipRoleRepository,
+            mock(PasswordEncoder.class)
+        );
+
+        assertThatThrownBy(() -> service.updateTenantAdminProfile(
+            TENANT_ID,
+            adminMembership.getId(),
+            new SystemManagementApi.UpdateTenantAdminProfileRequest("1tenantadmin", "租户管理员", "admin@example.com")
+        ))
+            .isInstanceOf(ApiException.class)
+            .extracting("code")
+            .isEqualTo("SYSTEM_TENANT_ADMIN_USERNAME_INVALID");
+    }
+
+    @Test
+    void shouldRejectDisablingLastTenantAdminFromSystemManagement() {
+        TenantRepository tenantRepository = mock(TenantRepository.class);
+        UserMembershipRepository userMembershipRepository = mock(UserMembershipRepository.class);
+        UserMembershipRoleRepository userMembershipRoleRepository = mock(UserMembershipRoleRepository.class);
+        RoleRepository roleRepository = mock(RoleRepository.class);
+        RoleEntity tenantAdminRole = RoleEntity.create(TENANT_ID, "tenant_admin", "租户管理员", "管理租户");
+        UserMembershipEntity onlyAdmin = UserMembershipEntity.create(TENANT_ID, UUID.randomUUID(), null);
+
+        when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", Instant.now())));
+        when(userMembershipRepository.findByIdAndTenantId(onlyAdmin.getId(), TENANT_ID)).thenReturn(Optional.of(onlyAdmin));
+        when(roleRepository.findByTenantIdAndCodeAndStatus(TENANT_ID, "tenant_admin", "active")).thenReturn(Optional.of(tenantAdminRole));
+        when(userMembershipRoleRepository.existsByMembershipIdAndRoleIdAndStatus(onlyAdmin.getId(), tenantAdminRole.getId(), "active")).thenReturn(true);
+        when(userMembershipRoleRepository.countActiveMembershipsByTenantIdAndRoleId(TENANT_ID, tenantAdminRole.getId(), "active", "active")).thenReturn(1L);
+
+        SystemManagementService service = buildService(
+            tenantRepository,
+            mock(ModelProviderRepository.class),
+            mock(ModelProviderTypeRepository.class),
+            mock(SystemCapabilityRepository.class),
+            mock(TenantCapabilityGrantRepository.class),
+            mock(TenantModelAssignmentRepository.class),
+            mock(UserAccountRepository.class),
+            mock(UserRoleAssignmentRepository.class),
+            roleRepository,
+            mock(DepartmentRepository.class),
+            userMembershipRepository,
+            userMembershipRoleRepository,
+            mock(PasswordEncoder.class)
+        );
+
+        assertThatThrownBy(() -> service.updateTenantAdminStatus(
+            TENANT_ID,
+            onlyAdmin.getId(),
+            new SystemManagementApi.UpdateTenantAdminStatusRequest("disabled")
+        ))
+            .isInstanceOf(ApiException.class)
+            .extracting("code")
+            .isEqualTo("SYSTEM_TENANT_ADMIN_REQUIRED");
     }
 
     @Test
@@ -747,6 +933,44 @@ class SystemManagementServiceTest {
             mock(McpSseConnectionTester.class),
             mock(SkillManifestProbe.class),
             mock(EmailDeliveryConnectionTester.class)
+        );
+    }
+
+    private static SystemManagementService buildService(
+        TenantRepository tenantRepository,
+        ModelProviderRepository modelProviderRepository,
+        ModelProviderTypeRepository modelProviderTypeRepository,
+        SystemCapabilityRepository systemCapabilityRepository,
+        TenantCapabilityGrantRepository tenantCapabilityGrantRepository,
+        TenantModelAssignmentRepository tenantModelAssignmentRepository,
+        UserAccountRepository userAccountRepository,
+        UserRoleAssignmentRepository userRoleAssignmentRepository,
+        RoleRepository roleRepository,
+        DepartmentRepository departmentRepository,
+        UserMembershipRepository userMembershipRepository,
+        UserMembershipRoleRepository userMembershipRoleRepository,
+        PasswordEncoder passwordEncoder
+    ) {
+        return new SystemManagementService(
+            tenantRepository,
+            modelProviderRepository,
+            modelProviderTypeRepository,
+            systemCapabilityRepository,
+            tenantCapabilityGrantRepository,
+            tenantModelAssignmentRepository,
+            userAccountRepository,
+            userRoleAssignmentRepository,
+            roleRepository,
+            departmentRepository,
+            userMembershipRepository,
+            userMembershipRoleRepository,
+            passwordEncoder,
+            FIELD_ENCRYPTION,
+            mock(ModelProviderConnectionTester.class),
+            mock(McpSseConnectionTester.class),
+            mock(SkillManifestProbe.class),
+            mock(EmailDeliveryConnectionTester.class),
+            Clock.fixed(Instant.parse("2026-05-15T08:00:00Z"), ZoneOffset.UTC)
         );
     }
 

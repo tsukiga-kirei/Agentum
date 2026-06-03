@@ -50,6 +50,7 @@ import com.agentum.permission.infrastructure.ResourceGrantRepository;
 import com.agentum.permission.infrastructure.RoleRepository;
 import com.agentum.shared.api.ApiException;
 import com.agentum.shared.api.RequestIds;
+import com.agentum.shared.util.UsernameValidator;
 import com.agentum.shared.pagination.PageQuery;
 import com.agentum.shared.pagination.PageResponse;
 import com.agentum.shared.pagination.PageableFactory;
@@ -149,6 +150,7 @@ public class TenantOrganizationService {
             });
 
         String username = normalizeRequired(request.username());
+        validateUsername(username);
 
         if (userAccountRepository.existsByUsername(username)) {
             log.warn("成员创建失败：用户名已存在 tenantId={} operatorUserId={} username={} requestId={}", tenantId, operatorUserId, username, RequestIds.current());
@@ -167,6 +169,7 @@ public class TenantOrganizationService {
                 log.warn("成员创建失败：角色不可用 tenantId={} operatorUserId={} roleId={} username={} requestId={}", tenantId, operatorUserId, roleId, username, RequestIds.current());
                 return new ApiException(HttpStatus.BAD_REQUEST, "ORG_ROLE_NOT_AVAILABLE", "所选角色不属于当前租户或已停用");
             });
+        assertNotTenantAdminRole(role);
 
         UUID departmentId = request.departmentId();
 
@@ -356,6 +359,7 @@ public class TenantOrganizationService {
     public TenantOrganizationOverviewResponse updateTenantRole(UUID tenantId, UUID operatorUserId, UUID roleId, UpdateTenantRoleRequest request) {
         RoleEntity role = roleRepository.findByIdAndTenantId(roleId, tenantId)
             .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ORG_ROLE_NOT_FOUND", "角色不存在"));
+        assertTenantAdminRoleManagedBySystem(role);
         String status = normalizeOptional(request.status());
         if (status == null || status.isBlank()) {
             status = role.getStatus();
@@ -390,6 +394,7 @@ public class TenantOrganizationService {
     public TenantOrganizationOverviewResponse updateRoleStatus(UUID tenantId, UUID operatorUserId, UUID roleId, String status) {
         RoleEntity role = roleRepository.findByIdAndTenantId(roleId, tenantId)
             .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ORG_ROLE_NOT_FOUND", "角色不存在"));
+        assertTenantAdminRoleManagedBySystem(role);
         String normalizedStatus = normalizeRequired(status);
 
         if (ACTIVE_STATUS.equals(normalizedStatus)) {
@@ -418,6 +423,7 @@ public class TenantOrganizationService {
     public void deleteTenantRole(UUID tenantId, UUID operatorUserId, UUID roleId) {
         RoleEntity role = roleRepository.findByIdAndTenantId(roleId, tenantId)
             .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ORG_ROLE_NOT_FOUND", "角色不存在"));
+        assertTenantAdminRoleManagedBySystem(role);
         long activeMembers = userMembershipRoleRepository.countActiveMembershipsByTenantIdAndRoleId(tenantId, roleId, ACTIVE_STATUS, ACTIVE_STATUS);
         if (activeMembers > 0) {
             log.warn("租户业务角色删除失败：仍有启用成员 tenantId={} operatorUserId={} roleId={} activeMembers={} requestId={}", tenantId, operatorUserId, roleId, activeMembers, RequestIds.current());
@@ -469,8 +475,10 @@ public class TenantOrganizationService {
                 );
                 return new ApiException(HttpStatus.NOT_FOUND, "ORG_MEMBERSHIP_NOT_FOUND", "成员关系不存在");
         });
+        assertTenantAdminMembershipManagedBySystem(tenantId, membership.getId(), "成员角色调整失败");
 
         List<RoleEntity> roles = validateRoles(tenantId, request.roleIds());
+        roles.forEach(this::assertNotTenantAdminRole);
         syncMembershipRoles(tenantId, membership, roles);
         log.info(
             "成员角色调整成功 tenantId={} operatorUserId={} membershipId={} roleIds={} requestId={}",
@@ -509,6 +517,7 @@ public class TenantOrganizationService {
             });
 
         String username = normalizeRequired(request.username());
+        validateUsername(username);
         if (userAccountRepository.existsByUsernameAndIdNot(username, account.getId())) {
             log.warn("成员基本信息更新失败：用户名已存在 tenantId={} operatorUserId={} membershipId={} username={} requestId={}", tenantId, operatorUserId, membershipId, username, RequestIds.current());
             throw new ApiException(HttpStatus.CONFLICT, "ORG_USER_USERNAME_EXISTS", "用户名已存在，请换一个用户名");
@@ -621,6 +630,29 @@ public class TenantOrganizationService {
         return normalizedRoleIds.stream().map(rolesById::get).toList();
     }
 
+    private void assertTenantAdminMembershipManagedBySystem(UUID tenantId, UUID membershipId, String actionLabel) {
+        boolean isTenantAdmin = loadActiveRolesForMembership(tenantId, membershipId).stream()
+            .anyMatch(role -> "tenant_admin".equals(role.getCode()));
+        if (isTenantAdmin) {
+            log.warn("{}：租户管理员身份只能由系统管理维护 tenantId={} membershipId={} requestId={}", actionLabel, tenantId, membershipId, RequestIds.current());
+            throw new ApiException(HttpStatus.FORBIDDEN, "ORG_TENANT_ADMIN_MANAGED_BY_SYSTEM", "租户管理员身份只能由系统管理维护");
+        }
+    }
+
+    private void assertTenantAdminRoleManagedBySystem(RoleEntity role) {
+        if ("tenant_admin".equals(role.getCode())) {
+            log.warn("租户管理员角色维护被拒绝：该角色只能由系统管理维护 tenantId={} roleId={} requestId={}", role.getTenantId(), role.getId(), RequestIds.current());
+            throw new ApiException(HttpStatus.FORBIDDEN, "ORG_TENANT_ADMIN_MANAGED_BY_SYSTEM", "租户管理员身份只能由系统管理维护");
+        }
+    }
+
+    private void assertNotTenantAdminRole(RoleEntity role) {
+        if ("tenant_admin".equals(role.getCode())) {
+            log.warn("租户成员角色授权被拒绝：租户管理员只能由系统管理授予 tenantId={} roleId={} requestId={}", role.getTenantId(), role.getId(), RequestIds.current());
+            throw new ApiException(HttpStatus.FORBIDDEN, "ORG_TENANT_ADMIN_MANAGED_BY_SYSTEM", "租户管理员身份只能由系统管理维护");
+        }
+    }
+
     private void syncMembershipRoles(UUID tenantId, UserMembershipEntity membership, List<RoleEntity> desiredRoles) {
         Map<UUID, UserMembershipRoleEntity> activeLinksByRoleId = userMembershipRoleRepository
             .findByMembershipIdAndStatus(membership.getId(), ACTIVE_STATUS)
@@ -671,6 +703,7 @@ public class TenantOrganizationService {
                 );
                 return new ApiException(HttpStatus.NOT_FOUND, "ORG_MEMBERSHIP_NOT_FOUND", "成员关系不存在");
             });
+        assertTenantAdminMembershipManagedBySystem(tenantId, membership.getId(), "成员部门调整失败");
 
         UUID departmentId = request.departmentId();
         if (departmentId != null) {
@@ -725,6 +758,7 @@ public class TenantOrganizationService {
                 );
                 return new ApiException(HttpStatus.NOT_FOUND, "ORG_MEMBERSHIP_NOT_FOUND", "成员关系不存在");
             });
+        assertTenantAdminMembershipManagedBySystem(tenantId, membership.getId(), "成员状态调整失败");
 
         String status = normalizeRequired(request.status());
         if (!ALLOWED_MEMBERSHIP_STATUS.contains(status)) {
@@ -1124,6 +1158,7 @@ public class TenantOrganizationService {
                     department == null ? "" : department.getName(),
                     membershipRoles,
                     membership.isDefaultMembership(),
+                    membershipRoles.stream().anyMatch(role -> "tenant_admin".equals(role.code())),
                     membership.getStatus()
                 );
             })
@@ -1142,6 +1177,12 @@ public class TenantOrganizationService {
 
     private static String normalizeRequired(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private static void validateUsername(String username) {
+        if (!UsernameValidator.isValid(username)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_USER_USERNAME_INVALID", UsernameValidator.RULE_MESSAGE);
+        }
     }
 
     private static String normalizeOptional(String value) {

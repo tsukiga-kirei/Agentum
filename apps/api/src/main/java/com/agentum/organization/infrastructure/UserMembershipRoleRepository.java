@@ -17,6 +17,8 @@ public interface UserMembershipRoleRepository extends JpaRepository<UserMembersh
 
     Optional<UserMembershipRoleEntity> findByMembershipIdAndRoleIdAndStatus(UUID membershipId, UUID roleId, String status);
 
+    boolean existsByMembershipIdAndRoleIdAndStatus(UUID membershipId, UUID roleId, String status);
+
     @Query("""
         select count(link)
         from UserMembershipRoleEntity link

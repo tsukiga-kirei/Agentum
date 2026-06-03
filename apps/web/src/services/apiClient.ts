@@ -25,6 +25,7 @@ import type {
 } from "../types/organization";
 import type {
   CreateTenantRequest,
+  CreateTenantAdminRequest,
   CreateModelProviderRequest,
   CreateSystemCapabilityRequest,
   CreateTenantCapabilityGrantRequest,
@@ -46,6 +47,8 @@ import type {
   UpdateSystemCapabilityRequest,
   UpdateTenantModelAssignmentStatusRequest,
   UpdateTenantStatusRequest,
+  UpdateTenantAdminProfileRequest,
+  UpdateTenantAdminStatusRequest,
 } from "../types/system";
 import type {
   CreateWorkflowDraftRequest,
@@ -226,6 +229,12 @@ export const systemApi = {
     apiRequest<SystemTenantRow>("/api/system/tenants", { method: "POST", token, body }),
   updateTenantStatus: (tenantId: string, token: string, body: UpdateTenantStatusRequest) =>
     apiRequest<SystemTenantRow>(`/api/system/tenants/${tenantId}/status`, { method: "PATCH", token, body }),
+  createTenantAdmin: (tenantId: string, token: string, body: CreateTenantAdminRequest) =>
+    apiRequest<void>(`/api/system/tenants/${tenantId}/admins`, { method: "POST", token, body }),
+  updateTenantAdminProfile: (tenantId: string, membershipId: string, token: string, body: UpdateTenantAdminProfileRequest) =>
+    apiRequest<void>(`/api/system/tenants/${tenantId}/admins/${membershipId}/profile`, { method: "PATCH", token, body }),
+  updateTenantAdminStatus: (tenantId: string, membershipId: string, token: string, body: UpdateTenantAdminStatusRequest) =>
+    apiRequest<void>(`/api/system/tenants/${tenantId}/admins/${membershipId}/status`, { method: "PATCH", token, body }),
   listModelProviderTypes: (token: string) => apiRequest<ModelProviderTypeRow[]>("/api/system/model-provider-types", { token }),
   listModelProviders: (token: string, page = 1, size = 10, sort = "createdAt,desc") =>
     apiRequest<ModelProviderPage>(`/api/system/model-providers?page=${page}&size=${size}&sort=${encodeURIComponent(sort)}`, { token }),

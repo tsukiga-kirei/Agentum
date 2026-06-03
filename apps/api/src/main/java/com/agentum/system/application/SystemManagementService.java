@@ -8,6 +8,7 @@ import com.agentum.shared.pagination.PageableFactory;
 import com.agentum.shared.pagination.SortWhitelist;
 import com.agentum.shared.security.FieldEncryptionService;
 import com.agentum.shared.util.CapabilityCodeGenerator;
+import com.agentum.shared.util.UsernameValidator;
 import com.agentum.system.domain.ModelProviderEntity;
 import com.agentum.system.domain.ModelProviderTypeEntity;
 import com.agentum.system.domain.SystemCapabilityEntity;
@@ -161,10 +162,12 @@ public class SystemManagementService {
 
     @Transactional
     public SystemManagementApi.TenantRow createTenant(SystemManagementApi.CreateTenantRequest request) {
+        String adminUsername = normalizeRequired(request.adminUsername(), "SYSTEM_TENANT_ADMIN_USERNAME_REQUIRED", "请输入管理员账号");
+        validateTenantAdminUsername(adminUsername);
         if (tenantRepository.existsByCode(request.code().trim())) {
             throw new ApiException(HttpStatus.CONFLICT, "SYSTEM_TENANT_DUPLICATE", "租户编码已被占用");
         }
-        if (userAccountRepository.existsByUsername(request.adminUsername().trim())) {
+        if (userAccountRepository.existsByUsername(adminUsername)) {
             throw new ApiException(HttpStatus.CONFLICT, "SYSTEM_USER_DUPLICATE", "管理员账号已被占用");
         }
 
@@ -182,7 +185,7 @@ public class SystemManagementService {
         // 4. 创建管理员账号
         String encodedPass = passwordEncoder.encode(request.adminPassword());
         String adminEmail = request.adminEmail() != null ? request.adminEmail().trim() : null;
-        UserAccount adminUser = UserAccount.create(request.adminUsername().trim(), encodedPass, request.adminDisplayName().trim(), adminEmail);
+        UserAccount adminUser = UserAccount.create(adminUsername, encodedPass, request.adminDisplayName().trim(), adminEmail);
         userAccountRepository.save(adminUser);
 
         // 5. 绑定成员关系，并同步写入统一登录角色分配表；否则新管理员只能出现在组织关系里，无法通过新认证模型登录。
@@ -214,6 +217,88 @@ public class SystemManagementService {
         tenantRepository.save(tenant);
         log.info("系统管理更新租户状态成功 tenantId={} status={} requestId={}", tenantId, status, RequestIds.current());
         return new SystemManagementApi.TenantRow(tenant.getId(), tenant.getName(), tenant.getCode(), tenant.getStatus());
+    }
+
+    @Transactional
+    public void createTenantAdmin(UUID tenantId, SystemManagementApi.CreateTenantAdminRequest request) {
+        TenantEntity tenant = ensureActiveTenantForAdminMutation(tenantId);
+        RoleEntity tenantAdminRole = loadTenantAdminRole(tenantId);
+        String username = normalizeRequired(request.username(), "SYSTEM_TENANT_ADMIN_USERNAME_REQUIRED", "请输入管理员账号");
+        validateTenantAdminUsername(username);
+        if (userAccountRepository.existsByUsername(username)) {
+            log.warn("系统管理新增租户管理员失败：用户名已存在 tenantId={} username={} requestId={}", tenantId, username, RequestIds.current());
+            throw new ApiException(HttpStatus.CONFLICT, "SYSTEM_TENANT_ADMIN_USERNAME_EXISTS", "管理员账号已存在，请换一个用户名");
+        }
+        UUID departmentId = request.departmentId();
+        if (departmentId != null) {
+            departmentRepository.findByIdAndTenantIdAndStatus(departmentId, tenantId, ACTIVE)
+                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_TENANT_ADMIN_DEPARTMENT_INVALID", "所选部门不属于当前租户或已停用"));
+        }
+
+        // 租户管理员身份属于平台级治理入口，由系统管理创建；这里同时写成员关系、租户内角色关系和三大入口角色分配。
+        UserAccount user = UserAccount.create(
+            username,
+            passwordEncoder.encode(normalizeRequired(request.password(), "SYSTEM_TENANT_ADMIN_PASSWORD_REQUIRED", "请输入初始密码")),
+            normalizeRequired(request.displayName(), "SYSTEM_TENANT_ADMIN_DISPLAY_NAME_REQUIRED", "请输入管理员姓名"),
+            normalizeOptional(request.email())
+        );
+        userAccountRepository.save(user);
+        UserMembershipEntity membership = UserMembershipEntity.create(tenantId, user.getId(), departmentId);
+        userMembershipRepository.save(membership);
+        userMembershipRoleRepository.save(UserMembershipRoleEntity.create(membership.getId(), tenantAdminRole.getId()));
+        ensureTenantAdminLoginAssignments(tenant, user.getId());
+        log.info("系统管理新增租户管理员成功 tenantId={} userId={} membershipId={} requestId={}", tenantId, user.getId(), membership.getId(), RequestIds.current());
+    }
+
+    @Transactional
+    public void updateTenantAdminProfile(UUID tenantId, UUID membershipId, SystemManagementApi.UpdateTenantAdminProfileRequest request) {
+        ensureActiveTenantForAdminMutation(tenantId);
+        UserMembershipEntity membership = assertTenantAdminMembership(tenantId, membershipId);
+        UserAccount account = userAccountRepository.findById(membership.getUserId())
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "SYSTEM_TENANT_ADMIN_ACCOUNT_NOT_FOUND", "租户管理员账号不存在"));
+        String username = normalizeRequired(request.username(), "SYSTEM_TENANT_ADMIN_USERNAME_REQUIRED", "请输入管理员账号");
+        validateTenantAdminUsername(username);
+        if (userAccountRepository.existsByUsernameAndIdNot(username, account.getId())) {
+            log.warn("系统管理更新租户管理员失败：用户名已存在 tenantId={} membershipId={} username={} requestId={}", tenantId, membershipId, username, RequestIds.current());
+            throw new ApiException(HttpStatus.CONFLICT, "SYSTEM_TENANT_ADMIN_USERNAME_EXISTS", "管理员账号已存在，请换一个用户名");
+        }
+        account.updateProfile(
+            username,
+            normalizeRequired(request.displayName(), "SYSTEM_TENANT_ADMIN_DISPLAY_NAME_REQUIRED", "请输入管理员姓名"),
+            normalizeOptional(request.email())
+        );
+        userAccountRepository.save(account);
+        log.info("系统管理更新租户管理员基本信息成功 tenantId={} membershipId={} userId={} requestId={}", tenantId, membershipId, account.getId(), RequestIds.current());
+    }
+
+    @Transactional
+    public void updateTenantAdminStatus(UUID tenantId, UUID membershipId, SystemManagementApi.UpdateTenantAdminStatusRequest request) {
+        TenantEntity tenant = ensureActiveTenantForAdminMutation(tenantId);
+        RoleEntity tenantAdminRole = loadTenantAdminRole(tenantId);
+        UserMembershipEntity membership = assertTenantAdminMembership(tenantId, membershipId, tenantAdminRole);
+        String status = normalizeRequired(request.status(), "SYSTEM_TENANT_ADMIN_STATUS_INVALID", "租户管理员状态不能为空");
+        if (!ACTIVE.equals(status) && !"disabled".equals(status)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_TENANT_ADMIN_STATUS_INVALID", "租户管理员状态只能是 active 或 disabled");
+        }
+
+        if ("disabled".equals(status) && ACTIVE.equals(membership.getStatus())) {
+            long activeAdmins = userMembershipRoleRepository.countActiveMembershipsByTenantIdAndRoleId(tenantId, tenantAdminRole.getId(), ACTIVE, ACTIVE);
+            if (activeAdmins <= 1) {
+                log.warn("系统管理停用租户管理员失败：至少保留一名 tenantId={} membershipId={} activeAdmins={} requestId={}", tenantId, membershipId, activeAdmins, RequestIds.current());
+                throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_TENANT_ADMIN_REQUIRED", "每个租户必须至少保留一名启用的租户管理员");
+            }
+        }
+
+        membership.updateStatus(status);
+        userMembershipRepository.save(membership);
+        if (ACTIVE.equals(status)) {
+            ensureTenantAdminLoginAssignments(tenant, membership.getUserId());
+        } else {
+            // 系统管理停用租户管理员时同步移除当前租户入口，避免旧角色切换继续进入租户内页面。
+            userRoleAssignmentRepository.deleteByUserIdAndRoleAndTenantId(membership.getUserId(), "tenant_admin", tenantId);
+            userRoleAssignmentRepository.deleteByUserIdAndRoleAndTenantId(membership.getUserId(), "business", tenantId);
+        }
+        log.info("系统管理更新租户管理员状态成功 tenantId={} membershipId={} status={} requestId={}", tenantId, membershipId, status, RequestIds.current());
     }
 
     @Transactional(readOnly = true)
@@ -692,6 +777,47 @@ public class SystemManagementService {
             });
     }
 
+    private TenantEntity ensureActiveTenantForAdminMutation(UUID tenantId) {
+        return tenantRepository.findByIdAndStatus(tenantId, ACTIVE)
+            .orElseThrow(() -> {
+                log.warn("系统管理维护租户管理员失败：租户不可用 tenantId={} requestId={}", tenantId, RequestIds.current());
+                return new ApiException(HttpStatus.NOT_FOUND, "SYSTEM_TENANT_NOT_FOUND", "租户不存在或已停用");
+            });
+    }
+
+    private RoleEntity loadTenantAdminRole(UUID tenantId) {
+        return roleRepository.findByTenantIdAndCodeAndStatus(tenantId, "tenant_admin", ACTIVE)
+            .orElseThrow(() -> {
+                log.warn("系统管理维护租户管理员失败：租户管理员角色缺失 tenantId={} requestId={}", tenantId, RequestIds.current());
+                return new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_TENANT_ADMIN_ROLE_MISSING", "当前租户缺少租户管理员角色");
+            });
+    }
+
+    private UserMembershipEntity assertTenantAdminMembership(UUID tenantId, UUID membershipId) {
+        return assertTenantAdminMembership(tenantId, membershipId, loadTenantAdminRole(tenantId));
+    }
+
+    private UserMembershipEntity assertTenantAdminMembership(UUID tenantId, UUID membershipId, RoleEntity tenantAdminRole) {
+        UserMembershipEntity membership = userMembershipRepository.findByIdAndTenantId(membershipId, tenantId)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "SYSTEM_TENANT_ADMIN_NOT_FOUND", "租户管理员不存在"));
+        if (!userMembershipRoleRepository.existsByMembershipIdAndRoleIdAndStatus(membership.getId(), tenantAdminRole.getId(), ACTIVE)) {
+            log.warn("系统管理维护租户管理员失败：成员不是租户管理员 tenantId={} membershipId={} requestId={}", tenantId, membershipId, RequestIds.current());
+            throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_TENANT_ADMIN_NOT_FOUND", "所选成员不是租户管理员");
+        }
+        return membership;
+    }
+
+    private void ensureTenantAdminLoginAssignments(TenantEntity tenant, UUID userId) {
+        userRoleAssignmentRepository.findByUserIdAndRoleAndTenantId(userId, "tenant_admin", tenant.getId())
+            .orElseGet(() -> userRoleAssignmentRepository.save(
+                UserRoleAssignmentEntity.create(userId, "tenant_admin", tenant.getId(), tenant.getName() + " - 租户管理", true)
+            ));
+        userRoleAssignmentRepository.findByUserIdAndRoleAndTenantId(userId, "business", tenant.getId())
+            .orElseGet(() -> userRoleAssignmentRepository.save(
+                UserRoleAssignmentEntity.create(userId, "business", tenant.getId(), tenant.getName() + " - 业务用户", false)
+            ));
+    }
+
     private void ensureModelProviderCanEnterStatus(UUID providerId, String targetStatus) {
         if ("draft".equals(targetStatus) && tenantModelAssignmentRepository.existsByProviderIdAndStatus(providerId, "enabled")) {
             log.warn("系统管理更新模型供应商失败：供应商仍被租户启用 providerId={} targetStatus={} requestId={}", providerId, targetStatus, RequestIds.current());
@@ -936,6 +1062,20 @@ public class SystemManagementService {
     private static String normalizeVersion(String version) {
         String normalized = normalizeOptional(version);
         return normalized.isBlank() ? "v1" : normalized;
+    }
+
+    private static String normalizeRequired(String value, String code, String message) {
+        String normalized = normalizeOptional(value);
+        if (normalized.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, code, message);
+        }
+        return normalized;
+    }
+
+    private static void validateTenantAdminUsername(String username) {
+        if (!UsernameValidator.isValid(username)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_TENANT_ADMIN_USERNAME_INVALID", UsernameValidator.RULE_MESSAGE);
+        }
     }
 
     private static String normalizeOptional(String value) {

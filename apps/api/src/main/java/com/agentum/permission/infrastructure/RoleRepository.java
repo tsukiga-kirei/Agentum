@@ -18,5 +18,7 @@ public interface RoleRepository extends JpaRepository<RoleEntity, UUID> {
 
     Optional<RoleEntity> findByIdAndTenantId(UUID id, UUID tenantId);
 
+    Optional<RoleEntity> findByTenantIdAndCodeAndStatus(UUID tenantId, String code, String status);
+
     boolean existsByTenantIdAndCode(UUID tenantId, String code);
 }

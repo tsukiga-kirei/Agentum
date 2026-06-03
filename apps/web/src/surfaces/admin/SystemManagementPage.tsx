@@ -32,9 +32,11 @@ import { Empty, Segmented, Spin, message, Drawer, Pagination } from "antd";
 import { SurfacePageLayout } from "../../components/workbench/SurfacePageLayout";
 import { AgentumApiError, organizationApi, systemApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
-import type { TenantOrganizationOverview } from "../../types/organization";
+import type { OrganizationMembership, TenantOrganizationOverview } from "../../types/organization";
+import { isValidUsername, usernameRuleMessage } from "../../utils/username";
 import type {
   CreateModelProviderRequest,
+  CreateTenantAdminRequest,
   CreateTenantRequest,
   CreateTenantCapabilityGrantRequest,
   CapabilityTestResult,
@@ -45,6 +47,7 @@ import type {
   SystemTenantRow,
   TenantCapabilityGrantRow,
   TenantModelAssignmentRow,
+  UpdateTenantAdminProfileRequest,
 } from "../../types/system";
 
 /** 自定义下拉选择器，替代原生 select，选项面板完全可控 */
@@ -330,6 +333,10 @@ export function SystemManagementPage() {
   const [createTenantModalOpen, setCreateTenantModalOpen] = useState(false);
   const [createTenantTab, setCreateTenantTab] = useState<"basic"|"admin">("basic");
   const ctRef = useRef<Record<string,string>>({});
+  const [tenantAdminModalOpen, setTenantAdminModalOpen] = useState(false);
+  const [editingTenantAdmin, setEditingTenantAdmin] = useState<OrganizationMembership | null>(null);
+  const [tenantAdminSubmitting, setTenantAdminSubmitting] = useState(false);
+  const tenantAdminRef = useRef<Record<string,string>>({});
 
   // 模型与能力 Modal
   const [modelModalOpen, setModelModalOpen] = useState(false);
@@ -520,6 +527,7 @@ export function SystemManagementPage() {
     if (!d.name?.trim()) { setCreateTenantTab("basic"); messageApi.warning("请输入租户名称"); return; }
     if (!d.code?.trim()) { setCreateTenantTab("basic"); messageApi.warning("请输入租户编码"); return; }
     if (!d.admin_username?.trim()) { setCreateTenantTab("admin"); messageApi.warning("请输入管理员账号"); return; }
+    if (!isValidUsername(d.admin_username)) { setCreateTenantTab("admin"); messageApi.warning(usernameRuleMessage); return; }
     if (!d.admin_displayName?.trim()) { setCreateTenantTab("admin"); messageApi.warning("请输入管理员姓名"); return; }
     if (!d.admin_password?.trim()) { setCreateTenantTab("admin"); messageApi.warning("请输入初始密码"); return; }
     try {
@@ -538,6 +546,70 @@ export function SystemManagementPage() {
       void loadSummary();
     } catch (e) {
       handleApiError(e, "创建租户失败");
+    }
+  };
+
+  const findMemberAccount = (membership: OrganizationMembership) =>
+    tenantOrganizationOverview?.members.find((member) => member.id === membership.userId);
+
+  const openTenantAdminModal = (membership: OrganizationMembership | null) => {
+    setEditingTenantAdmin(membership);
+    const account = membership ? findMemberAccount(membership) : null;
+    tenantAdminRef.current = membership
+      ? {
+          username: account?.username ?? "",
+          displayName: account?.displayName ?? membership.userDisplayName,
+          email: account?.email ?? "",
+        }
+      : {};
+    setTenantAdminModalOpen(true);
+  };
+
+  const submitTenantAdmin = async () => {
+    if (!token || !selectedTenant || tenantAdminSubmitting) return;
+    const d = tenantAdminRef.current;
+    if (!d.username?.trim()) { messageApi.warning("请输入管理员账号"); return; }
+    if (!isValidUsername(d.username)) { messageApi.warning(usernameRuleMessage); return; }
+    if (!d.displayName?.trim()) { messageApi.warning("请输入管理员姓名"); return; }
+    if (!editingTenantAdmin && !d.password?.trim()) { messageApi.warning("请输入初始密码"); return; }
+    setTenantAdminSubmitting(true);
+    try {
+      if (editingTenantAdmin) {
+        await systemApi.updateTenantAdminProfile(selectedTenant.id, editingTenantAdmin.id, token, {
+          username: d.username.trim(),
+          displayName: d.displayName.trim(),
+          email: d.email?.trim() || undefined,
+        } as UpdateTenantAdminProfileRequest);
+        messageApi.success("租户管理员信息已更新");
+      } else {
+        await systemApi.createTenantAdmin(selectedTenant.id, token, {
+          username: d.username.trim(),
+          displayName: d.displayName.trim(),
+          password: d.password,
+          email: d.email?.trim() || undefined,
+          departmentId: d.departmentId || undefined,
+        } as CreateTenantAdminRequest);
+        messageApi.success("租户管理员已新增");
+      }
+      setTenantAdminModalOpen(false);
+      setEditingTenantAdmin(null);
+      tenantAdminRef.current = {};
+      void loadTenantOrganizationOverview(selectedTenant.id);
+    } catch (e) {
+      handleApiError(e, editingTenantAdmin ? "更新租户管理员失败" : "新增租户管理员失败");
+    } finally {
+      setTenantAdminSubmitting(false);
+    }
+  };
+
+  const updateTenantAdminStatus = async (membership: OrganizationMembership, status: "active" | "disabled") => {
+    if (!token || !selectedTenant) return;
+    try {
+      await systemApi.updateTenantAdminStatus(selectedTenant.id, membership.id, token, { status });
+      messageApi.success(status === "active" ? "租户管理员已启用" : "租户管理员已停用");
+      void loadTenantOrganizationOverview(selectedTenant.id);
+    } catch (e) {
+      handleApiError(e, status === "active" ? "启用租户管理员失败" : "停用租户管理员失败");
     }
   };
 
@@ -1295,8 +1367,8 @@ export function SystemManagementPage() {
           {/* 成员 / 角色 */}
           {tenantActiveTab === "members" && (
             <div className="sys-drawer-section">
-              <div className="sys-section-header"><Users size={18}/> 成员与角色</div>
-              <div className="sys-hint"><Info size={14}/> 租户内的组织与人员，系统管理员可在此协助诊断越权问题。</div>
+              <div className="sys-section-header"><Users size={18}/> 租户管理员</div>
+              <div className="sys-hint"><Info size={14}/> 租户管理员身份由系统管理维护；每个租户必须至少保留一名启用的租户管理员。普通成员、部门和业务角色仍由租户管理维护。</div>
               <Spin spinning={tenantOrganizationLoading}>
                 {tenantOrganizationError ? (
                   <div className="rounded-[var(--radius-md)] border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-100">
@@ -1305,34 +1377,40 @@ export function SystemManagementPage() {
                 ) : null}
                 {tenantOrganizationOverview ? (
                   <div className="sys-config-group">
-                    <div className="sys-info-tags" style={{ marginBottom: 12 }}>
-                      <span className="sys-info-tag sys-info-tag--primary">{tenantOrganizationOverview.memberships.length} 名成员</span>
+                    <div className="tenant-org-actionbar" style={{ marginBottom: 12 }}>
+                      <div className="sys-info-tags">
+                        <span className="sys-info-tag sys-info-tag--primary">{tenantOrganizationOverview.memberships.filter((item) => item.tenantAdmin).length} 名租户管理员</span>
                       <span className="sys-info-tag">{tenantOrganizationOverview.departments.length} 个部门</span>
-                      <span className="sys-info-tag">{tenantOrganizationOverview.roles.length} 个角色</span>
+                      </div>
+                      <button type="button" className="sys-btn sys-btn--primary sys-btn--sm" onClick={() => openTenantAdminModal(null)}><PlusCircle size={14}/> 新增管理员</button>
                     </div>
-                    {tenantOrganizationOverview.memberships.length === 0 ? (
-                      <Empty description="暂无成员数据" />
+                    {tenantOrganizationOverview.memberships.filter((item) => item.tenantAdmin).length === 0 ? (
+                      <Empty description="暂无租户管理员" />
                     ) : (
-                      tenantOrganizationOverview.memberships.map((membership) => (
+                      tenantOrganizationOverview.memberships.filter((item) => item.tenantAdmin).map((membership) => (
                         <div key={membership.id} className="sys-form-row">
                           <span className="sys-form-label">{membership.userDisplayName || "未找到账号"}</span>
                           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
                             <span className="sys-info-tag">{membership.departmentName || "未分配部门"}</span>
-                            {membership.roles.length === 0 ? (
-                              <span className="sys-info-tag sys-info-tag--info">未分配角色</span>
-                            ) : membership.roles.map((role) => (
-                              <span key={role.id} className="sys-info-tag sys-info-tag--info">{role.name}</span>
-                            ))}
+                            <span className="sys-info-tag sys-info-tag--primary">租户管理员</span>
                             <span className={`sys-status sys-status--${membership.status === "active" ? "active" : "inactive"}`}>
                               <span className="sys-status-dot" />{membership.status === "active" ? "启用" : "停用"}
                             </span>
+                            <button type="button" className="sys-btn sys-btn--text sys-btn--sm" onClick={() => openTenantAdminModal(membership)}><Edit size={14}/> 编辑</button>
+                            <button
+                              type="button"
+                              className={`sys-btn sys-btn--text sys-btn--sm ${membership.status === "active" ? "sys-btn--danger" : ""}`}
+                              onClick={() => void updateTenantAdminStatus(membership, membership.status === "active" ? "disabled" : "active")}
+                            >
+                              {membership.status === "active" ? "停用" : "启用"}
+                            </button>
                           </div>
                         </div>
                       ))
                     )}
                   </div>
                 ) : !tenantOrganizationLoading && !tenantOrganizationError ? (
-                  <Empty description="暂无成员数据" />
+                  <Empty description="暂无租户管理员" />
                 ) : null}
               </Spin>
             </div>
@@ -1366,6 +1444,37 @@ export function SystemManagementPage() {
                   })}
                 </div>
               )}
+            </div>
+          )}
+
+          {tenantAdminModalOpen && (
+            <div className="sys-modal-mask sys-modal-mask--over-drawer" onClick={() => !tenantAdminSubmitting && setTenantAdminModalOpen(false)}>
+              <div className="sys-modal" style={{ maxWidth: 600 }} onClick={(event) => event.stopPropagation()}>
+                <div className="sys-modal-header">
+                  <span className="sys-modal-title">{editingTenantAdmin ? "编辑租户管理员" : "新增租户管理员"}</span>
+                  <button type="button" className="sys-modal-close" disabled={tenantAdminSubmitting} onClick={() => setTenantAdminModalOpen(false)}><X size={18}/></button>
+                </div>
+                <div className="sys-modal-body">
+                  <div className="sys-hint"><Info size={14}/> 租户管理员拥有租户管理入口。系统管理负责新增、启停和身份维护；租户管理只能修改基本联系方式。</div>
+                  <div className="sys-drawer-section">
+                    <div className="sys-field-row">
+                      <div className="sys-field"><label className="sys-field-label sys-field-label--required">管理员账号</label><div className="sys-field-input-wrap"><User size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如：tenant_admin" maxLength={50} defaultValue={tenantAdminRef.current.username || ""} onChange={(event) => { tenantAdminRef.current.username = event.target.value; }} /></div><div className="sys-field-hint">{usernameRuleMessage}</div></div>
+                      <div className="sys-field"><label className="sys-field-label sys-field-label--required">管理员姓名</label><div className="sys-field-input-wrap"><Type size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="显示名称" maxLength={50} defaultValue={tenantAdminRef.current.displayName || ""} onChange={(event) => { tenantAdminRef.current.displayName = event.target.value; }} /></div></div>
+                    </div>
+                    {!editingTenantAdmin ? (
+                      <div className="sys-field-row">
+                        <div className="sys-field"><label className="sys-field-label sys-field-label--required">初始密码</label><div className="sys-field-input-wrap"><KeyRound size={16} className="sys-field-prefix"/><input className="sys-field-input" type="password" placeholder="请妥善保管" maxLength={100} onChange={(event) => { tenantAdminRef.current.password = event.target.value; }} /></div></div>
+                        <div className="sys-field"><label className="sys-field-label">所属部门</label><SysSelect icon={Users} placeholder="未分配部门" options={(tenantOrganizationOverview?.departments ?? []).filter((department) => department.status === "active").map((department) => ({ value: department.id, label: department.name }))} onChange={(value) => { tenantAdminRef.current.departmentId = value; }} /></div>
+                      </div>
+                    ) : null}
+                    <div className="sys-field"><label className="sys-field-label">联系邮箱</label><div className="sys-field-input-wrap"><Mail size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="可选" maxLength={100} defaultValue={tenantAdminRef.current.email || ""} onChange={(event) => { tenantAdminRef.current.email = event.target.value; }} /></div></div>
+                  </div>
+                </div>
+                <div className="sys-modal-footer">
+                  <button type="button" className="sys-btn sys-btn--default" disabled={tenantAdminSubmitting} onClick={() => setTenantAdminModalOpen(false)}><X size={14}/> 取消</button>
+                  <button type="button" className="sys-btn sys-btn--primary" disabled={tenantAdminSubmitting} onClick={() => void submitTenantAdmin()}><PlusCircle size={14}/> {editingTenantAdmin ? "保存修改" : "确认新增"}</button>
+                </div>
+              </div>
             </div>
           )}
 
@@ -1403,7 +1512,7 @@ export function SystemManagementPage() {
                 <div className="sys-drawer-section">
                   <div className="sys-hint"><Info size={14}/> 必须为新租户指定一名初始租户管理员，该管理员登录后可继续在「租户管理」中添加其他成员。</div>
                   <div className="sys-field-row">
-                    <div className="sys-field"><label className="sys-field-label sys-field-label--required">管理员账号</label><div className="sys-field-input-wrap"><User size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="登录用用户名" maxLength={50} defaultValue={ctRef.current.admin_username||""} onChange={e=>{ctRef.current.admin_username=e.target.value;}}/></div></div>
+                    <div className="sys-field"><label className="sys-field-label sys-field-label--required">管理员账号</label><div className="sys-field-input-wrap"><User size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如：tenant_admin" maxLength={50} defaultValue={ctRef.current.admin_username||""} onChange={e=>{ctRef.current.admin_username=e.target.value;}}/></div><div className="sys-field-hint">{usernameRuleMessage}</div></div>
                     <div className="sys-field"><label className="sys-field-label sys-field-label--required">管理员姓名</label><div className="sys-field-input-wrap"><Type size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="显示名称" maxLength={50} defaultValue={ctRef.current.admin_displayName||""} onChange={e=>{ctRef.current.admin_displayName=e.target.value;}}/></div></div>
                   </div>
                   <div className="sys-field-row">

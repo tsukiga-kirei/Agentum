@@ -26,6 +26,7 @@ import {
 import { SurfacePageLayout } from "../../components/workbench/SurfacePageLayout";
 import { AgentumApiError, organizationApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
+import { isValidUsername, usernameRuleMessage } from "../../utils/username";
 import type {
   CreateDepartmentRequest,
   CreateMemberRequest,
@@ -367,6 +368,14 @@ export function TenantManagementPage() {
     setOrganizationError("");
 
     try {
+      if (!values.username.trim()) {
+        messageApi.warning("请输入用户名");
+        return;
+      }
+      if (!isValidUsername(values.username)) {
+        messageApi.warning(usernameRuleMessage);
+        return;
+      }
       if (!values.departmentId) {
         messageApi.warning("请选择成员所属部门");
         return;
@@ -550,9 +559,14 @@ export function TenantManagementPage() {
     if (!editingMembership) {
       return;
     }
+    const tenantAdminLocked = editingMembership.tenantAdmin;
 
     if (!memberEditDraft.displayName.trim() || !memberEditDraft.username.trim()) {
       messageApi.warning("请填写成员姓名和用户名");
+      return;
+    }
+    if (!isValidUsername(memberEditDraft.username)) {
+      messageApi.warning(usernameRuleMessage);
       return;
     }
 
@@ -577,6 +591,11 @@ export function TenantManagementPage() {
     const nextRoleIds = [...memberEditDraft.roleIds].sort().join(",");
     const roleChanged = originalRoleIds !== nextRoleIds;
     const statusChanged = editingMembership.status !== memberEditDraft.status;
+
+    if (tenantAdminLocked && (departmentChanged || roleChanged || statusChanged)) {
+      messageApi.warning("租户管理员身份、部门和状态只能由系统管理维护");
+      return;
+    }
 
     if (!profileChanged && !departmentChanged && !roleChanged && !statusChanged) {
       setEditMemberOpen(false);
@@ -882,7 +901,8 @@ export function TenantManagementPage() {
                 </div>
                 <div className="sys-field">
                   <label className="sys-field-label sys-field-label--required">用户名</label>
-                  <div className="sys-field-input-wrap"><Tag size={16} className="sys-field-prefix" /><input className="sys-field-input" value={memberDraft.username} placeholder="例如：zhangsan" autoComplete="off" onChange={(event) => setMemberDraft((draft) => ({ ...draft, username: event.target.value }))} /></div>
+                  <div className="sys-field-input-wrap"><Tag size={16} className="sys-field-prefix" /><input className="sys-field-input" value={memberDraft.username} placeholder="例如：zhangsan" maxLength={50} autoComplete="off" onChange={(event) => setMemberDraft((draft) => ({ ...draft, username: event.target.value }))} /></div>
+                  <p className="sys-field-hint">{usernameRuleMessage}</p>
                 </div>
               </div>
               <div className="sys-field-row">
@@ -919,7 +939,7 @@ export function TenantManagementPage() {
                     suffixIcon={adminSelectSuffixIcon}
                     placeholder="请选择角色"
                     value={memberDraft.roleId || undefined}
-                    options={(organizationOverview?.roles ?? []).filter((role) => role.status === "active").map((role) => ({ value: role.id, label: role.name }))}
+                    options={(organizationOverview?.roles ?? []).filter((role) => role.status === "active" && role.code !== "tenant_admin").map((role) => ({ value: role.id, label: role.name }))}
                     onChange={(roleId) => setMemberDraft((draft) => ({ ...draft, roleId }))}
                   />
                 </div>
@@ -958,7 +978,7 @@ export function TenantManagementPage() {
                       <input
                         className="sys-field-input"
                         value={memberEditDraft.displayName}
-                        maxLength={100}
+                        maxLength={50}
                         onChange={(event) => setMemberEditDraft((draft) => ({ ...draft, displayName: event.target.value }))}
                       />
                     </div>
@@ -975,6 +995,7 @@ export function TenantManagementPage() {
                         onChange={(event) => setMemberEditDraft((draft) => ({ ...draft, username: event.target.value }))}
                       />
                     </div>
+                    <p className="sys-field-hint">{usernameRuleMessage}</p>
                   </div>
                 </div>
                 <div className="sys-field">
@@ -996,6 +1017,7 @@ export function TenantManagementPage() {
                   <label className="sys-field-label">部门</label>
                   <Select
                     allowClear
+                    disabled={editingMembership?.tenantAdmin}
                     className="agent-admin-select w-full"
                     classNames={adminSelectClassNames}
                     prefix={<Building2 className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
@@ -1016,7 +1038,8 @@ export function TenantManagementPage() {
                     suffixIcon={adminSelectSuffixIcon}
                     placeholder="请选择一个或多个角色"
                     value={memberEditDraft.roleIds}
-                    options={(organizationOverview?.roles ?? []).filter((role) => role.status === "active").map((role) => ({ value: role.id, label: role.name }))}
+                    disabled={editingMembership?.tenantAdmin}
+                    options={(organizationOverview?.roles ?? []).filter((role) => role.status === "active" && (role.code !== "tenant_admin" || editingMembership?.tenantAdmin)).map((role) => ({ value: role.id, label: role.name }))}
                     onChange={(roleIds) => setMemberEditDraft((draft) => ({ ...draft, roleIds }))}
                   />
                 </div>
@@ -1024,6 +1047,7 @@ export function TenantManagementPage() {
               <div className="sys-field">
                 <label className="sys-field-label">状态</label>
                 <Select
+                  disabled={editingMembership?.tenantAdmin}
                   className="agent-admin-select w-full"
                   classNames={adminSelectClassNames}
                   prefix={<CheckCircle2 className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
@@ -1032,6 +1056,9 @@ export function TenantManagementPage() {
                   options={[{ value: "active", label: "启用" }, { value: "disabled", label: "禁用" }]}
                   onChange={(status) => setMemberEditDraft((draft) => ({ ...draft, status }))}
                 />
+                {editingMembership?.tenantAdmin ? (
+                  <div className="sys-field-hint">租户管理员身份和状态只能由系统管理维护；此处仅允许修改基本信息。</div>
+                ) : null}
               </div>
             </div>
             <div className="sys-modal-footer">
@@ -1616,6 +1643,9 @@ function OrganizationPanel({
                           ) : membership.roles.map((role) => (
                             <span key={role.id} className="sys-info-tag sys-info-tag--info">{role.name}</span>
                           ))}
+                          {membership.tenantAdmin ? (
+                            <span className="sys-info-tag sys-info-tag--primary">系统管理维护</span>
+                          ) : null}
                         </div>
                       </td>
                       <td>
