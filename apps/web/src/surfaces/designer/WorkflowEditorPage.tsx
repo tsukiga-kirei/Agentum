@@ -28,6 +28,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
+import { WorkbenchGlobalActions } from "../../components/workbench/SurfacePageLayout";
 import { AgentumApiError, assetApi, workflowApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import type { AssetType, MyAssetRow, SystemCapabilityAssetRow } from "../../types/asset";
@@ -514,7 +515,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
   }
 
   return (
-    <div className="flex h-[calc(100vh-var(--header-height))] flex-col bg-[var(--color-bg-layout)]">
+    <div className="flex h-screen flex-col bg-[var(--color-bg-layout)]">
       {messageContextHolder}
       <div className="workflow-editor-toolbar flex flex-wrap items-center gap-3 border-b border-[var(--color-border-light)] px-4 py-2">
         <button type="button" onClick={onBack} className="agent-button h-7 px-2 text-xs">
@@ -545,6 +546,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
           <Save className="h-3.5 w-3.5" aria-hidden="true" />
           {saving ? "保存中" : "保存流程"}
         </button>
+        <WorkbenchGlobalActions />
       </div>
 
       <div className="grid min-h-0 flex-1 grid-cols-[280px_minmax(0,1fr)]">
@@ -1969,7 +1971,7 @@ function EditorStateShell({
   message: string;
 }) {
   return (
-    <div className="flex h-[calc(100vh-var(--header-height))] flex-col">
+    <div className="flex h-screen flex-col">
       <div className="flex items-center gap-3 border-b border-[var(--color-border-light)] bg-[var(--color-bg-card)] px-4 py-2">
         <button type="button" onClick={onBack} className="agent-button h-7 px-2 text-xs">
           <ChevronLeft className="h-3.5 w-3.5" aria-hidden="true" />

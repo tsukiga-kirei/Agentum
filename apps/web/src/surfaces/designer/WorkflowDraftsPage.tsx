@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Drawer, Pagination, Segmented, Select, message } from "antd";
+import { SurfacePageLayout } from "../../components/workbench/SurfacePageLayout";
 import { AgentumApiError, workflowApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import type {
@@ -349,28 +350,15 @@ export function WorkflowDraftsPage() {
   }
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] bg-[var(--color-bg-page)] pb-10 pt-1">
+    <>
       {messageContextHolder}
-      <div className="mx-auto max-w-[1400px] px-5 lg:px-6">
-        <header className="mb-5 flex flex-col gap-4 border-b border-[var(--color-border-light)] pb-5 sm:flex-row sm:items-end sm:justify-between">
-          <div className="flex min-w-0 gap-4">
-            <div className="workflow-design-page-mark flex h-12 w-12 shrink-0 items-center justify-center rounded-[var(--radius-lg)]">
-              <GitBranch className="h-6 w-6" aria-hidden="true" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-lg font-semibold tracking-tight text-[var(--color-text-primary)] sm:text-xl">流程设计</h1>
-                <span className="rounded-full bg-[var(--color-bg-hover)] px-2.5 py-0.5 text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-[var(--color-border-light)]">
-                  流程治理
-                </span>
-              </div>
-              <p className="agent-muted mt-1.5 max-w-2xl text-sm leading-relaxed">
-                面向租户内协作的流程能力库：可参与共享流程设计，也可以维护自己的流程草稿、校验和发布版本。
-              </p>
-            </div>
-          </div>
-        </header>
-
+      <SurfacePageLayout
+        markClassName="workflow-design-page-mark"
+        icon={GitBranch}
+        title="流程设计"
+        badge="流程治理"
+        description="面向租户内协作的流程能力库：可参与共享流程设计，也可以维护自己的流程草稿、校验和发布版本。"
+      >
         <div className="system-mgmt-module-switch mb-5">
           <div className="system-mgmt-segmented-scroll">
             <Segmented
@@ -537,7 +525,7 @@ export function WorkflowDraftsPage() {
             ) : null}
           </section>
         ) : null}
-      </div>
+      </SurfacePageLayout>
 
       <Drawer
         title={detailWorkflow ? "流程详情" : "流程详情"}
@@ -684,7 +672,7 @@ export function WorkflowDraftsPage() {
           </section>
         </div>
       ) : null}
-    </div>
+    </>
   );
 }
 

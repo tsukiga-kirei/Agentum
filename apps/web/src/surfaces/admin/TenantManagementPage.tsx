@@ -23,6 +23,7 @@ import {
   UsersRound,
   X,
 } from "lucide-react";
+import { SurfacePageLayout } from "../../components/workbench/SurfacePageLayout";
 import { AgentumApiError, organizationApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import type {
@@ -800,28 +801,14 @@ export function TenantManagementPage() {
   }
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] bg-[var(--color-bg-page)] pb-10 pt-1">
-      {messageContextHolder}
-      <div className="mx-auto max-w-[1400px] px-5 lg:px-6">
-        <header className="mb-5 flex flex-col gap-4 border-b border-[var(--color-border-light)] pb-5 sm:flex-row sm:items-end sm:justify-between">
-          <div className="flex min-w-0 gap-4">
-            <div className="tenant-mgmt-page-mark flex h-12 w-12 shrink-0 items-center justify-center rounded-[var(--radius-lg)]">
-              <ShieldCheck className="h-6 w-6" aria-hidden="true" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-lg font-semibold tracking-tight text-[var(--color-text-primary)] sm:text-xl">租户管理</h1>
-                <span className="rounded-full bg-[var(--color-bg-hover)] px-2.5 py-0.5 text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-[var(--color-border-light)]">
-                  租户内治理
-                </span>
-              </div>
-              <p className="agent-muted mt-1.5 max-w-2xl text-sm leading-relaxed">
-                维护当前租户的人员组织、角色职责、业务入口和可用能力池，保证成员能在合适的范围内发起流程、设计流程和查看结果。
-              </p>
-            </div>
-          </div>
-        </header>
-
+    <SurfacePageLayout
+      markClassName="tenant-mgmt-page-mark"
+      icon={ShieldCheck}
+      title="租户管理"
+      badge="租户内治理"
+      description="维护当前租户的人员组织、角色职责、业务入口和可用能力池，保证成员能在合适的范围内发起流程、设计流程和查看结果。"
+      topSlot={messageContextHolder}
+    >
         <div className="system-mgmt-module-switch mb-5">
           <div className="system-mgmt-segmented-scroll">
             <Segmented<TenantManagementTabKey>
@@ -879,7 +866,6 @@ export function TenantManagementPage() {
             onDeleteGrant={(group) => void handleDeleteGrantGroup(group)}
           />
         </div>
-      </div>
 
       {createMemberOpen && (
         <div className="sys-modal-mask" onClick={() => setCreateMemberOpen(false)}>
@@ -1384,7 +1370,7 @@ export function TenantManagementPage() {
           </div>
         </div>
       </Drawer>
-    </div>
+    </SurfacePageLayout>
   );
 }
 

@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { ArrowRight, Bot, Boxes, BrainCircuit, CheckCircle2, ChevronDown, CircleAlert, Clock, Edit3, Eye, FileText, Hash, Library, PlusCircle, Search, Send, ShieldCheck, Tag, Trash2, UserRoundCog, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Empty, Pagination, Segmented, Select, Spin, message, Drawer } from "antd";
+import { SurfacePageLayout } from "../../components/workbench/SurfacePageLayout";
 import { AgentumApiError, assetApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import type { AssetSummary, AssetType, CreatableAssetType, CreateMyAssetRequest, MyAssetDetail, MyAssetRow, SystemCapabilityAssetRow, UpdateMyAssetRequest } from "../../types/asset";
@@ -328,34 +329,20 @@ export function AssetsPage() {
 
   if (!tenantId) {
     return (
-      <div className="min-h-[calc(100vh-4rem)] bg-[var(--color-bg-page)] pb-10 pt-1">
-        <div className="mx-auto max-w-[1400px] px-5 lg:px-6">
-          <header className="mb-5 flex flex-col gap-4 border-b border-[var(--color-border-light)] pb-5 sm:flex-row sm:items-end sm:justify-between">
-            <div className="flex min-w-0 gap-4">
-              <div className="asset-mgmt-page-mark flex h-12 w-12 shrink-0 items-center justify-center rounded-[var(--radius-lg)]">
-                <Library className="h-6 w-6" aria-hidden="true" />
-              </div>
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="text-lg font-semibold tracking-tight text-[var(--color-text-primary)] sm:text-xl">能力资产</h1>
-                  <span className="rounded-full bg-[var(--color-bg-hover)] px-2.5 py-0.5 text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-[var(--color-border-light)]">
-                    业务能力治理
-                  </span>
-                </div>
-                <p className="agent-muted mt-1.5 max-w-2xl text-sm leading-relaxed">
-                  能力资产需要明确租户上下文，用于连接系统能力池、租户分配和流程节点引用。
-                </p>
-              </div>
-            </div>
-          </header>
-          <Empty description="系统管理入口不绑定租户，请切换到业务用户或租户管理角色后查看能力资产" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-        </div>
-      </div>
+      <SurfacePageLayout
+        markClassName="asset-mgmt-page-mark"
+        icon={Library}
+        title="能力资产"
+        badge="业务能力治理"
+        description="能力资产需要明确租户上下文，用于连接系统能力池、租户分配和流程节点引用。"
+      >
+        <Empty description="系统管理入口不绑定租户，请切换到业务用户或租户管理角色后查看能力资产" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+      </SurfacePageLayout>
     );
   }
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] bg-[var(--color-bg-page)] pb-10 pt-1">
+    <>
       {messageContextHolder}
       {deleteTarget ? (
         <div className="sys-modal-mask agent-delete-confirm-mask" onClick={() => !submitting && setDeleteTarget(null)}>
@@ -380,26 +367,13 @@ export function AssetsPage() {
           </div>
         </div>
       ) : null}
-      <div className="mx-auto max-w-[1400px] px-5 lg:px-6">
-        <header className="mb-5 flex flex-col gap-4 border-b border-[var(--color-border-light)] pb-5 sm:flex-row sm:items-end sm:justify-between">
-          <div className="flex min-w-0 gap-4">
-            <div className="asset-mgmt-page-mark flex h-12 w-12 shrink-0 items-center justify-center rounded-[var(--radius-lg)]">
-              <Library className="h-6 w-6" aria-hidden="true" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-lg font-semibold tracking-tight text-[var(--color-text-primary)] sm:text-xl">能力资产</h1>
-                <span className="rounded-full bg-[var(--color-bg-hover)] px-2.5 py-0.5 text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-[var(--color-border-light)]">
-                  业务能力治理
-                </span>
-              </div>
-              <p className="agent-muted mt-1.5 max-w-2xl text-sm leading-relaxed">
-                连接系统管理开放能力、租户管理分配能力和流程设计节点引用，让能力从平台底座一路进入业务编排。
-              </p>
-            </div>
-          </div>
-        </header>
-
+      <SurfacePageLayout
+        markClassName="asset-mgmt-page-mark"
+        icon={Library}
+        title="能力资产"
+        badge="业务能力治理"
+        description="连接系统管理开放能力、租户管理分配能力和流程设计节点引用，让能力从平台底座一路进入业务编排。"
+      >
         <div className="system-mgmt-module-switch mb-5">
           <div className="system-mgmt-segmented-scroll">
             <Segmented
@@ -556,7 +530,7 @@ export function AssetsPage() {
             </section>
           ) : null}
         </Spin>
-      </div>
+      </SurfacePageLayout>
 
       {/* 新建能力草稿抽屉 */}
       <Drawer
@@ -891,7 +865,7 @@ export function AssetsPage() {
           </div>
         </div>
       </Drawer>
-    </div>
+    </>
   );
 }
 

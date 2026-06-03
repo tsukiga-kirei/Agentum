@@ -39,8 +39,7 @@ import { TenantManagementPage } from "../admin/TenantManagementPage";
 import { SystemManagementPage } from "../admin/SystemManagementPage";
 import { AssetsPage } from "../assets/AssetsPage";
 import { WorkflowDraftsPage } from "../designer/WorkflowDraftsPage";
-import { ThemeToggle } from "../../components/ThemeToggle";
-import { RoleSwitcher } from "../../components/RoleSwitcher";
+import { SurfacePageLayout, WorkbenchGlobalActions } from "../../components/workbench/SurfacePageLayout";
 import { AgentumMark } from "../../components/brand/AgentumMark";
 import { useAuthStore } from "../../stores/authStore";
 import { AgentumApiError, workbenchApi } from "../../services/apiClient";
@@ -528,20 +527,12 @@ export function WorkbenchShell() {
 
         {/* ===== 主内容区 ===== */}
         <section className={`min-w-0 flex-1${activeSurface === "workbench" && tenantId && openedTaskWorkflow ? " overflow-hidden" : ""}`}>
-          {/* 顶部操作栏 —— 右侧替换为角色切换器 + 主题切换 */}
-          <header className="bg-[var(--color-bg-page)]">
-            <div className="mx-auto flex min-h-[var(--header-height)] max-w-[1400px] items-center justify-end gap-3 px-5 lg:px-6">
-              <div className="flex items-center gap-2">
-                {/* 主题切换药丸（与 AuraOA 一致） */}
-                <ThemeToggle />
-                {/* 角色切换器（参照 AuraOA，替换原来的硬编码操作按钮） */}
-                <RoleSwitcher />
-              </div>
-            </div>
-          </header>
-
           {activeSurface === null ? (
-            <div className="mx-auto max-w-[1400px] px-5 py-4 lg:px-6">
+            <div className="min-h-screen bg-[var(--color-bg-page)] pb-10">
+              <div className="mx-auto max-w-[1400px] px-5 lg:px-6">
+                <header className="surface-page-chrome surface-page-chrome--actions-only flex justify-end pt-3">
+                  <WorkbenchGlobalActions />
+                </header>
               <section className="agent-card flex min-h-[360px] items-center justify-center p-8 text-center" aria-label="无可访问页签">
                 <div>
                   <ShieldCheck className="mx-auto h-10 w-10 text-[var(--color-text-tertiary)]" aria-hidden="true" />
@@ -549,6 +540,7 @@ export function WorkbenchShell() {
                   <p className="agent-muted mt-2 text-sm">当前账号尚未获得租户内页签分配，请联系租户管理员配置业务入口。</p>
                 </div>
               </section>
+              </div>
             </div>
           ) : null}
 
@@ -556,6 +548,9 @@ export function WorkbenchShell() {
           {activeSurface === "workbench" ? (
             tenantId && openedTaskWorkflow && openedTaskPreview ? (
               <div className="workbench-task-run-host">
+                <div className="workbench-immersive-topbar">
+                  <WorkbenchGlobalActions />
+                </div>
                 <div className="workbench-task-run-host-inner">
                   <WorkbenchTaskRunDetail
                     workflow={openedTaskWorkflow}
@@ -571,28 +566,13 @@ export function WorkbenchShell() {
                 </div>
               </div>
             ) : (
-            <div className="min-h-[calc(100vh-4rem)] bg-[var(--color-bg-page)] pb-10 pt-1">
-              <div className="mx-auto max-w-[1400px] px-5 lg:px-6">
-                  <>
-                <header className="mb-5 flex flex-col gap-4 border-b border-[var(--color-border-light)] pb-5 sm:flex-row sm:items-end sm:justify-between">
-                  <div className="flex min-w-0 gap-4">
-                    <div className="workbench-page-mark flex h-12 w-12 shrink-0 items-center justify-center rounded-[var(--radius-lg)]">
-                      <LayoutDashboard className="h-6 w-6" aria-hidden="true" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h1 className="text-lg font-semibold tracking-tight text-[var(--color-text-primary)] sm:text-xl">业务工作台</h1>
-                        <span className="rounded-full bg-[var(--color-bg-hover)] px-2.5 py-0.5 text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-[var(--color-border-light)]">
-                          任务运行
-                        </span>
-                      </div>
-                      <p className="agent-muted mt-1.5 max-w-2xl text-sm leading-relaxed">
-                        面向业务用户的任务入口：从总览进入任务创建、待办处理和任务续办；全部开放智能体流程可查看，有创建范围的流程才可发起任务。
-                      </p>
-                    </div>
-                  </div>
-                </header>
-
+            <SurfacePageLayout
+              markClassName="workbench-page-mark"
+              icon={LayoutDashboard}
+              title="业务工作台"
+              badge="任务运行"
+              description="面向业务用户的任务入口：从总览进入任务创建、待办处理和任务续办；全部开放智能体流程可查看，有创建范围的流程才可发起任务。"
+            >
                 <div className="system-mgmt-module-switch mb-5">
                   <div className="system-mgmt-segmented-scroll">
                     <Segmented<WorkbenchTab>
@@ -809,15 +789,13 @@ export function WorkbenchShell() {
 
                   </>
                 )}
-                  </>
                 <WorkflowLaunchDrawer
                   workflow={workflowDrawer}
                   rootClassName={isDarkMode ? "agent-admin-drawer agent-admin-drawer--dark" : "agent-admin-drawer"}
                   onClose={() => setWorkflowDrawer(null)}
                   onLaunch={handleLaunchTask}
                 />
-              </div>
-            </div>
+            </SurfacePageLayout>
             )
           ) : null}
 

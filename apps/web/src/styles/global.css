@@ -479,6 +479,34 @@ textarea:focus-visible {
   transform: translate(-50%, 0);
 }
 
+/* 业务页顶栏：介绍文案与主题/角色同一行，收起侧栏控件后不再预留独立顶栏高度 */
+.surface-page-chrome {
+  gap: 12px;
+}
+
+.surface-page-chrome--actions-only {
+  justify-content: flex-end;
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.workbench-immersive-topbar {
+  display: flex;
+  flex-shrink: 0;
+  justify-content: flex-end;
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 8px 20px 0;
+}
+
+@media (min-width: 1024px) {
+  .workbench-immersive-topbar {
+    padding-inline: 24px;
+  }
+}
+
 /* Ant Design 组件桥接层：组件库负责复杂交互，Agentum 继续用本地 token 统一视觉。 */
 
 /* 系统管理页内表格：与卡片背景融合，表头弱化、行 hover 使用主题 hover 色 */
@@ -3912,7 +3940,7 @@ textarea:focus-visible {
 .workbench-task-run-host {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - var(--header-height));
+  height: 100vh;
   min-height: 0;
   overflow: hidden;
   background: var(--color-bg-page);
@@ -5798,7 +5826,7 @@ textarea:focus-visible {
   }
 
   .workbench-task-run-host {
-    height: calc(100vh - var(--header-height));
+    height: 100vh;
   }
 
   .workbench-task-layout {

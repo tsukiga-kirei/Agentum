@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Empty, Segmented, Spin, message, Drawer, Pagination } from "antd";
+import { SurfacePageLayout } from "../../components/workbench/SurfacePageLayout";
 import { AgentumApiError, organizationApi, systemApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import type { TenantOrganizationOverview } from "../../types/organization";
@@ -959,28 +960,13 @@ export function SystemManagementPage() {
         </div>
         );
       })() : null}
-      <div className="min-h-[calc(100vh-4rem)] bg-[var(--color-bg-page)] pb-10 pt-1">
-        <div className="mx-auto min-w-0 max-w-[1400px] px-5 lg:px-6">
-          {/* 页头 */}
-          <header className="mb-5 flex flex-col gap-4 border-b border-[var(--color-border-light)] pb-5 sm:flex-row sm:items-end sm:justify-between">
-            <div className="flex min-w-0 gap-4">
-              <div className="system-mgmt-page-mark flex h-12 w-12 shrink-0 items-center justify-center rounded-[var(--radius-lg)]">
-                <ServerCog className="h-6 w-6" aria-hidden />
-              </div>
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="text-lg font-semibold tracking-tight text-[var(--color-text-primary)] sm:text-xl">系统管理</h1>
-                  <span className="rounded-full bg-[var(--color-bg-hover)] px-2.5 py-0.5 text-xs font-medium text-[var(--color-text-secondary)] ring-1 ring-[var(--color-border-light)]">
-                    平台底座
-                  </span>
-                </div>
-                <p className="agent-muted mt-1.5 max-w-2xl text-sm leading-relaxed">
-                  作为系统管理员，您可在此管理多租户生命周期、全局模型算力及底层基础能力。
-                </p>
-              </div>
-            </div>
-          </header>
-
+      <SurfacePageLayout
+        markClassName="system-mgmt-page-mark"
+        icon={ServerCog}
+        title="系统管理"
+        badge="平台底座"
+        description="作为系统管理员，您可在此管理多租户生命周期、全局模型算力及底层基础能力。"
+      >
           <div className="system-mgmt-module-switch mb-5">
             <div className="system-mgmt-segmented-scroll">
               <Segmented<SystemSection>
@@ -1227,8 +1213,7 @@ export function SystemManagementPage() {
               </div>
             )}
           </Spin>
-        </div>
-      </div>
+      </SurfacePageLayout>
 
       {/* 租户详情侧拉抽屉（AuraOA 风格页签 + 表单行） */}
       <Drawer
