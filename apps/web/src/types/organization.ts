@@ -22,7 +22,6 @@ export type OrganizationRole = {
   id: string;
   code: string;
   name: string;
-  scope: string;
   status: string;
   description: string;
 };

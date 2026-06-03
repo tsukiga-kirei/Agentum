@@ -173,7 +173,7 @@ public class SystemManagementService {
         tenantRepository.save(tenant);
 
         // 2. 为该租户初始化基础内置角色。roles 仍服务成员关系和资源授权，登录入口由 user_role_assignments 控制。
-        RoleEntity tenantAdminRole = RoleEntity.create(tenant.getId(), "tenant_admin", "租户管理员", "tenant", "管理租户内配置与人员");
+        RoleEntity tenantAdminRole = RoleEntity.create(tenant.getId(), "tenant_admin", "租户管理员", "管理租户内配置与人员");
         roleRepository.save(tenantAdminRole);
         // 3. 创建默认部门
         DepartmentEntity defaultDept = DepartmentEntity.create(tenant.getId(), null, "默认部门", "default", 0);

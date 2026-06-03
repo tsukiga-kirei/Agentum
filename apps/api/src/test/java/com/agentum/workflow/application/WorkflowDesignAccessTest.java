@@ -48,7 +48,7 @@ class WorkflowDesignAccessTest {
     @Test
     void shouldAllowBusinessUserWithWorkflowDesignerMembership() {
         WorkflowDesignAccess access = new WorkflowDesignAccess(userMembershipRepository, userMembershipRoleRepository, roleRepository);
-        RoleEntity role = RoleEntity.create(TENANT_ID, "workflow_designer", "流程设计者", "business", "维护工作流草稿");
+        RoleEntity role = RoleEntity.create(TENANT_ID, "workflow_designer", "流程设计者", "维护工作流草稿");
         UUID roleId = role.getId();
         UserMembershipEntity membership = UserMembershipEntity.create(TENANT_ID, USER_ID, null);
         UserMembershipRoleEntity membershipRole = UserMembershipRoleEntity.create(membership.getId(), roleId);
@@ -64,7 +64,7 @@ class WorkflowDesignAccessTest {
     @Test
     void shouldRejectBusinessUserWithoutDesignerMembership() {
         WorkflowDesignAccess access = new WorkflowDesignAccess(userMembershipRepository, userMembershipRoleRepository, roleRepository);
-        RoleEntity role = RoleEntity.create(TENANT_ID, "executor", "执行人", "business", "发起流程");
+        RoleEntity role = RoleEntity.create(TENANT_ID, "executor", "执行人", "发起流程");
         UUID roleId = role.getId();
         UserMembershipEntity membership = UserMembershipEntity.create(TENANT_ID, USER_ID, null);
         UserMembershipRoleEntity membershipRole = UserMembershipRoleEntity.create(membership.getId(), roleId);

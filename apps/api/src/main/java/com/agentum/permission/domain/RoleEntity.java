@@ -25,9 +25,6 @@ public class RoleEntity {
     private String name;
 
     @Column(nullable = false, length = 30)
-    private String scope;
-
-    @Column(nullable = false, length = 30)
     private String status;
 
     private String description;
@@ -41,13 +38,12 @@ public class RoleEntity {
     protected RoleEntity() {
     }
 
-    public static RoleEntity create(UUID tenantId, String code, String name, String scope, String description) {
+    public static RoleEntity create(UUID tenantId, String code, String name, String description) {
         RoleEntity role = new RoleEntity();
         role.id = UUID.randomUUID();
         role.tenantId = tenantId;
         role.code = code;
         role.name = name;
-        role.scope = scope;
         role.description = description;
         role.status = "active";
         role.builtIn = false;
@@ -76,10 +72,6 @@ public class RoleEntity {
 
     public String getName() {
         return name;
-    }
-
-    public String getScope() {
-        return scope;
     }
 
     public String getStatus() {

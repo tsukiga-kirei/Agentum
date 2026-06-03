@@ -346,7 +346,7 @@ public class TenantOrganizationService {
         tenantRepository.findByIdAndStatus(tenantId, ACTIVE_STATUS)
             .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "TENANT_NOT_FOUND", "租户不存在或已停用"));
         String code = generateRoleCode(tenantId, request.name());
-        RoleEntity role = RoleEntity.create(tenantId, code, normalizeRequired(request.name()), "business", normalizeOptional(request.description()));
+        RoleEntity role = RoleEntity.create(tenantId, code, normalizeRequired(request.name()), normalizeOptional(request.description()));
         roleRepository.save(role);
         log.info("租户业务角色创建成功 tenantId={} operatorUserId={} roleId={} code={} requestId={}", tenantId, operatorUserId, role.getId(), code, RequestIds.current());
         return getOverview(tenantId);
@@ -1104,7 +1104,6 @@ public class TenantOrganizationService {
                 role.getId().toString(),
                 role.getCode(),
                 role.getName(),
-                role.getScope(),
                 role.getStatus(),
                 role.getDescription() == null ? "" : role.getDescription()
             ))

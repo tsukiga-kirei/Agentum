@@ -87,7 +87,7 @@ class TenantOrganizationResourceGrantTest {
     @Test
     void shouldCreateGrantForEnabledCapabilityAndRolePrincipal() {
         TenantOrganizationService service = newService();
-        RoleEntity role = RoleEntity.create(TENANT_ID, "executor", "执行人", "business", "流程执行角色");
+        RoleEntity role = RoleEntity.create(TENANT_ID, "executor", "执行人", "流程执行角色");
         SystemCapabilityEntity capability = SystemCapabilityEntity.create("skill", "合同解析", "contract_parse", "v1", "", "medium", "active", Map.of(), Instant.now());
         TenantCapabilityGrantEntity capabilityGrant = TenantCapabilityGrantEntity.create(TENANT_ID, capability.getId(), "enabled", Instant.now());
 
@@ -161,7 +161,7 @@ class TenantOrganizationResourceGrantTest {
     @Test
     void shouldCreatePageGrantForDepartmentOrRolePrincipal() {
         TenantOrganizationService service = newService();
-        RoleEntity role = RoleEntity.create(TENANT_ID, "workflow_designer", "流程设计者", "business", "维护流程草稿");
+        RoleEntity role = RoleEntity.create(TENANT_ID, "workflow_designer", "流程设计者", "维护流程草稿");
         AtomicReference<PageGrantEntity> savedGrant = new AtomicReference<>();
 
         when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", Instant.now())));
@@ -195,8 +195,8 @@ class TenantOrganizationResourceGrantTest {
     @Test
     void shouldSyncRoleMembersWhenUpdatingTenantRole() {
         TenantOrganizationService service = newService();
-        RoleEntity reviewerRole = RoleEntity.create(TENANT_ID, "reviewer", "合同审核员", "business", "审核合同");
-        RoleEntity executorRole = RoleEntity.create(TENANT_ID, "executor", "执行人", "business", "执行流程");
+        RoleEntity reviewerRole = RoleEntity.create(TENANT_ID, "reviewer", "合同审核员", "审核合同");
+        RoleEntity executorRole = RoleEntity.create(TENANT_ID, "executor", "执行人", "执行流程");
         UserMembershipEntity currentReviewer = UserMembershipEntity.create(TENANT_ID, USER_ID, null);
         UserMembershipEntity currentExecutor = UserMembershipEntity.create(TENANT_ID, UUID.randomUUID(), null);
         UserMembershipRoleEntity reviewerLink = UserMembershipRoleEntity.create(currentReviewer.getId(), reviewerRole.getId());
@@ -236,7 +236,7 @@ class TenantOrganizationResourceGrantTest {
     @Test
     void shouldRejectDisablingRoleWithSelectedMembers() {
         TenantOrganizationService service = newService();
-        RoleEntity reviewerRole = RoleEntity.create(TENANT_ID, "reviewer", "合同审核员", "business", "审核合同");
+        RoleEntity reviewerRole = RoleEntity.create(TENANT_ID, "reviewer", "合同审核员", "审核合同");
         UserMembershipEntity currentReviewer = UserMembershipEntity.create(TENANT_ID, USER_ID, null);
 
         when(roleRepository.findByIdAndTenantId(reviewerRole.getId(), TENANT_ID)).thenReturn(Optional.of(reviewerRole));
@@ -256,7 +256,7 @@ class TenantOrganizationResourceGrantTest {
     @Test
     void shouldDisableRoleWithoutMembersAndKeepItInOverview() {
         TenantOrganizationService service = newService();
-        RoleEntity reviewerRole = RoleEntity.create(TENANT_ID, "reviewer", "合同审核员", "business", "审核合同");
+        RoleEntity reviewerRole = RoleEntity.create(TENANT_ID, "reviewer", "合同审核员", "审核合同");
         UserMembershipEntity currentReviewer = UserMembershipEntity.create(TENANT_ID, USER_ID, null);
 
         when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", Instant.now())));
@@ -278,7 +278,7 @@ class TenantOrganizationResourceGrantTest {
     @Test
     void shouldRejectDeletingRoleWithActiveMembers() {
         TenantOrganizationService service = newService();
-        RoleEntity reviewerRole = RoleEntity.create(TENANT_ID, "reviewer", "合同审核员", "business", "审核合同");
+        RoleEntity reviewerRole = RoleEntity.create(TENANT_ID, "reviewer", "合同审核员", "审核合同");
 
         when(roleRepository.findByIdAndTenantId(reviewerRole.getId(), TENANT_ID)).thenReturn(Optional.of(reviewerRole));
         when(userMembershipRoleRepository.countActiveMembershipsByTenantIdAndRoleId(TENANT_ID, reviewerRole.getId(), "active", "active")).thenReturn(1L);
@@ -292,7 +292,7 @@ class TenantOrganizationResourceGrantTest {
     @Test
     void shouldDeleteRoleWhenNoMemberOrGrantReferenceExists() {
         TenantOrganizationService service = newService();
-        RoleEntity reviewerRole = RoleEntity.create(TENANT_ID, "reviewer", "合同审核员", "business", "审核合同");
+        RoleEntity reviewerRole = RoleEntity.create(TENANT_ID, "reviewer", "合同审核员", "审核合同");
 
         when(roleRepository.findByIdAndTenantId(reviewerRole.getId(), TENANT_ID)).thenReturn(Optional.of(reviewerRole));
         when(userMembershipRoleRepository.countActiveMembershipsByTenantIdAndRoleId(TENANT_ID, reviewerRole.getId(), "active", "active")).thenReturn(0L);

@@ -3036,8 +3036,6 @@ components:
           type: string
         name:
           type: string
-        scope:
-          type: string
         status:
           type: string
         description:
@@ -3046,7 +3044,6 @@ components:
         - id
         - code
         - name
-        - scope
         - status
         - description
     UserMembership:

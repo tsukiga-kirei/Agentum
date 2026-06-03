@@ -1724,7 +1724,6 @@ function RoleManagementPanel({
                 <div className="sys-card-avatar sys-card-avatar--tenant"><ShieldCheck size={22} /></div>
                 <div className="sys-card-info">
                   <div className="sys-card-name">{role.name}</div>
-                  <div className="sys-card-code">{role.scope === "tenant" ? "租户角色" : role.scope}</div>
                 </div>
               </div>
               <div className="sys-info-tags">
