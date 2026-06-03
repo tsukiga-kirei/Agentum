@@ -24,6 +24,7 @@ export type OrganizationRole = {
   name: string;
   scope: string;
   status: string;
+  description: string;
 };
 
 export type OrganizationMembership = {
@@ -136,6 +137,10 @@ export type UpdateDepartmentStatusRequest = {
   status: "active" | "disabled";
 };
 
+export type UpdateRoleStatusRequest = {
+  status: "active" | "disabled";
+};
+
 export type CreateTenantRoleRequest = {
   name: string;
   description?: string;
@@ -144,7 +149,7 @@ export type CreateTenantRoleRequest = {
 export type UpdateTenantRoleRequest = {
   name: string;
   description?: string;
-  status: "active" | "disabled";
+  status?: "active" | "disabled";
   membershipIds?: string[];
 };
 

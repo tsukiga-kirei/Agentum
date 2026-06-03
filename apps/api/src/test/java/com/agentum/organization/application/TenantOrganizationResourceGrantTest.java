@@ -2,6 +2,7 @@ package com.agentum.organization.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -21,6 +22,7 @@ import com.agentum.organization.interfaces.GrantPrincipalRequest;
 import com.agentum.organization.interfaces.PageGrantResponse;
 import com.agentum.organization.interfaces.ResourceGrantItemRequest;
 import com.agentum.organization.interfaces.ResourceGrantResponse;
+import com.agentum.organization.interfaces.TenantOrganizationOverviewResponse;
 import com.agentum.organization.interfaces.UpdateMemberProfileRequest;
 import com.agentum.organization.interfaces.UpdateTenantRoleRequest;
 import com.agentum.permission.domain.PageGrantEntity;
@@ -215,7 +217,7 @@ class TenantOrganizationResourceGrantTest {
             .thenReturn(Optional.of(com.agentum.auth.domain.UserRoleAssignmentEntity.create(USER_ID, "business", TENANT_ID, "业务用户", true)));
         when(userAccountRepository.findAllById(any())).thenReturn(List.of());
         when(departmentRepository.findByTenantIdOrderBySortOrderAscNameAsc(TENANT_ID)).thenReturn(List.of());
-        when(roleRepository.findByTenantIdAndStatusOrderByNameAsc(TENANT_ID, "active")).thenReturn(List.of(reviewerRole, executorRole));
+        when(roleRepository.findByTenantIdOrderByNameAsc(TENANT_ID)).thenReturn(List.of(reviewerRole, executorRole));
 
         service.updateTenantRole(
             TENANT_ID,
@@ -249,6 +251,28 @@ class TenantOrganizationResourceGrantTest {
             .isInstanceOf(ApiException.class)
             .extracting("code")
             .isEqualTo("ORG_ROLE_DISABLE_WITH_MEMBERS");
+    }
+
+    @Test
+    void shouldDisableRoleWithoutMembersAndKeepItInOverview() {
+        TenantOrganizationService service = newService();
+        RoleEntity reviewerRole = RoleEntity.create(TENANT_ID, "reviewer", "合同审核员", "business", "审核合同");
+        UserMembershipEntity currentReviewer = UserMembershipEntity.create(TENANT_ID, USER_ID, null);
+
+        when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", Instant.now())));
+        when(roleRepository.findByIdAndTenantId(reviewerRole.getId(), TENANT_ID)).thenReturn(Optional.of(reviewerRole));
+        when(userMembershipRoleRepository.countActiveMembershipsByTenantIdAndRoleId(TENANT_ID, reviewerRole.getId(), "active", "active")).thenReturn(0L);
+        when(userAccountRepository.findAllById(any())).thenReturn(List.of());
+        when(departmentRepository.findByTenantIdOrderBySortOrderAscNameAsc(TENANT_ID)).thenReturn(List.of());
+        when(roleRepository.findByTenantIdOrderByNameAsc(TENANT_ID)).thenReturn(List.of(reviewerRole));
+        when(userMembershipRepository.findByTenantId(TENANT_ID)).thenReturn(List.of(currentReviewer));
+        when(userMembershipRoleRepository.findByMembershipIdInAndStatus(any(), any())).thenReturn(List.of());
+
+        TenantOrganizationOverviewResponse overview = service.updateRoleStatus(TENANT_ID, OPERATOR_USER_ID, reviewerRole.getId(), "disabled");
+
+        assertThat(reviewerRole.getStatus()).isEqualTo("disabled");
+        assertThat(overview.roles()).extracting("name", "status", "description")
+            .containsExactly(tuple("合同审核员", "disabled", "审核合同"));
     }
 
     @Test
@@ -293,7 +317,7 @@ class TenantOrganizationResourceGrantTest {
         when(userAccountRepository.existsByUsernameAndIdNot("new_operator", account.getId())).thenReturn(false);
         when(userAccountRepository.findAllById(any())).thenReturn(List.of(account));
         when(departmentRepository.findByTenantIdOrderBySortOrderAscNameAsc(TENANT_ID)).thenReturn(List.of());
-        when(roleRepository.findByTenantIdAndStatusOrderByNameAsc(TENANT_ID, "active")).thenReturn(List.of());
+        when(roleRepository.findByTenantIdOrderByNameAsc(TENANT_ID)).thenReturn(List.of());
         when(userMembershipRepository.findByTenantId(TENANT_ID)).thenReturn(List.of(membership));
         when(userMembershipRoleRepository.findByMembershipIdInAndStatus(any(), any())).thenReturn(List.of());
 

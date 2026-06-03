@@ -19,6 +19,7 @@ import type {
   UpdateMembershipStatusRequest,
   UpdateDepartmentRequest,
   UpdateDepartmentStatusRequest,
+  UpdateRoleStatusRequest,
   UpdateTenantOrgRoleRequest,
   UpdateTenantRoleRequest,
 } from "../types/organization";
@@ -175,6 +176,8 @@ export const organizationApi = {
     apiRequest<TenantOrganizationOverview>(`/api/admin/tenants/${tenantId}/organization/roles`, { method: "POST", token, body: request }),
   updateRole: (tenantId: string, roleId: string, token: string, request: UpdateTenantRoleRequest) =>
     apiRequest<TenantOrganizationOverview>(`/api/admin/tenants/${tenantId}/organization/roles/${roleId}`, { method: "PATCH", token, body: request }),
+  updateRoleStatus: (tenantId: string, roleId: string, token: string, request: UpdateRoleStatusRequest) =>
+    apiRequest<TenantOrganizationOverview>(`/api/admin/tenants/${tenantId}/organization/roles/${roleId}/status`, { method: "PATCH", token, body: request }),
   deleteRole: (tenantId: string, roleId: string, token: string) =>
     apiRequest<void>(`/api/admin/tenants/${tenantId}/organization/roles/${roleId}`, { method: "DELETE", token }),
   listResourceGrants: (tenantId: string, token: string) =>

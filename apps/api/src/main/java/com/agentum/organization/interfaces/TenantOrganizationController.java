@@ -130,6 +130,21 @@ public class TenantOrganizationController {
         return ApiResponse.success(tenantOrganizationService.updateTenantRole(tenantId, principal.userId(), roleId, updateTenantRoleRequest), RequestIds.current(request));
     }
 
+    @PatchMapping("/roles/{roleId}/status")
+    public ApiResponse<TenantOrganizationOverviewResponse> updateRoleStatus(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID roleId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @Valid @RequestBody UpdateRoleStatusRequest updateRoleStatusRequest,
+        HttpServletRequest request
+    ) {
+        tenantOrganizationAccess.assertCanManageTenant(principal, tenantId);
+        return ApiResponse.success(
+            tenantOrganizationService.updateRoleStatus(tenantId, principal.userId(), roleId, updateRoleStatusRequest.status()),
+            RequestIds.current(request)
+        );
+    }
+
     @DeleteMapping("/roles/{roleId}")
     public ApiResponse<Void> deleteRole(
         @PathVariable UUID tenantId,

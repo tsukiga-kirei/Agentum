@@ -358,7 +358,7 @@ public class TenantOrganizationService {
             .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ORG_ROLE_NOT_FOUND", "角色不存在"));
         String status = normalizeOptional(request.status());
         if (status == null || status.isBlank()) {
-            status = ACTIVE_STATUS;
+            status = role.getStatus();
         }
         if (!ALLOWED_ORG_ROLE_STATUS.contains(status)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_ROLE_STATUS_INVALID", "角色状态只能是 active 或 disabled");
@@ -387,9 +387,22 @@ public class TenantOrganizationService {
     }
 
     @Transactional
-    public TenantOrganizationOverviewResponse disableTenantRole(UUID tenantId, UUID operatorUserId, UUID roleId) {
+    public TenantOrganizationOverviewResponse updateRoleStatus(UUID tenantId, UUID operatorUserId, UUID roleId, String status) {
         RoleEntity role = roleRepository.findByIdAndTenantId(roleId, tenantId)
             .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ORG_ROLE_NOT_FOUND", "角色不存在"));
+        String normalizedStatus = normalizeRequired(status);
+
+        if (ACTIVE_STATUS.equals(normalizedStatus)) {
+            role.update(role.getName(), role.getDescription(), ACTIVE_STATUS);
+            roleRepository.save(role);
+            log.info("租户业务角色启用成功 tenantId={} operatorUserId={} roleId={} requestId={}", tenantId, operatorUserId, roleId, RequestIds.current());
+            return getOverview(tenantId);
+        }
+
+        if (!"disabled".equals(normalizedStatus)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_ROLE_STATUS_INVALID", "角色状态只能是 active 或 disabled");
+        }
+
         long activeMembers = userMembershipRoleRepository.countActiveMembershipsByTenantIdAndRoleId(tenantId, roleId, ACTIVE_STATUS, ACTIVE_STATUS);
         if (activeMembers > 0) {
             log.warn("租户业务角色停用失败：仍有成员 tenantId={} operatorUserId={} roleId={} activeMembers={} requestId={}", tenantId, operatorUserId, roleId, activeMembers, RequestIds.current());
@@ -1043,7 +1056,7 @@ public class TenantOrganizationService {
         Map<UUID, DepartmentEntity> departmentsById = departmentRepository.findByTenantIdOrderBySortOrderAscNameAsc(tenantId)
             .stream()
             .collect(Collectors.toMap(DepartmentEntity::getId, Function.identity()));
-        Map<UUID, RoleEntity> rolesById = roleRepository.findByTenantIdAndStatusOrderByNameAsc(tenantId, ACTIVE_STATUS)
+        Map<UUID, RoleEntity> rolesById = roleRepository.findByTenantIdOrderByNameAsc(tenantId)
             .stream()
             .collect(Collectors.toMap(RoleEntity::getId, Function.identity()));
         Map<UUID, List<MembershipRoleResponse>> rolesByMembershipId = userMembershipRoleRepository
@@ -1092,7 +1105,8 @@ public class TenantOrganizationService {
                 role.getCode(),
                 role.getName(),
                 role.getScope(),
-                role.getStatus()
+                role.getStatus(),
+                role.getDescription() == null ? "" : role.getDescription()
             ))
             .toList();
 

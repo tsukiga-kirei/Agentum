@@ -12,6 +12,8 @@ public interface RoleRepository extends JpaRepository<RoleEntity, UUID> {
 
     List<RoleEntity> findByTenantIdAndStatusOrderByNameAsc(UUID tenantId, String status);
 
+    List<RoleEntity> findByTenantIdOrderByNameAsc(UUID tenantId);
+
     Optional<RoleEntity> findByIdAndTenantIdAndStatus(UUID id, UUID tenantId, String status);
 
     Optional<RoleEntity> findByIdAndTenantId(UUID id, UUID tenantId);

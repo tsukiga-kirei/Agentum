@@ -80,14 +80,12 @@ const emptyDepartmentForm: CreateDepartmentRequest = {
 };
 
 type RoleDraft = CreateTenantRoleRequest & {
-  status: "active" | "disabled";
   membershipIds: string[];
 };
 
 const emptyRoleForm: RoleDraft = {
   name: "",
   description: "",
-  status: "active",
   membershipIds: [],
 };
 
@@ -459,25 +457,20 @@ export function TenantManagementPage() {
     const membershipIds = (organizationOverview?.memberships ?? [])
       .filter((membership) => membership.roles.some((item) => item.id === role.id) && membership.status === "active")
       .map((membership) => membership.id);
-    setRoleDraft({ name: role.name, description: "", status: role.status === "disabled" ? "disabled" : "active", membershipIds });
+    setRoleDraft({ name: role.name, description: role.description ?? "", membershipIds });
     setRoleModalOpen(true);
   }
 
   async function handleSubmitRole() {
     if (!token || !user?.tenantId) return;
-    if (editingRole && roleDraft.status === "disabled" && roleDraft.membershipIds.length > 0) {
-      messageApi.warning("停用角色前请先移出所有启用成员");
-      return;
-    }
     setRoleSubmitting(true);
     try {
       const overview = editingRole
         ? await organizationApi.updateRole(user.tenantId, editingRole.id, token, {
           name: roleDraft.name,
           description: roleDraft.description,
-          status: roleDraft.status,
           membershipIds: roleDraft.membershipIds,
-        } as UpdateTenantRoleRequest)
+        })
         : await organizationApi.createRole(user.tenantId, token, { name: roleDraft.name, description: roleDraft.description });
       setOrganizationOverview(overview);
       setRoleModalOpen(false);
@@ -486,6 +479,23 @@ export function TenantManagementPage() {
     } catch (error) {
       console.warn("[tenant-management] 角色保存失败", getTenantManagementErrorContext(error, user?.tenantId, { roleId: editingRole?.id }));
       messageApi.error(error instanceof AgentumApiError ? error.message : "角色保存失败，请稍后重试");
+    } finally {
+      setRoleSubmitting(false);
+    }
+  }
+
+  async function handleUpdateRoleStatus(role: OrganizationRole, status: "active" | "disabled") {
+    if (!token || !user?.tenantId) return;
+    setRoleSubmitting(true);
+    try {
+      const overview = await organizationApi.updateRoleStatus(user.tenantId, role.id, token, { status });
+      setOrganizationOverview(overview);
+      setRoleModalOpen(false);
+      setEditingRole(null);
+      messageApi.success(status === "active" ? "角色已启用" : "角色已停用");
+    } catch (error) {
+      console.warn("[tenant-management] 角色状态更新失败", getTenantManagementErrorContext(error, user.tenantId, { roleId: role.id, status }));
+      messageApi.error(error instanceof AgentumApiError ? error.message : "角色状态更新失败，请先确认角色下没有启用成员");
     } finally {
       setRoleSubmitting(false);
     }
@@ -912,7 +922,7 @@ export function TenantManagementPage() {
                     suffixIcon={adminSelectSuffixIcon}
                     placeholder="请选择角色"
                     value={memberDraft.roleId || undefined}
-                    options={(organizationOverview?.roles ?? []).map((role) => ({ value: role.id, label: role.name }))}
+                    options={(organizationOverview?.roles ?? []).filter((role) => role.status === "active").map((role) => ({ value: role.id, label: role.name }))}
                     onChange={(roleId) => setMemberDraft((draft) => ({ ...draft, roleId }))}
                   />
                 </div>
@@ -1009,7 +1019,7 @@ export function TenantManagementPage() {
                     suffixIcon={adminSelectSuffixIcon}
                     placeholder="请选择一个或多个角色"
                     value={memberEditDraft.roleIds}
-                    options={(organizationOverview?.roles ?? []).map((role) => ({ value: role.id, label: role.name }))}
+                    options={(organizationOverview?.roles ?? []).filter((role) => role.status === "active").map((role) => ({ value: role.id, label: role.name }))}
                     onChange={(roleIds) => setMemberEditDraft((draft) => ({ ...draft, roleIds }))}
                   />
                 </div>
@@ -1138,14 +1148,8 @@ export function TenantManagementPage() {
           </div>
           <div className="sys-field">
             <label className="sys-field-label">说明</label>
-            <textarea className="sys-field-textarea" value={roleDraft.description ?? ""} onChange={(event) => setRoleDraft((draft) => ({ ...draft, description: event.target.value }))} />
+            <textarea className="sys-field-textarea" value={roleDraft.description ?? ""} placeholder="补充该角色的职责范围和使用场景" onChange={(event) => setRoleDraft((draft) => ({ ...draft, description: event.target.value }))} />
           </div>
-          {editingRole ? (
-            <div className="sys-field">
-              <label className="sys-field-label">状态</label>
-              <Select className="agent-admin-select w-full" classNames={adminSelectClassNames} prefix={<CheckCircle2 className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />} suffixIcon={adminSelectSuffixIcon} value={roleDraft.status} options={[{ value: "active", label: "启用" }, { value: "disabled", label: "停用" }]} onChange={(status) => setRoleDraft((draft) => ({ ...draft, status }))} />
-            </div>
-          ) : null}
           {editingRole ? (
             <div className="sys-config-group tenant-role-members-group">
               <div className="sys-config-group-title">角色成员</div>
@@ -1172,7 +1176,16 @@ export function TenantManagementPage() {
         </div>
         <div className="sys-drawer-footer">
           {editingRole ? (
-            <button className="sys-btn sys-btn--danger-text" style={{ marginRight: "auto" }} disabled={roleSubmitting} onClick={() => setRoleDeleteTarget(editingRole)}><X size={14} /> 删除角色</button>
+            <div className="tenant-department-danger-actions">
+              <button
+                className="sys-btn sys-btn--default"
+                disabled={roleSubmitting}
+                onClick={() => void handleUpdateRoleStatus(editingRole, editingRole.status === "active" ? "disabled" : "active")}
+              >
+                <CheckCircle2 size={14} /> {editingRole.status === "active" ? "停用角色" : "启用角色"}
+              </button>
+              <button className="sys-btn sys-btn--danger" disabled={roleSubmitting} onClick={() => setRoleDeleteTarget(editingRole)}><X size={14} /> 删除角色</button>
+            </div>
           ) : null}
           <div className="sys-drawer-footer-right">
             <button className="sys-btn sys-btn--default" onClick={() => setRoleModalOpen(false)}><X size={14} /> 取消</button>
@@ -1717,6 +1730,9 @@ function RoleManagementPanel({
                 <span className={`sys-info-tag ${role.status === "active" ? "sys-info-tag--primary" : ""}`}>{role.status === "active" ? "启用" : "停用"}</span>
                 <span className="sys-info-tag">{roleMemberCount(role.id)} 名成员</span>
               </div>
+              {role.description ? (
+                <p className="agent-muted text-sm leading-6">{role.description}</p>
+              ) : null}
               <div className="sys-card-footer">
                 <span className="sys-card-footer-time">成员分配请在人员组织中编辑成员</span>
                 <div className="sys-card-footer-actions" onClick={(e) => e.stopPropagation()}>

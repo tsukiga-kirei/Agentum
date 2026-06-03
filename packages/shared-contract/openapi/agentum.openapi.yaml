@@ -3040,12 +3040,15 @@ components:
           type: string
         status:
           type: string
+        description:
+          type: string
       required:
         - id
         - code
         - name
         - scope
         - status
+        - description
     UserMembership:
       type: object
       properties:

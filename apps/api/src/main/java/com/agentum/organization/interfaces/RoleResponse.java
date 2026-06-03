@@ -5,6 +5,7 @@ public record RoleResponse(
     String code,
     String name,
     String scope,
-    String status
+    String status,
+    String description
 ) {
 }
