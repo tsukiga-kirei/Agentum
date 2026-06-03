@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -373,50 +374,69 @@ class TenantOrganizationResourceGrantTest {
     }
 
     @Test
-    void shouldRejectTenantAdminRoleChangeFromTenantManagement() {
+    void shouldAllowTenantAdminBusinessRoleChangeFromTenantManagementAndKeepAdminRole() {
         TenantOrganizationService service = newService();
         RoleEntity tenantAdminRole = RoleEntity.create(TENANT_ID, "tenant_admin", "租户管理员", "管理租户");
         RoleEntity businessRole = RoleEntity.create(TENANT_ID, "executor", "执行人", "执行流程");
         UserMembershipEntity membership = UserMembershipEntity.create(TENANT_ID, USER_ID, null);
         UserMembershipRoleEntity adminLink = UserMembershipRoleEntity.create(membership.getId(), tenantAdminRole.getId());
+        AtomicReference<UserMembershipRoleEntity> addedLink = new AtomicReference<>();
 
         when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", Instant.now())));
         when(userMembershipRepository.findByIdAndTenantId(membership.getId(), TENANT_ID)).thenReturn(Optional.of(membership));
         when(userMembershipRoleRepository.findByMembershipIdAndStatus(membership.getId(), "active")).thenReturn(List.of(adminLink));
         when(roleRepository.findAllById(any())).thenReturn(List.of(tenantAdminRole, businessRole));
+        when(userMembershipRoleRepository.save(any(UserMembershipRoleEntity.class))).thenAnswer(invocation -> {
+            UserMembershipRoleEntity link = invocation.getArgument(0);
+            if (businessRole.getId().equals(link.getRoleId())) {
+                addedLink.set(link);
+            }
+            return link;
+        });
+        when(userRoleAssignmentRepository.findByUserIdAndRoleAndTenantId(any(), any(), any()))
+            .thenReturn(Optional.of(com.agentum.auth.domain.UserRoleAssignmentEntity.create(USER_ID, "business", TENANT_ID, "业务用户", true)));
+        when(userAccountRepository.findAllById(any())).thenReturn(List.of());
+        when(departmentRepository.findByTenantIdOrderBySortOrderAscNameAsc(TENANT_ID)).thenReturn(List.of());
+        when(roleRepository.findByTenantIdOrderByNameAsc(TENANT_ID)).thenReturn(List.of(tenantAdminRole, businessRole));
 
-        assertThatThrownBy(() -> service.updateMembershipRole(
+        service.updateMembershipRole(
             TENANT_ID,
             OPERATOR_USER_ID,
             membership.getId(),
             new com.agentum.organization.interfaces.UpdateMembershipRoleRequest(List.of(businessRole.getId()))
-        ))
-            .isInstanceOf(ApiException.class)
-            .extracting("code")
-            .isEqualTo("ORG_TENANT_ADMIN_MANAGED_BY_SYSTEM");
+        );
+
+        assertThat(adminLink.getStatus()).isEqualTo("active");
+        assertThat(addedLink.get()).isNotNull();
+        assertThat(addedLink.get().getRoleId()).isEqualTo(businessRole.getId());
     }
 
     @Test
-    void shouldRejectTenantAdminDepartmentChangeFromTenantManagement() {
+    void shouldAllowTenantAdminDepartmentChangeFromTenantManagement() {
         TenantOrganizationService service = newService();
         RoleEntity tenantAdminRole = RoleEntity.create(TENANT_ID, "tenant_admin", "租户管理员", "管理租户");
         UserMembershipEntity membership = UserMembershipEntity.create(TENANT_ID, USER_ID, null);
         UserMembershipRoleEntity adminLink = UserMembershipRoleEntity.create(membership.getId(), tenantAdminRole.getId());
+        UUID departmentId = UUID.randomUUID();
 
         when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", Instant.now())));
         when(userMembershipRepository.findByIdAndTenantId(membership.getId(), TENANT_ID)).thenReturn(Optional.of(membership));
-        when(userMembershipRoleRepository.findByMembershipIdAndStatus(membership.getId(), "active")).thenReturn(List.of(adminLink));
-        when(roleRepository.findAllById(any())).thenReturn(List.of(tenantAdminRole));
+        lenient().when(userMembershipRoleRepository.findByMembershipIdAndStatus(membership.getId(), "active")).thenReturn(List.of(adminLink));
+        lenient().when(roleRepository.findAllById(any())).thenReturn(List.of(tenantAdminRole));
+        when(departmentRepository.findByIdAndTenantIdAndStatus(departmentId, TENANT_ID, "active"))
+            .thenReturn(Optional.of(com.agentum.organization.domain.DepartmentEntity.create(TENANT_ID, null, "默认部门", "default", 0)));
+        when(userAccountRepository.findAllById(any())).thenReturn(List.of());
+        when(departmentRepository.findByTenantIdOrderBySortOrderAscNameAsc(TENANT_ID)).thenReturn(List.of());
+        when(roleRepository.findByTenantIdOrderByNameAsc(TENANT_ID)).thenReturn(List.of());
 
-        assertThatThrownBy(() -> service.updateMembershipDepartment(
+        service.updateMembershipDepartment(
             TENANT_ID,
             OPERATOR_USER_ID,
             membership.getId(),
-            new com.agentum.organization.interfaces.UpdateMembershipDepartmentRequest(UUID.randomUUID())
-        ))
-            .isInstanceOf(ApiException.class)
-            .extracting("code")
-            .isEqualTo("ORG_TENANT_ADMIN_MANAGED_BY_SYSTEM");
+            new com.agentum.organization.interfaces.UpdateMembershipDepartmentRequest(departmentId)
+        );
+
+        assertThat(membership.getDepartmentId()).isEqualTo(departmentId);
     }
 
     @Test

@@ -570,7 +570,7 @@ export function TenantManagementPage() {
       return;
     }
 
-    if (memberEditDraft.roleIds.length === 0) {
+    if (!tenantAdminLocked && memberEditDraft.roleIds.length === 0) {
       messageApi.warning("请选择成员角色");
       return;
     }
@@ -592,8 +592,8 @@ export function TenantManagementPage() {
     const roleChanged = originalRoleIds !== nextRoleIds;
     const statusChanged = editingMembership.status !== memberEditDraft.status;
 
-    if (tenantAdminLocked && (departmentChanged || roleChanged || statusChanged)) {
-      messageApi.warning("租户管理员身份、部门和状态只能由系统管理维护");
+    if (tenantAdminLocked && statusChanged) {
+      messageApi.warning("租户管理员状态只能由系统管理维护");
       return;
     }
 
@@ -1017,7 +1017,6 @@ export function TenantManagementPage() {
                   <label className="sys-field-label">部门</label>
                   <Select
                     allowClear
-                    disabled={editingMembership?.tenantAdmin}
                     className="agent-admin-select w-full"
                     classNames={adminSelectClassNames}
                     prefix={<Building2 className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
@@ -1038,9 +1037,14 @@ export function TenantManagementPage() {
                     suffixIcon={adminSelectSuffixIcon}
                     placeholder="请选择一个或多个角色"
                     value={memberEditDraft.roleIds}
-                    disabled={editingMembership?.tenantAdmin}
-                    options={(organizationOverview?.roles ?? []).filter((role) => role.status === "active" && (role.code !== "tenant_admin" || editingMembership?.tenantAdmin)).map((role) => ({ value: role.id, label: role.name }))}
-                    onChange={(roleIds) => setMemberEditDraft((draft) => ({ ...draft, roleIds }))}
+                    options={(organizationOverview?.roles ?? []).filter((role) => role.status === "active" && (role.code !== "tenant_admin" || editingMembership?.tenantAdmin)).map((role) => ({ value: role.id, label: role.name, disabled: editingMembership?.tenantAdmin && role.code === "tenant_admin" }))}
+                    onChange={(roleIds) => {
+                      const tenantAdminRoleId = editingMembership?.roles.find((role) => role.code === "tenant_admin")?.id;
+                      const nextRoleIds = editingMembership?.tenantAdmin && tenantAdminRoleId && !roleIds.includes(tenantAdminRoleId)
+                        ? [tenantAdminRoleId, ...roleIds]
+                        : roleIds;
+                      setMemberEditDraft((draft) => ({ ...draft, roleIds: nextRoleIds }));
+                    }}
                   />
                 </div>
               </div>
@@ -1057,7 +1061,7 @@ export function TenantManagementPage() {
                   onChange={(status) => setMemberEditDraft((draft) => ({ ...draft, status }))}
                 />
                 {editingMembership?.tenantAdmin ? (
-                  <div className="sys-field-hint">租户管理员身份和状态只能由系统管理维护；此处仅允许修改基本信息。</div>
+                  <div className="sys-field-hint">租户管理员身份和状态只能由系统管理维护；部门和业务角色可在此调整，系统会保留租户管理员身份。</div>
                 ) : null}
               </div>
             </div>
@@ -1558,7 +1562,10 @@ function OrganizationPanel({
                 className={`tenant-dept-tree-item tenant-dept-tree-item--overview ${selectedDepartmentId === "all" ? "tenant-dept-tree-item--active" : ""}`}
                 onClick={() => setSelectedDepartmentId("all")}
               >
-                <UsersRound size={15} />
+                <span className="tenant-dept-tree-leading">
+                  <span className="tenant-dept-tree-toggle tenant-dept-tree-toggle--placeholder" />
+                  <UsersRound size={15} />
+                </span>
                 <span className="tenant-dept-tree-name">全部成员</span>
                 <span className="tenant-dept-tree-count">{overview.memberships.length}</span>
               </button>

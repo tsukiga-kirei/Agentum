@@ -69,6 +69,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
@@ -475,10 +476,9 @@ public class TenantOrganizationService {
                 );
                 return new ApiException(HttpStatus.NOT_FOUND, "ORG_MEMBERSHIP_NOT_FOUND", "成员关系不存在");
         });
-        assertTenantAdminMembershipManagedBySystem(tenantId, membership.getId(), "成员角色调整失败");
 
         List<RoleEntity> roles = validateRoles(tenantId, request.roleIds());
-        roles.forEach(this::assertNotTenantAdminRole);
+        roles = preserveTenantAdminRoleWhenNeeded(tenantId, membership.getId(), roles);
         syncMembershipRoles(tenantId, membership, roles);
         log.info(
             "成员角色调整成功 tenantId={} operatorUserId={} membershipId={} roleIds={} requestId={}",
@@ -489,6 +489,22 @@ public class TenantOrganizationService {
             RequestIds.current()
         );
         return getOverview(tenantId);
+    }
+
+    private List<RoleEntity> preserveTenantAdminRoleWhenNeeded(UUID tenantId, UUID membershipId, List<RoleEntity> requestedRoles) {
+        Optional<RoleEntity> activeTenantAdminRole = loadActiveRolesForMembership(tenantId, membershipId).stream()
+            .filter(role -> "tenant_admin".equals(role.getCode()))
+            .findFirst();
+        if (activeTenantAdminRole.isEmpty()) {
+            requestedRoles.forEach(this::assertNotTenantAdminRole);
+            return requestedRoles;
+        }
+
+        // 租户管理员身份由系统管理授予和回收；租户管理只允许调整其业务角色，所以这里强制保留 tenant_admin 角色关系。
+        LinkedHashMap<UUID, RoleEntity> rolesById = new LinkedHashMap<>();
+        requestedRoles.forEach(role -> rolesById.put(role.getId(), role));
+        rolesById.put(activeTenantAdminRole.get().getId(), activeTenantAdminRole.get());
+        return List.copyOf(rolesById.values());
     }
 
     @Transactional
@@ -703,8 +719,6 @@ public class TenantOrganizationService {
                 );
                 return new ApiException(HttpStatus.NOT_FOUND, "ORG_MEMBERSHIP_NOT_FOUND", "成员关系不存在");
             });
-        assertTenantAdminMembershipManagedBySystem(tenantId, membership.getId(), "成员部门调整失败");
-
         UUID departmentId = request.departmentId();
         if (departmentId != null) {
             departmentRepository.findByIdAndTenantIdAndStatus(departmentId, tenantId, ACTIVE_STATUS)

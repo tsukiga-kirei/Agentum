@@ -1377,8 +1377,8 @@ export function SystemManagementPage() {
                 ) : null}
                 {tenantOrganizationOverview ? (
                   <div className="sys-config-group">
-                    <div className="tenant-org-actionbar" style={{ marginBottom: 12 }}>
-                      <div className="sys-info-tags">
+                    <div className="tenant-org-actionbar tenant-admin-actionbar">
+                      <div className="sys-info-tags tenant-admin-tags">
                         <span className="sys-info-tag sys-info-tag--primary">{tenantOrganizationOverview.memberships.filter((item) => item.tenantAdmin).length} 名租户管理员</span>
                       <span className="sys-info-tag">{tenantOrganizationOverview.departments.length} 个部门</span>
                       </div>
