@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Empty, Segmented, Select, message, Pagination, Drawer } from "antd";
 import {
   AlertTriangle,
@@ -221,6 +221,8 @@ export function TenantManagementPage() {
   const [memberEditSubmitting, setMemberEditSubmitting] = useState(false);
   const [resourceOptions, setResourceOptions] = useState<TenantResourceOption[]>([]);
   const [authorizationLoading, setAuthorizationLoading] = useState(false);
+  const [authorizationHydrated, setAuthorizationHydrated] = useState(false);
+  const authorizationHydratedRef = useRef(false);
   const [authorizationError, setAuthorizationError] = useState("");
   const [pageGrants, setPageGrants] = useState<PageGrant[]>([]);
   const [pageGrantModalOpen, setPageGrantModalOpen] = useState(false);
@@ -265,22 +267,6 @@ export function TenantManagementPage() {
     };
   });
 
-  const loadPageGrants = useCallback(async () => {
-    if (!token || !user?.tenantId) return;
-
-    setAuthorizationLoading(true);
-    setAuthorizationError("");
-    try {
-      setPageGrants(await organizationApi.listPageGrants(user.tenantId, token));
-    } catch (error) {
-      console.warn("[tenant-management] 页签分配加载失败", getTenantManagementErrorContext(error, user.tenantId));
-      setAuthorizationError(error instanceof AgentumApiError ? error.message : "无法加载页签分配数据");
-      setPageGrants([]);
-    } finally {
-      setAuthorizationLoading(false);
-    }
-  }, [token, user?.tenantId]);
-
   const loadResourceOptions = useCallback(async () => {
     if (!token || !user?.tenantId) return;
 
@@ -292,16 +278,48 @@ export function TenantManagementPage() {
     }
   }, [token, user?.tenantId]);
 
-  const loadResourceGrants = useCallback(async () => {
+  const loadAuthorizationData = useCallback(async (options?: { silent?: boolean }) => {
     if (!token || !user?.tenantId) return;
 
+    const silent = options?.silent ?? authorizationHydratedRef.current;
+    if (!silent) {
+      setAuthorizationLoading(true);
+    }
+    setAuthorizationError("");
     try {
-      setResourceGrants(await organizationApi.listResourceGrants(user.tenantId, token));
+      const [nextPageGrants, nextResourceGrants] = await Promise.all([
+        organizationApi.listPageGrants(user.tenantId, token),
+        organizationApi.listResourceGrants(user.tenantId, token),
+      ]);
+      setPageGrants(nextPageGrants);
+      setResourceGrants(nextResourceGrants);
+      authorizationHydratedRef.current = true;
+      setAuthorizationHydrated(true);
     } catch (error) {
-      console.warn("[tenant-management] 能力分配加载失败", getTenantManagementErrorContext(error, user.tenantId));
+      console.warn("[tenant-management] 资源分配加载失败", getTenantManagementErrorContext(error, user.tenantId));
+      setAuthorizationError(error instanceof AgentumApiError ? error.message : "无法加载资源分配数据");
+      setPageGrants([]);
       setResourceGrants([]);
+    } finally {
+      if (!silent) {
+        setAuthorizationLoading(false);
+      }
     }
   }, [token, user?.tenantId]);
+
+  useEffect(() => {
+    if (!token || !user?.tenantId) {
+      authorizationHydratedRef.current = false;
+      setAuthorizationHydrated(false);
+      setPageGrants([]);
+      setResourceGrants([]);
+      setResourceOptions([]);
+      return;
+    }
+
+    void loadAuthorizationData();
+    void loadResourceOptions();
+  }, [token, user?.tenantId, loadAuthorizationData, loadResourceOptions]);
 
   useEffect(() => {
     if (!token || !user?.tenantId) {
@@ -336,13 +354,6 @@ export function TenantManagementPage() {
       active = false;
     };
   }, [token, user?.tenantId]);
-
-  useEffect(() => {
-    if (activeTab !== "resources") return;
-    void loadPageGrants();
-    void loadResourceOptions();
-    void loadResourceGrants();
-  }, [activeTab, loadPageGrants, loadResourceGrants, loadResourceOptions]);
 
   async function handleCreateMember(values: CreateMemberRequest) {
     if (!token || !user?.tenantId) {
@@ -688,7 +699,7 @@ export function TenantManagementPage() {
       } else {
         await organizationApi.createPageGrant(tenantId, token, request);
       }
-      await loadPageGrants();
+      await loadAuthorizationData({ silent: true });
       setPageGrantModalOpen(false);
       setEditingPageGrantGroup(null);
       setPageGrantGroupName("");
@@ -707,7 +718,7 @@ export function TenantManagementPage() {
     if (!token || !user?.tenantId) return;
     try {
       await organizationApi.deletePageGrant(user.tenantId, group.id, token);
-      await loadPageGrants();
+      await loadAuthorizationData({ silent: true });
       messageApi.success("页签分配已删除");
     } catch (error) {
       console.warn("[tenant-management] 页签分配删除失败", getTenantManagementErrorContext(error, user.tenantId, { grantId: group.id }));
@@ -761,7 +772,7 @@ export function TenantManagementPage() {
       } else {
         await organizationApi.createResourceGrant(tenantId, token, request);
       }
-      await loadResourceGrants();
+      await loadAuthorizationData({ silent: true });
       setGrantModalOpen(false);
       setEditingGrantGroup(null);
       setGrantGroupName("");
@@ -780,7 +791,7 @@ export function TenantManagementPage() {
     if (!token || !user?.tenantId) return;
     try {
       await organizationApi.deleteResourceGrant(user.tenantId, group.id, token);
-      await loadResourceGrants();
+      await loadAuthorizationData({ silent: true });
       messageApi.success("能力分配已删除");
     } catch (error) {
       console.warn("[tenant-management] 能力分配删除失败", getTenantManagementErrorContext(error, user.tenantId, { grantId: group.id }));
@@ -854,10 +865,10 @@ export function TenantManagementPage() {
             onEditRole={openEditRoleModal}
           />
         ) : null}
-        {activeTab === "resources" ? (
+        <div className={activeTab === "resources" ? undefined : "hidden"} aria-hidden={activeTab !== "resources"}>
           <ResourceAuthorizationPanel
             pageGrants={pageGrants}
-            loading={authorizationLoading}
+            loading={authorizationLoading && !authorizationHydrated}
             error={authorizationError}
             grants={resourceGrants}
             onCreateGrant={openGrantModal}
@@ -867,7 +878,7 @@ export function TenantManagementPage() {
             onDeletePageGrant={(group) => void handleDeletePageGrantGroup(group)}
             onDeleteGrant={(group) => void handleDeleteGrantGroup(group)}
           />
-        ) : null}
+        </div>
       </div>
 
       {createMemberOpen && (
@@ -1779,9 +1790,8 @@ function ResourceAuthorizationPanel({
 
   return (
     <div className="tenant-resource-panel">
-      <div className="tenant-resource-toolbar">
-        <p>分配模块入口和可用能力池</p>
-        <div className="tenant-resource-toolbar-actions">
+      <div className="tenant-org-actionbar">
+        <div className="tenant-org-actionbar-buttons">
           <button className="sys-btn sys-btn--default" onClick={onCreatePageGrant}><PlusCircle size={14} /> 新增页签</button>
           <button className="sys-btn sys-btn--primary" onClick={onCreateGrant}><PlusCircle size={14} /> 新增能力</button>
         </div>
@@ -1791,23 +1801,22 @@ function ResourceAuthorizationPanel({
         <div className="rounded-[var(--radius-md)] border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-100">{error}</div>
       ) : null}
 
-      {loading ? (
-        <div className="sys-preview-card"><div className="sys-preview-card-title"><UserRoundCog size={16} /> 正在加载资源分配</div></div>
-      ) : null}
-
       <div className="tenant-auth-section-block">
         <div className="tenant-auth-section-head tenant-auth-section-head--loose">
           <div>
             <h3>页签分配</h3>
           </div>
         </div>
-        {pageGrants.length === 0 && !loading ? (
+        {loading ? (
+          <div className="tenant-auth-section-loading">正在加载页签分配…</div>
+        ) : pageGrants.length === 0 ? (
           <div className="sys-surface-empty">
             <Empty description="暂无页签分配" image={Empty.PRESENTED_IMAGE_SIMPLE} />
           </div>
         ) : (
-          <div className="sys-card-grid tenant-auth-card-grid">
-            {pageGrantPagination.pagedItems.map((grant) => (
+          <>
+            <div className="sys-card-grid tenant-auth-card-grid">
+              {pageGrantPagination.pagedItems.map((grant) => (
               <article key={grant.id} className="sys-card tenant-auth-card" onClick={() => onEditPageGrant(grant)}>
                 <div className="sys-card-header">
                   <div className="sys-card-avatar sys-card-avatar--tenant"><ShieldCheck size={22} /></div>
@@ -1838,14 +1847,15 @@ function ResourceAuthorizationPanel({
                 </div>
               </article>
             ))}
-          </div>
+            </div>
+            <AdminPagination
+              current={pageGrantPagination.current}
+              pageSize={pageGrantPagination.pageSize}
+              total={pageGrantPagination.total}
+              onChange={pageGrantPagination.onChange}
+            />
+          </>
         )}
-        <AdminPagination
-          current={pageGrantPagination.current}
-          pageSize={pageGrantPagination.pageSize}
-          total={pageGrantPagination.total}
-          onChange={pageGrantPagination.onChange}
-        />
       </div>
 
       <div className="tenant-auth-section-block">
@@ -1855,15 +1865,16 @@ function ResourceAuthorizationPanel({
           </div>
         </div>
 
-        {!loading && grants.length === 0 ? (
+        {loading ? (
+          <div className="tenant-auth-section-loading">正在加载能力分配…</div>
+        ) : grants.length === 0 ? (
           <div className="sys-surface-empty">
             <Empty description="暂无能力分配" image={Empty.PRESENTED_IMAGE_SIMPLE} />
           </div>
-        ) : null}
-
-        {grants.length > 0 ? (
-          <div className="sys-card-grid tenant-auth-card-grid">
-            {grantPagination.pagedItems.map((grant) => (
+        ) : (
+          <>
+            <div className="sys-card-grid tenant-auth-card-grid">
+              {grantPagination.pagedItems.map((grant) => (
               <article key={grant.id} className="sys-card tenant-auth-card" onClick={() => onEditGrant(grant)}>
                 <div className="sys-card-header">
                   <div className="sys-card-avatar sys-card-avatar--tenant"><UserRoundCog size={22} /></div>
@@ -1898,14 +1909,15 @@ function ResourceAuthorizationPanel({
                 </div>
               </article>
             ))}
-          </div>
-        ) : null}
-        <AdminPagination
-          current={grantPagination.current}
-          pageSize={grantPagination.pageSize}
-          total={grantPagination.total}
-          onChange={grantPagination.onChange}
-        />
+            </div>
+            <AdminPagination
+              current={grantPagination.current}
+              pageSize={grantPagination.pageSize}
+              total={grantPagination.total}
+              onChange={grantPagination.onChange}
+            />
+          </>
+        )}
       </div>
     </div>
   );

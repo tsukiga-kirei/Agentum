@@ -2474,22 +2474,15 @@ textarea:focus-visible {
   display: grid;
   gap: 30px;
 }
-.tenant-resource-toolbar {
+.tenant-auth-section-loading {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-.tenant-resource-toolbar p {
-  margin: 0;
+  justify-content: center;
+  min-height: 220px;
+  padding: 32px 16px;
+  text-align: center;
+  font-size: 13px;
   color: var(--color-text-tertiary);
-  font-size: 14px;
-}
-.tenant-resource-toolbar-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: flex-end;
 }
 .tenant-auth-section-block {
   display: grid;
@@ -5824,13 +5817,6 @@ textarea:focus-visible {
   }
   .tenant-auth-section-head {
     flex-direction: column;
-  }
-  .tenant-resource-toolbar {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-  .tenant-resource-toolbar-actions {
-    justify-content: flex-start;
   }
   .tenant-member-toolbar {
     align-items: flex-start;
