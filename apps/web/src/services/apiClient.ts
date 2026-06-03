@@ -9,6 +9,7 @@ import type {
   CreateTenantOrgRoleRequest,
   PageResponse,
   PageGrant,
+  PrincipalGrantUsage,
   ResourceGrant,
   TenantOrgRole,
   TenantOrganizationOverview,
@@ -173,6 +174,11 @@ export const organizationApi = {
     apiRequest<TenantOrganizationOverview>(`/api/admin/tenants/${tenantId}/organization/departments/${departmentId}`, { method: "PATCH", token, body: request }),
   updateDepartmentStatus: (tenantId: string, departmentId: string, token: string, request: UpdateDepartmentStatusRequest) =>
     apiRequest<TenantOrganizationOverview>(`/api/admin/tenants/${tenantId}/organization/departments/${departmentId}/status`, { method: "PATCH", token, body: request }),
+  principalGrantUsage: (tenantId: string, principalType: "role" | "department" | "user", principalId: string, token: string) =>
+    apiRequest<PrincipalGrantUsage>(
+      `/api/admin/tenants/${tenantId}/organization/principals/${principalType}/${principalId}/grant-usage`,
+      { token }
+    ),
   deleteDepartment: (tenantId: string, departmentId: string, token: string) =>
     apiRequest<void>(`/api/admin/tenants/${tenantId}/organization/departments/${departmentId}`, { method: "DELETE", token }),
   createRole: (tenantId: string, token: string, request: CreateTenantRoleRequest) =>

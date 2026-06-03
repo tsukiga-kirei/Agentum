@@ -264,6 +264,20 @@ API 返回结构统一：
 - `TENANT_`
 - `ORG_`
 - `PERMISSION_`
+
+租户组织（`ORG_`）常用错误码：
+
+| 错误码 | 含义 |
+| --- | --- |
+| `ORG_DEPARTMENT_IN_USE` | 部门下仍有启用成员或启用下级部门，不能停用 |
+| `ORG_DEPARTMENT_CYCLE` | 上级部门不能选当前部门或其子孙 |
+| `ORG_DEPARTMENT_DELETE_BLOCKED` | 删除部门前仍有成员、子部门或分配引用 |
+| `ORG_ROLE_HAS_MEMBERS` | 角色下仍有启用成员，不能停用或删除 |
+| `ORG_ROLE_HAS_GRANTS` | 删除角色前仍有页签或能力分配引用（与停用时的 `ORG_PRINCIPAL_*` 并列使用） |
+| `ORG_PRINCIPAL_HAS_PAGE_GRANTS` | 停用部门/角色/成员前仍被页签分配引用 |
+| `ORG_PRINCIPAL_HAS_RESOURCE_GRANTS` | 停用前仍被能力分配引用 |
+| `ORG_PRINCIPAL_HAS_GRANTS` | 停用前同时被页签与能力分配引用 |
+| `ORG_TENANT_ADMIN_MANAGED_BY_SYSTEM` | 租户管理员身份仅系统管理可维护 |
 - `WORKFLOW_`
 - `NODE_`
 - `VARIABLE_`

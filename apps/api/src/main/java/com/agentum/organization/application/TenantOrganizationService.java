@@ -26,6 +26,7 @@ import com.agentum.organization.interfaces.MembershipResponse;
 import com.agentum.organization.interfaces.MembershipRoleResponse;
 import com.agentum.organization.interfaces.PageGrantItemResponse;
 import com.agentum.organization.interfaces.PageGrantResponse;
+import com.agentum.organization.interfaces.PrincipalGrantUsageResponse;
 import com.agentum.organization.interfaces.ResourceGrantItemRequest;
 import com.agentum.organization.interfaces.ResourceGrantItemResponse;
 import com.agentum.organization.interfaces.ResourceGrantResponse;
@@ -274,6 +275,7 @@ public class TenantOrganizationService {
         if (parentId != null) {
             departmentRepository.findByIdAndTenantIdAndStatus(parentId, tenantId, ACTIVE_STATUS)
                 .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "ORG_PARENT_DEPARTMENT_NOT_AVAILABLE", "上级部门不属于当前租户或已停用"));
+            assertDepartmentParentNotDescendant(tenantId, departmentId, parentId);
         }
 
         department.update(normalizeRequired(request.name()), parentId, request.sortOrder() == null ? department.getSortOrder() : request.sortOrder());
@@ -313,6 +315,7 @@ public class TenantOrganizationService {
             );
             throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_DEPARTMENT_IN_USE", "部门下仍有启用成员或启用下级部门，请先调整后再停用");
         }
+        assertPrincipalHasNoGrantsBeforeDisable(tenantId, "department", departmentId, "部门");
         department.disable();
         departmentRepository.save(department);
         log.info("部门停用成功 tenantId={} operatorUserId={} departmentId={} requestId={}", tenantId, operatorUserId, departmentId, RequestIds.current());
@@ -368,7 +371,10 @@ public class TenantOrganizationService {
         if (!ALLOWED_ORG_ROLE_STATUS.contains(status)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_ROLE_STATUS_INVALID", "角色状态只能是 active 或 disabled");
         }
-        if ("disabled".equals(status) && request.membershipIds() == null) {
+        if (request.membershipIds() != null) {
+            syncTenantRoleMemberships(tenantId, operatorUserId, role, request.membershipIds(), status);
+        }
+        if ("disabled".equals(status)) {
             long activeMembers = userMembershipRoleRepository.countActiveMembershipsByTenantIdAndRoleId(tenantId, roleId, ACTIVE_STATUS, ACTIVE_STATUS);
             if (activeMembers > 0) {
                 log.warn(
@@ -381,9 +387,7 @@ public class TenantOrganizationService {
                 );
                 throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_ROLE_HAS_MEMBERS", "角色下仍有启用成员，请先调整成员角色");
             }
-        }
-        if (request.membershipIds() != null) {
-            syncTenantRoleMemberships(tenantId, operatorUserId, role, request.membershipIds(), status);
+            assertPrincipalHasNoGrantsBeforeDisable(tenantId, "role", roleId, "角色");
         }
         role.update(normalizeRequired(request.name()), normalizeOptional(request.description()), status);
         roleRepository.save(role);
@@ -414,6 +418,7 @@ public class TenantOrganizationService {
             log.warn("租户业务角色停用失败：仍有成员 tenantId={} operatorUserId={} roleId={} activeMembers={} requestId={}", tenantId, operatorUserId, roleId, activeMembers, RequestIds.current());
             throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_ROLE_HAS_MEMBERS", "角色下仍有启用成员，请先调整成员角色");
         }
+        assertPrincipalHasNoGrantsBeforeDisable(tenantId, "role", roleId, "角色");
         role.update(role.getName(), role.getDescription(), "disabled");
         roleRepository.save(role);
         log.info("租户业务角色停用成功 tenantId={} operatorUserId={} roleId={} requestId={}", tenantId, operatorUserId, roleId, RequestIds.current());
@@ -781,6 +786,9 @@ public class TenantOrganizationService {
         }
 
         List<RoleEntity> activeRoles = loadActiveRolesForMembership(tenantId, membership.getId());
+        if ("disabled".equals(status)) {
+            assertPrincipalHasNoGrantsBeforeDisable(tenantId, "user", membership.getUserId(), "成员");
+        }
         membership.updateStatus(status);
         userMembershipRepository.save(membership);
 
@@ -1084,6 +1092,25 @@ public class TenantOrganizationService {
             RequestIds.current()
         );
         return toTenantOrgRoleResponse(role);
+    }
+
+    @Transactional(readOnly = true)
+    public PrincipalGrantUsageResponse getPrincipalGrantUsage(UUID tenantId, String principalType, UUID principalId) {
+        ensureActiveTenant(tenantId);
+        String normalizedType = normalizeRequired(principalType);
+        if (!ALLOWED_PRINCIPAL_TYPES.contains(normalizedType)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_PRINCIPAL_TYPE_INVALID", "分配主体类型只能是 role、department 或 user");
+        }
+        if (principalId == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_PRINCIPAL_ID_REQUIRED", "请指定分配主体");
+        }
+        PrincipalGrantCounts counts = countPrincipalGrants(tenantId, normalizedType, principalId);
+        return new PrincipalGrantUsageResponse(
+            normalizedType,
+            principalId.toString(),
+            counts.pageGrantRows(),
+            counts.resourceGrantRows()
+        );
     }
 
     @Transactional(readOnly = true)
@@ -1637,6 +1664,72 @@ public class TenantOrganizationService {
         }
     }
 
+    private void assertPrincipalHasNoGrantsBeforeDisable(UUID tenantId, String principalType, UUID principalId, String subjectLabel) {
+        PrincipalGrantCounts counts = countPrincipalGrants(tenantId, principalType, principalId);
+        if (counts.pageGrantRows() == 0 && counts.resourceGrantRows() == 0) {
+            return;
+        }
+        log.warn(
+            "{}停用失败：仍被资源分配引用 tenantId={} principalType={} principalId={} pageGrantRows={} resourceGrantRows={} requestId={}",
+            subjectLabel,
+            tenantId,
+            principalType,
+            principalId,
+            counts.pageGrantRows(),
+            counts.resourceGrantRows(),
+            RequestIds.current()
+        );
+        throw buildPrincipalHasGrantsException(counts);
+    }
+
+    private ApiException buildPrincipalHasGrantsException(PrincipalGrantCounts counts) {
+        if (counts.pageGrantRows() > 0 && counts.resourceGrantRows() == 0) {
+            return new ApiException(
+                HttpStatus.BAD_REQUEST,
+                "ORG_PRINCIPAL_HAS_PAGE_GRANTS",
+                "仍被 " + counts.pageGrantRows() + " 条页签分配引用，请先在资源范围中调整分配对象"
+            );
+        }
+        if (counts.resourceGrantRows() > 0 && counts.pageGrantRows() == 0) {
+            return new ApiException(
+                HttpStatus.BAD_REQUEST,
+                "ORG_PRINCIPAL_HAS_RESOURCE_GRANTS",
+                "仍被 " + counts.resourceGrantRows() + " 条能力分配引用，请先在资源范围中调整分配对象"
+            );
+        }
+        return new ApiException(
+            HttpStatus.BAD_REQUEST,
+            "ORG_PRINCIPAL_HAS_GRANTS",
+            "仍被 " + counts.pageGrantRows() + " 条页签分配和 " + counts.resourceGrantRows() + " 条能力分配引用，请先在资源范围中调整分配对象"
+        );
+    }
+
+    private PrincipalGrantCounts countPrincipalGrants(UUID tenantId, String principalType, UUID principalId) {
+        return new PrincipalGrantCounts(
+            pageGrantRepository.countByTenantIdAndPrincipalTypeAndPrincipalId(tenantId, principalType, principalId),
+            resourceGrantRepository.countByTenantIdAndPrincipalTypeAndPrincipalId(tenantId, principalType, principalId)
+        );
+    }
+
+    private void assertDepartmentParentNotDescendant(UUID tenantId, UUID departmentId, UUID parentId) {
+        UUID cursor = parentId;
+        while (cursor != null) {
+            if (cursor.equals(departmentId)) {
+                log.warn(
+                    "部门上级调整失败：形成组织环 tenantId={} departmentId={} parentId={} requestId={}",
+                    tenantId,
+                    departmentId,
+                    parentId,
+                    RequestIds.current()
+                );
+                throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_DEPARTMENT_CYCLE", "上级部门不能选择当前部门或其下级部门");
+            }
+            cursor = departmentRepository.findByIdAndTenantId(cursor, tenantId)
+                .map(DepartmentEntity::getParentId)
+                .orElse(null);
+        }
+    }
+
     private void ensureLoginAssignment(UUID userId, UUID tenantId, RoleEntity role, boolean defaultAssignment) {
         String systemRole = resolveLoginRole(role);
         String label = role.getName() == null || role.getName().isBlank() ? systemRole : role.getName();
@@ -1680,6 +1773,9 @@ public class TenantOrganizationService {
     }
 
     private record TenantResourcePermissionPayload(String resourceType, String resourceId, List<String> actions) {
+    }
+
+    private record PrincipalGrantCounts(long pageGrantRows, long resourceGrantRows) {
     }
 
     private record NormalizedPrincipal(String type, UUID id) {

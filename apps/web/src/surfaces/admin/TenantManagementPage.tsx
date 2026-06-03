@@ -1728,7 +1728,9 @@ function RoleManagementPanel({
     );
   }
 
-  const roleMemberCount = (roleId: string) => overview?.memberships.filter((membership) => membership.roles.some((role) => role.id === roleId)).length ?? 0;
+  // 与编辑角色抽屉一致：只统计「成员关系启用且仍持有该角色」的人数；停用成员保留历史角色关联，不计入卡片。
+  const roleMemberCount = (roleId: string) =>
+    overview?.memberships.filter((membership) => membership.status === "active" && membership.roles.some((role) => role.id === roleId)).length ?? 0;
 
   return (
     <div className="space-y-4">
@@ -1762,7 +1764,7 @@ function RoleManagementPanel({
               </div>
               <div className="sys-info-tags">
                 <span className={`sys-info-tag ${role.status === "active" ? "sys-info-tag--primary" : ""}`}>{role.status === "active" ? "启用" : "停用"}</span>
-                <span className="sys-info-tag">{roleMemberCount(role.id)} 名成员</span>
+                <span className="sys-info-tag">{roleMemberCount(role.id)} 名启用成员</span>
               </div>
               <div className="sys-card-footer tenant-role-card-footer">
                 <p className="tenant-role-card-description">{role.description?.trim() || "暂无说明"}</p>

@@ -95,6 +95,21 @@ public class TenantOrganizationController {
         );
     }
 
+    @GetMapping("/principals/{principalType}/{principalId}/grant-usage")
+    public ApiResponse<PrincipalGrantUsageResponse> principalGrantUsage(
+        @PathVariable UUID tenantId,
+        @PathVariable String principalType,
+        @PathVariable UUID principalId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        tenantOrganizationAccess.assertCanManageTenant(principal, tenantId);
+        return ApiResponse.success(
+            tenantOrganizationService.getPrincipalGrantUsage(tenantId, principalType, principalId),
+            RequestIds.current(request)
+        );
+    }
+
     @DeleteMapping("/departments/{departmentId}")
     public ApiResponse<Void> deleteDepartment(
         @PathVariable UUID tenantId,

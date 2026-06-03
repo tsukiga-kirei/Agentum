@@ -52,6 +52,14 @@ export type TenantOrganizationOverview = {
   memberships: OrganizationMembership[];
 };
 
+/** 组织主体在页签/能力分配中的引用行数，用于停用前预检查。 */
+export type PrincipalGrantUsage = {
+  principalType: string;
+  principalId: string;
+  pageGrantRows: number;
+  resourceGrantRows: number;
+};
+
 export type PageResponse<T> = {
   items: T[];
   page: number;
