@@ -961,6 +961,16 @@ textarea:focus-visible {
   color: var(--color-text-primary);
   border-color: var(--color-border);
 }
+.agent-admin-drawer--dark .sys-field-textarea:disabled {
+  background: var(--color-bg-hover);
+  color: var(--color-text-secondary);
+  border-color: var(--color-border);
+}
+.agent-admin-drawer--dark .sys-readonly-textarea {
+  background: var(--color-bg-hover);
+  color: var(--color-text-secondary);
+  border-color: var(--color-border);
+}
 .agent-admin-drawer--dark .sys-field-hint {
   color: var(--color-text-tertiary);
 }
@@ -2726,6 +2736,25 @@ textarea:focus-visible {
   box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
 .sys-field-textarea::placeholder { color: var(--color-text-tertiary); }
+.sys-field-textarea:disabled {
+  opacity: 1;
+  cursor: default;
+  background: var(--color-bg-hover);
+  color: var(--color-text-secondary);
+}
+.sys-readonly-textarea {
+  width: 100%;
+  min-height: 80px;
+  padding: 10px 14px;
+  font-size: 14px;
+  line-height: 1.6;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-hover);
+  color: var(--color-text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 .sys-field-hint { font-size: 11px; color: var(--color-text-tertiary); margin-top: 4px; }
 
 /* 自定义下拉选择器（替代原生 select，完全控制选项列表渲染） */

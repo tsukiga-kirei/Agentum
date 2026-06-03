@@ -57,7 +57,7 @@ const paginationLocale = {
 
 const assetTabs: Array<{ key: AssetTab; label: string; icon: LucideIcon; description: string }> = [
   { key: "overview", label: "总览", icon: Library, description: "查看系统能力、租户分配和自建资产的整体勾稽" },
-  { key: "system", label: "对我开放", icon: Boxes, description: "租户管理已分配给当前用户、部门或角色的系统能力，可作为智能体模板的构建材料" },
+  { key: "system", label: "对我开放", icon: Boxes, description: "查看租户管理已分配给当前用户、部门或角色的系统能力及当前版本" },
   { key: "mine", label: "我的能力", icon: Bot, description: "管理我创建的提示词模板草稿、智能体模板草稿和已发布能力" },
 ];
 
@@ -372,7 +372,7 @@ export function AssetsPage() {
         icon={Library}
         title="能力资产"
         badge="业务能力治理"
-        description="连接系统管理开放能力、租户管理分配能力和流程设计节点引用，让能力从平台底座一路进入业务编排。"
+        description="连接系统管理开放能力、租户管理分配与业务侧自建能力，查看当前主体可用能力及版本信息。"
       >
         <div className="system-mgmt-module-switch mb-5">
           <div className="system-mgmt-segmented-scroll">
@@ -846,12 +846,12 @@ export function AssetsPage() {
             </div>
             <div className="sys-field">
               <label className="sys-field-label">说明</label>
-              <textarea className="sys-field-textarea" disabled value={selectedSystemAsset.description || "暂无说明"} />
+              <div className="sys-readonly-textarea">{selectedSystemAsset.description || "暂无说明"}</div>
             </div>
             {selectedSystemAsset.assetType === "prompt_template" && selectedSystemAsset.promptContent ? (
               <div className="sys-field">
                 <label className="sys-field-label">提示词内容</label>
-                <textarea className="sys-field-textarea min-h-[220px]" disabled value={selectedSystemAsset.promptContent} />
+                <div className="sys-readonly-textarea min-h-[220px]">{selectedSystemAsset.promptContent}</div>
               </div>
             ) : null}
           </div>
@@ -905,7 +905,7 @@ function OverviewPanel({
         <section className="sys-preview-card">
           <div className="sys-preview-card-title"><ShieldCheck size={16} /> 能力功能入口</div>
           <div className="grid gap-3 lg:grid-cols-2">
-            <AssetFeatureCard icon={Boxes} title="对我开放" detail="查看当前用户、部门或角色已被分配的系统能力。" meta={`${systemAssets.length} 项当前页可引用能力`} onClick={onOpenSystem} />
+            <AssetFeatureCard icon={Boxes} title="对我开放" detail="查看当前用户、部门或角色已被分配的系统能力。" meta={`${systemAssets.length} 项当前页已分配能力`} onClick={onOpenSystem} />
             <AssetFeatureCard icon={Library} title="我的能力" detail="维护我创建的提示词模板和智能体模板草稿。" meta={`${summary?.myAssetTotal ?? myAssets.length} 项我的能力`} onClick={onOpenMine} />
             <AssetFeatureCard icon={PlusCircle} title="新建能力草稿" detail="创建提示词模板或智能体模板，再通过发布进入复用链路。" meta="提示词模板 / 智能体模板" onClick={onCreateDraft} />
             <AssetFeatureCard icon={BrainCircuit} title="待完善草稿" detail="回到我的能力处理未发布草稿和版本说明。" meta={`${draftAssets.length} 项待完善`} onClick={onOpenDrafts} />
@@ -999,19 +999,16 @@ function SystemAssetCard({ asset, onView }: { asset: SystemCapabilityAssetRow; o
       <p className="agent-muted min-h-12 text-sm leading-6">{asset.description || "暂无说明"}</p>
       <div className="sys-card-meta">
         <div className="sys-meta-item">
-          <span className="sys-meta-label">分配状态</span>
+          <span className="sys-meta-label">分配范围</span>
           <span className="sys-meta-value">{asset.assignmentScope}</span>
         </div>
         <div className="sys-meta-item">
-          <span className="sys-meta-label">当前状态</span>
-          <span className="sys-meta-value">{formatStatus(asset.status)}</span>
+          <span className="sys-meta-label">当前版本</span>
+          <span className="sys-meta-value">{asset.version}</span>
         </div>
       </div>
       <div className="sys-card-footer">
         <span className="sys-card-footer-time"><Clock size={12} /> 系统开放能力</span>
-        <div className="sys-card-footer-actions" onClick={(e) => e.stopPropagation()}>
-          <button type="button" disabled={!asset.assignedToMe} className="sys-btn sys-btn--text sys-btn--sm"><PlusCircle size={14} /> 加入节点引用</button>
-        </div>
       </div>
     </article>
   );
