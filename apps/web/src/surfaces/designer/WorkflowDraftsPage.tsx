@@ -13,7 +13,7 @@ import {
   Inbox,
   ListChecks,
   PanelRightOpen,
-  Pencil,
+  Save,
   Send,
   Share2,
   ShieldCheck,
@@ -329,7 +329,7 @@ export function WorkflowDraftsPage() {
     }
   }
 
-  async function handleUpdateDetail() {
+  async function handleSaveDetail() {
     if (!token || !user?.tenantId || !detailWorkflow) return;
     if (!detailName.trim()) {
       messageApi.warning("请输入工作流名称");
@@ -337,37 +337,24 @@ export function WorkflowDraftsPage() {
     }
     setSubmitting(true);
     try {
-      const detail = await workflowApi.updateDraft(user.tenantId, detailWorkflow.id, token, {
+      let detail = await workflowApi.updateDraft(user.tenantId, detailWorkflow.id, token, {
         name: detailName.trim(),
         description: detailDescription.trim(),
       });
+      if (drawerDetail?.access.canManageAccess) {
+        detail = await workflowApi.updateAccess(user.tenantId, detailWorkflow.id, token, {
+          readScope: detailAccess.readScope,
+          editScope: detailAccess.editScope,
+          readUserIds: detailAccess.readScope === "specified" ? detailAccess.readUserIds : [],
+          editUserIds: detailAccess.editScope === "specified" ? detailAccess.editUserIds : [],
+        });
+      }
       setDrawerDetail(detail);
       setDetailWorkflow(detail.draft);
       setWorkflows((items) => items.map((item) => item.id === detail.draft.id ? detail.draft : item));
-      messageApi.success("流程基础信息已保存");
+      messageApi.success("流程信息已保存");
     } catch (error) {
       messageApi.error(error instanceof AgentumApiError ? error.message : "保存流程信息失败");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function handleUpdateDetailAccess() {
-    if (!token || !user?.tenantId || !detailWorkflow) return;
-    setSubmitting(true);
-    try {
-      const detail = await workflowApi.updateAccess(user.tenantId, detailWorkflow.id, token, {
-        readScope: detailAccess.readScope,
-        editScope: detailAccess.editScope,
-        readUserIds: detailAccess.readScope === "specified" ? detailAccess.readUserIds : [],
-        editUserIds: detailAccess.editScope === "specified" ? detailAccess.editUserIds : [],
-      });
-      setDrawerDetail(detail);
-      setDetailWorkflow(detail.draft);
-      setWorkflows((items) => items.map((item) => item.id === detail.draft.id ? detail.draft : item));
-      messageApi.success("流程读取与编辑权限已保存");
-    } catch (error) {
-      messageApi.error(error instanceof AgentumApiError ? error.message : "保存流程权限失败");
     } finally {
       setSubmitting(false);
     }
@@ -715,16 +702,10 @@ export function WorkflowDraftsPage() {
                 </button>
                 {detailWorkflow.accessLevel !== "read" ? (
                   <>
-                    <button type="button" className="sys-btn sys-btn--default" disabled={submitting} onClick={() => void handleUpdateDetail()}>
-                      <Pencil size={14} aria-hidden="true" />
-                      保存说明
+                    <button type="button" className="sys-btn sys-btn--default" disabled={submitting} onClick={() => void handleSaveDetail()}>
+                      <Save size={14} aria-hidden="true" />
+                      保存
                     </button>
-                    {drawerDetail?.access.canManageAccess ? (
-                      <button type="button" className="sys-btn sys-btn--default" disabled={submitting} onClick={() => void handleUpdateDetailAccess()}>
-                        <ShieldCheck size={14} aria-hidden="true" />
-                        保存权限
-                      </button>
-                    ) : null}
                     <button type="button" className="sys-btn sys-btn--default" disabled={validatingWorkflowId === detailWorkflow.id} onClick={() => void handleValidateForPublish(detailWorkflow)}>
                       <ListChecks size={14} aria-hidden="true" />
                       {validatingWorkflowId === detailWorkflow.id ? "校验中" : "发布校验"}

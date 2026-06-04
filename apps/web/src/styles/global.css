@@ -849,6 +849,34 @@ textarea:focus-visible {
   box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1) !important;
 }
 
+/* 禁用态与 sys-field-input / textarea 只读灰底保持一致（覆盖上方 !important 背景） */
+.agent-admin-select.ant-select.ant-select-disabled {
+  cursor: not-allowed !important;
+  --ant-color-bg-container: var(--color-bg-hover);
+  background: var(--color-bg-hover) !important;
+  background-color: var(--color-bg-hover) !important;
+  border-color: var(--color-border-light) !important;
+  color: var(--color-text-secondary) !important;
+  box-shadow: none !important;
+}
+.agent-admin-select.ant-select.ant-select-disabled:hover,
+.agent-admin-select.ant-select.ant-select-disabled.ant-select-focused {
+  border-color: var(--color-border-light) !important;
+  box-shadow: none !important;
+}
+.agent-admin-select.ant-select.ant-select-disabled .ant-select-content-value {
+  color: var(--color-text-secondary) !important;
+}
+.agent-admin-select.ant-select.ant-select-disabled .ant-select-prefix,
+.agent-admin-select.ant-select.ant-select-disabled .ant-select-suffix {
+  color: var(--color-text-tertiary) !important;
+}
+.agent-admin-select.ant-select.ant-select-disabled.ant-select-multiple .ant-select-selection-item {
+  background: color-mix(in srgb, var(--color-bg-hover) 82%, var(--color-bg-page) 18%) !important;
+  border-color: var(--color-border-light) !important;
+  color: var(--color-text-secondary) !important;
+}
+
 .dark .ant-empty-description,
 .sys-preview-card .ant-empty-description {
   color: var(--color-text-secondary);
@@ -956,6 +984,12 @@ textarea:focus-visible {
   color: var(--color-text-primary);
   border-color: var(--color-border);
 }
+.agent-admin-drawer--dark .sys-field-input:disabled {
+  background: var(--color-bg-hover);
+  color: var(--color-text-secondary);
+  border-color: var(--color-border);
+  opacity: 1;
+}
 .agent-admin-drawer--dark .sys-field-textarea {
   background: var(--color-bg-input);
   color: var(--color-text-primary);
@@ -983,6 +1017,16 @@ textarea:focus-visible {
   background: var(--color-bg-hover);
   color: var(--color-text-secondary);
   border-color: var(--color-border);
+}
+.agent-admin-drawer--dark .agent-admin-select.ant-select.ant-select-disabled {
+  --ant-color-bg-container: var(--color-bg-hover);
+  background: var(--color-bg-hover) !important;
+  background-color: var(--color-bg-hover) !important;
+  border-color: var(--color-border) !important;
+  color: var(--color-text-secondary) !important;
+}
+.agent-admin-drawer--dark .agent-admin-select.ant-select.ant-select-disabled .ant-select-content-value {
+  color: var(--color-text-secondary) !important;
 }
 
 /* ===== 深色模式：Ant Design Modal（能力资产等使用） 增强覆盖 ===== */
@@ -2480,13 +2524,17 @@ textarea:focus-visible {
   filter: none;
 }
 
-/* 抽屉底部操作栏 */
+/* 抽屉底部操作栏：按钮过多时自动换行，避免挤压溢出 */
 .sys-drawer-footer {
-  display: flex; justify-content: space-between; align-items: center;
+  display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
+  gap: 12px;
   margin-top: 32px; padding-top: 20px;
   border-top: 1px solid var(--color-border-light);
 }
-.sys-drawer-footer-right { display: flex; gap: 8px; }
+.sys-drawer-footer-right {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  justify-content: flex-end; margin-left: auto;
+}
 
 /* 抽屉内表单描述行 */
 .sys-form-row {
@@ -2720,8 +2768,10 @@ textarea:focus-visible {
 .sys-field-input::placeholder { color: var(--color-text-tertiary); }
 .sys-field-input[type="password"] { letter-spacing: 2px; }
 .sys-field-input:disabled {
-  opacity: 0.6; cursor: not-allowed;
+  opacity: 1;
+  cursor: not-allowed;
   background: var(--color-bg-hover);
+  color: var(--color-text-secondary);
 }
 .sys-field-textarea {
   width: 100%; min-height: 80px; padding: 10px 14px; font-size: 14px;

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { ArrowRight, Bot, Boxes, BrainCircuit, CheckCircle2, ChevronDown, CircleAlert, Clock, Edit3, Eye, FileText, Hash, Library, PlusCircle, RotateCcw, Search, Send, ShieldCheck, Tag, Trash2, UserRoundCog, X } from "lucide-react";
+import { ArrowRight, Bot, Boxes, BrainCircuit, CheckCircle2, ChevronDown, CircleAlert, Clock, Edit3, Eye, FileText, Hash, Library, PlusCircle, RotateCcw, Save, Search, Send, ShieldCheck, Tag, Trash2, UserRoundCog, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Empty, Pagination, Segmented, Select, Spin, message, Drawer } from "antd";
 import { SurfacePageLayout } from "../../components/workbench/SurfacePageLayout";
@@ -356,7 +356,7 @@ export function AssetsPage() {
     }
   };
 
-  const handleUpdate = async () => {
+  const handleSaveDraft = async () => {
     if (!token || !tenantId || !currentAsset) return;
     if (!editDraft.name.trim()) {
       messageApi.warning("请输入能力名称");
@@ -365,7 +365,21 @@ export function AssetsPage() {
 
     setSubmitting(true);
     try {
-      const updated = await assetApi.updateMine(tenantId, token, currentAsset.id, normalizeEditDraft(editDraft, currentAsset.assetType));
+      let updated = await assetApi.updateMine(tenantId, token, currentAsset.id, normalizeEditDraft(editDraft, currentAsset.assetType));
+      if (currentAsset.canManageAccess) {
+        updated = await assetApi.updateMineAccess(tenantId, token, currentAsset.id, {
+          readScope: accessDraft.readScope,
+          editScope: accessDraft.editScope,
+          readUserIds: accessDraft.readScope === "specified" ? accessDraft.readUserIds : [],
+          editUserIds: accessDraft.editScope === "specified" ? accessDraft.editUserIds : [],
+        });
+        setAccessDraft({
+          readScope: updated.readScope,
+          editScope: updated.editScope,
+          readUserIds: updated.readUserIds ?? [],
+          editUserIds: updated.editUserIds ?? [],
+        });
+      }
       setCurrentAsset(updated);
       messageApi.success("能力草稿已保存");
       await Promise.all([loadSummary(), loadMyAssets(minePage.page, minePage.size, keyword)]);
@@ -935,16 +949,10 @@ export function AssetsPage() {
                       <X size={14} />
                       取消
                     </button>
-                    <button type="button" className="sys-btn sys-btn--default" disabled={submitting} onClick={() => void handleUpdate()}>
-                      <Edit3 size={14} />
-                      保存草稿
+                    <button type="button" className="sys-btn sys-btn--default" disabled={submitting} onClick={() => void handleSaveDraft()}>
+                      <Save size={14} />
+                      保存
                     </button>
-                    {currentAsset.canManageAccess ? (
-                      <button type="button" className="sys-btn sys-btn--default" disabled={submitting} onClick={() => void handleUpdateAccess()}>
-                        <Eye size={14} />
-                        保存权限
-                      </button>
-                    ) : null}
                     <button type="button" className="sys-btn sys-btn--primary" disabled={submitting} onClick={() => void handlePublish()}>
                       <Send size={14} />
                       发布能力
@@ -966,8 +974,8 @@ export function AssetsPage() {
                     </button>
                     {currentAsset.canManageAccess ? (
                       <button type="button" className="sys-btn sys-btn--default" disabled={submitting} onClick={() => void handleUpdateAccess()}>
-                        <Eye size={14} />
-                        保存权限
+                        <Save size={14} />
+                        保存
                       </button>
                     ) : null}
                     <button type="button" className="sys-btn sys-btn--primary" disabled={submitting} onClick={() => void handleRevertToDraft()}>
@@ -984,8 +992,8 @@ export function AssetsPage() {
                   </button>
                   {currentAsset.canManageAccess ? (
                     <button type="button" className="sys-btn sys-btn--primary" disabled={submitting} onClick={() => void handleUpdateAccess()}>
-                      <Eye size={14} />
-                      保存权限
+                      <Save size={14} />
+                      保存
                     </button>
                   ) : null}
                 </div>
