@@ -584,6 +584,9 @@ textarea:focus-visible {
 .agent-admin-drawer .ant-drawer-title {
   color: var(--color-text-primary);
   font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .agent-admin-drawer .ant-drawer-close {
@@ -1027,6 +1030,18 @@ textarea:focus-visible {
 }
 .agent-admin-drawer--dark .agent-admin-select.ant-select.ant-select-disabled .ant-select-content-value {
   color: var(--color-text-secondary) !important;
+}
+.agent-admin-drawer--dark .workflow-detail-drawer-hero {
+  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-bg-card));
+  border-color: var(--color-border);
+}
+.agent-admin-drawer--dark .workflow-detail-drawer-icon {
+  background: var(--color-bg-hover);
+  border-color: var(--color-border);
+}
+.agent-admin-drawer--dark .workflow-detail-drawer-desc {
+  border-top-color: var(--color-border);
+  color: var(--color-text-secondary);
 }
 
 /* ===== 深色模式：Ant Design Modal（能力资产等使用） 增强覆盖 ===== */
@@ -5329,32 +5344,67 @@ textarea:focus-visible {
   line-height: 1.7;
 }
 
-.workflow-detail-drawer-head {
+.workflow-detail-drawer-hero {
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr);
-  gap: 14px;
-  margin-bottom: 18px;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding: 16px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--color-primary) 4%, var(--color-bg-card));
+}
+
+.workflow-detail-drawer-hero-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.workflow-detail-drawer-hero-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.workflow-detail-drawer-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.workflow-detail-drawer-meta {
+  margin: 8px 0 0;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.workflow-detail-drawer-meta-sep {
+  margin: 0 6px;
+  color: var(--color-border);
+}
+
+.workflow-detail-drawer-desc {
+  margin: 0;
+  padding-top: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--color-border-light) 80%, transparent);
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.65;
 }
 
 .workflow-detail-drawer-icon {
   display: inline-flex;
-  width: 48px;
-  height: 48px;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
   align-items: center;
   justify-content: center;
-  border-radius: var(--radius-lg);
-  background: var(--color-primary-bg);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-card);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 18%, var(--color-border-light));
   color: var(--color-primary);
-}
-
-.workflow-detail-drawer-title {
-  margin: 0;
-  overflow: hidden;
-  color: var(--color-text-primary);
-  font-size: 18px;
-  font-weight: 700;
-  line-height: 1.35;
-  text-overflow: ellipsis;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
 }
 
 .workflow-detail-actions-grid {

@@ -627,7 +627,7 @@ export function WorkflowDraftsPage() {
       </SurfacePageLayout>
 
       <Drawer
-        title={detailWorkflow ? "流程详情" : "流程详情"}
+        title={detailWorkflow?.name ?? "流程详情"}
         placement="right"
         width={560}
         onClose={() => setDetailWorkflow(null)}
@@ -637,18 +637,29 @@ export function WorkflowDraftsPage() {
         {detailWorkflow ? (
           <>
             <div className="sys-drawer-section">
-              <div className="workflow-detail-drawer-head">
-                <span className="workflow-detail-drawer-icon">
-                  <GitBranch size={22} aria-hidden="true" />
-                </span>
-                <div className="min-w-0">
-                  <div className="sys-info-tags mb-2">
-                    <span className={`sys-info-tag ${statusMeta[detailWorkflow.status].className}`}>{statusMeta[detailWorkflow.status].label}</span>
-                    <span className="sys-info-tag">{isWorkflowOwnedByCurrentUser(detailWorkflow, currentUserId) ? "我的流程" : "协作开放"}</span>
+              <div className="workflow-detail-drawer-hero">
+                <div className="workflow-detail-drawer-hero-main">
+                  <span className="workflow-detail-drawer-icon" aria-hidden="true">
+                    <GitBranch size={20} />
+                  </span>
+                  <div className="workflow-detail-drawer-hero-body">
+                    <div className="workflow-detail-drawer-tags">
+                      <span className={`sys-info-tag ${statusMeta[detailWorkflow.status].className}`}>{statusMeta[detailWorkflow.status].label}</span>
+                      <span className="sys-info-tag sys-info-tag--primary">{isWorkflowOwnedByCurrentUser(detailWorkflow, currentUserId) ? "我的流程" : "协作开放"}</span>
+                      <span className="sys-info-tag">{formatAccessLevel(detailWorkflow.accessLevel)}</span>
+                    </div>
+                    <p className="workflow-detail-drawer-meta">
+                      {detailWorkflow.ownerName || "未知用户"}
+                      <span className="workflow-detail-drawer-meta-sep" aria-hidden="true">·</span>
+                      {detailWorkflow.nodeCount} 个积木
+                      <span className="workflow-detail-drawer-meta-sep" aria-hidden="true">·</span>
+                      更新于 {formatDateTime(detailWorkflow.updatedAt)}
+                    </p>
                   </div>
-                  <h2 className="workflow-detail-drawer-title">{detailWorkflow.name}</h2>
-                  <p className="agent-muted mt-2 text-sm leading-6">{formatAccessLevel(detailWorkflow.accessLevel)}</p>
                 </div>
+                {detailWorkflow.description ? (
+                  <p className="workflow-detail-drawer-desc">{detailWorkflow.description}</p>
+                ) : null}
               </div>
 
               <div className="sys-field">
