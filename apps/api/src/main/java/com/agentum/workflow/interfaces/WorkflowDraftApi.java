@@ -25,6 +25,10 @@ public final class WorkflowDraftApi {
         UUID ownerId,
         String ownerName,
         String accessLevel,
+        int latestVersionNumber,
+        Instant latestPublishedAt,
+        boolean hasUnpublishedChanges,
+        boolean launchEnabled,
         Instant updatedAt
     ) {
     }

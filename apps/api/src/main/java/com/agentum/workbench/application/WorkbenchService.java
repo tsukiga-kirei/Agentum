@@ -185,14 +185,11 @@ public class WorkbenchService {
         Pageable pageable = PageableFactory.from(PageQuery.of(page, size, sort), AVAILABLE_WORKFLOW_SORT);
         String normalizedKeyword = keyword == null ? "" : keyword.trim();
 
-        // 复用工作流草稿仓库的可见性查询，并通过 status='published' 仅取当前用户可读取的已发布定义。
-        Page<WorkflowDefinitionEntity> resultPage = workflowDefinitionRepository.searchDrafts(
+        // 业务侧可发起流程：至少存在一条冻结版本且入口未收回；与设计态 status 解耦，避免编辑后误下线。
+        Page<WorkflowDefinitionEntity> resultPage = workflowDefinitionRepository.searchLaunchableWorkflows(
             tenantId,
             normalizedKeyword,
             principal.userId(),
-            false,
-            false,
-            PUBLISHED_STATUS,
             pageable
         );
 

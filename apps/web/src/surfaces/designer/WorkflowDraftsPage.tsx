@@ -19,6 +19,9 @@ import {
   ShieldCheck,
   Split,
   Search,
+  Trash2,
+  Archive,
+  RotateCcw,
   UserRound,
   UsersRound,
   X,
@@ -41,21 +44,6 @@ import { WorkflowEditorPage } from "./WorkflowEditorPage";
 
 // 工作流草稿列表是设计态入口，不等同于运行实例；发布后需要生成不可变 WorkflowVersion。
 export type WorkflowDraft = WorkflowDraftRow;
-
-const statusMeta: Record<WorkflowStatus, { label: string; className: string }> = {
-  draft: {
-    label: "草稿",
-    className: "sys-info-tag--warn",
-  },
-  published: {
-    label: "已发布",
-    className: "sys-info-tag--success",
-  },
-  review: {
-    label: "待校验",
-    className: "sys-info-tag--info",
-  },
-};
 
 const workflowPaginationLocale = {
   items_per_page: "条/页",
@@ -131,6 +119,7 @@ export function WorkflowDraftsPage() {
     result: WorkflowPublishValidationResult;
   } | null>(null);
   const [publishingWorkflowId, setPublishingWorkflowId] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<WorkflowDraft | null>(null);
   const [activeTab, setActiveTab] = useState<WorkflowDesignerTab>("overview");
   const [detailWorkflow, setDetailWorkflow] = useState<WorkflowDraft | null>(null);
   const [drawerDetail, setDrawerDetail] = useState<WorkflowDraftDetail | null>(null);
@@ -215,6 +204,7 @@ export function WorkflowDraftsPage() {
       .then((detail) => {
         if (!cancelled) {
           setDrawerDetail(detail);
+          setDetailWorkflow(detail.draft);
           setDetailName(detail.draft.name);
           setDetailDescription(detail.draft.description);
           setDetailAccess({
@@ -242,7 +232,7 @@ export function WorkflowDraftsPage() {
     return () => {
       cancelled = true;
     };
-  }, [detailWorkflow, token, user?.tenantId]);
+  }, [detailWorkflow?.id, token, user?.tenantId]);
 
   const filteredWorkflows = useMemo(() => {
     if (activeTab === "all") {
@@ -256,9 +246,9 @@ export function WorkflowDraftsPage() {
   const sharedWorkflows = useMemo(() => workflows.filter((workflow) => !isWorkflowOwnedByCurrentUser(workflow, currentUserId)), [currentUserId, workflows]);
   const myOwnedWorkflows = useMemo(() => workflows.filter((workflow) => isWorkflowOwnedByCurrentUser(workflow, currentUserId)), [currentUserId, workflows]);
 
-  const draftCount = workflows.filter((workflow) => workflow.status === "draft").length;
-  const publishedCount = workflows.filter((workflow) => workflow.status === "published").length;
-  const reviewCount = workflows.filter((workflow) => workflow.status === "review").length;
+  const neverPublishedCount = workflows.filter((workflow) => workflow.latestVersionNumber === 0).length;
+  const publishedCount = workflows.filter((workflow) => workflow.latestVersionNumber > 0).length;
+  const pendingPublishCount = workflows.filter((workflow) => workflow.hasUnpublishedChanges).length;
   const moduleOptions = [
     {
       value: "overview",
@@ -365,8 +355,8 @@ export function WorkflowDraftsPage() {
       messageApi.error("当前账号缺少租户上下文，无法执行发布校验");
       return;
     }
-    if (workflow.status === "published") {
-      messageApi.warning("当前草稿没有待发布变更");
+    if (!workflow.hasUnpublishedChanges && workflow.latestVersionNumber > 0) {
+      messageApi.warning("当前没有待发布变更");
       return;
     }
 
@@ -380,6 +370,56 @@ export function WorkflowDraftsPage() {
       messageApi.error(error instanceof AgentumApiError ? error.message : "发布校验失败，请稍后重试");
     } finally {
       setValidatingWorkflowId("");
+    }
+  }
+
+  async function handleRecallLaunch() {
+    if (!token || !user?.tenantId || !detailWorkflow) return;
+    setSubmitting(true);
+    try {
+      const detail = await workflowApi.recallLaunch(user.tenantId, detailWorkflow.id, token);
+      setDrawerDetail(detail);
+      setDetailWorkflow(detail.draft);
+      setWorkflows((items) => items.map((item) => item.id === detail.draft.id ? detail.draft : item));
+      messageApi.success("已下线：工作台不再展示该流程，历史版本仍保留，可随时上线");
+    } catch (error) {
+      messageApi.error(error instanceof AgentumApiError ? error.message : "下线失败");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleRestoreLaunch() {
+    if (!token || !user?.tenantId || !detailWorkflow) return;
+    setSubmitting(true);
+    try {
+      const detail = await workflowApi.restoreLaunch(user.tenantId, detailWorkflow.id, token);
+      setDrawerDetail(detail);
+      setDetailWorkflow(detail.draft);
+      setWorkflows((items) => items.map((item) => item.id === detail.draft.id ? detail.draft : item));
+      messageApi.success("已上线：工作台可再次选用该流程");
+    } catch (error) {
+      messageApi.error(error instanceof AgentumApiError ? error.message : "上线失败");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function deleteWorkflow(workflow: WorkflowDraft) {
+    if (!token || !user?.tenantId) return;
+    setSubmitting(true);
+    try {
+      await workflowApi.deleteDraft(user.tenantId, workflow.id, token);
+      messageApi.success("流程已删除");
+      setDeleteTarget(null);
+      if (detailWorkflow?.id === workflow.id) {
+        setDetailWorkflow(null);
+      }
+      await loadDrafts(page, searchValue, pageSize, currentScope, workflowStatusFilter);
+    } catch (error) {
+      messageApi.error(error instanceof AgentumApiError ? error.message : "删除流程失败");
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -471,9 +511,9 @@ export function WorkflowDraftsPage() {
         {activeTab === "overview" ? (
           <section className="sys-overview-stats mb-5" aria-label="工作流概览">
             <OverviewStat icon={GitBranch} label="可见工作流" value={String(total)} tone="primary" />
-            <OverviewStat icon={Clock3} label="当前页草稿" value={String(draftCount)} tone="info" />
+            <OverviewStat icon={Clock3} label="当前页未发布" value={String(neverPublishedCount)} tone="info" />
             <OverviewStat icon={CheckCircle2} label="当前页已发布" value={String(publishedCount)} tone="success" />
-            <OverviewStat icon={ListChecks} label="当前页待校验" value={String(reviewCount)} tone="cap" />
+            <OverviewStat icon={ListChecks} label="当前页待发布" value={String(pendingPublishCount)} tone="cap" />
           </section>
         ) : null}
 
@@ -500,7 +540,7 @@ export function WorkflowDraftsPage() {
                   icon={ClipboardCheck}
                   title="发布治理"
                   description="进入流程抽屉后执行校验，查看阻塞项，通过后冻结正式版本。"
-                  meta={`${reviewCount} 个当前页待校验`}
+                  meta={`${pendingPublishCount} 个当前页待发布改动`}
                   onClick={handleOpenPublishGovernance}
                 />
                 <WorkflowFeatureCard
@@ -644,9 +684,16 @@ export function WorkflowDraftsPage() {
                   </span>
                   <div className="workflow-detail-drawer-hero-body">
                     <div className="workflow-detail-drawer-tags">
-                      <span className={`sys-info-tag ${statusMeta[detailWorkflow.status].className}`}>{statusMeta[detailWorkflow.status].label}</span>
-                      <span className="sys-info-tag sys-info-tag--primary">{isWorkflowOwnedByCurrentUser(detailWorkflow, currentUserId) ? "我的流程" : "协作开放"}</span>
-                      <span className="sys-info-tag">{formatAccessLevel(detailWorkflow.accessLevel)}</span>
+                      {(() => {
+                        const versionMeta = resolveWorkflowVersionMeta(detailWorkflow);
+                        return (
+                          <>
+                            <span className={`sys-info-tag ${versionMeta.className}`}>{versionMeta.label}</span>
+                            <span className="sys-info-tag sys-info-tag--primary">{isWorkflowOwnedByCurrentUser(detailWorkflow, currentUserId) ? "我的流程" : "协作开放"}</span>
+                            <span className="sys-info-tag">{formatAccessLevel(detailWorkflow.accessLevel)}</span>
+                          </>
+                        );
+                      })()}
                     </div>
                     <p className="workflow-detail-drawer-meta">
                       {detailWorkflow.ownerName || "未知用户"}
@@ -654,6 +701,12 @@ export function WorkflowDraftsPage() {
                       {detailWorkflow.nodeCount} 个积木
                       <span className="workflow-detail-drawer-meta-sep" aria-hidden="true">·</span>
                       更新于 {formatDateTime(detailWorkflow.updatedAt)}
+                      {detailWorkflow.latestPublishedAt ? (
+                        <>
+                          <span className="workflow-detail-drawer-meta-sep" aria-hidden="true">·</span>
+                          最近发布 {formatDateTime(detailWorkflow.latestPublishedAt)}
+                        </>
+                      ) : null}
                     </p>
                   </div>
                 </div>
@@ -705,29 +758,44 @@ export function WorkflowDraftsPage() {
               />
             </div>
 
-            <div className="sys-drawer-footer">
-              <div className="sys-drawer-footer-right">
-                <button type="button" className="sys-btn sys-btn--default" onClick={() => setDetailWorkflow(null)}>
-                  <X size={14} aria-hidden="true" />
-                  关闭
+            <div className="workflow-drawer-footer">
+              {isWorkflowOwnedByCurrentUser(detailWorkflow, currentUserId) ? (
+                <button type="button" className="sys-btn sys-btn--danger sys-btn--sm workflow-drawer-footer-danger" disabled={submitting} onClick={() => setDeleteTarget(detailWorkflow)}>
+                  <Trash2 size={14} aria-hidden="true" />
+                  删除
                 </button>
-                {detailWorkflow.accessLevel !== "read" ? (
-                  <>
-                    <button type="button" className="sys-btn sys-btn--default" disabled={submitting} onClick={() => void handleSaveDetail()}>
-                      <Save size={14} aria-hidden="true" />
-                      保存
-                    </button>
-                    <button type="button" className="sys-btn sys-btn--default" disabled={validatingWorkflowId === detailWorkflow.id} onClick={() => void handleValidateForPublish(detailWorkflow)}>
-                      <ListChecks size={14} aria-hidden="true" />
-                      {validatingWorkflowId === detailWorkflow.id ? "校验中" : "发布校验"}
-                    </button>
-                    <button type="button" className="sys-btn sys-btn--primary" onClick={() => { setEditingWorkflow(detailWorkflow); setDetailWorkflow(null); }}>
-                      <PanelRightOpen size={14} aria-hidden="true" />
-                      进入设计
-                    </button>
-                  </>
-                ) : null}
-              </div>
+              ) : (
+                <span className="workflow-drawer-footer-spacer" aria-hidden="true" />
+              )}
+              {detailWorkflow.accessLevel !== "read" ? (
+                <div className="workflow-drawer-footer-actions">
+                  <button type="button" className="sys-btn sys-btn--default sys-btn--sm" disabled={submitting} onClick={() => void handleSaveDetail()}>
+                    <Save size={14} aria-hidden="true" />
+                    保存
+                  </button>
+                  {isWorkflowOwnedByCurrentUser(detailWorkflow, currentUserId) && detailWorkflow.latestVersionNumber > 0 ? (
+                    detailWorkflow.launchEnabled ? (
+                      <button type="button" className="sys-btn sys-btn--default sys-btn--sm" disabled={submitting} onClick={() => void handleRecallLaunch()}>
+                        <Archive size={14} aria-hidden="true" />
+                        下线
+                      </button>
+                    ) : (
+                      <button type="button" className="sys-btn sys-btn--default sys-btn--sm" disabled={submitting} onClick={() => void handleRestoreLaunch()}>
+                        <RotateCcw size={14} aria-hidden="true" />
+                        上线
+                      </button>
+                    )
+                  ) : null}
+                  <button type="button" className="sys-btn sys-btn--default sys-btn--sm" disabled={validatingWorkflowId === detailWorkflow.id || (!detailWorkflow.hasUnpublishedChanges && detailWorkflow.latestVersionNumber > 0)} onClick={() => void handleValidateForPublish(detailWorkflow)}>
+                    <ListChecks size={14} aria-hidden="true" />
+                    {validatingWorkflowId === detailWorkflow.id ? "校验中" : "发布校验"}
+                  </button>
+                  <button type="button" className="sys-btn sys-btn--primary sys-btn--sm" onClick={() => { setEditingWorkflow(detailWorkflow); setDetailWorkflow(null); }}>
+                    <PanelRightOpen size={14} aria-hidden="true" />
+                    进入设计
+                  </button>
+                </div>
+              ) : null}
             </div>
           </>
         ) : null}
@@ -812,6 +880,27 @@ export function WorkflowDraftsPage() {
           </section>
         </div>
       ) : null}
+
+      {deleteTarget ? (
+        <div className="sys-modal-mask" onClick={() => setDeleteTarget(null)}>
+          <section className="sys-modal" style={{ maxWidth: 480 }} aria-labelledby="delete-workflow-title" onClick={(event) => event.stopPropagation()}>
+            <div className="sys-modal-header">
+              <span id="delete-workflow-title" className="sys-modal-title">删除流程</span>
+              <button className="sys-modal-close" onClick={() => setDeleteTarget(null)} aria-label="关闭删除确认"><X size={18} /></button>
+            </div>
+            <div className="sys-modal-body">
+              <p>确定删除「{deleteTarget.name}」吗？</p>
+              <p className="agent-muted text-sm leading-6">
+                将同时删除设计态与全部已冻结版本。若业务侧已有运行实例，后续接入运行态后将禁止删除。
+              </p>
+            </div>
+            <div className="sys-modal-footer">
+              <button type="button" className="sys-btn sys-btn--default" disabled={submitting} onClick={() => setDeleteTarget(null)}>取消</button>
+              <button type="button" className="sys-btn sys-btn--danger" disabled={submitting} onClick={() => void deleteWorkflow(deleteTarget)}>确认删除</button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </>
   );
 }
@@ -864,7 +953,7 @@ function WorkflowSideList({ title, empty, workflows, onOpen }: { title: string; 
 }
 
 function WorkflowPreviewItem({ workflow, onClick }: { workflow: WorkflowDraft; onClick: () => void }) {
-  const status = statusMeta[workflow.status];
+  const versionMeta = resolveWorkflowVersionMeta(workflow);
 
   return (
     <button type="button" className="sys-preview-item workflow-preview-item" onClick={onClick}>
@@ -877,7 +966,7 @@ function WorkflowPreviewItem({ workflow, onClick }: { workflow: WorkflowDraft; o
           <span className="sys-preview-item-sub">{workflow.ownerName || "未知用户"} · {workflow.nodeCount} 个积木</span>
         </span>
       </span>
-      <span className={`sys-info-tag ${status.className}`}>{status.label}</span>
+      <span className={`sys-info-tag ${versionMeta.className}`}>{versionMeta.shortLabel}</span>
     </button>
   );
 }
@@ -899,7 +988,7 @@ function WorkflowDesignCard({
   onOpenDetail: () => void;
   onValidate?: () => void;
 }) {
-  const status = statusMeta[workflow.status];
+  const versionMeta = resolveWorkflowVersionMeta(workflow);
 
   return (
     <article className="sys-card workflow-design-card" onClick={onOpenDetail}>
@@ -911,12 +1000,13 @@ function WorkflowDesignCard({
           <div className="sys-card-name">{workflow.name}</div>
           <div className="sys-card-code">{workflow.ownerName || "未知用户"} · {formatDateTime(workflow.updatedAt)}</div>
         </div>
-        <span className={`sys-status ${workflow.status === "published" ? "sys-status--active" : "sys-status--inactive"}`}>
+        <span className={`sys-status ${workflow.latestVersionNumber > 0 && workflow.launchEnabled ? "sys-status--active" : "sys-status--inactive"}`}>
           <span className="sys-status-dot" />
-          {status.label}
+          {versionMeta.shortLabel}
         </span>
       </div>
       <div className="sys-info-tags">
+        <span className={`sys-info-tag ${versionMeta.className}`}>{versionMeta.label}</span>
         <span className="sys-info-tag sys-info-tag--primary">{mine ? "我的流程" : "协作开放"}</span>
         <span className="sys-info-tag">{formatAccessLevel(workflow.accessLevel)}</span>
         <span className="sys-info-tag">{workflow.nodeCount} 个积木</span>
@@ -924,12 +1014,12 @@ function WorkflowDesignCard({
       <p className="agent-muted workflow-design-card-desc">{workflow.description || "暂无说明"}</p>
       <div className="sys-card-meta">
         <div className="sys-meta-item">
-          <span className="sys-meta-label">协作方式</span>
-          <span className="sys-meta-value">{formatAccessLevel(workflow.accessLevel)}</span>
+          <span className="sys-meta-label">上线状态</span>
+          <span className="sys-meta-value">{workflow.latestVersionNumber === 0 ? "未上线" : workflow.launchEnabled ? "已上线" : "已下线"}</span>
         </div>
         <div className="sys-meta-item">
           <span className="sys-meta-label">发布动作</span>
-          <span className="sys-meta-value">{workflow.status === "published" ? "可继续演进草稿" : "需校验后发布"}</span>
+          <span className="sys-meta-value">{workflow.hasUnpublishedChanges ? "需重新发布" : workflow.latestVersionNumber > 0 ? "与线上一致" : "需校验后发布"}</span>
         </div>
       </div>
       <div className="sys-card-footer">
@@ -1157,6 +1247,31 @@ function formatAccessLevel(level: WorkflowDraft["accessLevel"]) {
   if (level === "owner") return "创建者";
   if (level === "edit") return "可编辑";
   return "可读取";
+}
+
+function resolveWorkflowVersionMeta(workflow: WorkflowDraft) {
+  if (workflow.latestVersionNumber === 0) {
+    return { label: "未发布", shortLabel: "未发布", className: "sys-info-tag--warn" };
+  }
+  if (!workflow.launchEnabled) {
+    return {
+      label: `已发布 v${workflow.latestVersionNumber} · 已下线`,
+      shortLabel: `v${workflow.latestVersionNumber} 下线`,
+      className: "sys-info-tag--info",
+    };
+  }
+  if (workflow.hasUnpublishedChanges) {
+    return {
+      label: `已发布 v${workflow.latestVersionNumber} · 有未发布改动`,
+      shortLabel: `v${workflow.latestVersionNumber} 待发布`,
+      className: "sys-info-tag--warn",
+    };
+  }
+  return {
+    label: `已发布 v${workflow.latestVersionNumber}`,
+    shortLabel: `v${workflow.latestVersionNumber}`,
+    className: "sys-info-tag--success",
+  };
 }
 
 function getWorkflowErrorContext(error: unknown, tenantId?: string, extra?: Record<string, unknown>) {

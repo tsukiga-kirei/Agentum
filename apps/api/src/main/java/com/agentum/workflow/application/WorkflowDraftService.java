@@ -131,7 +131,8 @@ public class WorkflowDraftService {
             .filter(Objects::nonNull)
             .collect(Collectors.toSet());
         Map<UUID, UserAccount> usersById = loadUsersById(creatorIds);
-        return PageResponse.from(resultPage.map(definition -> toDraftRow(definition, usersById, operatorUserId)));
+        Map<UUID, WorkflowVersionEntity> latestVersions = loadLatestVersions(resultPage.getContent());
+        return PageResponse.from(resultPage.map(definition -> toDraftRow(definition, usersById, operatorUserId, latestVersions.get(definition.getId()))));
     }
 
     @Transactional
@@ -157,7 +158,7 @@ public class WorkflowDraftService {
             name,
             RequestIds.current()
         );
-        return toDraftRow(definition, loadUsersById(Set.of(operatorUserId)), operatorUserId);
+        return toDraftRow(definition, loadUsersById(Set.of(operatorUserId)), operatorUserId, null);
     }
 
     @Transactional(readOnly = true)
@@ -187,6 +188,62 @@ public class WorkflowDraftService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "WORKFLOW_DRAFT_NAME_REQUIRED", "请输入工作流名称");
         }
         definition.updateMetadata(name, normalizeOptional(request.description()), operatorUserId, clock.instant());
+        markUnpublishedChangesIfNeeded(definition, operatorUserId);
+        workflowDefinitionRepository.save(definition);
+        return toDetail(definition, operatorUserId);
+    }
+
+    @Transactional
+    public void deleteDraft(UUID tenantId, UUID operatorUserId, UUID workflowId) {
+        WorkflowDefinitionEntity definition = findDefinitionForOwner(tenantId, workflowId, operatorUserId);
+        // 运行实例引用检查将在运行态接入后补全；当前仅允许创建者删除整条定义及关联版本快照。
+        workflowAccessGrantRepository.deleteByWorkflowId(workflowId);
+        workflowDefinitionRepository.delete(definition);
+        log.info(
+            "工作流草稿已删除 tenantId={} operatorUserId={} workflowId={} requestId={}",
+            tenantId,
+            operatorUserId,
+            workflowId,
+            RequestIds.current()
+        );
+    }
+
+    @Transactional
+    public WorkflowDraftApi.WorkflowDraftDetail recallLaunch(UUID tenantId, UUID operatorUserId, UUID workflowId) {
+        WorkflowDefinitionEntity definition = findDefinitionForOwner(tenantId, workflowId, operatorUserId);
+        WorkflowVersionEntity latestVersion = requireLatestVersion(workflowId);
+        if (!definition.isLaunchEnabled()) {
+            return toDetail(definition, operatorUserId);
+        }
+        definition.recallFromLaunch(operatorUserId, clock.instant());
+        workflowDefinitionRepository.save(definition);
+        log.info(
+            "工作流已下线 tenantId={} operatorUserId={} workflowId={} version={} requestId={}",
+            tenantId,
+            operatorUserId,
+            workflowId,
+            latestVersion.getVersionNumber(),
+            RequestIds.current()
+        );
+        return toDetail(definition, operatorUserId);
+    }
+
+    @Transactional
+    public WorkflowDraftApi.WorkflowDraftDetail restoreLaunch(UUID tenantId, UUID operatorUserId, UUID workflowId) {
+        WorkflowDefinitionEntity definition = findDefinitionForOwner(tenantId, workflowId, operatorUserId);
+        requireLatestVersion(workflowId);
+        if (definition.isLaunchEnabled()) {
+            return toDetail(definition, operatorUserId);
+        }
+        definition.restoreLaunch(operatorUserId, clock.instant());
+        workflowDefinitionRepository.save(definition);
+        log.info(
+            "工作流已上线 tenantId={} operatorUserId={} workflowId={} requestId={}",
+            tenantId,
+            operatorUserId,
+            workflowId,
+            RequestIds.current()
+        );
         return toDetail(definition, operatorUserId);
     }
 
@@ -322,7 +379,11 @@ public class WorkflowDraftService {
             nextVersionNumber,
             RequestIds.current()
         );
-        return new WorkflowDraftApi.WorkflowPublishResult(toDraftRow(definition, loadUsersById(definition.getCreatedBy() == null ? Set.of() : Set.of(definition.getCreatedBy())), operatorUserId), nextVersionNumber, now);
+        return new WorkflowDraftApi.WorkflowPublishResult(
+            toDraftRow(definition, loadUsersById(definition.getCreatedBy() == null ? Set.of() : Set.of(definition.getCreatedBy())), operatorUserId, version),
+            nextVersionNumber,
+            now
+        );
     }
 
     @Transactional
@@ -573,8 +634,14 @@ public class WorkflowDraftService {
         List<WorkflowAccessGrantEntity> grants = workflowAccessGrantRepository.findByWorkflowId(definition.getId());
         CollaborationAccessPolicy.AccessLevel accessLevel = resolveAccess(definition, operatorUserId, grants);
         boolean canManageAccess = definition.getCreatedBy() != null && definition.getCreatedBy().equals(operatorUserId);
+        WorkflowVersionEntity latestVersion = workflowVersionRepository.findTopByWorkflowIdOrderByVersionNumberDesc(definition.getId()).orElse(null);
         return new WorkflowDraftApi.WorkflowDraftDetail(
-            toDraftRow(definition, loadUsersById(definition.getCreatedBy() == null ? Set.of() : Set.of(definition.getCreatedBy())), operatorUserId),
+            toDraftRow(
+                definition,
+                loadUsersById(definition.getCreatedBy() == null ? Set.of() : Set.of(definition.getCreatedBy())),
+                operatorUserId,
+                latestVersion
+            ),
             workflowNodeDefinitionRepository.findByWorkflowIdOrderBySortOrderAsc(definition.getId()).stream().map(this::toNodeRow).toList(),
             workflowEdgeDefinitionRepository.findByWorkflowIdOrderBySortOrderAsc(definition.getId()).stream().map(this::toEdgeRow).toList(),
             workflowVariableDefinitionRepository.findByWorkflowIdOrderBySortOrderAsc(definition.getId()).stream().map(this::toVariableRow).toList(),
@@ -589,8 +656,16 @@ public class WorkflowDraftService {
         );
     }
 
-    private WorkflowDraftApi.WorkflowDraftRow toDraftRow(WorkflowDefinitionEntity definition, Map<UUID, UserAccount> usersById, UUID operatorUserId) {
+    private WorkflowDraftApi.WorkflowDraftRow toDraftRow(
+        WorkflowDefinitionEntity definition,
+        Map<UUID, UserAccount> usersById,
+        UUID operatorUserId,
+        WorkflowVersionEntity latestVersion
+    ) {
         UserAccount owner = definition.getCreatedBy() == null ? null : usersById.get(definition.getCreatedBy());
+        int latestVersionNumber = latestVersion == null ? 0 : latestVersion.getVersionNumber();
+        Instant latestPublishedAt = latestVersion == null ? null : latestVersion.getPublishedAt();
+        boolean hasUnpublishedChanges = latestVersionNumber > 0 && "draft".equals(definition.getStatus());
         return new WorkflowDraftApi.WorkflowDraftRow(
             definition.getId(),
             definition.getTenantId(),
@@ -602,8 +677,36 @@ public class WorkflowDraftService {
             definition.getCreatedBy(),
             owner == null ? "未知用户" : owner.getDisplayName(),
             resolveAccess(definition, operatorUserId).name().toLowerCase(),
+            latestVersionNumber,
+            latestPublishedAt,
+            hasUnpublishedChanges,
+            definition.isLaunchEnabled(),
             definition.getUpdatedAt()
         );
+    }
+
+    private Map<UUID, WorkflowVersionEntity> loadLatestVersions(Collection<WorkflowDefinitionEntity> definitions) {
+        Set<UUID> workflowIds = definitions.stream().map(WorkflowDefinitionEntity::getId).collect(Collectors.toSet());
+        if (workflowIds.isEmpty()) {
+            return Map.of();
+        }
+        return workflowVersionRepository.findLatestByWorkflowIds(workflowIds).stream()
+            .collect(Collectors.toMap(WorkflowVersionEntity::getWorkflowId, Function.identity(), (left, right) -> left));
+    }
+
+    private void markUnpublishedChangesIfNeeded(WorkflowDefinitionEntity definition, UUID operatorUserId) {
+        if (!"published".equals(definition.getStatus())) {
+            return;
+        }
+        if (workflowVersionRepository.findTopByWorkflowIdOrderByVersionNumberDesc(definition.getId()).isEmpty()) {
+            return;
+        }
+        definition.markUnpublishedChanges(operatorUserId, clock.instant());
+    }
+
+    private WorkflowVersionEntity requireLatestVersion(UUID workflowId) {
+        return workflowVersionRepository.findTopByWorkflowIdOrderByVersionNumberDesc(workflowId)
+            .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "WORKFLOW_VERSION_REQUIRED", "流程尚未发布，无法上下线"));
     }
 
     private CollaborationAccessPolicy.AccessLevel resolveAccess(WorkflowDefinitionEntity definition, UUID operatorUserId) {

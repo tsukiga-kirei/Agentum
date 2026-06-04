@@ -89,6 +89,9 @@ class WorkflowDraftServicePublishTest {
         assertThat(result.versionNumber()).isEqualTo(1);
         assertThat(result.publishedAt()).isEqualTo(NOW);
         assertThat(result.draft().status()).isEqualTo("published");
+        assertThat(result.draft().latestVersionNumber()).isEqualTo(1);
+        assertThat(result.draft().launchEnabled()).isTrue();
+        assertThat(result.draft().hasUnpublishedChanges()).isFalse();
     }
 
     @Test

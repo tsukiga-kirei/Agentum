@@ -5344,6 +5344,45 @@ textarea:focus-visible {
   line-height: 1.7;
 }
 
+.workflow-drawer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 32px;
+  padding-top: 20px;
+  border-top: 1px solid var(--color-border-light);
+}
+
+.workflow-drawer-footer-spacer {
+  flex-shrink: 0;
+  width: 1px;
+}
+
+.workflow-drawer-footer-danger {
+  flex-shrink: 0;
+}
+
+.workflow-drawer-footer-actions {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+@media (max-width: 520px) {
+  .workflow-drawer-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .workflow-drawer-footer-actions {
+    justify-content: flex-start;
+  }
+}
+
 .workflow-detail-drawer-hero {
   display: grid;
   gap: 12px;

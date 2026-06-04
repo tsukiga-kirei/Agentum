@@ -102,7 +102,7 @@ class WorkbenchServiceTest {
 
         when(tenantRepository.findByIdAndStatus(TENANT_ID, "active"))
             .thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", NOW)));
-        when(workflowDefinitionRepository.searchDrafts(eq(TENANT_ID), anyString(), eq(USER_ID), eq(false), eq(false), eq("published"), any(Pageable.class)))
+        when(workflowDefinitionRepository.searchLaunchableWorkflows(eq(TENANT_ID), anyString(), eq(USER_ID), any(Pageable.class)))
             .thenReturn(new PageImpl<>(List.of(definition)));
         when(workflowVersionRepository.findLatestByWorkflowIds(any())).thenReturn(List.of(version));
         when(userAccountRepository.findAllById(any())).thenReturn(List.of(owner));

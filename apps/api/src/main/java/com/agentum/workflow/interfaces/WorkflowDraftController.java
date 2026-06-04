@@ -11,6 +11,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.UUID;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -142,6 +143,40 @@ public class WorkflowDraftController {
         workflowDesignAccess.assertCanDesign(principal, tenantId);
         // 正式发布会重新执行后端校验并冻结版本快照，不能依赖前端刚刚展示过的校验结果。
         return ApiResponse.success(workflowDraftService.publish(tenantId, principal.userId(), workflowId), RequestIds.current(request));
+    }
+
+    @PostMapping("/{workflowId}/recall-launch")
+    public ApiResponse<WorkflowDraftApi.WorkflowDraftDetail> recallLaunch(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID workflowId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        workflowDesignAccess.assertCanDesign(principal, tenantId);
+        return ApiResponse.success(workflowDraftService.recallLaunch(tenantId, principal.userId(), workflowId), RequestIds.current(request));
+    }
+
+    @PostMapping("/{workflowId}/restore-launch")
+    public ApiResponse<WorkflowDraftApi.WorkflowDraftDetail> restoreLaunch(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID workflowId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        workflowDesignAccess.assertCanDesign(principal, tenantId);
+        return ApiResponse.success(workflowDraftService.restoreLaunch(tenantId, principal.userId(), workflowId), RequestIds.current(request));
+    }
+
+    @DeleteMapping("/{workflowId}")
+    public ApiResponse<Void> deleteDraft(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID workflowId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        workflowDesignAccess.assertCanDesign(principal, tenantId);
+        workflowDraftService.deleteDraft(tenantId, principal.userId(), workflowId);
+        return ApiResponse.success(null, RequestIds.current(request));
     }
 
     @PutMapping("/{workflowId}/graph")

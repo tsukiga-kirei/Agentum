@@ -1,12 +1,12 @@
 # 当前进度与后续计划
 
-更新时间：2026-06-01（业务工作台任务处理预览：按节点类型重做当前处理、执行链路导航与固定页头布局）。
+更新时间：2026-06-04（流程版本治理方案 C：launch_enabled、收回/删除、业务入口与版本摘要；新增能力—流程—权限勾稽文档）。
 
 本文档只记录当前施工状态、阶段计划和下一步任务。长期规范、系统说明和架构设计分别维护在：
 
 - [开发规范](../development-standards.md)
 - [系统详细梳理介绍](../system-overview.md)
-- [架构文档](../architecture.md)
+- [能力—流程—权限治理](../capability-workflow-governance.md)
 
 ## 1. 当前阶段
 
@@ -160,6 +160,7 @@
 - 协作编辑流程保存与发布时按当前操作者重新校验所有引用能力：系统能力必须已分配给操作者，用户自建能力必须已发布且操作者拥有读取权限，流程编辑权限不会向下传递能力权限。
 - 业务工作台已完成后端化第一版：新增 `/api/tenants/{tenantId}/workbench/summary` 与 `/api/tenants/{tenantId}/workbench/available-workflows`，概览统计来自工作流定义、能力资产开放分配和我的能力草稿，可发起流程改为后端分页搜索；运行态尚未上线，待办与运行记录返回空列表并通过 `runtimeAvailable=false`、`runtimeStatusLabel` 在前端展示“运行态建设中”空态，移除前端工作台列表区的模拟待办、运行记录和流程模板硬编码。
 - 业务工作台任务处理页已补运行态预览交互（仍使用 `buildRuntimePreview` 本地 mock，未接 WorkflowRun API）：发起任务后进入固定页头 + 左侧流程进度 + 页签工作区；「当前处理」按输入、智能体、多智能体、人工审核、交付等节点类型分别展示对话流、能力调用条、追问/重新生成/中断和审批区；「执行链路」支持总览列表与单步详情切换；布局收敛为页头/页签固定、内容区单一滚动，并修正侧栏收起时 Logo 居中问题。
+- 流程设计落地版本治理方案 C：`workflow_definitions.launch_enabled` 控制业务入口收回/恢复；列表与详情展示 `latestVersionNumber`、`hasUnpublishedChanges`；创建者可删除流程或收回业务入口；业务工作台可发起列表改为「有冻结版本且入口未收回」，与设计态 `status` 解耦；新增 [能力—流程—权限治理](../capability-workflow-governance.md) 文档。
 
 ### 2.3 后端
 

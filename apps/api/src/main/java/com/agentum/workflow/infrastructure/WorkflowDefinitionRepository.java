@@ -55,13 +55,43 @@ public interface WorkflowDefinitionRepository extends JpaRepository<WorkflowDefi
           and (:onlyShared = false or definition.createdBy is null or definition.createdBy <> :operatorUserId)
           and (:status is null or definition.status = :status)
         """)
-    Page<WorkflowDefinitionEntity> searchDrafts(
+        Page<WorkflowDefinitionEntity> searchDrafts(
         @Param("tenantId") UUID tenantId,
         @Param("keyword") String keyword,
         @Param("operatorUserId") UUID operatorUserId,
         @Param("onlyMine") boolean onlyMine,
         @Param("onlyShared") boolean onlyShared,
         @Param("status") String status,
+        Pageable pageable
+    );
+
+    @Query("""
+        select definition from WorkflowDefinitionEntity definition
+        where definition.tenantId = :tenantId
+          and (
+            :keyword = ''
+            or lower(definition.name) like lower(concat('%', :keyword, '%'))
+            or lower(coalesce(definition.description, '')) like lower(concat('%', :keyword, '%'))
+          )
+          and (
+            definition.createdBy = :operatorUserId
+            or definition.readScope = 'all'
+            or definition.editScope = 'all'
+            or exists (
+              select grant.id from WorkflowAccessGrantEntity grant
+              where grant.workflowId = definition.id and grant.granteeUserId = :operatorUserId
+            )
+          )
+          and definition.launchEnabled = true
+          and exists (
+            select version.id from WorkflowVersionEntity version
+            where version.workflowId = definition.id
+          )
+        """)
+    Page<WorkflowDefinitionEntity> searchLaunchableWorkflows(
+        @Param("tenantId") UUID tenantId,
+        @Param("keyword") String keyword,
+        @Param("operatorUserId") UUID operatorUserId,
         Pageable pageable
     );
 }

@@ -38,6 +38,9 @@ public class WorkflowDefinitionEntity {
     @Column(name = "edit_scope", nullable = false, length = 30)
     private String editScope;
 
+    @Column(name = "launch_enabled", nullable = false)
+    private boolean launchEnabled = true;
+
     @Column(name = "created_by")
     private UUID createdBy;
 
@@ -64,6 +67,7 @@ public class WorkflowDefinitionEntity {
         entity.pausePointCount = 0;
         entity.readScope = "self";
         entity.editScope = "self";
+        entity.launchEnabled = true;
         entity.createdBy = operatorUserId;
         entity.updatedBy = operatorUserId;
         entity.createdAt = now;
@@ -83,6 +87,26 @@ public class WorkflowDefinitionEntity {
     public void markPublished(UUID operatorUserId, Instant now) {
         // 发布只改变设计态摘要；真正可回放的执行协议会冻结到 workflow_versions，避免后续草稿编辑污染历史版本。
         this.status = "published";
+        this.launchEnabled = true;
+        this.updatedBy = operatorUserId;
+        this.updatedAt = now;
+    }
+
+    public void markUnpublishedChanges(UUID operatorUserId, Instant now) {
+        // 存在已发布版本后再次修改元数据或积木，设计态回到 draft，业务侧仍使用最近冻结版本。
+        this.status = "draft";
+        this.updatedBy = operatorUserId;
+        this.updatedAt = now;
+    }
+
+    public void recallFromLaunch(UUID operatorUserId, Instant now) {
+        this.launchEnabled = false;
+        this.updatedBy = operatorUserId;
+        this.updatedAt = now;
+    }
+
+    public void restoreLaunch(UUID operatorUserId, Instant now) {
+        this.launchEnabled = true;
         this.updatedBy = operatorUserId;
         this.updatedAt = now;
     }
@@ -135,6 +159,10 @@ public class WorkflowDefinitionEntity {
 
     public String getEditScope() {
         return editScope;
+    }
+
+    public boolean isLaunchEnabled() {
+        return launchEnabled;
     }
 
     public UUID getCreatedBy() {

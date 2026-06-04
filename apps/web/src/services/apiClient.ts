@@ -371,6 +371,18 @@ export const workflowApi = {
       method: "POST",
       token,
     }),
+  recallLaunch: (tenantId: string, workflowId: string, token: string) =>
+    apiRequest<WorkflowDraftDetail>(`/api/tenants/${tenantId}/workflows/drafts/${workflowId}/recall-launch`, {
+      method: "POST",
+      token,
+    }),
+  restoreLaunch: (tenantId: string, workflowId: string, token: string) =>
+    apiRequest<WorkflowDraftDetail>(`/api/tenants/${tenantId}/workflows/drafts/${workflowId}/restore-launch`, {
+      method: "POST",
+      token,
+    }),
+  deleteDraft: (tenantId: string, workflowId: string, token: string) =>
+    apiRequest<void>(`/api/tenants/${tenantId}/workflows/drafts/${workflowId}`, { method: "DELETE", token }),
   saveGraph: (
     tenantId: string,
     workflowId: string,

@@ -26,6 +26,10 @@ export type WorkflowDraftRow = {
   ownerId: string | null;
   ownerName: string;
   accessLevel: CollaborationAccessLevel;
+  latestVersionNumber: number;
+  latestPublishedAt: string | null;
+  hasUnpublishedChanges: boolean;
+  launchEnabled: boolean;
   updatedAt: string;
 };
 
