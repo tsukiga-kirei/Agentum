@@ -5372,6 +5372,37 @@ textarea:focus-visible {
   font-weight: 700;
 }
 
+.workflow-drawer-step-index--user_input {
+  background: color-mix(in srgb, var(--color-info, #3b82f6) 12%, var(--color-bg-card));
+  color: var(--color-info, #3b82f6);
+}
+
+.workflow-drawer-step-index--agent {
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-bg-card));
+  color: var(--color-primary);
+}
+
+.workflow-drawer-step-index--parallel_group {
+  background: color-mix(in srgb, #7c3aed 14%, var(--color-bg-card));
+  color: #7c3aed;
+}
+
+.workflow-drawer-step-index--merge,
+.workflow-drawer-step-index--condition {
+  background: color-mix(in srgb, var(--color-warning) 14%, var(--color-bg-card));
+  color: var(--color-warning);
+}
+
+.workflow-drawer-step-index--human_review {
+  background: color-mix(in srgb, var(--color-danger) 11%, var(--color-bg-card));
+  color: var(--color-danger);
+}
+
+.workflow-drawer-step-index--delivery {
+  background: color-mix(in srgb, var(--color-success) 13%, var(--color-bg-card));
+  color: var(--color-success);
+}
+
 .workflow-drawer-step strong {
   display: block;
   overflow: hidden;

@@ -2023,7 +2023,7 @@ function buildCapabilityOptions(systemAssets: SystemCapabilityAssetRow[], myAsse
       version: asset.version,
       status: asset.status,
       source: "mine" as const,
-      scope: asset.visibility === "shared" ? "已共享" : "本人维护",
+      scope: asset.accessLevel === "owner" ? "本人维护" : asset.accessLevel === "edit" ? "可编辑" : "可读取",
     }));
 
   return [...systemOptions, ...myOptions].sort((left, right) => {

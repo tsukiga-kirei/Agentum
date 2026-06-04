@@ -32,6 +32,12 @@ public class WorkflowDefinitionEntity {
     @Column(name = "pause_point_count", nullable = false)
     private int pausePointCount;
 
+    @Column(name = "read_scope", nullable = false, length = 30)
+    private String readScope;
+
+    @Column(name = "edit_scope", nullable = false, length = 30)
+    private String editScope;
+
     @Column(name = "created_by")
     private UUID createdBy;
 
@@ -56,6 +62,8 @@ public class WorkflowDefinitionEntity {
         entity.status = "draft";
         entity.nodeCount = 0;
         entity.pausePointCount = 0;
+        entity.readScope = "self";
+        entity.editScope = "self";
         entity.createdBy = operatorUserId;
         entity.updatedBy = operatorUserId;
         entity.createdAt = now;
@@ -75,6 +83,20 @@ public class WorkflowDefinitionEntity {
     public void markPublished(UUID operatorUserId, Instant now) {
         // 发布只改变设计态摘要；真正可回放的执行协议会冻结到 workflow_versions，避免后续草稿编辑污染历史版本。
         this.status = "published";
+        this.updatedBy = operatorUserId;
+        this.updatedAt = now;
+    }
+
+    public void updateMetadata(String name, String description, UUID operatorUserId, Instant now) {
+        this.name = name;
+        this.description = description;
+        this.updatedBy = operatorUserId;
+        this.updatedAt = now;
+    }
+
+    public void updateAccess(String readScope, String editScope, UUID operatorUserId, Instant now) {
+        this.readScope = readScope;
+        this.editScope = editScope;
         this.updatedBy = operatorUserId;
         this.updatedAt = now;
     }
@@ -105,6 +127,14 @@ public class WorkflowDefinitionEntity {
 
     public int getPausePointCount() {
         return pausePointCount;
+    }
+
+    public String getReadScope() {
+        return readScope;
+    }
+
+    public String getEditScope() {
+        return editScope;
     }
 
     public UUID getCreatedBy() {

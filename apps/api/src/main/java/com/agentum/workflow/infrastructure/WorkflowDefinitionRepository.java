@@ -16,21 +16,51 @@ public interface WorkflowDefinitionRepository extends JpaRepository<WorkflowDefi
     long countByTenantIdAndStatus(UUID tenantId, String status);
 
     @Query("""
+        select count(definition) from WorkflowDefinitionEntity definition
+        where definition.tenantId = :tenantId
+          and definition.status = :status
+          and (
+            definition.createdBy = :operatorUserId
+            or definition.readScope = 'all'
+            or definition.editScope = 'all'
+            or exists (
+              select grant.id from WorkflowAccessGrantEntity grant
+              where grant.workflowId = definition.id and grant.granteeUserId = :operatorUserId
+            )
+          )
+        """)
+    long countVisibleByTenantIdAndStatus(
+        @Param("tenantId") UUID tenantId,
+        @Param("operatorUserId") UUID operatorUserId,
+        @Param("status") String status
+    );
+
+    @Query("""
         select definition from WorkflowDefinitionEntity definition
         where definition.tenantId = :tenantId
           and (
             lower(definition.name) like lower(concat('%', :keyword, '%'))
             or lower(coalesce(definition.description, '')) like lower(concat('%', :keyword, '%'))
           )
-          and (:ownerId is null or definition.createdBy = :ownerId)
-          and (:excludedOwnerId is null or definition.createdBy is null or definition.createdBy <> :excludedOwnerId)
+          and (
+            definition.createdBy = :operatorUserId
+            or definition.readScope = 'all'
+            or definition.editScope = 'all'
+            or exists (
+              select grant.id from WorkflowAccessGrantEntity grant
+              where grant.workflowId = definition.id and grant.granteeUserId = :operatorUserId
+            )
+          )
+          and (:onlyMine = false or definition.createdBy = :operatorUserId)
+          and (:onlyShared = false or definition.createdBy is null or definition.createdBy <> :operatorUserId)
           and (:status is null or definition.status = :status)
         """)
     Page<WorkflowDefinitionEntity> searchDrafts(
         @Param("tenantId") UUID tenantId,
         @Param("keyword") String keyword,
-        @Param("ownerId") UUID ownerId,
-        @Param("excludedOwnerId") UUID excludedOwnerId,
+        @Param("operatorUserId") UUID operatorUserId,
+        @Param("onlyMine") boolean onlyMine,
+        @Param("onlyShared") boolean onlyShared,
         @Param("status") String status,
         Pageable pageable
     );

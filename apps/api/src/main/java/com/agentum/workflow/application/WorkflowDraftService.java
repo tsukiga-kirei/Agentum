@@ -8,13 +8,18 @@ import com.agentum.shared.pagination.PageQuery;
 import com.agentum.shared.pagination.PageResponse;
 import com.agentum.shared.pagination.PageableFactory;
 import com.agentum.shared.pagination.SortWhitelist;
+import com.agentum.organization.domain.UserMembershipEntity;
+import com.agentum.organization.infrastructure.UserMembershipRepository;
+import com.agentum.permission.application.CollaborationAccessPolicy;
 import com.agentum.tenant.infrastructure.TenantRepository;
+import com.agentum.workflow.domain.WorkflowAccessGrantEntity;
 import com.agentum.workflow.domain.WorkflowDefinitionEntity;
 import com.agentum.workflow.domain.WorkflowEdgeDefinitionEntity;
 import com.agentum.workflow.domain.WorkflowNodeDefinitionEntity;
 import com.agentum.workflow.domain.WorkflowVariableDefinitionEntity;
 import com.agentum.workflow.domain.WorkflowVersionEntity;
 import com.agentum.workflow.infrastructure.WorkflowDefinitionRepository;
+import com.agentum.workflow.infrastructure.WorkflowAccessGrantRepository;
 import com.agentum.workflow.infrastructure.WorkflowEdgeDefinitionRepository;
 import com.agentum.workflow.infrastructure.WorkflowNodeDefinitionRepository;
 import com.agentum.workflow.infrastructure.WorkflowVariableDefinitionRepository;
@@ -29,6 +34,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -63,6 +69,7 @@ public class WorkflowDraftService {
     private final TenantRepository tenantRepository;
     private final UserAccountRepository userAccountRepository;
     private final WorkflowDefinitionRepository workflowDefinitionRepository;
+    private final WorkflowAccessGrantRepository workflowAccessGrantRepository;
     private final WorkflowNodeDefinitionRepository workflowNodeDefinitionRepository;
     private final WorkflowEdgeDefinitionRepository workflowEdgeDefinitionRepository;
     private final WorkflowVariableDefinitionRepository workflowVariableDefinitionRepository;
@@ -70,6 +77,8 @@ public class WorkflowDraftService {
     private final WorkflowVariableDeclarationValidator workflowVariableDeclarationValidator;
     private final WorkflowPublishValidator workflowPublishValidator;
     private final WorkflowNodeConfigValidator workflowNodeConfigValidator;
+    private final UserMembershipRepository userMembershipRepository;
+    private final CollaborationAccessPolicy collaborationAccessPolicy;
     private final ObjectMapper objectMapper;
     private final Clock clock;
 
@@ -77,6 +86,7 @@ public class WorkflowDraftService {
         TenantRepository tenantRepository,
         UserAccountRepository userAccountRepository,
         WorkflowDefinitionRepository workflowDefinitionRepository,
+        WorkflowAccessGrantRepository workflowAccessGrantRepository,
         WorkflowNodeDefinitionRepository workflowNodeDefinitionRepository,
         WorkflowEdgeDefinitionRepository workflowEdgeDefinitionRepository,
         WorkflowVariableDefinitionRepository workflowVariableDefinitionRepository,
@@ -84,12 +94,15 @@ public class WorkflowDraftService {
         WorkflowVariableDeclarationValidator workflowVariableDeclarationValidator,
         WorkflowPublishValidator workflowPublishValidator,
         WorkflowNodeConfigValidator workflowNodeConfigValidator,
+        UserMembershipRepository userMembershipRepository,
+        CollaborationAccessPolicy collaborationAccessPolicy,
         ObjectMapper objectMapper,
         Clock clock
     ) {
         this.tenantRepository = tenantRepository;
         this.userAccountRepository = userAccountRepository;
         this.workflowDefinitionRepository = workflowDefinitionRepository;
+        this.workflowAccessGrantRepository = workflowAccessGrantRepository;
         this.workflowNodeDefinitionRepository = workflowNodeDefinitionRepository;
         this.workflowEdgeDefinitionRepository = workflowEdgeDefinitionRepository;
         this.workflowVariableDefinitionRepository = workflowVariableDefinitionRepository;
@@ -97,6 +110,8 @@ public class WorkflowDraftService {
         this.workflowVariableDeclarationValidator = workflowVariableDeclarationValidator;
         this.workflowPublishValidator = workflowPublishValidator;
         this.workflowNodeConfigValidator = workflowNodeConfigValidator;
+        this.userMembershipRepository = userMembershipRepository;
+        this.collaborationAccessPolicy = collaborationAccessPolicy;
         this.objectMapper = objectMapper;
         this.clock = clock;
     }
@@ -110,13 +125,13 @@ public class WorkflowDraftService {
         boolean onlyShared = "shared".equals(scope);
         String normalizedStatus = status == null || status.isBlank() || "all".equals(status) ? null : status.trim();
         // 协作开放只展示他人开放给当前用户参与设计的流程；我的流程只筛当前创建人，避免前端用负责人姓名猜测归属。
-        var resultPage = workflowDefinitionRepository.searchDrafts(tenantId, normalizedKeyword, onlyMine ? operatorUserId : null, onlyShared ? operatorUserId : null, normalizedStatus, pageable);
+        var resultPage = workflowDefinitionRepository.searchDrafts(tenantId, normalizedKeyword, operatorUserId, onlyMine, onlyShared, normalizedStatus, pageable);
         Set<UUID> creatorIds = resultPage.getContent().stream()
             .map(WorkflowDefinitionEntity::getCreatedBy)
             .filter(Objects::nonNull)
             .collect(Collectors.toSet());
         Map<UUID, UserAccount> usersById = loadUsersById(creatorIds);
-        return PageResponse.from(resultPage.map(definition -> toDraftRow(definition, usersById)));
+        return PageResponse.from(resultPage.map(definition -> toDraftRow(definition, usersById, operatorUserId)));
     }
 
     @Transactional
@@ -124,12 +139,16 @@ public class WorkflowDraftService {
         ensureActiveTenant(tenantId);
         String name = normalizeRequired(request.name());
         String description = normalizeOptional(request.description());
+        String readScope = normalizeScope(request.readScope());
+        String editScope = normalizeScope(request.editScope());
         if (name.isBlank()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "WORKFLOW_DRAFT_NAME_REQUIRED", "请输入工作流名称");
         }
 
         WorkflowDefinitionEntity definition = WorkflowDefinitionEntity.create(tenantId, name, description, operatorUserId, clock.instant());
+        definition.updateAccess(readScope, editScope, operatorUserId, clock.instant());
         workflowDefinitionRepository.save(definition);
+        replaceAccessGrants(tenantId, definition, operatorUserId, readScope, request.readUserIds(), editScope, request.editUserIds());
         log.info(
             "工作流草稿创建成功 tenantId={} operatorUserId={} workflowId={} name={} requestId={}",
             tenantId,
@@ -138,20 +157,82 @@ public class WorkflowDraftService {
             name,
             RequestIds.current()
         );
-        return toDraftRow(definition, loadUsersById(Set.of(operatorUserId)));
+        return toDraftRow(definition, loadUsersById(Set.of(operatorUserId)), operatorUserId);
     }
 
     @Transactional(readOnly = true)
-    public WorkflowDraftApi.WorkflowDraftDetail getDraft(UUID tenantId, UUID workflowId) {
-        WorkflowDefinitionEntity definition = findDefinition(tenantId, workflowId);
-        return toDetail(definition);
+    public List<WorkflowDraftApi.ShareableMemberRow> listShareableMembers(UUID tenantId, UUID operatorUserId) {
+        ensureActiveTenant(tenantId);
+        return userMembershipRepository.findByTenantIdAndStatus(tenantId, ACTIVE_STATUS).stream()
+            .map(UserMembershipEntity::getUserId)
+            .filter(userId -> !userId.equals(operatorUserId))
+            .distinct()
+            .map(userId -> userAccountRepository.findById(userId).orElse(null))
+            .filter(user -> user != null && ACTIVE_STATUS.equals(user.getStatus()))
+            .sorted(java.util.Comparator.comparing(UserAccount::getDisplayName))
+            .map(user -> new WorkflowDraftApi.ShareableMemberRow(user.getId(), user.getUsername(), user.getDisplayName()))
+            .toList();
+    }
+
+    @Transactional
+    public WorkflowDraftApi.WorkflowDraftDetail updateDraft(
+        UUID tenantId,
+        UUID operatorUserId,
+        UUID workflowId,
+        WorkflowDraftApi.UpdateWorkflowDraftRequest request
+    ) {
+        WorkflowDefinitionEntity definition = findDefinitionForEdit(tenantId, workflowId, operatorUserId);
+        String name = normalizeRequired(request.name());
+        if (name.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKFLOW_DRAFT_NAME_REQUIRED", "请输入工作流名称");
+        }
+        definition.updateMetadata(name, normalizeOptional(request.description()), operatorUserId, clock.instant());
+        return toDetail(definition, operatorUserId);
+    }
+
+    @Transactional
+    public WorkflowDraftApi.WorkflowDraftDetail updateAccess(
+        UUID tenantId,
+        UUID operatorUserId,
+        UUID workflowId,
+        WorkflowDraftApi.UpdateWorkflowAccessRequest request
+    ) {
+        WorkflowDefinitionEntity definition = findDefinitionForOwner(tenantId, workflowId, operatorUserId);
+        String readScope = normalizeScope(request.readScope());
+        String editScope = normalizeScope(request.editScope());
+        definition.updateAccess(readScope, editScope, operatorUserId, clock.instant());
+        replaceAccessGrants(tenantId, definition, operatorUserId, readScope, request.readUserIds(), editScope, request.editUserIds());
+        log.info(
+            "工作流读取编辑权限已更新 tenantId={} operatorUserId={} workflowId={} readScope={} editScope={} requestId={}",
+            tenantId,
+            operatorUserId,
+            workflowId,
+            readScope,
+            editScope,
+            RequestIds.current()
+        );
+        return toDetail(definition, operatorUserId);
     }
 
     @Transactional(readOnly = true)
-    public WorkflowDraftApi.WorkflowPublishValidationResult validateForPublish(UUID tenantId, UUID workflowId) {
-        WorkflowDefinitionEntity definition = findDefinition(tenantId, workflowId);
-        WorkflowDraftApi.WorkflowDraftDetail detail = toDetail(definition);
-        WorkflowDraftApi.WorkflowPublishValidationResult result = workflowPublishValidator.validate(detail.nodes(), detail.edges());
+    public WorkflowDraftApi.WorkflowDraftDetail getDraft(UUID tenantId, UUID operatorUserId, UUID workflowId) {
+        WorkflowDefinitionEntity definition = findDefinitionForRead(tenantId, workflowId, operatorUserId);
+        return toDetail(definition, operatorUserId);
+    }
+
+    @Transactional(readOnly = true)
+    public WorkflowDraftApi.WorkflowPublishValidationResult validateForPublish(UUID tenantId, UUID operatorUserId, UUID workflowId) {
+        WorkflowDefinitionEntity definition = findDefinitionForEdit(tenantId, workflowId, operatorUserId);
+        WorkflowDraftApi.WorkflowDraftDetail detail = toDetail(definition, operatorUserId);
+        WorkflowDraftApi.WorkflowPublishValidationResult graphResult = workflowPublishValidator.validate(detail.nodes(), detail.edges());
+        List<WorkflowDraftApi.WorkflowValidationIssue> issues = new ArrayList<>(graphResult.issues());
+        issues.addAll(workflowNodeConfigValidator.validateCapabilityReferences(tenantId, operatorUserId, detail.nodes()));
+        WorkflowDraftApi.WorkflowPublishValidationResult result = new WorkflowDraftApi.WorkflowPublishValidationResult(
+            graphResult.valid() && issues.isEmpty(),
+            graphResult.nodeCount(),
+            graphResult.edgeCount(),
+            issues
+        );
         log.info(
             "工作流发布校验完成 tenantId={} workflowId={} valid={} issueCount={} requestId={}",
             tenantId,
@@ -165,7 +246,7 @@ public class WorkflowDraftService {
 
     @Transactional
     public WorkflowDraftApi.WorkflowPublishResult publish(UUID tenantId, UUID operatorUserId, UUID workflowId) {
-        WorkflowDefinitionEntity definition = findDefinition(tenantId, workflowId);
+        WorkflowDefinitionEntity definition = findDefinitionForEdit(tenantId, workflowId, operatorUserId);
         if ("published".equals(definition.getStatus())) {
             log.warn(
                 "工作流发布被拒绝：当前草稿没有待发布变更 tenantId={} operatorUserId={} workflowId={} requestId={}",
@@ -177,7 +258,7 @@ public class WorkflowDraftService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "WORKFLOW_ALREADY_PUBLISHED", "当前草稿没有待发布变更");
         }
 
-        WorkflowDraftApi.WorkflowDraftDetail detail = toDetail(definition);
+        WorkflowDraftApi.WorkflowDraftDetail detail = toDetail(definition, operatorUserId);
         WorkflowDraftApi.WorkflowPublishValidationResult validation = workflowPublishValidator.validate(detail.nodes(), detail.edges());
         if (!validation.valid()) {
             log.warn(
@@ -197,7 +278,7 @@ public class WorkflowDraftService {
         }
 
         // 发布前校验节点 config 中引用的 MCP / Skill / 交付能力仍在租户能力池内且状态有效。
-        List<WorkflowDraftApi.WorkflowValidationIssue> configIssues = workflowNodeConfigValidator.validateCapabilityReferences(tenantId, detail.nodes());
+        List<WorkflowDraftApi.WorkflowValidationIssue> configIssues = workflowNodeConfigValidator.validateCapabilityReferences(tenantId, operatorUserId, detail.nodes());
         if (!configIssues.isEmpty()) {
             log.warn(
                 "工作流发布被拒绝：节点能力引用校验未通过 tenantId={} operatorUserId={} workflowId={} issueCount={} requestId={}",
@@ -241,7 +322,7 @@ public class WorkflowDraftService {
             nextVersionNumber,
             RequestIds.current()
         );
-        return new WorkflowDraftApi.WorkflowPublishResult(toDraftRow(definition, loadUsersById(definition.getCreatedBy() == null ? Set.of() : Set.of(definition.getCreatedBy()))), nextVersionNumber, now);
+        return new WorkflowDraftApi.WorkflowPublishResult(toDraftRow(definition, loadUsersById(definition.getCreatedBy() == null ? Set.of() : Set.of(definition.getCreatedBy())), operatorUserId), nextVersionNumber, now);
     }
 
     @Transactional
@@ -251,12 +332,25 @@ public class WorkflowDraftService {
         UUID workflowId,
         WorkflowDraftApi.SaveWorkflowDraftGraphRequest request
     ) {
-        WorkflowDefinitionEntity definition = findDefinition(tenantId, workflowId);
+        WorkflowDefinitionEntity definition = findDefinitionForEdit(tenantId, workflowId, operatorUserId);
         List<WorkflowDraftApi.WorkflowNodeDraft> nodes = request.nodes() == null ? List.of() : request.nodes();
         List<WorkflowDraftApi.WorkflowEdgeDraft> edges = request.edges() == null ? List.of() : request.edges();
         List<WorkflowDraftApi.WorkflowVariableDraft> variables = request.variables() == null ? List.of() : request.variables();
         validateGraph(tenantId, workflowId, nodes, edges);
         workflowVariableDeclarationValidator.validate(nodes, variables);
+        List<WorkflowDraftApi.WorkflowValidationIssue> referenceIssues = workflowNodeConfigValidator.validateCapabilityReferences(
+            tenantId,
+            operatorUserId,
+            nodes.stream().map(this::toNodeRow).toList()
+        );
+        if (!referenceIssues.isEmpty()) {
+            throw new ApiException(
+                HttpStatus.BAD_REQUEST,
+                "WORKFLOW_CAPABILITY_REFERENCE_NOT_AVAILABLE",
+                "流程引用了当前编辑者不可使用的能力",
+                Map.of("issueCount", referenceIssues.size())
+            );
+        }
 
         Instant now = clock.instant();
         workflowNodeDefinitionRepository.deleteByWorkflowId(workflowId);
@@ -335,7 +429,7 @@ public class WorkflowDraftService {
             variables.size(),
             RequestIds.current()
         );
-        return toDetail(definition);
+        return toDetail(definition, operatorUserId);
     }
 
     private void validateGraph(
@@ -380,6 +474,53 @@ public class WorkflowDraftService {
         }
     }
 
+    private void replaceAccessGrants(
+        UUID tenantId,
+        WorkflowDefinitionEntity definition,
+        UUID operatorUserId,
+        String readScope,
+        List<UUID> readUserIds,
+        String editScope,
+        List<UUID> editUserIds
+    ) {
+        workflowAccessGrantRepository.deleteByWorkflowId(definition.getId());
+        List<UUID> normalizedReadUserIds = normalizeAccessUserIds(tenantId, operatorUserId, readScope, readUserIds, "读取");
+        List<UUID> normalizedEditUserIds = normalizeAccessUserIds(tenantId, operatorUserId, editScope, editUserIds, "编辑");
+        Instant now = clock.instant();
+        normalizedReadUserIds.forEach(userId -> workflowAccessGrantRepository.save(
+            WorkflowAccessGrantEntity.create(tenantId, definition.getId(), userId, "read", operatorUserId, now)
+        ));
+        normalizedEditUserIds.forEach(userId -> workflowAccessGrantRepository.save(
+            WorkflowAccessGrantEntity.create(tenantId, definition.getId(), userId, "edit", operatorUserId, now)
+        ));
+    }
+
+    private List<UUID> normalizeAccessUserIds(UUID tenantId, UUID operatorUserId, String scope, List<UUID> userIds, String label) {
+        if (!CollaborationAccessPolicy.SCOPE_SPECIFIED.equals(scope)) {
+            return List.of();
+        }
+        if (userIds == null || userIds.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKFLOW_ACCESS_USERS_REQUIRED", label + "权限选择指定同事时，必须至少选择一名有效成员");
+        }
+        Set<UUID> activeMemberIds = userMembershipRepository.findByTenantIdAndStatus(tenantId, ACTIVE_STATUS).stream()
+            .map(UserMembershipEntity::getUserId)
+            .collect(Collectors.toSet());
+        LinkedHashSet<UUID> normalized = new LinkedHashSet<>();
+        for (UUID userId : userIds) {
+            if (userId == null || userId.equals(operatorUserId)) {
+                continue;
+            }
+            if (!activeMemberIds.contains(userId)) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "WORKFLOW_ACCESS_USER_INVALID", "权限对象必须是当前租户内的有效成员");
+            }
+            normalized.add(userId);
+        }
+        if (normalized.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKFLOW_ACCESS_USERS_REQUIRED", label + "权限选择指定同事时，必须至少选择一名有效成员");
+        }
+        return new ArrayList<>(normalized);
+    }
+
     private WorkflowDefinitionEntity findDefinition(UUID tenantId, UUID workflowId) {
         ensureActiveTenant(tenantId);
         return workflowDefinitionRepository.findByIdAndTenantId(workflowId, tenantId)
@@ -387,6 +528,37 @@ public class WorkflowDraftService {
                 log.warn("工作流草稿查询失败：草稿不存在 tenantId={} workflowId={} requestId={}", tenantId, workflowId, RequestIds.current());
                 return new ApiException(HttpStatus.NOT_FOUND, "WORKFLOW_DRAFT_NOT_FOUND", "工作流草稿不存在");
             });
+    }
+
+    private WorkflowDefinitionEntity findDefinitionForRead(UUID tenantId, UUID workflowId, UUID operatorUserId) {
+        WorkflowDefinitionEntity definition = findDefinition(tenantId, workflowId);
+        if (!resolveAccess(definition, operatorUserId).canRead()) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "WORKFLOW_READ_ACCESS_REQUIRED", "当前账号没有读取该流程的权限");
+        }
+        return definition;
+    }
+
+    private WorkflowDefinitionEntity findDefinitionForEdit(UUID tenantId, UUID workflowId, UUID operatorUserId) {
+        WorkflowDefinitionEntity definition = findDefinition(tenantId, workflowId);
+        if (!resolveAccess(definition, operatorUserId).canEdit()) {
+            log.warn(
+                "工作流编辑被拒绝 tenantId={} operatorUserId={} workflowId={} requestId={}",
+                tenantId,
+                operatorUserId,
+                workflowId,
+                RequestIds.current()
+            );
+            throw new ApiException(HttpStatus.FORBIDDEN, "WORKFLOW_EDIT_ACCESS_REQUIRED", "当前账号没有编辑该流程的权限");
+        }
+        return definition;
+    }
+
+    private WorkflowDefinitionEntity findDefinitionForOwner(UUID tenantId, UUID workflowId, UUID operatorUserId) {
+        WorkflowDefinitionEntity definition = findDefinition(tenantId, workflowId);
+        if (definition.getCreatedBy() == null || !definition.getCreatedBy().equals(operatorUserId)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "WORKFLOW_OWNER_REQUIRED", "只有流程创建者可以调整权限");
+        }
+        return definition;
     }
 
     private void ensureActiveTenant(UUID tenantId) {
@@ -397,16 +569,27 @@ public class WorkflowDraftService {
             });
     }
 
-    private WorkflowDraftApi.WorkflowDraftDetail toDetail(WorkflowDefinitionEntity definition) {
+    private WorkflowDraftApi.WorkflowDraftDetail toDetail(WorkflowDefinitionEntity definition, UUID operatorUserId) {
+        List<WorkflowAccessGrantEntity> grants = workflowAccessGrantRepository.findByWorkflowId(definition.getId());
+        CollaborationAccessPolicy.AccessLevel accessLevel = resolveAccess(definition, operatorUserId, grants);
+        boolean canManageAccess = definition.getCreatedBy() != null && definition.getCreatedBy().equals(operatorUserId);
         return new WorkflowDraftApi.WorkflowDraftDetail(
-            toDraftRow(definition, loadUsersById(definition.getCreatedBy() == null ? Set.of() : Set.of(definition.getCreatedBy()))),
+            toDraftRow(definition, loadUsersById(definition.getCreatedBy() == null ? Set.of() : Set.of(definition.getCreatedBy())), operatorUserId),
             workflowNodeDefinitionRepository.findByWorkflowIdOrderBySortOrderAsc(definition.getId()).stream().map(this::toNodeRow).toList(),
             workflowEdgeDefinitionRepository.findByWorkflowIdOrderBySortOrderAsc(definition.getId()).stream().map(this::toEdgeRow).toList(),
-            workflowVariableDefinitionRepository.findByWorkflowIdOrderBySortOrderAsc(definition.getId()).stream().map(this::toVariableRow).toList()
+            workflowVariableDefinitionRepository.findByWorkflowIdOrderBySortOrderAsc(definition.getId()).stream().map(this::toVariableRow).toList(),
+            new WorkflowDraftApi.WorkflowAccessDetail(
+                definition.getReadScope(),
+                definition.getEditScope(),
+                canManageAccess ? accessUserIds(grants, "read") : List.of(),
+                canManageAccess ? accessUserIds(grants, "edit") : List.of(),
+                accessLevel.name().toLowerCase(),
+                canManageAccess
+            )
         );
     }
 
-    private WorkflowDraftApi.WorkflowDraftRow toDraftRow(WorkflowDefinitionEntity definition, Map<UUID, UserAccount> usersById) {
+    private WorkflowDraftApi.WorkflowDraftRow toDraftRow(WorkflowDefinitionEntity definition, Map<UUID, UserAccount> usersById, UUID operatorUserId) {
         UserAccount owner = definition.getCreatedBy() == null ? null : usersById.get(definition.getCreatedBy());
         return new WorkflowDraftApi.WorkflowDraftRow(
             definition.getId(),
@@ -418,8 +601,43 @@ public class WorkflowDraftService {
             definition.getPausePointCount(),
             definition.getCreatedBy(),
             owner == null ? "未知用户" : owner.getDisplayName(),
+            resolveAccess(definition, operatorUserId).name().toLowerCase(),
             definition.getUpdatedAt()
         );
+    }
+
+    private CollaborationAccessPolicy.AccessLevel resolveAccess(WorkflowDefinitionEntity definition, UUID operatorUserId) {
+        return resolveAccess(definition, operatorUserId, workflowAccessGrantRepository.findByWorkflowId(definition.getId()));
+    }
+
+    private CollaborationAccessPolicy.AccessLevel resolveAccess(
+        WorkflowDefinitionEntity definition,
+        UUID operatorUserId,
+        List<WorkflowAccessGrantEntity> grants
+    ) {
+        Set<UUID> readUserIds = grants.stream()
+            .filter(grant -> "read".equals(grant.getAccessLevel()))
+            .map(WorkflowAccessGrantEntity::getGranteeUserId)
+            .collect(Collectors.toSet());
+        Set<UUID> editUserIds = grants.stream()
+            .filter(grant -> "edit".equals(grant.getAccessLevel()))
+            .map(WorkflowAccessGrantEntity::getGranteeUserId)
+            .collect(Collectors.toSet());
+        return collaborationAccessPolicy.resolve(
+            definition.getCreatedBy(),
+            operatorUserId,
+            definition.getReadScope(),
+            readUserIds,
+            definition.getEditScope(),
+            editUserIds
+        );
+    }
+
+    private List<UUID> accessUserIds(List<WorkflowAccessGrantEntity> grants, String accessLevel) {
+        return grants.stream()
+            .filter(grant -> accessLevel.equals(grant.getAccessLevel()))
+            .map(WorkflowAccessGrantEntity::getGranteeUserId)
+            .toList();
     }
 
     private WorkflowDraftApi.WorkflowNodeRow toNodeRow(WorkflowNodeDefinitionEntity node) {
@@ -432,6 +650,19 @@ public class WorkflowDraftService {
             node.getInputVariables(),
             node.getOutputVariables(),
             node.getConfig()
+        );
+    }
+
+    private WorkflowDraftApi.WorkflowNodeRow toNodeRow(WorkflowDraftApi.WorkflowNodeDraft node) {
+        return new WorkflowDraftApi.WorkflowNodeRow(
+            node.nodeId(),
+            node.nodeType(),
+            node.name(),
+            node.positionX(),
+            node.positionY(),
+            node.inputVariables(),
+            node.outputVariables(),
+            node.config()
         );
     }
 
@@ -507,6 +738,17 @@ public class WorkflowDraftService {
     private static String normalizeOptional(String value) {
         String normalized = value == null ? "" : value.trim();
         return normalized.isBlank() ? null : normalized;
+    }
+
+    private String normalizeScope(String scope) {
+        String normalized = normalizeRequired(scope);
+        if (normalized.isBlank()) {
+            return CollaborationAccessPolicy.SCOPE_SELF;
+        }
+        if (!collaborationAccessPolicy.isSupportedScope(normalized)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKFLOW_ACCESS_SCOPE_INVALID", "权限范围不受支持");
+        }
+        return normalized;
     }
 
     private record WorkflowVersionSnapshot(

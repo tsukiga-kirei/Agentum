@@ -141,16 +141,16 @@ public class AssetManagementController {
         return ApiResponse.success(assetManagementService.listShareableMembers(tenantId, principal), RequestIds.current(request));
     }
 
-    @PatchMapping("/mine/{assetId}/sharing")
-    public ApiResponse<AssetManagementApi.MyAssetDetail> updateMineSharing(
+    @PatchMapping("/mine/{assetId}/access")
+    public ApiResponse<AssetManagementApi.MyAssetDetail> updateMineAccess(
         @PathVariable UUID tenantId,
         @PathVariable UUID assetId,
         @AuthenticationPrincipal CurrentUserPrincipal principal,
-        @Valid @RequestBody AssetManagementApi.UpdateMyAssetSharingRequest body,
+        @Valid @RequestBody AssetManagementApi.UpdateMyAssetAccessRequest body,
         HttpServletRequest request
     ) {
         assetAccess.assertCanUseAssets(principal, tenantId);
-        return ApiResponse.success(assetManagementService.updateMyAssetSharing(tenantId, assetId, principal, body), RequestIds.current(request));
+        return ApiResponse.success(assetManagementService.updateMyAssetAccess(tenantId, assetId, principal, body), RequestIds.current(request));
     }
 
     @DeleteMapping("/mine/{assetId}")

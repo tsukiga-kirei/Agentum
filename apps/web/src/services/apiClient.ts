@@ -1,5 +1,5 @@
 import type { LoginRequest, LoginResponse, MeResponse, SwitchRoleRequest, SwitchRoleResponse, TenantOption } from "../types/auth";
-import type { AssetSummary, CreateMyAssetRequest, MyAssetDetail, MyAssetPage, MyAssetRow, ShareableMemberRow, SystemCapabilityAssetPage, UpdateMyAssetRequest, UpdateMyAssetSharingRequest } from "../types/asset";
+import type { AssetSummary, CreateMyAssetRequest, MyAssetDetail, MyAssetPage, MyAssetRow, ShareableMemberRow, SystemCapabilityAssetPage, UpdateMyAssetAccessRequest, UpdateMyAssetRequest } from "../types/asset";
 import type {
   CreateDepartmentRequest,
   CreateMemberRequest,
@@ -60,6 +60,9 @@ import type {
   WorkflowDraftRow,
   WorkflowPublishResult,
   WorkflowPublishValidationResult,
+  WorkflowShareableMemberRow,
+  UpdateWorkflowAccessRequest,
+  UpdateWorkflowDraftRequest,
   WorkflowVariableDraft,
 } from "../types/workflow-contract";
 import type { WorkbenchAvailableWorkflowPage, WorkbenchSummary } from "../types/workbench";
@@ -307,8 +310,8 @@ export const assetApi = {
     apiRequest<MyAssetDetail>(`/api/tenants/${tenantId}/assets/mine/${assetId}/publish`, { method: "POST", token }),
   revertMineToDraft: (tenantId: string, token: string, assetId: string) =>
     apiRequest<MyAssetDetail>(`/api/tenants/${tenantId}/assets/mine/${assetId}/revert-to-draft`, { method: "POST", token }),
-  updateMineSharing: (tenantId: string, token: string, assetId: string, body: UpdateMyAssetSharingRequest) =>
-    apiRequest<MyAssetDetail>(`/api/tenants/${tenantId}/assets/mine/${assetId}/sharing`, { method: "PATCH", token, body }),
+  updateMineAccess: (tenantId: string, token: string, assetId: string, body: UpdateMyAssetAccessRequest) =>
+    apiRequest<MyAssetDetail>(`/api/tenants/${tenantId}/assets/mine/${assetId}/access`, { method: "PATCH", token, body }),
   deleteMine: (tenantId: string, token: string, assetId: string) =>
     apiRequest<void>(`/api/tenants/${tenantId}/assets/mine/${assetId}`, { method: "DELETE", token }),
 };
@@ -337,6 +340,8 @@ export const workbenchApi = {
 export const workflowApi = {
   getDesignerCatalog: (tenantId: string, token: string) =>
     apiRequest<WorkflowDesignerCatalog>(`/api/tenants/${tenantId}/workflows/drafts/designer-catalog`, { token }),
+  listShareableMembers: (tenantId: string, token: string) =>
+    apiRequest<WorkflowShareableMemberRow[]>(`/api/tenants/${tenantId}/workflows/drafts/shareable-members`, { token }),
   listDrafts: (tenantId: string, token: string, page = 1, size = 10, keyword = "", scope: "all" | "mine" | "shared" = "all", status: "all" | "draft" | "published" | "review" = "all", sort = "updatedAt,desc") => {
     const params = new URLSearchParams({
       page: String(page),
@@ -352,6 +357,10 @@ export const workflowApi = {
     apiRequest<WorkflowDraftRow>(`/api/tenants/${tenantId}/workflows/drafts`, { method: "POST", token, body: request }),
   getDraft: (tenantId: string, workflowId: string, token: string) =>
     apiRequest<WorkflowDraftDetail>(`/api/tenants/${tenantId}/workflows/drafts/${workflowId}`, { token }),
+  updateDraft: (tenantId: string, workflowId: string, token: string, request: UpdateWorkflowDraftRequest) =>
+    apiRequest<WorkflowDraftDetail>(`/api/tenants/${tenantId}/workflows/drafts/${workflowId}`, { method: "PUT", token, body: request }),
+  updateAccess: (tenantId: string, workflowId: string, token: string, request: UpdateWorkflowAccessRequest) =>
+    apiRequest<WorkflowDraftDetail>(`/api/tenants/${tenantId}/workflows/drafts/${workflowId}/access`, { method: "PUT", token, body: request }),
   validateForPublish: (tenantId: string, workflowId: string, token: string) =>
     apiRequest<WorkflowPublishValidationResult>(`/api/tenants/${tenantId}/workflows/drafts/${workflowId}/publish-validation`, {
       method: "POST",

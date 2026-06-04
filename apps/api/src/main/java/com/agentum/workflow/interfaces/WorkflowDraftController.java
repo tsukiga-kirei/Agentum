@@ -75,6 +75,16 @@ public class WorkflowDraftController {
         return ApiResponse.success(workflowDraftService.createDraft(tenantId, principal.userId(), createRequest), RequestIds.current(request));
     }
 
+    @GetMapping("/shareable-members")
+    public ApiResponse<java.util.List<WorkflowDraftApi.ShareableMemberRow>> listShareableMembers(
+        @PathVariable UUID tenantId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        workflowDesignAccess.assertCanDesign(principal, tenantId);
+        return ApiResponse.success(workflowDraftService.listShareableMembers(tenantId, principal.userId()), RequestIds.current(request));
+    }
+
     @GetMapping("/{workflowId}")
     public ApiResponse<WorkflowDraftApi.WorkflowDraftDetail> getDraft(
         @PathVariable UUID tenantId,
@@ -83,7 +93,31 @@ public class WorkflowDraftController {
         HttpServletRequest request
     ) {
         workflowDesignAccess.assertCanDesign(principal, tenantId);
-        return ApiResponse.success(workflowDraftService.getDraft(tenantId, workflowId), RequestIds.current(request));
+        return ApiResponse.success(workflowDraftService.getDraft(tenantId, principal.userId(), workflowId), RequestIds.current(request));
+    }
+
+    @PutMapping("/{workflowId}")
+    public ApiResponse<WorkflowDraftApi.WorkflowDraftDetail> updateDraft(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID workflowId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @Valid @RequestBody WorkflowDraftApi.UpdateWorkflowDraftRequest body,
+        HttpServletRequest request
+    ) {
+        workflowDesignAccess.assertCanDesign(principal, tenantId);
+        return ApiResponse.success(workflowDraftService.updateDraft(tenantId, principal.userId(), workflowId, body), RequestIds.current(request));
+    }
+
+    @PutMapping("/{workflowId}/access")
+    public ApiResponse<WorkflowDraftApi.WorkflowDraftDetail> updateAccess(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID workflowId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @Valid @RequestBody WorkflowDraftApi.UpdateWorkflowAccessRequest body,
+        HttpServletRequest request
+    ) {
+        workflowDesignAccess.assertCanDesign(principal, tenantId);
+        return ApiResponse.success(workflowDraftService.updateAccess(tenantId, principal.userId(), workflowId, body), RequestIds.current(request));
     }
 
     @PostMapping("/{workflowId}/publish-validation")
@@ -95,7 +129,7 @@ public class WorkflowDraftController {
     ) {
         workflowDesignAccess.assertCanDesign(principal, tenantId);
         // 发布前先返回结构化问题列表，便于设计者在画布中修复；真正发布时仍需再次执行同一组规则。
-        return ApiResponse.success(workflowDraftService.validateForPublish(tenantId, workflowId), RequestIds.current(request));
+        return ApiResponse.success(workflowDraftService.validateForPublish(tenantId, principal.userId(), workflowId), RequestIds.current(request));
     }
 
     @PostMapping("/{workflowId}/publish")

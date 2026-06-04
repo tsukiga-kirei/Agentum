@@ -8,13 +8,17 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.agentum.auth.infrastructure.UserAccountRepository;
+import com.agentum.organization.infrastructure.UserMembershipRepository;
+import com.agentum.permission.application.CollaborationAccessPolicy;
 import com.agentum.shared.api.ApiException;
 import com.agentum.tenant.domain.TenantEntity;
 import com.agentum.tenant.infrastructure.TenantRepository;
 import com.agentum.workflow.domain.WorkflowDefinitionEntity;
+import com.agentum.workflow.domain.WorkflowAccessGrantEntity;
 import com.agentum.workflow.domain.WorkflowNodeDefinitionEntity;
 import com.agentum.workflow.domain.WorkflowVersionEntity;
 import com.agentum.workflow.infrastructure.WorkflowDefinitionRepository;
+import com.agentum.workflow.infrastructure.WorkflowAccessGrantRepository;
 import com.agentum.workflow.infrastructure.WorkflowEdgeDefinitionRepository;
 import com.agentum.workflow.infrastructure.WorkflowNodeDefinitionRepository;
 import com.agentum.workflow.infrastructure.WorkflowVariableDefinitionRepository;
@@ -40,6 +44,7 @@ class WorkflowDraftServicePublishTest {
 
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000101");
     private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000003");
+    private static final UUID COLLABORATOR_ID = UUID.fromString("00000000-0000-0000-0000-000000000004");
     private static final Instant NOW = Instant.parse("2026-05-18T10:00:00Z");
 
     @Mock
@@ -48,6 +53,8 @@ class WorkflowDraftServicePublishTest {
     private UserAccountRepository userAccountRepository;
     @Mock
     private WorkflowDefinitionRepository workflowDefinitionRepository;
+    @Mock
+    private WorkflowAccessGrantRepository workflowAccessGrantRepository;
     @Mock
     private WorkflowNodeDefinitionRepository workflowNodeDefinitionRepository;
     @Mock
@@ -62,6 +69,8 @@ class WorkflowDraftServicePublishTest {
     private WorkflowPublishValidator workflowPublishValidator;
     @Mock
     private WorkflowNodeConfigValidator workflowNodeConfigValidator;
+    @Mock
+    private UserMembershipRepository userMembershipRepository;
 
     @Test
     void shouldCreateImmutableVersionAndMarkDraftPublished() {
@@ -160,6 +169,49 @@ class WorkflowDraftServicePublishTest {
         assertThat(savedNodes.get(0).getConfig()).containsEntry("summary", "识别授信风险").containsEntry("toolCount", 2);
     }
 
+    @Test
+    void shouldAllowSpecifiedEditorToSaveWorkflowGraph() {
+        WorkflowDefinitionEntity definition = draft();
+        definition.updateAccess("self", "specified", USER_ID, NOW);
+        WorkflowAccessGrantEntity editGrant = WorkflowAccessGrantEntity.create(
+            TENANT_ID, definition.getId(), COLLABORATOR_ID, "edit", USER_ID, NOW
+        );
+        stubDefinitionLookup(definition);
+        when(workflowAccessGrantRepository.findByWorkflowId(definition.getId())).thenReturn(List.of(editGrant));
+
+        WorkflowDraftApi.WorkflowDraftDetail detail = service().saveGraph(
+            TENANT_ID,
+            COLLABORATOR_ID,
+            definition.getId(),
+            new WorkflowDraftApi.SaveWorkflowDraftGraphRequest(List.of(), List.of(), List.of())
+        );
+
+        assertThat(detail.access().accessLevel()).isEqualTo("edit");
+        assertThat(detail.access().canManageAccess()).isFalse();
+    }
+
+    @Test
+    void shouldRejectReadOnlyCollaboratorWhenSavingWorkflowGraph() {
+        WorkflowDefinitionEntity definition = draft();
+        definition.updateAccess("specified", "self", USER_ID, NOW);
+        WorkflowAccessGrantEntity readGrant = WorkflowAccessGrantEntity.create(
+            TENANT_ID, definition.getId(), COLLABORATOR_ID, "read", USER_ID, NOW
+        );
+        when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("租户", "tenant", NOW)));
+        when(workflowDefinitionRepository.findByIdAndTenantId(definition.getId(), TENANT_ID)).thenReturn(Optional.of(definition));
+        when(workflowAccessGrantRepository.findByWorkflowId(definition.getId())).thenReturn(List.of(readGrant));
+
+        assertThatThrownBy(() -> service().saveGraph(
+            TENANT_ID,
+            COLLABORATOR_ID,
+            definition.getId(),
+            new WorkflowDraftApi.SaveWorkflowDraftGraphRequest(List.of(), List.of(), List.of())
+        ))
+            .isInstanceOf(ApiException.class)
+            .extracting("code")
+            .isEqualTo("WORKFLOW_EDIT_ACCESS_REQUIRED");
+    }
+
     private void stubDefinitionLookup(WorkflowDefinitionEntity definition) {
         when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("租户", "tenant", NOW)));
         when(workflowDefinitionRepository.findByIdAndTenantId(definition.getId(), TENANT_ID)).thenReturn(Optional.of(definition));
@@ -174,6 +226,7 @@ class WorkflowDraftServicePublishTest {
             tenantRepository,
             userAccountRepository,
             workflowDefinitionRepository,
+            workflowAccessGrantRepository,
             workflowNodeDefinitionRepository,
             workflowEdgeDefinitionRepository,
             workflowVariableDefinitionRepository,
@@ -181,6 +234,8 @@ class WorkflowDraftServicePublishTest {
             workflowVariableDeclarationValidator,
             workflowPublishValidator,
             workflowNodeConfigValidator,
+            userMembershipRepository,
+            new CollaborationAccessPolicy(),
             new ObjectMapper(),
             Clock.fixed(NOW, ZoneOffset.UTC)
         );

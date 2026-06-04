@@ -12,6 +12,8 @@ export type ApiResponse<TData> = {
 };
 
 export type WorkflowStatus = "draft" | "published" | "review";
+export type CollaborationAccessScope = "self" | "specified" | "all";
+export type CollaborationAccessLevel = "none" | "read" | "edit" | "owner";
 
 export type WorkflowDraftRow = {
   id: string;
@@ -23,12 +25,40 @@ export type WorkflowDraftRow = {
   pausePointCount: number;
   ownerId: string | null;
   ownerName: string;
+  accessLevel: CollaborationAccessLevel;
   updatedAt: string;
 };
 
 export type CreateWorkflowDraftRequest = {
   name: string;
   description?: string;
+  readScope?: CollaborationAccessScope;
+  editScope?: CollaborationAccessScope;
+  readUserIds?: string[];
+  editUserIds?: string[];
+};
+
+export type UpdateWorkflowDraftRequest = {
+  name: string;
+  description?: string;
+};
+
+export type UpdateWorkflowAccessRequest = {
+  readScope: CollaborationAccessScope;
+  editScope: CollaborationAccessScope;
+  readUserIds?: string[];
+  editUserIds?: string[];
+};
+
+export type WorkflowShareableMemberRow = {
+  userId: string;
+  username: string;
+  displayName: string;
+};
+
+export type WorkflowAccessDetail = UpdateWorkflowAccessRequest & {
+  accessLevel: CollaborationAccessLevel;
+  canManageAccess: boolean;
 };
 
 export type WorkflowNodeDraft = {
@@ -55,6 +85,7 @@ export type WorkflowDraftDetail = {
   nodes: WorkflowNodeDraft[];
   edges: WorkflowEdgeDraft[];
   variables: WorkflowVariableDraft[];
+  access: WorkflowAccessDetail;
 };
 
 export type WorkflowPublishValidationIssue = {

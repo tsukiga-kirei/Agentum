@@ -8,6 +8,8 @@ export type AssetSummary = {
 
 export type AssetType = "agent_template" | "skill" | "mcp" | "prompt_template" | "delivery";
 export type CreatableAssetType = "agent_template" | "prompt_template";
+export type AccessScope = "self" | "specified" | "all";
+export type AccessLevel = "none" | "read" | "edit" | "owner";
 
 export type SystemCapabilityAssetRow = {
   id: string;
@@ -22,6 +24,7 @@ export type SystemCapabilityAssetRow = {
   assignedToMe: boolean;
   assignmentScope: string;
   openSource: "tenant_admin" | "user_shared";
+  accessLevel: AccessLevel;
   ownerDisplayName: string;
   openedAt: string;
 };
@@ -35,7 +38,10 @@ export type MyAssetRow = {
   description: string;
   riskLevel: string;
   status: string;
-  visibility: "private" | "shared";
+  readScope: AccessScope;
+  editScope: AccessScope;
+  accessLevel: AccessLevel;
+  canManageAccess: boolean;
   sourceType: string;
   baseSystemCapabilityId: string | null;
   createdAt: string;
@@ -57,12 +63,15 @@ export type MyAssetDetail = MyAssetRow & {
     skillIds?: string[];
     mcpIds?: string[];
   };
-  sharedUserIds: string[];
+  readUserIds: string[];
+  editUserIds: string[];
 };
 
-export type UpdateMyAssetSharingRequest = {
-  visibility: "private" | "shared";
-  sharedUserIds?: string[];
+export type UpdateMyAssetAccessRequest = {
+  readScope: AccessScope;
+  editScope: AccessScope;
+  readUserIds?: string[];
+  editUserIds?: string[];
 };
 
 export type CreateMyAssetRequest = {
@@ -72,13 +81,15 @@ export type CreateMyAssetRequest = {
   version?: string;
   description?: string;
   riskLevel?: string;
-  visibility?: "private" | "shared";
+  readScope?: AccessScope;
+  editScope?: AccessScope;
   baseSystemCapabilityId?: string;
   config?: Record<string, unknown>;
-  sharedUserIds?: string[];
+  readUserIds?: string[];
+  editUserIds?: string[];
 };
 
-export type UpdateMyAssetRequest = Omit<CreateMyAssetRequest, "assetType" | "baseSystemCapabilityId" | "code">;
+export type UpdateMyAssetRequest = Pick<CreateMyAssetRequest, "name" | "version" | "description" | "riskLevel" | "config">;
 
 export type SystemCapabilityAssetPage = PageResponse<SystemCapabilityAssetRow>;
 export type MyAssetPage = PageResponse<MyAssetRow>;

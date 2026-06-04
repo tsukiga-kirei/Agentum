@@ -43,8 +43,11 @@ public class TenantAssetCapabilityEntity {
     @Column(nullable = false, length = 30)
     private String status;
 
-    @Column(nullable = false, length = 30)
-    private String visibility;
+    @Column(name = "read_scope", nullable = false, length = 30)
+    private String readScope;
+
+    @Column(name = "edit_scope", nullable = false, length = 30)
+    private String editScope;
 
     @Column(name = "source_type", nullable = false, length = 30)
     private String sourceType;
@@ -83,7 +86,8 @@ public class TenantAssetCapabilityEntity {
         String description,
         String riskLevel,
         String status,
-        String visibility,
+        String readScope,
+        String editScope,
         UUID baseSystemCapabilityId,
         Map<String, Object> config,
         UUID operatorUserId,
@@ -99,7 +103,8 @@ public class TenantAssetCapabilityEntity {
         entity.description = description;
         entity.riskLevel = riskLevel == null ? "low" : riskLevel;
         entity.status = status == null ? "draft" : status;
-        entity.visibility = visibility == null ? "private" : visibility;
+        entity.readScope = readScope == null ? "self" : readScope;
+        entity.editScope = editScope == null ? "self" : editScope;
         entity.sourceType = baseSystemCapabilityId == null ? "custom" : "derived";
         entity.baseSystemCapabilityId = baseSystemCapabilityId;
         entity.config = config == null ? new HashMap<>() : new HashMap<>(config);
@@ -116,7 +121,6 @@ public class TenantAssetCapabilityEntity {
         String version,
         String description,
         String riskLevel,
-        String visibility,
         Map<String, Object> config,
         UUID operatorUserId,
         Instant now
@@ -126,7 +130,6 @@ public class TenantAssetCapabilityEntity {
         this.version = version;
         this.description = description;
         this.riskLevel = riskLevel;
-        this.visibility = visibility;
         this.config = config == null ? new HashMap<>() : new HashMap<>(config);
         this.updatedBy = operatorUserId;
         this.updatedAt = now;
@@ -141,14 +144,14 @@ public class TenantAssetCapabilityEntity {
 
     public void revertToDraft(UUID operatorUserId, Instant now) {
         this.status = "draft";
-        this.visibility = "private";
         this.publishedAt = null;
         this.updatedBy = operatorUserId;
         this.updatedAt = now;
     }
 
-    public void updateSharing(String visibility, UUID operatorUserId, Instant now) {
-        this.visibility = visibility;
+    public void updateAccess(String readScope, String editScope, UUID operatorUserId, Instant now) {
+        this.readScope = readScope;
+        this.editScope = editScope;
         this.updatedBy = operatorUserId;
         this.updatedAt = now;
     }
@@ -189,8 +192,12 @@ public class TenantAssetCapabilityEntity {
         return status;
     }
 
-    public String getVisibility() {
-        return visibility;
+    public String getReadScope() {
+        return readScope;
+    }
+
+    public String getEditScope() {
+        return editScope;
     }
 
     public String getSourceType() {

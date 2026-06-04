@@ -31,6 +31,7 @@ public final class AssetManagementApi {
         boolean assignedToMe,
         String assignmentScope,
         String openSource,
+        String accessLevel,
         String ownerDisplayName,
         Instant openedAt
     ) {
@@ -45,7 +46,10 @@ public final class AssetManagementApi {
         String description,
         String riskLevel,
         String status,
-        String visibility,
+        String readScope,
+        String editScope,
+        String accessLevel,
+        boolean canManageAccess,
         String sourceType,
         UUID baseSystemCapabilityId,
         Instant createdAt,
@@ -63,11 +67,15 @@ public final class AssetManagementApi {
         String description,
         String riskLevel,
         String status,
-        String visibility,
+        String readScope,
+        String editScope,
+        String accessLevel,
+        boolean canManageAccess,
         String sourceType,
         UUID baseSystemCapabilityId,
         Map<String, Object> config,
-        java.util.List<UUID> sharedUserIds,
+        java.util.List<UUID> readUserIds,
+        java.util.List<UUID> editUserIds,
         Instant createdAt,
         Instant updatedAt,
         Instant publishedAt
@@ -88,10 +96,12 @@ public final class AssetManagementApi {
         @Size(max = 40) String version,
         @Size(max = 1000) String description,
         @Size(max = 20) String riskLevel,
-        @Size(max = 30) String visibility,
+        @Size(max = 30) String readScope,
+        @Size(max = 30) String editScope,
         UUID baseSystemCapabilityId,
         Map<String, Object> config,
-        java.util.List<UUID> sharedUserIds
+        java.util.List<UUID> readUserIds,
+        java.util.List<UUID> editUserIds
     ) {
     }
 
@@ -100,15 +110,15 @@ public final class AssetManagementApi {
         @Size(max = 40) String version,
         @Size(max = 1000) String description,
         @Size(max = 20) String riskLevel,
-        @Size(max = 30) String visibility,
-        Map<String, Object> config,
-        java.util.List<UUID> sharedUserIds
+        Map<String, Object> config
     ) {
     }
 
-    public record UpdateMyAssetSharingRequest(
-        @NotBlank @Size(max = 30) String visibility,
-        java.util.List<UUID> sharedUserIds
+    public record UpdateMyAssetAccessRequest(
+        @NotBlank @Size(max = 30) String readScope,
+        @NotBlank @Size(max = 30) String editScope,
+        java.util.List<UUID> readUserIds,
+        java.util.List<UUID> editUserIds
     ) {
     }
 }

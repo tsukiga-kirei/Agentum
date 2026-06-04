@@ -2,6 +2,7 @@ package com.agentum.asset.infrastructure;
 
 import com.agentum.asset.domain.TenantAssetCapabilityEntity;
 import java.util.Optional;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -18,6 +19,8 @@ public interface TenantAssetCapabilityRepository extends JpaRepository<TenantAss
     boolean existsByTenantIdAndCodeAndVersion(UUID tenantId, String code, String version);
 
     Optional<TenantAssetCapabilityEntity> findByIdAndTenantId(UUID id, UUID tenantId);
+
+    List<TenantAssetCapabilityEntity> findByTenantIdOrderByUpdatedAtDesc(UUID tenantId);
 
     boolean existsByTenantIdAndCodeAndVersionAndIdNot(UUID tenantId, String code, String version, UUID id);
 

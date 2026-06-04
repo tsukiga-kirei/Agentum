@@ -24,6 +24,7 @@ public final class WorkflowDraftApi {
         int pausePointCount,
         UUID ownerId,
         String ownerName,
+        String accessLevel,
         Instant updatedAt
     ) {
     }
@@ -32,8 +33,22 @@ public final class WorkflowDraftApi {
         WorkflowDraftRow draft,
         List<WorkflowNodeRow> nodes,
         List<WorkflowEdgeRow> edges,
-        List<WorkflowVariableRow> variables
+        List<WorkflowVariableRow> variables,
+        WorkflowAccessDetail access
     ) {
+    }
+
+    public record WorkflowAccessDetail(
+        String readScope,
+        String editScope,
+        List<UUID> readUserIds,
+        List<UUID> editUserIds,
+        String accessLevel,
+        boolean canManageAccess
+    ) {
+    }
+
+    public record ShareableMemberRow(UUID userId, String username, String displayName) {
     }
 
     public record WorkflowPublishValidationResult(
@@ -128,7 +143,25 @@ public final class WorkflowDraftApi {
 
     public record CreateWorkflowDraftRequest(
         @NotBlank @Size(max = 180) String name,
+        @Size(max = 1000) String description,
+        @Size(max = 30) String readScope,
+        @Size(max = 30) String editScope,
+        List<UUID> readUserIds,
+        List<UUID> editUserIds
+    ) {
+    }
+
+    public record UpdateWorkflowDraftRequest(
+        @NotBlank @Size(max = 180) String name,
         @Size(max = 1000) String description
+    ) {
+    }
+
+    public record UpdateWorkflowAccessRequest(
+        @NotBlank @Size(max = 30) String readScope,
+        @NotBlank @Size(max = 30) String editScope,
+        List<UUID> readUserIds,
+        List<UUID> editUserIds
     ) {
     }
 

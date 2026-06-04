@@ -124,7 +124,9 @@ public class WorkbenchService {
     public WorkbenchApi.WorkbenchSummary getSummary(UUID tenantId, CurrentUserPrincipal principal) {
         ensureActiveTenant(tenantId);
         long publishedWorkflowTotal = workflowDefinitionRepository.countByTenantIdAndStatus(tenantId, PUBLISHED_STATUS);
-        long availableWorkflowTotal = publishedWorkflowTotal;
+        long availableWorkflowTotal = principal == null
+            ? 0
+            : workflowDefinitionRepository.countVisibleByTenantIdAndStatus(tenantId, principal.userId(), PUBLISHED_STATUS);
         long openedCapabilityTotal = countOpenedCapabilities(tenantId, principal);
         long myAssetTotal = principal == null
             ? 0
@@ -164,8 +166,7 @@ public class WorkbenchService {
     /**
      * 分页查询当前用户可发起的已发布工作流。
      *
-     * <p>第一阶段不区分“可发起范围”，所有租户内已发布流程都展示给业务用户，
-     * 后续接入运行实例和资源范围后再细化“资源可见 + 可发起”维度。</p>
+     * <p>当前先以流程读取 / 使用权限作为可发起范围；后续接入运行实例后再叠加独立的发起动作权限。</p>
      */
     @Transactional(readOnly = true)
     public PageResponse<WorkbenchApi.AvailableWorkflowRow> listAvailableWorkflows(
@@ -184,13 +185,13 @@ public class WorkbenchService {
         Pageable pageable = PageableFactory.from(PageQuery.of(page, size, sort), AVAILABLE_WORKFLOW_SORT);
         String normalizedKeyword = keyword == null ? "" : keyword.trim();
 
-        // 复用工作流草稿仓库的多条件分页查询：scope=all 时 ownerId/excludedOwnerId 均为 null，
-        // 通过 status='published' 仅取已发布定义。
+        // 复用工作流草稿仓库的可见性查询，并通过 status='published' 仅取当前用户可读取的已发布定义。
         Page<WorkflowDefinitionEntity> resultPage = workflowDefinitionRepository.searchDrafts(
             tenantId,
             normalizedKeyword,
-            null,
-            null,
+            principal.userId(),
+            false,
+            false,
             PUBLISHED_STATUS,
             pageable
         );

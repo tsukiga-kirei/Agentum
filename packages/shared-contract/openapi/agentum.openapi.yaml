@@ -421,6 +421,45 @@ paths:
                     properties:
                       data:
                         $ref: "#/components/schemas/MyAssetDetail"
+  /api/tenants/{tenantId}/assets/mine/{assetId}/access:
+    patch:
+      summary: 配置自建能力读取与编辑权限
+      description: 仅创建者可配置；读取和编辑分别支持 self、specified、all，编辑权限自动包含读取权限。
+      tags:
+        - Asset
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAssetAccessRequest"
+      responses:
+        "200":
+          description: 权限配置成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/MyAssetDetail"
   /api/tenants/{tenantId}/workbench/summary:
     get:
       summary: 获取业务工作台概览
@@ -451,7 +490,7 @@ paths:
   /api/tenants/{tenantId}/workbench/available-workflows:
     get:
       summary: 查询当前用户可发起的已发布工作流
-      description: 返回租户内 status=published 的工作流定义及其最新发布版本号。第一阶段不区分“可发起范围”，后续接入资源范围后再细化。
+      description: 返回当前用户具有读取 / 使用权限且 status=published 的工作流定义及其最新发布版本号。
       tags:
         - Workbench
       security:
@@ -585,6 +624,23 @@ paths:
                     properties:
                       data:
                         $ref: "#/components/schemas/WorkflowDraftRow"
+  /api/tenants/{tenantId}/workflows/drafts/shareable-members:
+    get:
+      summary: 查询流程可授权成员
+      tags:
+        - Workflow
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 当前租户可授权成员
   /api/tenants/{tenantId}/workflows/drafts/{workflowId}:
     get:
       summary: 获取工作流草稿详情
@@ -608,6 +664,83 @@ paths:
       responses:
         "200":
           description: 草稿详情
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/WorkflowDraftDetail"
+    put:
+      summary: 更新工作流名称与说明
+      description: 创建者或具有编辑权限的同事可以更新流程基础信息。
+      tags:
+        - Workflow
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWorkflowDraftRequest"
+      responses:
+        "200":
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/WorkflowDraftDetail"
+  /api/tenants/{tenantId}/workflows/drafts/{workflowId}/access:
+    put:
+      summary: 配置工作流读取与编辑权限
+      description: 仅创建者可配置；读取和编辑分别支持 self、specified、all，编辑权限自动包含读取权限。
+      tags:
+        - Workflow
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWorkflowAccessRequest"
+      responses:
+        "200":
+          description: 权限配置成功
           content:
             application/json:
               schema:
@@ -658,7 +791,7 @@ paths:
   /api/tenants/{tenantId}/workflows/drafts/{workflowId}/publish-validation:
     post:
       summary: 校验工作流草稿是否满足最小发布条件
-      description: 当前阶段只校验图结构、起止节点、连通性和变量引用；真正发布时仍需再次复核能力授权与版本快照。
+      description: 校验图结构、起止节点、连通性、变量引用，以及当前编辑者对节点引用能力的读取权限；真正发布时再次复核并冻结版本快照。
       tags:
         - Workflow
       security:
@@ -3635,6 +3768,13 @@ components:
           type: boolean
         assignmentScope:
           type: string
+        openSource:
+          type: string
+          enum: [tenant_admin, user_shared]
+        accessLevel:
+          $ref: "#/components/schemas/CollaborationAccessLevel"
+        ownerDisplayName:
+          type: string
         openedAt:
           type: string
           format: date-time
@@ -3648,6 +3788,9 @@ components:
         - status
         - assignedToMe
         - assignmentScope
+        - openSource
+        - accessLevel
+        - ownerDisplayName
         - openedAt
     SystemCapabilityAssetPageResponse:
       type: object
@@ -3692,9 +3835,14 @@ components:
           type: string
         status:
           type: string
-        visibility:
-          type: string
-          enum: [private, tenant]
+        readScope:
+          $ref: "#/components/schemas/CollaborationAccessScope"
+        editScope:
+          $ref: "#/components/schemas/CollaborationAccessScope"
+        accessLevel:
+          $ref: "#/components/schemas/CollaborationAccessLevel"
+        canManageAccess:
+          type: boolean
         sourceType:
           type: string
         baseSystemCapabilityId:
@@ -3719,7 +3867,10 @@ components:
         - version
         - riskLevel
         - status
-        - visibility
+        - readScope
+        - editScope
+        - accessLevel
+        - canManageAccess
         - sourceType
         - createdAt
         - updatedAt
@@ -3731,8 +3882,20 @@ components:
             config:
               type: object
               additionalProperties: true
+            readUserIds:
+              type: array
+              items:
+                type: string
+                format: uuid
+            editUserIds:
+              type: array
+              items:
+                type: string
+                format: uuid
           required:
             - config
+            - readUserIds
+            - editUserIds
     MyAssetPageResponse:
       type: object
       properties:
@@ -3772,25 +3935,33 @@ components:
         riskLevel:
           type: string
           enum: [low, medium, high]
-        visibility:
-          type: string
-          enum: [private, tenant]
+        readScope:
+          $ref: "#/components/schemas/CollaborationAccessScope"
+        editScope:
+          $ref: "#/components/schemas/CollaborationAccessScope"
         baseSystemCapabilityId:
           type: string
           format: uuid
         config:
           type: object
           additionalProperties: true
+        readUserIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        editUserIds:
+          type: array
+          items:
+            type: string
+            format: uuid
       required:
         - assetType
         - name
-        - code
     UpdateMyAssetRequest:
       type: object
       properties:
         name:
-          type: string
-        code:
           type: string
         version:
           type: string
@@ -3799,15 +3970,31 @@ components:
         riskLevel:
           type: string
           enum: [low, medium, high]
-        visibility:
-          type: string
-          enum: [private, tenant]
         config:
           type: object
           additionalProperties: true
       required:
         - name
-        - code
+    UpdateAssetAccessRequest:
+      type: object
+      properties:
+        readScope:
+          $ref: "#/components/schemas/CollaborationAccessScope"
+        editScope:
+          $ref: "#/components/schemas/CollaborationAccessScope"
+        readUserIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        editUserIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+      required:
+        - readScope
+        - editScope
     SystemCapabilityRow:
       type: object
       properties:
@@ -4069,6 +4256,12 @@ components:
         - size
         - total
         - totalPages
+    CollaborationAccessScope:
+      type: string
+      enum: [self, specified, all]
+    CollaborationAccessLevel:
+      type: string
+      enum: [none, read, edit, owner]
     WorkflowDraftRow:
       type: object
       properties:
@@ -4095,6 +4288,8 @@ components:
           nullable: true
         ownerName:
           type: string
+        accessLevel:
+          $ref: "#/components/schemas/CollaborationAccessLevel"
         updatedAt:
           type: string
           format: date-time
@@ -4108,6 +4303,7 @@ components:
         - pausePointCount
         - ownerId
         - ownerName
+        - accessLevel
         - updatedAt
     CreateWorkflowDraftRequest:
       type: object
@@ -4118,8 +4314,65 @@ components:
         description:
           type: string
           maxLength: 1000
+        readScope:
+          $ref: "#/components/schemas/CollaborationAccessScope"
+        editScope:
+          $ref: "#/components/schemas/CollaborationAccessScope"
+        readUserIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        editUserIds:
+          type: array
+          items:
+            type: string
+            format: uuid
       required:
         - name
+    UpdateWorkflowDraftRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 180
+        description:
+          type: string
+          maxLength: 1000
+      required:
+        - name
+    UpdateWorkflowAccessRequest:
+      type: object
+      properties:
+        readScope:
+          $ref: "#/components/schemas/CollaborationAccessScope"
+        editScope:
+          $ref: "#/components/schemas/CollaborationAccessScope"
+        readUserIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        editUserIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+      required:
+        - readScope
+        - editScope
+    WorkflowAccessDetail:
+      allOf:
+        - $ref: "#/components/schemas/UpdateWorkflowAccessRequest"
+        - type: object
+          properties:
+            accessLevel:
+              $ref: "#/components/schemas/CollaborationAccessLevel"
+            canManageAccess:
+              type: boolean
+          required:
+            - accessLevel
+            - canManageAccess
     WorkflowDraftDetail:
       type: object
       properties:
@@ -4137,11 +4390,14 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/WorkflowVariable"
+        access:
+          $ref: "#/components/schemas/WorkflowAccessDetail"
       required:
         - draft
         - nodes
         - edges
         - variables
+        - access
     WorkflowPublishValidationResult:
       type: object
       properties:

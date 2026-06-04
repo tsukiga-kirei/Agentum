@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.agentum.asset.domain.TenantAssetCapabilityEntity;
+import com.agentum.asset.domain.TenantAssetAccessGrantEntity;
 import com.agentum.asset.infrastructure.TenantAssetCapabilityRepository;
 import com.agentum.asset.interfaces.AssetManagementApi;
 import com.agentum.auth.application.CurrentUserPrincipal;
@@ -17,6 +18,7 @@ import com.agentum.organization.infrastructure.UserMembershipRepository;
 import com.agentum.organization.infrastructure.UserMembershipRoleRepository;
 import com.agentum.permission.domain.ResourceGrantEntity;
 import com.agentum.permission.infrastructure.ResourceGrantRepository;
+import com.agentum.permission.application.CollaborationAccessPolicy;
 import com.agentum.shared.api.ApiException;
 import com.agentum.system.domain.SystemCapabilityEntity;
 import com.agentum.system.domain.TenantCapabilityGrantEntity;
@@ -39,6 +41,7 @@ class AssetManagementServiceTest {
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000101");
     private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000003");
     private static final UUID ROLE_ID = UUID.fromString("00000000-0000-0000-0000-000000000301");
+    private static final UUID COLLABORATOR_ID = UUID.fromString("00000000-0000-0000-0000-000000000004");
     private static final Instant NOW = Instant.parse("2026-05-19T08:00:00Z");
 
     private final TenantRepository tenantRepository = mock(TenantRepository.class);
@@ -48,7 +51,7 @@ class AssetManagementServiceTest {
     private final UserMembershipRepository userMembershipRepository = mock(UserMembershipRepository.class);
     private final UserMembershipRoleRepository userMembershipRoleRepository = mock(UserMembershipRoleRepository.class);
     private final TenantAssetCapabilityRepository tenantAssetCapabilityRepository = mock(TenantAssetCapabilityRepository.class);
-    private final com.agentum.asset.infrastructure.TenantAssetShareRepository tenantAssetShareRepository = mock(com.agentum.asset.infrastructure.TenantAssetShareRepository.class);
+    private final com.agentum.asset.infrastructure.TenantAssetAccessGrantRepository tenantAssetAccessGrantRepository = mock(com.agentum.asset.infrastructure.TenantAssetAccessGrantRepository.class);
     private final com.agentum.auth.infrastructure.UserAccountRepository userAccountRepository = mock(com.agentum.auth.infrastructure.UserAccountRepository.class);
 
     @Test
@@ -109,7 +112,8 @@ class AssetManagementServiceTest {
             "用于客户续约流程",
             "low",
             "draft",
-            "private",
+            "self",
+            "self",
             null,
             Map.of(),
             USER_ID,
@@ -123,12 +127,12 @@ class AssetManagementServiceTest {
         AssetManagementApi.MyAssetRow row = service.createMyAsset(
             TENANT_ID,
             businessPrincipal(),
-            new AssetManagementApi.CreateMyAssetRequest("prompt_template", "Renewal Question", null, "v1", "用于客户续约流程", "low", "private", null, Map.of(), List.of())
+            new AssetManagementApi.CreateMyAssetRequest("prompt_template", "Renewal Question", null, "v1", "用于客户续约流程", "low", "self", "self", null, Map.of(), List.of(), List.of())
         );
 
         assertThat(row.name()).isEqualTo("Renewal Question");
         assertThat(row.status()).isEqualTo("draft");
-        assertThat(row.visibility()).isEqualTo("private");
+        assertThat(row.readScope()).isEqualTo("self");
     }
 
     @Test
@@ -141,7 +145,7 @@ class AssetManagementServiceTest {
         assertThatThrownBy(() -> service.createMyAsset(
             TENANT_ID,
             businessPrincipal(),
-            new AssetManagementApi.CreateMyAssetRequest("agent_template", "合同解析智能体", null, "v1", "", "low", "private", baseCapabilityId, Map.of(), List.of())
+            new AssetManagementApi.CreateMyAssetRequest("agent_template", "合同解析智能体", null, "v1", "", "low", "self", "self", baseCapabilityId, Map.of(), List.of(), List.of())
         ))
             .isInstanceOf(ApiException.class)
             .extracting("code")
@@ -156,7 +160,7 @@ class AssetManagementServiceTest {
         assertThatThrownBy(() -> service.createMyAsset(
             TENANT_ID,
             businessPrincipal(),
-            new AssetManagementApi.CreateMyAssetRequest("skill", "风险核对 Skill", null, "v1", "", "low", "private", null, Map.of(), List.of())
+            new AssetManagementApi.CreateMyAssetRequest("skill", "风险核对 Skill", null, "v1", "", "low", "self", "self", null, Map.of(), List.of(), List.of())
         ))
             .isInstanceOf(ApiException.class)
             .extracting("code")
@@ -175,7 +179,8 @@ class AssetManagementServiceTest {
             "",
             "low",
             "draft",
-            "private",
+            "self",
+            "self",
             null,
             Map.of(),
             USER_ID,
@@ -190,7 +195,7 @@ class AssetManagementServiceTest {
         AssetManagementApi.MyAssetRow row = service.createMyAsset(
             TENANT_ID,
             businessPrincipal(),
-            new AssetManagementApi.CreateMyAssetRequest("prompt_template", "Renewal Question", null, "v1", "", "low", "private", null, Map.of(), List.of())
+            new AssetManagementApi.CreateMyAssetRequest("prompt_template", "Renewal Question", null, "v1", "", "low", "self", "self", null, Map.of(), List.of(), List.of())
         );
 
         assertThat(row.code()).isEqualTo("renewal_question_2");
@@ -208,7 +213,8 @@ class AssetManagementServiceTest {
             "",
             "medium",
             "draft",
-            "private",
+            "self",
+            "self",
             null,
             Map.of(),
             USER_ID,
@@ -235,7 +241,8 @@ class AssetManagementServiceTest {
             "",
             "low",
             "draft",
-            "private",
+            "self",
+            "self",
             null,
             Map.of("promptContent", ""),
             USER_ID,
@@ -250,13 +257,13 @@ class AssetManagementServiceTest {
             TENANT_ID,
             asset.getId(),
             businessPrincipal(),
-            new AssetManagementApi.UpdateMyAssetRequest("续约追问模板", "v1", "用于客户续约流程", "low", "private", Map.of("promptContent", "请识别客户续约风险。"), List.of())
+            new AssetManagementApi.UpdateMyAssetRequest("续约追问模板", "v1", "用于客户续约流程", "low", Map.of("promptContent", "请识别客户续约风险。"))
         );
         var published = service.publishMyAsset(TENANT_ID, asset.getId(), businessPrincipal());
 
         assertThat(updated.config()).containsEntry("promptContent", "请识别客户续约风险。");
         assertThat(published.status()).isEqualTo("published");
-        assertThat(published.visibility()).isEqualTo("private");
+        assertThat(published.readScope()).isEqualTo("self");
         assertThat(published.publishedAt()).isEqualTo(NOW);
     }
 
@@ -273,7 +280,8 @@ class AssetManagementServiceTest {
             "",
             "low",
             "draft",
-            "private",
+            "self",
+            "self",
             null,
             Map.of("promptContent", "请识别客户续约风险。"),
             USER_ID,
@@ -288,7 +296,8 @@ class AssetManagementServiceTest {
             "",
             "medium",
             "draft",
-            "private",
+            "self",
+            "self",
             null,
             Map.of(
                 "systemPrompt", "你是合同解析智能体。",
@@ -315,14 +324,12 @@ class AssetManagementServiceTest {
                 "v1",
                 "",
                 "medium",
-                "private",
                 Map.of(
                     "systemPrompt", "你是合同解析智能体。",
                     "systemPromptTemplateId", promptTemplateId.toString(),
                     "skillIds", List.of(),
                     "mcpIds", List.of()
-                ),
-                List.of()
+                )
             )
         ))
             .isInstanceOf(ApiException.class)
@@ -342,7 +349,8 @@ class AssetManagementServiceTest {
             "",
             "low",
             "published",
-            "tenant",
+            "specified",
+            "self",
             null,
             Map.of("promptContent", "请识别客户续约风险。"),
             USER_ID,
@@ -356,7 +364,7 @@ class AssetManagementServiceTest {
         var reverted = service.revertMyAssetToDraft(TENANT_ID, asset.getId(), businessPrincipal());
 
         assertThat(reverted.status()).isEqualTo("draft");
-        assertThat(reverted.visibility()).isEqualTo("private");
+        assertThat(reverted.readScope()).isEqualTo("specified");
         assertThat(reverted.publishedAt()).isNull();
     }
 
@@ -373,7 +381,8 @@ class AssetManagementServiceTest {
             "",
             "medium",
             "draft",
-            "private",
+            "self",
+            "self",
             null,
             Map.of(
                 "systemPrompt", "",
@@ -412,7 +421,8 @@ class AssetManagementServiceTest {
             "",
             "medium",
             "draft",
-            "private",
+            "self",
+            "self",
             null,
             Map.of("systemPrompt", "你是合同解析智能体。", "skillIds", List.of(capability.getId().toString()), "mcpIds", List.of()),
             USER_ID,
@@ -444,7 +454,8 @@ class AssetManagementServiceTest {
             "",
             "low",
             "draft",
-            "private",
+            "self",
+            "self",
             null,
             Map.of("promptContent", "请识别客户续约风险。"),
             USER_ID,
@@ -459,10 +470,61 @@ class AssetManagementServiceTest {
         verify(tenantAssetCapabilityRepository).delete(asset);
     }
 
+    @Test
+    void shouldAllowSpecifiedEditorToUpdateAssetContent() {
+        AssetManagementService service = newService();
+        TenantAssetCapabilityEntity asset = TenantAssetCapabilityEntity.create(
+            TENANT_ID, "prompt_template", "协作模板", "shared_prompt", "v1", "", "low", "draft",
+            "self", "specified", null, Map.of("promptContent", "旧内容"), USER_ID, NOW
+        );
+        TenantAssetAccessGrantEntity editGrant = TenantAssetAccessGrantEntity.create(
+            TENANT_ID, asset.getId(), COLLABORATOR_ID, "edit", USER_ID, NOW
+        );
+        when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", NOW)));
+        when(tenantAssetCapabilityRepository.findByIdAndTenantId(asset.getId(), TENANT_ID)).thenReturn(Optional.of(asset));
+        when(tenantAssetAccessGrantRepository.findByAssetId(asset.getId())).thenReturn(List.of(editGrant));
+        when(tenantAssetCapabilityRepository.existsByTenantIdAndCodeAndVersionAndIdNot(TENANT_ID, "shared_prompt", "v1", asset.getId())).thenReturn(false);
+
+        AssetManagementApi.MyAssetDetail detail = service.updateMyAsset(
+            TENANT_ID,
+            asset.getId(),
+            principal(COLLABORATOR_ID),
+            new AssetManagementApi.UpdateMyAssetRequest("协作模板", "v1", "协作编辑", "low", Map.of("promptContent", "新内容"))
+        );
+
+        assertThat(detail.accessLevel()).isEqualTo("edit");
+        assertThat(detail.config()).containsEntry("promptContent", "新内容");
+        assertThat(detail.canManageAccess()).isFalse();
+    }
+
+    @Test
+    void shouldRejectReadOnlyCollaboratorWhenUpdatingAssetContent() {
+        AssetManagementService service = newService();
+        TenantAssetCapabilityEntity asset = TenantAssetCapabilityEntity.create(
+            TENANT_ID, "prompt_template", "只读模板", "readonly_prompt", "v1", "", "low", "draft",
+            "specified", "self", null, Map.of("promptContent", "内容"), USER_ID, NOW
+        );
+        TenantAssetAccessGrantEntity readGrant = TenantAssetAccessGrantEntity.create(
+            TENANT_ID, asset.getId(), COLLABORATOR_ID, "read", USER_ID, NOW
+        );
+        when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", NOW)));
+        when(tenantAssetCapabilityRepository.findByIdAndTenantId(asset.getId(), TENANT_ID)).thenReturn(Optional.of(asset));
+        when(tenantAssetAccessGrantRepository.findByAssetId(asset.getId())).thenReturn(List.of(readGrant));
+
+        assertThatThrownBy(() -> service.updateMyAsset(
+            TENANT_ID,
+            asset.getId(),
+            principal(COLLABORATOR_ID),
+            new AssetManagementApi.UpdateMyAssetRequest("只读模板", "v1", "", "low", Map.of("promptContent", "越权内容"))
+        ))
+            .isInstanceOf(ApiException.class)
+            .extracting("code")
+            .isEqualTo("ASSET_EDIT_ACCESS_REQUIRED");
+    }
+
     private AssetManagementService newService() {
-        when(tenantAssetShareRepository.findByAssetId(any())).thenReturn(List.of());
-        when(tenantAssetShareRepository.findByTenantIdAndGranteeUserIdOrderByCreatedAtDesc(any(), any())).thenReturn(List.of());
-        when(tenantAssetShareRepository.countByAssetId(any())).thenReturn(0L);
+        when(tenantAssetAccessGrantRepository.findByAssetId(any())).thenReturn(List.of());
+        when(tenantAssetCapabilityRepository.findByTenantIdOrderByUpdatedAtDesc(any())).thenReturn(List.of());
         return new AssetManagementService(
             tenantRepository,
             tenantCapabilityGrantRepository,
@@ -471,13 +533,18 @@ class AssetManagementServiceTest {
             userMembershipRepository,
             userMembershipRoleRepository,
             tenantAssetCapabilityRepository,
-            tenantAssetShareRepository,
+            tenantAssetAccessGrantRepository,
             userAccountRepository,
+            new CollaborationAccessPolicy(),
             Clock.fixed(NOW, ZoneOffset.UTC)
         );
     }
 
     private static CurrentUserPrincipal businessPrincipal() {
-        return new CurrentUserPrincipal(USER_ID, "designer", TENANT_ID, "business", "business", UUID.randomUUID());
+        return principal(USER_ID);
+    }
+
+    private static CurrentUserPrincipal principal(UUID userId) {
+        return new CurrentUserPrincipal(userId, "designer", TENANT_ID, "business", "business", UUID.randomUUID());
     }
 }

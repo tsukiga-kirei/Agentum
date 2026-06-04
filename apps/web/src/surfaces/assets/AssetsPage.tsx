@@ -6,7 +6,7 @@ import { Empty, Pagination, Segmented, Select, Spin, message, Drawer } from "ant
 import { SurfacePageLayout } from "../../components/workbench/SurfacePageLayout";
 import { AgentumApiError, assetApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
-import type { AssetSummary, AssetType, CreatableAssetType, CreateMyAssetRequest, MyAssetDetail, MyAssetRow, ShareableMemberRow, SystemCapabilityAssetRow, UpdateMyAssetRequest } from "../../types/asset";
+import type { AccessScope, AssetSummary, AssetType, CreatableAssetType, CreateMyAssetRequest, MyAssetDetail, MyAssetRow, ShareableMemberRow, SystemCapabilityAssetRow, UpdateMyAssetRequest } from "../../types/asset";
 
 type AssetTab = "overview" | "system" | "mine";
 
@@ -41,9 +41,10 @@ const riskOptions = [
   { value: "high", label: "高风险" },
 ];
 
-const visibilityOptions = [
-  { value: "private", label: "仅自己使用" },
-  { value: "shared", label: "共享给指定同事" },
+const accessScopeOptions = [
+  { value: "self", label: "仅自己" },
+  { value: "specified", label: "指定同事" },
+  { value: "all", label: "全体同事" },
 ];
 
 const paginationLocale = {
@@ -104,19 +105,23 @@ export function AssetsPage() {
     version: "v1",
     description: "",
     riskLevel: "low",
-    visibility: "private",
+    readScope: "self",
+    editScope: "self",
     config: { promptContent: "" },
   });
   const [shareableMembers, setShareableMembers] = useState<ShareableMemberRow[]>([]);
-  const [sharingDraft, setSharingDraft] = useState<{ visibility: "private" | "shared"; sharedUserIds: string[] }>({ visibility: "private", sharedUserIds: [] });
+  const [accessDraft, setAccessDraft] = useState<{ readScope: AccessScope; editScope: AccessScope; readUserIds: string[]; editUserIds: string[] }>({
+    readScope: "self",
+    editScope: "self",
+    readUserIds: [],
+    editUserIds: [],
+  });
   const [editDraft, setEditDraft] = useState<UpdateMyAssetRequest>({
     name: "",
     version: "v1",
     description: "",
     riskLevel: "low",
-    visibility: "private",
     config: {},
-    sharedUserIds: [],
   });
 
   const tenantId = user?.tenantId ?? "";
@@ -238,7 +243,7 @@ export function AssetsPage() {
       .filter((asset) => asset.assetType === "prompt_template" && asset.openSource === "tenant_admin")
       .map((asset) => ({ value: asset.id, label: `${asset.name} · ${asset.version}（租户管理分配）` }));
     const sharedOptions = systemAssets
-      .filter((asset) => asset.assetType === "prompt_template" && asset.openSource === "user_shared")
+      .filter((asset) => asset.assetType === "prompt_template" && asset.openSource === "user_shared" && asset.status === "published")
       .map((asset) => ({ value: asset.id, label: `${asset.name} · ${asset.version}（${asset.ownerDisplayName || "同事"}共享）` }));
     const myOptions = myAssets
       .filter((asset) => asset.assetType === "prompt_template" && asset.status === "published")
@@ -275,7 +280,7 @@ export function AssetsPage() {
 
   const applyPromptTemplateSelection = useCallback(
     async (config: Record<string, unknown> | undefined, templateId: string) => {
-      const nextConfig = { ...(config ?? {}), systemPromptTemplateId: templateId };
+      const nextConfig: Record<string, unknown> = { ...(config ?? {}), systemPromptTemplateId: templateId };
       if (templateId === "none") {
         return nextConfig;
       }
@@ -309,11 +314,12 @@ export function AssetsPage() {
         name: draft.name.trim(),
         version: draft.version?.trim() || "v1",
         description: draft.description?.trim(),
-        sharedUserIds: draft.visibility === "shared" ? draft.sharedUserIds ?? [] : [],
+        readUserIds: draft.readScope === "specified" ? draft.readUserIds ?? [] : [],
+        editUserIds: draft.editScope === "specified" ? draft.editUserIds ?? [] : [],
       });
       messageApi.success("能力草稿已创建");
       setCreateOpen(false);
-      setDraft({ assetType: "prompt_template", name: "", version: "v1", description: "", riskLevel: "low", visibility: "private", config: { promptContent: "" } });
+      setDraft({ assetType: "prompt_template", name: "", version: "v1", description: "", riskLevel: "low", readScope: "self", editScope: "self", config: { promptContent: "" } });
       await Promise.all([loadSummary(), loadMyAssets(1, minePage.size, keyword)]);
       setActiveTab("mine");
     } catch (error) {
@@ -334,13 +340,13 @@ export function AssetsPage() {
         version: detail.version,
         description: detail.description,
         riskLevel: detail.riskLevel,
-        visibility: detail.visibility,
         config: detail.config ?? {},
-        sharedUserIds: detail.sharedUserIds ?? [],
       });
-      setSharingDraft({
-        visibility: detail.visibility,
-        sharedUserIds: detail.sharedUserIds ?? [],
+      setAccessDraft({
+        readScope: detail.readScope,
+        editScope: detail.editScope,
+        readUserIds: detail.readUserIds ?? [],
+        editUserIds: detail.editUserIds ?? [],
       });
       setEditOpen(true);
     } catch (error) {
@@ -398,13 +404,13 @@ export function AssetsPage() {
         version: reverted.version,
         description: reverted.description,
         riskLevel: reverted.riskLevel,
-        visibility: reverted.visibility,
         config: reverted.config ?? {},
-        sharedUserIds: reverted.sharedUserIds ?? [],
       });
-      setSharingDraft({
-        visibility: reverted.visibility,
-        sharedUserIds: reverted.sharedUserIds ?? [],
+      setAccessDraft({
+        readScope: reverted.readScope,
+        editScope: reverted.editScope,
+        readUserIds: reverted.readUserIds ?? [],
+        editUserIds: reverted.editUserIds ?? [],
       });
       messageApi.success("已改回草稿，可继续编辑");
       await Promise.all([loadSummary(), loadMyAssets(minePage.page, minePage.size, keyword)]);
@@ -434,23 +440,27 @@ export function AssetsPage() {
     }
   };
 
-  const handleUpdateSharing = async () => {
+  const handleUpdateAccess = async () => {
     if (!token || !tenantId || !currentAsset) return;
     setSubmitting(true);
     try {
-      const updated = await assetApi.updateMineSharing(tenantId, token, currentAsset.id, {
-        visibility: sharingDraft.visibility,
-        sharedUserIds: sharingDraft.visibility === "shared" ? sharingDraft.sharedUserIds : [],
+      const updated = await assetApi.updateMineAccess(tenantId, token, currentAsset.id, {
+        readScope: accessDraft.readScope,
+        editScope: accessDraft.editScope,
+        readUserIds: accessDraft.readScope === "specified" ? accessDraft.readUserIds : [],
+        editUserIds: accessDraft.editScope === "specified" ? accessDraft.editUserIds : [],
       });
       setCurrentAsset(updated);
-      setSharingDraft({
-        visibility: updated.visibility,
-        sharedUserIds: updated.sharedUserIds ?? [],
+      setAccessDraft({
+        readScope: updated.readScope,
+        editScope: updated.editScope,
+        readUserIds: updated.readUserIds ?? [],
+        editUserIds: updated.editUserIds ?? [],
       });
-      messageApi.success("共享范围已更新");
+      messageApi.success("读取与编辑权限已更新");
       await Promise.all([loadSummary(), loadSystemAssets(systemPage.page, systemPage.size), loadMyAssets(minePage.page, minePage.size, keyword)]);
     } catch (error) {
-      handleApiError(error, "更新共享范围失败");
+      handleApiError(error, "更新权限失败");
     } finally {
       setSubmitting(false);
     }
@@ -537,8 +547,12 @@ export function AssetsPage() {
               }}
               onCreateDraft={() => setCreateOpen(true)}
               onOpenSystemAsset={(asset) => {
-                setSelectedSystemAsset(asset);
-                setSystemDetailOpen(true);
+                if (asset.openSource === "user_shared") {
+                  void openEdit(asset.id);
+                } else {
+                  setSelectedSystemAsset(asset);
+                  setSystemDetailOpen(true);
+                }
               }}
               onOpenMyAsset={(asset) => void openEdit(asset.id)}
             />
@@ -585,8 +599,12 @@ export function AssetsPage() {
                       key={asset.id}
                       asset={asset}
                       onView={(a) => {
-                        setSelectedSystemAsset(a);
-                        setSystemDetailOpen(true);
+                        if (a.openSource === "user_shared") {
+                          void openEdit(a.id);
+                        } else {
+                          setSelectedSystemAsset(a);
+                          setSystemDetailOpen(true);
+                        }
                       }}
                     />
                   ))}
@@ -729,16 +747,24 @@ export function AssetsPage() {
               />
             </div>
           </div>
-          <ShareSettingsFields
-            visibility={draft.visibility ?? "private"}
-            sharedUserIds={draft.sharedUserIds ?? []}
+          <AccessSettingsFields
+            readScope={draft.readScope ?? "self"}
+            editScope={draft.editScope ?? "self"}
+            readUserIds={draft.readUserIds ?? []}
+            editUserIds={draft.editUserIds ?? []}
             memberOptions={shareableMemberOptions}
-            onVisibilityChange={(visibility) => setDraft((current) => ({
+            onReadScopeChange={(readScope) => setDraft((current) => ({
               ...current,
-              visibility,
-              sharedUserIds: visibility === "shared" ? current.sharedUserIds ?? [] : [],
+              readScope,
+              readUserIds: readScope === "specified" ? current.readUserIds ?? [] : [],
             }))}
-            onSharedUserIdsChange={(sharedUserIds) => setDraft((current) => ({ ...current, sharedUserIds }))}
+            onEditScopeChange={(editScope) => setDraft((current) => ({
+              ...current,
+              editScope,
+              editUserIds: editScope === "specified" ? current.editUserIds ?? [] : [],
+            }))}
+            onReadUserIdsChange={(readUserIds) => setDraft((current) => ({ ...current, readUserIds }))}
+            onEditUserIdsChange={(editUserIds) => setDraft((current) => ({ ...current, editUserIds }))}
           />
           <div className="sys-field">
             <label className="sys-field-label">说明</label>
@@ -798,13 +824,15 @@ export function AssetsPage() {
             <div className="sys-drawer-section">
               {currentAsset.status === "published" ? (
                 <div className="sys-hint"><ShieldCheck size={14} /> 已发布能力当前为只读查看；如需修改，请先改回草稿。</div>
+              ) : currentAsset.accessLevel === "read" ? (
+                <div className="sys-hint"><Eye size={14} /> 当前仅有读取权限，可查看内容但不能修改。</div>
               ) : null}
               <div className="sys-field-row">
                 <div className="sys-field">
                   <label className="sys-field-label sys-field-label--required">能力名称</label>
                   <div className="sys-field-input-wrap">
                     <Tag size={16} className="sys-field-prefix" aria-hidden="true" />
-                    <input className="sys-field-input" disabled={currentAsset.status !== "draft"} value={editDraft.name} onChange={(event) => setEditDraft((current) => ({ ...current, name: event.target.value }))} />
+                    <input className="sys-field-input" disabled={currentAsset.status !== "draft" || currentAsset.accessLevel === "read"} value={editDraft.name} onChange={(event) => setEditDraft((current) => ({ ...current, name: event.target.value }))} />
                   </div>
                 </div>
                 <div className="sys-field">
@@ -821,7 +849,7 @@ export function AssetsPage() {
                   <label className="sys-field-label">版本</label>
                   <div className="sys-field-input-wrap">
                     <FileText size={16} className="sys-field-prefix" aria-hidden="true" />
-                    <input className="sys-field-input" disabled={currentAsset.status !== "draft"} value={editDraft.version ?? "v1"} onChange={(event) => setEditDraft((current) => ({ ...current, version: event.target.value }))} />
+                    <input className="sys-field-input" disabled={currentAsset.status !== "draft" || currentAsset.accessLevel === "read"} value={editDraft.version ?? "v1"} onChange={(event) => setEditDraft((current) => ({ ...current, version: event.target.value }))} />
                   </div>
                 </div>
                 <div className="sys-field">
@@ -831,7 +859,7 @@ export function AssetsPage() {
                     classNames={adminSelectClassNames}
                     prefix={<ShieldCheck className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
                     suffixIcon={adminSelectSuffixIcon}
-                    disabled={currentAsset.status !== "draft"}
+                    disabled={currentAsset.status !== "draft" || currentAsset.accessLevel === "read"}
                     value={editDraft.riskLevel}
                     options={riskOptions}
                     onChange={(riskLevel) => setEditDraft((current) => ({ ...current, riskLevel }))}
@@ -840,42 +868,36 @@ export function AssetsPage() {
               </div>
               <div className="sys-field">
                 <label className="sys-field-label">说明</label>
-                <textarea className="sys-field-textarea" disabled={currentAsset.status !== "draft"} value={editDraft.description ?? ""} onChange={(event) => setEditDraft((current) => ({ ...current, description: event.target.value }))} />
+                <textarea className="sys-field-textarea" disabled={currentAsset.status !== "draft" || currentAsset.accessLevel === "read"} value={editDraft.description ?? ""} onChange={(event) => setEditDraft((current) => ({ ...current, description: event.target.value }))} />
               </div>
 
-              {currentAsset.status === "draft" ? (
-                <ShareSettingsFields
-                  visibility={editDraft.visibility ?? "private"}
-                  sharedUserIds={editDraft.sharedUserIds ?? []}
-                  memberOptions={shareableMemberOptions}
-                  onVisibilityChange={(visibility) => setEditDraft((current) => ({
-                    ...current,
-                    visibility,
-                    sharedUserIds: visibility === "shared" ? current.sharedUserIds ?? [] : [],
-                  }))}
-                  onSharedUserIdsChange={(sharedUserIds) => setEditDraft((current) => ({ ...current, sharedUserIds }))}
-                />
-              ) : (
-                <ShareSettingsFields
-                  readOnly={false}
-                  visibility={sharingDraft.visibility}
-                  sharedUserIds={sharingDraft.sharedUserIds}
-                  memberOptions={shareableMemberOptions}
-                  onVisibilityChange={(visibility) => setSharingDraft((current) => ({
-                    ...current,
-                    visibility,
-                    sharedUserIds: visibility === "shared" ? current.sharedUserIds : [],
-                  }))}
-                  onSharedUserIdsChange={(sharedUserIds) => setSharingDraft((current) => ({ ...current, sharedUserIds }))}
-                />
-              )}
+              <AccessSettingsFields
+                readOnly={!currentAsset.canManageAccess}
+                readScope={accessDraft.readScope}
+                editScope={accessDraft.editScope}
+                readUserIds={accessDraft.readUserIds}
+                editUserIds={accessDraft.editUserIds}
+                memberOptions={shareableMemberOptions}
+                onReadScopeChange={(readScope) => setAccessDraft((current) => ({
+                  ...current,
+                  readScope,
+                  readUserIds: readScope === "specified" ? current.readUserIds : [],
+                }))}
+                onEditScopeChange={(editScope) => setAccessDraft((current) => ({
+                  ...current,
+                  editScope,
+                  editUserIds: editScope === "specified" ? current.editUserIds : [],
+                }))}
+                onReadUserIdsChange={(readUserIds) => setAccessDraft((current) => ({ ...current, readUserIds }))}
+                onEditUserIdsChange={(editUserIds) => setAccessDraft((current) => ({ ...current, editUserIds }))}
+              />
 
               {currentAsset.assetType === "prompt_template" ? (
                 <div className="sys-field">
                   <label className="sys-field-label sys-field-label--required">提示词内容</label>
                   <textarea
                     className="sys-field-textarea min-h-[220px]"
-                    disabled={currentAsset.status !== "draft"}
+                    disabled={currentAsset.status !== "draft" || currentAsset.accessLevel === "read"}
                     value={getConfigString(editDraft.config, "promptContent")}
                     onChange={(event) => setEditDraft((current) => ({ ...current, config: { ...(current.config ?? {}), promptContent: event.target.value } }))}
                   />
@@ -884,7 +906,7 @@ export function AssetsPage() {
 
               {currentAsset.assetType === "agent_template" ? (
                 <AgentTemplateConfigFields
-                  readOnly={currentAsset.status !== "draft"}
+                  readOnly={currentAsset.status !== "draft" || currentAsset.accessLevel === "read"}
                   config={editDraft.config}
                   promptTemplateOptions={promptTemplateOptions}
                   skillOptions={skillOptions}
@@ -900,12 +922,14 @@ export function AssetsPage() {
             </div>
 
             <div className="sys-drawer-footer">
-              {currentAsset.status === "draft" ? (
+              {currentAsset.status === "draft" && currentAsset.accessLevel !== "read" ? (
                 <>
-                  <button type="button" className="sys-btn sys-btn--danger" style={{ marginRight: "auto" }} disabled={submitting} onClick={() => confirmDelete(currentAsset)}>
-                    <Trash2 size={14} />
-                    删除
-                  </button>
+                  {currentAsset.canManageAccess ? (
+                    <button type="button" className="sys-btn sys-btn--danger" style={{ marginRight: "auto" }} disabled={submitting} onClick={() => confirmDelete(currentAsset)}>
+                      <Trash2 size={14} />
+                      删除
+                    </button>
+                  ) : null}
                   <div className="sys-drawer-footer-right">
                     <button type="button" className="sys-btn sys-btn--default" onClick={() => setEditOpen(false)}>
                       <X size={14} />
@@ -915,33 +939,56 @@ export function AssetsPage() {
                       <Edit3 size={14} />
                       保存草稿
                     </button>
+                    {currentAsset.canManageAccess ? (
+                      <button type="button" className="sys-btn sys-btn--default" disabled={submitting} onClick={() => void handleUpdateAccess()}>
+                        <Eye size={14} />
+                        保存权限
+                      </button>
+                    ) : null}
                     <button type="button" className="sys-btn sys-btn--primary" disabled={submitting} onClick={() => void handlePublish()}>
                       <Send size={14} />
                       发布能力
                     </button>
                   </div>
                 </>
-              ) : (
+              ) : currentAsset.status === "published" && currentAsset.accessLevel !== "read" ? (
                 <>
-                  <button type="button" className="sys-btn sys-btn--danger" style={{ marginRight: "auto" }} disabled={submitting} onClick={() => confirmDelete(currentAsset)}>
-                    <Trash2 size={14} />
-                    删除
-                  </button>
+                  {currentAsset.canManageAccess ? (
+                    <button type="button" className="sys-btn sys-btn--danger" style={{ marginRight: "auto" }} disabled={submitting} onClick={() => confirmDelete(currentAsset)}>
+                      <Trash2 size={14} />
+                      删除
+                    </button>
+                  ) : null}
                   <div className="sys-drawer-footer-right">
                     <button type="button" className="sys-btn sys-btn--default" onClick={() => setEditOpen(false)}>
                       <X size={14} />
                       关闭
                     </button>
-                    <button type="button" className="sys-btn sys-btn--default" disabled={submitting} onClick={() => void handleUpdateSharing()}>
-                      <Eye size={14} />
-                      保存共享
-                    </button>
+                    {currentAsset.canManageAccess ? (
+                      <button type="button" className="sys-btn sys-btn--default" disabled={submitting} onClick={() => void handleUpdateAccess()}>
+                        <Eye size={14} />
+                        保存权限
+                      </button>
+                    ) : null}
                     <button type="button" className="sys-btn sys-btn--primary" disabled={submitting} onClick={() => void handleRevertToDraft()}>
                       <RotateCcw size={14} />
                       改回草稿
                     </button>
                   </div>
                 </>
+              ) : (
+                <div className="sys-drawer-footer-right">
+                  <button type="button" className="sys-btn sys-btn--default" onClick={() => setEditOpen(false)}>
+                    <X size={14} />
+                    关闭
+                  </button>
+                  {currentAsset.canManageAccess ? (
+                    <button type="button" className="sys-btn sys-btn--primary" disabled={submitting} onClick={() => void handleUpdateAccess()}>
+                      <Eye size={14} />
+                      保存权限
+                    </button>
+                  ) : null}
+                </div>
               )}
             </div>
           </>
@@ -1066,7 +1113,7 @@ function OverviewPanel({
         <section className="sys-preview-card">
           <div className="sys-preview-card-title"><ShieldCheck size={16} /> 能力功能入口</div>
           <div className="grid gap-3 lg:grid-cols-2">
-            <AssetFeatureCard icon={Boxes} title="对我开放" detail="查看当前用户、部门或角色已被分配的系统能力。" meta={`${systemAssets.length} 项当前页已分配能力`} onClick={onOpenSystem} />
+            <AssetFeatureCard icon={Boxes} title="对我开放" detail="查看租户分配的系统能力，以及同事开放给我的自建能力。" meta={`${systemAssets.length} 项当前页开放能力`} onClick={onOpenSystem} />
             <AssetFeatureCard icon={Library} title="我的能力" detail="维护我创建的提示词模板和智能体模板草稿。" meta={`${summary?.myAssetTotal ?? myAssets.length} 项我的能力`} onClick={onOpenMine} />
             <AssetFeatureCard icon={PlusCircle} title="新建能力草稿" detail="创建提示词模板或智能体模板，再通过发布进入复用链路。" meta="提示词模板 / 智能体模板" onClick={onCreateDraft} />
             <AssetFeatureCard icon={BrainCircuit} title="待完善草稿" detail="回到我的能力处理未发布草稿和版本说明。" meta={`${draftAssets.length} 项待完善`} onClick={onOpenDrafts} />
@@ -1150,12 +1197,14 @@ function SystemAssetCard({ asset, onView }: { asset: SystemCapabilityAssetRow; o
         </div>
         <span className={`sys-status ${asset.assignedToMe ? "sys-status--active" : "sys-status--inactive"}`}>
           <span className="sys-status-dot" />
-          {asset.assignedToMe ? "可引用" : "未分配"}
+          {asset.openSource === "user_shared"
+            ? asset.status === "published" ? "可引用" : asset.accessLevel === "edit" ? "可维护草稿" : "可查看草稿"
+            : asset.assignedToMe ? "可引用" : "未分配"}
         </span>
       </div>
       <div className="sys-info-tags">
         <span className="sys-info-tag sys-info-tag--primary">{formatAssetType(asset.assetType)}</span>
-        <span className="sys-info-tag">{asset.openSource === "user_shared" ? "同事共享" : "租户管理分配"}</span>
+        <span className="sys-info-tag">{asset.openSource === "user_shared" ? formatAccessLevel(asset.accessLevel) : "租户管理分配"}</span>
         <RiskTag level={asset.riskLevel} />
       </div>
       <p className="agent-muted min-h-12 text-sm leading-6">{asset.description || "暂无说明"}</p>
@@ -1193,20 +1242,24 @@ function MyAssetCard({ asset, onEdit, onDelete }: { asset: MyAssetRow; onEdit: (
       <div className="sys-info-tags">
         <span className="sys-info-tag sys-info-tag--primary">{formatAssetType(asset.assetType)}</span>
         <RiskTag level={asset.riskLevel} />
-        <span className="sys-info-tag">{formatAssetVisibility(asset.visibility)}</span>
+        <span className="sys-info-tag">{formatAccessLevel(asset.accessLevel)}</span>
+        <span className="sys-info-tag">读：{formatAccessScope(asset.readScope)}</span>
+        <span className="sys-info-tag">编：{formatAccessScope(asset.editScope)}</span>
       </div>
       <p className="agent-muted min-h-12 text-sm leading-6">{asset.description || "暂无说明"}</p>
       <div className="sys-card-footer">
         <span className="sys-card-footer-time"><Clock size={12} /> {asset.sourceType === "derived" ? "系统能力派生" : "我的能力"}</span>
         <div className="sys-card-footer-actions" onClick={(e) => e.stopPropagation()}>
           <button type="button" className="sys-btn sys-btn--text sys-btn--sm" onClick={() => onEdit(asset.id)}>
-            {asset.status === "draft" ? <Edit3 size={14} /> : <Eye size={14} />}
-            {asset.status === "draft" ? "编辑草稿" : "查看详情"}
+            {asset.accessLevel === "read" ? <Eye size={14} /> : <Edit3 size={14} />}
+            {asset.accessLevel === "read" ? "查看详情" : "维护能力"}
           </button>
-          <button type="button" className="sys-btn sys-btn--text sys-btn--danger-text sys-btn--sm" onClick={() => onDelete(asset)}>
-            <Trash2 size={14} />
-            删除
-          </button>
+          {asset.canManageAccess ? (
+            <button type="button" className="sys-btn sys-btn--text sys-btn--danger-text sys-btn--sm" onClick={() => onDelete(asset)}>
+              <Trash2 size={14} />
+              删除
+            </button>
+          ) : null}
         </div>
       </div>
     </article>
@@ -1310,40 +1363,48 @@ function RiskTag({ level }: { level: string }) {
   return <span className={`sys-info-tag ${cls}`}>{formatRisk(level)}</span>;
 }
 
-function ShareSettingsFields({
-  visibility,
-  sharedUserIds,
+function AccessSettingsFields({
+  readScope,
+  editScope,
+  readUserIds,
+  editUserIds,
   memberOptions,
   readOnly = false,
-  onVisibilityChange,
-  onSharedUserIdsChange,
+  onReadScopeChange,
+  onEditScopeChange,
+  onReadUserIdsChange,
+  onEditUserIdsChange,
 }: {
-  visibility: "private" | "shared";
-  sharedUserIds: string[];
+  readScope: AccessScope;
+  editScope: AccessScope;
+  readUserIds: string[];
+  editUserIds: string[];
   memberOptions: Array<{ value: string; label: string }>;
   readOnly?: boolean;
-  onVisibilityChange: (visibility: "private" | "shared") => void;
-  onSharedUserIdsChange: (sharedUserIds: string[]) => void;
+  onReadScopeChange: (scope: AccessScope) => void;
+  onEditScopeChange: (scope: AccessScope) => void;
+  onReadUserIdsChange: (userIds: string[]) => void;
+  onEditUserIdsChange: (userIds: string[]) => void;
 }) {
   return (
     <>
       <div className="sys-field">
-        <label className="sys-field-label">使用范围</label>
+        <label className="sys-field-label">读取 / 使用范围</label>
         <Select
           className="agent-admin-select w-full"
           classNames={adminSelectClassNames}
           prefix={<Eye className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
           suffixIcon={adminSelectSuffixIcon}
           disabled={readOnly}
-          value={visibility}
-          options={visibilityOptions}
-          onChange={(value) => onVisibilityChange(value as "private" | "shared")}
+          value={readScope}
+          options={accessScopeOptions}
+          onChange={(value) => onReadScopeChange(value as AccessScope)}
         />
-        <div className="sys-field-hint">发布只代表能力定稿；是否共享给其他同事需单独配置，与发布状态无关。</div>
+        <div className="sys-field-hint">可读取的同事可以查看并在流程中引用已发布能力。</div>
       </div>
-      {visibility === "shared" ? (
+      {readScope === "specified" ? (
         <div className="sys-field">
-          <label className="sys-field-label sys-field-label--required">共享给</label>
+          <label className="sys-field-label sys-field-label--required">指定可读取同事</label>
           <Select
             mode="multiple"
             className="agent-admin-select w-full"
@@ -1351,10 +1412,41 @@ function ShareSettingsFields({
             prefix={<UserRoundCog className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
             suffixIcon={adminSelectSuffixIcon}
             disabled={readOnly}
-            value={sharedUserIds}
+            value={readUserIds}
             options={memberOptions}
             placeholder="选择可使用的同事"
-            onChange={(values) => onSharedUserIdsChange(values)}
+            onChange={(values) => onReadUserIdsChange(values)}
+          />
+        </div>
+      ) : null}
+      <div className="sys-field">
+        <label className="sys-field-label">编辑范围</label>
+        <Select
+          className="agent-admin-select w-full"
+          classNames={adminSelectClassNames}
+          prefix={<Edit3 className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+          suffixIcon={adminSelectSuffixIcon}
+          disabled={readOnly}
+          value={editScope}
+          options={accessScopeOptions}
+          onChange={(value) => onEditScopeChange(value as AccessScope)}
+        />
+        <div className="sys-field-hint">可编辑会自动包含读取权限，但权限设置和删除仍仅限创建者。</div>
+      </div>
+      {editScope === "specified" ? (
+        <div className="sys-field">
+          <label className="sys-field-label sys-field-label--required">指定可编辑同事</label>
+          <Select
+            mode="multiple"
+            className="agent-admin-select w-full"
+            classNames={adminSelectClassNames}
+            prefix={<UserRoundCog className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+            suffixIcon={adminSelectSuffixIcon}
+            disabled={readOnly}
+            value={editUserIds}
+            options={memberOptions}
+            placeholder="选择可持续维护的同事"
+            onChange={(values) => onEditUserIdsChange(values)}
           />
         </div>
       ) : null}
@@ -1442,14 +1534,11 @@ function AgentTemplateConfigFields({
 }
 
 function normalizeEditDraft(draft: UpdateMyAssetRequest, assetType: AssetType): UpdateMyAssetRequest {
-  const visibility = draft.visibility === "shared" ? "shared" : "private";
   const base = {
     ...draft,
     name: draft.name.trim(),
     version: draft.version?.trim() || "v1",
     description: draft.description?.trim(),
-    visibility,
-    sharedUserIds: visibility === "shared" ? (draft.sharedUserIds ?? []) : [],
   };
   if (assetType === "prompt_template") {
     return { ...base, config: { promptContent: getConfigString(draft.config, "promptContent") } };
@@ -1489,9 +1578,17 @@ function formatRisk(level: string): string {
   return level;
 }
 
-function formatAssetVisibility(visibility: string): string {
-  if (visibility === "shared") return "已共享";
-  return "仅自己使用";
+function formatAccessScope(scope: string): string {
+  if (scope === "all") return "全体同事";
+  if (scope === "specified") return "指定同事";
+  return "仅自己";
+}
+
+function formatAccessLevel(level: string): string {
+  if (level === "owner") return "创建者";
+  if (level === "edit") return "可编辑";
+  if (level === "read") return "可读取";
+  return "无权限";
 }
 
 function formatStatus(status: string): string {

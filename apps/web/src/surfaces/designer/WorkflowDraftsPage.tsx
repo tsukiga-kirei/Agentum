@@ -2,15 +2,22 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   ArrowRight,
+  Bot,
   CheckCircle2,
   ChevronDown,
   ClipboardCheck,
   Clock3,
   FilePlus2,
   GitBranch,
+  GitMerge,
+  Inbox,
   ListChecks,
   PanelRightOpen,
+  Pencil,
+  Send,
   Share2,
+  ShieldCheck,
+  Split,
   Search,
   UserRound,
   UsersRound,
@@ -26,8 +33,9 @@ import type {
   WorkflowDraftRow,
   WorkflowNodeDraft,
   WorkflowPublishValidationResult,
+  WorkflowShareableMemberRow,
   WorkflowStatus,
-  WorkflowVariableDraft,
+  CollaborationAccessScope,
 } from "../../types/workflow-contract";
 import { WorkflowEditorPage } from "./WorkflowEditorPage";
 
@@ -66,12 +74,23 @@ const workflowPaginationLocale = {
 type WorkflowDesignerTab = "overview" | "all" | "mine";
 type WorkflowListScope = "all" | "mine" | "shared";
 type WorkflowStatusFilter = WorkflowStatus | "all";
+type WorkflowAccessDraft = {
+  readScope: CollaborationAccessScope;
+  editScope: CollaborationAccessScope;
+  readUserIds: string[];
+  editUserIds: string[];
+};
 
 const workflowStatusOptions: Array<{ value: WorkflowStatusFilter; label: string }> = [
   { value: "all", label: "全部状态" },
   { value: "draft", label: "草稿" },
   { value: "published", label: "已发布" },
   { value: "review", label: "待校验" },
+];
+const accessScopeOptions = [
+  { value: "self", label: "仅自己" },
+  { value: "specified", label: "指定同事" },
+  { value: "all", label: "全体同事" },
 ];
 
 const workflowSelectClassNames = { popup: { root: "agent-select-dropdown agent-admin-select-dropdown" } };
@@ -92,6 +111,13 @@ export function WorkflowDraftsPage() {
   const [isCreating, setIsCreating] = useState(false);
   const [draftName, setDraftName] = useState("");
   const [draftDescription, setDraftDescription] = useState("");
+  const [draftAccess, setDraftAccess] = useState({
+    readScope: "self" as CollaborationAccessScope,
+    editScope: "self" as CollaborationAccessScope,
+    readUserIds: [] as string[],
+    editUserIds: [] as string[],
+  });
+  const [shareableMembers, setShareableMembers] = useState<WorkflowShareableMemberRow[]>([]);
   const [editingWorkflow, setEditingWorkflow] = useState<WorkflowDraft | null>(null);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
@@ -110,11 +136,23 @@ export function WorkflowDraftsPage() {
   const [drawerDetail, setDrawerDetail] = useState<WorkflowDraftDetail | null>(null);
   const [drawerDetailLoading, setDrawerDetailLoading] = useState(false);
   const [drawerDetailError, setDrawerDetailError] = useState("");
+  const [detailName, setDetailName] = useState("");
+  const [detailDescription, setDetailDescription] = useState("");
+  const [detailAccess, setDetailAccess] = useState({
+    readScope: "self" as CollaborationAccessScope,
+    editScope: "self" as CollaborationAccessScope,
+    readUserIds: [] as string[],
+    editUserIds: [] as string[],
+  });
   const [workflowStatusFilter, setWorkflowStatusFilter] = useState<WorkflowStatusFilter>("all");
 
   const currentUserId = user?.id ?? "";
   const currentScope: WorkflowListScope = activeTab === "mine" ? "mine" : activeTab === "all" ? "shared" : "all";
   const drawerRootClassName = themeMode === "dark" ? "agent-admin-drawer agent-admin-drawer--dark" : "agent-admin-drawer";
+  const shareableMemberOptions = useMemo(
+    () => shareableMembers.map((member) => ({ value: member.userId, label: `${member.displayName} · ${member.username}` })),
+    [shareableMembers],
+  );
 
   const loadDrafts = useCallback(async (nextPage = 1, keyword = searchValue, nextPageSize = pageSize, scope: WorkflowListScope = currentScope, status: WorkflowStatusFilter = workflowStatusFilter) => {
     if (!token || !user?.tenantId) {
@@ -140,6 +178,14 @@ export function WorkflowDraftsPage() {
       setLoading(false);
     }
   }, [currentScope, pageSize, searchValue, token, user?.tenantId, workflowStatusFilter]);
+
+  useEffect(() => {
+    if (!token || !user?.tenantId) return;
+    const tenantId = user.tenantId;
+    void workflowApi.listShareableMembers(tenantId, token)
+      .then(setShareableMembers)
+      .catch((error) => console.warn("[workflow] 加载可授权成员失败", getWorkflowErrorContext(error, tenantId)));
+  }, [token, user?.tenantId]);
 
   useEffect(() => {
     void loadDrafts(1, searchValue, pageSize, currentScope);
@@ -169,6 +215,14 @@ export function WorkflowDraftsPage() {
       .then((detail) => {
         if (!cancelled) {
           setDrawerDetail(detail);
+          setDetailName(detail.draft.name);
+          setDetailDescription(detail.draft.description);
+          setDetailAccess({
+            readScope: detail.access.readScope,
+            editScope: detail.access.editScope,
+            readUserIds: detail.access.readUserIds ?? [],
+            editUserIds: detail.access.editUserIds ?? [],
+          });
         }
       })
       .catch((error) => {
@@ -253,15 +307,67 @@ export function WorkflowDraftsPage() {
     setSubmitting(true);
 
     try {
-      await workflowApi.createDraft(user.tenantId, token, { name, description });
+      await workflowApi.createDraft(user.tenantId, token, {
+        name,
+        description,
+        readScope: draftAccess.readScope,
+        editScope: draftAccess.editScope,
+        readUserIds: draftAccess.readScope === "specified" ? draftAccess.readUserIds : [],
+        editUserIds: draftAccess.editScope === "specified" ? draftAccess.editUserIds : [],
+      });
       setDraftName("");
       setDraftDescription("");
+      setDraftAccess({ readScope: "self", editScope: "self", readUserIds: [], editUserIds: [] });
       setIsCreating(false);
       await loadDrafts(1, searchValue);
       messageApi.success("工作流草稿已保存");
     } catch (error) {
       console.warn("[workflow] 工作流草稿创建失败", getWorkflowErrorContext(error, user.tenantId, { name }));
       messageApi.error(error instanceof AgentumApiError ? error.message : "保存草稿失败，请稍后重试");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleUpdateDetail() {
+    if (!token || !user?.tenantId || !detailWorkflow) return;
+    if (!detailName.trim()) {
+      messageApi.warning("请输入工作流名称");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const detail = await workflowApi.updateDraft(user.tenantId, detailWorkflow.id, token, {
+        name: detailName.trim(),
+        description: detailDescription.trim(),
+      });
+      setDrawerDetail(detail);
+      setDetailWorkflow(detail.draft);
+      setWorkflows((items) => items.map((item) => item.id === detail.draft.id ? detail.draft : item));
+      messageApi.success("流程基础信息已保存");
+    } catch (error) {
+      messageApi.error(error instanceof AgentumApiError ? error.message : "保存流程信息失败");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleUpdateDetailAccess() {
+    if (!token || !user?.tenantId || !detailWorkflow) return;
+    setSubmitting(true);
+    try {
+      const detail = await workflowApi.updateAccess(user.tenantId, detailWorkflow.id, token, {
+        readScope: detailAccess.readScope,
+        editScope: detailAccess.editScope,
+        readUserIds: detailAccess.readScope === "specified" ? detailAccess.readUserIds : [],
+        editUserIds: detailAccess.editScope === "specified" ? detailAccess.editUserIds : [],
+      });
+      setDrawerDetail(detail);
+      setDetailWorkflow(detail.draft);
+      setWorkflows((items) => items.map((item) => item.id === detail.draft.id ? detail.draft : item));
+      messageApi.success("流程读取与编辑权限已保存");
+    } catch (error) {
+      messageApi.error(error instanceof AgentumApiError ? error.message : "保存流程权限失败");
     } finally {
       setSubmitting(false);
     }
@@ -473,6 +579,12 @@ export function WorkflowDraftsPage() {
                   <Search size={18} aria-hidden="true" />
                   查询
                 </button>
+                {activeTab === "mine" ? (
+                  <button type="button" className="sys-btn sys-btn--primary" onClick={() => setIsCreating(true)}>
+                    <FilePlus2 size={18} aria-hidden="true" />
+                    新建流程
+                  </button>
+                ) : null}
               </div>
             </div>
 
@@ -486,7 +598,7 @@ export function WorkflowDraftsPage() {
                   mine={isWorkflowOwnedByCurrentUser(workflow, currentUserId)}
                   validating={validatingWorkflowId === workflow.id}
                   onOpenDetail={() => setDetailWorkflow(workflow)}
-                  onValidate={() => void handleValidateForPublish(workflow)}
+                  onValidate={workflow.accessLevel === "read" ? undefined : () => void handleValidateForPublish(workflow)}
                 />
               ))}
             </div>
@@ -548,8 +660,20 @@ export function WorkflowDraftsPage() {
                     <span className="sys-info-tag">{isWorkflowOwnedByCurrentUser(detailWorkflow, currentUserId) ? "我的流程" : "协作开放"}</span>
                   </div>
                   <h2 className="workflow-detail-drawer-title">{detailWorkflow.name}</h2>
-                  <p className="agent-muted mt-2 text-sm leading-6">{detailWorkflow.description || "暂无说明"}</p>
+                  <p className="agent-muted mt-2 text-sm leading-6">{formatAccessLevel(detailWorkflow.accessLevel)}</p>
                 </div>
+              </div>
+
+              <div className="sys-field">
+                <label className="sys-field-label sys-field-label--required">流程名称</label>
+                <div className="sys-field-input-wrap">
+                  <GitBranch size={16} className="sys-field-prefix" aria-hidden="true" />
+                  <input className="sys-field-input" disabled={detailWorkflow.accessLevel === "read"} value={detailName} onChange={(event) => setDetailName(event.target.value)} />
+                </div>
+              </div>
+              <div className="sys-field">
+                <label className="sys-field-label">说明</label>
+                <textarea className="sys-field-textarea" disabled={detailWorkflow.accessLevel === "read"} value={detailDescription} onChange={(event) => setDetailDescription(event.target.value)} placeholder="描述流程适用场景、输入材料和最终交付物" />
               </div>
 
               <div className="sys-config-group">
@@ -567,6 +691,15 @@ export function WorkflowDraftsPage() {
                 </div>
               </div>
 
+              {drawerDetail ? (
+                <WorkflowAccessFields
+                  readOnly={!drawerDetail.access.canManageAccess}
+                  access={detailAccess}
+                  memberOptions={shareableMemberOptions}
+                  onChange={setDetailAccess}
+                />
+              ) : null}
+
               <WorkflowDrawerContent
                 detail={drawerDetail}
                 loading={drawerDetailLoading}
@@ -580,14 +713,28 @@ export function WorkflowDraftsPage() {
                   <X size={14} aria-hidden="true" />
                   关闭
                 </button>
-                <button type="button" className="sys-btn sys-btn--default" disabled={validatingWorkflowId === detailWorkflow.id} onClick={() => void handleValidateForPublish(detailWorkflow)}>
-                  <ListChecks size={14} aria-hidden="true" />
-                  {validatingWorkflowId === detailWorkflow.id ? "校验中" : "发布校验"}
-                </button>
-                <button type="button" className="sys-btn sys-btn--primary" onClick={() => { setEditingWorkflow(detailWorkflow); setDetailWorkflow(null); }}>
-                  <PanelRightOpen size={14} aria-hidden="true" />
-                  进入设计
-                </button>
+                {detailWorkflow.accessLevel !== "read" ? (
+                  <>
+                    <button type="button" className="sys-btn sys-btn--default" disabled={submitting} onClick={() => void handleUpdateDetail()}>
+                      <Pencil size={14} aria-hidden="true" />
+                      保存说明
+                    </button>
+                    {drawerDetail?.access.canManageAccess ? (
+                      <button type="button" className="sys-btn sys-btn--default" disabled={submitting} onClick={() => void handleUpdateDetailAccess()}>
+                        <ShieldCheck size={14} aria-hidden="true" />
+                        保存权限
+                      </button>
+                    ) : null}
+                    <button type="button" className="sys-btn sys-btn--default" disabled={validatingWorkflowId === detailWorkflow.id} onClick={() => void handleValidateForPublish(detailWorkflow)}>
+                      <ListChecks size={14} aria-hidden="true" />
+                      {validatingWorkflowId === detailWorkflow.id ? "校验中" : "发布校验"}
+                    </button>
+                    <button type="button" className="sys-btn sys-btn--primary" onClick={() => { setEditingWorkflow(detailWorkflow); setDetailWorkflow(null); }}>
+                      <PanelRightOpen size={14} aria-hidden="true" />
+                      进入设计
+                    </button>
+                  </>
+                ) : null}
               </div>
             </div>
           </>
@@ -615,6 +762,7 @@ export function WorkflowDraftsPage() {
                   <span className="sys-field-label">说明</span>
                   <textarea value={draftDescription} onChange={(event) => setDraftDescription(event.target.value)} className="sys-field-textarea" placeholder="描述流程适用场景、输入材料和最终交付物" />
                 </label>
+                <WorkflowAccessFields access={draftAccess} memberOptions={shareableMemberOptions} onChange={setDraftAccess} />
               </div>
               <div className="sys-modal-footer">
                 <button type="button" onClick={() => setIsCreating(false)} className="sys-btn sys-btn--default">取消</button>
@@ -757,7 +905,7 @@ function WorkflowDesignCard({
   mine: boolean;
   validating: boolean;
   onOpenDetail: () => void;
-  onValidate: () => void;
+  onValidate?: () => void;
 }) {
   const status = statusMeta[workflow.status];
 
@@ -778,13 +926,14 @@ function WorkflowDesignCard({
       </div>
       <div className="sys-info-tags">
         <span className="sys-info-tag sys-info-tag--primary">{mine ? "我的流程" : "协作开放"}</span>
+        <span className="sys-info-tag">{formatAccessLevel(workflow.accessLevel)}</span>
         <span className="sys-info-tag">{workflow.nodeCount} 个积木</span>
       </div>
       <p className="agent-muted workflow-design-card-desc">{workflow.description || "暂无说明"}</p>
       <div className="sys-card-meta">
         <div className="sys-meta-item">
           <span className="sys-meta-label">协作方式</span>
-          <span className="sys-meta-value">{mine ? "本人维护" : "可参与设计"}</span>
+          <span className="sys-meta-value">{formatAccessLevel(workflow.accessLevel)}</span>
         </div>
         <div className="sys-meta-item">
           <span className="sys-meta-label">发布动作</span>
@@ -794,10 +943,12 @@ function WorkflowDesignCard({
       <div className="sys-card-footer">
         <span className="sys-card-footer-time"><Clock3 size={12} /> 点击查看详情</span>
         <div className="sys-card-footer-actions" onClick={(event) => event.stopPropagation()}>
-          <button type="button" disabled={validating} onClick={onValidate} className="sys-btn sys-btn--text sys-btn--sm">
-            <ListChecks size={14} aria-hidden="true" />
-            {validating ? "校验中" : "校验"}
-          </button>
+          {onValidate ? (
+            <button type="button" disabled={validating} onClick={onValidate} className="sys-btn sys-btn--text sys-btn--sm">
+              <ListChecks size={14} aria-hidden="true" />
+              {validating ? "校验中" : "校验"}
+            </button>
+          ) : null}
           <button type="button" onClick={onOpenDetail} className="sys-btn sys-btn--text sys-btn--sm">
             <PanelRightOpen size={14} aria-hidden="true" />
             详情
@@ -831,8 +982,6 @@ function WorkflowDrawerContent({
   }
 
   const nodes = sortDrawerNodes(detail?.nodes ?? []);
-  const variables = detail?.variables ?? [];
-
   return (
     <div className="workflow-drawer-overview">
       <section className="workflow-drawer-block">
@@ -847,44 +996,98 @@ function WorkflowDrawerContent({
           </div>
         )}
       </section>
-
-      <section className="workflow-drawer-block">
-        <h3>输出变量</h3>
-        {variables.length === 0 ? (
-          <p className="agent-muted text-sm">暂无变量声明</p>
-        ) : (
-          <div className="workflow-drawer-variable-list">
-            {variables.slice(0, 12).map((variable) => (
-              <WorkflowDrawerVariable key={`${variable.sourceNode}-${variable.name}`} variable={variable} />
-            ))}
-          </div>
-        )}
-      </section>
     </div>
   );
 }
 
 function WorkflowDrawerStep({ node, index }: { node: WorkflowNodeDraft; index: number }) {
   const nodeType = formatWorkflowNodeType(node.nodeType);
-  const summary = readWorkflowConfigString(node.config.summary, node.outputVariables.length > 0 ? `输出 ${node.outputVariables.join("、")}` : "尚未配置输出参数");
+  const summary = readWorkflowConfigString(node.config.summary, "尚未配置节点说明");
+  const Icon = workflowNodeIcon(node.nodeType);
 
   return (
     <article className="workflow-drawer-step">
-      <span className="workflow-drawer-step-index">{index + 1}</span>
+      <span className={`workflow-drawer-step-index workflow-drawer-step-index--${node.nodeType}`}>
+        <Icon size={14} aria-hidden="true" />
+      </span>
       <span className="min-w-0">
         <strong>{node.name}</strong>
-        <small>{nodeType} · {summary}</small>
+        <small>{index + 1}. {nodeType} · {summary}</small>
       </span>
     </article>
   );
 }
 
-function WorkflowDrawerVariable({ variable }: { variable: WorkflowVariableDraft }) {
+function WorkflowAccessFields({
+  access,
+  memberOptions,
+  readOnly = false,
+  onChange,
+}: {
+  access: WorkflowAccessDraft;
+  memberOptions: Array<{ value: string; label: string }>;
+  readOnly?: boolean;
+  onChange: (access: WorkflowAccessDraft) => void;
+}) {
   return (
-    <span className="workflow-drawer-variable">
-      <strong>{variable.name}</strong>
-      <small>{formatVariableType(variable.type)}</small>
-    </span>
+    <section className="workflow-drawer-block">
+      <h3>协作权限</h3>
+      <div className="sys-field">
+        <label className="sys-field-label">读取 / 使用范围</label>
+        <Select
+          className="agent-admin-select w-full"
+          classNames={workflowSelectClassNames}
+          suffixIcon={workflowSelectSuffixIcon}
+          disabled={readOnly}
+          value={access.readScope}
+          options={accessScopeOptions}
+          onChange={(readScope) => onChange({ ...access, readScope, readUserIds: readScope === "specified" ? access.readUserIds : [] })}
+        />
+      </div>
+      {access.readScope === "specified" ? (
+        <div className="sys-field">
+          <label className="sys-field-label sys-field-label--required">指定可读取同事</label>
+          <Select
+            mode="multiple"
+            className="agent-admin-select w-full"
+            classNames={workflowSelectClassNames}
+            suffixIcon={workflowSelectSuffixIcon}
+            disabled={readOnly}
+            value={access.readUserIds}
+            options={memberOptions}
+            onChange={(readUserIds) => onChange({ ...access, readUserIds })}
+          />
+        </div>
+      ) : null}
+      <div className="sys-field">
+        <label className="sys-field-label">编辑范围</label>
+        <Select
+          className="agent-admin-select w-full"
+          classNames={workflowSelectClassNames}
+          suffixIcon={workflowSelectSuffixIcon}
+          disabled={readOnly}
+          value={access.editScope}
+          options={accessScopeOptions}
+          onChange={(editScope) => onChange({ ...access, editScope, editUserIds: editScope === "specified" ? access.editUserIds : [] })}
+        />
+        <div className="sys-field-hint">可编辑会自动包含读取权限；进入设计和发布时仍会校验所引用能力的读取权限。</div>
+      </div>
+      {access.editScope === "specified" ? (
+        <div className="sys-field">
+          <label className="sys-field-label sys-field-label--required">指定可编辑同事</label>
+          <Select
+            mode="multiple"
+            className="agent-admin-select w-full"
+            classNames={workflowSelectClassNames}
+            suffixIcon={workflowSelectSuffixIcon}
+            disabled={readOnly}
+            value={access.editUserIds}
+            options={memberOptions}
+            onChange={(editUserIds) => onChange({ ...access, editUserIds })}
+          />
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -944,18 +1147,24 @@ function formatWorkflowNodeType(nodeType: WorkflowNodeDraft["nodeType"]) {
   return labels[nodeType];
 }
 
-function formatVariableType(type: WorkflowVariableDraft["type"]) {
-  const labels: Record<WorkflowVariableDraft["type"], string> = {
-    string: "文本",
-    number: "数字",
-    object: "对象",
-    array: "数组",
-    boolean: "布尔",
-    decision: "决策",
-    file: "文件",
+function workflowNodeIcon(nodeType: WorkflowNodeDraft["nodeType"]): LucideIcon {
+  const icons: Record<WorkflowNodeDraft["nodeType"], LucideIcon> = {
+    trigger: GitBranch,
+    user_input: Inbox,
+    agent: Bot,
+    parallel_group: UsersRound,
+    merge: GitMerge,
+    condition: Split,
+    human_review: ShieldCheck,
+    delivery: Send,
   };
+  return icons[nodeType];
+}
 
-  return labels[type];
+function formatAccessLevel(level: WorkflowDraft["accessLevel"]) {
+  if (level === "owner") return "创建者";
+  if (level === "edit") return "可编辑";
+  return "可读取";
 }
 
 function getWorkflowErrorContext(error: unknown, tenantId?: string, extra?: Record<string, unknown>) {

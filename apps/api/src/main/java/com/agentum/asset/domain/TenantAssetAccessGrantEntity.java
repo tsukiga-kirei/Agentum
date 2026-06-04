@@ -8,8 +8,8 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "tenant_asset_shares")
-public class TenantAssetShareEntity {
+@Table(name = "tenant_asset_access_grants")
+public class TenantAssetAccessGrantEntity {
 
     @Id
     private UUID id;
@@ -23,32 +23,35 @@ public class TenantAssetShareEntity {
     @Column(name = "grantee_user_id", nullable = false)
     private UUID granteeUserId;
 
+    @Column(name = "access_level", nullable = false, length = 20)
+    private String accessLevel;
+
     @Column(name = "created_by")
     private UUID createdBy;
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
-    protected TenantAssetShareEntity() {
+    protected TenantAssetAccessGrantEntity() {
     }
 
-    public static TenantAssetShareEntity create(UUID tenantId, UUID assetId, UUID granteeUserId, UUID operatorUserId, Instant now) {
-        TenantAssetShareEntity entity = new TenantAssetShareEntity();
+    public static TenantAssetAccessGrantEntity create(
+        UUID tenantId,
+        UUID assetId,
+        UUID granteeUserId,
+        String accessLevel,
+        UUID operatorUserId,
+        Instant now
+    ) {
+        TenantAssetAccessGrantEntity entity = new TenantAssetAccessGrantEntity();
         entity.id = UUID.randomUUID();
         entity.tenantId = tenantId;
         entity.assetId = assetId;
         entity.granteeUserId = granteeUserId;
+        entity.accessLevel = accessLevel;
         entity.createdBy = operatorUserId;
         entity.createdAt = now;
         return entity;
-    }
-
-    public UUID getId() {
-        return id;
-    }
-
-    public UUID getTenantId() {
-        return tenantId;
     }
 
     public UUID getAssetId() {
@@ -59,11 +62,7 @@ public class TenantAssetShareEntity {
         return granteeUserId;
     }
 
-    public UUID getCreatedBy() {
-        return createdBy;
-    }
-
-    public Instant getCreatedAt() {
-        return createdAt;
+    public String getAccessLevel() {
+        return accessLevel;
     }
 }

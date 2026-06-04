@@ -65,6 +65,7 @@ class WorkbenchServiceTest {
         when(tenantRepository.findByIdAndStatus(TENANT_ID, "active"))
             .thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", NOW)));
         when(workflowDefinitionRepository.countByTenantIdAndStatus(TENANT_ID, "published")).thenReturn(7L);
+        when(workflowDefinitionRepository.countVisibleByTenantIdAndStatus(TENANT_ID, USER_ID, "published")).thenReturn(4L);
         when(tenantAssetCapabilityRepository.countByTenantIdAndCreatedBy(TENANT_ID, USER_ID)).thenReturn(3L);
         when(tenantCapabilityGrantRepository.findByTenantIdOrderByCreatedAtDesc(TENANT_ID)).thenReturn(List.of(tenantGrant));
         when(systemCapabilityRepository.findAllById(any())).thenReturn(List.of(capability));
@@ -72,7 +73,7 @@ class WorkbenchServiceTest {
         WorkbenchApi.WorkbenchSummary summary = service.getSummary(TENANT_ID, tenantAdminPrincipal());
 
         assertThat(summary.metrics().publishedWorkflowTotal()).isEqualTo(7L);
-        assertThat(summary.metrics().availableWorkflowTotal()).isEqualTo(7L);
+        assertThat(summary.metrics().availableWorkflowTotal()).isEqualTo(4L);
         assertThat(summary.metrics().myAssetTotal()).isEqualTo(3L);
         // 租户管理员可以看到全部租户能力池中处于 active 且属于资产能力类型的能力。
         assertThat(summary.metrics().openedCapabilityTotal()).isEqualTo(1L);
@@ -101,7 +102,7 @@ class WorkbenchServiceTest {
 
         when(tenantRepository.findByIdAndStatus(TENANT_ID, "active"))
             .thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", NOW)));
-        when(workflowDefinitionRepository.searchDrafts(eq(TENANT_ID), anyString(), eq(null), eq(null), eq("published"), any(Pageable.class)))
+        when(workflowDefinitionRepository.searchDrafts(eq(TENANT_ID), anyString(), eq(USER_ID), eq(false), eq(false), eq("published"), any(Pageable.class)))
             .thenReturn(new PageImpl<>(List.of(definition)));
         when(workflowVersionRepository.findLatestByWorkflowIds(any())).thenReturn(List.of(version));
         when(userAccountRepository.findAllById(any())).thenReturn(List.of(owner));
