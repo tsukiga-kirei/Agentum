@@ -85,8 +85,6 @@ class WorkbenchServiceTest {
         assertThat(summary.metrics().openedCapabilityTotal()).isEqualTo(1L);
         assertThat(summary.pendingTodos()).isEmpty();
         assertThat(summary.recentRuns()).isEmpty();
-        assertThat(summary.runtimeAvailable()).isTrue();
-        assertThat(summary.runtimeStatusLabel()).isEqualTo("运行态已接入");
         assertThat(summary.generatedAt()).isEqualTo(NOW);
     }
 

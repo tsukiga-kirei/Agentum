@@ -66,6 +66,14 @@ public class WorkflowRunEntity {
     @Column(name = "completed_at")
     private Instant completedAt;
 
+    // 未保存的草稿只在发起页面临时存在，退出后删除，不进入待办列表。
+    @Column(nullable = false)
+    private boolean saved;
+
+    // 运行编号含日期前缀，供待办和任务记录统一展示。
+    @Column(name = "run_number", nullable = false, length = 40)
+    private String runNumber;
+
     protected WorkflowRunEntity() {
     }
 
@@ -78,6 +86,7 @@ public class WorkflowRunEntity {
         String workflowName,
         UUID createdBy,
         int totalNodeCount,
+        String runNumber,
         Instant now
     ) {
         WorkflowRunEntity entity = new WorkflowRunEntity();
@@ -93,9 +102,21 @@ public class WorkflowRunEntity {
         entity.totalNodeCount = totalNodeCount;
         entity.completedNodeCount = 0;
         entity.progressPercent = 0;
+        entity.saved = false;
+        entity.runNumber = runNumber;
         entity.startedAt = now;
         entity.updatedAt = now;
         return entity;
+    }
+
+    public void markSaved(Instant now) {
+        this.saved = true;
+        this.updatedAt = now;
+    }
+
+    public void updateTitle(String title, Instant now) {
+        this.title = title;
+        this.updatedAt = now;
     }
 
     public void pauseAt(String nodeKey, String nodeName, String nodeType, int completedNodeCount, Instant now) {
@@ -206,5 +227,13 @@ public class WorkflowRunEntity {
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    public boolean isSaved() {
+        return saved;
+    }
+
+    public String getRunNumber() {
+        return runNumber;
     }
 }

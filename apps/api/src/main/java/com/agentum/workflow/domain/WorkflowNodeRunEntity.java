@@ -137,6 +137,16 @@ public class WorkflowNodeRunEntity {
         this.updatedAt = now;
     }
 
+    // 回退到指定步骤时，将目标节点及后续节点重置为待执行，清除已写入的输出快照。
+    public void resetToPending(Instant now) {
+        this.state = "pending";
+        this.stateLabel = "等待中";
+        this.outputSnapshot = new HashMap<>();
+        this.startedAt = null;
+        this.completedAt = null;
+        this.updatedAt = now;
+    }
+
     public UUID getId() {
         return id;
     }

@@ -357,20 +357,44 @@ export const workbenchApi = {
       token,
       body: { workflowId, title },
     }),
-  listRuns: (
+  listActiveRuns: (
     tenantId: string,
     token: string,
     keyword = "",
-    state = "all",
     page = 1,
     size = 10,
     sort = "updatedAt,desc",
   ) => {
-    const params = new URLSearchParams({ keyword, state, page: String(page), size: String(size), sort });
+    const params = new URLSearchParams({ keyword, page: String(page), size: String(size), sort });
+    return apiRequest<WorkbenchTaskRunPage>(`/api/tenants/${tenantId}/workbench/active-runs?${params.toString()}`, { token });
+  },
+  listRuns: (
+    tenantId: string,
+    token: string,
+    keyword = "",
+    page = 1,
+    size = 10,
+    sort = "updatedAt,desc",
+  ) => {
+    const params = new URLSearchParams({ keyword, page: String(page), size: String(size), sort });
     return apiRequest<WorkbenchTaskRunPage>(`/api/tenants/${tenantId}/workbench/runs?${params.toString()}`, { token });
   },
   getRun: (tenantId: string, token: string, runId: string) =>
     apiRequest<WorkbenchRunDetail>(`/api/tenants/${tenantId}/workbench/runs/${runId}`, { token }),
+  saveRun: (tenantId: string, token: string, runId: string, title?: string) =>
+    apiRequest<WorkbenchRunDetail>(`/api/tenants/${tenantId}/workbench/runs/${runId}/save`, {
+      method: "POST",
+      token,
+      body: title ? { title } : {},
+    }),
+  deleteRun: (tenantId: string, token: string, runId: string) =>
+    apiRequest<void>(`/api/tenants/${tenantId}/workbench/runs/${runId}`, { method: "DELETE", token }),
+  rollbackRun: (tenantId: string, token: string, runId: string, nodeRunId: string) =>
+    apiRequest<WorkbenchRunDetail>(`/api/tenants/${tenantId}/workbench/runs/${runId}/rollback`, {
+      method: "POST",
+      token,
+      body: { nodeRunId },
+    }),
   completeTodo: (tenantId: string, token: string, todoId: string, comment: string, payload: Record<string, unknown> = {}) =>
     apiRequest<WorkbenchRunDetail>(`/api/tenants/${tenantId}/workbench/todos/${todoId}/complete`, {
       method: "POST",

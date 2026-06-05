@@ -166,8 +166,6 @@ public class WorkbenchService {
             metrics,
             pendingTodos,
             recentRuns,
-            true,
-            "运行态已接入",
             clock.instant()
         );
     }

@@ -2,7 +2,7 @@ import type { PageResponse } from "./organization";
 
 // 业务工作台契约：publishedWorkflowTotal 按“有冻结版本且入口未收回”的业务入口口径统计；
 // openedCapabilityTotal / myAssetTotal 等来自真实治理数据。
-// 业务工作台已接入运行态接口：创建任务列表展示全部已发布流程，并通过 canLaunch 区分权限。
+// 待办仅展示已保存且未完成任务；任务记录仅展示已完成任务。
 
 export type WorkbenchMetrics = {
   pendingTodoTotal: number;
@@ -16,19 +16,26 @@ export type WorkbenchMetrics = {
 export type WorkbenchPendingTodoRow = {
   id: string;
   runId: string;
-  nodeRunId: string;
+  openTodoId: string | null;
   title: string;
+  runNumber: string;
   workflowName: string;
-  nodeName: string;
+  currentNodeName: string;
+  state: string;
+  stateLabel: string;
   waitingReason: string;
-  waitingFor: string;
   action: string;
-  createdAt: string;
+  hasOpenTodo: boolean;
+  progressPercent: number;
+  completedNodeCount: number;
+  totalNodeCount: number;
+  updatedAt: string;
 };
 
 export type WorkbenchRecentRunRow = {
   id: string;
   title: string;
+  runNumber: string;
   workflowName: string;
   state: string;
   stateLabel: string;
@@ -43,8 +50,6 @@ export type WorkbenchSummary = {
   metrics: WorkbenchMetrics;
   pendingTodos: WorkbenchPendingTodoRow[];
   recentRuns: WorkbenchRecentRunRow[];
-  runtimeAvailable: boolean;
-  runtimeStatusLabel: string;
   generatedAt: string;
 };
 
@@ -81,6 +86,7 @@ export type WorkbenchAvailableWorkflowPage = PageResponse<WorkbenchAvailableWork
 export type WorkbenchTaskRunRow = {
   id: string;
   title: string;
+  runNumber: string;
   workflowName: string;
   workflowVersionNumber: number;
   state: string;
@@ -119,6 +125,9 @@ export type WorkbenchRunEventRow = {
 export type WorkbenchRunDetail = {
   id: string;
   title: string;
+  runNumber: string;
+  saved: boolean;
+  readOnly: boolean;
   workflowId: string;
   workflowName: string;
   workflowVersionNumber: number;

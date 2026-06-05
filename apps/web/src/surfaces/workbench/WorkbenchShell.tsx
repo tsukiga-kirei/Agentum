@@ -20,6 +20,8 @@ import {
   PauseCircle,
   PlayCircle,
   Plug,
+  RotateCcw,
+  Save,
   Search,
   Send,
   Settings,
@@ -44,7 +46,6 @@ import { AgentumApiError, workbenchApi } from "../../services/apiClient";
 import type {
   WorkbenchAvailableWorkflowNodeRow,
   WorkbenchAvailableWorkflowRow,
-  WorkbenchPendingTodoRow,
   WorkbenchRecentRunRow,
   WorkbenchRunDetail,
   WorkbenchSummary,
@@ -110,6 +111,7 @@ type RuntimeCapabilityItem = {
 };
 
 type RuntimePreviewStep = {
+  nodeRunId: string;
   title: string;
   subtitle: string;
   state: RuntimeStepState;
@@ -159,7 +161,7 @@ type RuntimePreview = {
 const workbenchTabs: WorkbenchTabMeta[] = [
   { key: "overview", label: "总览", icon: LayoutDashboard, description: "查看今日待办、可创建流程和运行态概况" },
   { key: "create", label: "创建任务", icon: PlayCircle, description: "浏览全部开放智能体流程，有权限的流程可创建任务" },
-  { key: "tasks", label: "任务中心", icon: ListTodo, description: "合并查看待办、运行中、暂停和历史完成任务" },
+  { key: "tasks", label: "任务中心", icon: ListTodo, description: "待办处理未完成任务，任务记录仅查看已完成任务" },
 ];
 
 const runWorkspaceTabs: Array<{ key: RunWorkspaceTab; label: string; icon: LucideIcon }> = [
@@ -237,6 +239,11 @@ export function WorkbenchShell() {
   const [availableKeyword, setAvailableKeyword] = useState("");
   const [availableKeywordInput, setAvailableKeywordInput] = useState("");
   const [availableError, setAvailableError] = useState<string | null>(null);
+  const [activeTasks, setActiveTasks] = useState<WorkbenchTaskRunRow[]>([]);
+  const [activeTasksTotal, setActiveTasksTotal] = useState(0);
+  const [activeTasksPage, setActiveTasksPage] = useState(1);
+  const [activeTasksLoading, setActiveTasksLoading] = useState(false);
+  const [activeTasksError, setActiveTasksError] = useState<string | null>(null);
   const [taskRuns, setTaskRuns] = useState<WorkbenchTaskRunRow[]>([]);
   const [taskRunsTotal, setTaskRunsTotal] = useState(0);
   const [taskRunsPage, setTaskRunsPage] = useState(1);
@@ -320,6 +327,33 @@ export function WorkbenchShell() {
     }
   }, [tenantId, token]);
 
+  const loadActiveTasks = useCallback(async (page: number) => {
+    if (!tenantId || !token) {
+      setActiveTasks([]);
+      setActiveTasksTotal(0);
+      return;
+    }
+
+    setActiveTasksLoading(true);
+    setActiveTasksError(null);
+    try {
+      const data = await workbenchApi.listActiveRuns(tenantId, token, "", page, TASK_RUN_PAGE_SIZE);
+      setActiveTasks(data.items);
+      setActiveTasksTotal(data.total);
+      setActiveTasksPage(data.page);
+    } catch (error) {
+      const reason = error instanceof AgentumApiError ? error.message : "待办列表加载失败";
+      console.warn("[workbench] 待办列表加载失败", {
+        code: error instanceof AgentumApiError ? error.code : "unknown",
+      });
+      setActiveTasksError(reason);
+      setActiveTasks([]);
+      setActiveTasksTotal(0);
+    } finally {
+      setActiveTasksLoading(false);
+    }
+  }, [tenantId, token]);
+
   const loadTaskRuns = useCallback(async (page: number) => {
     if (!tenantId || !token) {
       setTaskRuns([]);
@@ -330,13 +364,13 @@ export function WorkbenchShell() {
     setTaskRunsLoading(true);
     setTaskRunsError(null);
     try {
-      const data = await workbenchApi.listRuns(tenantId, token, "", "all", page, TASK_RUN_PAGE_SIZE);
+      const data = await workbenchApi.listRuns(tenantId, token, "", page, TASK_RUN_PAGE_SIZE);
       setTaskRuns(data.items);
       setTaskRunsTotal(data.total);
       setTaskRunsPage(data.page);
     } catch (error) {
-      const reason = error instanceof AgentumApiError ? error.message : "任务中心加载失败";
-      console.warn("[workbench] 任务中心加载失败", {
+      const reason = error instanceof AgentumApiError ? error.message : "任务记录加载失败";
+      console.warn("[workbench] 任务记录加载失败", {
         code: error instanceof AgentumApiError ? error.code : "unknown",
       });
       setTaskRunsError(reason);
@@ -360,6 +394,13 @@ export function WorkbenchShell() {
     }
     void loadAvailableWorkflows(availablePage, availableKeyword);
   }, [activeSurface, availableKeyword, availablePage, loadAvailableWorkflows]);
+
+  useEffect(() => {
+    if (activeSurface !== "workbench") {
+      return;
+    }
+    void loadActiveTasks(activeTasksPage);
+  }, [activeSurface, activeTasksPage, loadActiveTasks]);
 
   useEffect(() => {
     if (activeSurface !== "workbench") {
@@ -391,13 +432,10 @@ export function WorkbenchShell() {
 
     setCreatingWorkflowId(workflow.id);
     try {
-      const detail = await workbenchApi.createRun(tenantId, token, workflow.id, `${workflow.name}任务`);
+      const detail = await workbenchApi.createRun(tenantId, token, workflow.id, workflow.name);
       setOpenedRunDetail(detail);
       setWorkflowDrawer(null);
-      setActiveWorkbenchTab("tasks");
-      messageApi.success(`已创建「${detail.title}」`);
-      void loadSummary();
-      void loadTaskRuns(1);
+      messageApi.success(`已发起「${detail.title}」，请先保存后才会进入待办`);
     } catch (error) {
       const reason = error instanceof AgentumApiError ? error.message : "任务创建失败";
       console.warn("[workbench] 任务创建失败", { code: error instanceof AgentumApiError ? error.code : "unknown" });
@@ -425,15 +463,20 @@ export function WorkbenchShell() {
   }
 
   async function handleCompleteOpenTodo(comment: string) {
-    if (!tenantId || !token || !openedRunDetail?.openTodo) {
+    if (!tenantId || !token || !openedRunDetail?.openTodo?.openTodoId) {
       messageApi.info("当前没有需要处理的待办");
       return;
     }
+    if (openedRunDetail.readOnly) {
+      messageApi.warning("已完成任务只能查看，不能继续处理");
+      return;
+    }
     try {
-      const detail = await workbenchApi.completeTodo(tenantId, token, openedRunDetail.openTodo.id, comment);
+      const detail = await workbenchApi.completeTodo(tenantId, token, openedRunDetail.openTodo.openTodoId, comment);
       setOpenedRunDetail(detail);
       messageApi.success("待办已提交，流程已继续推进");
       void loadSummary();
+      void loadActiveTasks(activeTasksPage);
       void loadTaskRuns(taskRunsPage);
     } catch (error) {
       const reason = error instanceof AgentumApiError ? error.message : "待办提交失败";
@@ -442,28 +485,114 @@ export function WorkbenchShell() {
     }
   }
 
+  async function handleSaveRun() {
+    if (!tenantId || !token || !openedRunDetail) {
+      return;
+    }
+    if (openedRunDetail.saved) {
+      messageApi.info("任务已保存");
+      return;
+    }
+    try {
+      const savedDetail = await workbenchApi.saveRun(tenantId, token, openedRunDetail.id, openedRunDetail.title);
+      setOpenedRunDetail(savedDetail);
+      messageApi.success(savedDetail.readOnly ? "任务已保存，可在任务记录中查看" : "任务已保存，可在待办中继续处理");
+      void loadSummary();
+      if (savedDetail.readOnly) {
+        void loadTaskRuns(1);
+        setTaskRunsPage(1);
+      } else {
+        void loadActiveTasks(1);
+        setActiveTasksPage(1);
+      }
+    } catch (error) {
+      const reason = error instanceof AgentumApiError ? error.message : "任务保存失败";
+      console.warn("[workbench] 任务保存失败", { code: error instanceof AgentumApiError ? error.code : "unknown" });
+      messageApi.error(reason);
+    }
+  }
+
+  async function handleDeleteRun(runId: string) {
+    if (!tenantId || !token) {
+      return;
+    }
+    try {
+      await workbenchApi.deleteRun(tenantId, token, runId);
+      if (openedRunDetail?.id === runId) {
+        setOpenedRunDetail(null);
+      }
+      messageApi.success("任务已删除");
+      void loadSummary();
+      void loadActiveTasks(activeTasksPage);
+    } catch (error) {
+      const reason = error instanceof AgentumApiError ? error.message : "任务删除失败";
+      console.warn("[workbench] 任务删除失败", { code: error instanceof AgentumApiError ? error.code : "unknown" });
+      messageApi.error(reason);
+    }
+  }
+
+  async function handleRollbackRun(nodeRunId: string) {
+    if (!tenantId || !token || !openedRunDetail) {
+      return;
+    }
+    if (openedRunDetail.readOnly) {
+      messageApi.warning("已完成任务不能回退");
+      return;
+    }
+    try {
+      const detail = await workbenchApi.rollbackRun(tenantId, token, openedRunDetail.id, nodeRunId);
+      setOpenedRunDetail(detail);
+      messageApi.success("已回退到选定步骤，流程将从此处重新开始");
+      void loadSummary();
+      void loadActiveTasks(activeTasksPage);
+    } catch (error) {
+      const reason = error instanceof AgentumApiError ? error.message : "步骤回退失败";
+      console.warn("[workbench] 步骤回退失败", { code: error instanceof AgentumApiError ? error.code : "unknown" });
+      messageApi.error(reason);
+    }
+  }
+
+  async function handleBackFromRun() {
+    if (!tenantId || !token || !openedRunDetail) {
+      setOpenedRunDetail(null);
+      setActiveWorkbenchTab("tasks");
+      return;
+    }
+    if (!openedRunDetail.saved) {
+      try {
+        await workbenchApi.deleteRun(tenantId, token, openedRunDetail.id);
+      } catch (error) {
+        console.warn("[workbench] 未保存任务清理失败", error);
+      }
+    }
+    setOpenedRunDetail(null);
+    setActiveWorkbenchTab("tasks");
+    void loadSummary();
+    void loadActiveTasks(activeTasksPage);
+    void loadTaskRuns(taskRunsPage);
+  }
+
   function handleSubmitKeyword() {
     const trimmed = availableKeywordInput.trim();
     setAvailableKeyword(trimmed);
     setAvailablePage(1);
   }
 
-  // 概览指标卡片基于真实 summary.metrics 渲染；运行态状态异常时保留明确兜底。
+  // 概览指标卡片基于真实 summary.metrics 渲染。
   const metricCards: MetricCard[] = useMemo(() => {
     const metrics = summary?.metrics;
-    const runtimeReady = summary?.runtimeAvailable ?? false;
     return [
       {
         label: "我的待办",
-        value: runtimeReady ? String(metrics?.pendingTodoTotal ?? 0) : "—",
-        hint: runtimeReady ? "需要我处理的暂停点" : "运行态状态待确认",
+        value: metrics ? String(metrics.pendingTodoTotal) : "—",
+        hint: "已保存且未完成的任务",
         tone: "primary",
         icon: UserRoundCheck,
       },
       {
         label: "进行中任务",
-        value: runtimeReady ? String(metrics?.runningRunTotal ?? 0) : "—",
-        hint: runtimeReady ? "我可以查看的运行实例" : "运行态状态待确认",
+        value: metrics ? String(metrics.runningRunTotal) : "—",
+        hint: "运行中或已暂停的实例",
         tone: "info",
         icon: Activity,
       },
@@ -484,10 +613,7 @@ export function WorkbenchShell() {
     ];
   }, [summary]);
 
-  const pendingTodos = summary?.pendingTodos ?? [];
   const recentRuns = summary?.recentRuns ?? [];
-  const runtimeAvailable = summary?.runtimeAvailable ?? false;
-  const runtimeStatusLabel = summary?.runtimeStatusLabel ?? "正在加载运行态";
   const openedRunPreview = useMemo(
     () => openedRunDetail ? buildRuntimePreviewFromRun(openedRunDetail) : null,
     [openedRunDetail],
@@ -651,12 +777,10 @@ export function WorkbenchShell() {
                   <WorkbenchTaskRunDetail
                     run={openedRunDetail}
                     preview={openedRunPreview}
-                    runtimeStatusLabel={runtimeStatusLabel}
-                    onBack={() => {
-                      setOpenedRunDetail(null);
-                      setActiveWorkbenchTab("tasks");
-                    }}
+                    onBack={() => void handleBackFromRun()}
+                    onSave={() => void handleSaveRun()}
                     onCompleteTodo={handleCompleteOpenTodo}
+                    onRollback={(nodeRunId) => void handleRollbackRun(nodeRunId)}
                   />
                 </div>
               </div>
@@ -731,41 +855,30 @@ export function WorkbenchShell() {
                               <WorkbenchFeatureCard
                                 icon={ListTodo}
                                 title="我的待办"
-                                description="处理需要我补充资料、确认结果、人工审核或交付确认的暂停点。"
-                                meta={runtimeAvailable ? `${pendingTodos.length} 个待办` : runtimeStatusLabel}
-                                onClick={() => setActiveWorkbenchTab("tasks")}
-                              />
-                              <WorkbenchFeatureCard
-                                icon={PauseCircle}
-                                title="暂停续办"
-                                description="从正在进行和已暂停任务中恢复上下文，继续推进下一步。"
-                                meta={runtimeAvailable ? `${recentRuns.filter((record) => record.state !== "completed").length} 个可继续任务` : runtimeStatusLabel}
+                                description="处理已保存且未完成的任务，可继续推进、回退步骤或删除。"
+                                meta={summary ? `${summary.metrics.pendingTodoTotal} 个待办` : "加载中..."}
                                 onClick={() => setActiveWorkbenchTab("tasks")}
                               />
                               <WorkbenchFeatureCard
                                 icon={History}
-                                title="历史完成"
-                                description="查看已完成任务与交付结果，后续可进入运行详情追溯过程。"
-                                meta={runtimeAvailable ? `${recentRuns.filter((record) => record.state === "completed").length} 个完成任务` : runtimeStatusLabel}
+                                title="任务记录"
+                                description="查看已完成任务与交付结果，仅支持只读查看。"
+                                meta={summary ? `${recentRuns.length} 个最近完成` : "加载中..."}
                                 onClick={() => setActiveWorkbenchTab("tasks")}
                               />
                             </div>
                           </section>
 
                           <aside className="sys-preview-card">
-                            <div className="sys-preview-card-title"><History size={16} /> 最近任务</div>
-                            {runtimeAvailable ? (
-                              recentRuns.length === 0 ? (
-                                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无最近任务" />
-                              ) : (
-                                <div className="space-y-2">
-                                  {recentRuns.slice(0, 4).map((record) => (
-                                    <RecentRunListItem key={record.id} record={record} />
-                                  ))}
-                                </div>
-                              )
+                            <div className="sys-preview-card-title"><History size={16} /> 最近完成</div>
+                            {recentRuns.length === 0 ? (
+                              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无已完成任务" />
                             ) : (
-                              <RuntimePlaceholder label={runtimeStatusLabel} hint="请稍后刷新，或检查当前账号的业务工作台访问权限。" />
+                              <div className="space-y-2">
+                                {recentRuns.slice(0, 4).map((record) => (
+                                  <RecentRunListItem key={record.id} record={record} onOpen={() => void handleOpenRun(record.id)} />
+                                ))}
+                              </div>
                             )}
                           </aside>
                         </section>
@@ -877,47 +990,62 @@ export function WorkbenchShell() {
                       <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]" aria-label="任务中心">
                         <section className="sys-preview-card">
                           <div className="sys-preview-card-title"><UserRoundCheck size={16} /> 我的待办</div>
-                          {runtimeAvailable ? (
-                            pendingTodos.length === 0 ? (
-                              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无需要我处理的待办" />
-                            ) : (
-                              <div className="space-y-2">
-                                {pendingTodos.map((todo) => (
-                                  <PendingTodoListItem key={todo.id} todo={todo} onOpen={() => void handleOpenRun(todo.runId)} />
-                                ))}
-                              </div>
-                            )
+                          {activeTasksError ? (
+                            <RuntimePlaceholder label="待办加载失败" hint={activeTasksError} />
+                          ) : activeTasksLoading ? (
+                            <div className="workflow-definition-empty-state">
+                              <Loader2 className="h-8 w-8 animate-spin" aria-hidden="true" />
+                              <p>正在加载待办</p>
+                            </div>
+                          ) : activeTasks.length === 0 ? (
+                            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无已保存的未完成任务" />
                           ) : (
-                            <RuntimePlaceholder label={runtimeStatusLabel} hint="请稍后刷新，或检查当前账号是否存在可处理的运行暂停点。" />
+                            <div className="space-y-2">
+                              {activeTasks.map((record) => (
+                                <ActiveTaskListItem
+                                  key={record.id}
+                                  record={record}
+                                  onOpen={() => void handleOpenRun(record.id)}
+                                  onDelete={() => void handleDeleteRun(record.id)}
+                                />
+                              ))}
+                            </div>
                           )}
+                          {activeTasksTotal > TASK_RUN_PAGE_SIZE ? (
+                            <div className="agent-admin-pagination-wrap mt-4">
+                              <Pagination
+                                className="agent-admin-pagination"
+                                current={activeTasksPage}
+                                total={activeTasksTotal}
+                                pageSize={TASK_RUN_PAGE_SIZE}
+                                showSizeChanger={false}
+                                onChange={(page) => setActiveTasksPage(page)}
+                              />
+                            </div>
+                          ) : null}
                         </section>
 
                         <section className="sys-preview-card">
                           <div className="sys-preview-card-title"><History size={16} /> 任务记录</div>
                           {taskRunsError ? (
-                            <RuntimePlaceholder label="任务中心加载失败" hint={taskRunsError} />
-                          ) : taskRunsLoading || openedRunLoading ? (
+                            <RuntimePlaceholder label="任务记录加载失败" hint={taskRunsError} />
+                          ) : taskRunsLoading ? (
                             <div className="workflow-definition-empty-state">
                               <Loader2 className="h-8 w-8 animate-spin" aria-hidden="true" />
                               <p>正在加载任务记录</p>
                             </div>
-                          ) : runtimeAvailable ? (
-                            taskRuns.length === 0 ? (
-                              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无任务记录" />
-                            ) : (
-                              <div className="space-y-2">
-                                {taskRuns.map((record) => (
-                                  <TaskRunListItem
-                                    key={record.id}
-                                    record={record}
-                                    actionLabel={record.state === "completed" ? "查看" : "继续"}
-                                    onOpen={() => void handleOpenRun(record.id)}
-                                  />
-                                ))}
-                              </div>
-                            )
+                          ) : taskRuns.length === 0 ? (
+                            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无已完成任务记录" />
                           ) : (
-                            <RuntimePlaceholder label={runtimeStatusLabel} hint="请稍后刷新，或检查当前账号是否有可查看的任务运行记录。" />
+                            <div className="space-y-2">
+                              {taskRuns.map((record) => (
+                                <TaskRunListItem
+                                  key={record.id}
+                                  record={record}
+                                  onOpen={() => void handleOpenRun(record.id)}
+                                />
+                              ))}
+                            </div>
                           )}
                           {taskRunsTotal > TASK_RUN_PAGE_SIZE ? (
                             <div className="agent-admin-pagination-wrap mt-4">
@@ -1258,6 +1386,7 @@ function buildRuntimePreviewFromRun(run: WorkbenchRunDetail): RuntimePreview {
   const steps = run.nodes.map((node): RuntimePreviewStep => {
     const state = mapNodeState(node.state);
     return {
+      nodeRunId: node.id,
       title: node.name,
       subtitle: node.stateLabel,
       state,
@@ -1275,7 +1404,7 @@ function buildRuntimePreviewFromRun(run: WorkbenchRunDetail): RuntimePreview {
   });
 
   return {
-    runId: run.id.slice(0, 8).toUpperCase(),
+    runId: run.runNumber,
     statusLabel: run.stateLabel,
     activeNode,
     progress: run.progressPercent,
@@ -1384,15 +1513,17 @@ function formatTime(value: string): string {
 function WorkbenchTaskRunDetail({
   run,
   preview,
-  runtimeStatusLabel,
   onBack,
+  onSave,
   onCompleteTodo,
+  onRollback,
 }: {
   run: WorkbenchRunDetail;
   preview: RuntimePreview;
-  runtimeStatusLabel: string;
   onBack: () => void;
+  onSave: () => void;
   onCompleteTodo: (comment: string) => void;
+  onRollback: (nodeRunId: string) => void;
 }) {
   const [activeRunTab, setActiveRunTab] = useState<RunWorkspaceTab>("current");
   const currentStepIndex = Math.max(0, preview.steps.findIndex((step) => step.state === "running" || step.state === "waiting"));
@@ -1425,7 +1556,8 @@ function WorkbenchTaskRunDetail({
         <div className="workbench-task-title">
           <div className="workbench-run-kicker">
             <span>业务工作台 / 任务处理</span>
-            <span className="workbench-run-soft-badge">{runtimeStatusLabel}</span>
+            {!run.saved ? <span className="workbench-run-soft-badge">未保存草稿</span> : null}
+            {run.readOnly ? <span className="workbench-run-soft-badge">只读查看</span> : null}
           </div>
           <div className="workbench-run-title-row">
             <h2>{run.title}</h2>
@@ -1437,6 +1569,12 @@ function WorkbenchTaskRunDetail({
           <p>{run.workflowName} · 运行编号 {preview.runId} · v{preview.workflowVersion} · 当前节点：{activeStep.title}</p>
         </div>
         <div className="workbench-run-actions">
+          {!run.saved ? (
+            <button type="button" className="sys-btn sys-btn--primary" onClick={onSave}>
+              <Save size={16} aria-hidden="true" />
+              保存
+            </button>
+          ) : null}
           <button type="button" className="sys-btn sys-btn--default" onClick={onBack}>
             <History size={16} aria-hidden="true" />
             返回任务中心
@@ -1501,15 +1639,19 @@ function WorkbenchTaskRunDetail({
               <RunCurrentPanel
                 preview={preview}
                 activeStep={activeStep}
+                readOnly={run.readOnly}
                 onCompleteTodo={onCompleteTodo}
               />
             ) : null}
             {activeRunTab === "trace" ? (
               <RunTracePanel
                 preview={preview}
+                readOnly={run.readOnly}
+                saved={run.saved}
                 selectedStepIndex={selectedTraceStepIndex}
                 onSelectStep={setSelectedTraceStepIndex}
                 onClearStep={() => setSelectedTraceStepIndex(null)}
+                onRollback={onRollback}
               />
             ) : null}
             {activeRunTab === "deliveries" ? <RunDeliveriesPanel preview={preview} /> : null}
@@ -1664,15 +1806,17 @@ function CurrentNodeShell({
 
 function RunCurrentInputPanel({
   activeStep,
+  readOnly,
   onCompleteTodo,
 }: {
   activeStep: RuntimePreviewStep;
+  readOnly: boolean;
   onCompleteTodo: (comment: string) => void;
 }) {
   return (
     <CurrentNodeShell
       activeStep={activeStep}
-      footer={activeStep.state === "waiting" ? (
+      footer={!readOnly && activeStep.state === "waiting" ? (
         <div className="workbench-current-actions">
           <button type="button" className="sys-btn sys-btn--primary" onClick={() => onCompleteTodo("提交当前输入资料")}>
             <Send size={16} aria-hidden="true" />
@@ -1752,9 +1896,11 @@ function RunCurrentMultiAgentPanel({
 
 function RunCurrentApprovalPanel({
   activeStep,
+  readOnly,
   onCompleteTodo,
 }: {
   activeStep: RuntimePreviewStep;
+  readOnly: boolean;
   onCompleteTodo: (comment: string) => void;
 }) {
   const messages = activeStep.chatMessages ?? [];
@@ -1762,7 +1908,7 @@ function RunCurrentApprovalPanel({
   return (
     <CurrentNodeShell
       activeStep={activeStep}
-      footer={activeStep.state === "waiting" ? (
+      footer={!readOnly && activeStep.state === "waiting" ? (
         <div className="workbench-current-actions">
           <button type="button" className="sys-btn sys-btn--primary" onClick={() => onCompleteTodo("审核通过")}>
             <ShieldCheck size={16} aria-hidden="true" />
@@ -1821,14 +1967,16 @@ function RunCurrentDefaultPanel({
 function RunCurrentPanel({
   preview,
   activeStep,
+  readOnly,
   onCompleteTodo,
 }: {
   preview: RuntimePreview;
   activeStep: RuntimePreviewStep;
+  readOnly: boolean;
   onCompleteTodo: (comment: string) => void;
 }) {
   if (activeStep.kind === "input") {
-    return <RunCurrentInputPanel activeStep={activeStep} onCompleteTodo={onCompleteTodo} />;
+    return <RunCurrentInputPanel activeStep={activeStep} readOnly={readOnly} onCompleteTodo={onCompleteTodo} />;
   }
 
   if (activeStep.kind === "multiAgent") {
@@ -1840,7 +1988,7 @@ function RunCurrentPanel({
   }
 
   if (activeStep.kind === "approval") {
-    return <RunCurrentApprovalPanel activeStep={activeStep} onCompleteTodo={onCompleteTodo} />;
+    return <RunCurrentApprovalPanel activeStep={activeStep} readOnly={readOnly} onCompleteTodo={onCompleteTodo} />;
   }
 
   if (activeStep.kind === "delivery") {
@@ -1900,14 +2048,20 @@ function traceStepPillLabel(state: RuntimeStepState): string {
 
 function RunTracePanel({
   preview,
+  readOnly,
+  saved,
   selectedStepIndex,
   onSelectStep,
   onClearStep,
+  onRollback,
 }: {
   preview: RuntimePreview;
+  readOnly: boolean;
+  saved: boolean;
   selectedStepIndex: number | null;
   onSelectStep: (index: number) => void;
   onClearStep: () => void;
+  onRollback: (nodeRunId: string) => void;
 }) {
   const selectedStep = selectedStepIndex === null ? null : preview.steps[selectedStepIndex] ?? null;
   const traceableSteps = preview.steps
@@ -1950,6 +2104,14 @@ function RunTracePanel({
               <p className="workbench-panel-copy">该步骤暂无审计事件。</p>
             )}
           </div>
+          {!readOnly && saved && (selectedStep.state === "done" || selectedStep.state === "failed") ? (
+            <div className="workbench-current-actions mt-4">
+              <button type="button" className="sys-btn sys-btn--default" onClick={() => onRollback(selectedStep.nodeRunId)}>
+                <RotateCcw size={16} aria-hidden="true" />
+                退回到此步重新开始
+              </button>
+            </div>
+          ) : null}
         </section>
 
         <section className="sys-preview-card workbench-run-section workbench-node-detail-card">
@@ -2037,33 +2199,45 @@ function RuntimePlaceholder({ label, hint }: { label: string; hint: string }) {
   );
 }
 
-function PendingTodoListItem({ todo, onOpen }: { todo: WorkbenchPendingTodoRow; onOpen: () => void }) {
-  const createdLabel = todo.createdAt ? new Date(todo.createdAt).toLocaleString("zh-CN", { hour12: false }) : "—";
+function ActiveTaskListItem({
+  record,
+  onOpen,
+  onDelete,
+}: {
+  record: WorkbenchTaskRunRow;
+  onOpen: () => void;
+  onDelete: () => void;
+}) {
+  const Icon = record.state === "failed" ? AlertCircle : record.hasOpenTodo ? UserRoundCheck : Activity;
+  const updatedLabel = record.updatedAt ? new Date(record.updatedAt).toLocaleString("zh-CN", { hour12: false }) : "—";
   return (
     <div className="sys-preview-item">
       <div className="sys-preview-item-left">
         <span className="sys-preview-item-icon sys-card-avatar--cap">
-          <UserRoundCheck size={16} aria-hidden="true" />
+          <Icon size={16} aria-hidden="true" />
         </span>
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{todo.title}</p>
-          <p className="truncate text-xs text-[var(--color-text-secondary)]">{todo.workflowName} · {todo.nodeName} · {todo.waitingFor}</p>
-          <p className="truncate text-[11px] text-[var(--color-text-tertiary)]">{todo.action} · 创建于 {createdLabel}</p>
+          <p className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{record.title} · {record.runNumber}</p>
+          <p className="truncate text-xs text-[var(--color-text-secondary)]">{record.workflowName} · {record.currentNodeName}</p>
+          <p className="truncate text-[11px] text-[var(--color-text-tertiary)]">{record.completedNodeCount}/{record.totalNodeCount} · {record.progressPercent}% · 更新于 {updatedLabel}</p>
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${stateColors[todo.waitingReason] ?? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"}`}>
-          {todo.waitingReason}
+        <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${stateColors[record.stateLabel] ?? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"}`}>
+          {record.stateLabel}
         </span>
         <button type="button" className="agent-button h-7 px-2 text-xs" onClick={onOpen}>
-          处理
+          {record.hasOpenTodo ? "处理" : "继续"}
+        </button>
+        <button type="button" className="agent-button h-7 px-2 text-xs text-rose-600" onClick={onDelete}>
+          删除
         </button>
       </div>
     </div>
   );
 }
 
-function RecentRunListItem({ record, actionLabel }: { record: WorkbenchRecentRunRow; actionLabel?: string }) {
+function RecentRunListItem({ record, onOpen }: { record: WorkbenchRecentRunRow; onOpen?: () => void }) {
   const Icon = record.state === "completed" || record.stateLabel === "已完成" ? CheckCircle2 : record.state === "paused" || record.stateLabel === "已暂停" ? PauseCircle : Activity;
   const updatedLabel = record.updatedAt ? new Date(record.updatedAt).toLocaleString("zh-CN", { hour12: false }) : "—";
   return (
@@ -2073,8 +2247,8 @@ function RecentRunListItem({ record, actionLabel }: { record: WorkbenchRecentRun
           <Icon size={16} aria-hidden="true" />
         </span>
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{record.title}</p>
-          <p className="truncate text-xs text-[var(--color-text-secondary)]">{record.currentNode} · {record.ownerName}</p>
+          <p className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{record.title} · {record.runNumber}</p>
+          <p className="truncate text-xs text-[var(--color-text-secondary)]">{record.workflowName} · {record.currentNode}</p>
           <p className="truncate text-[11px] text-[var(--color-text-tertiary)]">{record.completedNodeCount}/{record.totalNodeCount} · 更新于 {updatedLabel}</p>
         </div>
       </div>
@@ -2082,9 +2256,9 @@ function RecentRunListItem({ record, actionLabel }: { record: WorkbenchRecentRun
         <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${stateColors[record.stateLabel] ?? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"}`}>
           {record.stateLabel}
         </span>
-        {actionLabel ? (
-          <button type="button" className="agent-button h-7 px-2 text-xs">
-            {actionLabel}
+        {onOpen ? (
+          <button type="button" className="agent-button h-7 px-2 text-xs" onClick={onOpen}>
+            查看
           </button>
         ) : null}
       </div>
@@ -2094,34 +2268,30 @@ function RecentRunListItem({ record, actionLabel }: { record: WorkbenchRecentRun
 
 function TaskRunListItem({
   record,
-  actionLabel,
   onOpen,
 }: {
   record: WorkbenchTaskRunRow;
-  actionLabel: string;
   onOpen: () => void;
 }) {
-  const Icon = record.state === "completed" ? CheckCircle2 : record.state === "paused" ? PauseCircle : Activity;
   const updatedLabel = record.updatedAt ? new Date(record.updatedAt).toLocaleString("zh-CN", { hour12: false }) : "—";
   return (
     <div className="sys-preview-item">
       <div className="sys-preview-item-left">
         <span className="sys-preview-item-icon sys-card-avatar--cap">
-          <Icon size={16} aria-hidden="true" />
+          <CheckCircle2 size={16} aria-hidden="true" />
         </span>
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{record.title}</p>
-          <p className="truncate text-xs text-[var(--color-text-secondary)]">{record.workflowName} v{record.workflowVersionNumber} · {record.currentNodeName}</p>
+          <p className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{record.title} · {record.runNumber}</p>
+          <p className="truncate text-xs text-[var(--color-text-secondary)]">{record.workflowName} · {record.currentNodeName}</p>
           <p className="truncate text-[11px] text-[var(--color-text-tertiary)]">{record.completedNodeCount}/{record.totalNodeCount} · {record.progressPercent}% · 更新于 {updatedLabel}</p>
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        {record.hasOpenTodo ? <span className="workbench-run-pill workbench-run-pill--waiting">有待办</span> : null}
         <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${stateColors[record.stateLabel] ?? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"}`}>
           {record.stateLabel}
         </span>
         <button type="button" className="agent-button h-7 px-2 text-xs" onClick={onOpen}>
-          {actionLabel}
+          查看
         </button>
       </div>
     </div>

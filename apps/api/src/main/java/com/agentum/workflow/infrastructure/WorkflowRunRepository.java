@@ -17,6 +17,19 @@ public interface WorkflowRunRepository extends JpaRepository<WorkflowRunEntity, 
     @Query("""
         select count(run) from WorkflowRunEntity run
         where run.tenantId = :tenantId
+          and run.saved = true
+          and run.state <> 'completed'
+          and (:tenantManager = true or run.createdBy = :operatorUserId)
+        """)
+    long countVisibleActiveRuns(
+        @Param("tenantId") UUID tenantId,
+        @Param("operatorUserId") UUID operatorUserId,
+        @Param("tenantManager") boolean tenantManager
+    );
+
+    @Query("""
+        select count(run) from WorkflowRunEntity run
+        where run.tenantId = :tenantId
           and run.state in :states
           and (:tenantManager = true or run.createdBy = :operatorUserId)
         """)
@@ -30,25 +43,42 @@ public interface WorkflowRunRepository extends JpaRepository<WorkflowRunEntity, 
     @Query("""
         select run from WorkflowRunEntity run
         where run.tenantId = :tenantId
+          and run.saved = true
+          and run.state <> 'completed'
           and (:tenantManager = true or run.createdBy = :operatorUserId)
-          and not exists (
-            select todo.id from WorkflowWaitingEventEntity todo
-            where todo.runId = run.id
-              and todo.status = 'open'
-          )
           and (
             :keyword = ''
             or lower(run.title) like lower(concat('%', :keyword, '%'))
+            or lower(run.runNumber) like lower(concat('%', :keyword, '%'))
             or lower(run.workflowName) like lower(concat('%', :keyword, '%'))
           )
-          and (:state = '' or run.state = :state)
         """)
-    Page<WorkflowRunEntity> searchVisibleRuns(
+    Page<WorkflowRunEntity> searchVisibleActiveRuns(
         @Param("tenantId") UUID tenantId,
         @Param("operatorUserId") UUID operatorUserId,
         @Param("tenantManager") boolean tenantManager,
         @Param("keyword") String keyword,
-        @Param("state") String state,
+        Pageable pageable
+    );
+
+    @Query("""
+        select run from WorkflowRunEntity run
+        where run.tenantId = :tenantId
+          and run.saved = true
+          and run.state = 'completed'
+          and (:tenantManager = true or run.createdBy = :operatorUserId)
+          and (
+            :keyword = ''
+            or lower(run.title) like lower(concat('%', :keyword, '%'))
+            or lower(run.runNumber) like lower(concat('%', :keyword, '%'))
+            or lower(run.workflowName) like lower(concat('%', :keyword, '%'))
+          )
+        """)
+    Page<WorkflowRunEntity> searchVisibleCompletedRuns(
+        @Param("tenantId") UUID tenantId,
+        @Param("operatorUserId") UUID operatorUserId,
+        @Param("tenantManager") boolean tenantManager,
+        @Param("keyword") String keyword,
         Pageable pageable
     );
 }

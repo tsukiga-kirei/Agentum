@@ -19,19 +19,15 @@ public final class WorkbenchApi {
     /**
      * 业务工作台概览响应。
      *
-     * @param metrics            概览统计指标
-     * @param pendingTodos       我的待办
-     * @param recentRuns         最近任务运行
-     * @param runtimeAvailable   工作流运行态是否已上线
-     * @param runtimeStatusLabel 运行态状态文案，例如“运行态已接入”
-     * @param generatedAt        响应生成时间，便于前端按时间戳缓存或对比
+     * @param metrics      概览统计指标
+     * @param pendingTodos 我的待办（已保存且未完成）
+     * @param recentRuns   最近已完成任务记录
+     * @param generatedAt  响应生成时间，便于前端按时间戳缓存或对比
      */
     public record WorkbenchSummary(
         WorkbenchMetrics metrics,
         List<PendingTodoRow> pendingTodos,
         List<RecentRunRow> recentRuns,
-        boolean runtimeAvailable,
-        String runtimeStatusLabel,
         Instant generatedAt
     ) {
     }
@@ -72,28 +68,35 @@ public final class WorkbenchApi {
     }
 
     /**
-     * 我的待办。
+     * 我的待办：已主动保存且未完成的任务运行。
      */
     public record PendingTodoRow(
         UUID id,
         UUID runId,
-        UUID nodeRunId,
+        UUID openTodoId,
         String title,
+        String runNumber,
         String workflowName,
-        String nodeName,
+        String currentNodeName,
+        String state,
+        String stateLabel,
         String waitingReason,
-        String waitingFor,
         String action,
-        Instant createdAt
+        boolean hasOpenTodo,
+        int progressPercent,
+        int completedNodeCount,
+        int totalNodeCount,
+        Instant updatedAt
     ) {
     }
 
     /**
-     * 最近任务运行。
+     * 最近已完成任务记录。
      */
     public record RecentRunRow(
         UUID id,
         String title,
+        String runNumber,
         String workflowName,
         String state,
         String stateLabel,
@@ -121,6 +124,7 @@ public final class WorkbenchApi {
     public record TaskRunRow(
         UUID id,
         String title,
+        String runNumber,
         String workflowName,
         int workflowVersionNumber,
         String state,
@@ -138,6 +142,9 @@ public final class WorkbenchApi {
     public record RunDetail(
         UUID id,
         String title,
+        String runNumber,
+        boolean saved,
+        boolean readOnly,
         UUID workflowId,
         String workflowName,
         int workflowVersionNumber,
@@ -153,6 +160,16 @@ public final class WorkbenchApi {
         List<NodeRunRow> nodes,
         List<RunEventRow> events,
         PendingTodoRow openTodo
+    ) {
+    }
+
+    public record SaveRunRequest(
+        String title
+    ) {
+    }
+
+    public record RollbackRunRequest(
+        UUID nodeRunId
     ) {
     }
 

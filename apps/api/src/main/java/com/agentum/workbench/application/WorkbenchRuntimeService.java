@@ -34,6 +34,8 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -229,6 +231,7 @@ public class WorkbenchRuntimeService {
             snapshot.name() == null || snapshot.name().isBlank() ? definition.getName() : snapshot.name(),
             principal.userId(),
             snapshotNodes.size(),
+            generateRunNumber(now),
             now
         );
         workflowRunRepository.save(run);
@@ -283,11 +286,10 @@ public class WorkbenchRuntimeService {
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<WorkbenchApi.TaskRunRow> listRuns(
+    public PageResponse<WorkbenchApi.TaskRunRow> listActiveRuns(
         UUID tenantId,
         CurrentUserPrincipal principal,
         String keyword,
-        String state,
         int page,
         int size,
         String sort
@@ -295,23 +297,38 @@ public class WorkbenchRuntimeService {
         ensureActiveTenant(tenantId);
         ensureAuthenticated(principal);
         Pageable pageable = PageableFactory.from(PageQuery.of(page, size, sort), RUN_SORT);
-        Page<WorkflowRunEntity> resultPage = workflowRunRepository.searchVisibleRuns(
+        Page<WorkflowRunEntity> resultPage = workflowRunRepository.searchVisibleActiveRuns(
             tenantId,
             principal.userId(),
             isTenantManager(principal),
             keyword == null ? "" : keyword.trim(),
-            state == null || "all".equals(state) ? "" : state.trim(),
+            pageable
+        );
+        return PageResponse.from(resultPage.map(run -> toTaskRunRow(run, Map.of(), hasOpenTodo(run.getId()))));
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<WorkbenchApi.TaskRunRow> listRuns(
+        UUID tenantId,
+        CurrentUserPrincipal principal,
+        String keyword,
+        int page,
+        int size,
+        String sort
+    ) {
+        ensureActiveTenant(tenantId);
+        ensureAuthenticated(principal);
+        Pageable pageable = PageableFactory.from(PageQuery.of(page, size, sort), RUN_SORT);
+        Page<WorkflowRunEntity> resultPage = workflowRunRepository.searchVisibleCompletedRuns(
+            tenantId,
+            principal.userId(),
+            isTenantManager(principal),
+            keyword == null ? "" : keyword.trim(),
             pageable
         );
         Set<UUID> userIds = resultPage.getContent().stream().map(WorkflowRunEntity::getCreatedBy).filter(Objects::nonNull).collect(Collectors.toSet());
         Map<UUID, UserAccount> usersById = loadUsersById(userIds);
-        Set<UUID> runIds = resultPage.getContent().stream().map(WorkflowRunEntity::getId).collect(Collectors.toSet());
-        Set<UUID> runsWithOpenTodo = runIds.isEmpty()
-            ? Set.of()
-            : workflowWaitingEventRepository.findByRunIdInAndStatus(runIds, "open").stream()
-                .map(WorkflowWaitingEventEntity::getRunId)
-                .collect(Collectors.toSet());
-        return PageResponse.from(resultPage.map(run -> toTaskRunRow(run, usersById, runsWithOpenTodo.contains(run.getId()))));
+        return PageResponse.from(resultPage.map(run -> toTaskRunRow(run, usersById, false)));
     }
 
     @Transactional(readOnly = true)
@@ -328,6 +345,136 @@ public class WorkbenchRuntimeService {
             .findFirst()
             .orElse(null);
         return toRunDetail(run, nodes, events, openTodo, loadUsersById(run.getCreatedBy() == null ? Set.of() : Set.of(run.getCreatedBy())));
+    }
+
+    @Transactional
+    public WorkbenchApi.RunDetail saveRun(UUID tenantId, CurrentUserPrincipal principal, UUID runId, WorkbenchApi.SaveRunRequest request) {
+        ensureActiveTenant(tenantId);
+        ensureAuthenticated(principal);
+        WorkflowRunEntity run = requireOwnedRun(tenantId, principal, runId);
+        if (run.isSaved()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_RUN_ALREADY_SAVED", "任务已保存，无需重复保存");
+        }
+        Instant now = clock.instant();
+        if (request != null && request.title() != null && !request.title().isBlank()) {
+            run.updateTitle(normalizeTitle(request.title(), run.getWorkflowName()), now);
+        }
+        run.markSaved(now);
+        workflowRunRepository.save(run);
+        String saveDescription = "completed".equals(run.getState())
+            ? "任务已保存到任务记录，退出后仍可查看。"
+            : "任务已保存到待办，退出后仍可继续处理。";
+        workflowRunEventRepository.save(WorkflowRunEventEntity.create(
+            run.getId(),
+            tenantId,
+            "run_saved",
+            "任务已保存",
+            saveDescription,
+            null,
+            principal.userId(),
+            Map.of("runNumber", run.getRunNumber(), "state", run.getState()),
+            now
+        ));
+        log.info(
+            "业务任务已保存 tenantId={} userId={} runId={} runNumber={} requestId={}",
+            tenantId,
+            principal.userId(),
+            runId,
+            run.getRunNumber(),
+            RequestIds.current()
+        );
+        return getRunDetail(tenantId, principal, runId);
+    }
+
+    @Transactional
+    public void deleteRun(UUID tenantId, CurrentUserPrincipal principal, UUID runId) {
+        ensureActiveTenant(tenantId);
+        ensureAuthenticated(principal);
+        WorkflowRunEntity run = requireOwnedRun(tenantId, principal, runId);
+        if ("completed".equals(run.getState())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_RUN_DELETE_FORBIDDEN", "已完成任务只能查看，不能删除");
+        }
+        log.info(
+            "业务任务删除 tenantId={} userId={} runId={} saved={} state={} requestId={}",
+            tenantId,
+            principal.userId(),
+            runId,
+            run.isSaved(),
+            run.getState(),
+            RequestIds.current()
+        );
+        workflowRunRepository.delete(run);
+    }
+
+    @Transactional
+    public WorkbenchApi.RunDetail rollbackRun(
+        UUID tenantId,
+        CurrentUserPrincipal principal,
+        UUID runId,
+        WorkbenchApi.RollbackRunRequest request
+    ) {
+        ensureActiveTenant(tenantId);
+        ensureAuthenticated(principal);
+        WorkflowRunEntity run = requireOwnedRun(tenantId, principal, runId);
+        if (!run.isSaved()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_RUN_NOT_SAVED", "请先保存任务后再执行回退");
+        }
+        if ("completed".equals(run.getState())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_RUN_ROLLBACK_FORBIDDEN", "已完成任务不能回退，请从历史记录查看");
+        }
+        UUID nodeRunId = request == null ? null : request.nodeRunId();
+        if (nodeRunId == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_ROLLBACK_NODE_REQUIRED", "请选择要回退到的步骤");
+        }
+        List<WorkflowNodeRunEntity> nodes = workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(runId);
+        WorkflowNodeRunEntity targetNode = nodes.stream()
+            .filter(node -> node.getId().equals(nodeRunId))
+            .findFirst()
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_NODE_RUN_NOT_FOUND", "节点运行不存在"));
+        if (!"completed".equals(targetNode.getState()) && !"failed".equals(targetNode.getState())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_ROLLBACK_NODE_INVALID", "只能回退到已执行过的步骤");
+        }
+        Instant now = clock.instant();
+        int targetIndex = targetNode.getSortOrder();
+        List<UUID> resetNodeIds = new ArrayList<>();
+        for (WorkflowNodeRunEntity node : nodes) {
+            if (node.getSortOrder() >= targetIndex) {
+                node.resetToPending(now);
+                resetNodeIds.add(node.getId());
+            }
+        }
+        workflowNodeRunRepository.saveAll(nodes);
+        resolveOpenTodos(run.getId(), principal.userId(), now);
+        if (!resetNodeIds.isEmpty()) {
+            workflowVariableSnapshotRepository.deleteByRunIdAndNodeRunIdIn(run.getId(), resetNodeIds);
+        }
+        int completedBefore = (int) nodes.stream()
+            .filter(node -> node.getSortOrder() < targetIndex && "completed".equals(node.getState()))
+            .count();
+        run.markRunning(targetNode.getNodeKey(), targetNode.getName(), targetNode.getNodeType(), completedBefore, now);
+        workflowRunEventRepository.save(WorkflowRunEventEntity.create(
+            run.getId(),
+            tenantId,
+            "run_rollback",
+            "流程已回退",
+            "已回退到「" + targetNode.getName() + "」并从此步骤重新开始。",
+            targetNode.getNodeKey(),
+            principal.userId(),
+            Map.of("nodeRunId", nodeRunId.toString(), "sortOrder", targetIndex),
+            now
+        ));
+        WorkflowWaitingEventEntity openTodo = advanceUntilPause(run, nodes, targetIndex, principal.userId(), now, new ArrayList<>());
+        workflowRunRepository.save(run);
+        log.info(
+            "业务任务回退 tenantId={} userId={} runId={} nodeRunId={} sortOrder={} requestId={}",
+            tenantId,
+            principal.userId(),
+            runId,
+            nodeRunId,
+            targetIndex,
+            RequestIds.current()
+        );
+        return getRunDetail(tenantId, principal, runId);
     }
 
     @Transactional
@@ -373,7 +520,7 @@ public class WorkbenchRuntimeService {
     @Transactional(readOnly = true)
     public long countVisibleOpenTodos(UUID tenantId, CurrentUserPrincipal principal) {
         ensureAuthenticated(principal);
-        return workflowWaitingEventRepository.countVisibleOpenTodos(tenantId, principal.userId(), isTenantManager(principal));
+        return workflowRunRepository.countVisibleActiveRuns(tenantId, principal.userId(), isTenantManager(principal));
     }
 
     @Transactional(readOnly = true)
@@ -385,29 +532,23 @@ public class WorkbenchRuntimeService {
     @Transactional(readOnly = true)
     public List<WorkbenchApi.PendingTodoRow> listPendingTodos(UUID tenantId, CurrentUserPrincipal principal, int limit) {
         ensureAuthenticated(principal);
-        List<WorkflowWaitingEventEntity> todos = workflowWaitingEventRepository.findVisibleOpenTodos(
+        Page<WorkflowRunEntity> page = workflowRunRepository.searchVisibleActiveRuns(
             tenantId,
             principal.userId(),
             isTenantManager(principal),
-            PageRequest.of(0, Math.max(1, limit))
+            "",
+            PageRequest.of(0, Math.max(1, limit), Sort.by(Sort.Direction.DESC, "updatedAt"))
         );
-        if (todos.isEmpty()) {
-            return List.of();
-        }
-        Map<UUID, WorkflowRunEntity> runsById = workflowRunRepository.findAllById(todos.stream().map(WorkflowWaitingEventEntity::getRunId).collect(Collectors.toSet()))
-            .stream()
-            .collect(Collectors.toMap(WorkflowRunEntity::getId, Function.identity()));
-        return todos.stream().map(todo -> toPendingTodoRow(todo, runsById.get(todo.getRunId()), null)).toList();
+        return page.getContent().stream().map(this::toActiveTaskRow).toList();
     }
 
     @Transactional(readOnly = true)
     public List<WorkbenchApi.RecentRunRow> listRecentRuns(UUID tenantId, CurrentUserPrincipal principal, int limit) {
         ensureAuthenticated(principal);
-        Page<WorkflowRunEntity> page = workflowRunRepository.searchVisibleRuns(
+        Page<WorkflowRunEntity> page = workflowRunRepository.searchVisibleCompletedRuns(
             tenantId,
             principal.userId(),
             isTenantManager(principal),
-            "",
             "",
             PageRequest.of(0, Math.max(1, limit), Sort.by(Sort.Direction.DESC, "updatedAt"))
         );
@@ -601,9 +742,13 @@ public class WorkbenchRuntimeService {
         Map<UUID, UserAccount> usersById
     ) {
         UserAccount owner = run.getCreatedBy() == null ? null : usersById.get(run.getCreatedBy());
+        boolean readOnly = "completed".equals(run.getState());
         return new WorkbenchApi.RunDetail(
             run.getId(),
             run.getTitle(),
+            run.getRunNumber(),
+            run.isSaved(),
+            readOnly,
             run.getWorkflowId(),
             run.getWorkflowName(),
             run.getWorkflowVersionNumber(),
@@ -618,7 +763,7 @@ public class WorkbenchRuntimeService {
             run.getUpdatedAt(),
             nodes.stream().map(this::toNodeRunRow).toList(),
             events.stream().map(this::toRunEventRow).toList(),
-            openTodo == null ? null : toPendingTodoRow(openTodo, run, null)
+            openTodo == null ? null : toOpenTodoRow(openTodo, run)
         );
     }
 
@@ -627,6 +772,7 @@ public class WorkbenchRuntimeService {
         return new WorkbenchApi.TaskRunRow(
             run.getId(),
             run.getTitle(),
+            run.getRunNumber(),
             run.getWorkflowName(),
             run.getWorkflowVersionNumber(),
             run.getState(),
@@ -641,17 +787,48 @@ public class WorkbenchRuntimeService {
         );
     }
 
-    private WorkbenchApi.PendingTodoRow toPendingTodoRow(WorkflowWaitingEventEntity todo, WorkflowRunEntity run, WorkflowNodeRunEntity node) {
+    private WorkbenchApi.PendingTodoRow toActiveTaskRow(WorkflowRunEntity run) {
+        WorkflowWaitingEventEntity openTodo = workflowWaitingEventRepository.findByRunIdAndStatusOrderByCreatedAtDesc(run.getId(), "open")
+            .stream()
+            .findFirst()
+            .orElse(null);
         return new WorkbenchApi.PendingTodoRow(
+            run.getId(),
+            run.getId(),
+            openTodo == null ? null : openTodo.getId(),
+            run.getTitle(),
+            run.getRunNumber(),
+            run.getWorkflowName(),
+            run.getCurrentNodeName() == null ? "处理中" : run.getCurrentNodeName(),
+            run.getState(),
+            stateLabel(run.getState()),
+            openTodo == null ? stateLabel(run.getState()) : openTodo.getWaitingReason(),
+            openTodo == null ? "继续处理" : actionLabelFromType(openTodo.getActionType()),
+            openTodo != null,
+            run.getProgressPercent(),
+            run.getCompletedNodeCount(),
+            run.getTotalNodeCount(),
+            run.getUpdatedAt()
+        );
+    }
+
+    private WorkbenchApi.PendingTodoRow toOpenTodoRow(WorkflowWaitingEventEntity todo, WorkflowRunEntity run) {
+        return new WorkbenchApi.PendingTodoRow(
+            run.getId(),
+            run.getId(),
             todo.getId(),
-            todo.getRunId(),
-            todo.getNodeRunId(),
+            run.getTitle(),
+            run.getRunNumber(),
+            run.getWorkflowName(),
             todo.getTitle(),
-            run == null ? "" : run.getWorkflowName(),
-            node == null ? todo.getTitle() : node.getName(),
+            run.getState(),
+            stateLabel(run.getState()),
             todo.getWaitingReason(),
-            "user".equals(todo.getWaitingForType()) ? "当前处理人" : todo.getWaitingForType(),
             actionLabelFromType(todo.getActionType()),
+            true,
+            run.getProgressPercent(),
+            run.getCompletedNodeCount(),
+            run.getTotalNodeCount(),
             todo.getCreatedAt()
         );
     }
@@ -661,6 +838,7 @@ public class WorkbenchRuntimeService {
         return new WorkbenchApi.RecentRunRow(
             run.getId(),
             run.getTitle(),
+            run.getRunNumber(),
             run.getWorkflowName(),
             run.getState(),
             stateLabel(run.getState()),
@@ -852,7 +1030,34 @@ public class WorkbenchRuntimeService {
         if (!normalized.isBlank()) {
             return normalized.length() > 200 ? normalized.substring(0, 200) : normalized;
         }
-        return workflowName + "任务";
+        return workflowName;
+    }
+
+    private String generateRunNumber(Instant now) {
+        String datePrefix = DateTimeFormatter.ofPattern("yyyyMMdd").withZone(ZoneId.of("Asia/Shanghai")).format(now);
+        String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
+        return datePrefix + "-" + suffix;
+    }
+
+    private WorkflowRunEntity requireOwnedRun(UUID tenantId, CurrentUserPrincipal principal, UUID runId) {
+        WorkflowRunEntity run = workflowRunRepository.findByIdAndTenantId(runId, tenantId)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_RUN_NOT_FOUND", "任务运行不存在"));
+        if (!isTenantManager(principal) && (run.getCreatedBy() == null || !run.getCreatedBy().equals(principal.userId()))) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "WORKBENCH_RUN_WRITE_FORBIDDEN", "当前账号不能操作该任务");
+        }
+        return run;
+    }
+
+    private boolean hasOpenTodo(UUID runId) {
+        return !workflowWaitingEventRepository.findByRunIdAndStatusOrderByCreatedAtDesc(runId, "open").isEmpty();
+    }
+
+    private void resolveOpenTodos(UUID runId, UUID operatorUserId, Instant now) {
+        List<WorkflowWaitingEventEntity> openTodos = workflowWaitingEventRepository.findByRunIdAndStatusOrderByCreatedAtDesc(runId, "open");
+        for (WorkflowWaitingEventEntity todo : openTodos) {
+            todo.resolve(operatorUserId, now);
+            workflowWaitingEventRepository.save(todo);
+        }
     }
 
     private String stateLabel(String state) {
