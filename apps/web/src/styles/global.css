@@ -3558,6 +3558,62 @@ textarea:focus-visible {
   font-weight: 700;
 }
 
+.workflow-launch-card-meta--restricted {
+  color: var(--color-text-secondary);
+  font-weight: 600;
+}
+
+.workflow-launch-card-tag--restricted {
+  border-color: color-mix(in srgb, var(--color-warning) 24%, var(--color-border-light));
+  background: color-mix(in srgb, var(--color-warning) 8%, var(--color-bg-card));
+  color: color-mix(in srgb, var(--color-warning) 72%, var(--color-text-secondary));
+}
+
+.workflow-launch-sections {
+  display: grid;
+  gap: 28px;
+}
+
+.workflow-launch-section {
+  display: grid;
+  gap: 16px;
+}
+
+.workflow-launch-section--restricted {
+  padding-top: 24px;
+  border-top: 1px solid var(--color-border-light);
+}
+
+.workflow-launch-section-head {
+  display: grid;
+  gap: 6px;
+}
+
+.workflow-launch-section-title {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.workflow-launch-section-desc {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.workflow-launch-section-empty {
+  border: 1px dashed color-mix(in srgb, var(--color-border-light) 88%, transparent);
+  border-radius: 16px;
+  background: var(--color-bg-card);
+  padding: 28px 20px;
+  color: var(--color-text-tertiary);
+  font-size: 14px;
+  text-align: center;
+}
+
 .workbench-launch-drawer {
   display: grid;
   gap: 18px;

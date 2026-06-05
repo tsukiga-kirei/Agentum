@@ -244,6 +244,10 @@ export function WorkbenchShell() {
   const [creatingWorkflowId, setCreatingWorkflowId] = useState<string | null>(null);
   const [workflowDrawer, setWorkflowDrawer] = useState<WorkbenchAvailableWorkflowRow | null>(null);
   const activeWorkbenchTabMeta = workbenchTabs.find((tab) => tab.key === activeWorkbenchTab) ?? workbenchTabs[0];
+  const { launchableWorkflows, blockedWorkflows } = useMemo(() => ({
+    launchableWorkflows: availableWorkflows.filter((workflow) => workflow.canLaunch),
+    blockedWorkflows: availableWorkflows.filter((workflow) => !workflow.canLaunch),
+  }), [availableWorkflows]);
   const workbenchSegmentedOptions = workbenchTabs.map((tab) => {
     const Icon = tab.icon;
     return {
@@ -808,10 +812,42 @@ export function WorkbenchShell() {
                             <span>{availableKeyword ? "可以调整搜索词后重试。" : "可前往流程设计进行发布。"}</span>
                           </div>
                         ) : (
-                          <div className="sys-card-grid">
-                            {availableWorkflows.map((workflow) => (
-                              <WorkflowLaunchCard key={workflow.id} workflow={workflow} onOpen={() => setWorkflowDrawer(workflow)} />
-                            ))}
+                          <div className="workflow-launch-sections">
+                            <section className="workflow-launch-section" aria-label="可发起流程">
+                              <div className="workflow-launch-section-head">
+                                <h3 className="workflow-launch-section-title">可发起流程</h3>
+                                <p className="workflow-launch-section-desc">
+                                  {launchableWorkflows.length > 0
+                                    ? `当前页共 ${launchableWorkflows.length} 个流程，可直接创建任务。`
+                                    : "当前页暂无可发起流程，可先查看下方无权限流程或调整搜索条件。"}
+                                </p>
+                              </div>
+                              {launchableWorkflows.length > 0 ? (
+                                <div className="sys-card-grid">
+                                  {launchableWorkflows.map((workflow) => (
+                                    <WorkflowLaunchCard key={workflow.id} workflow={workflow} onOpen={() => setWorkflowDrawer(workflow)} />
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="workflow-launch-section-empty">暂无可发起流程</div>
+                              )}
+                            </section>
+
+                            {blockedWorkflows.length > 0 ? (
+                              <section className="workflow-launch-section workflow-launch-section--restricted" aria-label="暂无发起权限的流程">
+                                <div className="workflow-launch-section-head">
+                                  <h3 className="workflow-launch-section-title">暂无发起权限</h3>
+                                  <p className="workflow-launch-section-desc">
+                                    以下流程已发布，但当前账号尚未获得读取或发起权限，可查看权限状态并联系流程负责人。
+                                  </p>
+                                </div>
+                                <div className="sys-card-grid">
+                                  {blockedWorkflows.map((workflow) => (
+                                    <WorkflowLaunchCard key={workflow.id} workflow={workflow} restricted onOpen={() => setWorkflowDrawer(workflow)} />
+                                  ))}
+                                </div>
+                              </section>
+                            ) : null}
                           </div>
                         )}
 
@@ -979,7 +1015,15 @@ function WorkbenchFeatureCard({
   );
 }
 
-function WorkflowLaunchCard({ workflow, onOpen }: { workflow: WorkbenchAvailableWorkflowRow; onOpen: () => void }) {
+function WorkflowLaunchCard({
+  workflow,
+  restricted = false,
+  onOpen,
+}: {
+  workflow: WorkbenchAvailableWorkflowRow;
+  restricted?: boolean;
+  onOpen: () => void;
+}) {
   const publishedAt = workflow.publishedAt ? new Date(workflow.publishedAt) : null;
   const publishedLabel = publishedAt ? publishedAt.toLocaleString("zh-CN", { hour12: false }) : "—";
   const visibilityLabel = workflow.canLaunch
@@ -1006,11 +1050,11 @@ function WorkflowLaunchCard({ workflow, onOpen }: { workflow: WorkbenchAvailable
       <span className="workflow-launch-card-tags">
         <span className="workflow-launch-card-tag workflow-launch-card-tag--owner">发布人：{workflow.ownerName}</span>
         <span className="workflow-launch-card-tag workflow-launch-card-tag--time">发布于 {publishedLabel}</span>
-        <span className={`workflow-launch-card-tag ${workflow.canLaunch ? "workflow-launch-card-tag--owner" : "workflow-launch-card-tag--time"}`}>
+        <span className={`workflow-launch-card-tag ${restricted ? "workflow-launch-card-tag--restricted" : "workflow-launch-card-tag--owner"}`}>
           {visibilityLabel}
         </span>
       </span>
-      <span className="workflow-launch-card-meta">
+      <span className={`workflow-launch-card-meta${restricted ? " workflow-launch-card-meta--restricted" : ""}`}>
         {workflow.canLaunch ? "查看并发起" : "查看权限状态"}
         <ArrowRight size={14} aria-hidden="true" />
       </span>
