@@ -6296,11 +6296,48 @@ textarea:focus-visible {
 
 .workflow-agent-modal {
   max-width: 860px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.workflow-agent-modal .sys-modal-header,
+.workflow-agent-modal .sys-modal-footer {
+  flex-shrink: 0;
+}
+
+.workflow-agent-modal .sys-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.workflow-agent-modal .sys-modal-body::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .workflow-agent-modal-body {
   display: grid;
-  gap: 22px;
+  gap: 16px;
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+.workflow-agent-modal .workflow-prompt-section {
+  gap: 12px;
+  padding: 12px;
+}
+
+.workflow-agent-modal .workflow-prompt-textarea {
+  min-height: 72px;
+  max-height: 120px;
+  resize: vertical;
 }
 
 .workflow-modal-section {
