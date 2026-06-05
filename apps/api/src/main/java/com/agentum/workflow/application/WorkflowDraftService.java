@@ -258,6 +258,7 @@ public class WorkflowDraftService {
         String readScope = normalizeScope(request.readScope());
         String editScope = normalizeScope(request.editScope());
         definition.updateAccess(readScope, editScope, operatorUserId, clock.instant());
+        workflowDefinitionRepository.save(definition);
         replaceAccessGrants(tenantId, definition, operatorUserId, readScope, request.readUserIds(), editScope, request.editUserIds());
         log.info(
             "工作流读取编辑权限已更新 tenantId={} operatorUserId={} workflowId={} readScope={} editScope={} requestId={}",
@@ -545,6 +546,8 @@ public class WorkflowDraftService {
         List<UUID> editUserIds
     ) {
         workflowAccessGrantRepository.deleteByWorkflowId(definition.getId());
+        // 必须立即 flush，确保物理删除先于新授权插入执行，避免 uk_workflow_access_grants_workflow_user_level 冲突。
+        workflowAccessGrantRepository.flush();
         List<UUID> normalizedReadUserIds = normalizeAccessUserIds(tenantId, operatorUserId, readScope, readUserIds, "读取");
         List<UUID> normalizedEditUserIds = normalizeAccessUserIds(tenantId, operatorUserId, editScope, editUserIds, "编辑");
         Instant now = clock.instant();

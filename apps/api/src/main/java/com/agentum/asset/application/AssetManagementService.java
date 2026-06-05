@@ -557,6 +557,8 @@ public class AssetManagementService {
         List<UUID> editUserIds
     ) {
         tenantAssetAccessGrantRepository.deleteByAssetId(asset.getId());
+        // 必须立即 flush，确保物理删除先于新授权插入执行，避免 uk_tenant_asset_access_grants_asset_user_level 冲突。
+        tenantAssetAccessGrantRepository.flush();
         List<UUID> normalizedReadUserIds = normalizeAccessUserIds(tenantId, principal, readScope, readUserIds, "读取");
         List<UUID> normalizedEditUserIds = normalizeAccessUserIds(tenantId, principal, editScope, editUserIds, "编辑");
         Instant now = clock.instant();

@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.agentum.auth.infrastructure.UserAccountRepository;
+import com.agentum.organization.domain.UserMembershipEntity;
 import com.agentum.organization.infrastructure.UserMembershipRepository;
 import com.agentum.permission.application.CollaborationAccessPolicy;
 import com.agentum.shared.api.ApiException;
@@ -191,6 +192,36 @@ class WorkflowDraftServicePublishTest {
 
         assertThat(detail.access().accessLevel()).isEqualTo("edit");
         assertThat(detail.access().canManageAccess()).isFalse();
+    }
+
+    @Test
+    void shouldReplaceWorkflowAccessGrantsAfterFlushWhenUpdatingAccess() {
+        WorkflowDefinitionEntity definition = draft();
+        WorkflowAccessGrantEntity existingReadGrant = WorkflowAccessGrantEntity.create(
+            TENANT_ID, definition.getId(), COLLABORATOR_ID, "read", USER_ID, NOW
+        );
+        stubDefinitionLookup(definition);
+        when(workflowAccessGrantRepository.findByWorkflowId(definition.getId())).thenReturn(List.of(existingReadGrant));
+        when(userMembershipRepository.findByTenantIdAndStatus(TENANT_ID, "active"))
+            .thenReturn(List.of(
+                UserMembershipEntity.create(TENANT_ID, USER_ID, null),
+                UserMembershipEntity.create(TENANT_ID, COLLABORATOR_ID, null)
+            ));
+
+        WorkflowDraftApi.WorkflowDraftDetail detail = service().updateAccess(
+            TENANT_ID,
+            USER_ID,
+            definition.getId(),
+            new WorkflowDraftApi.UpdateWorkflowAccessRequest("specified", "self", List.of(COLLABORATOR_ID), List.of())
+        );
+
+        verify(workflowAccessGrantRepository).deleteByWorkflowId(definition.getId());
+        verify(workflowAccessGrantRepository).flush();
+        verify(workflowAccessGrantRepository).save(any(WorkflowAccessGrantEntity.class));
+        assertThat(detail.access().readScope()).isEqualTo("specified");
+        assertThat(detail.access().editScope()).isEqualTo("self");
+        assertThat(detail.access().readUserIds()).containsExactly(COLLABORATOR_ID);
+        assertThat(detail.access().editUserIds()).isEmpty();
     }
 
     @Test
