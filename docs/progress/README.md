@@ -158,8 +158,8 @@
 - 用户自建能力和流程已统一为双权限模型：读取 / 使用与内容编辑分别支持仅自己、指定同事、全体同事；编辑自动包含读取，只有创建者可以配置权限和删除资源。
 - 能力资产「对我开放」和流程设计「协作开放」展示当前用户有读取或编辑权限的内容并标注访问级别；流程「我的流程」补充新建入口，详情支持协作者编辑说明，流程内容按节点类型使用不同图标颜色且不再重复展示输出变量。
 - 协作编辑流程保存与发布时按当前操作者重新校验所有引用能力：系统能力必须已分配给操作者，用户自建能力必须已发布且操作者拥有读取权限，流程编辑权限不会向下传递能力权限。
-- 业务工作台已完成后端化第一版：新增 `/api/tenants/{tenantId}/workbench/summary` 与 `/api/tenants/{tenantId}/workbench/available-workflows`，概览统计来自工作流定义、能力资产开放分配和我的能力草稿，可发起流程改为后端分页搜索；运行态尚未上线，待办与运行记录返回空列表并通过 `runtimeAvailable=false`、`runtimeStatusLabel` 在前端展示“运行态建设中”空态，移除前端工作台列表区的模拟待办、运行记录和流程模板硬编码。
-- 业务工作台任务处理页已补运行态预览交互（仍使用 `buildRuntimePreview` 本地 mock，未接 WorkflowRun API）：发起任务后进入固定页头 + 左侧流程进度 + 页签工作区；「当前处理」按输入、智能体、多智能体、人工审核、交付等节点类型分别展示对话流、能力调用条、追问/重新生成/中断和审批区；「执行链路」支持总览列表与单步详情切换；布局收敛为页头/页签固定、内容区单一滚动，并修正侧栏收起时 Logo 居中问题。
+- 业务工作台运行态已接入第一版：新增 `workflow_runs`、`workflow_node_runs`、`workflow_waiting_events`、`workflow_run_events` 表，`/api/tenants/{tenantId}/workbench/summary` 返回真实待办和最近运行；创建任务列表改为展示全部未收回且已发布流程，并通过 `visibility`、`canLaunch`、`launchBlockedReason` 标记当前账号是否有发起权限。
+- 业务工作台任务处理页已从本地 `buildRuntimePreview` mock 切换到后端 `WorkflowRun` API：新增创建运行、任务中心分页、运行详情和待办完成接口；发起任务后按发布版本快照生成节点链路，输入 / 审核 / 交付节点形成真实待办，智能体和集群节点先记录可审计占位输出，后续由真实模型 / MCP 执行器替换。
 - 流程设计落地版本治理方案 C：`workflow_definitions.launch_enabled` 控制业务入口收回/恢复；列表与详情展示 `latestVersionNumber`、`hasUnpublishedChanges`；创建者可删除流程或收回业务入口；业务工作台可发起列表改为「有冻结版本且入口未收回」，与设计态 `status` 解耦；新增 [能力—流程—权限治理](../capability-workflow-governance.md) 文档。
 - 企业 SSO 完成 OIDC 第一版骨架：新增租户 SSO Provider 与外部身份绑定表，登录页按租户发现 SSO 身份源，后端生成签名 `state` 与 `nonce` 并完成 OIDC 回调后的本地 token 签发；新增 [企业 SSO 对接说明](../sso-integration.md)，明确业务系统只需按标准 OIDC 提供身份，不承载 Agentum 权限判断。
 
@@ -404,3 +404,9 @@
 | 2026-05-28 | OpenAPI YAML 解析检查 | 通过：业务工作台路径与 `WorkbenchSummary` / `WorkbenchAvailableWorkflowPageResponse` 等 Schema 补入契约后复验 |
 | 2026-05-28 | `git diff --check` | 通过：业务工作台后端化、契约和文档同步后复验 |
 | 2026-06-01 | `pnpm lint:web` | 通过：业务工作台任务处理预览（当前处理分节点、执行链路、固定页头布局、侧栏 Logo 收起居中）后复验 |
+| 2026-06-05 | `./gradlew :apps:api:test` | 通过：业务工作台运行态表、运行实例创建、待办推进、全部流程可见与权限区分后端测试后复验 |
+| 2026-06-05 | `pnpm --dir apps/web exec tsc --noEmit` | 通过：业务工作台任务中心、运行详情和待办动作接入后端类型后复验 |
+| 2026-06-05 | `pnpm lint:web` | 通过：业务工作台移除本地任务预览并接入运行态 API 后复验 |
+| 2026-06-05 | `pnpm build:web` | 通过：业务工作台运行态前端构建后复验；Vite 提示 Ant Design vendor chunk 超过 500 kB |
+| 2026-06-05 | OpenAPI YAML 解析检查 | 通过：业务工作台运行实例、任务记录、待办完成接口契约后复验 |
+| 2026-06-05 | `git diff --check` | 通过：业务工作台运行态全链路更新后复验 |

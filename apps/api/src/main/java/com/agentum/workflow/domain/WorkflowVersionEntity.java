@@ -88,6 +88,10 @@ public class WorkflowVersionEntity {
         return nodeCount;
     }
 
+    public String getDefinitionSnapshot() {
+        return definitionSnapshot;
+    }
+
     public Instant getPublishedAt() {
         return publishedAt;
     }

@@ -106,4 +106,24 @@ public interface WorkflowDefinitionRepository extends JpaRepository<WorkflowDefi
         @Param("operatorUserId") UUID operatorUserId,
         Pageable pageable
     );
+
+    @Query("""
+        select definition from WorkflowDefinitionEntity definition
+        where definition.tenantId = :tenantId
+          and (
+            :keyword = ''
+            or lower(definition.name) like lower(concat('%', :keyword, '%'))
+            or lower(coalesce(definition.description, '')) like lower(concat('%', :keyword, '%'))
+          )
+          and definition.launchEnabled = true
+          and exists (
+            select version.id from WorkflowVersionEntity version
+            where version.workflowId = definition.id
+          )
+        """)
+    Page<WorkflowDefinitionEntity> searchAllLaunchableWorkflows(
+        @Param("tenantId") UUID tenantId,
+        @Param("keyword") String keyword,
+        Pageable pageable
+    );
 }

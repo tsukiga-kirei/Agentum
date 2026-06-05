@@ -463,7 +463,7 @@ paths:
   /api/tenants/{tenantId}/workbench/summary:
     get:
       summary: 获取业务工作台概览
-      description: 业务工作台默认入口，聚合真实统计、当前用户的待办与最近任务。运行态尚未上线前，pendingTodos / recentRuns 固定为空，并通过 runtimeAvailable=false 标记状态。
+      description: 业务工作台默认入口，聚合真实统计、当前用户的待办与最近任务运行。
       tags:
         - Workbench
       security:
@@ -489,8 +489,8 @@ paths:
                         $ref: "#/components/schemas/WorkbenchSummary"
   /api/tenants/{tenantId}/workbench/available-workflows:
     get:
-      summary: 查询当前用户可发起的已发布工作流
-      description: 返回当前用户具有读取 / 使用权限且 status=published 的工作流定义及其最新发布版本号。
+      summary: 查询全部已发布工作流并标记发起权限
+      description: 返回当前租户内有冻结版本且入口未收回的全部流程；无读取或发起权限的流程仍展示，但 canLaunch=false。
       tags:
         - Workbench
       security:
@@ -533,6 +533,160 @@ paths:
                     properties:
                       data:
                         $ref: "#/components/schemas/WorkbenchAvailableWorkflowPageResponse"
+  /api/tenants/{tenantId}/workbench/runs:
+    post:
+      summary: 创建业务任务运行
+      description: 基于最新发布版本创建 WorkflowRun、节点运行链路和首个等待事件。
+      tags:
+        - Workbench
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkbenchCreateRunRequest"
+      responses:
+        "200":
+          description: 创建后的运行详情
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/WorkbenchRunDetail"
+    get:
+      summary: 查询业务任务中心
+      description: 分页查询当前账号可见的运行实例。
+      tags:
+        - Workbench
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: keyword
+          in: query
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            type: string
+            default: all
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 10
+        - name: sort
+          in: query
+          schema:
+            type: string
+            default: updatedAt,desc
+      responses:
+        "200":
+          description: 任务运行分页列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/WorkbenchTaskRunPageResponse"
+  /api/tenants/{tenantId}/workbench/runs/{runId}:
+    get:
+      summary: 获取业务任务运行详情
+      tags:
+        - Workbench
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 运行详情
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/WorkbenchRunDetail"
+  /api/tenants/{tenantId}/workbench/todos/{todoId}/complete:
+    post:
+      summary: 处理并完成业务待办
+      description: 提交当前待办后恢复运行实例并继续推进后续节点。
+      tags:
+        - Workbench
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: todoId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkbenchCompleteTodoRequest"
+      responses:
+        "200":
+          description: 推进后的运行详情
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/WorkbenchRunDetail"
   /api/tenants/{tenantId}/workflows/drafts:
     get:
       summary: 查询工作流草稿列表
@@ -3613,9 +3767,17 @@ components:
         id:
           type: string
           format: uuid
+        runId:
+          type: string
+          format: uuid
+        nodeRunId:
+          type: string
+          format: uuid
         title:
           type: string
         workflowName:
+          type: string
+        nodeName:
           type: string
         waitingReason:
           type: string
@@ -3623,26 +3785,33 @@ components:
           type: string
         action:
           type: string
-        dueAt:
+        createdAt:
           type: string
           format: date-time
-          nullable: true
       required:
         - id
+        - runId
+        - nodeRunId
         - title
         - workflowName
+        - nodeName
         - waitingReason
         - waitingFor
         - action
+        - createdAt
     WorkbenchRecentRunRow:
       type: object
       properties:
         id:
           type: string
           format: uuid
+        title:
+          type: string
         workflowName:
           type: string
         state:
+          type: string
+        stateLabel:
           type: string
         currentNode:
           type: string
@@ -3657,8 +3826,10 @@ components:
           format: date-time
       required:
         - id
+        - title
         - workflowName
         - state
+        - stateLabel
         - currentNode
         - ownerName
         - completedNodeCount
@@ -3679,7 +3850,7 @@ components:
             $ref: "#/components/schemas/WorkbenchRecentRunRow"
         runtimeAvailable:
           type: boolean
-          description: 运行态是否已上线。第一阶段固定为 false，前端据此展示运行态建设中空态。
+          description: 运行态是否已上线。当前返回 true，表示待办和运行记录来自 WorkflowRun / NodeRun / WaitingEvent。
         runtimeStatusLabel:
           type: string
         generatedAt:
@@ -3715,6 +3886,13 @@ components:
           nullable: true
         ownerName:
           type: string
+        visibility:
+          type: string
+          enum: [owner, open, locked, manager]
+        canLaunch:
+          type: boolean
+        launchBlockedReason:
+          type: string
       required:
         - id
         - name
@@ -3723,6 +3901,9 @@ components:
         - latestVersionNumber
         - publishedAt
         - ownerName
+        - visibility
+        - canLaunch
+        - launchBlockedReason
     WorkbenchAvailableWorkflowPageResponse:
       type: object
       properties:
@@ -3730,6 +3911,219 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/WorkbenchAvailableWorkflowRow"
+        page:
+          type: integer
+        size:
+          type: integer
+        total:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+      required:
+        - items
+        - page
+        - size
+        - total
+        - totalPages
+    WorkbenchCreateRunRequest:
+      type: object
+      properties:
+        workflowId:
+          type: string
+          format: uuid
+        title:
+          type: string
+      required:
+        - workflowId
+    WorkbenchCompleteTodoRequest:
+      type: object
+      properties:
+        action:
+          type: string
+        comment:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+    WorkbenchTaskRunRow:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        workflowName:
+          type: string
+        workflowVersionNumber:
+          type: integer
+        state:
+          type: string
+        stateLabel:
+          type: string
+        currentNodeName:
+          type: string
+        ownerName:
+          type: string
+        completedNodeCount:
+          type: integer
+        totalNodeCount:
+          type: integer
+        progressPercent:
+          type: integer
+        hasOpenTodo:
+          type: boolean
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - title
+        - workflowName
+        - workflowVersionNumber
+        - state
+        - stateLabel
+        - currentNodeName
+        - ownerName
+        - completedNodeCount
+        - totalNodeCount
+        - progressPercent
+        - hasOpenTodo
+        - updatedAt
+    WorkbenchNodeRunRow:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        nodeId:
+          type: string
+        nodeType:
+          type: string
+        name:
+          type: string
+        state:
+          type: string
+        stateLabel:
+          type: string
+        inputs:
+          type: object
+          additionalProperties: true
+        outputs:
+          type: object
+          additionalProperties: true
+        config:
+          type: object
+          additionalProperties: true
+        sortOrder:
+          type: integer
+      required:
+        - id
+        - nodeId
+        - nodeType
+        - name
+        - state
+        - stateLabel
+        - inputs
+        - outputs
+        - config
+        - sortOrder
+    WorkbenchRunEventRow:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        eventType:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        nodeId:
+          type: string
+          nullable: true
+        eventTime:
+          type: string
+          format: date-time
+      required:
+        - id
+        - eventType
+        - title
+        - description
+        - eventTime
+    WorkbenchRunDetail:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        workflowId:
+          type: string
+          format: uuid
+        workflowName:
+          type: string
+        workflowVersionNumber:
+          type: integer
+        state:
+          type: string
+        stateLabel:
+          type: string
+        progressPercent:
+          type: integer
+        currentNodeKey:
+          type: string
+          nullable: true
+        currentNodeName:
+          type: string
+          nullable: true
+        currentNodeType:
+          type: string
+          nullable: true
+        ownerName:
+          type: string
+        startedAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkbenchNodeRunRow"
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkbenchRunEventRow"
+        openTodo:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/WorkbenchPendingTodoRow"
+      required:
+        - id
+        - title
+        - workflowId
+        - workflowName
+        - workflowVersionNumber
+        - state
+        - stateLabel
+        - progressPercent
+        - ownerName
+        - startedAt
+        - updatedAt
+        - nodes
+        - events
+    WorkbenchTaskRunPageResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkbenchTaskRunRow"
         page:
           type: integer
         size:

@@ -53,6 +53,7 @@ class WorkbenchServiceTest {
     private final ResourceGrantRepository resourceGrantRepository = mock(ResourceGrantRepository.class);
     private final UserMembershipRepository userMembershipRepository = mock(UserMembershipRepository.class);
     private final UserMembershipRoleRepository userMembershipRoleRepository = mock(UserMembershipRoleRepository.class);
+    private final WorkbenchRuntimeService workbenchRuntimeService = mock(WorkbenchRuntimeService.class);
 
     @Test
     void shouldReturnSummaryWithRealStatistics() {
@@ -65,23 +66,27 @@ class WorkbenchServiceTest {
         when(tenantRepository.findByIdAndStatus(TENANT_ID, "active"))
             .thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", NOW)));
         when(workflowDefinitionRepository.countLaunchableByTenantId(TENANT_ID)).thenReturn(7L);
-        when(workflowDefinitionRepository.countVisibleLaunchableByTenantId(TENANT_ID, USER_ID)).thenReturn(4L);
         when(tenantAssetCapabilityRepository.countByTenantIdAndCreatedBy(TENANT_ID, USER_ID)).thenReturn(3L);
         when(tenantCapabilityGrantRepository.findByTenantIdOrderByCreatedAtDesc(TENANT_ID)).thenReturn(List.of(tenantGrant));
         when(systemCapabilityRepository.findAllById(any())).thenReturn(List.of(capability));
+        when(workbenchRuntimeService.countVisibleOpenTodos(TENANT_ID, tenantAdminPrincipal())).thenReturn(2L);
+        when(workbenchRuntimeService.countVisibleRunningRuns(TENANT_ID, tenantAdminPrincipal())).thenReturn(3L);
+        when(workbenchRuntimeService.listPendingTodos(TENANT_ID, tenantAdminPrincipal(), 5)).thenReturn(List.of());
+        when(workbenchRuntimeService.listRecentRuns(TENANT_ID, tenantAdminPrincipal(), 6)).thenReturn(List.of());
 
         WorkbenchApi.WorkbenchSummary summary = service.getSummary(TENANT_ID, tenantAdminPrincipal());
 
+        assertThat(summary.metrics().pendingTodoTotal()).isEqualTo(2L);
+        assertThat(summary.metrics().runningRunTotal()).isEqualTo(3L);
         assertThat(summary.metrics().publishedWorkflowTotal()).isEqualTo(7L);
-        assertThat(summary.metrics().availableWorkflowTotal()).isEqualTo(4L);
+        assertThat(summary.metrics().availableWorkflowTotal()).isEqualTo(7L);
         assertThat(summary.metrics().myAssetTotal()).isEqualTo(3L);
         // 租户管理员可以看到全部租户能力池中处于 active 且属于资产能力类型的能力。
         assertThat(summary.metrics().openedCapabilityTotal()).isEqualTo(1L);
-        // 第一阶段运行态未上线，待办与运行记录恒为空。
         assertThat(summary.pendingTodos()).isEmpty();
         assertThat(summary.recentRuns()).isEmpty();
-        assertThat(summary.runtimeAvailable()).isFalse();
-        assertThat(summary.runtimeStatusLabel()).isEqualTo("运行态建设中");
+        assertThat(summary.runtimeAvailable()).isTrue();
+        assertThat(summary.runtimeStatusLabel()).isEqualTo("运行态已接入");
         assertThat(summary.generatedAt()).isEqualTo(NOW);
     }
 
@@ -172,6 +177,7 @@ class WorkbenchServiceTest {
             resourceGrantRepository,
             userMembershipRepository,
             userMembershipRoleRepository,
+            workbenchRuntimeService,
             Clock.fixed(NOW, ZoneOffset.UTC)
         );
     }

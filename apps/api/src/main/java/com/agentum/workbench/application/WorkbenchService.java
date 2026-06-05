@@ -52,7 +52,7 @@ import org.springframework.transaction.annotation.Transactional;
  * <ul>
  *   <li>概览指标：已发布工作流、能力资产数量等，全部来自真实数据库统计。</li>
  *   <li>可发起的已发布工作流：来自未收回的业务入口与最新发布版本，和设计态草稿状态解耦。</li>
- *   <li>我的待办 / 最近运行：运行态尚未上线，固定返回空列表并通过 {@code runtimeAvailable=false} 通知前端。</li>
+ *   <li>我的待办 / 最近运行：来自运行态表，作为业务工作台任务中心的摘要入口。</li>
  * </ul>
  *
  * <p>租户管理员属于租户内全量视图，业务用户只能看到通过租户管理“分配卡片”开放的能力；
@@ -88,6 +88,7 @@ public class WorkbenchService {
     private final ResourceGrantRepository resourceGrantRepository;
     private final UserMembershipRepository userMembershipRepository;
     private final UserMembershipRoleRepository userMembershipRoleRepository;
+    private final WorkbenchRuntimeService workbenchRuntimeService;
     private final Clock clock;
 
     public WorkbenchService(
@@ -101,6 +102,7 @@ public class WorkbenchService {
         ResourceGrantRepository resourceGrantRepository,
         UserMembershipRepository userMembershipRepository,
         UserMembershipRoleRepository userMembershipRoleRepository,
+        WorkbenchRuntimeService workbenchRuntimeService,
         Clock clock
     ) {
         this.tenantRepository = tenantRepository;
@@ -113,6 +115,7 @@ public class WorkbenchService {
         this.resourceGrantRepository = resourceGrantRepository;
         this.userMembershipRepository = userMembershipRepository;
         this.userMembershipRoleRepository = userMembershipRoleRepository;
+        this.workbenchRuntimeService = workbenchRuntimeService;
         this.clock = clock;
     }
 
@@ -127,17 +130,22 @@ public class WorkbenchService {
         long publishedWorkflowTotal = workflowDefinitionRepository.countLaunchableByTenantId(tenantId);
         long availableWorkflowTotal = principal == null
             ? 0
-            : workflowDefinitionRepository.countVisibleLaunchableByTenantId(tenantId, principal.userId());
+            : isTenantManager(principal)
+                ? publishedWorkflowTotal
+                : workflowDefinitionRepository.countVisibleLaunchableByTenantId(tenantId, principal.userId());
         long openedCapabilityTotal = countOpenedCapabilities(tenantId, principal);
         long myAssetTotal = principal == null
             ? 0
             : tenantAssetCapabilityRepository.countByTenantIdAndCreatedBy(tenantId, principal.userId());
 
-        // 运行态、待办、最近运行所依赖的 WorkflowRun / NodeRun / WaitingEvent 表尚未落地，
-        // 这里固定返回空集合并标记 runtimeAvailable=false，前端据此展示运行态建设中提示。
+        long pendingTodoTotal = principal == null ? 0L : workbenchRuntimeService.countVisibleOpenTodos(tenantId, principal);
+        long runningRunTotal = principal == null ? 0L : workbenchRuntimeService.countVisibleRunningRuns(tenantId, principal);
+        List<WorkbenchApi.PendingTodoRow> pendingTodos = principal == null ? List.of() : workbenchRuntimeService.listPendingTodos(tenantId, principal, 5);
+        List<WorkbenchApi.RecentRunRow> recentRuns = principal == null ? List.of() : workbenchRuntimeService.listRecentRuns(tenantId, principal, 6);
+
         WorkbenchApi.WorkbenchMetrics metrics = new WorkbenchApi.WorkbenchMetrics(
-            0L,
-            0L,
+            pendingTodoTotal,
+            runningRunTotal,
             publishedWorkflowTotal,
             availableWorkflowTotal,
             openedCapabilityTotal,
@@ -156,10 +164,10 @@ public class WorkbenchService {
 
         return new WorkbenchApi.WorkbenchSummary(
             metrics,
-            List.of(),
-            List.of(),
-            false,
-            "运行态建设中",
+            pendingTodos,
+            recentRuns,
+            true,
+            "运行态已接入",
             clock.instant()
         );
     }
@@ -225,7 +233,10 @@ public class WorkbenchService {
             latestVersion == null ? 0 : latestVersion.getVersionNumber(),
             latestVersion == null ? definition.getUpdatedAt() : latestVersion.getPublishedAt(),
             definition.getCreatedBy(),
-            owner == null ? "未知用户" : owner.getDisplayName()
+            owner == null ? "未知用户" : owner.getDisplayName(),
+            "open",
+            true,
+            ""
         );
     }
 

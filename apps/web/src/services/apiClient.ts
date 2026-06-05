@@ -65,7 +65,12 @@ import type {
   UpdateWorkflowDraftRequest,
   WorkflowVariableDraft,
 } from "../types/workflow-contract";
-import type { WorkbenchAvailableWorkflowPage, WorkbenchSummary } from "../types/workbench";
+import type {
+  WorkbenchAvailableWorkflowPage,
+  WorkbenchRunDetail,
+  WorkbenchSummary,
+  WorkbenchTaskRunPage,
+} from "../types/workbench";
 
 type ApiEnvelope<T> = {
   success: boolean;
@@ -322,10 +327,10 @@ export const assetApi = {
 };
 
 export const workbenchApi = {
-  // 业务工作台概览：返回真实统计、运行态状态标识与（运行态上线前为空的）待办、运行记录。
+  // 业务工作台概览：返回真实统计、待办和最近任务运行。
   summary: (tenantId: string, token: string) =>
     apiRequest<WorkbenchSummary>(`/api/tenants/${tenantId}/workbench/summary`, { token }),
-  // 可发起的已发布工作流：按“有冻结版本且入口未收回”展示，与设计态草稿状态解耦。
+  // 已发布工作流：按“有冻结版本且入口未收回”展示全部流程，并由 canLaunch 区分当前账号能否发起。
   listAvailableWorkflows: (
     tenantId: string,
     token: string,
@@ -340,6 +345,32 @@ export const workbenchApi = {
       { token },
     );
   },
+  createRun: (tenantId: string, token: string, workflowId: string, title: string) =>
+    apiRequest<WorkbenchRunDetail>(`/api/tenants/${tenantId}/workbench/runs`, {
+      method: "POST",
+      token,
+      body: { workflowId, title },
+    }),
+  listRuns: (
+    tenantId: string,
+    token: string,
+    keyword = "",
+    state = "all",
+    page = 1,
+    size = 10,
+    sort = "updatedAt,desc",
+  ) => {
+    const params = new URLSearchParams({ keyword, state, page: String(page), size: String(size), sort });
+    return apiRequest<WorkbenchTaskRunPage>(`/api/tenants/${tenantId}/workbench/runs?${params.toString()}`, { token });
+  },
+  getRun: (tenantId: string, token: string, runId: string) =>
+    apiRequest<WorkbenchRunDetail>(`/api/tenants/${tenantId}/workbench/runs/${runId}`, { token }),
+  completeTodo: (tenantId: string, token: string, todoId: string, comment: string, payload: Record<string, unknown> = {}) =>
+    apiRequest<WorkbenchRunDetail>(`/api/tenants/${tenantId}/workbench/todos/${todoId}/complete`, {
+      method: "POST",
+      token,
+      body: { action: "complete", comment, payload },
+    }),
 };
 
 export const workflowApi = {

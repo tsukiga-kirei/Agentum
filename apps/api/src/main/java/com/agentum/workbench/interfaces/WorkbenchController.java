@@ -5,9 +5,11 @@ import com.agentum.shared.api.ApiResponse;
 import com.agentum.shared.api.RequestIds;
 import com.agentum.shared.pagination.PageResponse;
 import com.agentum.workbench.application.WorkbenchAccess;
+import com.agentum.workbench.application.WorkbenchRuntimeService;
 import com.agentum.workbench.application.WorkbenchService;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.UUID;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -29,10 +31,16 @@ public class WorkbenchController {
 
     private final WorkbenchAccess workbenchAccess;
     private final WorkbenchService workbenchService;
+    private final WorkbenchRuntimeService workbenchRuntimeService;
 
-    public WorkbenchController(WorkbenchAccess workbenchAccess, WorkbenchService workbenchService) {
+    public WorkbenchController(
+        WorkbenchAccess workbenchAccess,
+        WorkbenchService workbenchService,
+        WorkbenchRuntimeService workbenchRuntimeService
+    ) {
         this.workbenchAccess = workbenchAccess;
         this.workbenchService = workbenchService;
+        this.workbenchRuntimeService = workbenchRuntimeService;
     }
 
     @GetMapping("/summary")
@@ -57,8 +65,60 @@ public class WorkbenchController {
     ) {
         workbenchAccess.assertCanAccessWorkbench(principal, tenantId);
         return ApiResponse.success(
-            workbenchService.listAvailableWorkflows(tenantId, principal, keyword, page, size, sort),
+            workbenchRuntimeService.listLaunchableWorkflows(tenantId, principal, keyword, page, size, sort),
             RequestIds.current(request)
         );
+    }
+
+    @PostMapping("/runs")
+    public ApiResponse<WorkbenchApi.RunDetail> createRun(
+        @PathVariable UUID tenantId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @org.springframework.web.bind.annotation.RequestBody WorkbenchApi.CreateRunRequest body,
+        HttpServletRequest request
+    ) {
+        workbenchAccess.assertCanAccessWorkbench(principal, tenantId);
+        return ApiResponse.success(workbenchRuntimeService.createRun(tenantId, principal, body), RequestIds.current(request));
+    }
+
+    @GetMapping("/runs")
+    public ApiResponse<PageResponse<WorkbenchApi.TaskRunRow>> listRuns(
+        @PathVariable UUID tenantId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @RequestParam(defaultValue = "") String keyword,
+        @RequestParam(defaultValue = "all") String state,
+        @RequestParam(defaultValue = "1") int page,
+        @RequestParam(defaultValue = "10") int size,
+        @RequestParam(defaultValue = "updatedAt,desc") String sort,
+        HttpServletRequest request
+    ) {
+        workbenchAccess.assertCanAccessWorkbench(principal, tenantId);
+        return ApiResponse.success(
+            workbenchRuntimeService.listRuns(tenantId, principal, keyword, state, page, size, sort),
+            RequestIds.current(request)
+        );
+    }
+
+    @GetMapping("/runs/{runId}")
+    public ApiResponse<WorkbenchApi.RunDetail> getRun(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID runId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        workbenchAccess.assertCanAccessWorkbench(principal, tenantId);
+        return ApiResponse.success(workbenchRuntimeService.getRunDetail(tenantId, principal, runId), RequestIds.current(request));
+    }
+
+    @PostMapping("/todos/{todoId}/complete")
+    public ApiResponse<WorkbenchApi.RunDetail> completeTodo(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID todoId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @org.springframework.web.bind.annotation.RequestBody WorkbenchApi.CompleteTodoRequest body,
+        HttpServletRequest request
+    ) {
+        workbenchAccess.assertCanAccessWorkbench(principal, tenantId);
+        return ApiResponse.success(workbenchRuntimeService.completeTodo(tenantId, principal, todoId, body), RequestIds.current(request));
     }
 }

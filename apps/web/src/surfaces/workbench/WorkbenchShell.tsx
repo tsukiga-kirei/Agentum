@@ -47,7 +47,9 @@ import type {
   WorkbenchAvailableWorkflowRow,
   WorkbenchPendingTodoRow,
   WorkbenchRecentRunRow,
+  WorkbenchRunDetail,
   WorkbenchSummary,
+  WorkbenchTaskRunRow,
 } from "../../types/workbench";
 
 type SurfaceKey = "workbench" | "designer" | "assets" | "tenant" | "system";
@@ -155,9 +157,6 @@ type RuntimePreview = {
   deliveries: Array<{ name: string; status: string; meta: string }>;
 };
 
-// 业务工作台运行态状态：第一阶段后端 runtimeAvailable 固定为 false，
-// 前端按此标记展示“运行态建设中”空态，等待运行实例 API 上线。
-
 const workbenchTabs: WorkbenchTabMeta[] = [
   { key: "overview", label: "总览", icon: LayoutDashboard, description: "查看今日待办、可创建流程和运行态概况" },
   { key: "create", label: "创建任务", icon: PlayCircle, description: "浏览全部开放智能体流程，有权限的流程可创建任务" },
@@ -171,7 +170,7 @@ const runWorkspaceTabs: Array<{ key: RunWorkspaceTab; label: string; icon: Lucid
   { key: "deliveries", label: "交付物", icon: Send },
 ];
 
-// 运行状态对应的颜色标记（保留供后续运行态接入后直接复用）
+// 运行状态对应的颜色标记，后端返回中文 stateLabel，前端只负责稳定映射。
 const stateColors: Record<string, string> = {
   "运行中": "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300",
   "已暂停": "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
@@ -182,6 +181,7 @@ const stateColors: Record<string, string> = {
 };
 
 const AVAILABLE_PAGE_SIZE = 12;
+const TASK_RUN_PAGE_SIZE = 10;
 
 export function WorkbenchShell() {
   // 菜单来自后端（通过 authStore.menus），不再前端硬编码 visibleFor。
@@ -237,8 +237,14 @@ export function WorkbenchShell() {
   const [availableKeyword, setAvailableKeyword] = useState("");
   const [availableKeywordInput, setAvailableKeywordInput] = useState("");
   const [availableError, setAvailableError] = useState<string | null>(null);
-  const [createdTaskWorkflow, setCreatedTaskWorkflow] = useState<WorkbenchAvailableWorkflowRow | null>(null);
-  const [openedTaskWorkflow, setOpenedTaskWorkflow] = useState<WorkbenchAvailableWorkflowRow | null>(null);
+  const [taskRuns, setTaskRuns] = useState<WorkbenchTaskRunRow[]>([]);
+  const [taskRunsTotal, setTaskRunsTotal] = useState(0);
+  const [taskRunsPage, setTaskRunsPage] = useState(1);
+  const [taskRunsLoading, setTaskRunsLoading] = useState(false);
+  const [taskRunsError, setTaskRunsError] = useState<string | null>(null);
+  const [openedRunDetail, setOpenedRunDetail] = useState<WorkbenchRunDetail | null>(null);
+  const [openedRunLoading, setOpenedRunLoading] = useState(false);
+  const [creatingWorkflowId, setCreatingWorkflowId] = useState<string | null>(null);
   const [workflowDrawer, setWorkflowDrawer] = useState<WorkbenchAvailableWorkflowRow | null>(null);
   const activeWorkbenchTabMeta = workbenchTabs.find((tab) => tab.key === activeWorkbenchTab) ?? workbenchTabs[0];
   const workbenchSegmentedOptions = workbenchTabs.map((tab) => {
@@ -310,6 +316,33 @@ export function WorkbenchShell() {
     }
   }, [tenantId, token]);
 
+  const loadTaskRuns = useCallback(async (page: number) => {
+    if (!tenantId || !token) {
+      setTaskRuns([]);
+      setTaskRunsTotal(0);
+      return;
+    }
+
+    setTaskRunsLoading(true);
+    setTaskRunsError(null);
+    try {
+      const data = await workbenchApi.listRuns(tenantId, token, "", "all", page, TASK_RUN_PAGE_SIZE);
+      setTaskRuns(data.items);
+      setTaskRunsTotal(data.total);
+      setTaskRunsPage(data.page);
+    } catch (error) {
+      const reason = error instanceof AgentumApiError ? error.message : "任务中心加载失败";
+      console.warn("[workbench] 任务中心加载失败", {
+        code: error instanceof AgentumApiError ? error.code : "unknown",
+      });
+      setTaskRunsError(reason);
+      setTaskRuns([]);
+      setTaskRunsTotal(0);
+    } finally {
+      setTaskRunsLoading(false);
+    }
+  }, [tenantId, token]);
+
   useEffect(() => {
     if (activeSurface !== "workbench") {
       return;
@@ -324,6 +357,13 @@ export function WorkbenchShell() {
     void loadAvailableWorkflows(availablePage, availableKeyword);
   }, [activeSurface, availableKeyword, availablePage, loadAvailableWorkflows]);
 
+  useEffect(() => {
+    if (activeSurface !== "workbench") {
+      return;
+    }
+    void loadTaskRuns(taskRunsPage);
+  }, [activeSurface, taskRunsPage, loadTaskRuns]);
+
   function handleToggleSidebar() {
     if (sidebarTransitionTimer.current !== null) {
       window.clearTimeout(sidebarTransitionTimer.current);
@@ -336,21 +376,66 @@ export function WorkbenchShell() {
     }, 320);
   }
 
-  function handleLaunchTask(workflow: WorkbenchAvailableWorkflowRow) {
-    // 第一阶段尚未接入运行实例创建 API，这里先直接进入任务处理页。
-    // 后续替换为 POST 创建 WorkflowRun 成功后，按 runId 打开真实任务详情；只有保存/暂停后才刷新待办。
-    setOpenedTaskWorkflow(null);
-    window.setTimeout(() => setOpenedTaskWorkflow(workflow), 0);
-    setWorkflowDrawer(null);
-    messageApi.info(`已进入「${workflow.name}」任务处理页，保存后会出现在待办中`);
-  }
-
-  function handleSaveTaskToTodo() {
-    if (!openedTaskWorkflow) {
+  async function handleLaunchTask(workflow: WorkbenchAvailableWorkflowRow) {
+    if (!tenantId || !token) {
       return;
     }
-    setCreatedTaskWorkflow(openedTaskWorkflow);
-    messageApi.info(`「${openedTaskWorkflow.name}」已保存到待办预览，真实保存将写入 WaitingEvent / WorkflowRun`);
+    if (!workflow.canLaunch) {
+      messageApi.warning(workflow.launchBlockedReason || "当前账号没有发起该流程的权限");
+      return;
+    }
+
+    setCreatingWorkflowId(workflow.id);
+    try {
+      const detail = await workbenchApi.createRun(tenantId, token, workflow.id, `${workflow.name}任务`);
+      setOpenedRunDetail(detail);
+      setWorkflowDrawer(null);
+      setActiveWorkbenchTab("tasks");
+      messageApi.success(`已创建「${detail.title}」`);
+      void loadSummary();
+      void loadTaskRuns(1);
+    } catch (error) {
+      const reason = error instanceof AgentumApiError ? error.message : "任务创建失败";
+      console.warn("[workbench] 任务创建失败", { code: error instanceof AgentumApiError ? error.code : "unknown" });
+      messageApi.error(reason);
+    } finally {
+      setCreatingWorkflowId(null);
+    }
+  }
+
+  async function handleOpenRun(runId: string) {
+    if (!tenantId || !token) {
+      return;
+    }
+    setOpenedRunLoading(true);
+    try {
+      const detail = await workbenchApi.getRun(tenantId, token, runId);
+      setOpenedRunDetail(detail);
+    } catch (error) {
+      const reason = error instanceof AgentumApiError ? error.message : "任务详情加载失败";
+      console.warn("[workbench] 任务详情加载失败", { code: error instanceof AgentumApiError ? error.code : "unknown" });
+      messageApi.error(reason);
+    } finally {
+      setOpenedRunLoading(false);
+    }
+  }
+
+  async function handleCompleteOpenTodo(comment: string) {
+    if (!tenantId || !token || !openedRunDetail?.openTodo) {
+      messageApi.info("当前没有需要处理的待办");
+      return;
+    }
+    try {
+      const detail = await workbenchApi.completeTodo(tenantId, token, openedRunDetail.openTodo.id, comment);
+      setOpenedRunDetail(detail);
+      messageApi.success("待办已提交，流程已继续推进");
+      void loadSummary();
+      void loadTaskRuns(taskRunsPage);
+    } catch (error) {
+      const reason = error instanceof AgentumApiError ? error.message : "待办提交失败";
+      console.warn("[workbench] 待办提交失败", { code: error instanceof AgentumApiError ? error.code : "unknown" });
+      messageApi.error(reason);
+    }
   }
 
   function handleSubmitKeyword() {
@@ -359,7 +444,7 @@ export function WorkbenchShell() {
     setAvailablePage(1);
   }
 
-  // 概览指标卡片基于真实 summary.metrics 渲染；运行态相关指标在 runtimeAvailable=false 时显示“—”。
+  // 概览指标卡片基于真实 summary.metrics 渲染；运行态状态异常时保留明确兜底。
   const metricCards: MetricCard[] = useMemo(() => {
     const metrics = summary?.metrics;
     const runtimeReady = summary?.runtimeAvailable ?? false;
@@ -367,14 +452,14 @@ export function WorkbenchShell() {
       {
         label: "我的待办",
         value: runtimeReady ? String(metrics?.pendingTodoTotal ?? 0) : "—",
-        hint: runtimeReady ? "需要我处理的暂停点" : "运行态建设中",
+        hint: runtimeReady ? "需要我处理的暂停点" : "运行态状态待确认",
         tone: "primary",
         icon: UserRoundCheck,
       },
       {
         label: "进行中任务",
         value: runtimeReady ? String(metrics?.runningRunTotal ?? 0) : "—",
-        hint: runtimeReady ? "我可以查看的运行实例" : "运行态建设中",
+        hint: runtimeReady ? "我可以查看的运行实例" : "运行态状态待确认",
         tone: "info",
         icon: Activity,
       },
@@ -398,14 +483,10 @@ export function WorkbenchShell() {
   const pendingTodos = summary?.pendingTodos ?? [];
   const recentRuns = summary?.recentRuns ?? [];
   const runtimeAvailable = summary?.runtimeAvailable ?? false;
-  const runtimeStatusLabel = summary?.runtimeStatusLabel ?? "运行态建设中";
-  const createdTaskPreview = useMemo(
-    () => createdTaskWorkflow ? buildRuntimePreview(createdTaskWorkflow, user?.displayName ?? "当前用户") : null,
-    [createdTaskWorkflow, user?.displayName],
-  );
-  const openedTaskPreview = useMemo(
-    () => openedTaskWorkflow ? buildRuntimePreview(openedTaskWorkflow, user?.displayName ?? "当前用户") : null,
-    [openedTaskWorkflow, user?.displayName],
+  const runtimeStatusLabel = summary?.runtimeStatusLabel ?? "正在加载运行态";
+  const openedRunPreview = useMemo(
+    () => openedRunDetail ? buildRuntimePreviewFromRun(openedRunDetail) : null,
+    [openedRunDetail],
   );
 
   return (
@@ -530,7 +611,7 @@ export function WorkbenchShell() {
         </aside>
 
         {/* ===== 主内容区 ===== */}
-        <section className={`min-w-0 flex-1${activeSurface === "workbench" && tenantId && openedTaskWorkflow ? " overflow-hidden" : ""}`}>
+        <section className={`min-w-0 flex-1${activeSurface === "workbench" && tenantId && openedRunDetail ? " overflow-hidden" : ""}`}>
           {activeSurface === null ? (
             <div className="min-h-screen bg-[var(--color-bg-page)] pb-10">
               <div className="mx-auto max-w-[1400px] px-5 lg:px-6">
@@ -557,22 +638,23 @@ export function WorkbenchShell() {
 
           {/* 业务工作台内容 */}
           {activeSurface === "workbench" ? (
-            tenantId && openedTaskWorkflow && openedTaskPreview ? (
+            tenantId && openedRunDetail && openedRunPreview ? (
               <div className="workbench-task-run-host">
                 <div className="workbench-immersive-topbar">
                   <WorkbenchGlobalActions />
                 </div>
                 <div className="workbench-task-run-host-inner">
                   <WorkbenchTaskRunDetail
-                    workflow={openedTaskWorkflow}
-                    preview={openedTaskPreview}
+                    run={openedRunDetail}
+                    preview={openedRunPreview}
                     runtimeStatusLabel={runtimeStatusLabel}
                     onBack={() => {
-                      setOpenedTaskWorkflow(null);
+                      setOpenedRunDetail(null);
                       setActiveWorkbenchTab("tasks");
                     }}
-                    onSaveToTodo={handleSaveTaskToTodo}
-                    onAction={(label) => messageApi.info(`${label} 将在运行态 API 上线后写入真实任务`)}
+                    onSaveToTodo={() => messageApi.info("任务已经保存为后端运行实例，可从任务中心继续处理")}
+                    onCompleteTodo={handleCompleteOpenTodo}
+                    onAction={(label) => messageApi.info(`${label} 的后端动作将在运行状态机后续版本接入`)}
                   />
                 </div>
               </div>
@@ -655,14 +737,14 @@ export function WorkbenchShell() {
                                 icon={PauseCircle}
                                 title="暂停续办"
                                 description="从正在进行和已暂停任务中恢复上下文，继续推进下一步。"
-                                meta={runtimeAvailable ? `${recentRuns.filter((record) => record.state !== "已完成").length} 个可继续任务` : runtimeStatusLabel}
+                                meta={runtimeAvailable ? `${recentRuns.filter((record) => record.state !== "completed").length} 个可继续任务` : runtimeStatusLabel}
                                 onClick={() => setActiveWorkbenchTab("tasks")}
                               />
                               <WorkbenchFeatureCard
                                 icon={Archive}
                                 title="历史完成"
                                 description="查看已完成任务与交付结果，后续可进入运行详情追溯过程。"
-                                meta={runtimeAvailable ? `${recentRuns.filter((record) => record.state === "已完成").length} 个完成任务` : runtimeStatusLabel}
+                                meta={runtimeAvailable ? `${recentRuns.filter((record) => record.state === "completed").length} 个完成任务` : runtimeStatusLabel}
                                 onClick={() => setActiveWorkbenchTab("tasks")}
                               />
                             </div>
@@ -681,7 +763,7 @@ export function WorkbenchShell() {
                                 </div>
                               )
                             ) : (
-                              <RuntimePlaceholder label={runtimeStatusLabel} hint="运行实例、节点运行和暂停事件将随运行态 API 一并上线。" />
+                              <RuntimePlaceholder label={runtimeStatusLabel} hint="请稍后刷新，或检查当前账号的业务工作台访问权限。" />
                             )}
                           </aside>
                         </section>
@@ -757,43 +839,60 @@ export function WorkbenchShell() {
                       <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]" aria-label="任务中心">
                         <section className="sys-preview-card">
                           <div className="sys-preview-card-title"><UserRoundCheck size={16} /> 我的待办</div>
-                          {createdTaskWorkflow && createdTaskPreview ? (
-                            <CreatedTaskTodoItem
-                              workflow={createdTaskWorkflow}
-                              preview={createdTaskPreview}
-                              onOpen={() => setOpenedTaskWorkflow(createdTaskWorkflow)}
-                            />
-                          ) : null}
                           {runtimeAvailable ? (
                             pendingTodos.length === 0 ? (
-                              createdTaskWorkflow ? null : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无需要我处理的待办" />
+                              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无需要我处理的待办" />
                             ) : (
                               <div className="space-y-2">
                                 {pendingTodos.map((todo) => (
-                                  <PendingTodoListItem key={todo.id} todo={todo} />
-                                ))}
-                              </div>
-                            )
-                          ) : !createdTaskWorkflow ? (
-                            <RuntimePlaceholder label={runtimeStatusLabel} hint="人工审核、用户输入、交付确认等待办来源都依赖运行态接入。" />
-                          ) : null}
-                        </section>
-
-                        <section className="sys-preview-card">
-                          <div className="sys-preview-card-title"><History size={16} /> 任务记录</div>
-                          {runtimeAvailable ? (
-                            recentRuns.length === 0 ? (
-                              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无任务记录" />
-                            ) : (
-                              <div className="space-y-2">
-                                {recentRuns.map((record) => (
-                                  <RecentRunListItem key={record.id} record={record} actionLabel={record.state === "已完成" ? "查看" : "继续"} />
+                                  <PendingTodoListItem key={todo.id} todo={todo} onOpen={() => void handleOpenRun(todo.runId)} />
                                 ))}
                               </div>
                             )
                           ) : (
-                            <RuntimePlaceholder label={runtimeStatusLabel} hint="任务运行实例的取消、重试、补偿会在运行监控模块单独承接。" />
+                            <RuntimePlaceholder label={runtimeStatusLabel} hint="请稍后刷新，或检查当前账号是否存在可处理的运行暂停点。" />
                           )}
+                        </section>
+
+                        <section className="sys-preview-card">
+                          <div className="sys-preview-card-title"><History size={16} /> 任务记录</div>
+                          {taskRunsError ? (
+                            <RuntimePlaceholder label="任务中心加载失败" hint={taskRunsError} />
+                          ) : taskRunsLoading || openedRunLoading ? (
+                            <div className="workflow-definition-empty-state">
+                              <Loader2 className="h-8 w-8 animate-spin" aria-hidden="true" />
+                              <p>正在加载任务记录</p>
+                            </div>
+                          ) : runtimeAvailable ? (
+                            taskRuns.length === 0 ? (
+                              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无任务记录" />
+                            ) : (
+                              <div className="space-y-2">
+                                {taskRuns.map((record) => (
+                                  <TaskRunListItem
+                                    key={record.id}
+                                    record={record}
+                                    actionLabel={record.state === "completed" ? "查看" : "继续"}
+                                    onOpen={() => void handleOpenRun(record.id)}
+                                  />
+                                ))}
+                              </div>
+                            )
+                          ) : (
+                            <RuntimePlaceholder label={runtimeStatusLabel} hint="请稍后刷新，或检查当前账号是否有可查看的任务运行记录。" />
+                          )}
+                          {taskRunsTotal > TASK_RUN_PAGE_SIZE ? (
+                            <div className="agent-admin-pagination-wrap mt-4">
+                              <Pagination
+                                className="agent-admin-pagination"
+                                current={taskRunsPage}
+                                total={taskRunsTotal}
+                                pageSize={TASK_RUN_PAGE_SIZE}
+                                showSizeChanger={false}
+                                onChange={(page) => setTaskRunsPage(page)}
+                              />
+                            </div>
+                          ) : null}
                         </section>
                       </section>
                     ) : null}
@@ -805,6 +904,7 @@ export function WorkbenchShell() {
                   rootClassName={isDarkMode ? "agent-admin-drawer agent-admin-drawer--dark" : "agent-admin-drawer"}
                   onClose={() => setWorkflowDrawer(null)}
                   onLaunch={handleLaunchTask}
+                  launching={creatingWorkflowId === workflowDrawer?.id}
                 />
             </SurfacePageLayout>
             )
@@ -887,6 +987,13 @@ function WorkbenchFeatureCard({
 function WorkflowLaunchCard({ workflow, onOpen }: { workflow: WorkbenchAvailableWorkflowRow; onOpen: () => void }) {
   const publishedAt = workflow.publishedAt ? new Date(workflow.publishedAt) : null;
   const publishedLabel = publishedAt ? publishedAt.toLocaleString("zh-CN", { hour12: false }) : "—";
+  const visibilityLabel = workflow.canLaunch
+    ? workflow.visibility === "owner"
+      ? "我创建的流程"
+      : workflow.visibility === "manager"
+        ? "管理视角可发起"
+        : "已开放"
+    : "无发起权限";
   return (
     <button type="button" onClick={onOpen} className="workflow-launch-card">
       <span className="workflow-feature-card-head">
@@ -904,9 +1011,12 @@ function WorkflowLaunchCard({ workflow, onOpen }: { workflow: WorkbenchAvailable
       <span className="workflow-launch-card-tags">
         <span className="workflow-launch-card-tag workflow-launch-card-tag--owner">发布人：{workflow.ownerName}</span>
         <span className="workflow-launch-card-tag workflow-launch-card-tag--time">发布于 {publishedLabel}</span>
+        <span className={`workflow-launch-card-tag ${workflow.canLaunch ? "workflow-launch-card-tag--owner" : "workflow-launch-card-tag--time"}`}>
+          {visibilityLabel}
+        </span>
       </span>
       <span className="workflow-launch-card-meta">
-        查看详情
+        {workflow.canLaunch ? "查看并发起" : "查看权限状态"}
         <ArrowRight size={14} aria-hidden="true" />
       </span>
     </button>
@@ -918,11 +1028,13 @@ function WorkflowLaunchDrawer({
   rootClassName,
   onClose,
   onLaunch,
+  launching,
 }: {
   workflow: WorkbenchAvailableWorkflowRow | null;
   rootClassName: string;
   onClose: () => void;
   onLaunch: (workflow: WorkbenchAvailableWorkflowRow) => void;
+  launching: boolean;
 }) {
   if (!workflow) {
     return null;
@@ -930,7 +1042,6 @@ function WorkflowLaunchDrawer({
 
   const publishedAt = workflow.publishedAt ? new Date(workflow.publishedAt) : null;
   const publishedLabel = publishedAt ? publishedAt.toLocaleString("zh-CN", { hour12: false }) : "—";
-  const preview = buildRuntimePreview(workflow, workflow.ownerName);
 
   return (
     <Drawer
@@ -957,18 +1068,8 @@ function WorkflowLaunchDrawer({
         </section>
 
         <section className="workbench-launch-drawer-section">
-          <h3>发起后将进入的处理链路</h3>
-          <div className="workbench-launch-drawer-steps">
-            {preview.steps.slice(0, 5).map((step, index) => (
-              <div key={step.title}>
-                <span>{index + 1}</span>
-                <div>
-                  <strong>{step.title}</strong>
-                  <small>{step.subtitle}</small>
-                </div>
-              </div>
-            ))}
-          </div>
+          <h3>权限状态</h3>
+          <p>{workflow.canLaunch ? "当前账号可以基于该发布版本创建任务，创建后会生成运行实例、节点链路和首个待办。" : workflow.launchBlockedReason || "当前账号没有该流程的读取或发起权限。"}</p>
         </section>
 
         <section className="workbench-launch-drawer-section">
@@ -986,9 +1087,9 @@ function WorkflowLaunchDrawer({
           <button type="button" className="sys-btn sys-btn--default" onClick={onClose}>
             取消
           </button>
-          <button type="button" className="sys-btn sys-btn--primary" onClick={() => onLaunch(workflow)}>
-            <PlayCircle size={16} aria-hidden="true" />
-            发起任务
+          <button type="button" className="sys-btn sys-btn--primary" onClick={() => onLaunch(workflow)} disabled={!workflow.canLaunch || launching}>
+            {launching ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <PlayCircle size={16} aria-hidden="true" />}
+            {workflow.canLaunch ? "发起任务" : "无权限发起"}
           </button>
         </div>
       </div>
@@ -996,159 +1097,148 @@ function WorkflowLaunchDrawer({
   );
 }
 
-function buildRuntimePreview(workflow: WorkbenchAvailableWorkflowRow, ownerName: string): RuntimePreview {
+function buildRuntimePreviewFromRun(run: WorkbenchRunDetail): RuntimePreview {
+  const activeNode = run.currentNodeName ?? run.nodes.find((node) => node.state === "waiting" || node.state === "running")?.name ?? "已结束";
+  const steps = run.nodes.map((node): RuntimePreviewStep => {
+    const state = mapNodeState(node.state);
+    return {
+      title: node.name,
+      subtitle: node.stateLabel,
+      state,
+      kind: mapNodeKind(node.nodeType),
+      description: nodeDescription(node.nodeType, node.config),
+      inputs: objectToFields(node.inputs),
+      outputs: objectToFields(node.outputs),
+      completedAt: state === "done" ? formatTime(run.updatedAt) : undefined,
+      chatMessages: nodeMessages(node),
+      capabilities: nodeCapabilities(node),
+      allowsFollowUp: node.nodeType === "agent" || node.nodeType === "parallel_group",
+      allowsRegenerate: node.nodeType === "agent" || node.nodeType === "parallel_group",
+      allowsInterrupt: node.state === "running",
+    };
+  });
+
   return {
-    runId: "RUN-20260601-018",
-    statusLabel: "运行中",
-    activeNode: "外部数据核验",
-    progress: 58,
-    startedAt: "2026-06-01 09:42",
-    ownerName,
-    workflowVersion: workflow.latestVersionNumber,
-    steps: [
-      {
-        title: "创建任务",
-        subtitle: "流程版本已冻结",
-        state: "done",
-        kind: "launch",
-        description: "发起人确认流程版本、任务名称和处理范围，系统生成不可变运行快照。",
-        outputs: [
-          { label: "运行编号", value: "RUN-20260601-018" },
-          { label: "流程版本", value: `v${workflow.latestVersionNumber}` },
-        ],
-        completedAt: "09:42",
-      },
-      {
-        title: "补充资料",
-        subtitle: "授信主体与附件已提交",
-        state: "done",
-        kind: "input",
-        description: "业务人员补充授信主体、报告用途和附件材料，后续节点只能读取快照数据。",
-        inputs: [
-          { label: "授信主体", value: "云程科技有限公司" },
-          { label: "报告用途", value: "年度授信复核" },
-          { label: "补充材料", value: "征信授权书、近三年财务报表" },
-        ],
-        outputs: [
-          { label: "主体信息快照", value: "已固化" },
-          { label: "附件校验", value: "3 份材料可读" },
-        ],
-        completedAt: "09:47",
-      },
-      {
-        title: "智能体追问",
-        subtitle: "缺失口径已确认",
-        state: "done",
-        kind: "agent",
-        description: "智能体发现报告口径缺失后向处理人追问，并将确认结果写入后续上下文。",
-        inputs: [{ label: "追问", value: "本次报告用于新增授信还是年度复核？" }],
-        outputs: [
-          { label: "确认口径", value: "年度授信复核" },
-          { label: "补充担保资料", value: "无需追加" },
-        ],
-        completedAt: "09:51",
-        allowsFollowUp: true,
-        allowsRegenerate: true,
-        chatMessages: [
-          { id: "agent-q1", role: "assistant", author: "授信分析智能体", content: "检测到报告用途未明确，请确认本次报告用于新增授信还是年度复核？" },
-          { id: "agent-q2", role: "user", author: "处理人", content: "用于年度授信复核，无需追加担保人资料。" },
-          { id: "agent-q3", role: "assistant", author: "授信分析智能体", content: "已确认口径为「年度授信复核」，并将结论写入后续节点上下文。" },
-        ],
-        capabilities: [
-          { id: "skill-followup", name: "口径追问 Skill", kind: "skill", status: "done", statusLabel: "已完成", summary: "识别缺失字段并生成追问" },
-        ],
-      },
-      {
-        title: "外部数据核验",
-        subtitle: "多智能体并行执行中",
-        state: "running",
-        kind: "multiAgent",
-        description: "当前节点由多个支撑智能体并行执行，处理人可以查看实时回复、审批 MCP 调用、追问或要求重新生成。",
-        inputs: [
-          { label: "主体信息", value: "云程科技有限公司" },
-          { label: "报告口径", value: "年度授信复核" },
-        ],
-        allowsFollowUp: true,
-        allowsRegenerate: true,
-        allowsInterrupt: true,
-        chatMessages: [
-          { id: "ma-sys", role: "system", author: "系统", content: "外部数据核验节点已启动，4 个支撑智能体并行执行中。" },
-          { id: "ma-a1", role: "assistant", author: "授信核验编排智能体", content: "已完成工商登记与财务指标的初步核验。主体名称、统一社会信用代码和经营状态一致，现金流覆盖率低于同业中位，需要结合司法风险结果判断是否触发人工复核。" },
-          { id: "ma-a2", role: "assistant", author: "行业研究智能体", content: "正在补充行业景气度和政策影响。当前生成内容只作为模型文本，可由处理人追问、改写或要求重新生成。", streaming: true },
-        ],
-        capabilities: [
-          { id: "cap-mcp-corp", name: "企查 MCP", kind: "mcp", status: "running", statusLabel: "执行中", summary: "主体登记、股东结构与经营状态" },
-          { id: "cap-mcp-legal", name: "司法查询 MCP", kind: "mcp", status: "waiting", statusLabel: "待审批", summary: "涉诉与被执行数据源", highRisk: true },
-          { id: "cap-skill-finance", name: "财务分析 Skill", kind: "skill", status: "done", statusLabel: "已完成", summary: "近三年营收、现金流与负债率摘要" },
-          { id: "cap-agent-industry", name: "行业研究智能体", kind: "agent", status: "running", statusLabel: "生成中", summary: "同业区间、政策风险与景气度" },
-        ],
-      },
-      {
-        title: "报告组装",
-        subtitle: "等待核验结果汇总",
-        state: "pending",
-        kind: "agent",
-        description: "等待外部数据核验完成后，将事实结果和模型分析组装为报告草稿。",
-        allowsFollowUp: true,
-        allowsRegenerate: true,
-        chatMessages: [
-          { id: "asm-hint", role: "system", author: "系统", content: "等待上游节点输出全部就绪后，组装智能体将统一章节口径并生成报告草稿。" },
-        ],
-        capabilities: [
-          { id: "cap-asm", name: "报告组装 Skill", kind: "skill", status: "idle", statusLabel: "等待中", summary: "章节合并与口径统一" },
-        ],
-      },
-      {
-        title: "人工审核",
-        subtitle: "风控经理复核",
-        state: "pending",
-        kind: "approval",
-        description: "风控经理复核报告草稿、事实来源和高风险调用审批记录。",
-        chatMessages: [
-          { id: "ap-preview", role: "assistant", author: "报告预览", content: "报告草稿已生成，包含主体概况、财务分析、司法风险与行业补充四个章节。其中司法风险章节依赖待审批 MCP 调用结果。" },
-        ],
-      },
-      {
-        title: "文档交付",
-        subtitle: "生成 Word / PDF",
-        state: "pending",
-        kind: "delivery",
-        description: "审核通过后生成交付物并进入归档或下游系统推送。",
-      },
-    ],
-    agents: [
-      { name: "工商信息核验", capability: "企查 MCP · 只读查询", status: "执行中", statusTone: "running", output: "已获取主体登记、股东和经营状态，正在比对统一社会信用代码。", duration: "01:48" },
-      { name: "司法风险检索", capability: "司法查询 MCP · 高风险", status: "待审批", statusTone: "waiting", output: "即将调用涉诉与被执行数据源，需要当前处理人审批后继续。", duration: "等待" },
-      { name: "财务指标解析", capability: "财务分析 Skill", status: "已完成", statusTone: "done", output: "完成近三年营收、现金流和负债率摘要，输出变量 finance_ratio_summary。", duration: "00:54" },
-      { name: "行业补充分析", capability: "行业研究智能体", status: "执行中", statusTone: "running", output: "正在生成同业区间、政策风险和行业景气度补充段落。", duration: "02:13" },
-    ],
-    events: [
-      { time: "09:42", title: "任务已创建", description: `${workflow.name} v${workflow.latestVersionNumber} 生成运行实例快照。`, tone: "success", stepTitle: "创建任务" },
-      { time: "09:47", title: "用户补充资料", description: "补充授信主体名称、征信授权附件和报告用途。", tone: "success", stepTitle: "补充资料" },
-      { time: "09:51", title: "智能体完成追问", description: "确认报告口径为“年度授信复核”，无需追加担保人资料。", tone: "info", stepTitle: "智能体追问" },
-      { time: "09:56", title: "触发高风险调用审批", description: "司法风险检索需要审批后继续，审批记录将写入审计链路。", tone: "warning", stepTitle: "外部数据核验" },
-    ],
-    deliveries: [
-      { name: "授信分析报告.docx", status: "待生成", meta: "报告组装节点完成后生成" },
-      { name: "风险摘要.pdf", status: "待生成", meta: "人工审核通过后固化" },
-      { name: "OA 归档流程", status: "未触发", meta: "交付确认后创建" },
-    ],
+    runId: run.id.slice(0, 8).toUpperCase(),
+    statusLabel: run.stateLabel,
+    activeNode,
+    progress: run.progressPercent,
+    startedAt: formatDateTime(run.startedAt),
+    ownerName: run.ownerName,
+    workflowVersion: run.workflowVersionNumber,
+    steps,
+    agents: run.nodes
+      .filter((node) => node.nodeType === "agent" || node.nodeType === "parallel_group")
+      .map((node) => ({
+        name: node.name,
+        capability: node.nodeType === "parallel_group" ? "智能体集群节点" : "智能体节点",
+        status: node.stateLabel,
+        statusTone: node.state === "completed" ? "done" : node.state === "waiting" ? "waiting" : "running",
+        output: stringifyValue(node.outputs.summary ?? "等待节点输出"),
+        duration: "记录中",
+      })),
+    events: run.events.map((event) => ({
+      time: formatTime(event.eventTime),
+      title: event.title,
+      description: event.description,
+      tone: event.eventType === "node_waiting" ? "warning" : event.eventType === "node_completed" || event.eventType === "run_completed" ? "success" : "info",
+      stepTitle: run.nodes.find((node) => node.nodeId === event.nodeId)?.name ?? "任务",
+    })),
+    deliveries: run.nodes
+      .filter((node) => node.nodeType === "delivery")
+      .map((node) => ({
+        name: node.name,
+        status: node.stateLabel,
+        meta: stringifyValue(node.outputs.summary ?? "交付确认后生成"),
+      })),
   };
 }
 
+function mapNodeState(state: string): RuntimeStepState {
+  if (state === "completed") return "done";
+  if (state === "waiting") return "waiting";
+  if (state === "running") return "running";
+  return "pending";
+}
+
+function mapNodeKind(nodeType: string): RuntimeNodeKind {
+  if (nodeType === "trigger") return "launch";
+  if (nodeType === "user_input") return "input";
+  if (nodeType === "parallel_group") return "multiAgent";
+  if (nodeType === "human_review") return "approval";
+  if (nodeType === "delivery") return "delivery";
+  return "agent";
+}
+
+function objectToFields(values: Record<string, unknown>): RuntimeNodeField[] {
+  return Object.entries(values ?? {}).map(([label, value]) => ({ label, value: stringifyValue(value) }));
+}
+
+function stringifyValue(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return JSON.stringify(value);
+}
+
+function nodeDescription(nodeType: string, config: Record<string, unknown>): string {
+  const summary = stringifyValue(config.summary);
+  if (summary) return summary;
+  if (nodeType === "user_input") return "等待业务用户补充当前节点所需资料，提交后后端会继续推进后续节点。";
+  if (nodeType === "human_review") return "等待人工审核意见，审核记录会写入运行事件。";
+  if (nodeType === "delivery") return "等待交付确认，确认后生成或触发交付动作。";
+  if (nodeType === "parallel_group") return "并行智能体节点已按运行快照记录，真实执行器接入后会展示各子任务输出。";
+  return "节点运行状态来自后端运行实例。";
+}
+
+function nodeMessages(node: WorkbenchRunDetail["nodes"][number]): RuntimeChatMessage[] {
+  const summary = stringifyValue(node.outputs.summary);
+  if (summary) {
+    return [{ id: `${node.id}-summary`, role: "assistant", author: node.name, content: summary }];
+  }
+  if (node.state === "waiting") {
+    return [{ id: `${node.id}-waiting`, role: "system", author: "系统", content: `${node.name}正在等待处理。` }];
+  }
+  return [{ id: `${node.id}-pending`, role: "system", author: "系统", content: `${node.name}尚未开始执行。` }];
+}
+
+function nodeCapabilities(node: WorkbenchRunDetail["nodes"][number]): RuntimeCapabilityItem[] {
+  if (node.nodeType !== "agent" && node.nodeType !== "parallel_group") {
+    return [];
+  }
+  return [{
+    id: `${node.id}-runtime`,
+    name: node.nodeType === "parallel_group" ? "智能体集群" : "智能体运行器",
+    kind: "agent",
+    status: node.state === "completed" ? "done" : node.state === "waiting" ? "waiting" : node.state === "running" ? "running" : "idle",
+    statusLabel: node.stateLabel,
+    summary: "状态来自后端节点运行记录",
+  }];
+}
+
+function formatDateTime(value: string): string {
+  return value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "—";
+}
+
+function formatTime(value: string): string {
+  return value ? new Date(value).toLocaleTimeString("zh-CN", { hour12: false, hour: "2-digit", minute: "2-digit" }) : "—";
+}
+
 function WorkbenchTaskRunDetail({
-  workflow,
+  run,
   preview,
   runtimeStatusLabel,
   onBack,
   onSaveToTodo,
+  onCompleteTodo,
   onAction,
 }: {
-  workflow: WorkbenchAvailableWorkflowRow;
+  run: WorkbenchRunDetail;
   preview: RuntimePreview;
   runtimeStatusLabel: string;
   onBack: () => void;
   onSaveToTodo: () => void;
+  onCompleteTodo: (comment: string) => void;
   onAction: (label: string) => void;
 }) {
   const [activeRunTab, setActiveRunTab] = useState<RunWorkspaceTab>("current");
@@ -1185,13 +1275,13 @@ function WorkbenchTaskRunDetail({
             <span className="workbench-run-soft-badge">{runtimeStatusLabel}</span>
           </div>
           <div className="workbench-run-title-row">
-            <h2>{workflow.name}</h2>
+            <h2>{run.title}</h2>
             <span className="workbench-run-status">
               <span className="workbench-run-status-dot" />
               {preview.statusLabel}
             </span>
           </div>
-          <p>运行编号 {preview.runId} · v{preview.workflowVersion} · 当前节点：{activeStep.title}</p>
+          <p>{run.workflowName} · 运行编号 {preview.runId} · v{preview.workflowVersion} · 当前节点：{activeStep.title}</p>
         </div>
         <div className="workbench-run-actions">
           <button type="button" className="sys-btn sys-btn--default" onClick={() => onAction("退回上一步")}>
@@ -1265,12 +1355,13 @@ function WorkbenchTaskRunDetail({
           </nav>
 
           <div className="workbench-task-panel-scroll">
-            {activeRunTab === "overview" ? <RunOverviewPanel workflow={workflow} preview={preview} /> : null}
+            {activeRunTab === "overview" ? <RunOverviewPanel run={run} preview={preview} /> : null}
             {activeRunTab === "current" ? (
               <RunCurrentPanel
                 preview={preview}
                 activeStep={activeStep}
                 onSaveToTodo={onSaveToTodo}
+                onCompleteTodo={onCompleteTodo}
                 onAction={onAction}
               />
             ) : null}
@@ -1290,16 +1381,17 @@ function WorkbenchTaskRunDetail({
   );
 }
 
-function RunOverviewPanel({ workflow, preview }: { workflow: WorkbenchAvailableWorkflowRow; preview: RuntimePreview }) {
+function RunOverviewPanel({ run, preview }: { run: WorkbenchRunDetail; preview: RuntimePreview }) {
   return (
     <div className="workbench-panel-grid">
       <section className="sys-preview-card workbench-run-section">
         <div className="sys-preview-card-title"><LayoutDashboard size={16} /> 任务概览</div>
-        <p className="workbench-panel-copy">{workflow.description?.trim() ? workflow.description : "当前流程未填写说明，任务处理页会按节点展示输入、智能体输出、外部调用和交付结果。"}</p>
+        <p className="workbench-panel-copy">任务运行详情来自后端运行实例，节点状态、输入输出和事件链路均按发布版本快照生成。</p>
         <div className="workbench-run-meta-grid workbench-run-meta-grid--compact">
           <RunMetaCard icon={FileText} label="运行编号" value={preview.runId} />
           <RunMetaCard icon={GitBranch} label="流程版本" value={`v${preview.workflowVersion}`} />
           <RunMetaCard icon={UserRoundCheck} label="发起人" value={preview.ownerName} />
+          <RunMetaCard icon={GitBranch} label="流程名称" value={run.workflowName} />
           <RunMetaCard icon={Clock3} label="开始时间" value={preview.startedAt} />
         </div>
       </section>
@@ -1494,10 +1586,12 @@ function CurrentNodeShell({
 function RunCurrentInputPanel({
   activeStep,
   onSaveToTodo,
+  onCompleteTodo,
   onAction,
 }: {
   activeStep: RuntimePreviewStep;
   onSaveToTodo: () => void;
+  onCompleteTodo: (comment: string) => void;
   onAction: (label: string) => void;
 }) {
   return (
@@ -1505,7 +1599,7 @@ function RunCurrentInputPanel({
       activeStep={activeStep}
       footer={(
         <div className="workbench-current-actions">
-          <button type="button" className="sys-btn sys-btn--primary" onClick={() => onAction("提交当前输入")}>
+          <button type="button" className="sys-btn sys-btn--primary" onClick={() => onCompleteTodo("提交当前输入资料")}>
             <Send size={16} aria-hidden="true" />
             提交输入
           </button>
@@ -1619,10 +1713,12 @@ function RunCurrentMultiAgentPanel({
 function RunCurrentApprovalPanel({
   activeStep,
   onSaveToTodo,
+  onCompleteTodo,
   onAction,
 }: {
   activeStep: RuntimePreviewStep;
   onSaveToTodo: () => void;
+  onCompleteTodo: (comment: string) => void;
   onAction: (label: string) => void;
 }) {
   const messages = activeStep.chatMessages ?? [];
@@ -1632,7 +1728,7 @@ function RunCurrentApprovalPanel({
       activeStep={activeStep}
       footer={(
         <div className="workbench-current-actions">
-          <button type="button" className="sys-btn sys-btn--primary" onClick={() => onAction("审核通过")}>
+          <button type="button" className="sys-btn sys-btn--primary" onClick={() => onCompleteTodo("审核通过")}>
             <ShieldCheck size={16} aria-hidden="true" />
             审核通过
           </button>
@@ -1659,10 +1755,12 @@ function RunCurrentApprovalPanel({
 function RunCurrentDeliveryPanel({
   activeStep,
   preview,
+  onCompleteTodo,
   onAction,
 }: {
   activeStep: RuntimePreviewStep;
   preview: RuntimePreview;
+  onCompleteTodo: (comment: string) => void;
   onAction: (label: string) => void;
 }) {
   return (
@@ -1670,7 +1768,7 @@ function RunCurrentDeliveryPanel({
       activeStep={activeStep}
       footer={(
         <div className="workbench-current-actions">
-          <button type="button" className="sys-btn sys-btn--primary" onClick={() => onAction("确认交付")}>
+          <button type="button" className="sys-btn sys-btn--primary" onClick={() => onCompleteTodo("确认交付")}>
             <Send size={16} aria-hidden="true" />
             确认交付
           </button>
@@ -1724,15 +1822,17 @@ function RunCurrentPanel({
   preview,
   activeStep,
   onSaveToTodo,
+  onCompleteTodo,
   onAction,
 }: {
   preview: RuntimePreview;
   activeStep: RuntimePreviewStep;
   onSaveToTodo: () => void;
+  onCompleteTodo: (comment: string) => void;
   onAction: (label: string) => void;
 }) {
   if (activeStep.kind === "input") {
-    return <RunCurrentInputPanel activeStep={activeStep} onSaveToTodo={onSaveToTodo} onAction={onAction} />;
+    return <RunCurrentInputPanel activeStep={activeStep} onSaveToTodo={onSaveToTodo} onCompleteTodo={onCompleteTodo} onAction={onAction} />;
   }
 
   if (activeStep.kind === "multiAgent") {
@@ -1744,11 +1844,11 @@ function RunCurrentPanel({
   }
 
   if (activeStep.kind === "approval") {
-    return <RunCurrentApprovalPanel activeStep={activeStep} onSaveToTodo={onSaveToTodo} onAction={onAction} />;
+    return <RunCurrentApprovalPanel activeStep={activeStep} onSaveToTodo={onSaveToTodo} onCompleteTodo={onCompleteTodo} onAction={onAction} />;
   }
 
   if (activeStep.kind === "delivery") {
-    return <RunCurrentDeliveryPanel activeStep={activeStep} preview={preview} onAction={onAction} />;
+    return <RunCurrentDeliveryPanel activeStep={activeStep} preview={preview} onCompleteTodo={onCompleteTodo} onAction={onAction} />;
   }
 
   return <RunCurrentDefaultPanel activeStep={activeStep} onAction={onAction} />;
@@ -1932,38 +2032,6 @@ function RunMetaCard({ icon: Icon, label, value }: { icon: LucideIcon; label: st
   );
 }
 
-function CreatedTaskTodoItem({
-  workflow,
-  preview,
-  onOpen,
-}: {
-  workflow: WorkbenchAvailableWorkflowRow;
-  preview: RuntimePreview;
-  onOpen: () => void;
-}) {
-  return (
-    <div className="workbench-created-todo">
-      <div className="workbench-created-todo-main">
-        <span className="workbench-agent-icon workbench-agent-icon--waiting">
-          <ShieldAlert size={16} aria-hidden="true" />
-        </span>
-        <div>
-          <strong>{workflow.name}</strong>
-          <p>{preview.activeNode} · 等待处理人审批高风险 MCP 调用</p>
-          <small>{preview.runId} · v{preview.workflowVersion} · {preview.startedAt}</small>
-        </div>
-      </div>
-      <div className="workbench-created-todo-actions">
-        <span className="workbench-run-pill workbench-run-pill--waiting">待处理</span>
-        <button type="button" className="sys-btn sys-btn--primary sys-btn--sm" onClick={onOpen}>
-          处理
-          <ArrowRight size={14} aria-hidden="true" />
-        </button>
-      </div>
-    </div>
-  );
-}
-
 function RuntimePlaceholder({ label, hint }: { label: string; hint: string }) {
   return (
     <div className="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed border-[var(--color-border-light)] bg-[var(--color-bg-page)] px-4 py-8 text-center">
@@ -1974,8 +2042,8 @@ function RuntimePlaceholder({ label, hint }: { label: string; hint: string }) {
   );
 }
 
-function PendingTodoListItem({ todo }: { todo: WorkbenchPendingTodoRow }) {
-  const dueLabel = todo.dueAt ? new Date(todo.dueAt).toLocaleString("zh-CN", { hour12: false }) : "无截止";
+function PendingTodoListItem({ todo, onOpen }: { todo: WorkbenchPendingTodoRow; onOpen: () => void }) {
+  const createdLabel = todo.createdAt ? new Date(todo.createdAt).toLocaleString("zh-CN", { hour12: false }) : "—";
   return (
     <div className="sys-preview-item">
       <div className="sys-preview-item-left">
@@ -1984,15 +2052,15 @@ function PendingTodoListItem({ todo }: { todo: WorkbenchPendingTodoRow }) {
         </span>
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{todo.title}</p>
-          <p className="truncate text-xs text-[var(--color-text-secondary)]">{todo.workflowName} · {todo.waitingFor}</p>
-          <p className="truncate text-[11px] text-[var(--color-text-tertiary)]">{todo.action} · {dueLabel}</p>
+          <p className="truncate text-xs text-[var(--color-text-secondary)]">{todo.workflowName} · {todo.nodeName} · {todo.waitingFor}</p>
+          <p className="truncate text-[11px] text-[var(--color-text-tertiary)]">{todo.action} · 创建于 {createdLabel}</p>
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-2">
         <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${stateColors[todo.waitingReason] ?? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"}`}>
           {todo.waitingReason}
         </span>
-        <button type="button" className="agent-button h-7 px-2 text-xs">
+        <button type="button" className="agent-button h-7 px-2 text-xs" onClick={onOpen}>
           处理
         </button>
       </div>
@@ -2001,7 +2069,7 @@ function PendingTodoListItem({ todo }: { todo: WorkbenchPendingTodoRow }) {
 }
 
 function RecentRunListItem({ record, actionLabel }: { record: WorkbenchRecentRunRow; actionLabel?: string }) {
-  const Icon = record.state === "已完成" ? CheckCircle2 : record.state === "已暂停" ? PauseCircle : Activity;
+  const Icon = record.state === "completed" || record.stateLabel === "已完成" ? CheckCircle2 : record.state === "paused" || record.stateLabel === "已暂停" ? PauseCircle : Activity;
   const updatedLabel = record.updatedAt ? new Date(record.updatedAt).toLocaleString("zh-CN", { hour12: false }) : "—";
   return (
     <div className="sys-preview-item">
@@ -2010,20 +2078,56 @@ function RecentRunListItem({ record, actionLabel }: { record: WorkbenchRecentRun
           <Icon size={16} aria-hidden="true" />
         </span>
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{record.workflowName}</p>
+          <p className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{record.title}</p>
           <p className="truncate text-xs text-[var(--color-text-secondary)]">{record.currentNode} · {record.ownerName}</p>
           <p className="truncate text-[11px] text-[var(--color-text-tertiary)]">{record.completedNodeCount}/{record.totalNodeCount} · 更新于 {updatedLabel}</p>
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${stateColors[record.state] ?? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"}`}>
-          {record.state}
+        <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${stateColors[record.stateLabel] ?? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"}`}>
+          {record.stateLabel}
         </span>
         {actionLabel ? (
           <button type="button" className="agent-button h-7 px-2 text-xs">
             {actionLabel}
           </button>
         ) : null}
+      </div>
+    </div>
+  );
+}
+
+function TaskRunListItem({
+  record,
+  actionLabel,
+  onOpen,
+}: {
+  record: WorkbenchTaskRunRow;
+  actionLabel: string;
+  onOpen: () => void;
+}) {
+  const Icon = record.state === "completed" ? CheckCircle2 : record.state === "paused" ? PauseCircle : Activity;
+  const updatedLabel = record.updatedAt ? new Date(record.updatedAt).toLocaleString("zh-CN", { hour12: false }) : "—";
+  return (
+    <div className="sys-preview-item">
+      <div className="sys-preview-item-left">
+        <span className="sys-preview-item-icon sys-card-avatar--cap">
+          <Icon size={16} aria-hidden="true" />
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{record.title}</p>
+          <p className="truncate text-xs text-[var(--color-text-secondary)]">{record.workflowName} v{record.workflowVersionNumber} · {record.currentNodeName}</p>
+          <p className="truncate text-[11px] text-[var(--color-text-tertiary)]">{record.completedNodeCount}/{record.totalNodeCount} · {record.progressPercent}% · 更新于 {updatedLabel}</p>
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        {record.hasOpenTodo ? <span className="workbench-run-pill workbench-run-pill--waiting">有待办</span> : null}
+        <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${stateColors[record.stateLabel] ?? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"}`}>
+          {record.stateLabel}
+        </span>
+        <button type="button" className="agent-button h-7 px-2 text-xs" onClick={onOpen}>
+          {actionLabel}
+        </button>
       </div>
     </div>
   );

@@ -7,10 +7,9 @@ import java.util.UUID;
 /**
  * 业务工作台契约。
  *
- * <p>第一阶段的业务工作台聚合“概览统计 + 可发起的已发布流程 + 我的待办 + 最近任务运行”。
- * 由于工作流运行态、待办与运行实例仍在建设中，{@code pendingTodos} 与 {@code recentRuns}
- * 在当前阶段返回空数组，并通过 {@code runtimeAvailable=false} 通知前端展示“运行态建设中”空态。
- * 待运行实例、节点运行、暂停事件等表落地后，再扩展待办与最近运行的真实数据源。</p>
+ * <p>业务工作台聚合“概览统计 + 全部已发布流程 + 我的待办 + 任务运行”。创建任务列表会展示
+ * 当前租户内全部未收回且已有发布版本的流程，但通过 {@code canLaunch} 标记当前账号是否可发起，
+ * 避免用户误以为系统里不存在那些未开放流程。</p>
  */
 public final class WorkbenchApi {
 
@@ -21,10 +20,10 @@ public final class WorkbenchApi {
      * 业务工作台概览响应。
      *
      * @param metrics            概览统计指标
-     * @param pendingTodos       我的待办（当前阶段为空数组）
-     * @param recentRuns         最近任务运行（当前阶段为空数组）
+     * @param pendingTodos       我的待办
+     * @param recentRuns         最近任务运行
      * @param runtimeAvailable   工作流运行态是否已上线
-     * @param runtimeStatusLabel 运行态状态文案，例如“运行态建设中”
+     * @param runtimeStatusLabel 运行态状态文案，例如“运行态已接入”
      * @param generatedAt        响应生成时间，便于前端按时间戳缓存或对比
      */
     public record WorkbenchSummary(
@@ -40,8 +39,6 @@ public final class WorkbenchApi {
     /**
      * 概览统计指标，全部来自当前真实数据。
      *
-     * <p>{@code pendingTodoTotal} 与 {@code runningRunTotal} 在运行态未上线前固定为 0，
-     * 前端需配合 {@code runtimeAvailable} 展示运行态建设中提示。</p>
      */
     public record WorkbenchMetrics(
         long pendingTodoTotal,
@@ -54,11 +51,10 @@ public final class WorkbenchApi {
     }
 
     /**
-     * 可发起的已发布工作流模板。
+     * 已发布工作流模板。
      *
      * <p>对应租户内至少存在一个冻结版本且 {@code launch_enabled=true} 的流程。
-     * 设计态在已发布后再次编辑会回到草稿状态，但旧版本未收回时仍可从业务入口发起；
-     * 第一阶段流程发起入口未接入运行实例，前端点击后只跳转到流程详情/设计预览或提示运行态待上线。</p>
+     * 列表返回全部流程，并通过权限字段区分“可发起 / 无权限”。</p>
      */
     public record AvailableWorkflowRow(
         UUID id,
@@ -68,41 +64,119 @@ public final class WorkbenchApi {
         int latestVersionNumber,
         Instant publishedAt,
         UUID ownerId,
-        String ownerName
+        String ownerName,
+        String visibility,
+        boolean canLaunch,
+        String launchBlockedReason
     ) {
     }
 
     /**
      * 我的待办。
-     *
-     * <p>第一阶段运行态未上线，待办列表暂时返回空数组；保留字段定义便于后续接入
-     * {@code WorkflowRun + NodeRun + WaitingEvent} 后直接落库不再改契约。</p>
      */
     public record PendingTodoRow(
         UUID id,
+        UUID runId,
+        UUID nodeRunId,
         String title,
         String workflowName,
+        String nodeName,
         String waitingReason,
         String waitingFor,
         String action,
-        Instant dueAt
+        Instant createdAt
     ) {
     }
 
     /**
      * 最近任务运行。
-     *
-     * <p>同样为运行态预留契约，运行态上线前固定返回空数组。</p>
      */
     public record RecentRunRow(
         UUID id,
+        String title,
         String workflowName,
         String state,
+        String stateLabel,
         String currentNode,
         String ownerName,
         int completedNodeCount,
         int totalNodeCount,
         Instant updatedAt
+    ) {
+    }
+
+    public record CreateRunRequest(
+        UUID workflowId,
+        String title
+    ) {
+    }
+
+    public record CompleteTodoRequest(
+        String action,
+        String comment,
+        java.util.Map<String, Object> payload
+    ) {
+    }
+
+    public record TaskRunRow(
+        UUID id,
+        String title,
+        String workflowName,
+        int workflowVersionNumber,
+        String state,
+        String stateLabel,
+        String currentNodeName,
+        String ownerName,
+        int completedNodeCount,
+        int totalNodeCount,
+        int progressPercent,
+        boolean hasOpenTodo,
+        Instant updatedAt
+    ) {
+    }
+
+    public record RunDetail(
+        UUID id,
+        String title,
+        UUID workflowId,
+        String workflowName,
+        int workflowVersionNumber,
+        String state,
+        String stateLabel,
+        int progressPercent,
+        String currentNodeKey,
+        String currentNodeName,
+        String currentNodeType,
+        String ownerName,
+        Instant startedAt,
+        Instant updatedAt,
+        List<NodeRunRow> nodes,
+        List<RunEventRow> events,
+        PendingTodoRow openTodo
+    ) {
+    }
+
+    public record NodeRunRow(
+        UUID id,
+        String nodeId,
+        String nodeType,
+        String name,
+        String state,
+        String stateLabel,
+        java.util.Map<String, Object> inputs,
+        java.util.Map<String, Object> outputs,
+        java.util.Map<String, Object> config,
+        int sortOrder
+    ) {
+    }
+
+    public record RunEventRow(
+        UUID id,
+        String eventType,
+        String title,
+        String description,
+        String nodeId,
+        Instant eventTime
     ) {
     }
 }
