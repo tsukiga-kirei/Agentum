@@ -3604,16 +3604,6 @@ textarea:focus-visible {
   line-height: 1.7;
 }
 
-.workflow-launch-section-empty {
-  border: 1px dashed color-mix(in srgb, var(--color-border-light) 88%, transparent);
-  border-radius: 16px;
-  background: var(--color-bg-card);
-  padding: 28px 20px;
-  color: var(--color-text-tertiary);
-  font-size: 14px;
-  text-align: center;
-}
-
 .workbench-launch-drawer {
   display: grid;
   gap: 18px;

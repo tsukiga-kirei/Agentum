@@ -819,11 +819,11 @@ export function WorkbenchShell() {
                             <section className="workflow-launch-section" aria-label="可发起流程">
                               <div className="workflow-launch-section-head">
                                 <h3 className="workflow-launch-section-title">可发起流程</h3>
-                                <p className="workflow-launch-section-desc">
-                                  {launchableWorkflows.length > 0
-                                    ? `当前页共 ${launchableWorkflows.length} 个流程，可直接创建任务。`
-                                    : "当前页暂无可发起流程，可先查看下方无权限流程或调整搜索条件。"}
-                                </p>
+                                {launchableWorkflows.length > 0 ? (
+                                  <p className="workflow-launch-section-desc">
+                                    当前页共 {launchableWorkflows.length} 个流程，可直接创建任务。
+                                  </p>
+                                ) : null}
                               </div>
                               {launchableWorkflows.length > 0 ? (
                                 <div className="sys-card-grid">
@@ -832,7 +832,11 @@ export function WorkbenchShell() {
                                   ))}
                                 </div>
                               ) : (
-                                <div className="workflow-launch-section-empty">暂无可发起流程</div>
+                                <div className="workflow-definition-empty-state">
+                                  <PlayCircle className="h-8 w-8" aria-hidden="true" />
+                                  <p>暂无可发起流程</p>
+                                  <span>可先查看下方无权限流程，或联系流程负责人开通读取权限。</span>
+                                </div>
                               )}
                             </section>
 
