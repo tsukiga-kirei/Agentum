@@ -195,7 +195,6 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
   const [nodeSearchValue, setNodeSearchValue] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [loadError, setLoadError] = useState("");
   const [messageApi, messageContextHolder] = message.useMessage();
   const [designerCatalog, setDesignerCatalog] = useState<WorkflowDesignerCatalog | null>(null);
   const [capabilityOptions, setCapabilityOptions] = useState<WorkflowCapabilityOption[]>([]);
@@ -209,13 +208,13 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
   useEffect(() => {
     if (!token || !user?.tenantId) {
       setLoading(false);
-      setLoadError("当前账号缺少租户上下文，无法加载工作流草稿");
+      messageApi.error("当前账号缺少租户上下文，无法加载工作流草稿");
+      onBack();
       return;
     }
 
     let cancelled = false;
     setLoading(true);
-    setLoadError("");
 
     // 设计态模板由后端统一下发；前端加载草稿后只负责映射成可编辑状态。
     void Promise.all([
@@ -241,10 +240,11 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
           return;
         }
         console.warn("[workflow] 工作流草稿加载失败", getWorkflowEditorErrorContext(error, user.tenantId ?? undefined, workflow.id));
-        setLoadError(error instanceof AgentumApiError ? error.message : "无法加载工作流草稿");
+        messageApi.error(error instanceof AgentumApiError ? error.message : "无法加载工作流草稿");
         setDesignerCatalog(null);
         setNodes([]);
         setEdges([]);
+        onBack();
       })
       .finally(() => {
         if (!cancelled) {
@@ -255,7 +255,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
     return () => {
       cancelled = true;
     };
-  }, [token, user?.tenantId, workflow.id]);
+  }, [messageApi, onBack, token, user?.tenantId, workflow.id]);
 
   useEffect(() => {
     if (!token || !user?.tenantId) {
@@ -501,17 +501,6 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
 
   if (loading) {
     return <EditorStateShell workflowName={workflow.name} onBack={onBack} icon={<Clock3 className="h-5 w-5" aria-hidden="true" />} message="正在加载工作流草稿" />;
-  }
-
-  if (loadError) {
-    return (
-      <EditorStateShell
-        workflowName={workflow.name}
-        onBack={onBack}
-        icon={<AlertTriangle className="h-5 w-5" aria-hidden="true" />}
-        message={loadError}
-      />
-    );
   }
 
   return (

@@ -1,20 +1,10 @@
 package com.agentum.workflow.application;
 
 import com.agentum.auth.application.CurrentUserPrincipal;
-import com.agentum.organization.domain.UserMembershipEntity;
-import com.agentum.organization.domain.UserMembershipRoleEntity;
-import com.agentum.organization.infrastructure.UserMembershipRepository;
-import com.agentum.organization.infrastructure.UserMembershipRoleRepository;
-import com.agentum.permission.domain.RoleEntity;
-import com.agentum.permission.infrastructure.RoleRepository;
+import com.agentum.permission.application.BusinessPageAccess;
 import com.agentum.shared.api.ApiException;
 import com.agentum.shared.api.RequestIds;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -24,17 +14,12 @@ import org.springframework.stereotype.Component;
 public class WorkflowDesignAccess {
 
     private static final Logger log = LoggerFactory.getLogger(WorkflowDesignAccess.class);
-    private static final String ACTIVE_STATUS = "active";
-    private static final Set<String> DESIGN_ROLE_CODES = Set.of("workflow_designer", "tenant_admin");
+    private static final String DESIGNER_PAGE_KEY = "designer";
 
-    private final UserMembershipRepository userMembershipRepository;
-    private final UserMembershipRoleRepository userMembershipRoleRepository;
-    private final RoleRepository roleRepository;
+    private final BusinessPageAccess businessPageAccess;
 
-    public WorkflowDesignAccess(UserMembershipRepository userMembershipRepository, UserMembershipRoleRepository userMembershipRoleRepository, RoleRepository roleRepository) {
-        this.userMembershipRepository = userMembershipRepository;
-        this.userMembershipRoleRepository = userMembershipRoleRepository;
-        this.roleRepository = roleRepository;
+    public WorkflowDesignAccess(BusinessPageAccess businessPageAccess) {
+        this.businessPageAccess = businessPageAccess;
     }
 
     public void assertCanDesign(CurrentUserPrincipal principal, UUID tenantId) {
@@ -64,34 +49,26 @@ public class WorkflowDesignAccess {
             return;
         }
 
-        // 第一阶段尚未把 tenant_org_roles 绑定到成员关系，这里先用租户内内置角色 workflow_designer 控制流程设计入口。
-        List<UserMembershipEntity> memberships = userMembershipRepository.findByUserIdAndTenantIdAndStatus(principal.userId(), tenantId, ACTIVE_STATUS);
-        List<UserMembershipRoleEntity> membershipRoles = userMembershipRoleRepository.findByMembershipIdInAndStatus(
-            memberships.stream().map(UserMembershipEntity::getId).collect(Collectors.toSet()),
-            ACTIVE_STATUS
-        );
-        Map<UUID, RoleEntity> rolesById = roleRepository.findAllById(membershipRoles.stream().map(UserMembershipRoleEntity::getRoleId).collect(Collectors.toSet()))
-            .stream()
-            .collect(Collectors.toMap(RoleEntity::getId, Function.identity()));
-        boolean allowed = membershipRoles.stream()
-            .map(link -> rolesById.get(link.getRoleId()))
-            .anyMatch(role -> role != null && DESIGN_ROLE_CODES.contains(role.getCode()));
-
-        if (!allowed) {
-            log.warn(
-                "工作流设计访问被拒绝：缺少流程设计角色 userId={} tenantId={} systemRole={} requestId={}",
-                principal.userId(),
-                tenantId,
-                principal.role(),
-                RequestIds.current()
-            );
-            throw denied();
+        if (businessPageAccess.hasPageGrant(tenantId, principal.userId(), DESIGNER_PAGE_KEY)) {
+            log.debug("工作流设计访问通过：已分配流程设计页签 userId={} tenantId={} requestId={}", principal.userId(), tenantId, RequestIds.current());
+            return;
         }
 
-        log.debug("工作流设计访问通过 userId={} tenantId={} requestId={}", principal.userId(), tenantId, RequestIds.current());
+        log.warn(
+            "工作流设计访问被拒绝：未分配流程设计页签 userId={} tenantId={} systemRole={} requestId={}",
+            principal.userId(),
+            tenantId,
+            principal.role(),
+            RequestIds.current()
+        );
+        throw denied();
     }
 
     private static ApiException denied() {
-        return new ApiException(HttpStatus.FORBIDDEN, "PERMISSION_WORKFLOW_DESIGN_DENIED", "当前账号没有流程设计权限");
+        return new ApiException(
+            HttpStatus.FORBIDDEN,
+            "PERMISSION_WORKFLOW_DESIGN_DENIED",
+            "当前账号未被分配流程设计页签，请联系租户管理员在页签分配中开通"
+        );
     }
 }

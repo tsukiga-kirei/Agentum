@@ -9,6 +9,7 @@ import com.agentum.organization.domain.UserMembershipEntity;
 import com.agentum.organization.domain.UserMembershipRoleEntity;
 import com.agentum.organization.infrastructure.UserMembershipRepository;
 import com.agentum.organization.infrastructure.UserMembershipRoleRepository;
+import com.agentum.permission.application.BusinessPageAccess;
 import com.agentum.permission.domain.PageGrantEntity;
 import com.agentum.permission.infrastructure.PageGrantRepository;
 import java.util.List;
@@ -94,6 +95,6 @@ class MenuServiceTest {
     }
 
     private MenuService newService() {
-        return new MenuService(pageGrantRepository, userMembershipRepository, userMembershipRoleRepository);
+        return new MenuService(new BusinessPageAccess(pageGrantRepository, userMembershipRepository, userMembershipRoleRepository));
     }
 }

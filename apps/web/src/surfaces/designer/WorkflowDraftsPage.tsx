@@ -112,7 +112,6 @@ export function WorkflowDraftsPage() {
   const [pageSize, setPageSize] = useState(8);
   const [total, setTotal] = useState(0);
   const [submitting, setSubmitting] = useState(false);
-  const [loadError, setLoadError] = useState("");
   const [validatingWorkflowId, setValidatingWorkflowId] = useState("");
   const [validationModal, setValidationModal] = useState<{
     workflow: WorkflowDraft;
@@ -124,7 +123,6 @@ export function WorkflowDraftsPage() {
   const [detailWorkflow, setDetailWorkflow] = useState<WorkflowDraft | null>(null);
   const [drawerDetail, setDrawerDetail] = useState<WorkflowDraftDetail | null>(null);
   const [drawerDetailLoading, setDrawerDetailLoading] = useState(false);
-  const [drawerDetailError, setDrawerDetailError] = useState("");
   const [detailName, setDetailName] = useState("");
   const [detailDescription, setDetailDescription] = useState("");
   const [detailAccess, setDetailAccess] = useState({
@@ -145,13 +143,11 @@ export function WorkflowDraftsPage() {
 
   const loadDrafts = useCallback(async (nextPage = 1, keyword = searchValue, nextPageSize = pageSize, scope: WorkflowListScope = currentScope, status: WorkflowStatusFilter = workflowStatusFilter) => {
     if (!token || !user?.tenantId) {
-      setLoadError("当前账号缺少租户上下文，无法加载工作流草稿");
       setWorkflows([]);
       return;
     }
 
     setLoading(true);
-    setLoadError("");
 
     try {
       const result = await workflowApi.listDrafts(user.tenantId, token, nextPage, nextPageSize, keyword, scope, status);
@@ -161,12 +157,12 @@ export function WorkflowDraftsPage() {
       setTotal(result.total);
     } catch (error) {
       console.warn("[workflow] 工作流草稿加载失败", getWorkflowErrorContext(error, user.tenantId));
-      setLoadError(error instanceof AgentumApiError ? error.message : "无法加载工作流草稿");
+      messageApi.error(error instanceof AgentumApiError ? error.message : "无法加载工作流草稿");
       setWorkflows([]);
     } finally {
       setLoading(false);
     }
-  }, [currentScope, pageSize, searchValue, token, user?.tenantId, workflowStatusFilter]);
+  }, [currentScope, messageApi, pageSize, searchValue, token, user?.tenantId, workflowStatusFilter]);
 
   useEffect(() => {
     if (!token || !user?.tenantId) return;
@@ -183,13 +179,11 @@ export function WorkflowDraftsPage() {
   useEffect(() => {
     if (!detailWorkflow) {
       setDrawerDetail(null);
-      setDrawerDetailError("");
       setDrawerDetailLoading(false);
       return;
     }
 
     if (!token || !user?.tenantId) {
-      setDrawerDetailError("当前账号缺少租户上下文，无法加载流程内容");
       setDrawerDetail(null);
       return;
     }
@@ -197,7 +191,6 @@ export function WorkflowDraftsPage() {
     const tenantId = user.tenantId;
     let cancelled = false;
     setDrawerDetailLoading(true);
-    setDrawerDetailError("");
 
     // 抽屉用于进入设计前快速看完整流程内容，只读取草稿详情，不触发保存或发布等写动作。
     void workflowApi.getDraft(tenantId, detailWorkflow.id, token)
@@ -220,7 +213,7 @@ export function WorkflowDraftsPage() {
           return;
         }
         console.warn("[workflow] 工作流详情抽屉加载失败", getWorkflowErrorContext(error, tenantId, { workflowId: detailWorkflow.id }));
-        setDrawerDetailError(error instanceof AgentumApiError ? error.message : "无法加载流程内容");
+        messageApi.error(error instanceof AgentumApiError ? error.message : "无法加载流程内容");
         setDrawerDetail(null);
       })
       .finally(() => {
@@ -232,7 +225,7 @@ export function WorkflowDraftsPage() {
     return () => {
       cancelled = true;
     };
-  }, [detailWorkflow?.id, token, user?.tenantId]);
+  }, [detailWorkflow?.id, messageApi, token, user?.tenantId]);
 
   const filteredWorkflows = useMemo(() => {
     if (activeTab === "all") {
@@ -615,8 +608,6 @@ export function WorkflowDraftsPage() {
               </div>
             </div>
 
-            {loadError ? <div className="workflow-feedback workflow-feedback--danger">{loadError}</div> : null}
-
             <div className="sys-card-grid">
               {filteredWorkflows.map((workflow) => (
                 <WorkflowDesignCard
@@ -754,7 +745,6 @@ export function WorkflowDraftsPage() {
               <WorkflowDrawerContent
                 detail={drawerDetail}
                 loading={drawerDetailLoading}
-                error={drawerDetailError}
               />
             </div>
 
@@ -1044,11 +1034,9 @@ function WorkflowDesignCard({
 function WorkflowDrawerContent({
   detail,
   loading,
-  error,
 }: {
   detail: WorkflowDraftDetail | null;
   loading: boolean;
-  error: string;
 }) {
   if (loading) {
     return (
@@ -1057,10 +1045,6 @@ function WorkflowDrawerContent({
         正在读取流程内容
       </div>
     );
-  }
-
-  if (error) {
-    return <div className="workflow-feedback workflow-feedback--danger">{error}</div>;
   }
 
   const nodes = sortDrawerNodes(detail?.nodes ?? []);

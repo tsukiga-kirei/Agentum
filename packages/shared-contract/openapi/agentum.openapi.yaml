@@ -690,7 +690,7 @@ paths:
   /api/tenants/{tenantId}/workflows/drafts:
     get:
       summary: 查询工作流草稿列表
-      description: 流程设计页使用的租户内工作流定义草稿列表，后端按租户上下文和流程设计权限复核。
+      description: 流程设计页使用的租户内工作流定义草稿列表，后端按租户上下文和 designer 页签分配复核。
       tags:
         - Workflow
       security:

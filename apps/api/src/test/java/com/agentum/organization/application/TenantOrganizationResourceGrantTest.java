@@ -163,7 +163,7 @@ class TenantOrganizationResourceGrantTest {
     @Test
     void shouldCreatePageGrantForDepartmentOrRolePrincipal() {
         TenantOrganizationService service = newService();
-        RoleEntity role = RoleEntity.create(TENANT_ID, "workflow_designer", "流程设计者", "维护流程草稿");
+        RoleEntity role = RoleEntity.create(TENANT_ID, "process_editor", "流程编辑", "维护流程草稿");
         AtomicReference<PageGrantEntity> savedGrant = new AtomicReference<>();
 
         when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", Instant.now())));
@@ -189,7 +189,7 @@ class TenantOrganizationResourceGrantTest {
 
         assertThat(savedGrant.get()).isNotNull();
         assertThat(response.groupName()).isEqualTo("设计入口");
-        assertThat(response.principals().get(0).principalName()).isEqualTo("流程设计者");
+        assertThat(response.principals().get(0).principalName()).isEqualTo("流程编辑");
         assertThat(response.pages().get(0).pageKey()).isEqualTo("designer");
         assertThat(response.pages().get(0).pageName()).isEqualTo("流程设计");
     }

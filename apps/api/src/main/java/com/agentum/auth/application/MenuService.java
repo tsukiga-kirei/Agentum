@@ -1,19 +1,12 @@
 package com.agentum.auth.application;
 
 import com.agentum.auth.interfaces.MenuItemResponse;
-import com.agentum.organization.domain.UserMembershipEntity;
-import com.agentum.organization.domain.UserMembershipRoleEntity;
-import com.agentum.organization.infrastructure.UserMembershipRepository;
-import com.agentum.organization.infrastructure.UserMembershipRoleRepository;
-import com.agentum.permission.domain.PageGrantEntity;
-import com.agentum.permission.infrastructure.PageGrantRepository;
+import com.agentum.permission.application.BusinessPageAccess;
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 
 /**
@@ -49,18 +42,10 @@ public class MenuService {
         )
     );
 
-    private final PageGrantRepository pageGrantRepository;
-    private final UserMembershipRepository userMembershipRepository;
-    private final UserMembershipRoleRepository userMembershipRoleRepository;
+    private final BusinessPageAccess businessPageAccess;
 
-    public MenuService(
-        PageGrantRepository pageGrantRepository,
-        UserMembershipRepository userMembershipRepository,
-        UserMembershipRoleRepository userMembershipRoleRepository
-    ) {
-        this.pageGrantRepository = pageGrantRepository;
-        this.userMembershipRepository = userMembershipRepository;
-        this.userMembershipRoleRepository = userMembershipRoleRepository;
+    public MenuService(BusinessPageAccess businessPageAccess) {
+        this.businessPageAccess = businessPageAccess;
     }
 
     /**
@@ -77,43 +62,15 @@ public class MenuService {
             return List.of();
         }
 
-        Set<String> principalKeys = resolvePrincipalKeys(tenantId, userId);
-        if (principalKeys.isEmpty()) {
+        Set<String> grantedPageKeys = businessPageAccess.resolveGrantedPageKeys(tenantId, userId);
+        if (grantedPageKeys.isEmpty()) {
             return List.of();
         }
-
-        Set<String> grantedPageKeys = pageGrantRepository.findByTenantIdOrderByCreatedAtDesc(tenantId)
-            .stream()
-            .filter(grant -> principalKeys.contains(grant.getPrincipalType() + ":" + grant.getPrincipalId()))
-            .map(PageGrantEntity::getPageKey)
-            .collect(Collectors.toCollection(LinkedHashSet::new));
 
         return SYSTEM_ROLE_MENUS.getOrDefault("business", List.of())
             .stream()
             .filter(menu -> grantedPageKeys.contains(menu.key()))
             .filter(menu -> !DEPRECATED_MENU_KEYS.contains(menu.key()))
             .toList();
-    }
-
-    private Set<String> resolvePrincipalKeys(UUID tenantId, UUID userId) {
-        List<UserMembershipEntity> memberships = userMembershipRepository.findByUserIdAndTenantIdAndStatus(userId, tenantId, ACTIVE_STATUS);
-        Set<String> principalKeys = new LinkedHashSet<>();
-        principalKeys.add("user:" + userId);
-        memberships.stream()
-            .map(UserMembershipEntity::getDepartmentId)
-            .filter(departmentId -> departmentId != null)
-            .map(departmentId -> "department:" + departmentId)
-            .forEach(principalKeys::add);
-
-        Set<UUID> membershipIds = memberships.stream().map(UserMembershipEntity::getId).collect(Collectors.toSet());
-        if (!membershipIds.isEmpty()) {
-            userMembershipRoleRepository.findByMembershipIdInAndStatus(membershipIds, ACTIVE_STATUS)
-                .stream()
-                .map(UserMembershipRoleEntity::getRoleId)
-                .map(roleId -> "role:" + roleId)
-                .forEach(principalKeys::add);
-        }
-
-        return principalKeys;
     }
 }

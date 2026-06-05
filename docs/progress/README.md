@@ -189,11 +189,11 @@
 - 租户页签分配和能力分配接口改为卡片语义：新增 `grant_group_id` 迁移，`POST /page-grants`、`PUT /page-grants/{grantGroupId}`、`DELETE /page-grants/{grantGroupId}` 以及能力分配同类接口均按卡片创建、编辑、删除，同时保留明细行服务运行时判权。
 - 新增 `TimeConfiguration` 提供可注入的 `Clock`，便于服务层时间与测试。
 - 新增 Flyway `V202605100001` 演示种子：模型供应商、系统能力、租户可用能力池示例数据。
-- 新增本地开发身份数据迁移，用于跑通系统管理、业务用户、流程设计者和租户管理入口。
+- 新增本地开发身份数据迁移，用于跑通系统管理、业务用户和租户管理入口。
 - 修复 Gradle 仓库配置冲突，使后端测试可以在临时 Gradle Docker 镜像中执行。
 - 新增 Flyway `V202605130001`：建立 `workflow_definitions`、`workflow_node_definitions`、`workflow_edge_definitions`，先承接设计态草稿、节点和依赖。
 - 新增工作流草稿 API：分页查询、新建草稿、读取详情、保存节点和依赖，并按租户上下文与流程设计角色复核权限。
-- 新增 `WorkflowDesignAccessTest`，覆盖租户管理员、流程设计者、普通业务用户和跨租户访问边界。
+- 新增 `WorkflowDesignAccessTest`，覆盖租户管理员、页签分配、普通业务用户和跨租户访问边界。
 - 新增工作流发布校验 API：基于已保存草稿结构返回结构化校验结果，并新增 `WorkflowPublishValidatorTest` 覆盖连通性、结构异常、循环和变量依赖错误。
 - 新增 Flyway `V202605180001`：建立 `workflow_variable_definitions`，把变量定义从节点字符串数组中拆出；保存草稿结构时同步校验变量命名、类型、来源节点和输出一致性，并新增 `WorkflowVariableDeclarationValidatorTest`。
 - 新增 Flyway `V202605180002`：建立 `workflow_versions`；新增正式发布 API，把通过校验的草稿冻结为不可变版本，并新增 `WorkflowDraftServicePublishTest` 覆盖发布成功与校验失败边界。

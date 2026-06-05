@@ -18,8 +18,8 @@
 | 用户名 | 入口 | 租户 |
 | --- | --- | --- |
 | `admin` | 系统管理 | 不绑定租户 |
-| `operator` | 业务用户 | 云程科技 |
-| `designer` | 业务用户 | 云程科技 |
+| `operator` | 业务用户 | 云程科技（已分配 workbench / designer / assets 页签） |
+| `designer` | 业务用户 | 云程科技（已分配 workbench / designer / assets 页签） |
 | `tenantadmin` | 租户管理 | 云程科技 |
 
 这批数据只用于第一阶段跑通登录、租户上下文和角色入口，生产初始化后续应改为管理员创建或环境专用 seed。
