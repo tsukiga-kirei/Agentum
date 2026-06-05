@@ -138,6 +138,7 @@ type RuntimePreviewAgent = {
 };
 
 type RuntimePreviewEvent = {
+  id: string;
   time: string;
   title: string;
   description: string;
@@ -1268,7 +1269,7 @@ function WorkflowLaunchDrawer({
   return (
     <Drawer
       title="可发起流程详情"
-      width={560}
+      size={560}
       open
       onClose={onClose}
       rootClassName={rootClassName}
@@ -1428,6 +1429,7 @@ function buildRuntimePreviewFromRun(run: WorkbenchRunDetail): RuntimePreview {
         duration: "记录中",
       })),
     events: run.events.map((event) => ({
+      id: event.id,
       time: formatTime(event.eventTime),
       title: event.title,
       description: event.description,
@@ -2107,7 +2109,7 @@ function RunTracePanel({
           <div className="workbench-subsection-title"><FileText size={15} /> 审计事件</div>
           <div className="workbench-event-timeline">
             {relatedEvents.length > 0 ? relatedEvents.map((event) => (
-              <div key={`${event.time}-${event.title}`} className={`workbench-event-item workbench-event-item--${event.tone}`}>
+              <div key={event.id} className={`workbench-event-item workbench-event-item--${event.tone}`}>
                 <span>{event.time}</span>
                 <div>
                   <strong>{event.title}</strong>
