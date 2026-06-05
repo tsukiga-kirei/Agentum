@@ -76,7 +76,8 @@ public class WorkflowDefinitionEntity {
     }
 
     public void updateGraphSummary(int nodeCount, int pausePointCount, UUID operatorUserId, Instant now) {
-        // 已发布定义再次编辑后必须回到草稿态，否则列表会把“存在未发布改动”的流程误展示成当前版本仍然有效。
+        // 已发布定义再次编辑后回到设计态草稿，用于提示“存在未发布改动”；
+        // 业务入口是否仍可发起由 workflow_versions 与 launch_enabled 决定，不能只看 status。
         this.status = "draft";
         this.nodeCount = nodeCount;
         this.pausePointCount = pausePointCount;

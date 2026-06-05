@@ -56,7 +56,8 @@ public final class WorkbenchApi {
     /**
      * 可发起的已发布工作流模板。
      *
-     * <p>对应租户内 {@code workflow_definitions.status='published'} 的流程；
+     * <p>对应租户内至少存在一个冻结版本且 {@code launch_enabled=true} 的流程。
+     * 设计态在已发布后再次编辑会回到草稿状态，但旧版本未收回时仍可从业务入口发起；
      * 第一阶段流程发起入口未接入运行实例，前端点击后只跳转到流程详情/设计预览或提示运行态待上线。</p>
      */
     public record AvailableWorkflowRow(

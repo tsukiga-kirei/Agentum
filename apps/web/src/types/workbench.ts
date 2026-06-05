@@ -1,6 +1,7 @@
 import type { PageResponse } from "./organization";
 
-// 业务工作台契约：当前阶段聚合 publishedWorkflowTotal / openedCapabilityTotal / myAssetTotal 等真实统计；
+// 业务工作台契约：publishedWorkflowTotal 按“有冻结版本且入口未收回”的业务入口口径统计；
+// openedCapabilityTotal / myAssetTotal 等来自真实治理数据。
 // pendingTodos 和 recentRuns 在运行态上线前为空列表，前端结合 runtimeAvailable 展示运行态建设中提示。
 
 export type WorkbenchMetrics = {

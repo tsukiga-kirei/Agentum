@@ -325,7 +325,7 @@ export const workbenchApi = {
   // 业务工作台概览：返回真实统计、运行态状态标识与（运行态上线前为空的）待办、运行记录。
   summary: (tenantId: string, token: string) =>
     apiRequest<WorkbenchSummary>(`/api/tenants/${tenantId}/workbench/summary`, { token }),
-  // 可发起的已发布工作流：当前阶段返回租户内所有已发布定义，后续按资源范围细化。
+  // 可发起的已发布工作流：按“有冻结版本且入口未收回”展示，与设计态草稿状态解耦。
   listAvailableWorkflows: (
     tenantId: string,
     token: string,

@@ -64,8 +64,8 @@ class WorkbenchServiceTest {
 
         when(tenantRepository.findByIdAndStatus(TENANT_ID, "active"))
             .thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", NOW)));
-        when(workflowDefinitionRepository.countByTenantIdAndStatus(TENANT_ID, "published")).thenReturn(7L);
-        when(workflowDefinitionRepository.countVisibleByTenantIdAndStatus(TENANT_ID, USER_ID, "published")).thenReturn(4L);
+        when(workflowDefinitionRepository.countLaunchableByTenantId(TENANT_ID)).thenReturn(7L);
+        when(workflowDefinitionRepository.countVisibleLaunchableByTenantId(TENANT_ID, USER_ID)).thenReturn(4L);
         when(tenantAssetCapabilityRepository.countByTenantIdAndCreatedBy(TENANT_ID, USER_ID)).thenReturn(3L);
         when(tenantCapabilityGrantRepository.findByTenantIdOrderByCreatedAtDesc(TENANT_ID)).thenReturn(List.of(tenantGrant));
         when(systemCapabilityRepository.findAllById(any())).thenReturn(List.of(capability));
@@ -83,6 +83,24 @@ class WorkbenchServiceTest {
         assertThat(summary.runtimeAvailable()).isFalse();
         assertThat(summary.runtimeStatusLabel()).isEqualTo("运行态建设中");
         assertThat(summary.generatedAt()).isEqualTo(NOW);
+    }
+
+    @Test
+    void shouldCountLaunchableWorkflowWhenDraftHasUnpublishedChanges() {
+        WorkbenchService service = newService();
+
+        when(tenantRepository.findByIdAndStatus(TENANT_ID, "active"))
+            .thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", NOW)));
+        // 已发布版本仍然可发起，但流程设计态在编辑后会回到 draft，旧 status 统计不能代表业务入口数量。
+        when(workflowDefinitionRepository.countLaunchableByTenantId(TENANT_ID)).thenReturn(1L);
+        when(workflowDefinitionRepository.countVisibleLaunchableByTenantId(TENANT_ID, USER_ID)).thenReturn(1L);
+        when(tenantAssetCapabilityRepository.countByTenantIdAndCreatedBy(TENANT_ID, USER_ID)).thenReturn(0L);
+        when(tenantCapabilityGrantRepository.findByTenantIdOrderByCreatedAtDesc(TENANT_ID)).thenReturn(List.of());
+
+        WorkbenchApi.WorkbenchSummary summary = service.getSummary(TENANT_ID, businessPrincipal());
+
+        assertThat(summary.metrics().publishedWorkflowTotal()).isEqualTo(1L);
+        assertThat(summary.metrics().availableWorkflowTotal()).isEqualTo(1L);
     }
 
     @Test
@@ -129,7 +147,6 @@ class WorkbenchServiceTest {
 
         when(tenantRepository.findByIdAndStatus(TENANT_ID, "active"))
             .thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", NOW)));
-        when(workflowDefinitionRepository.countByTenantIdAndStatus(TENANT_ID, "published")).thenReturn(0L);
         when(tenantAssetCapabilityRepository.countByTenantIdAndCreatedBy(TENANT_ID, USER_ID)).thenReturn(0L);
         when(tenantCapabilityGrantRepository.findByTenantIdOrderByCreatedAtDesc(TENANT_ID)).thenReturn(List.of(tenantGrant));
         when(systemCapabilityRepository.findAllById(any())).thenReturn(List.of(capability));

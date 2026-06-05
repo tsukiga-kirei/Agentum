@@ -13,12 +13,20 @@ public interface WorkflowDefinitionRepository extends JpaRepository<WorkflowDefi
 
     Optional<WorkflowDefinitionEntity> findByIdAndTenantId(UUID id, UUID tenantId);
 
-    long countByTenantIdAndStatus(UUID tenantId, String status);
+    @Query("""
+        select count(definition) from WorkflowDefinitionEntity definition
+        where definition.tenantId = :tenantId
+          and definition.launchEnabled = true
+          and exists (
+            select version.id from WorkflowVersionEntity version
+            where version.workflowId = definition.id
+          )
+        """)
+    long countLaunchableByTenantId(@Param("tenantId") UUID tenantId);
 
     @Query("""
         select count(definition) from WorkflowDefinitionEntity definition
         where definition.tenantId = :tenantId
-          and definition.status = :status
           and (
             definition.createdBy = :operatorUserId
             or definition.readScope = 'all'
@@ -28,11 +36,15 @@ public interface WorkflowDefinitionRepository extends JpaRepository<WorkflowDefi
               where grant.workflowId = definition.id and grant.granteeUserId = :operatorUserId
             )
           )
+          and definition.launchEnabled = true
+          and exists (
+            select version.id from WorkflowVersionEntity version
+            where version.workflowId = definition.id
+          )
         """)
-    long countVisibleByTenantIdAndStatus(
+    long countVisibleLaunchableByTenantId(
         @Param("tenantId") UUID tenantId,
-        @Param("operatorUserId") UUID operatorUserId,
-        @Param("status") String status
+        @Param("operatorUserId") UUID operatorUserId
     );
 
     @Query("""

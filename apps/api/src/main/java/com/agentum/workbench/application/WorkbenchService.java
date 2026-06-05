@@ -51,7 +51,7 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>当前阶段聚合三类真实数据：</p>
  * <ul>
  *   <li>概览指标：已发布工作流、能力资产数量等，全部来自真实数据库统计。</li>
- *   <li>可发起的已发布工作流：来自 {@code workflow_definitions.status='published'} 与最新发布版本。</li>
+ *   <li>可发起的已发布工作流：来自未收回的业务入口与最新发布版本，和设计态草稿状态解耦。</li>
  *   <li>我的待办 / 最近运行：运行态尚未上线，固定返回空列表并通过 {@code runtimeAvailable=false} 通知前端。</li>
  * </ul>
  *
@@ -63,7 +63,6 @@ public class WorkbenchService {
 
     private static final Logger log = LoggerFactory.getLogger(WorkbenchService.class);
     private static final String ACTIVE_STATUS = "active";
-    private static final String PUBLISHED_STATUS = "published";
     private static final Set<String> SYSTEM_CAPABILITY_TYPES = Set.of("skill", "mcp", "prompt_template", "delivery");
     // 排序白名单只允许真实数据库字段，避免任意 sort 字段穿透到 JPA。
     // publishedAt / lastPublishedAt 别名映射到 workflow_definitions.updatedAt，
@@ -123,10 +122,12 @@ public class WorkbenchService {
     @Transactional(readOnly = true)
     public WorkbenchApi.WorkbenchSummary getSummary(UUID tenantId, CurrentUserPrincipal principal) {
         ensureActiveTenant(tenantId);
-        long publishedWorkflowTotal = workflowDefinitionRepository.countByTenantIdAndStatus(tenantId, PUBLISHED_STATUS);
+        // 业务入口展示的是“仍可发起的发布版本”。流程发布后再次编辑会让设计态回到 draft，
+        // 但旧版本未收回时仍应计入已发布流程，避免概览与创建任务列表口径不一致。
+        long publishedWorkflowTotal = workflowDefinitionRepository.countLaunchableByTenantId(tenantId);
         long availableWorkflowTotal = principal == null
             ? 0
-            : workflowDefinitionRepository.countVisibleByTenantIdAndStatus(tenantId, principal.userId(), PUBLISHED_STATUS);
+            : workflowDefinitionRepository.countVisibleLaunchableByTenantId(tenantId, principal.userId());
         long openedCapabilityTotal = countOpenedCapabilities(tenantId, principal);
         long myAssetTotal = principal == null
             ? 0
