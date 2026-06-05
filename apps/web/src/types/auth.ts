@@ -14,6 +14,13 @@ export type TenantOption = {
   code: string;
 };
 
+/** 租户公开 SSO 身份源，登录页只用它渲染企业登录按钮。 */
+export type SsoProviderOption = {
+  id: string;
+  name: string;
+  providerType: "oidc" | "saml";
+};
+
 /** 系统角色（三大入口角色），用于 user_role_assignments.role */
 export type SystemRole = "system_admin" | "tenant_admin" | "business";
 

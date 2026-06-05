@@ -2079,6 +2079,42 @@ textarea:focus-visible {
   text-align: center;
 }
 
+.login-sso-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  color: var(--color-text-tertiary);
+  font-size: 13px;
+}
+
+.login-sso-divider::before,
+.login-sso-divider::after {
+  flex: 1;
+  height: 1px;
+  content: "";
+  background: var(--color-border-light);
+}
+
+.login-sso-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.login-sso-button {
+  height: 44px;
+  border-color: var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  background: var(--color-bg-input);
+  font-weight: 600;
+}
+
+.login-sso-button:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
 .login-sso-placeholder p {
   margin: 0;
   color: var(--color-text-tertiary);

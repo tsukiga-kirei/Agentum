@@ -161,6 +161,7 @@
 - 业务工作台已完成后端化第一版：新增 `/api/tenants/{tenantId}/workbench/summary` 与 `/api/tenants/{tenantId}/workbench/available-workflows`，概览统计来自工作流定义、能力资产开放分配和我的能力草稿，可发起流程改为后端分页搜索；运行态尚未上线，待办与运行记录返回空列表并通过 `runtimeAvailable=false`、`runtimeStatusLabel` 在前端展示“运行态建设中”空态，移除前端工作台列表区的模拟待办、运行记录和流程模板硬编码。
 - 业务工作台任务处理页已补运行态预览交互（仍使用 `buildRuntimePreview` 本地 mock，未接 WorkflowRun API）：发起任务后进入固定页头 + 左侧流程进度 + 页签工作区；「当前处理」按输入、智能体、多智能体、人工审核、交付等节点类型分别展示对话流、能力调用条、追问/重新生成/中断和审批区；「执行链路」支持总览列表与单步详情切换；布局收敛为页头/页签固定、内容区单一滚动，并修正侧栏收起时 Logo 居中问题。
 - 流程设计落地版本治理方案 C：`workflow_definitions.launch_enabled` 控制业务入口收回/恢复；列表与详情展示 `latestVersionNumber`、`hasUnpublishedChanges`；创建者可删除流程或收回业务入口；业务工作台可发起列表改为「有冻结版本且入口未收回」，与设计态 `status` 解耦；新增 [能力—流程—权限治理](../capability-workflow-governance.md) 文档。
+- 企业 SSO 完成 OIDC 第一版骨架：新增租户 SSO Provider 与外部身份绑定表，登录页按租户发现 SSO 身份源，后端生成签名 `state` 与 `nonce` 并完成 OIDC 回调后的本地 token 签发；新增 [企业 SSO 对接说明](../sso-integration.md)，明确业务系统只需按标准 OIDC 提供身份，不承载 Agentum 权限判断。
 
 ### 2.3 后端
 

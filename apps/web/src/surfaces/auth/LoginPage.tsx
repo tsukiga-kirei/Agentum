@@ -5,7 +5,8 @@ import { useAuthStore } from "../../stores/authStore";
 import { readLoginPrefs, saveLoginPrefs } from "../../stores/authSession";
 import { ThemeToggle } from "../../components/ThemeToggle";
 import { AgentumMark } from "../../components/brand/AgentumMark";
-import type { PortalType } from "../../types/auth";
+import { API_BASE_URL, authApi } from "../../services/apiClient";
+import type { LoginResponse, PortalType } from "../../types/auth";
 
 // 登录入口选项，与 docs/system-overview.md 中角色定义对齐。
 // 三种入口面向不同角色，登录后进入不同默认页面。
@@ -50,13 +51,19 @@ export function LoginPage() {
   const tenants = useAuthStore((s) => s.tenants);
   const tenantsLoading = useAuthStore((s) => s.tenantsLoading);
   const fetchTenants = useAuthStore((s) => s.fetchTenants);
+  const ssoProviders = useAuthStore((s) => s.ssoProviders);
+  const ssoProvidersLoading = useAuthStore((s) => s.ssoProvidersLoading);
+  const fetchSsoProviders = useAuthStore((s) => s.fetchSsoProviders);
   const login = useAuthStore((s) => s.login);
+  const completeSsoLogin = useAuthStore((s) => s.completeSsoLogin);
   const themeMode = useAuthStore((s) => s.themeMode);
   const isDark = themeMode === "dark";
 
   const [form] = Form.useForm<LoginFormValues>();
+  const selectedTenantId = Form.useWatch("tenantId", form);
   const [activePortal, setActivePortal] = useState<PortalType>("business");
   const [loading, setLoading] = useState(false);
+  const [ssoLoadingProviderId, setSsoLoadingProviderId] = useState<string | null>(null);
   const [messageApi, messageContextHolder] = message.useMessage();
 
   const currentPortal = portals.find((p) => p.key === activePortal) ?? portals[0];
@@ -143,6 +150,59 @@ export function LoginPage() {
     }
   }, [form, tenants]);
 
+  useEffect(() => {
+    if (!shouldSelectTenant) {
+      void fetchSsoProviders(undefined);
+      return;
+    }
+
+    void fetchSsoProviders(typeof selectedTenantId === "string" ? selectedTenantId : undefined);
+  }, [fetchSsoProviders, selectedTenantId, shouldSelectTenant]);
+
+  useEffect(() => {
+    const expectedOrigin = new URL(API_BASE_URL).origin;
+
+    function handleSsoMessage(event: MessageEvent) {
+      if (event.origin !== expectedOrigin) {
+        return;
+      }
+
+      const data = event.data as { type?: string; payload?: LoginResponse };
+      if (data.type !== "agentum:sso-login" || !data.payload?.token) {
+        return;
+      }
+
+      const rememberMe = Boolean(form.getFieldValue("rememberMe"));
+      completeSsoLogin(data.payload, rememberMe);
+      saveLoginPrefs({
+        rememberMe,
+        portal: activePortal,
+        tenantId: shouldSelectTenant ? selectedTenantId : undefined,
+        username: data.payload.user.username,
+      });
+      setSsoLoadingProviderId(null);
+    }
+
+    window.addEventListener("message", handleSsoMessage);
+    return () => window.removeEventListener("message", handleSsoMessage);
+  }, [activePortal, completeSsoLogin, form, selectedTenantId, shouldSelectTenant]);
+
+  useEffect(() => {
+    const raw = window.localStorage.getItem("agentum_sso_callback");
+    if (!raw) {
+      return;
+    }
+    window.localStorage.removeItem("agentum_sso_callback");
+    try {
+      const response = JSON.parse(raw) as LoginResponse;
+      if (response.token) {
+        completeSsoLogin(response, Boolean(form.getFieldValue("rememberMe")));
+      }
+    } catch (error) {
+      console.warn("[auth] 企业 SSO 回调缓存解析失败", { message: error instanceof Error ? error.message : "unknown" });
+    }
+  }, [completeSsoLogin, form]);
+
   function handlePortalChange(portal: PortalType) {
     setActivePortal(portal);
     clearLoginError();
@@ -191,6 +251,26 @@ export function LoginPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleSsoLogin(providerId: string) {
+    clearLoginError();
+
+    if (!selectedTenantId || typeof selectedTenantId !== "string") {
+      showLoginError("请选择租户后再使用企业 SSO 登录");
+      return;
+    }
+
+    setSsoLoadingProviderId(providerId);
+    const url = authApi.ssoAuthorizeUrl(selectedTenantId, providerId, activePortal);
+    const popup = window.open(url, "agentum-sso-login", "width=720,height=760");
+
+    if (!popup) {
+      window.location.href = url;
+      return;
+    }
+
+    popup.focus();
   }
 
   return (
@@ -338,9 +418,29 @@ export function LoginPage() {
               </Form>
             </ConfigProvider>
 
-            {/* SSO 占位 */}
+            {/* 企业 SSO：仅展示当前租户已启用的身份源；权限仍由后端登录回调后重新计算。 */}
             <div className="login-sso-placeholder">
-              <p>企业 SSO 登录即将支持</p>
+              {shouldSelectTenant && ssoProviders.length > 0 ? (
+                <>
+                  <div className="login-sso-divider"><span>企业 SSO</span></div>
+                  <div className="login-sso-actions">
+                    {ssoProviders.map((provider) => (
+                      <Button
+                        key={provider.id}
+                        block
+                        className="login-sso-button"
+                        loading={ssoLoadingProviderId === provider.id}
+                        type="default"
+                        onClick={() => handleSsoLogin(provider.id)}
+                      >
+                        {provider.name}
+                      </Button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <p>{ssoProvidersLoading ? "正在检查企业 SSO 配置…" : "当前租户未启用企业 SSO"}</p>
+              )}
             </div>
 
             {/* 页脚 */}

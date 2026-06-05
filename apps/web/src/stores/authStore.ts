@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { AgentumApiError, authApi } from "../services/apiClient";
-import type { AuthUser, MenuItem, PortalType, RoleInfo, TenantOption, ThemeMode } from "../types/auth";
+import type { AuthUser, LoginResponse, MenuItem, PortalType, RoleInfo, SsoProviderOption, TenantOption, ThemeMode } from "../types/auth";
 import { clearAuthToken, persistAuthToken, readStoredAuthToken } from "./authSession";
 
 // 认证状态管理负责前端会话缓存，真实身份、租户和角色上下文全部以后端 auth API 为准。
@@ -23,6 +23,10 @@ type AuthState = {
   tenants: TenantOption[];
   /** 租户列表是否正在加载 */
   tenantsLoading: boolean;
+  /** 当前租户公开启用的企业 SSO 身份源 */
+  ssoProviders: SsoProviderOption[];
+  /** SSO 身份源是否正在加载 */
+  ssoProvidersLoading: boolean;
   /** 是否已完成初始化检查（例如从本地缓存恢复） */
   initialized: boolean;
   /** 当前 token 是否写入 localStorage（记住我）；否则仅 sessionStorage */
@@ -34,6 +38,8 @@ type AuthState = {
 type AuthActions = {
   /** 从后端加载登录页可见租户 */
   fetchTenants: () => Promise<void>;
+  /** 根据租户加载可用企业 SSO 身份源 */
+  fetchSsoProviders: (tenantId?: string) => Promise<void>;
   /** 登录并保存后端返回的 token、角色列表和菜单；rememberMe 决定 token 存 localStorage 或 sessionStorage */
   login: (
     username: string,
@@ -42,6 +48,8 @@ type AuthActions = {
     tenantId?: string,
     rememberMe?: boolean,
   ) => Promise<{ success: boolean; message?: string }>;
+  /** SSO 回调完成后写入 Agentum 自己的 token 和角色上下文 */
+  completeSsoLogin: (response: LoginResponse, rememberMe?: boolean) => void;
   /** 退出登录 */
   logout: () => Promise<void>;
   /** 从本地缓存恢复会话（调用 /api/auth/me 获取完整角色和菜单上下文） */
@@ -65,6 +73,8 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   menus: [],
   tenants: [],
   tenantsLoading: false,
+  ssoProviders: [],
+  ssoProvidersLoading: false,
   initialized: false,
   sessionPersist: false,
   themeMode: "light",
@@ -79,6 +89,24 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       console.warn("[auth] 租户列表加载失败", getErrorLogContext(error));
       set({ tenants: [], tenantsLoading: false });
       throw new Error("无法加载租户列表，请确认后端服务已启动");
+    }
+  },
+
+  fetchSsoProviders: async (tenantId) => {
+    if (!tenantId) {
+      set({ ssoProviders: [], ssoProvidersLoading: false });
+      return;
+    }
+
+    set({ ssoProvidersLoading: true });
+
+    try {
+      const ssoProviders = await authApi.listSsoProviders(tenantId);
+      set({ ssoProviders, ssoProvidersLoading: false });
+    } catch (error) {
+      // SSO 是登录增强能力，加载失败时保留密码登录可用，只输出脱敏诊断。
+      console.warn("[auth] 企业 SSO 身份源加载失败", getErrorLogContext(error));
+      set({ ssoProviders: [], ssoProvidersLoading: false });
     }
   },
 
@@ -122,6 +150,20 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       console.error("[auth] 登录请求异常", getErrorLogContext(error));
       return { success: false, message: "无法连接后端服务，请确认 API 已启动" };
     }
+  },
+
+  completeSsoLogin: (response, rememberMe = false) => {
+    persistAuthToken(response.token, rememberMe);
+    set({
+      user: response.user,
+      token: response.token,
+      roles: response.roles,
+      activeRole: response.activeRole,
+      permissions: response.permissions,
+      menus: response.menus,
+      initialized: true,
+      sessionPersist: rememberMe,
+    });
   },
 
   logout: async () => {

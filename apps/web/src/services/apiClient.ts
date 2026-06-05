@@ -1,4 +1,4 @@
-import type { LoginRequest, LoginResponse, MeResponse, SwitchRoleRequest, SwitchRoleResponse, TenantOption } from "../types/auth";
+import type { LoginRequest, LoginResponse, MeResponse, PortalType, SsoProviderOption, SwitchRoleRequest, SwitchRoleResponse, TenantOption } from "../types/auth";
 import type { AssetSummary, CreateMyAssetRequest, MyAssetDetail, MyAssetPage, MyAssetRow, ShareableMemberRow, SystemCapabilityAssetPage, UpdateMyAssetAccessRequest, UpdateMyAssetRequest } from "../types/asset";
 import type {
   CreateDepartmentRequest,
@@ -83,7 +83,7 @@ type RequestOptions = Omit<RequestInit, "body"> & {
   token?: string | null;
 };
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080";
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080";
 
 export class AgentumApiError extends Error {
   readonly code: string;
@@ -145,6 +145,11 @@ async function apiRequest<T>(path: string, options: RequestOptions = {}): Promis
 
 export const authApi = {
   listTenants: () => apiRequest<TenantOption[]>("/api/public/tenants"),
+  listSsoProviders: (tenantId: string) => apiRequest<SsoProviderOption[]>(`/api/public/tenants/${tenantId}/sso-providers`),
+  ssoAuthorizeUrl: (tenantId: string, providerId: string, portal: PortalType) => {
+    const params = new URLSearchParams({ tenantId, providerId, portal });
+    return `${API_BASE_URL}/api/auth/sso/authorize?${params.toString()}`;
+  },
   login: (request: LoginRequest) => apiRequest<LoginResponse>("/api/auth/login", { method: "POST", body: request }),
   me: (token: string) => apiRequest<MeResponse>("/api/auth/me", { token }),
   switchRole: (token: string, request: SwitchRoleRequest) =>
