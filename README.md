@@ -140,6 +140,7 @@ docs/                     产品与架构文档
 | [架构文档](./docs/architecture.md) | 模块边界、数据模型、部署演进 |
 | [开发规范](./docs/development-standards.md) | 命名、接口、测试与 AI 协作约定 |
 | [能力—流程—权限治理](./docs/capability-workflow-governance.md) | 版本模型、引用勾稽、收回/删除与后续选型 |
+| [AI 运行态接入说明](./docs/ai-runtime-integration.md) | 模型、MCP、Skill、提示词模板与流程运行时的当前实现 |
 | [企业 SSO 对接说明](./docs/sso-integration.md) | OIDC 单点登录边界、业务系统配合方式与当前实现状态 |
 | [当前进度](./docs/progress/README.md) | 阶段计划与施工状态 |
 | [AGENTS.md](./AGENTS.md) | 仓库内 AI 代理开发入口 |

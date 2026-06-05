@@ -7,6 +7,7 @@
 - [开发规范](../development-standards.md)
 - [系统详细梳理介绍](../system-overview.md)
 - [能力—流程—权限治理](../capability-workflow-governance.md)
+- [AI 运行态接入说明](../ai-runtime-integration.md)
 
 ## 1. 当前阶段
 
