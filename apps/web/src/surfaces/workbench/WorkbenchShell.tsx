@@ -24,6 +24,7 @@ import {
   Save,
   Search,
   Send,
+  Trash2,
   Settings,
   ShieldAlert,
   ShieldCheck,
@@ -512,7 +513,7 @@ export function WorkbenchShell() {
     }
   }
 
-  async function handleDeleteRun(runId: string) {
+  async function handleDeleteRun(runId: string, closeWorkspace = false) {
     if (!tenantId || !token) {
       return;
     }
@@ -520,6 +521,9 @@ export function WorkbenchShell() {
       await workbenchApi.deleteRun(tenantId, token, runId);
       if (openedRunDetail?.id === runId) {
         setOpenedRunDetail(null);
+        if (closeWorkspace) {
+          setActiveWorkbenchTab("tasks");
+        }
       }
       messageApi.success("任务已删除");
       void loadSummary();
@@ -781,6 +785,7 @@ export function WorkbenchShell() {
                     onSave={() => void handleSaveRun()}
                     onCompleteTodo={handleCompleteOpenTodo}
                     onRollback={(nodeRunId) => void handleRollbackRun(nodeRunId)}
+                    onDelete={() => void handleDeleteRun(openedRunDetail.id, true)}
                   />
                 </div>
               </div>
@@ -1515,6 +1520,7 @@ function WorkbenchTaskRunDetail({
   preview,
   onBack,
   onSave,
+  onDelete,
   onCompleteTodo,
   onRollback,
 }: {
@@ -1522,6 +1528,7 @@ function WorkbenchTaskRunDetail({
   preview: RuntimePreview;
   onBack: () => void;
   onSave: () => void;
+  onDelete: () => void;
   onCompleteTodo: (comment: string) => void;
   onRollback: (nodeRunId: string) => void;
 }) {
@@ -1557,6 +1564,7 @@ function WorkbenchTaskRunDetail({
           <div className="workbench-run-kicker">
             <span>业务工作台 / 任务处理</span>
             {!run.saved ? <span className="workbench-run-soft-badge">未保存草稿</span> : null}
+            {run.saved && !run.readOnly ? <span className="workbench-run-soft-badge">已保存</span> : null}
             {run.readOnly ? <span className="workbench-run-soft-badge">只读查看</span> : null}
           </div>
           <div className="workbench-run-title-row">
@@ -1573,6 +1581,12 @@ function WorkbenchTaskRunDetail({
             <button type="button" className="sys-btn sys-btn--primary" onClick={onSave}>
               <Save size={16} aria-hidden="true" />
               保存
+            </button>
+          ) : null}
+          {!run.readOnly ? (
+            <button type="button" className="sys-btn sys-btn--danger" onClick={onDelete}>
+              <Trash2 size={16} aria-hidden="true" />
+              删除
             </button>
           ) : null}
           <button type="button" className="sys-btn sys-btn--default" onClick={onBack}>
@@ -2229,7 +2243,7 @@ function ActiveTaskListItem({
         <button type="button" className="agent-button h-7 px-2 text-xs" onClick={onOpen}>
           {record.hasOpenTodo ? "处理" : "继续"}
         </button>
-        <button type="button" className="agent-button h-7 px-2 text-xs text-rose-600" onClick={onDelete}>
+        <button type="button" className="sys-btn sys-btn--danger sys-btn--sm" onClick={onDelete}>
           删除
         </button>
       </div>
