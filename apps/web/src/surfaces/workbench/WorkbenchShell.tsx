@@ -1398,7 +1398,7 @@ function buildRuntimePreviewFromRun(run: WorkbenchRunDetail): RuntimePreview {
       state,
       kind: mapNodeKind(node.nodeType),
       description: nodeDescription(node.nodeType, node.config),
-      inputs: objectToFields(node.inputs),
+      inputs: resolveStepInputs(node),
       outputs: objectToFields(node.outputs),
       completedAt: state === "done" ? formatTime(run.updatedAt) : undefined,
       chatMessages: nodeMessages(node),
@@ -1467,6 +1467,58 @@ function objectToFields(values: Record<string, unknown>): RuntimeNodeField[] {
   return Object.entries(values ?? {}).map(([label, value]) => ({ label, value: stringifyValue(value) }));
 }
 
+type InputFieldConfigShape = {
+  id: string;
+  label: string;
+  variable: string;
+  placeholder: string;
+  defaultValue?: string;
+};
+
+function isInputFieldConfig(value: unknown): value is InputFieldConfigShape {
+  return typeof value === "object"
+    && value !== null
+    && typeof (value as InputFieldConfigShape).label === "string"
+    && typeof (value as InputFieldConfigShape).variable === "string";
+}
+
+// 用户输入节点应优先读取发布快照里的 inputFields，而不是运行态变量占位。
+function buildUserInputFields(config: Record<string, unknown>): RuntimeNodeField[] {
+  const configured = config.inputFields;
+  if (Array.isArray(configured)) {
+    const fields = configured.filter(isInputFieldConfig);
+    if (fields.length > 0) {
+      return fields.map((field) => ({
+        label: field.label,
+        value: field.defaultValue ?? "",
+      }));
+    }
+  }
+  return [];
+}
+
+function defaultUserInputFields(): RuntimeNodeField[] {
+  return [
+    { label: "业务资料", value: "" },
+    { label: "补充说明", value: "" },
+  ];
+}
+
+function resolveStepInputs(node: WorkbenchRunDetail["nodes"][number]): RuntimeNodeField[] {
+  if (node.nodeType !== "user_input") {
+    return objectToFields(node.inputs);
+  }
+  const fromConfig = buildUserInputFields(node.config);
+  if (fromConfig.length > 0) {
+    return fromConfig;
+  }
+  const fromSnapshot = objectToFields(node.inputs).filter((field) => field.value && field.value !== "等待上游输入");
+  if (fromSnapshot.length > 0) {
+    return fromSnapshot;
+  }
+  return defaultUserInputFields();
+}
+
 function stringifyValue(value: unknown): string {
   if (value === null || value === undefined) return "";
   if (typeof value === "string") return value;
@@ -1477,7 +1529,15 @@ function stringifyValue(value: unknown): string {
 function nodeDescription(nodeType: string, config: Record<string, unknown>): string {
   const summary = stringifyValue(config.summary);
   if (summary) return summary;
-  if (nodeType === "user_input") return "等待业务用户补充当前节点所需资料，提交后后端会继续推进后续节点。";
+  if (nodeType === "user_input") {
+    const placeholder = stringifyValue(config.placeholder);
+    if (placeholder) return placeholder;
+    const fields = buildUserInputFields(config);
+    if (fields.length > 0) {
+      return `请填写：${fields.map((field) => field.label).join("、")}`;
+    }
+    return "等待业务用户补充当前节点所需资料，提交后后端会继续推进后续节点。";
+  }
   if (nodeType === "human_review") return "等待人工审核意见，审核记录会写入运行事件。";
   if (nodeType === "delivery") return "交付节点由后端运行态执行，结果会写入交付记录并同步到执行链路。";
   if (nodeType === "parallel_group") return "智能体集群按发布快照顺序执行，子智能体输出会汇总到节点结果。";
@@ -1842,13 +1902,8 @@ function RunCurrentInputPanel({
       ) : undefined}
     >
       <div className="workbench-input-form">
-        {(activeStep.inputs ?? [
-          { label: "授信主体", value: "" },
-          { label: "报告用途", value: "" },
-          { label: "补充材料", value: "" },
-          { label: "处理说明", value: "" },
-        ]).map((field) => (
-          <label key={field.label} className="workbench-input-form-field">
+        {(activeStep.inputs?.length ? activeStep.inputs : defaultUserInputFields()).map((field, index) => (
+          <label key={`${field.label}-${index}`} className="workbench-input-form-field">
             <span>{field.label}</span>
             <input defaultValue={field.value} placeholder={`请输入${field.label}`} />
           </label>
