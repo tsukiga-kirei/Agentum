@@ -67,6 +67,7 @@ import type {
 } from "../types/workflow-contract";
 import type {
   WorkbenchAvailableWorkflowPage,
+  WorkbenchAvailableWorkflowPreview,
   WorkbenchRunDetail,
   WorkbenchSummary,
   WorkbenchTaskRunPage,
@@ -345,6 +346,11 @@ export const workbenchApi = {
       { token },
     );
   },
+  getAvailableWorkflowPreview: (tenantId: string, token: string, workflowId: string) =>
+    apiRequest<WorkbenchAvailableWorkflowPreview>(
+      `/api/tenants/${tenantId}/workbench/available-workflows/${workflowId}/preview`,
+      { token },
+    ),
   createRun: (tenantId: string, token: string, workflowId: string, title: string) =>
     apiRequest<WorkbenchRunDetail>(`/api/tenants/${tenantId}/workbench/runs`, {
       method: "POST",

@@ -10,6 +10,7 @@ import {
   FileText,
   GitBranch,
   History,
+  Inbox,
   LayoutDashboard,
   Library,
   ListTodo,
@@ -27,6 +28,7 @@ import {
   Sparkles,
   User,
   UserRoundCheck,
+  UsersRound,
   Wrench,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -40,6 +42,7 @@ import { AgentumMark } from "../../components/brand/AgentumMark";
 import { useAuthStore } from "../../stores/authStore";
 import { AgentumApiError, workbenchApi } from "../../services/apiClient";
 import type {
+  WorkbenchAvailableWorkflowNodeRow,
   WorkbenchAvailableWorkflowRow,
   WorkbenchPendingTodoRow,
   WorkbenchRecentRunRow,
@@ -1075,6 +1078,49 @@ function WorkflowLaunchDrawer({
   onLaunch: (workflow: WorkbenchAvailableWorkflowRow) => void;
   launching: boolean;
 }) {
+  const token = useAuthStore((state) => state.token);
+  const tenantId = useAuthStore((state) => state.user?.tenantId);
+  const [previewNodes, setPreviewNodes] = useState<WorkbenchAvailableWorkflowNodeRow[]>([]);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState("");
+
+  useEffect(() => {
+    if (!workflow || !token || !tenantId) {
+      setPreviewNodes([]);
+      setPreviewLoading(false);
+      setPreviewError("");
+      return;
+    }
+
+    let cancelled = false;
+    setPreviewLoading(true);
+    setPreviewError("");
+
+    void workbenchApi.getAvailableWorkflowPreview(tenantId, token, workflow.id)
+      .then((preview) => {
+        if (!cancelled) {
+          setPreviewNodes(preview.nodes);
+        }
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+        console.warn("[workbench] 流程节点预览加载失败", error);
+        setPreviewError(error instanceof AgentumApiError ? error.message : "无法加载流程节点");
+        setPreviewNodes([]);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setPreviewLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantId, token, workflow?.id]);
+
   if (!workflow) {
     return null;
   }
@@ -1107,19 +1153,29 @@ function WorkflowLaunchDrawer({
         </section>
 
         <section className="workbench-launch-drawer-section">
-          <h3>权限状态</h3>
-          <p>{workflow.canLaunch ? "当前账号可以基于该发布版本创建任务，创建后会生成运行实例、节点链路和首个待办。" : workflow.launchBlockedReason || "当前账号没有该流程的读取或发起权限。"}</p>
+          <h3>流程节点</h3>
+          <p className="workbench-launch-drawer-section-lead">基于 v{workflow.latestVersionNumber} 发布快照，发起任务后将按以下步骤依次执行。</p>
+          {previewLoading ? (
+            <div className="workflow-drawer-loading">
+              <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+              正在读取流程节点
+            </div>
+          ) : previewError ? (
+            <p className="agent-muted text-sm leading-6">{previewError}</p>
+          ) : previewNodes.length === 0 ? (
+            <p className="agent-muted text-sm leading-6">当前发布版本还没有可展示的业务节点。</p>
+          ) : (
+            <div className="workflow-drawer-step-list">
+              {previewNodes.map((node, index) => (
+                <LaunchPreviewStep key={node.nodeId} node={node} index={index} />
+              ))}
+            </div>
+          )}
         </section>
 
         <section className="workbench-launch-drawer-section">
-          <h3>运行依据</h3>
-          <div className="workbench-capability-stack">
-            <span>发布版本快照</span>
-            <span>后端节点状态机</span>
-            <span>租户模型分配</span>
-            <span>能力池授权复核</span>
-            <span>变量与交付记录</span>
-          </div>
+          <h3>权限状态</h3>
+          <p>{workflow.canLaunch ? "当前账号可以基于该发布版本创建任务，创建后会生成运行实例、节点链路和首个待办。" : workflow.launchBlockedReason || "当前账号没有该流程的读取或发起权限。"}</p>
         </section>
 
         <div className="workbench-launch-drawer-footer">
@@ -1134,6 +1190,63 @@ function WorkflowLaunchDrawer({
       </div>
     </Drawer>
   );
+}
+
+function LaunchPreviewStep({ node, index }: { node: WorkbenchAvailableWorkflowNodeRow; index: number }) {
+  const nodeType = formatLaunchNodeType(node.nodeType);
+  const summary = node.summary || "尚未配置节点说明";
+  const Icon = launchNodeIcon(node.nodeType);
+  const tone = launchNodeTone(node.nodeType);
+
+  return (
+    <article className="workflow-drawer-step">
+      <span className={`workflow-drawer-step-index workflow-drawer-step-index--${tone}`}>
+        <Icon size={14} aria-hidden="true" />
+      </span>
+      <span className="min-w-0">
+        <strong>{node.name}</strong>
+        <small>{index + 1}. {nodeType} · {summary}</small>
+      </span>
+    </article>
+  );
+}
+
+function formatLaunchNodeType(nodeType: string) {
+  const labels: Record<string, string> = {
+    trigger: "系统触发",
+    user_input: "输入节点",
+    agent: "单智能体节点",
+    parallel_group: "智能体集群节点",
+    merge: "组装节点",
+    condition: "条件分支",
+    human_review: "人工审核",
+    delivery: "交付节点",
+  };
+  return labels[nodeType] ?? nodeType;
+}
+
+function launchNodeIcon(nodeType: string): LucideIcon {
+  const icons: Record<string, LucideIcon> = {
+    trigger: GitBranch,
+    user_input: Inbox,
+    agent: Bot,
+    parallel_group: UsersRound,
+    merge: GitBranch,
+    condition: GitBranch,
+    human_review: ShieldCheck,
+    delivery: Send,
+  };
+  return icons[nodeType] ?? Bot;
+}
+
+function launchNodeTone(nodeType: string) {
+  if (nodeType === "user_input") return "user_input";
+  if (nodeType === "agent") return "agent";
+  if (nodeType === "parallel_group") return "parallel_group";
+  if (nodeType === "human_review") return "human_review";
+  if (nodeType === "delivery") return "delivery";
+  if (nodeType === "merge" || nodeType === "condition") return "merge";
+  return "agent";
 }
 
 function buildRuntimePreviewFromRun(run: WorkbenchRunDetail): RuntimePreview {

@@ -70,6 +70,20 @@ public class WorkbenchController {
         );
     }
 
+    @GetMapping("/available-workflows/{workflowId}/preview")
+    public ApiResponse<WorkbenchApi.AvailableWorkflowPreview> getAvailableWorkflowPreview(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID workflowId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        workbenchAccess.assertCanAccessWorkbench(principal, tenantId);
+        return ApiResponse.success(
+            workbenchRuntimeService.getAvailableWorkflowPreview(tenantId, principal, workflowId),
+            RequestIds.current(request)
+        );
+    }
+
     @PostMapping("/runs")
     public ApiResponse<WorkbenchApi.RunDetail> createRun(
         @PathVariable UUID tenantId,

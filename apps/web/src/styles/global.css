@@ -3663,6 +3663,13 @@ textarea:focus-visible {
   line-height: 1.75;
 }
 
+.workbench-launch-drawer-section-lead {
+  margin-bottom: 12px !important;
+  color: var(--color-text-tertiary) !important;
+  font-size: 12px !important;
+  line-height: 1.7 !important;
+}
+
 .workbench-launch-drawer-steps {
   display: grid;
   gap: 8px;

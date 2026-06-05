@@ -62,6 +62,20 @@ export type WorkbenchAvailableWorkflowRow = {
   launchBlockedReason: string;
 };
 
+export type WorkbenchAvailableWorkflowNodeRow = {
+  nodeId: string;
+  nodeType: string;
+  name: string;
+  summary: string;
+  sortOrder: number;
+};
+
+export type WorkbenchAvailableWorkflowPreview = {
+  workflowId: string;
+  versionNumber: number;
+  nodes: WorkbenchAvailableWorkflowNodeRow[];
+};
+
 export type WorkbenchAvailableWorkflowPage = PageResponse<WorkbenchAvailableWorkflowRow>;
 
 export type WorkbenchTaskRunRow = {

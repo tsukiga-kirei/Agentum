@@ -533,6 +533,39 @@ paths:
                     properties:
                       data:
                         $ref: "#/components/schemas/WorkbenchAvailableWorkflowPageResponse"
+  /api/tenants/{tenantId}/workbench/available-workflows/{workflowId}/preview:
+    get:
+      summary: 预览可发起流程的发布节点
+      description: 基于最新发布版本快照返回业务节点列表，供创建任务前查看流程步骤。
+      tags:
+        - Workbench
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 发布版本节点预览
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/WorkbenchAvailableWorkflowPreview"
   /api/tenants/{tenantId}/workbench/runs:
     post:
       summary: 创建业务任务运行
@@ -3926,6 +3959,41 @@ components:
         - size
         - total
         - totalPages
+    WorkbenchAvailableWorkflowNodeRow:
+      type: object
+      properties:
+        nodeId:
+          type: string
+        nodeType:
+          type: string
+        name:
+          type: string
+        summary:
+          type: string
+        sortOrder:
+          type: integer
+      required:
+        - nodeId
+        - nodeType
+        - name
+        - summary
+        - sortOrder
+    WorkbenchAvailableWorkflowPreview:
+      type: object
+      properties:
+        workflowId:
+          type: string
+          format: uuid
+        versionNumber:
+          type: integer
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkbenchAvailableWorkflowNodeRow"
+      required:
+        - workflowId
+        - versionNumber
+        - nodes
     WorkbenchCreateRunRequest:
       type: object
       properties:

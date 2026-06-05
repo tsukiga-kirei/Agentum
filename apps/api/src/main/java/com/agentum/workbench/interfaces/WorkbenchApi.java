@@ -179,4 +179,23 @@ public final class WorkbenchApi {
         Instant eventTime
     ) {
     }
+
+    /**
+     * 发起前预览：基于最新发布版本快照返回业务节点，便于用户在创建任务前了解流程步骤。
+     */
+    public record AvailableWorkflowNodeRow(
+        String nodeId,
+        String nodeType,
+        String name,
+        String summary,
+        int sortOrder
+    ) {
+    }
+
+    public record AvailableWorkflowPreview(
+        UUID workflowId,
+        int versionNumber,
+        List<AvailableWorkflowNodeRow> nodes
+    ) {
+    }
 }

@@ -93,6 +93,29 @@ class WorkbenchRuntimeServiceTest {
     }
 
     @Test
+    void shouldPreviewPublishedWorkflowNodesWithoutTrigger() {
+        WorkbenchRuntimeService service = newService();
+        WorkflowDefinitionEntity open = publishedDefinition("授信报告流程", DESIGNER_ID, "all");
+        WorkflowVersionEntity openVersion = version(open, 3, snapshotJson());
+
+        stubTenant();
+        when(workflowDefinitionRepository.findByIdAndTenantId(open.getId(), TENANT_ID)).thenReturn(Optional.of(open));
+        when(workflowVersionRepository.findTopByWorkflowIdOrderByVersionNumberDesc(open.getId())).thenReturn(Optional.of(openVersion));
+
+        WorkbenchApi.AvailableWorkflowPreview preview = service.getAvailableWorkflowPreview(
+            TENANT_ID,
+            businessPrincipal(),
+            open.getId()
+        );
+
+        assertThat(preview.versionNumber()).isEqualTo(3);
+        assertThat(preview.nodes()).extracting(WorkbenchApi.AvailableWorkflowNodeRow::nodeType)
+            .containsExactly("user_input", "agent", "delivery");
+        assertThat(preview.nodes()).extracting(WorkbenchApi.AvailableWorkflowNodeRow::name)
+            .containsExactly("补充授信资料", "智能体分析", "生成授信报告");
+    }
+
+    @Test
     void shouldRejectLockedWorkflowWhenCreatingRun() {
         WorkbenchRuntimeService service = newService();
         WorkflowDefinitionEntity locked = publishedDefinition("未开放流程", DESIGNER_ID, "self");

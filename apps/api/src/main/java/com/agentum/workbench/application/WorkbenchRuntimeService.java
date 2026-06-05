@@ -155,6 +155,40 @@ public class WorkbenchRuntimeService {
         )));
     }
 
+    @Transactional(readOnly = true)
+    public WorkbenchApi.AvailableWorkflowPreview getAvailableWorkflowPreview(
+        UUID tenantId,
+        CurrentUserPrincipal principal,
+        UUID workflowId
+    ) {
+        ensureActiveTenant(tenantId);
+        ensureAuthenticated(principal);
+        WorkflowDefinitionEntity definition = workflowDefinitionRepository.findByIdAndTenantId(workflowId, tenantId)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKFLOW_DRAFT_NOT_FOUND", "流程不存在"));
+        if (!definition.isLaunchEnabled()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_WORKFLOW_RECALLED", "该流程入口已被收回，暂不能查看发布节点");
+        }
+        WorkflowVersionEntity version = workflowVersionRepository.findTopByWorkflowIdOrderByVersionNumberDesc(workflowId)
+            .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "WORKFLOW_VERSION_REQUIRED", "流程尚未发布，无法预览节点"));
+        VersionSnapshot snapshot = readSnapshot(version);
+        List<SnapshotNode> snapshotNodes = snapshot.nodes() == null ? List.of() : snapshot.nodes();
+        List<WorkbenchApi.AvailableWorkflowNodeRow> nodes = new ArrayList<>();
+        int sortOrder = 0;
+        for (SnapshotNode node : snapshotNodes) {
+            if ("trigger".equals(node.nodeType())) {
+                continue;
+            }
+            nodes.add(new WorkbenchApi.AvailableWorkflowNodeRow(
+                node.nodeId(),
+                node.nodeType(),
+                node.name(),
+                nodeSummary(node.config()),
+                sortOrder++
+            ));
+        }
+        return new WorkbenchApi.AvailableWorkflowPreview(workflowId, version.getVersionNumber(), nodes);
+    }
+
     @Transactional
     public WorkbenchApi.RunDetail createRun(UUID tenantId, CurrentUserPrincipal principal, WorkbenchApi.CreateRunRequest request) {
         ensureActiveTenant(tenantId);
@@ -709,6 +743,21 @@ public class WorkbenchRuntimeService {
         Map<String, Object> result = new HashMap<>();
         variables.forEach(variable -> result.put(variable, value));
         return result;
+    }
+
+    private String nodeSummary(Map<String, Object> config) {
+        if (config == null || config.isEmpty()) {
+            return "";
+        }
+        Object summary = config.get("summary");
+        if (summary instanceof String summaryText && !summaryText.isBlank()) {
+            return summaryText.trim();
+        }
+        Object placeholder = config.get("placeholder");
+        if (placeholder instanceof String placeholderText && !placeholderText.isBlank()) {
+            return placeholderText.trim();
+        }
+        return "";
     }
 
     private boolean isWaitable(String nodeType) {
