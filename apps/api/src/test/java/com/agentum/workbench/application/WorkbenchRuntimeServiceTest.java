@@ -4,8 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -13,6 +13,7 @@ import com.agentum.auth.application.CurrentUserPrincipal;
 import com.agentum.auth.domain.UserAccount;
 import com.agentum.auth.infrastructure.UserAccountRepository;
 import com.agentum.permission.application.CollaborationAccessPolicy;
+import com.agentum.shared.api.ApiException;
 import com.agentum.tenant.domain.TenantEntity;
 import com.agentum.tenant.infrastructure.TenantRepository;
 import com.agentum.workbench.interfaces.WorkbenchApi;
@@ -28,6 +29,7 @@ import com.agentum.workflow.infrastructure.WorkflowNodeRunRepository;
 import com.agentum.workflow.infrastructure.WorkflowRunEventRepository;
 import com.agentum.workflow.infrastructure.WorkflowRunRepository;
 import com.agentum.workflow.infrastructure.WorkflowVersionRepository;
+import com.agentum.workflow.infrastructure.WorkflowVariableSnapshotRepository;
 import com.agentum.workflow.infrastructure.WorkflowWaitingEventRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
@@ -40,6 +42,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 
 class WorkbenchRuntimeServiceTest {
 
@@ -57,7 +60,9 @@ class WorkbenchRuntimeServiceTest {
     private final WorkflowNodeRunRepository workflowNodeRunRepository = mock(WorkflowNodeRunRepository.class);
     private final WorkflowWaitingEventRepository workflowWaitingEventRepository = mock(WorkflowWaitingEventRepository.class);
     private final WorkflowRunEventRepository workflowRunEventRepository = mock(WorkflowRunEventRepository.class);
+    private final WorkflowVariableSnapshotRepository workflowVariableSnapshotRepository = mock(WorkflowVariableSnapshotRepository.class);
     private final UserAccountRepository userAccountRepository = mock(UserAccountRepository.class);
+    private final WorkflowRuntimeExecutor workflowRuntimeExecutor = mock(WorkflowRuntimeExecutor.class);
 
     @Test
     void shouldListAllPublishedWorkflowsAndMarkLockedRows() {
@@ -120,6 +125,8 @@ class WorkbenchRuntimeServiceTest {
         when(workflowVersionRepository.findTopByWorkflowIdOrderByVersionNumberDesc(open.getId())).thenReturn(Optional.of(version));
         when(workflowAccessGrantRepository.findByWorkflowId(open.getId())).thenReturn(List.of());
         when(userAccountRepository.findAllById(any())).thenReturn(List.of(operator));
+        when(workflowRuntimeExecutor.execute(any()))
+            .thenReturn(new WorkflowRuntimeExecutor.ExecutionResult(Map.of("summary", "手动触发节点已完成")));
 
         WorkbenchApi.RunDetail detail = service.createRun(
             TENANT_ID,
@@ -142,6 +149,93 @@ class WorkbenchRuntimeServiceTest {
         verify(workflowRunEventRepository, atLeastOnce()).save(any());
     }
 
+    @Test
+    void shouldExecuteAgentAndDeliveryNodesWithoutPlaceholderOutput() {
+        WorkbenchRuntimeService service = newService();
+        WorkflowDefinitionEntity open = publishedDefinition("自动执行流程", DESIGNER_ID, "all");
+        WorkflowVersionEntity version = version(open, 4, autoSnapshotJson());
+        UserAccount operator = mock(UserAccount.class);
+        when(operator.getId()).thenReturn(OPERATOR_ID);
+        when(operator.getDisplayName()).thenReturn("业务用户");
+
+        stubTenant();
+        when(workflowDefinitionRepository.findByIdAndTenantId(open.getId(), TENANT_ID)).thenReturn(Optional.of(open));
+        when(workflowVersionRepository.findTopByWorkflowIdOrderByVersionNumberDesc(open.getId())).thenReturn(Optional.of(version));
+        when(workflowAccessGrantRepository.findByWorkflowId(open.getId())).thenReturn(List.of());
+        when(userAccountRepository.findAllById(any())).thenReturn(List.of(operator));
+        when(workflowRuntimeExecutor.execute(any()))
+            .thenAnswer(invocation -> {
+                WorkflowRuntimeExecutor.ExecutionRequest request = invocation.getArgument(0);
+                if ("agent".equals(request.nodeRun().getNodeType())) {
+                    return new WorkflowRuntimeExecutor.ExecutionResult(Map.of(
+                        "risk_summary", "AI 已基于租户模型生成风险摘要",
+                        "summary", "AI 已基于租户模型生成风险摘要"
+                    ));
+                }
+                if ("delivery".equals(request.nodeRun().getNodeType())) {
+                    return new WorkflowRuntimeExecutor.ExecutionResult(Map.of(
+                        "delivery_record", "邮件交付成功",
+                        "summary", "邮件交付成功"
+                    ));
+                }
+                return new WorkflowRuntimeExecutor.ExecutionResult(Map.of("summary", "节点已完成"));
+            });
+
+        WorkbenchApi.RunDetail detail = service.createRun(
+            TENANT_ID,
+            businessPrincipal(),
+            new WorkbenchApi.CreateRunRequest(open.getId(), "自动执行任务")
+        );
+
+        assertThat(detail.state()).isEqualTo("completed");
+        assertThat(detail.openTodo()).isNull();
+        assertThat(detail.nodes()).extracting(WorkbenchApi.NodeRunRow::state)
+            .containsExactly("completed", "completed", "completed");
+        assertThat(detail.nodes().get(1).outputs()).containsEntry("risk_summary", "AI 已基于租户模型生成风险摘要");
+        assertThat(detail.nodes().get(2).outputs()).containsEntry("delivery_record", "邮件交付成功");
+        assertThat(detail.nodes().get(1).outputs().get("summary").toString()).doesNotContain("尚未接入");
+    }
+
+    @Test
+    void shouldKeepRunFailedAndAuditableWhenExecutorFails() {
+        WorkbenchRuntimeService service = newService();
+        WorkflowDefinitionEntity open = publishedDefinition("失败留痕流程", DESIGNER_ID, "all");
+        WorkflowVersionEntity version = version(open, 5, autoSnapshotJson());
+        UserAccount operator = mock(UserAccount.class);
+        when(operator.getId()).thenReturn(OPERATOR_ID);
+        when(operator.getDisplayName()).thenReturn("业务用户");
+
+        stubTenant();
+        when(workflowDefinitionRepository.findByIdAndTenantId(open.getId(), TENANT_ID)).thenReturn(Optional.of(open));
+        when(workflowVersionRepository.findTopByWorkflowIdOrderByVersionNumberDesc(open.getId())).thenReturn(Optional.of(version));
+        when(workflowAccessGrantRepository.findByWorkflowId(open.getId())).thenReturn(List.of());
+        when(userAccountRepository.findAllById(any())).thenReturn(List.of(operator));
+        when(workflowRuntimeExecutor.execute(any()))
+            .thenAnswer(invocation -> {
+                WorkflowRuntimeExecutor.ExecutionRequest request = invocation.getArgument(0);
+                if ("agent".equals(request.nodeRun().getNodeType())) {
+                    throw new ApiException(HttpStatus.BAD_GATEWAY, "MODEL_CALL_FAILED", "模型调用失败，请稍后重试");
+                }
+                return new WorkflowRuntimeExecutor.ExecutionResult(Map.of("summary", "节点已完成"));
+            });
+
+        WorkbenchApi.RunDetail detail = service.createRun(
+            TENANT_ID,
+            businessPrincipal(),
+            new WorkbenchApi.CreateRunRequest(open.getId(), "失败留痕任务")
+        );
+
+        assertThat(detail.state()).isEqualTo("failed");
+        assertThat(detail.currentNodeName()).isEqualTo("智能体分析");
+        assertThat(detail.nodes()).extracting(WorkbenchApi.NodeRunRow::state)
+            .containsExactly("completed", "failed", "pending");
+        assertThat(detail.nodes().get(1).outputs()).containsEntry("errorCode", "MODEL_CALL_FAILED");
+        assertThat(detail.events()).extracting(WorkbenchApi.RunEventRow::eventType).contains("node_failed");
+        verify(workflowRunRepository, atLeastOnce()).save(any(WorkflowRunEntity.class));
+        verify(workflowNodeRunRepository, atLeastOnce()).save(any(WorkflowNodeRunEntity.class));
+        verify(workflowRunEventRepository, atLeastOnce()).save(any());
+    }
+
     private WorkbenchRuntimeService newService() {
         return new WorkbenchRuntimeService(
             tenantRepository,
@@ -152,9 +246,11 @@ class WorkbenchRuntimeServiceTest {
             workflowNodeRunRepository,
             workflowWaitingEventRepository,
             workflowRunEventRepository,
+            workflowVariableSnapshotRepository,
             userAccountRepository,
             new CollaborationAccessPolicy(),
             new ObjectMapper(),
+            workflowRuntimeExecutor,
             Clock.fixed(NOW, ZoneOffset.UTC)
         );
     }
@@ -233,6 +329,43 @@ class WorkbenchRuntimeServiceTest {
                   "inputVariables": ["risk_summary"],
                   "outputVariables": ["report_file"],
                   "config": {"deliveryMode": "docx"}
+                }
+              ],
+              "edges": [],
+              "variables": []
+            }
+            """;
+    }
+
+    private static String autoSnapshotJson() {
+        return """
+            {
+              "name": "自动执行流程",
+              "description": "AI 分析后自动交付",
+              "nodes": [
+                {
+                  "nodeId": "trigger_manual",
+                  "nodeType": "trigger",
+                  "name": "创建任务",
+                  "inputVariables": [],
+                  "outputVariables": ["starter"],
+                  "config": {"summary": "手动发起"}
+                },
+                {
+                  "nodeId": "agent_review",
+                  "nodeType": "agent",
+                  "name": "智能体分析",
+                  "inputVariables": ["starter"],
+                  "outputVariables": ["risk_summary"],
+                  "config": {"summary": "生成风险摘要", "systemPrompt": "你是授信风险分析智能体"}
+                },
+                {
+                  "nodeId": "delivery_report",
+                  "nodeType": "delivery",
+                  "name": "交付报告",
+                  "inputVariables": ["risk_summary"],
+                  "outputVariables": ["delivery_record"],
+                  "config": {"deliveryMode": "direct"}
                 }
               ],
               "edges": [],

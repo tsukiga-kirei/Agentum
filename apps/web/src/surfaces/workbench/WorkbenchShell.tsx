@@ -4,10 +4,8 @@ import {
   AlertCircle,
   ArrowRight,
   ChevronLeft,
-  Archive,
   Bot,
   CheckCircle2,
-  CircleStop,
   Clock3,
   FileText,
   GitBranch,
@@ -21,14 +19,12 @@ import {
   PauseCircle,
   PlayCircle,
   Plug,
-  RefreshCcw,
   Search,
   Send,
   Settings,
   ShieldAlert,
   ShieldCheck,
   Sparkles,
-  Undo2,
   User,
   UserRoundCheck,
   Wrench,
@@ -83,7 +79,7 @@ type WorkbenchTabMeta = {
   description: string;
 };
 
-type RuntimeStepState = "done" | "running" | "waiting" | "pending";
+type RuntimeStepState = "done" | "running" | "waiting" | "failed" | "pending";
 type RuntimeNodeKind = "launch" | "input" | "agent" | "multiAgent" | "approval" | "delivery";
 
 type RuntimeNodeField = {
@@ -175,6 +171,7 @@ const stateColors: Record<string, string> = {
   "运行中": "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300",
   "已暂停": "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
   "已完成": "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300",
+  "已失败": "bg-rose-100 text-rose-800 dark:bg-rose-950/50 dark:text-rose-300",
   "等待人工审核": "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
   "等待用户输入": "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300",
   "等待交付确认": "bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300",
@@ -652,9 +649,7 @@ export function WorkbenchShell() {
                       setOpenedRunDetail(null);
                       setActiveWorkbenchTab("tasks");
                     }}
-                    onSaveToTodo={() => messageApi.info("任务已经保存为后端运行实例，可从任务中心继续处理")}
                     onCompleteTodo={handleCompleteOpenTodo}
-                    onAction={(label) => messageApi.info(`${label} 的后端动作将在运行状态机后续版本接入`)}
                   />
                 </div>
               </div>
@@ -741,7 +736,7 @@ export function WorkbenchShell() {
                                 onClick={() => setActiveWorkbenchTab("tasks")}
                               />
                               <WorkbenchFeatureCard
-                                icon={Archive}
+                                icon={History}
                                 title="历史完成"
                                 description="查看已完成任务与交付结果，后续可进入运行详情追溯过程。"
                                 meta={runtimeAvailable ? `${recentRuns.filter((record) => record.state === "completed").length} 个完成任务` : runtimeStatusLabel}
@@ -1073,13 +1068,13 @@ function WorkflowLaunchDrawer({
         </section>
 
         <section className="workbench-launch-drawer-section">
-          <h3>运行能力</h3>
+          <h3>运行依据</h3>
           <div className="workbench-capability-stack">
-            <span>输入节点</span>
-            <span>智能体集群</span>
-            <span>MCP 审批</span>
-            <span>节点输入输出</span>
-            <span>交付物生成</span>
+            <span>发布版本快照</span>
+            <span>后端节点状态机</span>
+            <span>租户模型分配</span>
+            <span>能力池授权复核</span>
+            <span>变量与交付记录</span>
           </div>
         </section>
 
@@ -1141,7 +1136,7 @@ function buildRuntimePreviewFromRun(run: WorkbenchRunDetail): RuntimePreview {
       time: formatTime(event.eventTime),
       title: event.title,
       description: event.description,
-      tone: event.eventType === "node_waiting" ? "warning" : event.eventType === "node_completed" || event.eventType === "run_completed" ? "success" : "info",
+      tone: event.eventType === "node_failed" ? "warning" : event.eventType === "node_waiting" ? "warning" : event.eventType === "node_completed" || event.eventType === "run_completed" ? "success" : "info",
       stepTitle: run.nodes.find((node) => node.nodeId === event.nodeId)?.name ?? "任务",
     })),
     deliveries: run.nodes
@@ -1158,6 +1153,7 @@ function mapNodeState(state: string): RuntimeStepState {
   if (state === "completed") return "done";
   if (state === "waiting") return "waiting";
   if (state === "running") return "running";
+  if (state === "failed") return "failed";
   return "pending";
 }
 
@@ -1186,15 +1182,15 @@ function nodeDescription(nodeType: string, config: Record<string, unknown>): str
   if (summary) return summary;
   if (nodeType === "user_input") return "等待业务用户补充当前节点所需资料，提交后后端会继续推进后续节点。";
   if (nodeType === "human_review") return "等待人工审核意见，审核记录会写入运行事件。";
-  if (nodeType === "delivery") return "等待交付确认，确认后生成或触发交付动作。";
-  if (nodeType === "parallel_group") return "并行智能体节点已按运行快照记录，真实执行器接入后会展示各子任务输出。";
+  if (nodeType === "delivery") return "交付节点由后端运行态执行，结果会写入交付记录并同步到执行链路。";
+  if (nodeType === "parallel_group") return "智能体集群按发布快照顺序执行，子智能体输出会汇总到节点结果。";
   return "节点运行状态来自后端运行实例。";
 }
 
 function nodeMessages(node: WorkbenchRunDetail["nodes"][number]): RuntimeChatMessage[] {
   const summary = stringifyValue(node.outputs.summary);
   if (summary) {
-    return [{ id: `${node.id}-summary`, role: "assistant", author: node.name, content: summary }];
+    return [{ id: `${node.id}-summary`, role: node.state === "failed" ? "system" : "assistant", author: node.name, content: summary }];
   }
   if (node.state === "waiting") {
     return [{ id: `${node.id}-waiting`, role: "system", author: "系统", content: `${node.name}正在等待处理。` }];
@@ -1229,17 +1225,13 @@ function WorkbenchTaskRunDetail({
   preview,
   runtimeStatusLabel,
   onBack,
-  onSaveToTodo,
   onCompleteTodo,
-  onAction,
 }: {
   run: WorkbenchRunDetail;
   preview: RuntimePreview;
   runtimeStatusLabel: string;
   onBack: () => void;
-  onSaveToTodo: () => void;
   onCompleteTodo: (comment: string) => void;
-  onAction: (label: string) => void;
 }) {
   const [activeRunTab, setActiveRunTab] = useState<RunWorkspaceTab>("current");
   const currentStepIndex = Math.max(0, preview.steps.findIndex((step) => step.state === "running" || step.state === "waiting"));
@@ -1284,18 +1276,6 @@ function WorkbenchTaskRunDetail({
           <p>{run.workflowName} · 运行编号 {preview.runId} · v{preview.workflowVersion} · 当前节点：{activeStep.title}</p>
         </div>
         <div className="workbench-run-actions">
-          <button type="button" className="sys-btn sys-btn--default" onClick={() => onAction("退回上一步")}>
-            <Undo2 size={16} aria-hidden="true" />
-            退回上一步
-          </button>
-          <button type="button" className="sys-btn sys-btn--default" onClick={onSaveToTodo}>
-            <Archive size={16} aria-hidden="true" />
-            保存
-          </button>
-          <button type="button" className="sys-btn sys-btn--default" onClick={() => onAction("暂停任务")}>
-            <PauseCircle size={16} aria-hidden="true" />
-            暂停
-          </button>
           <button type="button" className="sys-btn sys-btn--default" onClick={onBack}>
             <History size={16} aria-hidden="true" />
             返回任务中心
@@ -1360,9 +1340,7 @@ function WorkbenchTaskRunDetail({
               <RunCurrentPanel
                 preview={preview}
                 activeStep={activeStep}
-                onSaveToTodo={onSaveToTodo}
                 onCompleteTodo={onCompleteTodo}
-                onAction={onAction}
               />
             ) : null}
             {activeRunTab === "trace" ? (
@@ -1373,7 +1351,7 @@ function WorkbenchTaskRunDetail({
                 onClearStep={() => setSelectedTraceStepIndex(null)}
               />
             ) : null}
-            {activeRunTab === "deliveries" ? <RunDeliveriesPanel preview={preview} onAction={onAction} /> : null}
+            {activeRunTab === "deliveries" ? <RunDeliveriesPanel preview={preview} /> : null}
           </div>
         </section>
       </div>
@@ -1402,6 +1380,9 @@ function RunOverviewPanel({ run, preview }: { run: WorkbenchRunDetail; preview: 
 function currentStepStatusLabel(step: RuntimePreviewStep): string {
   if (step.state === "waiting") {
     return "等待处理";
+  }
+  if (step.state === "failed") {
+    return "执行失败";
   }
   if (step.state === "running") {
     return step.kind === "input" ? "等待填写" : "执行中";
@@ -1449,10 +1430,8 @@ function AgentChatStream({ messages }: { messages: RuntimeChatMessage[] }) {
 
 function AgentCapabilityDock({
   capabilities,
-  onAction,
 }: {
   capabilities: RuntimeCapabilityItem[];
-  onAction: (label: string) => void;
 }) {
   if (capabilities.length === 0) {
     return null;
@@ -1468,15 +1447,13 @@ function AgentCapabilityDock({
         {capabilities.map((capability) => {
           const Icon = capabilityKindIcon(capability.kind);
           return (
-            <button
+            <div
               key={capability.id}
-              type="button"
               className={[
                 "workbench-capability-chip",
                 `workbench-capability-chip--${capability.status}`,
                 capability.highRisk ? "workbench-capability-chip--risk" : "",
               ].filter(Boolean).join(" ")}
-              onClick={() => onAction(`查看${capability.name}调用明细`)}
             >
               <span className="workbench-capability-chip-icon">
                 <Icon size={14} aria-hidden="true" />
@@ -1488,69 +1465,10 @@ function AgentCapabilityDock({
               <span className={`workbench-run-pill workbench-run-pill--${capability.status === "done" ? "done" : capability.status === "waiting" ? "waiting" : "running"}`}>
                 {capability.statusLabel}
               </span>
-            </button>
+            </div>
           );
         })}
       </div>
-    </div>
-  );
-}
-
-function AgentChatComposer({
-  activeStep,
-  onAction,
-}: {
-  activeStep: RuntimePreviewStep;
-  onAction: (label: string) => void;
-}) {
-  const [draft, setDraft] = useState("");
-
-  if (!activeStep.allowsFollowUp && !activeStep.allowsRegenerate) {
-    return null;
-  }
-
-  return (
-    <div className="workbench-ai-composer">
-      <div className="workbench-ai-composer-toolbar">
-        {activeStep.allowsRegenerate ? (
-          <button type="button" className="sys-btn sys-btn--default sys-btn--sm" onClick={() => onAction("重新生成当前节点输出")}>
-            <RefreshCcw size={14} aria-hidden="true" />
-            重新生成
-          </button>
-        ) : null}
-        {activeStep.allowsInterrupt ? (
-          <button type="button" className="sys-btn sys-btn--default sys-btn--sm workbench-ai-interrupt-btn" onClick={() => onAction("中断当前节点执行")}>
-            <CircleStop size={14} aria-hidden="true" />
-            中断执行
-          </button>
-        ) : null}
-        <button type="button" className="sys-btn sys-btn--default sys-btn--sm" onClick={() => onAction("查看事实来源")}>
-          <FileText size={14} aria-hidden="true" />
-          查看来源
-        </button>
-      </div>
-      {activeStep.allowsFollowUp ? (
-        <div className="workbench-ai-composer-input">
-          <textarea
-            rows={3}
-            value={draft}
-            placeholder="追问智能体，例如：补充现金流压力分析，并标注事实来源"
-            onChange={(event) => setDraft(event.target.value)}
-          />
-          <button
-            type="button"
-            className="sys-btn sys-btn--primary"
-            disabled={draft.trim().length === 0}
-            onClick={() => {
-              onAction("发送追问");
-              setDraft("");
-            }}
-          >
-            <Send size={16} aria-hidden="true" />
-            发送
-          </button>
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -1571,7 +1489,7 @@ function CurrentNodeShell({
           <div className="sys-preview-card-title"><Sparkles size={16} /> 当前处理：{activeStep.title}</div>
           <p>{activeStep.description}</p>
         </div>
-        <span className={`workbench-run-pill workbench-run-pill--${activeStep.state === "waiting" ? "waiting" : "running"}`}>
+        <span className={`workbench-run-pill workbench-run-pill--${activeStep.state === "waiting" ? "waiting" : activeStep.state === "failed" ? "failed" : "running"}`}>
           {currentStepStatusLabel(activeStep)}
         </span>
       </header>
@@ -1585,30 +1503,22 @@ function CurrentNodeShell({
 
 function RunCurrentInputPanel({
   activeStep,
-  onSaveToTodo,
   onCompleteTodo,
-  onAction,
 }: {
   activeStep: RuntimePreviewStep;
-  onSaveToTodo: () => void;
   onCompleteTodo: (comment: string) => void;
-  onAction: (label: string) => void;
 }) {
   return (
     <CurrentNodeShell
       activeStep={activeStep}
-      footer={(
+      footer={activeStep.state === "waiting" ? (
         <div className="workbench-current-actions">
           <button type="button" className="sys-btn sys-btn--primary" onClick={() => onCompleteTodo("提交当前输入资料")}>
             <Send size={16} aria-hidden="true" />
             提交输入
           </button>
-          <button type="button" className="sys-btn sys-btn--default" onClick={onSaveToTodo}>
-            <Archive size={16} aria-hidden="true" />
-            保存草稿
-          </button>
         </div>
-      )}
+      ) : undefined}
     >
       <div className="workbench-input-form">
         {(activeStep.inputs ?? [
@@ -1629,10 +1539,8 @@ function RunCurrentInputPanel({
 
 function RunCurrentAgentPanel({
   activeStep,
-  onAction,
 }: {
   activeStep: RuntimePreviewStep;
-  onAction: (label: string) => void;
 }) {
   const messages = activeStep.chatMessages ?? [];
   const capabilities = activeStep.capabilities ?? [];
@@ -1642,8 +1550,8 @@ function RunCurrentAgentPanel({
       activeStep={activeStep}
       footer={(
         <>
-          <AgentCapabilityDock capabilities={capabilities} onAction={onAction} />
-          <AgentChatComposer activeStep={activeStep} onAction={onAction} />
+          <AgentCapabilityDock capabilities={capabilities} />
+          <NodeIoSummary step={activeStep} />
         </>
       )}
     >
@@ -1654,52 +1562,23 @@ function RunCurrentAgentPanel({
 
 function RunCurrentMultiAgentPanel({
   activeStep,
-  onSaveToTodo,
-  onAction,
 }: {
   activeStep: RuntimePreviewStep;
-  onSaveToTodo: () => void;
-  onAction: (label: string) => void;
 }) {
   const messages = activeStep.chatMessages ?? [];
   const capabilities = activeStep.capabilities ?? [];
-  const waitingCapability = capabilities.find((item) => item.status === "waiting" && item.highRisk);
 
   return (
     <CurrentNodeShell
       activeStep={activeStep}
       footer={(
         <>
-          <AgentCapabilityDock capabilities={capabilities} onAction={onAction} />
-          <AgentChatComposer activeStep={activeStep} onAction={onAction} />
+          <AgentCapabilityDock capabilities={capabilities} />
+          <NodeIoSummary step={activeStep} />
         </>
       )}
     >
       <AgentChatStream messages={messages} />
-      {waitingCapability ? (
-        <section className="workbench-approval-inline">
-          <div className="workbench-approval-inline-head">
-            <ShieldAlert size={16} aria-hidden="true" />
-            <div>
-              <strong>待审批：{waitingCapability.name}</strong>
-              <p>{waitingCapability.summary}。这是高风险只读查询，继续前需要记录处理意见。</p>
-            </div>
-          </div>
-          <textarea className="workbench-approval-textarea" placeholder="填写审批意见，后续将写入 WaitingEvent 恢复记录" />
-          <div className="workbench-approval-inline-actions">
-            <button type="button" className="sys-btn sys-btn--primary sys-btn--sm" onClick={() => onAction("通过并继续")}>
-              <ShieldCheck size={14} aria-hidden="true" />
-              通过并继续
-            </button>
-            <button type="button" className="sys-btn sys-btn--default sys-btn--sm" onClick={() => onAction("要求补充来源")}>
-              要求补充来源
-            </button>
-            <button type="button" className="sys-btn sys-btn--default sys-btn--sm" onClick={onSaveToTodo}>
-              保存待办
-            </button>
-          </div>
-        </section>
-      ) : null}
       {activeStep.inputs && activeStep.inputs.length > 0 ? (
         <details className="workbench-current-context">
           <summary>查看节点输入上下文</summary>
@@ -1712,35 +1591,24 @@ function RunCurrentMultiAgentPanel({
 
 function RunCurrentApprovalPanel({
   activeStep,
-  onSaveToTodo,
   onCompleteTodo,
-  onAction,
 }: {
   activeStep: RuntimePreviewStep;
-  onSaveToTodo: () => void;
   onCompleteTodo: (comment: string) => void;
-  onAction: (label: string) => void;
 }) {
   const messages = activeStep.chatMessages ?? [];
 
   return (
     <CurrentNodeShell
       activeStep={activeStep}
-      footer={(
+      footer={activeStep.state === "waiting" ? (
         <div className="workbench-current-actions">
           <button type="button" className="sys-btn sys-btn--primary" onClick={() => onCompleteTodo("审核通过")}>
             <ShieldCheck size={16} aria-hidden="true" />
             审核通过
           </button>
-          <button type="button" className="sys-btn sys-btn--default" onClick={() => onAction("驳回并退回")}>
-            驳回修改
-          </button>
-          <button type="button" className="sys-btn sys-btn--default" onClick={onSaveToTodo}>
-            <Archive size={16} aria-hidden="true" />
-            保存意见
-          </button>
         </div>
-      )}
+      ) : undefined}
     >
       <AgentChatStream messages={messages} />
       <label className="workbench-approval-form">
@@ -1755,30 +1623,12 @@ function RunCurrentApprovalPanel({
 function RunCurrentDeliveryPanel({
   activeStep,
   preview,
-  onCompleteTodo,
-  onAction,
 }: {
   activeStep: RuntimePreviewStep;
   preview: RuntimePreview;
-  onCompleteTodo: (comment: string) => void;
-  onAction: (label: string) => void;
 }) {
   return (
-    <CurrentNodeShell
-      activeStep={activeStep}
-      footer={(
-        <div className="workbench-current-actions">
-          <button type="button" className="sys-btn sys-btn--primary" onClick={() => onCompleteTodo("确认交付")}>
-            <Send size={16} aria-hidden="true" />
-            确认交付
-          </button>
-          <button type="button" className="sys-btn sys-btn--default" onClick={() => onAction("预览交付物")}>
-            <FileText size={16} aria-hidden="true" />
-            预览文件
-          </button>
-        </div>
-      )}
-    >
+    <CurrentNodeShell activeStep={activeStep}>
       <div className="workbench-delivery-preview-list">
         {preview.deliveries.map((delivery) => (
           <div key={delivery.name} className="workbench-delivery-preview-row">
@@ -1797,22 +1647,11 @@ function RunCurrentDeliveryPanel({
 
 function RunCurrentDefaultPanel({
   activeStep,
-  onAction,
 }: {
   activeStep: RuntimePreviewStep;
-  onAction: (label: string) => void;
 }) {
   return (
-    <CurrentNodeShell
-      activeStep={activeStep}
-      footer={(
-        <div className="workbench-current-actions">
-          <button type="button" className="sys-btn sys-btn--primary" onClick={() => onAction("继续执行")}>
-            继续执行
-          </button>
-        </div>
-      )}
-    >
+    <CurrentNodeShell activeStep={activeStep}>
       <NodeIoSummary step={activeStep} />
     </CurrentNodeShell>
   );
@@ -1821,37 +1660,33 @@ function RunCurrentDefaultPanel({
 function RunCurrentPanel({
   preview,
   activeStep,
-  onSaveToTodo,
   onCompleteTodo,
-  onAction,
 }: {
   preview: RuntimePreview;
   activeStep: RuntimePreviewStep;
-  onSaveToTodo: () => void;
   onCompleteTodo: (comment: string) => void;
-  onAction: (label: string) => void;
 }) {
   if (activeStep.kind === "input") {
-    return <RunCurrentInputPanel activeStep={activeStep} onSaveToTodo={onSaveToTodo} onCompleteTodo={onCompleteTodo} onAction={onAction} />;
+    return <RunCurrentInputPanel activeStep={activeStep} onCompleteTodo={onCompleteTodo} />;
   }
 
   if (activeStep.kind === "multiAgent") {
-    return <RunCurrentMultiAgentPanel activeStep={activeStep} onSaveToTodo={onSaveToTodo} onAction={onAction} />;
+    return <RunCurrentMultiAgentPanel activeStep={activeStep} />;
   }
 
   if (activeStep.kind === "agent") {
-    return <RunCurrentAgentPanel activeStep={activeStep} onAction={onAction} />;
+    return <RunCurrentAgentPanel activeStep={activeStep} />;
   }
 
   if (activeStep.kind === "approval") {
-    return <RunCurrentApprovalPanel activeStep={activeStep} onSaveToTodo={onSaveToTodo} onCompleteTodo={onCompleteTodo} onAction={onAction} />;
+    return <RunCurrentApprovalPanel activeStep={activeStep} onCompleteTodo={onCompleteTodo} />;
   }
 
   if (activeStep.kind === "delivery") {
-    return <RunCurrentDeliveryPanel activeStep={activeStep} preview={preview} onCompleteTodo={onCompleteTodo} onAction={onAction} />;
+    return <RunCurrentDeliveryPanel activeStep={activeStep} preview={preview} />;
   }
 
-  return <RunCurrentDefaultPanel activeStep={activeStep} onAction={onAction} />;
+  return <RunCurrentDefaultPanel activeStep={activeStep} />;
 }
 
 function NodeIoSummary({ step }: { step: RuntimePreviewStep }) {
@@ -1859,7 +1694,7 @@ function NodeIoSummary({ step }: { step: RuntimePreviewStep }) {
   const outputs = step.outputs ?? [];
 
   if (inputs.length === 0 && outputs.length === 0) {
-    return <p className="workbench-panel-copy">该节点暂无可展示的输入输出快照，真实运行态接入后会按节点类型展示结构化数据。</p>;
+    return <p className="workbench-panel-copy">该节点暂无可展示的输入输出快照。</p>;
   }
 
   return (
@@ -1896,6 +1731,9 @@ function traceStepPillLabel(state: RuntimeStepState): string {
   if (state === "waiting") {
     return "等待处理";
   }
+  if (state === "failed") {
+    return "执行失败";
+  }
   return "待执行";
 }
 
@@ -1930,7 +1768,7 @@ function RunTracePanel({
               <div className="sys-preview-card-title"><History size={16} /> 链路详情：{selectedStep.title}</div>
               <p>{selectedStep.description}</p>
             </div>
-            <span className={`workbench-run-pill workbench-run-pill--${selectedStep.state === "done" ? "done" : selectedStep.state === "waiting" ? "waiting" : "running"}`}>
+            <span className={`workbench-run-pill workbench-run-pill--${selectedStep.state === "done" ? "done" : selectedStep.state === "waiting" ? "waiting" : selectedStep.state === "failed" ? "failed" : "running"}`}>
               {traceStepPillLabel(selectedStep.state)}
             </span>
           </div>
@@ -1948,7 +1786,7 @@ function RunTracePanel({
                 </div>
               </div>
             )) : (
-              <p className="workbench-panel-copy">该步骤暂无审计事件，真实运行态接入后会按节点写入调用与审批记录。</p>
+              <p className="workbench-panel-copy">该步骤暂无审计事件。</p>
             )}
           </div>
         </section>
@@ -1983,7 +1821,7 @@ function RunTracePanel({
                 <strong>{step.title}</strong>
                 <small>{step.subtitle}{step.completedAt ? ` · ${step.completedAt} 完成` : ""}</small>
               </span>
-              <span className={`workbench-run-pill workbench-run-pill--${step.state === "done" ? "done" : step.state === "waiting" ? "waiting" : "running"}`}>
+              <span className={`workbench-run-pill workbench-run-pill--${step.state === "done" ? "done" : step.state === "waiting" ? "waiting" : step.state === "failed" ? "failed" : "running"}`}>
                 {traceStepPillLabel(step.state)}
               </span>
               <ArrowRight size={14} aria-hidden="true" />
@@ -1995,15 +1833,11 @@ function RunTracePanel({
   );
 }
 
-function RunDeliveriesPanel({ preview, onAction }: { preview: RuntimePreview; onAction: (label: string) => void }) {
+function RunDeliveriesPanel({ preview }: { preview: RuntimePreview }) {
   return (
     <section className="sys-preview-card workbench-run-section">
       <div className="workbench-run-section-head">
         <div className="sys-preview-card-title"><Send size={16} /> 交付物</div>
-        <button type="button" className="sys-btn sys-btn--default sys-btn--sm" onClick={() => onAction("刷新交付物")}>
-          <RefreshCcw size={14} aria-hidden="true" />
-          刷新
-        </button>
       </div>
       <div className="workbench-delivery-list">
         {preview.deliveries.map((delivery) => (

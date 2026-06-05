@@ -18,6 +18,7 @@ import com.agentum.workflow.domain.WorkflowDefinitionEntity;
 import com.agentum.workflow.domain.WorkflowNodeRunEntity;
 import com.agentum.workflow.domain.WorkflowRunEntity;
 import com.agentum.workflow.domain.WorkflowRunEventEntity;
+import com.agentum.workflow.domain.WorkflowVariableSnapshotEntity;
 import com.agentum.workflow.domain.WorkflowVersionEntity;
 import com.agentum.workflow.domain.WorkflowWaitingEventEntity;
 import com.agentum.workflow.infrastructure.WorkflowAccessGrantRepository;
@@ -26,6 +27,7 @@ import com.agentum.workflow.infrastructure.WorkflowNodeRunRepository;
 import com.agentum.workflow.infrastructure.WorkflowRunEventRepository;
 import com.agentum.workflow.infrastructure.WorkflowRunRepository;
 import com.agentum.workflow.infrastructure.WorkflowVersionRepository;
+import com.agentum.workflow.infrastructure.WorkflowVariableSnapshotRepository;
 import com.agentum.workflow.infrastructure.WorkflowWaitingEventRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -76,9 +78,11 @@ public class WorkbenchRuntimeService {
     private final WorkflowNodeRunRepository workflowNodeRunRepository;
     private final WorkflowWaitingEventRepository workflowWaitingEventRepository;
     private final WorkflowRunEventRepository workflowRunEventRepository;
+    private final WorkflowVariableSnapshotRepository workflowVariableSnapshotRepository;
     private final UserAccountRepository userAccountRepository;
     private final CollaborationAccessPolicy collaborationAccessPolicy;
     private final ObjectMapper objectMapper;
+    private final WorkflowRuntimeExecutor workflowRuntimeExecutor;
     private final Clock clock;
 
     public WorkbenchRuntimeService(
@@ -90,9 +94,11 @@ public class WorkbenchRuntimeService {
         WorkflowNodeRunRepository workflowNodeRunRepository,
         WorkflowWaitingEventRepository workflowWaitingEventRepository,
         WorkflowRunEventRepository workflowRunEventRepository,
+        WorkflowVariableSnapshotRepository workflowVariableSnapshotRepository,
         UserAccountRepository userAccountRepository,
         CollaborationAccessPolicy collaborationAccessPolicy,
         ObjectMapper objectMapper,
+        WorkflowRuntimeExecutor workflowRuntimeExecutor,
         Clock clock
     ) {
         this.tenantRepository = tenantRepository;
@@ -103,9 +109,11 @@ public class WorkbenchRuntimeService {
         this.workflowNodeRunRepository = workflowNodeRunRepository;
         this.workflowWaitingEventRepository = workflowWaitingEventRepository;
         this.workflowRunEventRepository = workflowRunEventRepository;
+        this.workflowVariableSnapshotRepository = workflowVariableSnapshotRepository;
         this.userAccountRepository = userAccountRepository;
         this.collaborationAccessPolicy = collaborationAccessPolicy;
         this.objectMapper = objectMapper;
+        this.workflowRuntimeExecutor = workflowRuntimeExecutor;
         this.clock = clock;
     }
 
@@ -422,22 +430,44 @@ public class WorkbenchRuntimeService {
             }
 
             run.markRunning(node.getNodeKey(), node.getName(), node.getNodeType(), completed, now);
-            node.complete(autoOutput(node), now);
-            completed++;
-            workflowNodeRunRepository.save(node);
-            WorkflowRunEventEntity event = WorkflowRunEventEntity.create(
-                run.getId(),
-                run.getTenantId(),
-                "node_completed",
-                "节点已完成",
-                autoEventDescription(node),
-                node.getNodeKey(),
-                operatorUserId,
-                Map.of("nodeType", node.getNodeType()),
-                now
-            );
-            workflowRunEventRepository.save(event);
-            inMemoryEvents.add(event);
+            try {
+                Map<String, Object> output = workflowRuntimeExecutor.execute(new WorkflowRuntimeExecutor.ExecutionRequest(
+                    run,
+                    node,
+                    currentVariables(nodeRuns),
+                    operatorUserId
+                )).outputs();
+                node.complete(output, now);
+                completed++;
+                workflowNodeRunRepository.save(node);
+                persistVariableSnapshots(run, node, output, now);
+                WorkflowRunEventEntity event = WorkflowRunEventEntity.create(
+                    run.getId(),
+                    run.getTenantId(),
+                    "node_completed",
+                    "节点已完成",
+                    executionEventDescription(node, output),
+                    node.getNodeKey(),
+                    operatorUserId,
+                    Map.of("nodeType", node.getNodeType()),
+                    now
+                );
+                workflowRunEventRepository.save(event);
+                inMemoryEvents.add(event);
+            } catch (ApiException exception) {
+                return failNode(run, node, completed, operatorUserId, now, exception.getCode(), exception.getMessage(), inMemoryEvents);
+            } catch (RuntimeException exception) {
+                log.error(
+                    "工作流节点执行异常 tenantId={} runId={} nodeRunId={} nodeType={} requestId={}",
+                    run.getTenantId(),
+                    run.getId(),
+                    node.getId(),
+                    node.getNodeType(),
+                    RequestIds.current(),
+                    exception
+                );
+                return failNode(run, node, completed, operatorUserId, now, "WORKBENCH_NODE_EXECUTION_FAILED", "节点执行失败，请联系管理员查看运行日志", inMemoryEvents);
+            }
         }
         run.complete(completed, now);
         WorkflowRunEventEntity completedEvent = WorkflowRunEventEntity.create(
@@ -453,6 +483,50 @@ public class WorkbenchRuntimeService {
         );
         workflowRunEventRepository.save(completedEvent);
         inMemoryEvents.add(completedEvent);
+        return null;
+    }
+
+    private WorkflowWaitingEventEntity failNode(
+        WorkflowRunEntity run,
+        WorkflowNodeRunEntity node,
+        int completed,
+        UUID operatorUserId,
+        Instant now,
+        String errorCode,
+        String errorMessage,
+        List<WorkflowRunEventEntity> inMemoryEvents
+    ) {
+        Map<String, Object> failureOutput = Map.of(
+            "errorCode", errorCode == null ? "WORKBENCH_NODE_EXECUTION_FAILED" : errorCode,
+            "errorMessage", errorMessage == null ? "节点执行失败" : errorMessage,
+            "summary", errorMessage == null ? "节点执行失败，流程已停止。" : errorMessage
+        );
+        node.fail(failureOutput, now);
+        workflowNodeRunRepository.save(node);
+        run.failAt(node.getNodeKey(), node.getName(), node.getNodeType(), completed, now);
+        WorkflowRunEventEntity event = WorkflowRunEventEntity.create(
+            run.getId(),
+            run.getTenantId(),
+            "node_failed",
+            "节点执行失败",
+            errorMessage == null ? "节点执行失败，流程已停止。" : errorMessage,
+            node.getNodeKey(),
+            operatorUserId,
+            Map.of("nodeType", node.getNodeType(), "errorCode", failureOutput.get("errorCode")),
+            now
+        );
+        workflowRunEventRepository.save(event);
+        inMemoryEvents.add(event);
+        log.warn(
+            "工作流节点执行失败 tenantId={} runId={} nodeRunId={} nodeType={} errorCode={} userId={} requestId={}",
+            run.getTenantId(),
+            run.getId(),
+            node.getId(),
+            node.getNodeType(),
+            failureOutput.get("errorCode"),
+            operatorUserId,
+            RequestIds.current()
+        );
         return null;
     }
 
@@ -637,24 +711,8 @@ public class WorkbenchRuntimeService {
         return result;
     }
 
-    private Map<String, Object> autoOutput(WorkflowNodeRunEntity node) {
-        Map<String, Object> output = new HashMap<>();
-        if ("trigger".equals(node.getNodeType())) {
-            output.put("trigger", "手动发起");
-            return output;
-        }
-        output.put("summary", switch (node.getNodeType()) {
-            case "agent" -> "智能体运行器尚未接入，当前记录节点占位摘要，后续会替换为模型输出。";
-            case "parallel_group" -> "并行子智能体运行器尚未接入，当前记录集群节点占位摘要。";
-            case "merge" -> "已记录合并节点占位输出。";
-            case "condition" -> "已按默认路径通过条件节点。";
-            default -> "节点已自动完成。";
-        });
-        return output;
-    }
-
     private boolean isWaitable(String nodeType) {
-        return "user_input".equals(nodeType) || "human_review".equals(nodeType) || "delivery".equals(nodeType);
+        return "user_input".equals(nodeType) || "human_review".equals(nodeType);
     }
 
     private String waitingReason(String nodeType) {
@@ -682,11 +740,62 @@ public class WorkbenchRuntimeService {
         };
     }
 
-    private String autoEventDescription(WorkflowNodeRunEntity node) {
+    private String executionEventDescription(WorkflowNodeRunEntity node, Map<String, Object> output) {
         if ("trigger".equals(node.getNodeType())) {
             return "手动触发节点已完成，流程进入业务节点。";
         }
-        return node.getName() + "已生成运行记录；真实模型、MCP 或交付调用接入后会替换当前占位输出。";
+        Object summary = output == null ? null : output.get("summary");
+        if (summary != null && !summary.toString().isBlank()) {
+            return summary.toString();
+        }
+        return node.getName() + "已由运行执行器完成。";
+    }
+
+    private Map<String, Object> currentVariables(List<WorkflowNodeRunEntity> nodeRuns) {
+        Map<String, Object> variables = new HashMap<>();
+        for (WorkflowNodeRunEntity nodeRun : nodeRuns) {
+            if ("completed".equals(nodeRun.getState())) {
+                variables.putAll(nodeRun.getOutputSnapshot());
+            }
+        }
+        return variables;
+    }
+
+    private void persistVariableSnapshots(WorkflowRunEntity run, WorkflowNodeRunEntity node, Map<String, Object> output, Instant now) {
+        if (output == null || output.isEmpty()) {
+            return;
+        }
+        List<WorkflowVariableSnapshotEntity> snapshots = output.entrySet().stream()
+            .filter(entry -> entry.getKey() != null && !entry.getKey().isBlank())
+            .filter(entry -> !"errorCode".equals(entry.getKey()) && !"errorMessage".equals(entry.getKey()))
+            .map(entry -> {
+                boolean sensitive = isSensitiveVariable(entry.getKey());
+                return WorkflowVariableSnapshotEntity.create(
+                    run,
+                    node,
+                    entry.getKey(),
+                    sensitive ? "***" : entry.getValue(),
+                    sensitive,
+                    !sensitive && "delivery".equals(node.getNodeType()),
+                    now
+                );
+            })
+            .toList();
+        if (!snapshots.isEmpty()) {
+            workflowVariableSnapshotRepository.saveAll(snapshots);
+        }
+    }
+
+    private boolean isSensitiveVariable(String variableName) {
+        String normalized = variableName == null ? "" : variableName.toLowerCase();
+        return normalized.contains("password")
+            || normalized.contains("token")
+            || normalized.contains("secret")
+            || normalized.contains("apikey")
+            || normalized.contains("api_key")
+            || normalized.contains("credential")
+            || normalized.contains("凭证")
+            || normalized.contains("密钥");
     }
 
     private String normalizeTitle(String title, String workflowName) {

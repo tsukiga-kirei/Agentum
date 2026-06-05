@@ -31,6 +31,11 @@ public interface WorkflowRunRepository extends JpaRepository<WorkflowRunEntity, 
         select run from WorkflowRunEntity run
         where run.tenantId = :tenantId
           and (:tenantManager = true or run.createdBy = :operatorUserId)
+          and not exists (
+            select todo.id from WorkflowWaitingEventEntity todo
+            where todo.runId = run.id
+              and todo.status = 'open'
+          )
           and (
             :keyword = ''
             or lower(run.title) like lower(concat('%', :keyword, '%'))

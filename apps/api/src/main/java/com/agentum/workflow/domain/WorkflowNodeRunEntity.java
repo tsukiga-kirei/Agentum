@@ -117,6 +117,17 @@ public class WorkflowNodeRunEntity {
         this.updatedAt = now;
     }
 
+    public void fail(Map<String, Object> output, Instant now) {
+        this.state = "failed";
+        this.stateLabel = "执行失败";
+        this.outputSnapshot = output == null ? new HashMap<>() : new HashMap<>(output);
+        if (this.startedAt == null) {
+            this.startedAt = now;
+        }
+        this.completedAt = now;
+        this.updatedAt = now;
+    }
+
     public void waitForInput(Instant now) {
         this.state = "waiting";
         this.stateLabel = "等待处理";

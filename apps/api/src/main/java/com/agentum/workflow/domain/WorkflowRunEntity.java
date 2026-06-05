@@ -117,6 +117,15 @@ public class WorkflowRunEntity {
         this.updatedAt = now;
     }
 
+    public void failAt(String nodeKey, String nodeName, String nodeType, int completedNodeCount, Instant now) {
+        this.state = "failed";
+        this.currentNodeKey = nodeKey;
+        this.currentNodeName = nodeName;
+        this.currentNodeType = nodeType;
+        updateProgress(completedNodeCount);
+        this.updatedAt = now;
+    }
+
     public void markRunning(String nodeKey, String nodeName, String nodeType, int completedNodeCount, Instant now) {
         this.state = "running";
         this.currentNodeKey = nodeKey;

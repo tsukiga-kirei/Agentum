@@ -4051,6 +4051,11 @@ textarea:focus-visible {
   color: var(--color-success);
 }
 
+.workbench-run-pill--failed {
+  background: rgba(225, 29, 72, 0.1);
+  color: #be123c;
+}
+
 .workbench-event-item {
   display: grid;
   grid-template-columns: 52px minmax(0, 1fr);
@@ -4217,6 +4222,11 @@ textarea:focus-visible {
 .workbench-trace-step-link--waiting .workbench-trace-step-link-index {
   background: var(--color-warning-bg);
   color: var(--color-warning);
+}
+
+.workbench-trace-step-link--failed .workbench-trace-step-link-index {
+  background: rgba(225, 29, 72, 0.1);
+  color: #be123c;
 }
 
 .workbench-trace-step-link-main {
@@ -4558,6 +4568,16 @@ textarea:focus-visible {
 .workbench-node-step--waiting .workbench-node-step-index {
   background: var(--color-warning-bg);
   color: var(--color-warning);
+}
+
+.workbench-node-step--failed {
+  border-color: color-mix(in srgb, #e11d48 38%, var(--color-border-light));
+  background: color-mix(in srgb, #e11d48 5%, var(--color-bg-card));
+}
+
+.workbench-node-step--failed .workbench-node-step-index {
+  background: rgba(225, 29, 72, 0.1);
+  color: #be123c;
 }
 
 .workbench-task-main {

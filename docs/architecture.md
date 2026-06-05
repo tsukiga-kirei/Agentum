@@ -280,6 +280,9 @@ isSystemAdmin
 - `VariableSnapshot`
 - `WaitingEvent`
 - `RunEvent`
+- `ModelCallLog`
+- `McpCallLog`
+- `DeliveryRecord`
 
 状态建议：
 
@@ -292,7 +295,7 @@ pending -> running -> paused -> resumed -> running -> completed
 
 业务恢复、管理员介入和审计查看应分层处理：
 
-- 业务恢复：用户输入、追问确认、人工审核、高风险审批和交付确认，来自待办详情或业务运行详情。
+- 业务恢复：用户输入、人工审核、追问确认、高风险审批和高风险交付确认，来自待办详情或业务运行详情；当前已落地用户输入和人工审核恢复。
 - 管理员介入：取消、重试、补偿和故障处理，来自运行监控。
 - 审计查看：执行链路、节点输入输出快照、工具调用、审核和交付记录，只读展示，不修改运行状态。
 
@@ -364,6 +367,8 @@ pending -> running -> paused -> resumed -> running -> completed
 
 模型不能看到所有工具，只能看到当前节点和当前用户可用能力池中的工具。
 
+当前运行态已支持标准 MCP SSE 接入：系统管理登记 `sseUrl` 后，运行节点按租户能力池授权复核，通过 `initialize` / `notifications/initialized` / `tools/call` 执行工具，并将工具名、脱敏参数、结果、耗时和失败原因写入 `mcp_call_logs`。
+
 ### 5.9 模型供应商模块
 
 职责：
@@ -375,6 +380,8 @@ pending -> running -> paused -> resumed -> running -> completed
 - 为租户配置默认模型或允许模型集合。
 
 模型密钥必须服务端加密存储，前端只展示脱敏状态。
+
+当前运行态按 `tenant_model_assignments` 选择租户启用模型，解密模型供应商 API Key 后调用 OpenAI 兼容 / 通义兼容 / Azure OpenAI Chat Completions，并把提示词摘要、响应摘要、Token 用量、耗时和失败原因写入 `model_call_logs`。Anthropic Messages 协议暂未接入，运行时会返回明确错误而不是生成占位输出。
 
 ### 5.10 交付模块
 
@@ -390,6 +397,8 @@ pending -> running -> paused -> resumed -> running -> completed
 - 记录交付结果和失败重试。
 
 交付能力分为系统内置和自定义适配器。系统内置交付能力由 API / Worker 原生实现，例如邮箱发送；自定义交付适配器放在 `capabilities/delivery/<delivery-key>/`，通过 Manifest 声明 `runtime`、`entry`、`configSchema`、`inputSchema`、`outputSchema` 和风险等级。高风险交付能力必须走权限校验、审批或二次确认。
+
+当前运行态已支持三类基础交付：站内直接交付记录、系统内置邮箱发送和 Webhook 调用。所有交付动作都会写入 `delivery_records`，并关联租户、运行、节点、流程定义和发布版本；失败时节点和运行进入失败状态。
 
 ### 5.11 系统管理模块
 
@@ -477,8 +486,8 @@ GET /api/.../xxx?page=1&size=20&sort=createdAt,desc
 | 系统能力 | `model_providers`、`system_capabilities`、`tenant_capability_grants`、`subject_capability_assignments` |
 | 能力资产 | `agent_templates`、`skills`、`mcp_services`、`prompt_templates`、`delivery_capabilities` |
 | 工作流定义 | `workflow_definitions`、`workflow_versions`、`workflow_nodes`、`workflow_edges` |
-| 工作流运行 | `workflow_runs`、`node_runs`、`variable_snapshots`、`waiting_events` |
-| 审计与交付 | `audit_logs`、`delivery_records`、`mcp_call_logs` |
+| 工作流运行 | `workflow_runs`、`workflow_node_runs`、`variable_snapshots`、`workflow_waiting_events`、`workflow_run_events` |
+| 审计与交付 | `audit_logs`、`model_call_logs`、`mcp_call_logs`、`delivery_records` |
 
 数据库字段必须包含 `created_at`、`updated_at`，重要业务表建议包含 `tenant_id`、`created_by`、`updated_by`。
 
