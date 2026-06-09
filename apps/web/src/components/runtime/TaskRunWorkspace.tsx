@@ -239,22 +239,43 @@ export function TaskRunWorkspace({
     }
   }, [isFlowCompleted, activeRunTab]);
 
-  // 智能体/多智能体到达当前步骤后自动开始执行；完成后仍由用户确认再推进下一步。
+  const initialAutoStartRef = useRef(false);
+
   useEffect(() => {
+    initialAutoStartRef.current = false;
+  }, [runDetail.id]);
+
+  // 智能体/多智能体/交付执行完成后切到「当前处理」，展示结果与「确认并执行下一步」。
+  useEffect(() => {
+    if (isFlowCompleted || runDetail.readOnly) {
+      return;
+    }
+    if (
+      activeStep.state === "done"
+      && (activeStep.kind === "agent" || activeStep.kind === "multiAgent" || activeStep.kind === "delivery")
+    ) {
+      setActiveRunTab("current");
+    }
+  }, [activeStep.nodeRunId, activeStep.state, activeStep.kind, isFlowCompleted, runDetail.readOnly]);
+
+  // 仅在首次进入任务且当前步骤为待执行智能体时自动启动；完成后不再因下一步 pending 而链式推进。
+  useEffect(() => {
+    if (initialAutoStartRef.current) {
+      return;
+    }
     if (runDetail.readOnly || isAdvancing || isLiveExecuting || streamInterrupted) {
       return;
     }
-    const autoStartKinds = ["agent", "multiAgent"];
-    if (
-      runDetail.state === "paused"
-      && activeStep
-      && autoStartKinds.includes(activeStep.kind)
-      && activeStep.state === "pending"
-    ) {
-      void handleAdvanceStep();
+    if (activeStep.state !== "pending") {
+      return;
     }
+    if (activeStep.kind !== "agent" && activeStep.kind !== "multiAgent") {
+      return;
+    }
+    initialAutoStartRef.current = true;
+    void handleAdvanceStep();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runDetail.state, activeStep?.nodeRunId, activeStep?.state, activeStep?.kind, isAdvancing, isLiveExecuting, streamInterrupted, runDetail.readOnly]);
+  }, [runDetail.id, activeStep.nodeRunId, activeStep.state, activeStep.kind]);
 
   const clusterAgentsForPanel = useMemo(() => {
     if (stream.clusterAgents.length > 0) {
@@ -385,7 +406,19 @@ export function TaskRunWorkspace({
       );
       setRunDetail(updated);
       onReload(updated);
-    } catch (e: any) {
+      // 输入类待办完成后，若下一步为待执行智能体，则自动启动（仍不等同于完成后自动跳步）。
+      const nextPreview = buildRuntimePreviewFromRun(updated);
+      const nextStepIndex = resolveActiveStepIndex(nextPreview.steps, updated);
+      const nextStep = nextPreview.steps[nextStepIndex];
+      if (
+        nextStep
+        && (nextStep.kind === "agent" || nextStep.kind === "multiAgent")
+        && nextStep.state === "pending"
+      ) {
+        initialAutoStartRef.current = true;
+        await handleAdvanceStep();
+      }
+    } catch (e: unknown) {
       console.error("提交资料失败", e);
     }
   }

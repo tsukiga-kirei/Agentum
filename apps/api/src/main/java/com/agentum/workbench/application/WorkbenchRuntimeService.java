@@ -997,7 +997,7 @@ public class WorkbenchRuntimeService {
     }
 
     private boolean requiresManualAdvance(String nodeType) {
-        return "agent".equals(nodeType) || "parallel_group".equals(nodeType);
+        return "agent".equals(nodeType) || "parallel_group".equals(nodeType) || "delivery".equals(nodeType);
     }
 
     private String waitingReason(String nodeType) {
@@ -1318,12 +1318,17 @@ public class WorkbenchRuntimeService {
         List<WorkflowNodeRunEntity> nodes = workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(runId);
         int completed = (int) nodes.stream().filter(n -> "completed".equals(n.getState())).count();
 
-        int nextIndex = node.getSortOrder() + 1;
-        if (nextIndex < nodes.size()) {
-            WorkflowNodeRunEntity nextNode = nodes.get(nextIndex);
-            run.pauseAt(nextNode.getNodeKey(), nextNode.getName(), nextNode.getNodeType(), completed, now);
+        // 智能体/多智能体/交付完成后停在当前节点，等待用户确认后再 prepareNextNode 推进下一步。
+        if (requiresManualAdvance(node.getNodeType())) {
+            run.pauseAt(node.getNodeKey(), node.getName(), node.getNodeType(), completed, now);
         } else {
-            run.complete(completed, now);
+            int nextIndex = node.getSortOrder() + 1;
+            if (nextIndex < nodes.size()) {
+                WorkflowNodeRunEntity nextNode = nodes.get(nextIndex);
+                run.pauseAt(nextNode.getNodeKey(), nextNode.getName(), nextNode.getNodeType(), completed, now);
+            } else {
+                run.complete(completed, now);
+            }
         }
         workflowRunRepository.save(run);
 
@@ -1442,20 +1447,30 @@ public class WorkbenchRuntimeService {
             )));
 
             List<WorkflowNodeRunEntity> allNodes = workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(runId);
-            int nextIndex = nodeRun.getSortOrder() + 1;
-            if (nextIndex < allNodes.size()) {
-                WorkflowNodeRunEntity next = allNodes.get(nextIndex);
+            WorkflowNodeRunEntity finishedNode = workflowNodeRunRepository.findById(nodeRunId).orElse(null);
+            if (finishedNode != null && requiresManualAdvance(finishedNode.getNodeType())) {
                 sendSseEvent(emitter, "run_paused", eventPayload(runId, null, clock.instant().toString(), Map.of(
-                    "nextNodeRunId", next.getId().toString(),
-                    "nextNodeName", next.getName(),
-                    "nextNodeType", next.getNodeType(),
-                    "reason", "等待用户点击下一步"
+                    "nextNodeRunId", nodeRunId.toString(),
+                    "nextNodeName", nodeName,
+                    "nextNodeType", nodeType,
+                    "reason", "等待用户确认后再执行下一步"
                 )));
             } else {
-                sendSseEvent(emitter, "run_completed", eventPayload(runId, null, clock.instant().toString(), Map.of(
-                    "totalDurationMs", 0,
-                    "completedNodeCount", allNodes.size()
-                )));
+                int nextIndex = finishedNode == null ? allNodes.size() : finishedNode.getSortOrder() + 1;
+                if (nextIndex < allNodes.size()) {
+                    WorkflowNodeRunEntity next = allNodes.get(nextIndex);
+                    sendSseEvent(emitter, "run_paused", eventPayload(runId, null, clock.instant().toString(), Map.of(
+                        "nextNodeRunId", next.getId().toString(),
+                        "nextNodeName", next.getName(),
+                        "nextNodeType", next.getNodeType(),
+                        "reason", "等待用户点击下一步"
+                    )));
+                } else {
+                    sendSseEvent(emitter, "run_completed", eventPayload(runId, null, clock.instant().toString(), Map.of(
+                        "totalDurationMs", 0,
+                        "completedNodeCount", allNodes.size()
+                    )));
+                }
             }
 
             sendSseEvent(emitter, "message", "[DONE]");
