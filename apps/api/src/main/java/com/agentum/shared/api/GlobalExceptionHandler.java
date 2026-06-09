@@ -1,17 +1,43 @@
 package com.agentum.shared.api;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public void handleAsyncRequestNotUsable(
+        AsyncRequestNotUsableException exception,
+        HttpServletRequest request,
+        HttpServletResponse response
+    ) {
+        if (ClientDisconnectSupport.isClientDisconnect(exception)) {
+            log.debug(
+                "客户端已断开连接，忽略 SSE/异步写入失败 path={} requestId={}",
+                request.getRequestURI(),
+                RequestIds.current(request)
+            );
+            return;
+        }
+        if (!response.isCommitted()) {
+            log.warn(
+                "异步响应不可用 path={} requestId={} message={}",
+                request.getRequestURI(),
+                RequestIds.current(request),
+                exception.getMessage()
+            );
+        }
+    }
 
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ApiResponse<Void>> handleApiException(ApiException exception, HttpServletRequest request) {
@@ -43,6 +69,14 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleUnexpected(Exception exception, HttpServletRequest request) {
+        if (ClientDisconnectSupport.isClientDisconnect(exception)) {
+            log.debug(
+                "客户端已断开连接，忽略流式响应异常 path={} requestId={}",
+                request.getRequestURI(),
+                RequestIds.current(request)
+            );
+            return ResponseEntity.ok().build();
+        }
         // 非预期异常统一兜底，响应不暴露堆栈、SQL 或依赖原始错误，详细信息只进后端日志。
         ApiError error = new ApiError("SYSTEM_INTERNAL_ERROR", "系统暂时无法处理请求，请稍后重试");
         log.error("系统异常 path={} requestId={}", request.getRequestURI(), RequestIds.current(request), exception);

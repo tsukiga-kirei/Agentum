@@ -1,6 +1,7 @@
 package com.agentum.workbench.interfaces;
 
 import com.agentum.auth.application.CurrentUserPrincipal;
+import com.agentum.shared.api.ClientDisconnectSupport;
 import com.agentum.shared.api.ApiResponse;
 import com.agentum.shared.api.RequestIds;
 import com.agentum.workbench.application.WorkbenchAccess;
@@ -53,35 +54,46 @@ public class RuntimeSseController {
         @AuthenticationPrincipal CurrentUserPrincipal principal
     ) {
         workbenchAccess.assertCanAccessWorkbench(principal, tenantId);
-        log.info("用户建立 SSE 连接 tenantId={} userId={} runId={} requestId={}", 
+        log.info("用户建立 SSE 连接 tenantId={} userId={} runId={} requestId={}",
             tenantId, principal.userId(), runId, RequestIds.current());
 
-        // 如果已存在连接，先清理
-        SseEmitter oldEmitter = emitters.remove(runId);
+        // 同一 run 只允许保留最新连接；旧连接由客户端断开或 complete 自然结束。
+        SseEmitter oldEmitter = emitters.put(runId, createEmitter(runId));
         if (oldEmitter != null) {
-            try {
-                oldEmitter.complete();
-            } catch (Exception ignored) {}
+            log.debug("替换已有 SSE 连接 runId={}", runId);
+            closeEmitterQuietly(oldEmitter);
         }
 
-        // 5分钟超时
-        SseEmitter emitter = new SseEmitter(300_000L);
-        emitters.put(runId, emitter);
+        SseEmitter emitter = emitters.get(runId);
+        sendConnectedEvent(runId, emitter);
+        return emitter;
+    }
 
+    private SseEmitter createEmitter(UUID runId) {
+        SseEmitter emitter = new SseEmitter(300_000L);
         emitter.onCompletion(() -> {
             log.info("SSE 连接完成 runId={}", runId);
-            emitters.remove(runId);
+            emitters.remove(runId, emitter);
         });
         emitter.onTimeout(() -> {
             log.warn("SSE 连接超时 runId={}", runId);
-            emitters.remove(runId);
+            emitters.remove(runId, emitter);
         });
-        emitter.onError((ex) -> {
-            log.warn("SSE 连接异常 runId={} message={}", runId, ex.getMessage());
-            emitters.remove(runId);
+        emitter.onError(ex -> {
+            if (ClientDisconnectSupport.isClientDisconnect(ex)) {
+                log.debug("SSE 客户端断开 runId={}", runId);
+            } else {
+                log.warn("SSE 连接异常 runId={} message={}", runId, ex.getMessage());
+            }
+            emitters.remove(runId, emitter);
         });
+        return emitter;
+    }
 
-        // 发送初始连接成功事件
+    private void sendConnectedEvent(UUID runId, SseEmitter emitter) {
+        if (emitter == null || emitters.get(runId) != emitter) {
+            return;
+        }
         try {
             emitter.send(SseEmitter.event()
                 .name("connected")
@@ -90,12 +102,23 @@ public class RuntimeSseController {
                     "currentState", "connected",
                     "timestamp", java.time.Instant.now().toString()
                 ), MediaType.APPLICATION_JSON));
-        } catch (Exception e) {
-            log.error("推送初始 SSE 消息失败 runId={}", runId, e);
-            emitter.completeWithError(e);
+        } catch (Exception exception) {
+            emitters.remove(runId, emitter);
+            if (ClientDisconnectSupport.isClientDisconnect(exception)) {
+                log.debug("SSE 初始推送时客户端已断开 runId={}", runId);
+            } else {
+                log.warn("推送初始 SSE 消息失败 runId={}", runId, exception);
+            }
+            closeEmitterQuietly(emitter);
         }
+    }
 
-        return emitter;
+    private static void closeEmitterQuietly(SseEmitter emitter) {
+        try {
+            emitter.complete();
+        } catch (Exception ignored) {
+            // 客户端已断开时 complete 也可能失败，忽略即可。
+        }
     }
 
     /**

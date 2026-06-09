@@ -4,6 +4,7 @@ import com.agentum.shared.api.ApiError;
 import com.agentum.shared.api.ApiResponse;
 import com.agentum.shared.api.RequestIds;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.List;
@@ -44,6 +45,8 @@ public class SecurityConfiguration {
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(authorize -> authorize
+                // SSE / SseEmitter 完成时会触发 ASYNC dispatch；此时响应已提交，不应再次鉴权。
+                .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/public/tenants").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/public/tenants/*/sso-providers").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
@@ -53,10 +56,28 @@ public class SecurityConfiguration {
                 .anyRequest().authenticated()
             )
             .exceptionHandling(exceptionHandling -> exceptionHandling
-                .authenticationEntryPoint((request, response, exception) ->
-                    writeSecurityFailure(request, response, HttpStatus.UNAUTHORIZED, "AUTH_REQUIRED", "请先登录后再访问"))
-                .accessDeniedHandler((request, response, exception) ->
-                    writeSecurityFailure(request, response, HttpStatus.FORBIDDEN, "PERMISSION_DENIED", "当前账号没有访问权限"))
+                .authenticationEntryPoint((request, response, exception) -> {
+                    if (response.isCommitted()) {
+                        log.debug(
+                            "未认证访问但响应已提交，跳过写入 path={} requestId={}",
+                            request.getRequestURI(),
+                            RequestIds.current(request)
+                        );
+                        return;
+                    }
+                    writeSecurityFailure(request, response, HttpStatus.UNAUTHORIZED, "AUTH_REQUIRED", "请先登录后再访问");
+                })
+                .accessDeniedHandler((request, response, exception) -> {
+                    if (response.isCommitted()) {
+                        log.debug(
+                            "访问被拒绝但响应已提交，跳过写入 path={} requestId={}",
+                            request.getRequestURI(),
+                            RequestIds.current(request)
+                        );
+                        return;
+                    }
+                    writeSecurityFailure(request, response, HttpStatus.FORBIDDEN, "PERMISSION_DENIED", "当前账号没有访问权限");
+                })
             )
             .addFilterBefore(bearerTokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
             .build();

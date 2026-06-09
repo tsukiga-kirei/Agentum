@@ -31,8 +31,9 @@ export function useRunStream(
   const [error, setError] = useState<string | null>(null);
 
   const abortControllerRef = useRef<AbortController | null>(null);
-  const reconnectTimeoutRef = useRef<any>(null);
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const connectionStateRef = useRef<StreamConnectionState>("disconnected");
+  const connectSessionRef = useRef(0);
 
   // Keep ref of connection state to avoid stale closure in loops
   useEffect(() => {
@@ -40,6 +41,7 @@ export function useRunStream(
   }, [connectionState]);
 
   const disconnect = useCallback(() => {
+    connectSessionRef.current += 1;
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
@@ -57,7 +59,18 @@ export function useRunStream(
       return;
     }
 
-    disconnect();
+    const session = connectSessionRef.current + 1;
+    connectSessionRef.current = session;
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+
     setConnectionState("connecting");
     setError(null);
 
@@ -77,6 +90,11 @@ export function useRunStream(
           signal: controller.signal,
         });
 
+        if (session !== connectSessionRef.current) {
+          await response.body?.cancel();
+          return;
+        }
+
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -93,6 +111,11 @@ export function useRunStream(
         let currentEventType = "";
 
         while (true) {
+          if (session !== connectSessionRef.current) {
+            await reader.cancel();
+            return;
+          }
+
           const { done, value } = await reader.read();
           if (done) {
             break;
@@ -100,7 +123,6 @@ export function useRunStream(
 
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split("\n");
-          // The last line might be incomplete, keep it in buffer
           buffer = lines.pop() || "";
 
           for (const line of lines) {
@@ -114,7 +136,9 @@ export function useRunStream(
             } else if (trimmed.startsWith("data:")) {
               const dataStr = trimmed.substring(5).trim();
               if (dataStr === "[DONE]") {
-                disconnect();
+                if (session === connectSessionRef.current) {
+                  disconnect();
+                }
                 break;
               }
 
@@ -126,8 +150,6 @@ export function useRunStream(
                 } as StreamEvent;
 
                 setEvents((prev) => [...prev, streamEvent]);
-
-                // Dispatch stream event to update state
                 handleStreamEvent(streamEvent);
               } catch (e) {
                 console.error("Failed to parse SSE data line:", dataStr, e);
@@ -137,18 +159,29 @@ export function useRunStream(
             }
           }
         }
-      } catch (err: any) {
-        if (err.name === "AbortError") {
+
+        if (session === connectSessionRef.current) {
+          setConnectionState("disconnected");
+        }
+      } catch (err: unknown) {
+        if (session !== connectSessionRef.current) {
+          return;
+        }
+        if (err instanceof Error && err.name === "AbortError") {
           return;
         }
         console.error("SSE connection error:", err);
         setConnectionState("error");
-        setError(err.message || "连接断开");
+        setError(err instanceof Error ? err.message : "连接断开");
 
-        // Simple reconnect logic after 3 seconds
-        if (controller.signal.aborted === false) {
+        if (!controller.signal.aborted) {
           setConnectionState("reconnecting");
           reconnectTimeoutRef.current = setTimeout(() => {
+            if (session !== connectSessionRef.current) {
+              return;
+            }
+            connectionStateRef.current = "disconnected";
+            setConnectionState("disconnected");
             connect();
           }, 3000);
         }

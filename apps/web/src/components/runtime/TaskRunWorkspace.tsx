@@ -58,12 +58,11 @@ export function TaskRunWorkspace({
   const stream = useRunStream(tenantId, runDetail.id, token);
 
   useEffect(() => {
-    // Automatically connect to SSE stream when run changes or mounts
     stream.connect();
     return () => {
       stream.disconnect();
     };
-  }, [runDetail.id]);
+  }, [runDetail.id, stream.connect, stream.disconnect]);
 
   // Sync state if initialRun updates from parent
   useEffect(() => {
@@ -152,9 +151,7 @@ export function TaskRunWorkspace({
       const updated = await workbenchApi.advanceStep(tenantId, token, runDetail.id);
       setRunDetail(updated);
       onReload(updated);
-      // Re-trigger SSE connection just in case
-      stream.connect();
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("推进步骤失败", e);
     }
   }
