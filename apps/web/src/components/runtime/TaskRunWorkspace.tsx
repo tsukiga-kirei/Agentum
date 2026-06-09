@@ -15,6 +15,7 @@ import { StepActionBar } from "./StepActionBar";
 import { AgentChatPanel } from "./AgentChatPanel";
 import { UserInputPanel } from "./UserInputPanel";
 import { MultiAgentPanel } from "./MultiAgentPanel";
+import { MarkdownRenderer } from "./MarkdownRenderer";
 import { workbenchApi } from "../../services/apiClient";
 import { 
   Save, 
@@ -24,14 +25,8 @@ import {
   Activity, 
   FileText, 
   Package, 
-  Bot, 
-  Wrench, 
-  Plug, 
-  Library, 
-  Check, 
-  X,
   FileCheck,
-  AlertCircle
+  RotateCcw
 } from "lucide-react";
 
 interface TaskRunWorkspaceProps {
@@ -224,6 +219,14 @@ export function TaskRunWorkspace({
     }
   }
 
+  async function handleRegenerateStep() {
+    if (activeStep?.allowsRegenerate && (activeStep.state === "done" || activeStep.state === "failed")) {
+      await handleRollback(activeStep.nodeRunId);
+      return;
+    }
+    await handleRetryNode();
+  }
+
   async function handleRollback(nodeRunId: string) {
     try {
       const updated = await workbenchApi.rollbackRun(tenantId, token, runDetail.id, nodeRunId);
@@ -385,7 +388,6 @@ export function TaskRunWorkspace({
                 readOnly={runDetail.readOnly}
                 saved={runDetail.saved}
                 selectedStepIndex={selectedTraceStepIndex}
-                onSelectStep={setSelectedTraceStepIndex}
                 onRollback={handleRollback}
               />
             )}
@@ -401,12 +403,13 @@ export function TaskRunWorkspace({
             isStreaming={stream.isStreaming}
             isRunCompleted={preview.statusLabel === "已完成" || runDetail.state === "completed"}
             isRunFailed={runDetail.state === "failed" || activeStep.state === "failed"}
+            isRunSaved={runDetail.saved}
             readOnly={runDetail.readOnly}
             onAdvance={handleAdvanceStep}
             onCompleteTodo={(comment) => handleCompleteTodo({ comment })}
             onApprove={handleApprove}
             onReject={handleReject}
-            onRetry={handleRetryNode}
+            onRetry={handleRegenerateStep}
             onRollback={handleRetryNode}
             onBack={onBack}
             onInterrupt={() => stream.disconnect()}
@@ -459,104 +462,140 @@ function RunTracePanel({
   readOnly,
   saved,
   selectedStepIndex,
-  onSelectStep,
   onRollback,
 }: {
   preview: RuntimePreview;
   readOnly: boolean;
   saved: boolean;
   selectedStepIndex: number | null;
-  onSelectStep: (idx: number) => void;
   onRollback: (nodeRunId: string) => void;
 }) {
   const steps = preview.steps.filter((s) => s.state !== "pending");
-  const selectedIdx = selectedStepIndex !== null ? selectedStepIndex : steps.length - 1;
-  const step = steps[selectedIdx];
+  const fallbackIndex = Math.max(0, lastExecutableStepIndex(steps));
+  const selectedIdx = selectedStepIndex !== null ? selectedStepIndex : fallbackIndex;
+  const step = preview.steps[selectedIdx] && preview.steps[selectedIdx].state !== "pending"
+    ? preview.steps[selectedIdx]
+    : steps[fallbackIndex];
+  const relatedEvents = preview.events.filter((event) => !step || event.stepTitle === step.title || event.stepTitle === "任务");
+  const events = relatedEvents.length > 0 ? relatedEvents : preview.events;
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
-      {/* Left panel step logs list */}
-      <div className="md:col-span-1 border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/30 dark:bg-slate-900/10 p-3 h-[400px] overflow-y-auto space-y-2">
-        <h4 className="text-[10px] font-bold text-slate-400 uppercase px-2 mb-2">执行节点列表</h4>
-        {steps.map((s, idx) => (
-          <button
-            key={s.nodeRunId}
-            type="button"
-            onClick={() => onSelectStep(idx)}
-            className={`w-full text-left p-2.5 rounded-lg border text-xs flex justify-between items-center transition-all ${
-              selectedIdx === idx 
-                ? "bg-blue-50 border-blue-200 text-blue-600 dark:bg-blue-950/20 dark:border-blue-900 dark:text-blue-400 font-semibold" 
-                : "bg-white dark:bg-slate-950 border-slate-100 dark:border-slate-800 hover:border-slate-200 dark:hover:border-slate-700"
-            }`}
-          >
-            <span>{s.title}</span>
-            <span className={`text-[9px] px-1.5 py-0.2 rounded-full ${
-              s.state === "done" 
-                ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400" 
-                : s.state === "failed" 
-                ? "bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400" 
-                : "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400"
-            }`}>
-              {s.state === "done" ? "已完成" : s.state === "failed" ? "已失败" : "执行中"}
-            </span>
-          </button>
-        ))}
-      </div>
-
-      {/* Right panel detailed inputs/outputs */}
-      <div className="md:col-span-2 space-y-4">
+    <div className="max-w-5xl mx-auto space-y-4">
+      <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-5">
         {step ? (
-          <div className="border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-4 bg-white dark:bg-slate-950">
+          <div className="space-y-5">
             <header className="flex justify-between items-center border-b border-slate-100 dark:border-slate-850 pb-3">
               <div>
-                <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">{step.title}</h4>
-                <small className="text-[10px] text-slate-400 mt-1 block">完成时间：{step.completedAt || "—"}</small>
+                <div className="flex items-center gap-2">
+                  <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">{step.title}</h4>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                    step.state === "done"
+                      ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400"
+                      : step.state === "failed"
+                      ? "bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400"
+                      : "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400"
+                  }`}>
+                    {step.state === "done" ? "已完成" : step.state === "failed" ? "已失败" : step.state === "waiting" ? "等待中" : "执行中"}
+                  </span>
+                </div>
+                <small className="text-[10px] text-slate-400 mt-1 block">
+                  {step.description} · 完成时间：{step.completedAt || "—"}
+                </small>
               </div>
               {!readOnly && saved && (step.state === "done" || step.state === "failed") && (
                 <button
                   type="button"
                   onClick={() => onRollback(step.nodeRunId)}
-                  className="sys-btn sys-btn--danger text-[10px] px-2.5 py-1"
+                  className="sys-btn sys-btn--danger text-[10px] px-2.5 py-1 inline-flex items-center gap-1.5"
                 >
+                  <RotateCcw size={12} />
                   回退到此步骤重新开始
                 </button>
               )}
             </header>
 
-            {/* Inputs snapshot list */}
-            {step.inputs && step.inputs.length > 0 && (
-              <div className="space-y-2">
-                <span className="text-[10px] font-bold text-slate-400 block">输入参数</span>
-                <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 p-3 space-y-2">
-                  {step.inputs.map((field) => (
-                    <div key={field.label} className="text-xs">
-                      <span className="text-slate-400 block text-[10px]">{field.label}</span>
-                      <p className="text-slate-700 dark:text-slate-300 font-mono mt-0.5">{field.value || "—"}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Outputs snapshot list */}
-            {step.outputs && step.outputs.length > 0 && (
-              <div className="space-y-2">
-                <span className="text-[10px] font-bold text-slate-400 block">输出快照</span>
-                <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 p-3 space-y-2">
-                  {step.outputs.map((field) => (
-                    <div key={field.label} className="text-xs">
-                      <span className="text-slate-400 block text-[10px]">{field.label}</span>
-                      <p className="text-slate-700 dark:text-slate-300 font-sans mt-0.5 whitespace-pre-wrap">{field.value || "—"}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <SnapshotFieldList title="输入参数" fields={step.inputs || []} monospace />
+              <SnapshotFieldList title="输出快照" fields={step.outputs || []} markdown />
+            </div>
           </div>
         ) : (
           <div className="text-center py-12 text-slate-400 text-xs">
-            选择左侧的已执行步骤查看详情。
+            左侧流程轨选择已执行步骤后，可查看对应输入、输出和事件。
           </div>
+        )}
+      </section>
+
+      <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">事件时间线</h4>
+            <p className="text-[10px] text-slate-400 mt-1">按真实运行事件展示，左侧流程轨负责节点选择。</p>
+          </div>
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+            {events.length} 条事件
+          </span>
+        </div>
+        {events.length === 0 ? (
+          <div className="text-center py-8 text-slate-400 text-xs">暂无执行事件。</div>
+        ) : (
+          <div className="space-y-3">
+            {events.map((event) => (
+              <div key={event.id} className="flex gap-3">
+                <div className={`mt-1 h-2 w-2 rounded-full shrink-0 ${
+                  event.tone === "success"
+                    ? "bg-emerald-500"
+                    : event.tone === "warning"
+                    ? "bg-amber-500"
+                    : "bg-blue-500"
+                }`} />
+                <div className="min-w-0 flex-1 border-b border-slate-100 dark:border-slate-850 pb-3 last:border-b-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <strong className="text-xs text-slate-800 dark:text-slate-200">{event.title}</strong>
+                    <span className="text-[10px] text-slate-400">{event.time}</span>
+                    <span className="text-[10px] text-slate-400">· {event.stepTitle}</span>
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">{event.description}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function SnapshotFieldList({
+  title,
+  fields,
+  monospace = false,
+  markdown = false,
+}: {
+  title: string;
+  fields: RuntimeNodeField[];
+  monospace?: boolean;
+  markdown?: boolean;
+}) {
+  return (
+    <div className="space-y-2 min-w-0">
+      <span className="text-[10px] font-bold text-slate-400 block">{title}</span>
+      <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 p-3 space-y-3 min-h-[96px]">
+        {fields.length === 0 ? (
+          <p className="text-xs text-slate-400">无快照数据。</p>
+        ) : (
+          fields.map((field) => (
+            <div key={field.label} className="text-xs min-w-0">
+              <span className="text-slate-400 block text-[10px]">{field.label}</span>
+              {markdown ? (
+                <MarkdownRenderer content={field.value || "—"} compact className="mt-1" />
+              ) : (
+                <p className={`text-slate-700 dark:text-slate-300 mt-0.5 break-words ${monospace ? "font-mono" : "font-sans whitespace-pre-wrap"}`}>
+                  {field.value || "—"}
+                </p>
+              )}
+            </div>
+          ))
         )}
       </div>
     </div>
@@ -705,7 +744,7 @@ function isInputFieldConfig(value: unknown): value is InputFieldConfigShape {
 
 function resolveStepInputs(node: any): RuntimeNodeField[] {
   const configs = node.config?.inputFields;
-  const outputs = node.inputSnapshot || {};
+  const outputs = node.inputs || {};
   if (Array.isArray(configs)) {
     return configs.filter(isInputFieldConfig).map((cfg) => ({
       label: cfg.label,
@@ -729,9 +768,8 @@ function nodeMessages(node: any): RuntimeChatMessage[] {
   const messages: RuntimeChatMessage[] = [];
   const outputs = node.outputs || {};
   
-  if (node.nodeType === "agent") {
-    // Reconstruct assistant message from outputs.agent_response or summary
-    const content = outputs.agent_response || outputs.summary || "";
+  if (node.nodeType === "agent" || node.nodeType === "parallel_group") {
+    const content = outputs.final_answer || outputs.agent_response || outputs.summary || "";
     if (content) {
       messages.push({
         id: node.id + "-msg",
@@ -758,7 +796,30 @@ function nodeCapabilities(node: any): RuntimeCapabilityItem[] {
       summary: `调用模型 ${outputs.modelName} 推理。`,
     });
   }
+  if (Array.isArray(outputs.toolCalls)) {
+    outputs.toolCalls.forEach((tool: any, index: number) => {
+      const status = tool.status === "failed" || tool.status === "error" ? "error" : "done";
+      list.push({
+        id: `${node.id}-tool-${index}`,
+        name: stringifyValue(tool.toolName || tool.name || "工具调用"),
+        kind: tool.toolType === "skill" ? "skill" : tool.toolType === "agent" ? "agent" : "mcp",
+        status,
+        statusLabel: status === "error" ? "调用失败" : "调用完成",
+        summary: stringifyValue(tool.summary || tool.result || "智能体已完成该工具调用。"),
+        resultSummary: stringifyValue(tool.summary || tool.result || ""),
+      });
+    });
+  }
   return list;
+}
+
+function lastExecutableStepIndex(steps: RuntimePreviewStep[]): number {
+  for (let index = steps.length - 1; index >= 0; index--) {
+    if (steps[index].state === "failed" || steps[index].state === "running" || steps[index].state === "waiting" || steps[index].state === "done") {
+      return index;
+    }
+  }
+  return 0;
 }
 
 function stringifyValue(value: unknown): string {

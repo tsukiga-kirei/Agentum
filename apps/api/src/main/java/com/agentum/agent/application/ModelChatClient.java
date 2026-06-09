@@ -31,21 +31,80 @@ public interface ModelChatClient {
         String apiKey,
         String modelName,
         List<ChatMessage> messages,
-        Map<String, Object> options
+        Map<String, Object> options,
+        List<ToolDefinition> tools
     ) {
+        public ChatRequest(
+            UUID providerId,
+            String providerType,
+            String baseUrl,
+            String apiKey,
+            String modelName,
+            List<ChatMessage> messages,
+            Map<String, Object> options
+        ) {
+            this(providerId, providerType, baseUrl, apiKey, modelName, messages, options, List.of());
+        }
+
         public ChatRequest {
             messages = messages == null ? List.of() : List.copyOf(messages);
             options = options == null ? Map.of() : Map.copyOf(options);
+            tools = tools == null ? List.of() : List.copyOf(tools);
         }
     }
 
-    record ChatMessage(String role, String content) {
+    record ChatMessage(String role, String content, String toolCallId, List<ToolCall> toolCalls) {
+        public ChatMessage(String role, String content) {
+            this(role, content, null, List.of());
+        }
+
+        public static ChatMessage assistantToolCalls(String content, List<ToolCall> toolCalls) {
+            return new ChatMessage("assistant", content == null ? "" : content, null, toolCalls);
+        }
+
+        public static ChatMessage toolResult(String toolCallId, String content) {
+            return new ChatMessage("tool", content == null ? "" : content, toolCallId, List.of());
+        }
+
+        public ChatMessage {
+            content = content == null ? "" : content;
+            toolCalls = toolCalls == null ? List.of() : List.copyOf(toolCalls);
+        }
     }
 
-    record ChatResult(String content, Map<String, Object> responseSnapshot, Map<String, Object> tokenUsage, long latencyMs) {
+    record ToolDefinition(String name, String description, Map<String, Object> parameters) {
+        public ToolDefinition {
+            description = description == null ? "" : description;
+            parameters = parameters == null ? Map.of("type", "object", "properties", Map.of()) : Map.copyOf(parameters);
+        }
+    }
+
+    record ToolCall(String id, String name, String argumentsJson) {
+        public ToolCall {
+            id = id == null || id.isBlank() ? UUID.randomUUID().toString() : id;
+            name = name == null ? "" : name;
+            argumentsJson = argumentsJson == null ? "{}" : argumentsJson;
+        }
+    }
+
+    record ChatResult(
+        String content,
+        Map<String, Object> responseSnapshot,
+        Map<String, Object> tokenUsage,
+        long latencyMs,
+        List<ToolCall> toolCalls,
+        String finishReason
+    ) {
+        public ChatResult(String content, Map<String, Object> responseSnapshot, Map<String, Object> tokenUsage, long latencyMs) {
+            this(content, responseSnapshot, tokenUsage, latencyMs, List.of(), "");
+        }
+
         public ChatResult {
+            content = content == null ? "" : content;
             responseSnapshot = responseSnapshot == null ? Map.of() : Map.copyOf(responseSnapshot);
             tokenUsage = tokenUsage == null ? Map.of() : Map.copyOf(tokenUsage);
+            toolCalls = toolCalls == null ? List.of() : List.copyOf(toolCalls);
+            finishReason = finishReason == null ? "" : finishReason;
         }
     }
 }

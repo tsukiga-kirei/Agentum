@@ -1,6 +1,6 @@
 # 当前进度与后续计划
 
-更新时间：2026-06-05（业务工作台真实运行态：租户模型 AI、MCP SSE 调用、交付记录、变量快照和失败留痕）。
+更新时间：2026-06-09（业务工作台 Agent 模式运行态：模型自主调用 Skill / MCP、SSE 流式输出、Markdown final_answer、变量快照和失败留痕）。
 
 本文档只记录当前施工状态、阶段计划和下一步任务。长期规范、系统说明和架构设计分别维护在：
 
@@ -161,9 +161,9 @@
 - 协作编辑流程保存与发布时按当前操作者重新校验所有引用能力：系统能力必须已分配给操作者，用户自建能力必须已发布且操作者拥有读取权限，流程编辑权限不会向下传递能力权限。
 - 业务工作台运行态已接入第一版：新增 `workflow_runs`、`workflow_node_runs`、`workflow_waiting_events`、`workflow_run_events` 表，`/api/tenants/{tenantId}/workbench/summary` 返回真实待办和最近运行；创建任务列表改为展示全部未收回且已发布流程，并通过 `visibility`、`canLaunch`、`launchBlockedReason` 标记当前账号是否有发起权限。
 - 业务工作台任务处理页已从本地 `buildRuntimePreview` mock 切换到后端 `WorkflowRun` API：新增创建运行、任务中心分页、运行详情和待办完成接口；发起任务后按发布版本快照生成节点链路，用户输入 / 人工审核节点形成真实待办，任务记录会排除仍有打开待办的运行实例，避免待办与记录重复展示。
-- 后端运行态已从占位输出升级为 `WorkflowRuntimeExecutor` 分发：触发、条件、汇聚节点本地完成；单智能体和智能体集群调用租户已启用模型分配，支持 OpenAI / 通义兼容与 Azure OpenAI Chat Completions；MCP 节点按租户能力池授权复核后通过 SSE `tools/call` 调用；交付节点支持站内直接交付记录、系统内置邮箱和 Webhook。
+- 后端运行态已从占位输出升级为 `WorkflowRuntimeExecutor` + `AgentRuntimeService` 分发：触发、条件、汇聚节点本地完成；单智能体和智能体集群调用租户已启用模型分配，支持 OpenAI / 通义兼容与 Azure OpenAI Chat Completions；智能体节点已改为 ReAct/Function Calling 模式，模型可自主调用当前节点可用的 Skill 读取工具和 MCP SSE `tools/call`，最后通过 `final_answer` 提交 Markdown 结论；交付节点支持站内直接交付记录、系统内置邮箱和 Webhook。
 - 新增运行态勾稽表 `variable_snapshots`、`model_call_logs`、`mcp_call_logs`、`delivery_records`，节点完成后写入变量快照，模型 / MCP / 交付调用均关联租户、运行、节点、流程定义和发布版本；执行失败会把运行与当前节点标记为失败并写入 `node_failed` 事件，不再返回“尚未接入”的占位输出。
-- 业务工作台运行详情收敛为真实可操作项：待办节点只显示提交动作，AI / MCP / 交付节点展示后端输出、调用状态和交付摘要，不再展示未接入的暂停、保存、退回、重生成或中断按钮。
+- 业务工作台运行详情收敛为真实可操作项：待办节点只显示提交动作，AI / MCP / Skill / 交付节点展示后端输出、调用状态和交付摘要；执行历史去掉与左侧流程轨重复的节点列表，改为选中步骤快照 + 事件时间线；已保存任务可对智能体节点释放重新生成入口，追问追加上下文和后端取消补偿继续建设。
 - 流程设计落地版本治理方案 C：`workflow_definitions.launch_enabled` 控制业务入口收回/恢复；列表与详情展示 `latestVersionNumber`、`hasUnpublishedChanges`；创建者可删除流程或收回业务入口；业务工作台可发起列表改为「有冻结版本且入口未收回」，与设计态 `status` 解耦；新增 [能力—流程—权限治理](../capability-workflow-governance.md) 文档。
 - 企业 SSO 完成 OIDC 第一版骨架：新增租户 SSO Provider 与外部身份绑定表，登录页按租户发现 SSO 身份源，后端生成签名 `state` 与 `nonce` 并完成 OIDC 回调后的本地 token 签发；新增 [企业 SSO 对接说明](../sso-integration.md)，明确业务系统只需按标准 OIDC 提供身份，不承载 Agentum 权限判断。
 

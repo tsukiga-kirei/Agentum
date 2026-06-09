@@ -1,6 +1,7 @@
 import React, { useState } from "react";
-import type { RuntimePreviewStep, RuntimeChatMessage, RuntimeCapabilityItem, AgentPhase } from "../../types/runtime-types";
-import { Bot, Sparkles, Terminal, FileText, ChevronDown, ChevronUp, AlertTriangle, CheckCircle, HelpCircle } from "lucide-react";
+import type { RuntimePreviewStep, RuntimeCapabilityItem, AgentPhase } from "../../types/runtime-types";
+import { Bot, Sparkles, Terminal, FileText, ChevronDown, ChevronUp } from "lucide-react";
+import { MarkdownRenderer } from "./MarkdownRenderer";
 
 interface AgentChatPanelProps {
   activeStep: RuntimePreviewStep;
@@ -200,7 +201,11 @@ export function AgentChatPanel({
                   <div className={`text-[10px] font-medium mb-1 ${
                     msg.role === "user" ? "text-blue-100" : "text-slate-400"
                   }`}>{msg.author}</div>
-                  <p className="text-xs leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                  <MarkdownRenderer
+                    content={msg.content}
+                    compact
+                    className={msg.role === "user" ? "agent-markdown--user" : ""}
+                  />
                   
                   {msg.streaming && (
                     <span className="inline-block w-1.5 h-3.5 bg-blue-500 dark:bg-blue-400 ml-1 vertical-middle animate-pulse agent-chat-cursor" />

@@ -32,7 +32,6 @@ import com.agentum.workflow.infrastructure.WorkflowVersionRepository;
 import com.agentum.workflow.infrastructure.WorkflowVariableSnapshotRepository;
 import com.agentum.workflow.infrastructure.WorkflowWaitingEventRepository;
 import com.agentum.agent.application.AgentRuntimeService;
-import com.agentum.mcp.application.McpRuntimeService;
 import com.agentum.delivery.application.DeliveryRuntimeService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
@@ -67,7 +66,6 @@ class WorkbenchRuntimeServiceTest {
     private final UserAccountRepository userAccountRepository = mock(UserAccountRepository.class);
     private final WorkflowRuntimeExecutor workflowRuntimeExecutor = mock(WorkflowRuntimeExecutor.class);
     private final AgentRuntimeService agentRuntimeService = mock(AgentRuntimeService.class);
-    private final McpRuntimeService mcpRuntimeService = mock(McpRuntimeService.class);
     private final DeliveryRuntimeService deliveryRuntimeService = mock(DeliveryRuntimeService.class);
 
     @Test
@@ -282,7 +280,6 @@ class WorkbenchRuntimeServiceTest {
             workflowRuntimeExecutor,
             Clock.fixed(NOW, ZoneOffset.UTC),
             agentRuntimeService,
-            mcpRuntimeService,
             deliveryRuntimeService
         );
     }

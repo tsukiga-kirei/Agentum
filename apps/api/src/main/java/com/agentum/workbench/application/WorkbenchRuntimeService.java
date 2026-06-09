@@ -31,9 +31,6 @@ import com.agentum.workflow.infrastructure.WorkflowVariableSnapshotRepository;
 import com.agentum.workflow.infrastructure.WorkflowWaitingEventRepository;
 import com.agentum.agent.application.AgentRuntimeService;
 import com.agentum.agent.application.AgentRuntimeRequest;
-import com.agentum.agent.application.ModelChatClient;
-import com.agentum.mcp.application.McpRuntimeService;
-import com.agentum.mcp.application.McpRuntimeRequest;
 import com.agentum.delivery.application.DeliveryRuntimeService;
 import com.agentum.delivery.application.DeliveryRuntimeRequest;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -97,7 +94,6 @@ public class WorkbenchRuntimeService {
     private final WorkflowRuntimeExecutor workflowRuntimeExecutor;
     private final Clock clock;
     private final AgentRuntimeService agentRuntimeService;
-    private final McpRuntimeService mcpRuntimeService;
     private final DeliveryRuntimeService deliveryRuntimeService;
 
     public WorkbenchRuntimeService(
@@ -116,7 +112,6 @@ public class WorkbenchRuntimeService {
         WorkflowRuntimeExecutor workflowRuntimeExecutor,
         Clock clock,
         AgentRuntimeService agentRuntimeService,
-        McpRuntimeService mcpRuntimeService,
         DeliveryRuntimeService deliveryRuntimeService
     ) {
         this.tenantRepository = tenantRepository;
@@ -134,7 +129,6 @@ public class WorkbenchRuntimeService {
         this.workflowRuntimeExecutor = workflowRuntimeExecutor;
         this.clock = clock;
         this.agentRuntimeService = agentRuntimeService;
-        this.mcpRuntimeService = mcpRuntimeService;
         this.deliveryRuntimeService = deliveryRuntimeService;
     }
 
@@ -1468,82 +1462,75 @@ public class WorkbenchRuntimeService {
 
     private Map<String, Object> executeStreamingAgent(UUID runId, WorkflowNodeRunEntity nodeRun, Map<String, Object> variables, UUID operatorUserId, SseEmitter emitter) {
         WorkflowRunEntity run = workflowRunRepository.findById(runId).get();
-        String nowStr = clock.instant().toString();
-        
-        sendSseEvent(emitter, "agent_thinking", eventPayload(runId, nodeRun.getId(), nowStr, Map.of(
+        sendSseEvent(emitter, "agent_thinking", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
             "phase", "preparing",
-            "message", "正在装配变量与解析模型配置..."
+            "message", "正在装配 Agent 工具箱与上下文..."
         )));
 
-        sendSseEvent(emitter, "agent_thinking", eventPayload(runId, nodeRun.getId(), nowStr, Map.of(
-            "phase", "tool_calling",
-            "message", "正在调用 MCP 工具..."
-        )));
-
-        Map<String, Object> toolOutputs = mcpRuntimeService.executeConfiguredMcps(new McpRuntimeRequest(
-            run,
-            nodeRun,
-            nodeRun.getConfigSnapshot(),
-            variables,
-            operatorUserId
-        )).outputs();
-
-        for (Map.Entry<String, Object> entry : toolOutputs.entrySet()) {
-            sendSseEvent(emitter, "agent_tool_call", eventPayload(runId, nodeRun.getId(), nowStr, Map.of(
-                "toolName", entry.getKey(),
-                "toolType", "mcp",
-                "status", "completed",
-                "result", summarizeText(entry.getValue() != null ? entry.getValue().toString() : ""),
-                "durationMs", 200
-            )));
-        }
-
-        sendSseEvent(emitter, "agent_thinking", eventPayload(runId, nodeRun.getId(), nowStr, Map.of(
-            "phase", "model_calling",
-            "message", "正在向模型发送推理请求..."
-        )));
-
-        Map<String, Object> outputs = new LinkedHashMap<>(toolOutputs);
-        
         AgentRuntimeRequest agentRequest = new AgentRuntimeRequest(
             run,
             nodeRun,
             nodeRun.getConfigSnapshot(),
             variables,
-            toolOutputs,
+            Map.of(),
             operatorUserId
         );
 
-        outputs.putAll(agentRuntimeService.executeStreaming(agentRequest, new ModelChatClient.StreamingCallback() {
+        return new LinkedHashMap<>(agentRuntimeService.executeStreaming(agentRequest, new AgentRuntimeService.AgentRuntimeEventSink() {
             private final StringBuilder accumulated = new StringBuilder();
 
             @Override
-            public void onChunk(String deltaContent) {
+            public void onPhase(String phase, String message) {
+                sendSseEvent(emitter, "agent_thinking", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
+                    "phase", phase,
+                    "message", message
+                )));
+            }
+
+            @Override
+            public void onToolCall(String toolName, String toolType, String status, String result, long durationMs) {
+                sendSseEvent(emitter, "agent_tool_call", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
+                    "toolName", toolName,
+                    "toolType", toolType,
+                    "status", status,
+                    "result", summarizeText(result),
+                    "durationMs", durationMs
+                )));
+            }
+
+            @Override
+            public void onToken(String deltaContent, String accumulatedContent) {
                 accumulated.append(deltaContent);
                 sendSseEvent(emitter, "agent_streaming", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
                     "deltaContent", deltaContent,
+                    "accumulatedContent", accumulatedContent == null || accumulatedContent.isBlank()
+                        ? accumulated.toString()
+                        : accumulatedContent
+                )));
+            }
+
+            @Override
+            public void onCompleted(String answer) {
+                accumulated.setLength(0);
+                accumulated.append(answer == null ? "" : answer);
+                sendSseEvent(emitter, "agent_streaming", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
+                    "deltaContent", "",
                     "accumulatedContent", accumulated.toString()
                 )));
-            }
-
-            @Override
-            public void onComplete(ModelChatClient.ChatResult result) {
                 sendSseEvent(emitter, "agent_thinking", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
                     "phase", "completed",
-                    "message", "模型推理已完成。"
+                    "message", "智能体已完成 final_answer。"
                 )));
             }
 
             @Override
-            public void onError(String code, String message) {
+            public void onFailed(String code, String message) {
                 sendSseEvent(emitter, "agent_thinking", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
                     "phase", "failed",
-                    "message", "模型调用出错: " + message
+                    "message", "智能体执行出错: " + message
                 )));
             }
         }).outputs());
-
-        return outputs;
     }
 
     @SuppressWarnings("unchecked")
@@ -1575,61 +1562,85 @@ public class WorkbenchRuntimeService {
                 "eventType", "started"
             )));
 
-            Map<String, Object> toolOutputs = mcpRuntimeService.executeConfiguredMcps(new McpRuntimeRequest(
-                run,
-                nodeRun,
-                agentConfig,
-                currentVars,
-                operatorUserId
-            )).outputs();
-
-            for (Map.Entry<String, Object> entry : toolOutputs.entrySet()) {
-                sendSseEvent(emitter, "cluster_agent", eventPayload(runId, nodeRun.getId(), nowStr, Map.of(
-                    "agentIndex", agentIndex,
-                    "agentName", agentName,
-                    "eventType", "tool_call",
-                    "toolName", entry.getKey(),
-                    "toolStatus", "completed"
-                )));
-            }
-
             AgentRuntimeRequest agentRequest = new AgentRuntimeRequest(
                 run,
                 nodeRun,
                 agentConfig,
                 currentVars,
-                toolOutputs,
+                Map.of(),
                 operatorUserId
             );
 
             final int idx = agentIndex;
             final String name = agentName;
             
-            Map<String, Object> agentOutput = agentRuntimeService.executeStreaming(agentRequest, new ModelChatClient.StreamingCallback() {
+            Map<String, Object> agentOutput = agentRuntimeService.executeStreaming(agentRequest, new AgentRuntimeService.AgentRuntimeEventSink() {
                 private final StringBuilder subAccumulated = new StringBuilder();
 
                 @Override
-                public void onChunk(String deltaContent) {
+                public void onPhase(String phase, String message) {
+                    sendSseEvent(emitter, "cluster_agent", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
+                        "agentIndex", idx,
+                        "agentName", name,
+                        "eventType", "phase",
+                        "phase", phase,
+                        "message", message
+                    )));
+                }
+
+                @Override
+                public void onToolCall(String toolName, String toolType, String status, String result, long durationMs) {
+                    sendSseEvent(emitter, "cluster_agent", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
+                        "agentIndex", idx,
+                        "agentName", name,
+                        "eventType", "tool_call",
+                        "toolName", toolName,
+                        "toolType", toolType,
+                        "toolStatus", status,
+                        "result", summarizeText(result),
+                        "durationMs", durationMs
+                    )));
+                }
+
+                @Override
+                public void onToken(String deltaContent, String accumulatedContent) {
                     subAccumulated.append(deltaContent);
                     sendSseEvent(emitter, "cluster_agent", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
                         "agentIndex", idx,
                         "agentName", name,
                         "eventType", "streaming",
                         "deltaContent", deltaContent,
+                        "accumulatedContent", accumulatedContent == null || accumulatedContent.isBlank()
+                            ? subAccumulated.toString()
+                            : accumulatedContent
+                    )));
+                }
+
+                @Override
+                public void onCompleted(String answer) {
+                    subAccumulated.setLength(0);
+                    subAccumulated.append(answer == null ? "" : answer);
+                    sendSseEvent(emitter, "cluster_agent", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
+                        "agentIndex", idx,
+                        "agentName", name,
+                        "eventType", "streaming",
+                        "deltaContent", "",
                         "accumulatedContent", subAccumulated.toString()
                     )));
                 }
 
                 @Override
-                public void onComplete(ModelChatClient.ChatResult result) {
-                }
-
-                @Override
-                public void onError(String code, String message) {
+                public void onFailed(String code, String message) {
+                    sendSseEvent(emitter, "cluster_agent", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
+                        "agentIndex", idx,
+                        "agentName", name,
+                        "eventType", "failed",
+                        "errorCode", code,
+                        "errorMessage", message
+                    )));
                 }
             }).outputs();
 
-            currentVars.putAll(toolOutputs);
             currentVars.putAll(agentOutput);
             
             String summaryText = stringValue(agentOutput.get("summary"), "已完成");
@@ -1649,6 +1660,9 @@ public class WorkbenchRuntimeService {
         }
 
         currentVars.put("clusterAgents", summaries);
+        String finalAnswer = clusterFinalAnswer(summaries);
+        currentVars.put("final_answer", finalAnswer);
+        currentVars.put("agent_response", finalAnswer);
         currentVars.put("summary", "智能体集群已完成 " + summaries.size() + " 个子智能体。");
         return currentVars;
     }
@@ -1688,5 +1702,20 @@ public class WorkbenchRuntimeService {
             return "智能体已完成模型调用。";
         }
         return normalized.length() > 120 ? normalized.substring(0, 120) + "..." : normalized;
+    }
+
+    private static String clusterFinalAnswer(List<Map<String, Object>> summaries) {
+        if (summaries == null || summaries.isEmpty()) {
+            return "智能体集群未生成子智能体结论。";
+        }
+        StringBuilder result = new StringBuilder("## 智能体集群结论\n");
+        for (Map<String, Object> summary : summaries) {
+            result.append("\n### ")
+                .append(stringValue(summary.get("name"), "子智能体"))
+                .append("\n")
+                .append(stringValue(summary.get("summary"), "已完成"))
+                .append("\n");
+        }
+        return result.toString();
     }
 }

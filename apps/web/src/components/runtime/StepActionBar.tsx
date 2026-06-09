@@ -7,6 +7,7 @@ interface StepActionBarProps {
   isStreaming: boolean;
   isRunCompleted: boolean;
   isRunFailed: boolean;
+  isRunSaved: boolean;
   readOnly: boolean;
   onAdvance: () => void;
   onCompleteTodo: (comment: string) => void;
@@ -23,6 +24,7 @@ export function StepActionBar({
   isStreaming,
   isRunCompleted,
   isRunFailed,
+  isRunSaved,
   readOnly,
   onAdvance,
   onCompleteTodo,
@@ -62,15 +64,19 @@ export function StepActionBar({
   if (isRunFailed) {
     return (
       <div className="step-action-bar flex justify-between items-center p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
-        <span className="text-xs text-rose-600 dark:text-rose-400 font-medium">✗ 节点执行发生错误</span>
-        <div className="flex gap-3">
-          <button type="button" className="sys-btn sys-btn--default flex items-center gap-2 text-xs" onClick={onRollback}>
-            <ArrowLeft size={14} /> 回退上一步
-          </button>
-          <button type="button" className="sys-btn sys-btn--primary flex items-center gap-2 text-xs" onClick={onRetry}>
-            <RotateCw size={14} /> 重试当前节点
-          </button>
-        </div>
+        <span className="text-xs text-rose-600 dark:text-rose-400 font-medium">
+          节点执行发生错误{isRunSaved ? "" : "，请先保存任务后再重试"}
+        </span>
+        {isRunSaved && (
+          <div className="flex gap-3">
+            <button type="button" className="sys-btn sys-btn--default flex items-center gap-2 text-xs" onClick={onRollback}>
+              <ArrowLeft size={14} /> 回退上一步
+            </button>
+            <button type="button" className="sys-btn sys-btn--primary flex items-center gap-2 text-xs" onClick={onRetry}>
+              <RotateCw size={14} /> 重试当前节点
+            </button>
+          </div>
+        )}
       </div>
     );
   }
@@ -99,12 +105,22 @@ export function StepActionBar({
 
   // 4. Completed but ready to advance to next step
   if (activeStep.state === "done") {
+    const canRegenerate = isRunSaved && activeStep.allowsRegenerate;
     return (
       <div className="step-action-bar flex justify-between items-center p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
-        <span className="text-xs text-slate-500 dark:text-slate-400">当前节点已执行完毕，点击下一步继续推进。</span>
-        <button type="button" className="sys-btn sys-btn--primary step-advance-btn flex items-center gap-2 text-xs" onClick={onAdvance}>
-          <Play size={14} fill="currentColor" /> 执行下一步
-        </button>
+        <span className="text-xs text-slate-500 dark:text-slate-400">
+          当前节点已执行完毕{canRegenerate ? "，可重新生成或继续推进。" : "，点击下一步继续推进。"}
+        </span>
+        <div className="flex items-center gap-3">
+          {canRegenerate && (
+            <button type="button" className="sys-btn sys-btn--default flex items-center gap-2 text-xs" onClick={onRetry}>
+              <RotateCw size={14} /> 重新生成
+            </button>
+          )}
+          <button type="button" className="sys-btn sys-btn--primary step-advance-btn flex items-center gap-2 text-xs" onClick={onAdvance}>
+            <Play size={14} fill="currentColor" /> 执行下一步
+          </button>
+        </div>
       </div>
     );
   }

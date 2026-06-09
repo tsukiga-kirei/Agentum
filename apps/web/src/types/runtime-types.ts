@@ -195,15 +195,25 @@ export type ClusterAgentEvent = {
   /** 子智能体在集群中的索引 */
   agentIndex: number;
   agentName: string;
-  eventType: "started" | "streaming" | "tool_call" | "completed" | "failed";
+  eventType: "started" | "phase" | "streaming" | "tool_call" | "completed" | "failed";
+  /** phase 时的智能体阶段 */
+  phase?: AgentPhase;
+  /** phase 时的阶段说明 */
+  message?: string;
   /** streaming 时的增量文本 */
   deltaContent?: string;
   /** streaming 时的累计文本 */
   accumulatedContent?: string;
   /** tool_call 时的工具名称 */
   toolName?: string;
+  /** tool_call 时的工具类型 */
+  toolType?: "mcp" | "skill" | "agent";
   /** tool_call 时的状态 */
   toolStatus?: "started" | "completed" | "failed";
+  /** tool_call 时的结果摘要 */
+  result?: string;
+  /** tool_call 时的耗时 */
+  durationMs?: number;
   /** completed 时的输出摘要 */
   outputSummary?: string;
   timestamp: string;

@@ -225,8 +225,11 @@ export function useRunStream(
           deltaContent,
           accumulatedContent,
           toolName,
+          toolType,
           toolStatus,
           outputSummary,
+          result,
+          durationMs,
         } = event.data;
 
         setClusterAgents((prev) => {
@@ -250,6 +253,8 @@ export function useRunStream(
             agent.status = "running";
             agent.streamingText = "";
             agent.toolCalls = [];
+          } else if (eventType === "phase") {
+            agent.status = "running";
           } else if (eventType === "streaming" && accumulatedContent) {
             agent.status = "running";
             agent.streamingText = accumulatedContent;
@@ -263,10 +268,12 @@ export function useRunStream(
             const updatedTool: RuntimeCapabilityItem = {
               id: toolName,
               name: toolName,
-              kind: "mcp", // default to mcp in subagents for now
+              kind: toolType === "skill" ? "skill" : toolType === "agent" ? "agent" : "mcp",
               status: toolStatus === "started" ? "running" : toolStatus === "completed" ? "done" : "error",
               statusLabel: toolStatus === "started" ? "调用中" : toolStatus === "completed" ? "调用完成" : "调用失败",
               summary: toolStatus === "started" ? `正在调用 ${toolName}...` : toolStatus === "completed" ? `调用成功` : `调用失败`,
+              durationMs,
+              resultSummary: result,
             };
 
             if (existingToolIdx >= 0) {

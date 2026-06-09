@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import type { RuntimePreviewStep, RunStreamState, RuntimeCapabilityItem } from "../../types/runtime-types";
-import { Users, Bot, CheckCircle, Clock, ChevronDown, ChevronUp, Terminal, Cpu } from "lucide-react";
+import { Users, Bot, ChevronDown, ChevronUp, Terminal } from "lucide-react";
+import { MarkdownRenderer } from "./MarkdownRenderer";
 
 interface MultiAgentPanelProps {
   activeStep: RuntimePreviewStep;
@@ -109,14 +110,12 @@ export function MultiAgentPanel({
               <div className="p-4 flex-1 flex flex-col justify-between space-y-3 min-h-[120px]">
                 <div className="space-y-2">
                   {isRunning && agent.streamingText ? (
-                    <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-slate-800 font-mono text-[10px] leading-relaxed text-slate-600 dark:text-slate-350 max-h-[150px] overflow-y-auto whitespace-pre-wrap">
-                      {agent.streamingText}
+                    <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-slate-800 max-h-[150px] overflow-y-auto">
+                      <MarkdownRenderer content={agent.streamingText} compact />
                       <span className="inline-block w-1.5 h-3 bg-blue-500 dark:bg-blue-400 ml-0.5 animate-pulse" />
                     </div>
                   ) : isCompleted ? (
-                    <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed line-clamp-4">
-                      {agent.outputSummary}
-                    </p>
+                    <MarkdownRenderer content={agent.outputSummary} compact className="line-clamp-4" />
                   ) : (
                     <p className="text-xs text-slate-400 dark:text-slate-500 italic">
                       {isRunning ? "正在初始化任务变量..." : "等待上游智能体节点就绪"}
@@ -160,8 +159,8 @@ export function MultiAgentPanel({
 
               {/* Collapsed Detailed Output */}
               {isSelected && isCompleted && (
-                <div className="p-4 bg-slate-50/40 dark:bg-slate-900/10 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-350 leading-relaxed whitespace-pre-wrap max-h-[250px] overflow-y-auto font-sans">
-                  {agent.outputSummary}
+                <div className="p-4 bg-slate-50/40 dark:bg-slate-900/10 border-t border-slate-100 dark:border-slate-800 max-h-[250px] overflow-y-auto">
+                  <MarkdownRenderer content={agent.outputSummary} compact />
                 </div>
               )}
             </div>

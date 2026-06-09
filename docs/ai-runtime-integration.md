@@ -1,6 +1,6 @@
 # AI 运行态接入说明
 
-更新时间：2026-06-05
+更新时间：2026-06-09
 
 本文档说明 **当前代码** 如何把业务流程与 AI 模型、MCP、提示词模板等能力关联起来，重点回答：
 
@@ -22,14 +22,15 @@
   -> WorkbenchRuntimeService 按节点顺序推进
   -> 遇到用户输入 / 人工审核：暂停并生成待办
   -> 遇到智能体 / 集群 / 交付：交给 WorkflowRuntimeExecutor
-       -> 先调 MCP（如节点配置了 mcpIds）
-       -> 再调租户已分配模型（OpenAI 兼容 Chat Completions）
+       -> 智能体节点进入 AgentRuntimeService ReAct 循环
+       -> 模型按当前节点可用工具自主选择 Skill / MCP / final_answer
+       -> MCP 与 Skill 只在模型选择对应工具后执行
        -> 或执行交付能力（站内 / 邮件 / Webhook）
   -> 节点输出写入变量快照、模型/MCP/交付日志
-  -> 前端运行详情只读展示后端结果
+  -> 前端通过 SSE 展示阶段、工具调用和 Markdown final_answer
 ```
 
-**Skill 当前只完成治理与源文件探测，尚未进入智能体运行时的 prompt 注入或工具编排。**
+**智能体节点已从“先 MCP 后模型”的固定链路升级为 Agent 模式：模型拿到当前节点可用 Skill / MCP 的工具声明，自主调用工具，最后必须通过 `final_answer` 工具提交 Markdown 结论。**
 
 ---
 
@@ -58,20 +59,23 @@ flowchart TB
     Workbench[业务工作台 WorkbenchRuntimeService]
     Executor[DefaultWorkflowRuntimeExecutor]
     MCP[McpRuntimeService]
+    Skill[SkillRuntimeService]
     Agent[AgentRuntimeService]
     Delivery[DeliveryRuntimeService]
     ModelClient[OpenAiCompatibleModelChatClient]
     Workbench --> Executor
-    Executor --> MCP
     Executor --> Agent
     Executor --> Delivery
     Agent --> ModelClient
+    Agent --> MCP
+    Agent --> Skill
     MCP --> McpSse[HttpMcpSseRuntimeClient]
   end
 
   Publish --> Workbench
-  TenantAssign --> MCP
   TenantAssign --> Agent
+  TenantAssign --> MCP
+  TenantAssign --> Skill
   ModelAssign --> Agent
 ```
 
@@ -81,7 +85,7 @@ flowchart TB
 | --- | --- | --- |
 | 设计态 | 配置节点、提示词、MCP、Skill 引用、变量 | 已接入 |
 | 治理态 | 登记能力、放入租户池、分配给主体、分配模型 | 已接入 |
-| 运行态 | 真正调用模型 / MCP / 交付并留痕 | 第一版已接入，Skill 运行时未接入 |
+| 运行态 | 真正调用模型 / MCP / Skill / 交付并留痕 | Agent 工具调用循环已接入 |
 
 ---
 
@@ -120,8 +124,8 @@ flowchart TB
 
 ```text
 trigger      -> 本地生成占位输出
-agent        -> MCP 先执行，再执行 AgentRuntimeService
-parallel_group -> 逐个 clusterAgents 子配置：每个子智能体同样 MCP -> Agent
+agent        -> AgentRuntimeService 暴露 Skill / MCP / final_answer 工具，由模型自主调用
+parallel_group -> 逐个 clusterAgents 子配置：每个子智能体同样进入 Agent 工具调用循环
 delivery     -> DeliveryRuntimeService
 condition    -> 本地记录表达式
 merge        -> 本地透传/合并变量
@@ -153,7 +157,7 @@ merge        -> 本地透传/合并变量
    - `systemPromptTemplateId` / `userPromptTemplateId`
    - `agentAssetId`（引用已发布智能体模板）
    - `modelName` / `temperature` / `maxTokens`
-   - `mcpIds`（MCP 在 Agent 之前由 `McpRuntimeService` 处理）
+   - `mcpIds` / `skillIds`（转换为当前 Agent 可见工具）
 
 2. **智能体模板资产**
    - 若 `agentAssetId` 指向租户内已发布 `agent_template`，先展开其 `config`，再被节点内联配置覆盖。
@@ -174,24 +178,36 @@ merge        -> 本地透传/合并变量
 
 这意味着：**当前租户只能用到系统分配的那套模型供应商**；节点可覆盖 `modelName`，但不能绕过租户分配。
 
-### 4.4 Prompt 组装方式
+### 4.4 Agent 循环与 Prompt 组装方式
 
-当前实现是 **单轮 Chat Completions**，不是 Agent Loop，也不是原生 Function Calling：
+当前实现是 **多轮 Agent Loop + OpenAI 兼容 Function Calling**：
 
 ```text
-system message = 渲染后的 systemPrompt
+system message = 渲染后的业务 systemPrompt
+                 + Agentum ReAct 运行规则
+                 + 当前节点可用 Skill / MCP 摘要
 user message   = 渲染后的 userPrompt
                  + 上游变量 JSON
-                 + MCP 工具结果 JSON
+                 + 既有工具结果 JSON
+tools          = skill_xxx_read / mcp_xxx / final_answer
+
+循环：
+1. 模型决定是否调用 Skill 或 MCP。
+2. 后端执行被选择的工具，校验租户能力池并写 MCP / Skill 观察结果。
+3. 工具观察结果作为 tool message 回写给模型。
+4. 模型继续推理，直到调用 final_answer 或达到最大循环次数。
 ```
 
 模板变量替换规则：
 
 - 支持 `{{变量名}}`
-- 变量来自上游已完成节点输出 + MCP 输出
+- 变量来自上游已完成节点输出 + 已有工具输出
+- MCP 与 Skill 不再由工作台层预执行，只有模型选择工具时才执行
 
 对应代码：
 
+- `AgentRuntimeService.executeAgentLoop`
+- `AgentRuntimeService.buildToolDefinitions`
 - `AgentRuntimeService.renderTemplate`
 - `OpenAiCompatibleModelChatClient`
 
@@ -215,9 +231,12 @@ user message   = 渲染后的 userPrompt
 | 字段 | 含义 |
 | --- | --- |
 | `output` / `outputVariable` | 节点声明的输出变量名，默认 `agent_response` |
+| `final_answer` | 模型最终提交的 Markdown 业务结论 |
 | `summary` | 截断后的摘要，供工作台 UI 展示 |
-| `modelCallLogId` | 关联 `model_call_logs` |
+| `toolCalls` | 本次 Agent 循环实际调用过的 Skill / MCP 摘要 |
+| `modelCallLogIds` / `modelCallLogId` | 关联 `model_call_logs` |
 | `modelName` | 实际使用的模型 |
+| `agentMode` | 当前为 `react` |
 
 同时写入：
 
@@ -248,14 +267,17 @@ capabilities/mcp-servers/<server-key>   # 自研 MCP 源码
 
 ### 5.2 运行时调用顺序
 
-对 `agent` 节点：
+对 `agent` 节点，MCP 不再由工作台层预执行，而是由 Agent 循环暴露为模型工具：
 
 ```text
-1. McpRuntimeService.executeConfiguredMcps
-2. AgentRuntimeService.execute（把 MCP 输出拼进 user prompt）
+1. AgentRuntimeService.resolveMcpTools 读取当前节点 mcpIds。
+2. 每个 MCP 能力转换为一个 OpenAI function tool。
+3. 模型在需要事实数据或外部系统动作时选择对应工具。
+4. AgentRuntimeService 调用 McpRuntimeService.executeResolvedTool。
+5. MCP 观察结果作为 tool message 回写给模型继续推理。
 ```
 
-也就是说：**当前 MCP 不是模型原生 tool call，而是“先调工具，再把结果喂给模型”**。
+`McpRuntimeService.executeConfiguredMcps` 保留给兼容路径和非 Agent 场景，智能体运行态主路径使用 `resolveMcpTools` + `executeResolvedTool`。
 
 ### 5.3 节点配置字段
 
@@ -268,7 +290,7 @@ capabilities/mcp-servers/<server-key>   # 自研 MCP 源码
 | `toolArguments` / `arguments` | 工具参数，可写 `{{变量名}}` |
 | `mcpOutput` | 输出变量名，默认用能力 `code` |
 
-若选了 MCP 但没配 `toolName`，运行时会 **跳过真实调用**，在 `mcp_call_logs` 记 `skipped`。
+若选了 MCP 但没配 `toolName`，Agent 工具声明会退回到能力 code 作为远端工具名；生产能力应在系统管理配置 `defaultToolName` 或节点配置 `toolName`，避免模型选择到无法执行的远端工具。
 
 ### 5.4 运行时协议
 
@@ -302,7 +324,7 @@ capabilities/mcp-servers/<server-key>   # 自研 MCP 源码
 
 ### 6.1 现在已有什么
 
-Skill 在当前代码里主要是 **资产与治理对象**，不是运行时执行器：
+Skill 在当前代码里已经进入智能体运行时，但定位不是“后端硬编码函数”，而是模型可按需阅读的能力说明书：
 
 | 能力 | 状态 |
 | --- | --- |
@@ -311,23 +333,24 @@ Skill 在当前代码里主要是 **资产与治理对象**，不是运行时执
 | 租户能力池 / 分配 | 已支持 |
 | 流程设计器选择 `skillIds` | 已支持 |
 | 发布校验引用是否在能力池内 | 已支持 |
-| 运行时把 Skill 注入模型 prompt / 作为 tool | **未实现** |
+| 运行时把 Skill 作为模型工具读取 | 已支持 |
 
 对应代码：
 
 - 探测：`FilesystemSkillManifestProbe`
 - 设计态校验：`WorkflowNodeConfigValidator`
-- 运行时：`AgentRuntimeService` 中 **没有** `skillIds` 处理逻辑
+- 运行时：`SkillRuntimeService.resolveSkillTools` / `SkillRuntimeService.readSkill`
 
 ### 6.2 设计意图
 
-按架构规划，Skill 未来应作为：
+当前 Skill 工具的行为：
 
-- 可版本化的方法论 / 提示词片段 / 操作指南
-- 在智能体执行前展开到 system prompt 或中间推理步骤
-- 与 `capabilities/skills/` 源码目录和数据库资产表保持勾稽
+- 节点配置 `skillIds` 后，AgentRuntimeService 为每个 Skill 暴露 `skill_xxx_read` 工具。
+- 模型只有在需要理解方法论、提示策略或操作指南时才读取 Skill。
+- 文件读取限定在该 Skill 的 `SKILL.md` 同目录下，禁止绝对路径和 `..` 越权。
+- 单次读取内容会截断，避免把过长文档一次性塞进上下文。
 
-但第一版为了先打通「流程 -> 模型 -> MCP -> 交付」闭环，**Skill 还没进入执行链**。
+后续可以在当前基础上扩展 Skill 脚本执行、Skill 版本快照和更细的工具审批，但不能绕过租户能力池与运行审计。
 
 ---
 
@@ -422,14 +445,28 @@ Skill 在当前代码里主要是 **资产与治理对象**，不是运行时执
 | 发起任务 | `POST /workbench/runs` |
 | 查看运行详情 | `GET /workbench/runs/{runId}` |
 | 完成待办 | `POST /workbench/todos/{todoId}/complete` |
+| 流式推进下一步 | `GET /workbench/runs/{runId}/stream` / `POST /workbench/runs/{runId}/advance` |
 
-`WorkbenchShell.buildRuntimePreviewFromRun` 把后端返回的：
+`TaskRunWorkspace.buildRuntimePreviewFromRun` 把后端返回的：
 
-- `nodes[].outputs.summary`
+- `nodes[].outputs.final_answer`
+- `nodes[].outputs.toolCalls`
 - `nodes[].state`
 - `events[]`
 
-渲染成「当前处理 / 执行链路 / 交付物」页面。
+渲染成「当前处理 / 执行历史 / 交付物」页面。Agent 输出使用 `react-markdown` + `remark-gfm` 渲染 Markdown，执行历史不再重复展示节点列表，而是依赖左侧流程轨选择节点，右侧展示选中步骤快照与事件时间线。
+
+SSE 事件目前包括：
+
+| 事件 | 含义 |
+| --- | --- |
+| `node_started` | 当前节点开始执行 |
+| `agent_thinking` | Agent 阶段变化，如准备、模型推理、工具调用、验证 |
+| `agent_tool_call` | 单智能体 Skill / MCP 工具调用状态 |
+| `agent_streaming` | final_answer 流式文本 |
+| `cluster_agent` | 子智能体阶段、工具调用、流式输出和完成状态 |
+| `node_completed` / `node_failed` | 节点完成或失败 |
+| `run_paused` / `run_completed` | 流程暂停或完成 |
 
 前端**不会**发起模型或 MCP 请求；所有 AI 调用都在后端完成。
 
@@ -456,16 +493,19 @@ Skill 在当前代码里主要是 **资产与治理对象**，不是运行时执
 
 - 租户级模型供应商分配与真实 Chat Completions 调用
 - 单智能体 / 智能体集群节点执行
+- OpenAI 兼容 Function Calling 工具声明
+- Agent 多轮工具调用循环和 `final_answer`
+- Skill 运行时读取工具
 - MCP SSE `tools/call` 与租户能力池授权校验
 - 提示词模板、智能体模板在运行时的配置展开
+- SSE 流式运行事件与前端 Markdown 展示
 - 交付节点与运行失败留痕
 - 用户输入 / 人工审核暂停恢复
 
 ### 13.2 尚未实现
 
-- Skill 运行时展开或调用
-- 模型原生 Tool Calling / 多轮 Agent Loop
-- 智能体追问、流式输出、前端中断
+- 智能体追问追加上下文接口
+- 前端中断对应的后端取消与补偿
 - 高风险 MCP / 交付人工审批
 - Worker 异步长任务、复杂文档生成
 - 完整运行审计独立页面（当前工作台只做业务处理视图）
@@ -480,13 +520,14 @@ Skill 在当前代码里主要是 **资产与治理对象**，不是运行时执
 | 节点分发 | `apps/api/.../workbench/application/DefaultWorkflowRuntimeExecutor.java` |
 | 模型调用 | `apps/api/.../agent/application/AgentRuntimeService.java` |
 | 聊天客户端 | `apps/api/.../agent/infrastructure/OpenAiCompatibleModelChatClient.java` |
+| Skill 运行时 | `apps/api/.../agent/application/SkillRuntimeService.java` |
 | MCP 运行时 | `apps/api/.../mcp/application/McpRuntimeService.java` |
 | MCP SSE 客户端 | `apps/api/.../mcp/infrastructure/HttpMcpSseRuntimeClient.java` |
 | 交付运行时 | `apps/api/.../delivery/application/DeliveryRuntimeService.java` |
 | 设计态能力校验 | `apps/api/.../workflow/application/WorkflowNodeConfigValidator.java` |
 | Skill 源文件探测 | `apps/api/.../system/infrastructure/FilesystemSkillManifestProbe.java` |
 | 流程设计器 | `apps/web/src/surfaces/designer/WorkflowEditorPage.tsx` |
-| 业务工作台运行页 | `apps/web/src/surfaces/workbench/WorkbenchShell.tsx` |
+| 业务工作台运行页 | `apps/web/src/components/runtime/TaskRunWorkspace.tsx` |
 | 能力源码目录 | `capabilities/` |
 
 ---
@@ -499,11 +540,11 @@ Skill 在当前代码里主要是 **资产与治理对象**，不是运行时执
    - 如需 MCP：登记 MCP 能力并填写 `sseUrl`
 
 2. **租户管理**
-   - 把 MCP / 提示词模板 / 交付能力分配给目标用户或角色
+   - 把 Skill / MCP / 提示词模板 / 交付能力分配给目标用户或角色
 
 3. **流程设计**
    - 添加「用户输入」节点
-   - 添加「单智能体」或「智能体集群」节点，配置提示词，按需选择 MCP
+   - 添加「单智能体」或「智能体集群」节点，配置提示词，按需选择 Skill / MCP
    - 添加「交付」节点
    - 发布流程
 

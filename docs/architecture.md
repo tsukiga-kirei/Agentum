@@ -369,6 +369,8 @@ pending -> running -> paused -> resumed -> running -> completed
 
 当前运行态已支持标准 MCP SSE 接入：系统管理登记 `sseUrl` 后，运行节点按租户能力池授权复核，通过 `initialize` / `notifications/initialized` / `tools/call` 执行工具，并将工具名、脱敏参数、结果、耗时和失败原因写入 `mcp_call_logs`。
 
+智能体节点不再由工作台层预先调用 MCP。`AgentRuntimeService` 会把当前节点可用的 Skill 与 MCP 转成模型工具声明，模型选择具体工具后，后端再执行 `SkillRuntimeService` 或 `McpRuntimeService.executeResolvedTool`，并把观察结果作为 tool message 回写到下一轮模型推理。最终输出必须通过 `final_answer` 工具提交。
+
 ### 5.9 模型供应商模块
 
 职责：
@@ -381,7 +383,7 @@ pending -> running -> paused -> resumed -> running -> completed
 
 模型密钥必须服务端加密存储，前端只展示脱敏状态。
 
-当前运行态按 `tenant_model_assignments` 选择租户启用模型，解密模型供应商 API Key 后调用 OpenAI 兼容 / 通义兼容 / Azure OpenAI Chat Completions，并把提示词摘要、响应摘要、Token 用量、耗时和失败原因写入 `model_call_logs`。Anthropic Messages 协议暂未接入，运行时会返回明确错误而不是生成占位输出。
+当前运行态按 `tenant_model_assignments` 选择租户启用模型，解密模型供应商 API Key 后调用 OpenAI 兼容 / 通义兼容 / Azure OpenAI Chat Completions。聊天客户端支持 Function Calling 工具声明与 SSE 文本流，把每轮提示词摘要、响应摘要、Token 用量、耗时和失败原因写入 `model_call_logs`。Anthropic Messages 协议暂未接入，运行时会返回明确错误而不是生成占位输出。
 
 ### 5.10 交付模块
 

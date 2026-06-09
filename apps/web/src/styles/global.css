@@ -243,6 +243,146 @@ textarea:focus-visible {
   box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
 }
 
+/* 智能体 Markdown 输出：用于 final_answer、执行快照和流式消息。 */
+.agent-markdown {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+
+.agent-markdown--compact {
+  line-height: 1.65;
+}
+
+.agent-markdown--user,
+.agent-markdown--user * {
+  color: #ffffff;
+}
+
+.agent-markdown p,
+.agent-markdown ul,
+.agent-markdown ol,
+.agent-markdown blockquote,
+.agent-markdown table,
+.agent-markdown pre {
+  margin: 0 0 10px;
+}
+
+.agent-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.agent-markdown h1,
+.agent-markdown h2,
+.agent-markdown h3,
+.agent-markdown h4 {
+  margin: 12px 0 8px;
+  color: var(--color-text-primary);
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.agent-markdown--user h1,
+.agent-markdown--user h2,
+.agent-markdown--user h3,
+.agent-markdown--user h4 {
+  color: #ffffff;
+}
+
+.agent-markdown h1 {
+  font-size: 16px;
+}
+
+.agent-markdown h2 {
+  font-size: 14px;
+}
+
+.agent-markdown h3,
+.agent-markdown h4 {
+  font-size: 13px;
+}
+
+.agent-markdown ul,
+.agent-markdown ol {
+  padding-left: 18px;
+}
+
+.agent-markdown li + li {
+  margin-top: 4px;
+}
+
+.agent-markdown a {
+  color: var(--color-primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.agent-markdown a:hover {
+  text-decoration: underline;
+}
+
+.agent-markdown code {
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-hover);
+  padding: 1px 5px;
+  color: var(--color-text-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+}
+
+.agent-markdown--user code {
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+}
+
+.agent-markdown pre {
+  max-width: 100%;
+  overflow: auto;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-hover);
+  padding: 10px;
+}
+
+.agent-markdown pre code {
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.agent-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  font-size: 11px;
+}
+
+.agent-markdown th,
+.agent-markdown td {
+  border: 1px solid var(--color-border-light);
+  padding: 7px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.agent-markdown th {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+  font-weight: 700;
+}
+
+.agent-markdown blockquote {
+  border-left: 3px solid var(--color-primary);
+  background: var(--color-bg-hover);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: 8px 10px;
+  color: var(--color-text-secondary);
+}
+
 /* 输入框 */
 .agent-input {
   border: 1px solid var(--color-border);

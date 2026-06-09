@@ -220,14 +220,54 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
             payload.put("model", request.modelName());
         }
         payload.put("messages", request.messages().stream()
-            .map(message -> Map.of("role", message.role(), "content", message.content()))
+            .map(this::messagePayload)
             .toList());
+        if (!request.tools().isEmpty()) {
+            payload.put("tools", request.tools().stream()
+                .map(tool -> Map.of(
+                    "type", "function",
+                    "function", Map.of(
+                        "name", tool.name(),
+                        "description", tool.description(),
+                        "parameters", tool.parameters()
+                    )
+                ))
+                .toList());
+            payload.put("tool_choice", stringOption(request.options(), "toolChoice", "auto"));
+            payload.put("parallel_tool_calls", booleanOption(request.options(), "parallelToolCalls", false));
+        }
         if (isReasoningModel(request.modelName())) {
             payload.put("max_completion_tokens", numberOption(request.options(), "maxCompletionTokens", numberOption(request.options(), "maxTokens", 2048)));
         } else {
             payload.put("temperature", decimalOption(request.options(), "temperature", 0.2));
             payload.put("max_tokens", numberOption(request.options(), "maxTokens", 2048));
         }
+        return payload;
+    }
+
+    private Map<String, Object> messagePayload(ModelChatClient.ChatMessage message) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("role", message.role());
+        if ("tool".equals(message.role())) {
+            payload.put("tool_call_id", message.toolCallId());
+            payload.put("content", message.content());
+            return payload;
+        }
+        if ("assistant".equals(message.role()) && !message.toolCalls().isEmpty()) {
+            payload.put("content", message.content().isBlank() ? null : message.content());
+            payload.put("tool_calls", message.toolCalls().stream()
+                .map(toolCall -> Map.of(
+                    "id", toolCall.id(),
+                    "type", "function",
+                    "function", Map.of(
+                        "name", toolCall.name(),
+                        "arguments", toolCall.argumentsJson()
+                    )
+                ))
+                .toList());
+            return payload;
+        }
+        payload.put("content", message.content());
         return payload;
     }
 
@@ -253,9 +293,10 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
         JsonNode firstChoice = root.path("choices").isArray() && !root.path("choices").isEmpty()
             ? root.path("choices").get(0)
             : objectMapper.createObjectNode();
-        String content = firstChoice.path("message").path("content").asText("");
+        JsonNode message = firstChoice.path("message");
+        String content = message.path("content").asText("");
         if (content.isBlank()) {
-            JsonNode contentArray = firstChoice.path("message").path("content");
+            JsonNode contentArray = message.path("content");
             if (contentArray.isArray()) {
                 List<String> parts = new ArrayList<>();
                 for (JsonNode part : contentArray) {
@@ -267,16 +308,47 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
                 content = String.join("\n", parts);
             }
         }
-        if (content.isBlank()) {
+        List<ModelChatClient.ToolCall> toolCalls = parseToolCalls(message.path("tool_calls"));
+        if (content.isBlank() && toolCalls.isEmpty()) {
             throw new ApiException(HttpStatus.BAD_GATEWAY, "MODEL_RESPONSE_EMPTY", "模型未返回可用文本");
         }
         Map<String, Object> usage = objectMapper.convertValue(root.path("usage"), new TypeReference<Map<String, Object>>() {
         });
+        String finishReason = firstChoice.path("finish_reason").asText("");
         Map<String, Object> responseSnapshot = new LinkedHashMap<>();
         responseSnapshot.put("content", content);
-        responseSnapshot.put("finishReason", firstChoice.path("finish_reason").asText(""));
+        responseSnapshot.put("finishReason", finishReason);
         responseSnapshot.put("id", root.path("id").asText(""));
-        return new ChatResult(content, responseSnapshot, usage, latencyMs);
+        if (!toolCalls.isEmpty()) {
+            responseSnapshot.put("toolCalls", toolCalls.stream()
+                .map(toolCall -> Map.of(
+                    "id", toolCall.id(),
+                    "name", toolCall.name(),
+                    "arguments", toolCall.argumentsJson()
+                ))
+                .toList());
+        }
+        return new ChatResult(content, responseSnapshot, usage, latencyMs, toolCalls, finishReason);
+    }
+
+    private List<ModelChatClient.ToolCall> parseToolCalls(JsonNode toolCallsNode) {
+        if (!toolCallsNode.isArray()) {
+            return List.of();
+        }
+        List<ModelChatClient.ToolCall> toolCalls = new ArrayList<>();
+        for (JsonNode item : toolCallsNode) {
+            JsonNode function = item.path("function");
+            String name = function.path("name").asText("");
+            if (name.isBlank()) {
+                continue;
+            }
+            toolCalls.add(new ModelChatClient.ToolCall(
+                item.path("id").asText(""),
+                name,
+                function.path("arguments").asText("{}")
+            ));
+        }
+        return toolCalls;
     }
 
     private static String stringOption(Map<String, Object> options, String key, String fallback) {
@@ -307,5 +379,13 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
         } catch (NumberFormatException exception) {
             return fallback;
         }
+    }
+
+    private static boolean booleanOption(Map<String, Object> options, String key, boolean fallback) {
+        Object value = options.get(key);
+        if (value instanceof Boolean bool) {
+            return bool;
+        }
+        return value == null ? fallback : Boolean.parseBoolean(value.toString());
     }
 }

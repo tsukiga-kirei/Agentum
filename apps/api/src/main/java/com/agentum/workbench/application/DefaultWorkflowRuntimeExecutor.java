@@ -4,8 +4,6 @@ import com.agentum.agent.application.AgentRuntimeRequest;
 import com.agentum.agent.application.AgentRuntimeService;
 import com.agentum.delivery.application.DeliveryRuntimeRequest;
 import com.agentum.delivery.application.DeliveryRuntimeService;
-import com.agentum.mcp.application.McpRuntimeRequest;
-import com.agentum.mcp.application.McpRuntimeService;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -23,16 +21,13 @@ import org.springframework.stereotype.Service;
 public class DefaultWorkflowRuntimeExecutor implements WorkflowRuntimeExecutor {
 
     private final AgentRuntimeService agentRuntimeService;
-    private final McpRuntimeService mcpRuntimeService;
     private final DeliveryRuntimeService deliveryRuntimeService;
 
     public DefaultWorkflowRuntimeExecutor(
         AgentRuntimeService agentRuntimeService,
-        McpRuntimeService mcpRuntimeService,
         DeliveryRuntimeService deliveryRuntimeService
     ) {
         this.agentRuntimeService = agentRuntimeService;
-        this.mcpRuntimeService = mcpRuntimeService;
         this.deliveryRuntimeService = deliveryRuntimeService;
     }
 
@@ -63,23 +58,16 @@ public class DefaultWorkflowRuntimeExecutor implements WorkflowRuntimeExecutor {
     }
 
     private Map<String, Object> executeAgentNode(ExecutionRequest request) {
-        Map<String, Object> toolOutputs = mcpRuntimeService.executeConfiguredMcps(new McpRuntimeRequest(
+        // Agent 模式下 MCP/Skill 不再由执行器预先调用，而是作为工具交给模型自主选择。
+        // 这样工具选择、观察结果和最终回答都能形成同一条可审计推理链。
+        return agentRuntimeService.execute(new AgentRuntimeRequest(
             request.run(),
             request.nodeRun(),
             request.nodeRun().getConfigSnapshot(),
             request.variables(),
+            Map.of(),
             request.operatorUserId()
         )).outputs();
-        Map<String, Object> outputs = new LinkedHashMap<>(toolOutputs);
-        outputs.putAll(agentRuntimeService.execute(new AgentRuntimeRequest(
-            request.run(),
-            request.nodeRun(),
-            request.nodeRun().getConfigSnapshot(),
-            request.variables(),
-            toolOutputs,
-            request.operatorUserId()
-        )).outputs());
-        return outputs;
     }
 
     @SuppressWarnings("unchecked")
@@ -97,22 +85,14 @@ public class DefaultWorkflowRuntimeExecutor implements WorkflowRuntimeExecutor {
                 continue;
             }
             Map<String, Object> agentConfig = new LinkedHashMap<>((Map<String, Object>) rawMap);
-            Map<String, Object> toolOutputs = mcpRuntimeService.executeConfiguredMcps(new McpRuntimeRequest(
-                request.run(),
-                request.nodeRun(),
-                agentConfig,
-                variables,
-                request.operatorUserId()
-            )).outputs();
             Map<String, Object> agentOutput = agentRuntimeService.execute(new AgentRuntimeRequest(
                 request.run(),
                 request.nodeRun(),
                 agentConfig,
                 variables,
-                toolOutputs,
+                Map.of(),
                 request.operatorUserId()
             )).outputs();
-            variables.putAll(toolOutputs);
             variables.putAll(agentOutput);
             summaries.add(Map.of(
                 "name", stringValue(agentConfig.get("name"), "子智能体"),
