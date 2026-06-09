@@ -119,10 +119,7 @@ export function TaskRunWorkspace({
     };
   }, [basePreview, stream.activeNodeInfo, stream.streamingText, stream.currentPhase, stream.toolCalls, stream.isStreaming, stream.connectionState]);
 
-  const currentStepIndex = Math.max(
-    0, 
-    preview.steps.findIndex((step) => step.state === "running" || step.state === "waiting")
-  );
+  const currentStepIndex = resolveActiveStepIndex(preview.steps);
   const activeStep = preview.steps[currentStepIndex] ?? preview.steps[0];
 
   function handleTabChange(tab: RunWorkspaceTab) {
@@ -209,19 +206,33 @@ export function TaskRunWorkspace({
     }
   }
 
-  async function handleRetryNode() {
-    const lastCompletedIdx = preview.steps.findIndex((s) => s.state === "failed");
-    if (lastCompletedIdx >= 0) {
-      await handleRollback(preview.steps[lastCompletedIdx].nodeRunId);
+  async function handleRegenerateStep() {
+    const targetStep = preview.steps[resolveActiveStepIndex(preview.steps)];
+    if (!targetStep?.nodeRunId) {
+      return;
+    }
+
+    try {
+      const updated = await workbenchApi.rollbackRun(tenantId, token, runDetail.id, targetStep.nodeRunId);
+      setRunDetail(updated);
+      onReload(updated);
+      stream.connect();
+      const afterAdvance = await workbenchApi.advanceStep(tenantId, token, runDetail.id);
+      setRunDetail(afterAdvance);
+      onReload(afterAdvance);
+    } catch (e: unknown) {
+      console.error("重试节点失败", e);
     }
   }
 
-  async function handleRegenerateStep() {
-    if (activeStep?.allowsRegenerate && (activeStep.state === "done" || activeStep.state === "failed")) {
-      await handleRollback(activeStep.nodeRunId);
-      return;
+  async function handleRollbackPrevious() {
+    const currentIdx = resolveActiveStepIndex(preview.steps);
+    for (let index = currentIdx - 1; index >= 0; index -= 1) {
+      if (preview.steps[index].state === "done") {
+        await handleRollback(preview.steps[index].nodeRunId);
+        return;
+      }
     }
-    await handleRetryNode();
   }
 
   async function handleRollback(nodeRunId: string) {
@@ -327,13 +338,21 @@ export function TaskRunWorkspace({
                     <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">{activeStep.description}</p>
                   </div>
                   <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
-                    activeStep.state === "waiting" 
-                      ? "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400" 
-                      : activeStep.state === "failed" 
-                      ? "bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400" 
+                    activeStep.state === "waiting"
+                      ? "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400"
+                      : activeStep.state === "failed"
+                      ? "bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400"
+                      : activeStep.state === "done"
+                      ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400"
                       : "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400"
                   }`}>
-                    {activeStep.state === "waiting" ? "等待输入" : activeStep.state === "failed" ? "执行错误" : "运行中"}
+                    {activeStep.state === "waiting"
+                      ? "等待输入"
+                      : activeStep.state === "failed"
+                      ? "执行错误"
+                      : activeStep.state === "done"
+                      ? "已完成"
+                      : "运行中"}
                   </span>
                 </header>
 
@@ -407,7 +426,7 @@ export function TaskRunWorkspace({
             onApprove={handleApprove}
             onReject={handleReject}
             onRetry={handleRegenerateStep}
-            onRollback={handleRetryNode}
+            onRollback={handleRollbackPrevious}
             onBack={onBack}
             onInterrupt={() => stream.disconnect()}
           />
@@ -767,12 +786,21 @@ function nodeMessages(node: any): RuntimeChatMessage[] {
   
   if (node.nodeType === "agent" || node.nodeType === "parallel_group") {
     const content = outputs.final_answer || outputs.agent_response || outputs.summary || "";
-    if (content) {
+    if (content && node.state !== "failed") {
       messages.push({
         id: node.id + "-msg",
         role: "assistant",
         author: node.name,
         content,
+      });
+    }
+    if (node.state === "failed") {
+      const errorMessage = stringifyValue(outputs.errorMessage || outputs.summary || "节点执行失败");
+      messages.push({
+        id: node.id + "-error",
+        role: "assistant",
+        author: node.name,
+        content: `**执行失败**\n\n${errorMessage}`,
       });
     }
   }
@@ -808,6 +836,18 @@ function nodeCapabilities(node: any): RuntimeCapabilityItem[] {
     });
   }
   return list;
+}
+
+function resolveActiveStepIndex(steps: RuntimePreviewStep[]): number {
+  const failedIndex = steps.findIndex((step) => step.state === "failed");
+  if (failedIndex >= 0) {
+    return failedIndex;
+  }
+  const activeIndex = steps.findIndex((step) => step.state === "running" || step.state === "waiting");
+  if (activeIndex >= 0) {
+    return activeIndex;
+  }
+  return lastExecutableStepIndex(steps);
 }
 
 function lastExecutableStepIndex(steps: RuntimePreviewStep[]): number {

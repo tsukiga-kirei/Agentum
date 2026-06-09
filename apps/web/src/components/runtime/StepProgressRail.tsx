@@ -49,7 +49,7 @@ export function StepProgressRail({
         {preview.steps.map((step, index) => {
           const isSelected = selectedStepIndex === index || (activeRunTab === "current" && activeStepIndex === index);
           const isPending = step.state === "pending";
-          const isCurrent = step.state === "running" || step.state === "waiting";
+          const isCurrent = step.state === "running" || step.state === "waiting" || step.state === "failed";
           const isDone = step.state === "done";
           const isFailed = step.state === "failed";
           

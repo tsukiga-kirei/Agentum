@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -22,11 +23,14 @@ import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 
 @Component
 public class OpenAiCompatibleModelChatClient implements ModelChatClient {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAiCompatibleModelChatClient.class);
+    private static final int LOG_TEXT_MAX_LENGTH = 400;
+    private static final int LOG_RESPONSE_BODY_MAX_LENGTH = 4000;
 
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
@@ -50,6 +54,7 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
         Instant startedAt = Instant.now();
         URI uri = buildChatCompletionUri(request);
         Map<String, Object> payload = buildPayload(request);
+        logChatRequest(request, uri, payload, false);
         try {
             String body = restClient.post()
                 .uri(uri)
@@ -59,27 +64,43 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
                 .retrieve()
                 .body(String.class);
             long latency = Duration.between(startedAt, Instant.now()).toMillis();
-            return parseResult(body, latency);
+            ChatResult result = parseResult(body, latency);
+            logChatResponse(request, result, body, latency, false);
+            return result;
         } catch (ApiException exception) {
             throw exception;
+        } catch (RestClientResponseException exception) {
+            log.warn(
+                "模型聊天 HTTP 错误 providerId={} providerType={} model={} status={} body={} requestId={}",
+                request.providerId(),
+                request.providerType(),
+                request.modelName(),
+                exception.getStatusCode().value(),
+                truncateForLog(exception.getResponseBodyAsString(), LOG_RESPONSE_BODY_MAX_LENGTH),
+                RequestIds.current()
+            );
+            throw new ApiException(HttpStatus.BAD_GATEWAY, "MODEL_CALL_FAILED", "模型调用失败，请检查供应商连通性、模型名称或额度");
         } catch (RestClientException exception) {
             log.warn(
-                "模型聊天请求失败 providerId={} providerType={} model={} errorType={} requestId={}",
+                "模型聊天请求失败 providerId={} providerType={} model={} errorType={} message={} requestId={}",
                 request.providerId(),
                 request.providerType(),
                 request.modelName(),
                 exception.getClass().getSimpleName(),
+                exception.getMessage(),
                 RequestIds.current()
             );
             throw new ApiException(HttpStatus.BAD_GATEWAY, "MODEL_CALL_FAILED", "模型调用失败，请检查供应商连通性、模型名称或额度");
         } catch (Exception exception) {
             log.warn(
-                "模型聊天响应处理失败 providerId={} providerType={} model={} errorType={} requestId={}",
+                "模型聊天响应处理失败 providerId={} providerType={} model={} errorType={} message={} requestId={}",
                 request.providerId(),
                 request.providerType(),
                 request.modelName(),
                 exception.getClass().getSimpleName(),
-                RequestIds.current()
+                exception.getMessage(),
+                RequestIds.current(),
+                exception
             );
             throw new ApiException(HttpStatus.BAD_GATEWAY, "MODEL_RESPONSE_INVALID", "模型响应无法解析");
         }
@@ -96,6 +117,7 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
         Map<String, Object> payload = buildPayload(request);
         Map<String, Object> streamPayload = new LinkedHashMap<>(payload);
         streamPayload.put("stream", true);
+        logChatRequest(request, uri, streamPayload, true);
 
         try {
             String requestBodyJson = objectMapper.writeValueAsString(streamPayload);
@@ -108,7 +130,14 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
                     if (response.getStatusCode().isError()) {
                         byte[] bodyBytes = response.getBody().readAllBytes();
                         String errorBody = new String(bodyBytes, java.nio.charset.StandardCharsets.UTF_8);
-                        log.warn("模型聊天流请求 HTTP 错误: {} - {}", response.getStatusCode(), errorBody);
+                        log.warn(
+                            "模型聊天流 HTTP 错误 providerId={} model={} status={} body={} requestId={}",
+                            request.providerId(),
+                            request.modelName(),
+                            response.getStatusCode().value(),
+                            truncateForLog(errorBody, LOG_RESPONSE_BODY_MAX_LENGTH),
+                            RequestIds.current()
+                        );
                         callback.onError("MODEL_HTTP_ERROR", "HTTP " + response.getStatusCode() + ": " + errorBody);
                         return null;
                     }
@@ -165,6 +194,7 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
                         responseSnapshot.put("id", responseId);
 
                         ChatResult result = new ChatResult(accumulated.toString(), responseSnapshot, usage, latency);
+                        logChatResponse(request, result, accumulated.toString(), latency, true);
                         callback.onComplete(result);
                     } catch (Exception e) {
                         log.warn("处理模型聊天流异常", e);
@@ -242,7 +272,31 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
             payload.put("temperature", decimalOption(request.options(), "temperature", 0.2));
             payload.put("max_tokens", numberOption(request.options(), "maxTokens", 2048));
         }
+        mergeProviderExtensions(payload, request.options());
         return payload;
+    }
+
+    /**
+     * 允许在模型供应商 settings 中透传网关特有字段，例如 GLM 的 chat_template_kwargs。
+     */
+    private void mergeProviderExtensions(Map<String, Object> payload, Map<String, Object> options) {
+        if (options == null || options.isEmpty()) {
+            return;
+        }
+        for (String key : List.of("chat_template_kwargs", "top_p", "frequency_penalty", "presence_penalty")) {
+            Object value = options.get(key);
+            if (value != null) {
+                payload.put(key, value);
+            }
+        }
+        Object extraBody = options.get("extraRequestBody");
+        if (extraBody instanceof Map<?, ?> extra) {
+            extra.forEach((key, value) -> {
+                if (key != null && value != null && !payload.containsKey(key.toString())) {
+                    payload.put(key.toString(), value);
+                }
+            });
+        }
     }
 
     private Map<String, Object> messagePayload(ModelChatClient.ChatMessage message) {
@@ -289,31 +343,24 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
     }
 
     private ChatResult parseResult(String body, long latencyMs) throws Exception {
+        if (body == null || body.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_GATEWAY, "MODEL_RESPONSE_EMPTY", "模型返回空响应体");
+        }
         JsonNode root = objectMapper.readTree(body);
+        if (root.has("error")) {
+            String message = root.path("error").path("message").asText("模型网关返回错误");
+            throw new ApiException(HttpStatus.BAD_GATEWAY, "MODEL_CALL_FAILED", message);
+        }
         JsonNode firstChoice = root.path("choices").isArray() && !root.path("choices").isEmpty()
             ? root.path("choices").get(0)
             : objectMapper.createObjectNode();
         JsonNode message = firstChoice.path("message");
-        String content = message.path("content").asText("");
-        if (content.isBlank()) {
-            JsonNode contentArray = message.path("content");
-            if (contentArray.isArray()) {
-                List<String> parts = new ArrayList<>();
-                for (JsonNode part : contentArray) {
-                    String text = part.path("text").asText("");
-                    if (!text.isBlank()) {
-                        parts.add(text);
-                    }
-                }
-                content = String.join("\n", parts);
-            }
-        }
+        String content = extractMessageContent(message);
         List<ModelChatClient.ToolCall> toolCalls = parseToolCalls(message.path("tool_calls"));
         if (content.isBlank() && toolCalls.isEmpty()) {
-            throw new ApiException(HttpStatus.BAD_GATEWAY, "MODEL_RESPONSE_EMPTY", "模型未返回可用文本");
+            throw new ApiException(HttpStatus.BAD_GATEWAY, "MODEL_RESPONSE_EMPTY", "模型未返回可用文本或工具调用");
         }
-        Map<String, Object> usage = objectMapper.convertValue(root.path("usage"), new TypeReference<Map<String, Object>>() {
-        });
+        Map<String, Object> usage = parseUsage(root.path("usage"));
         String finishReason = firstChoice.path("finish_reason").asText("");
         Map<String, Object> responseSnapshot = new LinkedHashMap<>();
         responseSnapshot.put("content", content);
@@ -331,6 +378,35 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
         return new ChatResult(content, responseSnapshot, usage, latencyMs, toolCalls, finishReason);
     }
 
+    private String extractMessageContent(JsonNode message) {
+        JsonNode contentNode = message.path("content");
+        if (contentNode.isNull() || contentNode.isMissingNode()) {
+            return "";
+        }
+        if (contentNode.isTextual()) {
+            return contentNode.asText("");
+        }
+        if (contentNode.isArray()) {
+            List<String> parts = new ArrayList<>();
+            for (JsonNode part : contentNode) {
+                String text = part.path("text").asText("");
+                if (!text.isBlank()) {
+                    parts.add(text);
+                }
+            }
+            return String.join("\n", parts);
+        }
+        return contentNode.asText("");
+    }
+
+    private Map<String, Object> parseUsage(JsonNode usageNode) {
+        if (usageNode == null || usageNode.isNull() || usageNode.isMissingNode()) {
+            return Map.of();
+        }
+        Map<String, Object> usage = objectMapper.convertValue(usageNode, new TypeReference<Map<String, Object>>() {});
+        return usage == null ? Map.of() : usage;
+    }
+
     private List<ModelChatClient.ToolCall> parseToolCalls(JsonNode toolCallsNode) {
         if (!toolCallsNode.isArray()) {
             return List.of();
@@ -345,10 +421,21 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
             toolCalls.add(new ModelChatClient.ToolCall(
                 item.path("id").asText(""),
                 name,
-                function.path("arguments").asText("{}")
+                readArgumentsJson(function.path("arguments"))
             ));
         }
         return toolCalls;
+    }
+
+    private String readArgumentsJson(JsonNode argumentsNode) {
+        if (argumentsNode == null || argumentsNode.isNull() || argumentsNode.isMissingNode()) {
+            return "{}";
+        }
+        if (argumentsNode.isTextual()) {
+            String text = argumentsNode.asText("");
+            return text.isBlank() ? "{}" : text;
+        }
+        return argumentsNode.toString();
     }
 
     private static String stringOption(Map<String, Object> options, String key, String fallback) {
@@ -387,5 +474,156 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
             return bool;
         }
         return value == null ? fallback : Boolean.parseBoolean(value.toString());
+    }
+
+    /**
+     * 记录模型对接请求摘要，便于排查网关地址、模型名、工具与消息结构；不输出 API Key。
+     */
+    private void logChatRequest(ChatRequest request, URI uri, Map<String, Object> payload, boolean streaming) {
+        List<String> toolNames = request.tools().stream()
+            .map(ModelChatClient.ToolDefinition::name)
+            .toList();
+        List<String> messageRoles = request.messages().stream()
+            .map(ModelChatClient.ChatMessage::role)
+            .toList();
+        log.info(
+            "模型聊天请求 providerId={} providerType={} model={} uri={} streaming={} messageCount={} messageRoles={} toolCount={} toolNames={} requestPayload={} requestId={}",
+            request.providerId(),
+            request.providerType(),
+            request.modelName(),
+            uri,
+            streaming,
+            request.messages().size(),
+            messageRoles,
+            toolNames.size(),
+            toolNames,
+            payloadSummaryForLog(payload),
+            RequestIds.current()
+        );
+    }
+
+    /**
+     * 记录模型对接响应摘要，包含耗时、finish_reason、工具调用与脱敏后的响应体片段。
+     */
+    private void logChatResponse(ChatRequest request, ChatResult result, String rawBody, long latencyMs, boolean streaming) {
+        List<String> toolCallNames = result.toolCalls().stream()
+            .map(ModelChatClient.ToolCall::name)
+            .collect(Collectors.toList());
+        log.info(
+            "模型聊天响应 providerId={} providerType={} model={} streaming={} latencyMs={} finishReason={} contentLength={} toolCallCount={} toolCallNames={} tokenUsage={} contentPreview={} responseBody={} requestId={}",
+            request.providerId(),
+            request.providerType(),
+            request.modelName(),
+            streaming,
+            latencyMs,
+            result.finishReason(),
+            result.content() == null ? 0 : result.content().length(),
+            result.toolCalls().size(),
+            toolCallNames,
+            result.tokenUsage(),
+            truncateForLog(result.content(), LOG_TEXT_MAX_LENGTH),
+            truncateForLog(rawBody, LOG_RESPONSE_BODY_MAX_LENGTH),
+            RequestIds.current()
+        );
+    }
+
+    private String payloadSummaryForLog(Map<String, Object> payload) {
+        try {
+            return objectMapper.writeValueAsString(sanitizePayloadForLog(payload));
+        } catch (Exception exception) {
+            return "[请求体序列化失败]";
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> sanitizePayloadForLog(Map<String, Object> payload) {
+        Map<String, Object> sanitized = new LinkedHashMap<>();
+        payload.forEach((key, value) -> {
+            if ("messages".equals(key) && value instanceof List<?> messages) {
+                sanitized.put(key, messages.stream()
+                    .map(this::sanitizeMessageForLog)
+                    .toList());
+                return;
+            }
+            if ("tools".equals(key) && value instanceof List<?> tools) {
+                sanitized.put(key, tools.stream()
+                    .map(item -> item instanceof Map<?, ?> map ? sanitizeToolForLog((Map<String, Object>) map) : item)
+                    .toList());
+                return;
+            }
+            sanitized.put(key, value);
+        });
+        return sanitized;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> sanitizeMessageForLog(Object message) {
+        if (!(message instanceof Map<?, ?> raw)) {
+            return Map.of("value", truncateForLog(String.valueOf(message), LOG_TEXT_MAX_LENGTH));
+        }
+        Map<String, Object> sanitized = new LinkedHashMap<>();
+        raw.forEach((key, value) -> {
+            String field = key == null ? "" : key.toString();
+            if ("content".equals(field) && value != null) {
+                sanitized.put(field, truncateForLog(String.valueOf(value), LOG_TEXT_MAX_LENGTH));
+                return;
+            }
+            if ("tool_calls".equals(field) && value instanceof List<?> toolCalls) {
+                sanitized.put(field, toolCalls.stream()
+                    .map(item -> item instanceof Map<?, ?> map ? sanitizeToolCallForLog((Map<String, Object>) map) : item)
+                    .toList());
+                return;
+            }
+            sanitized.put(field, value);
+        });
+        return sanitized;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> sanitizeToolForLog(Map<String, Object> tool) {
+        Map<String, Object> sanitized = new LinkedHashMap<>(tool);
+        Object function = sanitized.get("function");
+        if (function instanceof Map<?, ?> functionMap) {
+            Map<String, Object> sanitizedFunction = new LinkedHashMap<>();
+            functionMap.forEach((key, value) -> {
+                String field = key == null ? "" : key.toString();
+                if ("parameters".equals(field) && value != null) {
+                    sanitizedFunction.put(field, truncateForLog(String.valueOf(value), LOG_TEXT_MAX_LENGTH));
+                    return;
+                }
+                sanitizedFunction.put(field, value);
+            });
+            sanitized.put("function", sanitizedFunction);
+        }
+        return sanitized;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> sanitizeToolCallForLog(Map<String, Object> toolCall) {
+        Map<String, Object> sanitized = new LinkedHashMap<>(toolCall);
+        Object function = sanitized.get("function");
+        if (function instanceof Map<?, ?> functionMap) {
+            Map<String, Object> sanitizedFunction = new LinkedHashMap<>();
+            functionMap.forEach((key, value) -> {
+                String field = key == null ? "" : key.toString();
+                if ("arguments".equals(field) && value != null) {
+                    sanitizedFunction.put(field, truncateForLog(String.valueOf(value), LOG_TEXT_MAX_LENGTH));
+                    return;
+                }
+                sanitizedFunction.put(field, value);
+            });
+            sanitized.put("function", sanitizedFunction);
+        }
+        return sanitized;
+    }
+
+    private static String truncateForLog(String value, int maxLength) {
+        if (value == null) {
+            return "";
+        }
+        if (value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength) + "...(truncated," + value.length() + " chars)";
     }
 }

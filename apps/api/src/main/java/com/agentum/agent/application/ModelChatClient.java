@@ -1,5 +1,6 @@
 package com.agentum.agent.application;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -101,10 +102,23 @@ public interface ModelChatClient {
 
         public ChatResult {
             content = content == null ? "" : content;
-            responseSnapshot = responseSnapshot == null ? Map.of() : Map.copyOf(responseSnapshot);
-            tokenUsage = tokenUsage == null ? Map.of() : Map.copyOf(tokenUsage);
+            responseSnapshot = safeCopy(responseSnapshot);
+            tokenUsage = safeCopy(tokenUsage);
             toolCalls = toolCalls == null ? List.of() : List.copyOf(toolCalls);
             finishReason = finishReason == null ? "" : finishReason;
+        }
+
+        private static Map<String, Object> safeCopy(Map<String, Object> source) {
+            if (source == null || source.isEmpty()) {
+                return Map.of();
+            }
+            Map<String, Object> sanitized = new LinkedHashMap<>();
+            source.forEach((key, value) -> {
+                if (key != null && value != null) {
+                    sanitized.put(key, value);
+                }
+            });
+            return sanitized.isEmpty() ? Map.of() : Map.copyOf(sanitized);
         }
     }
 }

@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -177,7 +178,7 @@ class WorkbenchRuntimeServiceTest {
     }
 
     @Test
-    void shouldExecuteAgentAndDeliveryNodesWithoutPlaceholderOutput() {
+    void shouldPauseAtAgentNodeForManualSseAdvance() {
         WorkbenchRuntimeService service = newService();
         WorkflowDefinitionEntity open = publishedDefinition("自动执行流程", DESIGNER_ID, "all");
         WorkflowVersionEntity version = version(open, 4, autoSnapshotJson());
@@ -191,22 +192,7 @@ class WorkbenchRuntimeServiceTest {
         when(workflowAccessGrantRepository.findByWorkflowId(open.getId())).thenReturn(List.of());
         when(userAccountRepository.findAllById(any())).thenReturn(List.of(operator));
         when(workflowRuntimeExecutor.execute(any()))
-            .thenAnswer(invocation -> {
-                WorkflowRuntimeExecutor.ExecutionRequest request = invocation.getArgument(0);
-                if ("agent".equals(request.nodeRun().getNodeType())) {
-                    return new WorkflowRuntimeExecutor.ExecutionResult(Map.of(
-                        "risk_summary", "AI 已基于租户模型生成风险摘要",
-                        "summary", "AI 已基于租户模型生成风险摘要"
-                    ));
-                }
-                if ("delivery".equals(request.nodeRun().getNodeType())) {
-                    return new WorkflowRuntimeExecutor.ExecutionResult(Map.of(
-                        "delivery_record", "邮件交付成功",
-                        "summary", "邮件交付成功"
-                    ));
-                }
-                return new WorkflowRuntimeExecutor.ExecutionResult(Map.of("summary", "节点已完成"));
-            });
+            .thenReturn(new WorkflowRuntimeExecutor.ExecutionResult(Map.of("summary", "手动触发节点已完成")));
 
         WorkbenchApi.RunDetail detail = service.createRun(
             TENANT_ID,
@@ -214,17 +200,16 @@ class WorkbenchRuntimeServiceTest {
             new WorkbenchApi.CreateRunRequest(open.getId(), "自动执行任务")
         );
 
-        assertThat(detail.state()).isEqualTo("completed");
+        assertThat(detail.state()).isEqualTo("paused");
+        assertThat(detail.currentNodeName()).isEqualTo("智能体分析");
         assertThat(detail.openTodo()).isNull();
         assertThat(detail.nodes()).extracting(WorkbenchApi.NodeRunRow::state)
-            .containsExactly("completed", "completed", "completed");
-        assertThat(detail.nodes().get(1).outputs()).containsEntry("risk_summary", "AI 已基于租户模型生成风险摘要");
-        assertThat(detail.nodes().get(2).outputs()).containsEntry("delivery_record", "邮件交付成功");
-        assertThat(detail.nodes().get(1).outputs().get("summary").toString()).doesNotContain("尚未接入");
+            .containsExactly("completed", "pending", "pending");
+        verify(workflowRuntimeExecutor, times(1)).execute(any());
     }
 
     @Test
-    void shouldKeepRunFailedAndAuditableWhenExecutorFails() {
+    void shouldPauseAtAgentNodeWhenCreateRunWithoutAutoExecution() {
         WorkbenchRuntimeService service = newService();
         WorkflowDefinitionEntity open = publishedDefinition("失败留痕流程", DESIGNER_ID, "all");
         WorkflowVersionEntity version = version(open, 5, autoSnapshotJson());
@@ -238,13 +223,7 @@ class WorkbenchRuntimeServiceTest {
         when(workflowAccessGrantRepository.findByWorkflowId(open.getId())).thenReturn(List.of());
         when(userAccountRepository.findAllById(any())).thenReturn(List.of(operator));
         when(workflowRuntimeExecutor.execute(any()))
-            .thenAnswer(invocation -> {
-                WorkflowRuntimeExecutor.ExecutionRequest request = invocation.getArgument(0);
-                if ("agent".equals(request.nodeRun().getNodeType())) {
-                    throw new ApiException(HttpStatus.BAD_GATEWAY, "MODEL_CALL_FAILED", "模型调用失败，请稍后重试");
-                }
-                return new WorkflowRuntimeExecutor.ExecutionResult(Map.of("summary", "节点已完成"));
-            });
+            .thenReturn(new WorkflowRuntimeExecutor.ExecutionResult(Map.of("summary", "手动触发节点已完成")));
 
         WorkbenchApi.RunDetail detail = service.createRun(
             TENANT_ID,
@@ -252,15 +231,11 @@ class WorkbenchRuntimeServiceTest {
             new WorkbenchApi.CreateRunRequest(open.getId(), "失败留痕任务")
         );
 
-        assertThat(detail.state()).isEqualTo("failed");
+        assertThat(detail.state()).isEqualTo("paused");
         assertThat(detail.currentNodeName()).isEqualTo("智能体分析");
         assertThat(detail.nodes()).extracting(WorkbenchApi.NodeRunRow::state)
-            .containsExactly("completed", "failed", "pending");
-        assertThat(detail.nodes().get(1).outputs()).containsEntry("errorCode", "MODEL_CALL_FAILED");
-        assertThat(detail.events()).extracting(WorkbenchApi.RunEventRow::eventType).contains("node_failed");
-        verify(workflowRunRepository, atLeastOnce()).save(any(WorkflowRunEntity.class));
-        verify(workflowNodeRunRepository, atLeastOnce()).save(any(WorkflowNodeRunEntity.class));
-        verify(workflowRunEventRepository, atLeastOnce()).save(any());
+            .containsExactly("completed", "pending", "pending");
+        verify(workflowRuntimeExecutor, times(1)).execute(any());
     }
 
     private WorkbenchRuntimeService newService() {

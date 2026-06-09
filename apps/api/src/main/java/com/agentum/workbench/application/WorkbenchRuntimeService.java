@@ -634,6 +634,25 @@ public class WorkbenchRuntimeService {
                 return todo;
             }
 
+            // 智能体节点统一走 SSE 步进，不在自动推进链路里同步调用模型。
+            if (requiresManualAdvance(node.getNodeType())) {
+                run.pauseAt(node.getNodeKey(), node.getName(), node.getNodeType(), completed, now);
+                WorkflowRunEventEntity event = WorkflowRunEventEntity.create(
+                    run.getId(),
+                    run.getTenantId(),
+                    "node_waiting",
+                    "节点等待推进",
+                    node.getName() + "等待用户点击「执行下一步」后继续。",
+                    node.getNodeKey(),
+                    operatorUserId,
+                    Map.of("nodeType", node.getNodeType(), "manualAdvance", true),
+                    now
+                );
+                workflowRunEventRepository.save(event);
+                inMemoryEvents.add(event);
+                return null;
+            }
+
             run.markRunning(node.getNodeKey(), node.getName(), node.getNodeType(), completed, now);
             try {
                 Map<String, Object> output = workflowRuntimeExecutor.execute(new WorkflowRuntimeExecutor.ExecutionRequest(
@@ -970,6 +989,10 @@ public class WorkbenchRuntimeService {
 
     private boolean isWaitable(String nodeType) {
         return "user_input".equals(nodeType) || "human_review".equals(nodeType);
+    }
+
+    private boolean requiresManualAdvance(String nodeType) {
+        return "agent".equals(nodeType) || "parallel_group".equals(nodeType);
     }
 
     private String waitingReason(String nodeType) {

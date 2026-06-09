@@ -628,7 +628,7 @@ public class AgentRuntimeService {
     private Map<String, Object> modelOptions(ModelProviderEntity provider, Map<String, Object> config) {
         Map<String, Object> options = new HashMap<>(provider.getSettings() == null ? Map.of() : provider.getSettings());
         options.remove("encryptedApiKey");
-        for (String key : List.of("temperature", "maxTokens", "maxCompletionTokens", "chatCompletionEndpoint", "apiVersion", "api-version")) {
+        for (String key : List.of("temperature", "maxTokens", "maxCompletionTokens", "chatCompletionEndpoint", "apiVersion", "api-version", "chat_template_kwargs", "extraRequestBody", "top_p")) {
             if (config.containsKey(key)) {
                 options.put(key, config.get(key));
             }
