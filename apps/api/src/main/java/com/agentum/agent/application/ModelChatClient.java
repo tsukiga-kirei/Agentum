@@ -11,6 +11,13 @@ public interface ModelChatClient {
 
     interface StreamingCallback {
         void onChunk(String deltaContent);
+
+        /**
+         * final_answer 工具参数中的 answer 字段流式到达时触发，供运行态 SSE 展示 Markdown 正文。
+         */
+        default void onFinalAnswerDelta(String deltaContent, String accumulatedAnswer) {
+        }
+
         void onComplete(ChatResult result);
         void onError(String code, String message);
     }

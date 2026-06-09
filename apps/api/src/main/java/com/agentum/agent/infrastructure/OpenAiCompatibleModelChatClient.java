@@ -148,6 +148,11 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
                         String responseId = "";
                         String finishReason = "";
                         Map<String, Object> usage = new LinkedHashMap<>();
+                        OpenAiStreamSupport.StreamingToolCallAssembler toolCallAssembler =
+                            new OpenAiStreamSupport.StreamingToolCallAssembler();
+                        OpenAiStreamSupport.FinalAnswerArgumentStreamer finalAnswerStreamer =
+                            new OpenAiStreamSupport.FinalAnswerArgumentStreamer();
+                        int previousFinalAnswerArgumentsLength = 0;
 
                         while ((line = reader.readLine()) != null) {
                             String trimmed = line.trim();
@@ -167,15 +172,27 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
                                     JsonNode choices = node.path("choices");
                                     if (choices.isArray() && !choices.isEmpty()) {
                                         JsonNode firstChoice = choices.get(0);
-                                        if (firstChoice.has("finish_reason")) {
+                                        if (firstChoice.has("finish_reason") && !firstChoice.get("finish_reason").isNull()) {
                                             finishReason = firstChoice.get("finish_reason").asText("");
                                         }
                                         JsonNode delta = firstChoice.path("delta");
-                                        if (delta.has("content")) {
+                                        if (delta.has("content") && !delta.get("content").isNull()) {
                                             String content = delta.get("content").asText("");
                                             if (!content.isEmpty()) {
                                                 accumulated.append(content);
                                                 callback.onChunk(content);
+                                            }
+                                        }
+                                        if (delta.has("tool_calls")) {
+                                            toolCallAssembler.absorb(delta.get("tool_calls"));
+                                            String currentArguments = toolCallAssembler.latestFinalAnswerArguments();
+                                            if (currentArguments.length() > previousFinalAnswerArgumentsLength) {
+                                                String argumentDelta = currentArguments.substring(previousFinalAnswerArgumentsLength);
+                                                previousFinalAnswerArgumentsLength = currentArguments.length();
+                                                String answerDelta = finalAnswerStreamer.consume(argumentDelta);
+                                                if (!answerDelta.isEmpty()) {
+                                                    callback.onFinalAnswerDelta(answerDelta, finalAnswerStreamer.accumulatedAnswer());
+                                                }
                                             }
                                         }
                                     }
@@ -188,12 +205,22 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
                             }
                         }
                         long latency = Duration.between(startedAt, Instant.now()).toMillis();
-                        Map<String, Object> responseSnapshot = new LinkedHashMap<>();
-                        responseSnapshot.put("content", accumulated.toString());
-                        responseSnapshot.put("finishReason", finishReason);
-                        responseSnapshot.put("id", responseId);
+                        List<ModelChatClient.ToolCall> toolCalls = toolCallAssembler.toToolCalls();
+                        Map<String, Object> responseSnapshot = OpenAiStreamSupport.buildResponseSnapshot(
+                            accumulated.toString(),
+                            finishReason,
+                            responseId,
+                            toolCalls
+                        );
 
-                        ChatResult result = new ChatResult(accumulated.toString(), responseSnapshot, usage, latency);
+                        ChatResult result = new ChatResult(
+                            accumulated.toString(),
+                            responseSnapshot,
+                            usage,
+                            latency,
+                            toolCalls,
+                            finishReason
+                        );
                         logChatResponse(request, result, accumulated.toString(), latency, true);
                         callback.onComplete(result);
                     } catch (Exception e) {
@@ -486,7 +513,7 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
         List<String> messageRoles = request.messages().stream()
             .map(ModelChatClient.ChatMessage::role)
             .toList();
-        log.info(
+        log.debug(
             "模型聊天请求 providerId={} providerType={} model={} uri={} streaming={} messageCount={} messageRoles={} toolCount={} toolNames={} requestPayload={} requestId={}",
             request.providerId(),
             request.providerType(),
@@ -509,7 +536,7 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
         List<String> toolCallNames = result.toolCalls().stream()
             .map(ModelChatClient.ToolCall::name)
             .collect(Collectors.toList());
-        log.info(
+        log.debug(
             "模型聊天响应 providerId={} providerType={} model={} streaming={} latencyMs={} finishReason={} contentLength={} toolCallCount={} toolCallNames={} tokenUsage={} contentPreview={} responseBody={} requestId={}",
             request.providerId(),
             request.providerType(),

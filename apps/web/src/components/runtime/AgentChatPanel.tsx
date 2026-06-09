@@ -92,7 +92,11 @@ export function AgentChatPanel({
                     isActive ? "text-blue-600 dark:text-blue-400" : "text-slate-700 dark:text-slate-350"
                   }`}>{pd.label}</strong>
                 </div>
-                <small className="text-[10px] text-slate-400 dark:text-slate-500 block mt-1 leading-tight">{pd.desc}</small>
+                <small className="text-[10px] text-slate-400 dark:text-slate-500 block mt-1 leading-tight">
+                  {isActive && pd.key === "model_calling" && isStreaming && streamingText
+                    ? `${streamingText.slice(0, 80)}${streamingText.length > 80 ? "…" : ""}`
+                    : pd.desc}
+                </small>
               </div>
             );
           })}

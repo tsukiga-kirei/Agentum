@@ -6,6 +6,7 @@ import com.agentum.auth.infrastructure.UserAccountRepository;
 import com.agentum.permission.application.CollaborationAccessPolicy;
 import com.agentum.permission.application.CollaborationAccessPolicy.AccessLevel;
 import com.agentum.shared.api.ApiException;
+import com.agentum.shared.api.ClientDisconnectSupport;
 import com.agentum.shared.api.RequestIds;
 import com.agentum.shared.pagination.PageQuery;
 import com.agentum.shared.pagination.PageResponse;
@@ -51,6 +52,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -95,6 +98,8 @@ public class WorkbenchRuntimeService {
     private final Clock clock;
     private final AgentRuntimeService agentRuntimeService;
     private final DeliveryRuntimeService deliveryRuntimeService;
+    /** SSE 连接关闭后跳过后续推送，避免 cluster_agent 等事件刷屏告警。 */
+    private final ConcurrentHashMap<SseEmitter, AtomicBoolean> sseEmitterOpenStates = new ConcurrentHashMap<>();
 
     public WorkbenchRuntimeService(
         TenantRepository tenantRepository,
@@ -1354,6 +1359,15 @@ public class WorkbenchRuntimeService {
     @Async
     public void advanceSingleStep(UUID tenantId, CurrentUserPrincipal principal, UUID runId, SseEmitter emitter) {
         UUID nodeRunId = null;
+        boolean nodeSucceeded = false;
+        if (emitter == null) {
+            log.warn(
+                "推进步骤时缺少 SSE 连接，将仅执行节点逻辑 runId={} userId={} requestId={}",
+                runId,
+                principal.userId(),
+                RequestIds.current()
+            );
+        }
         try {
             String nowStr = clock.instant().toString();
             sendSseEvent(emitter, "connected", eventPayload(runId, null, nowStr, Map.of(
@@ -1368,7 +1382,7 @@ public class WorkbenchRuntimeService {
                     "completedNodeCount", 0
                 )));
                 sendSseEvent(emitter, "message", "[DONE]");
-                emitter.complete();
+                completeSseEmitter(emitter);
                 return;
             }
 
@@ -1380,7 +1394,7 @@ public class WorkbenchRuntimeService {
                     "reason", waitingReason(nextNode.nodeType())
                 )));
                 sendSseEvent(emitter, "message", "[DONE]");
-                emitter.complete();
+                completeSseEmitter(emitter);
                 return;
             }
 
@@ -1421,6 +1435,7 @@ public class WorkbenchRuntimeService {
             }
 
             saveNodeSuccess(runId, nodeRunId, outputs, principal.userId());
+            nodeSucceeded = true;
 
             sendSseEvent(emitter, "node_completed", eventPayload(runId, nodeRunId, clock.instant().toString(), Map.of(
                 "outputs", outputs
@@ -1444,11 +1459,11 @@ public class WorkbenchRuntimeService {
             }
 
             sendSseEvent(emitter, "message", "[DONE]");
-            emitter.complete();
+            completeSseEmitter(emitter);
 
         } catch (ApiException e) {
             log.warn("执行流式步骤 API 异常 runId={} code={} msg={}", runId, e.getCode(), e.getMessage());
-            if (nodeRunId != null) {
+            if (nodeRunId != null && !nodeSucceeded) {
                 saveNodeFailure(runId, nodeRunId, e.getCode(), e.getMessage(), principal.userId());
             }
             sendSseEvent(emitter, "node_failed", eventPayload(runId, nodeRunId, clock.instant().toString(), Map.of(
@@ -1456,10 +1471,10 @@ public class WorkbenchRuntimeService {
                 "errorMessage", e.getMessage()
             )));
             sendSseEvent(emitter, "message", "[DONE]");
-            emitter.complete();
+            completeSseEmitter(emitter);
         } catch (Exception e) {
             log.error("执行流式步骤系统异常 runId={}", runId, e);
-            if (nodeRunId != null) {
+            if (nodeRunId != null && !nodeSucceeded) {
                 saveNodeFailure(runId, nodeRunId, "WORKBENCH_NODE_EXECUTION_FAILED", e.getMessage(), principal.userId());
             }
             sendSseEvent(emitter, "node_failed", eventPayload(runId, nodeRunId, clock.instant().toString(), Map.of(
@@ -1467,7 +1482,7 @@ public class WorkbenchRuntimeService {
                 "errorMessage", "执行异常: " + e.getMessage()
             )));
             sendSseEvent(emitter, "message", "[DONE]");
-            emitter.complete();
+            completeSseEmitter(emitter);
         }
     }
 
@@ -1523,12 +1538,15 @@ public class WorkbenchRuntimeService {
 
             @Override
             public void onToken(String deltaContent, String accumulatedContent) {
-                accumulated.append(deltaContent);
+                if (accumulatedContent != null && !accumulatedContent.isBlank()) {
+                    accumulated.setLength(0);
+                    accumulated.append(accumulatedContent);
+                } else if (deltaContent != null && !deltaContent.isBlank()) {
+                    accumulated.append(deltaContent);
+                }
                 sendSseEvent(emitter, "agent_streaming", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
-                    "deltaContent", deltaContent,
-                    "accumulatedContent", accumulatedContent == null || accumulatedContent.isBlank()
-                        ? accumulated.toString()
-                        : accumulatedContent
+                    "deltaContent", deltaContent == null ? "" : deltaContent,
+                    "accumulatedContent", accumulated.toString()
                 )));
             }
 
@@ -1691,13 +1709,43 @@ public class WorkbenchRuntimeService {
     }
 
     private void sendSseEvent(SseEmitter emitter, String eventType, Object data) {
-        if (emitter == null) return;
+        if (emitter == null) {
+            return;
+        }
+        AtomicBoolean open = sseEmitterOpenStates.computeIfAbsent(emitter, ignored -> new AtomicBoolean(true));
+        if (!open.get()) {
+            return;
+        }
         try {
             emitter.send(SseEmitter.event()
                 .name(eventType)
                 .data(data, org.springframework.http.MediaType.APPLICATION_JSON));
-        } catch (Exception e) {
-            log.warn("发送 SSE 事件失败 eventType={} error={}", eventType, e.getMessage());
+        } catch (Exception exception) {
+            open.set(false);
+            if (ClientDisconnectSupport.isClientDisconnect(exception)) {
+                log.debug("SSE 连接已关闭，跳过推送 eventType={}", eventType);
+                return;
+            }
+            log.warn("发送 SSE 事件失败 eventType={} error={}", eventType, exception.getMessage());
+        }
+    }
+
+    private void completeSseEmitter(SseEmitter emitter) {
+        if (emitter == null) {
+            return;
+        }
+        AtomicBoolean open = sseEmitterOpenStates.get(emitter);
+        if (open != null) {
+            open.set(false);
+        }
+        try {
+            emitter.complete();
+        } catch (Exception exception) {
+            if (!ClientDisconnectSupport.isClientDisconnect(exception)) {
+                log.debug("关闭 SSE 连接失败 message={}", exception.getMessage());
+            }
+        } finally {
+            sseEmitterOpenStates.remove(emitter);
         }
     }
 

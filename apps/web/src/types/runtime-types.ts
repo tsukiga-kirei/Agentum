@@ -360,7 +360,9 @@ export type RunStreamState = {
   /** 连接错误信息 */
   error: string | null;
   /** 建立连接 */
-  connect: () => void;
+  connect: () => Promise<void>;
+  /** 等待 SSE 已连接后再推进步骤 */
+  ensureConnected: (timeoutMs?: number) => Promise<void>;
   /** 断开连接 */
   disconnect: () => void;
 };

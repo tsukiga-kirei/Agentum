@@ -22,7 +22,9 @@ public final class ClientDisconnectSupport {
                 String normalized = message.toLowerCase();
                 if (normalized.contains("broken pipe")
                     || normalized.contains("connection reset")
-                    || normalized.contains("connection abort")) {
+                    || normalized.contains("connection abort")
+                    || normalized.contains("already completed")
+                    || normalized.contains("async request not usable")) {
                     return true;
                 }
             }

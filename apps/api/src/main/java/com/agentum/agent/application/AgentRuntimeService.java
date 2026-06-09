@@ -170,14 +170,18 @@ public class AgentRuntimeService {
         try {
             for (int iteration = 0; iteration < maxIterations; iteration++) {
                 eventSink.onPhase("model_calling", iteration == 0 ? "正在让智能体规划下一步。" : "正在基于工具观察结果继续推理。");
-                LoggedChatResult loggedResult = callModelWithLog(request, provider, modelName, messages, options, toolDefinitions);
+                LoggedChatResult loggedResult = streamFinalAnswer
+                    ? callModelStreamWithLog(request, provider, modelName, messages, options, toolDefinitions, eventSink)
+                    : callModelWithLog(request, provider, modelName, messages, options, toolDefinitions);
                 modelCallLogIds.add(loggedResult.callLogId());
                 ModelChatClient.ChatResult result = loggedResult.result();
 
                 Optional<String> finalAnswerFromTool = extractFinalAnswer(result.toolCalls());
                 if (finalAnswerFromTool.isPresent()) {
                     finalAnswer = finalAnswerFromTool.get();
-                    emitFinalAnswer(eventSink, finalAnswer);
+                    if (!streamFinalAnswer) {
+                        emitFinalAnswer(eventSink, finalAnswer);
+                    }
                     break;
                 }
 
@@ -186,7 +190,9 @@ public class AgentRuntimeService {
                     .toList();
                 if (executableToolCalls.isEmpty()) {
                     finalAnswer = result.content();
-                    emitFinalAnswer(eventSink, finalAnswer);
+                    if (!streamFinalAnswer) {
+                        emitFinalAnswer(eventSink, finalAnswer);
+                    }
                     break;
                 }
 
@@ -348,6 +354,91 @@ public class AgentRuntimeService {
             callLog.fail(exception.getCode(), exception.getMessage(), 0L, clock.instant());
             modelCallLogRepository.save(callLog);
             throw exception;
+        }
+    }
+
+    /**
+     * 运行态 SSE 场景下走模型流式接口，并把 content / final_answer 增量推送给前端。
+     */
+    private LoggedChatResult callModelStreamWithLog(
+        AgentRuntimeRequest request,
+        ModelProviderEntity provider,
+        String modelName,
+        List<ModelChatClient.ChatMessage> messages,
+        Map<String, Object> options,
+        List<ModelChatClient.ToolDefinition> tools,
+        AgentRuntimeEventSink eventSink
+    ) {
+        Map<String, Object> promptSnapshot = promptSnapshot(messages, request, tools);
+        ModelCallLogEntity callLog = ModelCallLogEntity.started(
+            request.run(),
+            request.nodeRun(),
+            provider.getId(),
+            provider.getProviderType(),
+            modelName,
+            promptSnapshot,
+            clock.instant()
+        );
+        modelCallLogRepository.save(callLog);
+        java.util.concurrent.CompletableFuture<ModelChatClient.ChatResult> future = new java.util.concurrent.CompletableFuture<>();
+        StringBuilder displayText = new StringBuilder();
+        modelChatClient.chatStream(new ModelChatClient.ChatRequest(
+            provider.getId(),
+            provider.getProviderType(),
+            provider.getBaseUrl(),
+            decryptApiKey(provider),
+            modelName,
+            messages,
+            options,
+            tools
+        ), new ModelChatClient.StreamingCallback() {
+            @Override
+            public void onChunk(String deltaContent) {
+                if (deltaContent == null || deltaContent.isEmpty()) {
+                    return;
+                }
+                displayText.append(deltaContent);
+                eventSink.onToken(deltaContent, displayText.toString());
+            }
+
+            @Override
+            public void onFinalAnswerDelta(String deltaContent, String accumulatedAnswer) {
+                displayText.setLength(0);
+                displayText.append(accumulatedAnswer);
+                eventSink.onToken(deltaContent, accumulatedAnswer);
+            }
+
+            @Override
+            public void onComplete(ModelChatClient.ChatResult result) {
+                callLog.succeed(result.responseSnapshot(), result.tokenUsage(), result.latencyMs(), clock.instant());
+                modelCallLogRepository.save(callLog);
+                future.complete(result);
+            }
+
+            @Override
+            public void onError(String code, String message) {
+                callLog.fail(code, message, 0L, clock.instant());
+                modelCallLogRepository.save(callLog);
+                future.completeExceptionally(new ApiException(HttpStatus.BAD_GATEWAY, code, message));
+            }
+        });
+        try {
+            ModelChatClient.ChatResult result = future.get();
+            Optional<String> streamedFinalAnswer = extractFinalAnswer(result.toolCalls());
+            if (streamedFinalAnswer.isPresent() && displayText.isEmpty()) {
+                emitFinalAnswer(eventSink, streamedFinalAnswer.get());
+            } else if (streamedFinalAnswer.isEmpty() && !result.content().isBlank() && displayText.isEmpty()) {
+                emitFinalAnswer(eventSink, result.content());
+            }
+            return new LoggedChatResult(result, callLogId(callLog));
+        } catch (java.util.concurrent.ExecutionException exception) {
+            if (exception.getCause() instanceof ApiException apiException) {
+                throw apiException;
+            }
+            throw new ApiException(HttpStatus.BAD_GATEWAY, "MODEL_CALL_FAILED", "模型流式调用失败");
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "STREAM_INTERRUPTED", "流式调用被中断");
         }
     }
 

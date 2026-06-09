@@ -135,8 +135,11 @@ public class RuntimeSseController {
         log.info("用户触发人工步进推进流程 tenantId={} userId={} runId={} requestId={}", 
             tenantId, principal.userId(), runId, RequestIds.current(request));
 
-        // 异步推进单个节点，并通过对应 SSE emitter 推送事件
+        // 异步推进单个节点，并通过对应 SSE emitter 推送事件；若前端尚未建立 SSE，仍继续执行节点逻辑。
         SseEmitter emitter = emitters.get(runId);
+        if (emitter == null) {
+            log.warn("推进步骤时未找到 SSE 连接 runId={} requestId={}", runId, RequestIds.current(request));
+        }
         workbenchRuntimeService.advanceSingleStep(tenantId, principal, runId, emitter);
 
         // 立即返回当前节点状态快照

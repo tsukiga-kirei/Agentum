@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import type { 
   RuntimePreview, 
   RuntimePreviewStep, 
@@ -53,16 +53,44 @@ export function TaskRunWorkspace({
   const [runDetail, setRunDetail] = useState<WorkbenchRunDetail>(initialRun);
   const [activeRunTab, setActiveRunTab] = useState<RunWorkspaceTab>("current");
   const [selectedTraceStepIndex, setSelectedTraceStepIndex] = useState<number | null>(null);
+  const processedStreamEventsRef = useRef(0);
   
   // 1. Establish SSE Connection via useRunStream hook
   const stream = useRunStream(tenantId, runDetail.id, token);
 
+  async function reloadRunDetail() {
+    try {
+      const updated = await workbenchApi.getRun(tenantId, token, runDetail.id);
+      setRunDetail(updated);
+      onReload(updated);
+    } catch (error: unknown) {
+      console.error("刷新任务运行态失败", error);
+    }
+  }
+
   useEffect(() => {
-    stream.connect();
+    if (stream.events.length <= processedStreamEventsRef.current) {
+      return;
+    }
+    const newEvents = stream.events.slice(processedStreamEventsRef.current);
+    processedStreamEventsRef.current = stream.events.length;
+    const shouldReload = newEvents.some(
+      (event) =>
+        event.type === "node_completed"
+        || event.type === "run_paused"
+        || event.type === "run_completed"
+        || event.type === "node_failed"
+    );
+    if (shouldReload) {
+      void reloadRunDetail();
+    }
+  }, [stream.events, tenantId, token, runDetail.id, onReload]);
+
+  useEffect(() => {
     return () => {
       stream.disconnect();
     };
-  }, [runDetail.id, stream.connect, stream.disconnect]);
+  }, [runDetail.id, stream.disconnect]);
 
   // Sync state if initialRun updates from parent
   useEffect(() => {
@@ -80,7 +108,11 @@ export function TaskRunWorkspace({
     
     // Find if the currently streaming node matches any step
     const updatedSteps = basePreview.steps.map((step) => {
-      if (stream.activeNodeInfo && step.nodeRunId === stream.activeNodeInfo.nodeRunId) {
+      if (
+        stream.isStreaming
+        && stream.activeNodeInfo
+        && step.nodeRunId === stream.activeNodeInfo.nodeRunId
+      ) {
         // Build updated messages
         const chatMessages = [...(step.chatMessages || [])];
         if (stream.streamingText) {
@@ -145,11 +177,11 @@ export function TaskRunWorkspace({
   // 4. Action Handlers: Advance Step
   async function handleAdvanceStep() {
     try {
-      const updated = await workbenchApi.advanceStep(tenantId, token, runDetail.id);
-      setRunDetail(updated);
-      onReload(updated);
+      await stream.ensureConnected();
+      await workbenchApi.advanceStep(tenantId, token, runDetail.id);
     } catch (e: unknown) {
       console.error("推进步骤失败", e);
+      await reloadRunDetail();
     }
   }
 
@@ -216,7 +248,7 @@ export function TaskRunWorkspace({
       const updated = await workbenchApi.rollbackRun(tenantId, token, runDetail.id, targetStep.nodeRunId);
       setRunDetail(updated);
       onReload(updated);
-      stream.connect();
+      await stream.ensureConnected();
       const afterAdvance = await workbenchApi.advanceStep(tenantId, token, runDetail.id);
       setRunDetail(afterAdvance);
       onReload(afterAdvance);
@@ -846,6 +878,10 @@ function resolveActiveStepIndex(steps: RuntimePreviewStep[]): number {
   const activeIndex = steps.findIndex((step) => step.state === "running" || step.state === "waiting");
   if (activeIndex >= 0) {
     return activeIndex;
+  }
+  const pendingIndex = steps.findIndex((step) => step.state === "pending");
+  if (pendingIndex > 0 && steps[pendingIndex - 1]?.state === "done") {
+    return pendingIndex - 1;
   }
   return lastExecutableStepIndex(steps);
 }
