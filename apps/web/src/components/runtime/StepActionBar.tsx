@@ -103,7 +103,24 @@ export function StepActionBar({
     );
   }
 
-  // 4. Completed but ready to advance to next step
+  // 4. Pending agent / cluster step — needs manual advance to start execution
+  if (
+    activeStep.state === "pending"
+    && (activeStep.kind === "agent" || activeStep.kind === "multiAgent")
+  ) {
+    return (
+      <div className="step-action-bar flex justify-between items-center p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
+        <span className="text-xs text-slate-500 dark:text-slate-400">
+          当前节点尚未开始执行，点击下方按钮启动{activeStep.kind === "multiAgent" ? "智能体集群" : "智能体"}。
+        </span>
+        <button type="button" className="sys-btn sys-btn--primary step-advance-btn flex items-center gap-2 text-xs" onClick={onAdvance}>
+          <Play size={14} fill="currentColor" /> 执行此步骤
+        </button>
+      </div>
+    );
+  }
+
+  // 5. Completed but ready to advance to next step
   if (activeStep.state === "done") {
     const canRegenerate = isRunSaved && activeStep.allowsRegenerate;
     return (

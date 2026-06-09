@@ -154,6 +154,49 @@ export function TaskRunWorkspace({
   const currentStepIndex = resolveActiveStepIndex(preview.steps);
   const activeStep = preview.steps[currentStepIndex] ?? preview.steps[0];
 
+  const clusterAgentsForPanel = useMemo(() => {
+    if (stream.clusterAgents.length > 0) {
+      return stream.clusterAgents;
+    }
+    if (activeStep.kind !== "multiAgent") {
+      return [];
+    }
+    const configAgents = Array.isArray(activeStep.configSnapshot?.clusterAgents)
+      ? (activeStep.configSnapshot?.clusterAgents as Array<Record<string, unknown>>)
+      : [];
+    const outputAgents = parseClusterAgentSummaries(activeStep.outputs);
+
+    if (activeStep.state === "done") {
+      const completed = outputAgents ?? configAgents;
+      return completed.map((agent: Record<string, unknown>, index: number) => ({
+        index,
+        name: stringifyValue(agent.name || agent.label || `子智能体 ${index + 1}`),
+        status: "completed" as const,
+        streamingText: "",
+        outputSummary: stringifyValue(agent.summary || agent.outputSummary || "已完成"),
+        toolCalls: [],
+      }));
+    }
+
+    const stepRunning =
+      activeStep.state === "running"
+      || (stream.isStreaming && stream.activeNodeInfo?.nodeRunId === activeStep.nodeRunId);
+
+    return configAgents.map((agent, index) => ({
+      index,
+      name: stringifyValue(agent.name || `子智能体 ${index + 1}`),
+      status: stepRunning ? ("running" as const) : ("pending" as const),
+      streamingText: "",
+      outputSummary: "",
+      toolCalls: [],
+    }));
+  }, [
+    stream.clusterAgents,
+    stream.isStreaming,
+    stream.activeNodeInfo,
+    activeStep,
+  ]);
+
   function handleTabChange(tab: RunWorkspaceTab) {
     setActiveRunTab(tab);
     if (tab === "trace") {
@@ -406,7 +449,8 @@ export function TaskRunWorkspace({
                 ) : activeStep.kind === "multiAgent" ? (
                   <MultiAgentPanel
                     activeStep={activeStep}
-                    clusterAgents={stream.clusterAgents}
+                    clusterAgents={clusterAgentsForPanel}
+                    isStreaming={stream.isStreaming}
                   />
                 ) : activeStep.kind === "approval" ? (
                   <div className="bg-white dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-850 p-5 space-y-4 max-w-2xl mx-auto">
@@ -870,6 +914,19 @@ function nodeCapabilities(node: any): RuntimeCapabilityItem[] {
   return list;
 }
 
+function parseClusterAgentSummaries(outputs: RuntimePreviewStep["outputs"]): Array<Record<string, unknown>> | null {
+  const field = outputs?.find((item) => item.label === "clusterAgents");
+  if (!field?.value) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(field.value);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 function resolveActiveStepIndex(steps: RuntimePreviewStep[]): number {
   const failedIndex = steps.findIndex((step) => step.state === "failed");
   if (failedIndex >= 0) {
@@ -880,8 +937,8 @@ function resolveActiveStepIndex(steps: RuntimePreviewStep[]): number {
     return activeIndex;
   }
   const pendingIndex = steps.findIndex((step) => step.state === "pending");
-  if (pendingIndex > 0 && steps[pendingIndex - 1]?.state === "done") {
-    return pendingIndex - 1;
+  if (pendingIndex >= 0 && steps.slice(0, pendingIndex).every((step) => step.state === "done")) {
+    return pendingIndex;
   }
   return lastExecutableStepIndex(steps);
 }

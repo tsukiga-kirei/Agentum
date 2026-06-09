@@ -1645,15 +1645,18 @@ public class WorkbenchRuntimeService {
 
                 @Override
                 public void onToken(String deltaContent, String accumulatedContent) {
-                    subAccumulated.append(deltaContent);
+                    if (accumulatedContent != null && !accumulatedContent.isBlank()) {
+                        subAccumulated.setLength(0);
+                        subAccumulated.append(accumulatedContent);
+                    } else if (deltaContent != null && !deltaContent.isBlank()) {
+                        subAccumulated.append(deltaContent);
+                    }
                     sendSseEvent(emitter, "cluster_agent", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
                         "agentIndex", idx,
                         "agentName", name,
                         "eventType", "streaming",
-                        "deltaContent", deltaContent,
-                        "accumulatedContent", accumulatedContent == null || accumulatedContent.isBlank()
-                            ? subAccumulated.toString()
-                            : accumulatedContent
+                        "deltaContent", deltaContent == null ? "" : deltaContent,
+                        "accumulatedContent", subAccumulated.toString()
                     )));
                 }
 
