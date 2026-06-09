@@ -109,15 +109,20 @@ export function StepActionBar({
     );
   }
 
-  // 4. Pending agent / cluster step — needs manual advance to start execution
-  if (
-    activeStep.state === "pending"
-    && (activeStep.kind === "agent" || activeStep.kind === "multiAgent")
-  ) {
+  // 4. Pending step — needs manual advance to start execution
+  if (activeStep.state === "pending") {
+    const pendingHint =
+      activeStep.kind === "multiAgent"
+        ? "智能体集群"
+        : activeStep.kind === "delivery"
+          ? "交付"
+          : activeStep.kind === "agent"
+            ? "智能体"
+            : "当前步骤";
     return (
       <div className="step-action-bar flex justify-between items-center p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
         <span className="text-xs text-slate-500 dark:text-slate-400">
-          当前节点尚未开始执行，点击下方按钮启动{activeStep.kind === "multiAgent" ? "智能体集群" : "智能体"}。
+          当前节点尚未开始执行，点击下方按钮启动{pendingHint}。
         </span>
         <button
           type="button"

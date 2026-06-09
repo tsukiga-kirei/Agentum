@@ -33,13 +33,16 @@ export function useRunStream(
   const abortControllerRef = useRef<AbortController | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const connectionStateRef = useRef<StreamConnectionState>("disconnected");
+  const isStreamActiveRef = useRef(false);
   const connectSessionRef = useRef(0);
-  const connectPromiseRef = useRef<Promise<void> | null>(null);
+  const connectReadyRef = useRef<Promise<void> | null>(null);
   const pendingConnectResolversRef = useRef<Array<() => void>>([]);
 
   const disconnect = useCallback(() => {
     connectSessionRef.current += 1;
-    connectPromiseRef.current = null;
+    connectReadyRef.current = null;
+    connectionStateRef.current = "disconnected";
+    isStreamActiveRef.current = false;
     pendingConnectResolversRef.current.forEach((resolve) => resolve());
     pendingConnectResolversRef.current = [];
     if (abortControllerRef.current) {
@@ -65,11 +68,11 @@ export function useRunStream(
   }, []);
 
   const connect = useCallback((): Promise<void> => {
-    if (connectionStateRef.current === "connected") {
+    if (connectionStateRef.current === "connected" && isStreamActiveRef.current) {
       return Promise.resolve();
     }
-    if (connectionStateRef.current === "connecting" && connectPromiseRef.current) {
-      return connectPromiseRef.current;
+    if (connectionStateRef.current === "connecting" && connectReadyRef.current) {
+      return connectReadyRef.current;
     }
 
     const session = connectSessionRef.current + 1;
@@ -93,149 +96,148 @@ export function useRunStream(
 
     const url = `${API_BASE_URL}/api/tenants/${tenantId}/workbench/runs/${runId}/stream`;
 
-    connectPromiseRef.current = (async function startStream() {
-      try {
-        const response = await fetch(url, {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: "text/event-stream",
-          },
-          signal: controller.signal,
-        });
+    connectReadyRef.current = new Promise<void>((resolveReady, rejectReady) => {
+      void (async function startStream() {
+        try {
+          const response = await fetch(url, {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              Accept: "text/event-stream",
+            },
+            signal: controller.signal,
+          });
 
-        if (session !== connectSessionRef.current) {
-          await response.body?.cancel();
-          return;
-        }
-
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        connectionStateRef.current = "connected";
-        setConnectionState("connected");
-        resolvePendingConnectors();
-
-        const reader = response.body?.getReader();
-        if (!reader) {
-          throw new Error("Response body is not readable");
-        }
-
-        const decoder = new TextDecoder("utf-8");
-        let buffer = "";
-        let currentEventType = "";
-
-        while (true) {
           if (session !== connectSessionRef.current) {
-            await reader.cancel();
+            await response.body?.cancel();
             return;
           }
 
-          const { done, value } = await reader.read();
-          if (done) {
-            break;
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
           }
 
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() || "";
+          connectionStateRef.current = "connected";
+          isStreamActiveRef.current = true;
+          setConnectionState("connected");
+          resolveReady();
+          resolvePendingConnectors();
 
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed) {
-              continue;
-            }
-
-            if (trimmed.startsWith("event:")) {
-              currentEventType = trimmed.substring(6).trim();
-            } else if (trimmed.startsWith("data:")) {
-              const dataStr = trimmed.substring(5).trim();
-              if (dataStr === "[DONE]") {
-                if (session === connectSessionRef.current) {
-                  disconnect();
-                }
-                break;
-              }
-
-              try {
-                const parsedData = JSON.parse(dataStr);
-                const streamEvent = {
-                  type: currentEventType || "message",
-                  data: parsedData,
-                } as StreamEvent;
-
-                setEvents((prev) => [...prev, streamEvent]);
-                handleStreamEvent(streamEvent);
-              } catch (e) {
-                console.error("Failed to parse SSE data line:", dataStr, e);
-              }
-
-              currentEventType = "";
-            }
+          const reader = response.body?.getReader();
+          if (!reader) {
+            throw new Error("Response body is not readable");
           }
-        }
 
-        if (session === connectSessionRef.current) {
-          connectionStateRef.current = "disconnected";
-          setConnectionState("disconnected");
-        }
-      } catch (err: unknown) {
-        if (session !== connectSessionRef.current) {
-          return;
-        }
-        if (err instanceof Error && err.name === "AbortError") {
-          return;
-        }
-        console.error("SSE connection error:", err);
-        connectionStateRef.current = "error";
-        setConnectionState("error");
-        setError(err instanceof Error ? err.message : "连接断开");
-        resolvePendingConnectors();
+          const decoder = new TextDecoder("utf-8");
+          let buffer = "";
+          let currentEventType = "";
 
-        if (!controller.signal.aborted) {
-          setConnectionState("reconnecting");
-          reconnectTimeoutRef.current = setTimeout(() => {
+          while (true) {
             if (session !== connectSessionRef.current) {
+              await reader.cancel();
               return;
             }
-            connectionStateRef.current = "disconnected";
-            setConnectionState("disconnected");
-            void connect();
-          }, 3000);
-        }
-      } finally {
-        if (connectPromiseRef.current) {
-          connectPromiseRef.current = null;
-        }
-      }
-    })();
 
-    return connectPromiseRef.current;
+            const { done, value } = await reader.read();
+            if (done) {
+              break;
+            }
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() || "";
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed) {
+                continue;
+              }
+
+              if (trimmed.startsWith("event:")) {
+                currentEventType = trimmed.substring(6).trim();
+              } else if (trimmed.startsWith("data:")) {
+                const dataStr = trimmed.substring(5).trim();
+                if (dataStr === "[DONE]") {
+                  if (session === connectSessionRef.current) {
+                    disconnect();
+                  }
+                  break;
+                }
+
+                try {
+                  const parsedData = JSON.parse(dataStr);
+                  const streamEvent = {
+                    type: currentEventType || "message",
+                    data: parsedData,
+                  } as StreamEvent;
+
+                  setEvents((prev) => [...prev, streamEvent]);
+                  handleStreamEvent(streamEvent);
+                } catch (e) {
+                  console.error("Failed to parse SSE data line:", dataStr, e);
+                }
+
+                currentEventType = "";
+              }
+            }
+          }
+
+          if (session === connectSessionRef.current) {
+            connectionStateRef.current = "disconnected";
+            isStreamActiveRef.current = false;
+            setConnectionState("disconnected");
+          }
+        } catch (err: unknown) {
+          if (session !== connectSessionRef.current) {
+            return;
+          }
+          if (err instanceof Error && err.name === "AbortError") {
+            connectionStateRef.current = "disconnected";
+            isStreamActiveRef.current = false;
+            return;
+          }
+          console.error("SSE connection error:", err);
+          connectionStateRef.current = "error";
+          isStreamActiveRef.current = false;
+          setConnectionState("error");
+          setError(err instanceof Error ? err.message : "连接断开");
+          resolvePendingConnectors();
+          rejectReady(err instanceof Error ? err : new Error("SSE 连接失败"));
+
+          if (!controller.signal.aborted) {
+            setConnectionState("reconnecting");
+            reconnectTimeoutRef.current = setTimeout(() => {
+              if (session !== connectSessionRef.current) {
+                return;
+              }
+              connectionStateRef.current = "disconnected";
+              setConnectionState("disconnected");
+              void connect();
+            }, 3000);
+          }
+        } finally {
+          if (connectReadyRef.current && session === connectSessionRef.current) {
+            connectReadyRef.current = null;
+          }
+        }
+      })();
+    });
+
+    return connectReadyRef.current;
   }, [tenantId, runId, token, disconnect, resolvePendingConnectors]);
 
   const ensureConnected = useCallback(async (timeoutMs = 8000) => {
-    if (connectionStateRef.current === "connected") {
+    if (connectionStateRef.current === "connected" && isStreamActiveRef.current) {
       return;
     }
-    const connectPromise = connect();
-    if (connectionStateRef.current === "connected") {
-      return;
-    }
-    await new Promise<void>((resolve, reject) => {
-      const timer = window.setTimeout(() => {
-        reject(new Error("SSE 连接超时，请稍后重试"));
-      }, timeoutMs);
-      pendingConnectResolversRef.current.push(() => {
-        window.clearTimeout(timer);
-        if (connectionStateRef.current === "connected") {
-          resolve();
-          return;
-        }
-        reject(new Error("SSE 连接失败"));
-      });
-    });
-    await connectPromise;
+    await Promise.race([
+      connect(),
+      new Promise<void>((_, reject) => {
+        window.setTimeout(() => {
+          reject(new Error("SSE 连接超时，请稍后重试"));
+        }, timeoutMs);
+      }),
+    ]);
   }, [connect]);
 
   const handleStreamEvent = (event: StreamEvent) => {

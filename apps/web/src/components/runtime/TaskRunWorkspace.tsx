@@ -61,13 +61,15 @@ export function TaskRunWorkspace({
   // 1. Establish SSE Connection via useRunStream hook
   const stream = useRunStream(tenantId, runDetail.id, token);
 
-  async function reloadRunDetail() {
+  async function reloadRunDetail(): Promise<WorkbenchRunDetail | null> {
     try {
       const updated = await workbenchApi.getRun(tenantId, token, runDetail.id);
       setRunDetail(updated);
       onReload(updated);
+      return updated;
     } catch (error: unknown) {
       console.error("刷新任务运行态失败", error);
+      return null;
     }
   }
 
@@ -259,10 +261,22 @@ export function TaskRunWorkspace({
     setIsAdvancing(true);
     setAdvanceError(null);
     const eventCountBefore = stream.events.length;
+    const progressBefore = runDetail.progressPercent;
+    const runStateBefore = runDetail.state;
+    const nodeStatesBefore = new Map(runDetail.nodes.map((node) => [node.id, node.state]));
     try {
       await stream.ensureConnected();
-      await workbenchApi.advanceStep(tenantId, token, runDetail.id);
-      await waitForAdvanceResult(eventCountBefore, streamEventsRef, reloadRunDetail);
+      const afterAdvance = await workbenchApi.advanceStep(tenantId, token, runDetail.id);
+      setRunDetail(afterAdvance);
+      onReload(afterAdvance);
+      await waitForAdvanceResult({
+        eventCountBefore,
+        streamEventsRef,
+        reloadRunDetail,
+        progressBefore,
+        runStateBefore,
+        nodeStatesBefore,
+      });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "推进步骤失败";
       console.error("推进步骤失败", error);
@@ -526,7 +540,11 @@ export function TaskRunWorkspace({
                   <div className="bg-white dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-850 p-5 space-y-4 max-w-2xl mx-auto">
                     <div className="text-center py-8 text-slate-400 text-xs">
                       <Package size={28} className="mx-auto mb-2 text-emerald-500" />
-                      当前步骤为系统交付步骤，已完成交付文档封装。
+                      {activeStep.state === "done"
+                        ? "交付步骤已完成，可在「生成报告」页签查看归档结果。"
+                        : isAdvancing
+                          ? "正在执行交付步骤，请稍候..."
+                          : "当前为系统交付步骤，请点击下方「执行此步骤」生成并归档交付物。"}
                     </div>
                   </div>
                 ) : (
@@ -1021,21 +1039,54 @@ function resolveActiveStepIndex(steps: RuntimePreviewStep[], run: WorkbenchRunDe
   return lastExecutableStepIndex(steps);
 }
 
-async function waitForAdvanceResult(
-  eventCountBefore: number,
-  streamEventsRef: React.MutableRefObject<StreamEvent[]>,
-  reloadRunDetail: () => Promise<void>
-) {
+interface WaitForAdvanceResultOptions {
+  eventCountBefore: number;
+  streamEventsRef: React.MutableRefObject<StreamEvent[]>;
+  reloadRunDetail: () => Promise<WorkbenchRunDetail | null>;
+  progressBefore: number;
+  runStateBefore: WorkbenchRunDetail["state"];
+  nodeStatesBefore: Map<string, string>;
+}
+
+async function waitForAdvanceResult(options: WaitForAdvanceResultOptions) {
+  const {
+    eventCountBefore,
+    streamEventsRef,
+    reloadRunDetail,
+    progressBefore,
+    runStateBefore,
+    nodeStatesBefore,
+  } = options;
   const terminalEvents = new Set(["node_completed", "run_paused", "run_completed", "node_failed"]);
+
   for (let attempt = 0; attempt < 30; attempt += 1) {
-    await sleep(2000);
+    if (attempt > 0) {
+      await sleep(2000);
+    }
+
     const newEvents = streamEventsRef.current.slice(eventCountBefore);
     if (newEvents.some((event) => terminalEvents.has(event.type))) {
       await reloadRunDetail();
       return;
     }
-    if (attempt % 2 === 1) {
-      await reloadRunDetail();
+
+    const updated = await reloadRunDetail();
+    if (!updated) {
+      continue;
+    }
+    if (updated.state === "completed" || updated.state === "failed") {
+      return;
+    }
+    if (updated.progressPercent > progressBefore || updated.state !== runStateBefore) {
+      return;
+    }
+    const nodeProgressed = updated.nodes.some((node) => {
+      const before = nodeStatesBefore.get(node.id);
+      return before !== node.state
+        && (node.state === "completed" || node.state === "failed" || node.state === "waiting");
+    });
+    if (nodeProgressed) {
+      return;
     }
   }
 }
