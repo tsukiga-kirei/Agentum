@@ -535,9 +535,6 @@ export function WorkbenchShell() {
       <>
         {messageContextHolder}
         <div className="workbench-task-run-host flex flex-col h-[calc(100vh-var(--topbar-height,0px))] overflow-hidden">
-          <div className="workbench-immersive-topbar shrink-0">
-            <WorkbenchGlobalActions />
-          </div>
           <div className="workbench-task-run-host-inner flex-1 overflow-hidden p-6">
             <TaskRunWorkspace
               run={openedRunDetail}

@@ -33,10 +33,10 @@ export function StepProgressRail({
   }
 
   return (
-    <aside className="workbench-task-rail border-r border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 p-4 w-full flex-shrink-0 flex flex-col" aria-label="任务流程进度">
+    <aside className="workbench-task-rail border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-4 w-full flex-shrink-0 flex flex-col rounded-xl shadow-sm" aria-label="任务流程进度">
       <div className="flex justify-between items-center mb-2">
-        <strong className="text-sm font-semibold text-slate-800 dark:text-slate-200">流程进度</strong>
-        <span className="text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 px-2 py-0.5 rounded-full">{preview.progress}%</span>
+        <strong className="text-base font-semibold text-slate-800 dark:text-slate-200">流程进度</strong>
+        <span className="text-sm font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 px-2.5 py-0.5 rounded-full">{preview.progress}%</span>
       </div>
       <div className="h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden mb-6">
         <div 
@@ -107,7 +107,7 @@ export function StepProgressRail({
                 }`}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <strong className={`text-xs font-semibold block leading-tight transition-colors duration-200 ${
+                  <strong className={`text-sm font-semibold block leading-tight transition-colors duration-200 ${
                     isSelected ? "text-blue-600 dark:text-blue-400" : "text-slate-800 dark:text-slate-200"
                   }`}>
                     {step.title}
@@ -119,7 +119,7 @@ export function StepProgressRail({
                     </span>
                   )}
                 </div>
-                <small className="text-[10px] text-slate-500 dark:text-slate-400 block mt-1 leading-normal">{step.subtitle}</small>
+                <small className="text-xs text-slate-500 dark:text-slate-400 block mt-1 leading-normal">{step.subtitle}</small>
               </button>
             </div>
           );

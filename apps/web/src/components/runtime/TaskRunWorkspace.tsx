@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
+import { Segmented } from "antd";
 import type { 
   RuntimePreview, 
   RuntimePreviewStep, 
@@ -18,6 +19,7 @@ import { UserInputPanel } from "./UserInputPanel";
 import { MultiAgentPanel } from "./MultiAgentPanel";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { workbenchApi } from "../../services/apiClient";
+import { WorkbenchGlobalActions } from "../workbench/SurfacePageLayout";
 import { 
   Save, 
   Trash2, 
@@ -406,41 +408,78 @@ export function TaskRunWorkspace({
     { key: "deliveries" as const, label: "产品交付", icon: Package },
   ];
 
+  const tabSegmentedOptions = runWorkspaceTabs.map((tab) => {
+    const Icon = tab.icon;
+    return {
+      value: tab.key,
+      label: (
+        <span className="flex items-center gap-1.5 py-0.5 text-xs font-semibold">
+          <Icon size={14} />
+          {tab.label}
+        </span>
+      ),
+    };
+  });
+
   return (
-    <section className="workbench-task-workspace sys-fade-in flex flex-col h-full bg-slate-50 dark:bg-slate-900 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800" aria-label="任务处理工作区">
+    <section className="workbench-task-workspace sys-fade-in flex flex-col h-full bg-[var(--color-bg-page)] dark:bg-slate-900 overflow-hidden" aria-label="任务处理工作区">
       {/* 5a. Topbar bar actions */}
-      <header className="workbench-task-topbar flex justify-between items-center px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-        <div className="workbench-task-title space-y-1">
-          <div className="workbench-run-kicker flex items-center gap-2 text-[10px] text-slate-400">
-            <span>业务工作台 / 任务运行</span>
-            {!runDetail.saved && <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400 font-semibold scale-90">草稿</span>}
-            {runDetail.saved && !runDetail.readOnly && <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-450 font-semibold scale-90">已保存</span>}
-            {runDetail.readOnly && <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 font-semibold scale-90">只读</span>}
+      <header className="surface-page-chrome pb-4 border-b border-[var(--color-border-light)] flex flex-col gap-4">
+        {/* Row 1: Title, Page Actions, and Global Actions (Theme/Role switcher) */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between w-full">
+          <div className="flex min-w-0 gap-4">
+            <div className="workbench-page-mark flex h-12 w-12 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-blue-500/10 text-blue-500">
+              <Activity className="h-6 w-6" aria-hidden="true" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-lg font-semibold tracking-tight text-[var(--color-text-primary)] sm:text-xl">
+                  {runDetail.title}
+                </h1>
+                {!runDetail.saved && <span className="rounded-full bg-amber-50 dark:bg-amber-950/40 px-2.5 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400 ring-1 ring-amber-200 dark:ring-amber-900/50">草稿</span>}
+                {runDetail.saved && !runDetail.readOnly && <span className="rounded-full bg-blue-50 dark:bg-blue-950/40 px-2.5 py-0.5 text-xs font-medium text-blue-600 dark:text-blue-450 ring-1 ring-blue-200 dark:ring-blue-900/50">已保存</span>}
+                {runDetail.readOnly && <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 text-xs font-medium text-slate-500 dark:text-slate-400 ring-1 ring-slate-200 dark:ring-slate-700/50">只读</span>}
+              </div>
+              <p className="agent-muted mt-1.5 max-w-2xl text-sm leading-relaxed text-slate-500 dark:text-slate-400">
+                {runDetail.workflowName} · 任务单号 {preview.runId} · v{preview.workflowVersion} · 当前步骤：<strong>{activeStep.title}</strong>
+              </p>
+            </div>
           </div>
-          <div className="workbench-run-title-row flex items-center gap-2">
-            <h2 className="text-sm font-bold text-slate-800 dark:text-slate-200 leading-none">{runDetail.title}</h2>
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-3 sm:pt-0.5">
+            <div className="workbench-run-actions flex items-center gap-2 shrink-0">
+              {!runDetail.saved && (
+                <button type="button" className="sys-btn sys-btn--primary flex items-center gap-1.5 text-xs px-3 py-1.5" onClick={onSave}>
+                  <Save size={14} />
+                  保存
+                </button>
+              )}
+              {!runDetail.readOnly && (
+                <button type="button" className="sys-btn sys-btn--danger flex items-center gap-1.5 text-xs px-3 py-1.5" onClick={onDelete}>
+                  <Trash2 size={14} />
+                  删除
+                </button>
+              )}
+              <button type="button" className="sys-btn sys-btn--default flex items-center gap-1.5 text-xs px-3 py-1.5" onClick={onBack}>
+                <History size={14} />
+                返回列表
+              </button>
+            </div>
+            <div className="border-l border-slate-200 dark:border-slate-850 pl-3 h-6 flex items-center">
+              <WorkbenchGlobalActions />
+            </div>
           </div>
-          <p className="text-[10px] text-slate-500 dark:text-slate-400">
-            {runDetail.workflowName} · 任务单号 {preview.runId} · v{preview.workflowVersion} · 当前步骤：<strong>{activeStep.title}</strong>
-          </p>
         </div>
-        <div className="workbench-run-actions flex items-center gap-2 shrink-0">
-          {!runDetail.saved && (
-            <button type="button" className="sys-btn sys-btn--primary flex items-center gap-1.5 text-xs px-3 py-1.5" onClick={onSave}>
-              <Save size={14} />
-              保存
-            </button>
-          )}
-          {!runDetail.readOnly && (
-            <button type="button" className="sys-btn sys-btn--danger flex items-center gap-1.5 text-xs px-3 py-1.5" onClick={onDelete}>
-              <Trash2 size={14} />
-              删除
-            </button>
-          )}
-          <button type="button" className="sys-btn sys-btn--default flex items-center gap-1.5 text-xs px-3 py-1.5" onClick={onBack}>
-            <History size={14} />
-            返回列表
-          </button>
+
+        {/* Row 2: Tab Switcher (Segmented) */}
+        <div className="system-mgmt-module-switch border-t border-slate-100 dark:border-slate-800/80 pt-3">
+          <div className="system-mgmt-segmented-scroll">
+            <Segmented<RunWorkspaceTab>
+              value={activeRunTab}
+              options={tabSegmentedOptions}
+              onChange={(value) => handleTabChange(value)}
+              className="login-portal-segmented login-portal-segmented--business system-mgmt-segmented"
+            />
+          </div>
         </div>
       </header>
 
@@ -454,30 +493,7 @@ export function TaskRunWorkspace({
           onStepSelect={handleStepSelect}
         />
 
-        <section className="workbench-task-main flex-1 flex flex-col bg-white dark:bg-slate-950 overflow-hidden">
-          {/* Tab Navigation */}
-          <nav className="workbench-runtime-tabs flex border-b border-slate-100 dark:border-slate-800/80 px-4 bg-slate-50/50 dark:bg-slate-900/10" aria-label="任务处理页签">
-            {runWorkspaceTabs.map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeRunTab === tab.key;
-              return (
-                <button
-                  key={tab.key}
-                  type="button"
-                  className={`flex items-center gap-1.5 px-4 py-3 border-b-2 text-xs font-semibold transition-all ${
-                    isActive 
-                      ? "border-blue-500 text-blue-600 dark:text-blue-450" 
-                      : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-                  }`}
-                  onClick={() => handleTabChange(tab.key)}
-                >
-                  <Icon size={14} />
-                  {tab.label}
-                </button>
-              );
-            })}
-          </nav>
-
+        <section className="workbench-task-main flex-1 flex flex-col bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm overflow-hidden">
           {/* Panel Container Scroll */}
           <div className="flex-1 overflow-y-auto p-6 min-h-0">
             {activeRunTab === "overview" && (
@@ -488,18 +504,18 @@ export function TaskRunWorkspace({
               <div className="space-y-4 max-w-4xl mx-auto">
                 <header className="flex justify-between items-center border-b border-slate-100 dark:border-slate-850 pb-3 mb-2">
                   <div>
-                    <h3 className="text-xs font-bold text-slate-800 dark:text-slate-200">当前节点：{activeStep.title}</h3>
-                    <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">{activeStep.description}</p>
+                    <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">当前节点：{activeStep.title}</h3>
+                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">{activeStep.description}</p>
                     {runDetail.state === "paused" && !isLiveExecuting && !isAdvancing ? (
-                      <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1">
+                      <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
                         任务已暂停，停在「{runDetail.currentNodeName ?? activeStep.title}」。点击底部按钮继续执行。
                       </p>
                     ) : null}
                     {advanceError ? (
-                      <p className="text-[10px] text-rose-600 dark:text-rose-400 mt-1">{advanceError}</p>
+                      <p className="text-xs text-rose-600 dark:text-rose-400 mt-1">{advanceError}</p>
                     ) : null}
                   </div>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                     isAdvancing
                       ? "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400"
                       : activeStep.state === "waiting"
@@ -631,50 +647,50 @@ function RunOverviewPanel({ run, preview }: { run: WorkbenchRunDetail; preview: 
   return (
     <div className="workbench-panel-grid max-w-4xl mx-auto space-y-4">
       <section className="bg-white dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 p-5">
-        <h3 className="text-xs font-semibold text-slate-805 dark:text-slate-250 mb-2 flex items-center gap-1.5">
+        <h3 className="text-sm font-bold text-slate-805 dark:text-slate-250 mb-2 flex items-center gap-1.5">
           <LayoutDashboard size={16} className="text-blue-500" /> 任务概览
         </h3>
-        <p className="text-[10px] text-slate-400 mb-4">
+        <p className="text-xs text-slate-400 mb-4">
           任务运行详情来自后端运行实例，节点状态、输入输出和事件链路均按发布版本快照生成。
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800">
-            <span className="text-[10px] text-slate-400 block">运行编号</span>
-            <strong className="text-xs text-slate-700 dark:text-slate-350 font-mono mt-0.5 block">{preview.runId}</strong>
+            <span className="text-xs text-slate-400 block">运行编号</span>
+            <strong className="text-sm text-slate-700 dark:text-slate-350 font-mono mt-0.5 block">{preview.runId}</strong>
           </div>
           <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800">
-            <span className="text-[10px] text-slate-400 block">流程版本</span>
-            <strong className="text-xs text-slate-700 dark:text-slate-350 font-mono mt-0.5 block">v{preview.workflowVersion}</strong>
+            <span className="text-xs text-slate-400 block">流程版本</span>
+            <strong className="text-sm text-slate-700 dark:text-slate-350 font-mono mt-0.5 block">v{preview.workflowVersion}</strong>
           </div>
           <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800">
-            <span className="text-[10px] text-slate-400 block">发起人</span>
-            <strong className="text-xs text-slate-700 dark:text-slate-350 mt-0.5 block">{preview.ownerName}</strong>
+            <span className="text-xs text-slate-400 block">发起人</span>
+            <strong className="text-sm text-slate-700 dark:text-slate-350 mt-0.5 block">{preview.ownerName}</strong>
           </div>
           <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800">
-            <span className="text-[10px] text-slate-400 block">开始时间</span>
-            <strong className="text-xs text-slate-700 dark:text-slate-350 mt-0.5 block">{preview.startedAt}</strong>
+            <span className="text-xs text-slate-400 block">开始时间</span>
+            <strong className="text-sm text-slate-700 dark:text-slate-350 mt-0.5 block">{preview.startedAt}</strong>
           </div>
         </div>
       </section>
 
       {/* Global Event Timeline */}
       <section className="bg-white dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 p-5">
-        <h3 className="text-xs font-semibold text-slate-850 dark:text-slate-250 mb-4 flex items-center gap-1.5">
+        <h3 className="text-sm font-bold text-slate-850 dark:text-slate-250 mb-4 flex items-center gap-1.5">
           <History size={16} className="text-indigo-500" /> 任务日志与时间线
         </h3>
         {preview.events.length === 0 ? (
-          <div className="text-center py-6 text-slate-400 text-xs">暂无任务日志。</div>
+          <div className="text-center py-6 text-slate-400 text-sm">暂无任务日志。</div>
         ) : (
           <div className="space-y-3">
             {preview.events.map((event) => (
-              <div key={event.id} className="flex gap-3 text-xs">
+              <div key={event.id} className="flex gap-3 text-sm">
                 <div className={`mt-1 h-2 w-2 rounded-full shrink-0 ${
                   event.tone === "success" ? "bg-emerald-500" : event.tone === "warning" ? "bg-amber-500" : "bg-blue-500"
                 }`} />
                 <div className="min-w-0 flex-1 border-b border-slate-100 dark:border-slate-850 pb-2 last:border-b-0">
                   <div className="flex items-center gap-2">
                     <strong className="text-slate-850 dark:text-slate-200 font-bold">{event.title}</strong>
-                    <span className="text-[10px] text-slate-400">{event.time}</span>
+                    <span className="text-xs text-slate-400">{event.time}</span>
                   </div>
                   <p className="text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">{event.description}</p>
                 </div>
@@ -722,8 +738,8 @@ function RunTracePanel({
             <header className="flex justify-between items-center border-b border-slate-100 dark:border-slate-850 pb-3">
               <div>
                 <div className="flex items-center gap-2">
-                  <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">{step.title}</h4>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                  <h4 className="text-base font-bold text-slate-800 dark:text-slate-200">{step.title}</h4>
+                  <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${
                     step.state === "done"
                       ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400"
                       : step.state === "failed"
@@ -733,7 +749,7 @@ function RunTracePanel({
                     {step.state === "done" ? "已完成" : step.state === "failed" ? "已失败" : step.state === "waiting" ? "等待中" : "执行中"}
                   </span>
                 </div>
-                <small className="text-[10px] text-slate-400 mt-1 block">
+                <small className="text-xs text-slate-400 mt-1 block">
                   {step.description} · 完成时间：{step.completedAt || "—"}
                 </small>
               </div>
@@ -741,7 +757,7 @@ function RunTracePanel({
                 <button
                   type="button"
                   onClick={() => onRollback(step.nodeRunId)}
-                  className="sys-btn sys-btn--danger text-[10px] px-2.5 py-1 inline-flex items-center gap-1.5"
+                  className="sys-btn sys-btn--danger text-xs px-2.5 py-1 inline-flex items-center gap-1.5"
                 >
                   <RotateCcw size={12} />
                   回退到此步骤重新开始
@@ -752,7 +768,7 @@ function RunTracePanel({
             {/* Custom tailored layouts for different step kinds */}
             {step.kind === "input" && (
               <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 p-4">
-                <h5 className="text-xs font-bold text-slate-700 dark:text-slate-350 mb-3">输入项配置与录入结果</h5>
+                <h5 className="text-sm font-bold text-slate-700 dark:text-slate-350 mb-3">输入项配置与录入结果</h5>
                 <div className="space-y-3">
                   {step.inputs?.map((input) => (
                     <CollapsibleField 
@@ -769,31 +785,31 @@ function RunTracePanel({
               <div className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800">
-                    <span className="text-[10px] text-slate-400 block">执行模型</span>
-                    <strong className="text-xs text-slate-700 dark:text-slate-300 mt-1 block">
+                    <span className="text-xs text-slate-400 block">执行模型</span>
+                    <strong className="text-sm text-slate-700 dark:text-slate-300 mt-1 block">
                       {step.outputs?.find((f) => f.label === "modelName")?.value || "GLM-5.1"}
                     </strong>
                   </div>
                   <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800">
-                    <span className="text-[10px] text-slate-400 block">执行模式</span>
-                    <strong className="text-xs text-slate-700 dark:text-slate-300 mt-1 block">ReAct 智能体模式</strong>
+                    <span className="text-xs text-slate-400 block">执行模式</span>
+                    <strong className="text-sm text-slate-700 dark:text-slate-300 mt-1 block">ReAct 智能体模式</strong>
                   </div>
                 </div>
 
                 {step.capabilities && step.capabilities.length > 0 && (
                   <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 p-4">
-                    <h5 className="text-xs font-bold text-slate-700 dark:text-slate-350 mb-3">工具与 MCP 调用记录</h5>
+                    <h5 className="text-sm font-bold text-slate-700 dark:text-slate-350 mb-3">工具与 MCP 调用记录</h5>
                     <div className="space-y-2">
                       {step.capabilities.map((tool) => (
                         <div 
                           key={tool.id}
-                          className="p-3 rounded bg-white dark:bg-slate-950 border border-slate-100 dark:border-slate-850 text-xs flex justify-between items-center"
+                          className="p-3 rounded bg-white dark:bg-slate-950 border border-slate-100 dark:border-slate-855 text-sm flex justify-between items-center"
                         >
                           <div>
-                            <span className="text-[9px] font-bold text-slate-400 uppercase">{tool.kind}</span>
-                            <strong className="text-xs text-slate-800 dark:text-slate-200 block mt-0.5">{tool.name}</strong>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">{tool.kind}</span>
+                            <strong className="text-sm text-slate-800 dark:text-slate-200 block mt-0.5">{tool.name}</strong>
                           </div>
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                             tool.status === "done" ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400" : "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400"
                           }`}>
                             {tool.statusLabel}
@@ -805,7 +821,7 @@ function RunTracePanel({
                 )}
 
                 <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 p-4">
-                  <h5 className="text-xs font-bold text-slate-700 dark:text-slate-350 mb-2">输出结论</h5>
+                  <h5 className="text-sm font-bold text-slate-700 dark:text-slate-350 mb-2">输出结论</h5>
                   <div className="bg-white dark:bg-slate-950 border border-slate-150 dark:border-slate-850 p-4 rounded-lg">
                     <MarkdownRenderer content={step.outputs?.find((f) => f.label === "final_answer" || f.label === "agent_response")?.value || "—"} />
                   </div>
@@ -815,13 +831,13 @@ function RunTracePanel({
 
             {step.kind === "multiAgent" && (
               <div className="space-y-4">
-                <h5 className="text-xs font-bold text-slate-700 dark:text-slate-350">智能体集群执行报告</h5>
+                <h5 className="text-sm font-bold text-slate-700 dark:text-slate-350">智能体集群执行报告</h5>
                 <div className="space-y-3">
                   {parseClusterAgentSummaries(step.outputs)?.map((agent: any, idx: number) => (
                     <div key={idx} className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 p-4">
                       <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-850 pb-2 mb-3">
-                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200">{agent.name || `子智能体 ${idx + 1}`}</span>
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400 font-medium">已完成</span>
+                        <span className="text-sm font-bold text-slate-800 dark:text-slate-200">{agent.name || `子智能体 ${idx + 1}`}</span>
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400 font-medium">已完成</span>
                       </div>
                       <MarkdownRenderer content={agent.summary || agent.outputSummary || "已完成"} compact />
                     </div>
@@ -832,7 +848,7 @@ function RunTracePanel({
 
             {step.kind === "approval" && (
               <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 p-4 space-y-4">
-                <h5 className="text-xs font-bold text-slate-700 dark:text-slate-350">审核结果汇总</h5>
+                <h5 className="text-sm font-bold text-slate-700 dark:text-slate-350">审核结果汇总</h5>
                 <div className="bg-white dark:bg-slate-950 border border-slate-150 dark:border-slate-850 p-4 rounded-lg flex items-start gap-4">
                   <span className={`text-xs px-2.5 py-1 rounded-full font-bold ${
                     step.outputs?.find((f) => f.label === "approved")?.value === "false"
@@ -842,8 +858,8 @@ function RunTracePanel({
                     {step.outputs?.find((f) => f.label === "approved")?.value === "false" ? "审核驳回" : "审核通过"}
                   </span>
                   <div className="flex-1">
-                    <span className="text-[10px] text-slate-400 font-semibold block">审核批注</span>
-                    <p className="text-xs text-slate-800 dark:text-slate-200 mt-1 italic">
+                    <span className="text-xs text-slate-400 font-semibold block">审核批注</span>
+                    <p className="text-sm text-slate-800 dark:text-slate-200 mt-1 italic">
                       "{step.outputs?.find((f) => f.label === "comment")?.value || "无批注内容"}"
                     </p>
                   </div>
@@ -853,10 +869,10 @@ function RunTracePanel({
 
             {step.kind === "delivery" && (
               <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 p-4 space-y-4">
-                <h5 className="text-xs font-bold text-slate-700 dark:text-slate-350">产品交付结果</h5>
+                <h5 className="text-sm font-bold text-slate-700 dark:text-slate-350">产品交付结果</h5>
                 <div className="bg-white dark:bg-slate-950 border border-slate-150 dark:border-slate-850 p-4 rounded-lg">
-                  <span className="text-[10px] text-slate-400 font-semibold block">交付状态</span>
-                  <strong className="text-xs text-slate-800 dark:text-slate-200 mt-1 block font-mono">
+                  <span className="text-xs text-slate-400 font-semibold block">交付状态</span>
+                  <strong className="text-sm text-slate-800 dark:text-slate-200 mt-1 block font-mono">
                     {step.outputs?.find((f) => f.label === "summary")?.value || "交付文件已生成并归档。"}
                   </strong>
                 </div>
@@ -872,7 +888,7 @@ function RunTracePanel({
             )}
           </div>
         ) : (
-          <div className="text-center py-12 text-slate-400 text-xs">
+          <div className="text-center py-12 text-slate-400 text-sm">
             左侧流程轨选择已执行步骤后，可查看该步骤专属的历史数据和快照。
           </div>
         )}
@@ -882,15 +898,15 @@ function RunTracePanel({
         <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-5">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">步骤运行日志</h4>
-              <p className="text-[10px] text-slate-400 mt-1">仅显示与当前选中步骤相关的事件线记录。</p>
+              <h4 className="text-base font-bold text-slate-800 dark:text-slate-200">步骤运行日志</h4>
+              <p className="text-xs text-slate-400 mt-1">仅显示与当前选中步骤相关的事件线记录。</p>
             </div>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
               {events.length} 条事件
             </span>
           </div>
           {events.length === 0 ? (
-            <div className="text-center py-8 text-slate-400 text-xs">当前步骤暂无特定运行事件。</div>
+            <div className="text-center py-8 text-slate-400 text-sm">当前步骤暂无特定运行事件。</div>
           ) : (
             <div className="space-y-3">
               {events.map((event) => (
@@ -902,12 +918,12 @@ function RunTracePanel({
                       ? "bg-amber-500"
                       : "bg-blue-500"
                   }`} />
-                  <div className="min-w-0 flex-1 border-b border-slate-100 dark:border-slate-850 pb-3 last:border-b-0">
+                  <div className="min-w-0 flex-1 border-b border-slate-100 dark:border-slate-855 pb-3 last:border-b-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <strong className="text-xs text-slate-800 dark:text-slate-200">{event.title}</strong>
-                      <span className="text-[10px] text-slate-400">{event.time}</span>
+                      <strong className="text-sm text-slate-800 dark:text-slate-200">{event.title}</strong>
+                      <span className="text-xs text-slate-400">{event.time}</span>
                     </div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">{event.description}</p>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">{event.description}</p>
                   </div>
                 </div>
               ))}
@@ -934,13 +950,13 @@ function CollapsibleField({
   const shouldCollapse = value.length > 250;
 
   return (
-    <div className="text-xs min-w-0 relative mb-3 last:mb-0">
-      <span className="text-slate-400 block text-[10px]">{label}</span>
+    <div className="text-sm min-w-0 relative mb-3 last:mb-0">
+      <span className="text-slate-400 block text-xs">{label}</span>
       <div className={`mt-0.5 relative transition-all duration-200 ${shouldCollapse && !isExpanded ? "max-h-24 overflow-hidden" : ""}`}>
         {markdown ? (
           <MarkdownRenderer content={value || "—"} compact className="mt-1" />
         ) : (
-          <p className={`text-slate-755 dark:text-slate-350 mt-0.5 break-words ${monospace ? "font-mono" : "font-sans whitespace-pre-wrap"}`}>
+          <p className={`text-slate-755 dark:text-slate-355 mt-0.5 break-words ${monospace ? "font-mono" : "font-sans whitespace-pre-wrap"}`}>
             {value || "—"}
           </p>
         )}
@@ -952,7 +968,7 @@ function CollapsibleField({
         <button
           type="button"
           onClick={() => setIsExpanded(!isExpanded)}
-          className="text-blue-500 hover:text-blue-600 dark:text-blue-400 mt-1 text-[10px] font-semibold flex items-center gap-0.5"
+          className="text-blue-500 hover:text-blue-600 dark:text-blue-400 mt-1 text-xs font-semibold flex items-center gap-0.5"
         >
           {isExpanded ? "收起内容" : "展开全文"}
         </button>
@@ -974,10 +990,10 @@ function SnapshotFieldList({
 }) {
   return (
     <div className="space-y-2 min-w-0">
-      <span className="text-[10px] font-bold text-slate-400 block">{title}</span>
+      <span className="text-xs font-bold text-slate-400 block">{title}</span>
       <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 p-3 space-y-3 min-h-[96px]">
         {fields.length === 0 ? (
-          <p className="text-xs text-slate-400">无快照数据。</p>
+          <p className="text-sm text-slate-400">无快照数据。</p>
         ) : (
           fields.map((field) => (
             <CollapsibleField
@@ -1020,27 +1036,27 @@ function RunDeliveriesPanel({ preview }: { preview: RuntimePreview }) {
             <CheckCircle2 size={22} />
           </div>
           <div>
-            <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">产品交付成功</h4>
-            <p className="text-[10px] text-slate-400 mt-1">业务流程已顺利执行完毕，交付结果已成功归档并输出。</p>
+            <h4 className="text-base font-bold text-slate-800 dark:text-slate-200">产品交付成功</h4>
+            <p className="text-xs text-slate-400 mt-1">业务流程已顺利执行完毕，交付结果已成功归档并输出。</p>
           </div>
         </div>
-        <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
+        <span className="text-sm px-2.5 py-1 rounded-full font-bold bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
           已交付
         </span>
       </div>
 
       {/* Delivery Channels List */}
       <div className="bg-white dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 p-5 space-y-3">
-        <h4 className="text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+        <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
           <Send size={16} className="text-emerald-500" /> 交付通道与方式
         </h4>
         {list.length === 0 ? (
-          <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 flex justify-between items-center text-xs">
+          <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 flex justify-between items-center text-sm">
             <div>
               <strong className="text-slate-800 dark:text-slate-200 font-medium block">直接输出交付</strong>
               <span className="text-slate-400 block mt-0.5">直接在平台内展示智能体推理结论。</span>
             </div>
-            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
+            <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
               就绪
             </span>
           </div>
@@ -1049,13 +1065,13 @@ function RunDeliveriesPanel({ preview }: { preview: RuntimePreview }) {
             {list.map((item, index) => (
               <div 
                 key={index} 
-                className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 flex justify-between items-center text-xs"
+                className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 flex justify-between items-center text-sm"
               >
                 <div>
                   <strong className="text-slate-800 dark:text-slate-200 font-medium block">{item.name}</strong>
                   <span className="text-slate-400 block mt-0.5">{item.meta}</span>
                 </div>
-                <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
+                <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
                   {item.status}
                 </span>
               </div>
@@ -1068,13 +1084,13 @@ function RunDeliveriesPanel({ preview }: { preview: RuntimePreview }) {
       {finalAnswer && (
         <div className="bg-white dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
           <header className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/10">
-            <h4 className="text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+            <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
               <FileText size={16} className="text-blue-500" /> 直接输出交付结论 (Markdown)
             </h4>
             <button
               type="button"
               onClick={handleCopy}
-              className="text-xs font-semibold text-blue-500 hover:text-blue-650 dark:text-blue-400 flex items-center gap-1"
+              className="text-sm font-semibold text-blue-500 hover:text-blue-650 dark:text-blue-400 flex items-center gap-1"
             >
               {copied ? "已复制" : "复制报告内容"}
             </button>
