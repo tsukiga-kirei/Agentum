@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Button, Checkbox, ConfigProvider, Form, Input, Select, Segmented, message, theme as antdTheme } from "antd";
 import { Building2, KeyRound, LayoutDashboard, Settings, Shield, User } from "lucide-react";
 import { useAuthStore } from "../../stores/authStore";
@@ -6,6 +7,7 @@ import { readLoginPrefs, saveLoginPrefs } from "../../stores/authSession";
 import { ThemeToggle } from "../../components/ThemeToggle";
 import { AgentumMark } from "../../components/brand/AgentumMark";
 import { API_BASE_URL, authApi } from "../../services/apiClient";
+import { firstAllowedSurfacePath } from "../../routes/paths";
 import type { LoginResponse, PortalType } from "../../types/auth";
 
 // 登录入口选项，与 docs/system-overview.md 中角色定义对齐。
@@ -56,7 +58,11 @@ export function LoginPage() {
   const fetchSsoProviders = useAuthStore((s) => s.fetchSsoProviders);
   const login = useAuthStore((s) => s.login);
   const completeSsoLogin = useAuthStore((s) => s.completeSsoLogin);
+  const user = useAuthStore((s) => s.user);
+  const menus = useAuthStore((s) => s.menus);
   const themeMode = useAuthStore((s) => s.themeMode);
+  const navigate = useNavigate();
+  const location = useLocation();
   const isDark = themeMode === "dark";
 
   const [form] = Form.useForm<LoginFormValues>();
@@ -65,6 +71,14 @@ export function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [ssoLoadingProviderId, setSsoLoadingProviderId] = useState<string | null>(null);
   const [messageApi, messageContextHolder] = message.useMessage();
+
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+    const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname;
+    navigate(from ?? firstAllowedSurfacePath(menus), { replace: true });
+  }, [location.state, menus, navigate, user]);
 
   const currentPortal = portals.find((p) => p.key === activePortal) ?? portals[0];
   const shouldSelectTenant = activePortal !== "system_admin";

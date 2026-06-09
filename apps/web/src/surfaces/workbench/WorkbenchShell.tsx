@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Activity,
   AlertCircle,
@@ -15,8 +15,6 @@ import {
   Library,
   ListTodo,
   Loader2,
-  LogOut,
-  PanelLeft,
   PauseCircle,
   PlayCircle,
   Plug,
@@ -25,26 +23,21 @@ import {
   Search,
   Send,
   Trash2,
-  Settings,
   ShieldAlert,
   ShieldCheck,
   Sparkles,
-  User,
   UserRoundCheck,
   UsersRound,
   Wrench,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Drawer, Empty, Pagination, Segmented, message } from "antd";
-import { TenantManagementPage } from "../admin/TenantManagementPage";
-import { SystemManagementPage } from "../admin/SystemManagementPage";
-import { AssetsPage } from "../assets/AssetsPage";
-import { WorkflowDraftsPage } from "../designer/WorkflowDraftsPage";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { SurfacePageLayout, WorkbenchGlobalActions } from "../../components/workbench/SurfacePageLayout";
-import { AgentumMark } from "../../components/brand/AgentumMark";
+import { TaskRunWorkspace } from "../../components/runtime/TaskRunWorkspace";
 import { useAuthStore } from "../../stores/authStore";
 import { AgentumApiError, workbenchApi } from "../../services/apiClient";
-import { TaskRunWorkspace } from "../../components/runtime/TaskRunWorkspace";
+import { parsePositiveInt, paths } from "../../routes/paths";
 import type {
   WorkbenchAvailableWorkflowNodeRow,
   WorkbenchAvailableWorkflowRow,
@@ -54,18 +47,7 @@ import type {
   WorkbenchTaskRunRow,
 } from "../../types/workbench";
 
-type SurfaceKey = "workbench" | "designer" | "assets" | "tenant" | "system";
 type WorkbenchTab = "overview" | "create" | "tasks";
-
-// 图标映射：后端返回菜单 icon 字符串，前端映射为 lucide-react 组件
-const ICON_MAP: Record<string, typeof LayoutDashboard> = {
-  LayoutDashboard,
-  GitBranch,
-  Library,
-  Activity,
-  ShieldCheck,
-  Settings,
-};
 
 type MetricTone = "primary" | "success" | "info" | "cap";
 
@@ -109,45 +91,32 @@ const AVAILABLE_PAGE_SIZE = 12;
 const TASK_RUN_PAGE_SIZE = 10;
 
 export function WorkbenchShell() {
-  // 菜单来自后端（通过 authStore.menus），不再前端硬编码 visibleFor。
-  // 切换角色后后端返回新的 menus，前端自动更新导航。
-  const menus = useAuthStore((s) => s.menus);
-  const activeRole = useAuthStore((s) => s.activeRole);
-  const roles = useAuthStore((s) => s.roles);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { runId } = useParams<{ runId?: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
   const themeMode = useAuthStore((s) => s.themeMode);
   const user = useAuthStore((s) => s.user);
   const token = useAuthStore((s) => s.token);
-  const logout = useAuthStore((s) => s.logout);
   const tenantId = user?.tenantId ?? null;
   const isDarkMode = themeMode === "dark";
-  const currentBusinessRoleHasNoEntry = activeRole?.role === "business" && menus.length === 0;
-  const hasTenantAdminRoleForCurrentTenant = roles.some((role) => role.role === "tenant_admin" && role.tenantId === activeRole?.tenantId);
   const [messageApi, messageContextHolder] = message.useMessage();
 
-  // 根据菜单列表确定初始页面（第一个菜单项）
-  const [activeSurface, setActiveSurface] = useState<SurfaceKey | null>(() => {
-    const firstMenu = menus[0];
-    return firstMenu ? (firstMenu.key as SurfaceKey) : null;
-  });
-
-  useEffect(() => {
-    if (menus.length === 0) {
-      setActiveSurface(null);
-      return;
+  const activeWorkbenchTab = useMemo<WorkbenchTab>(() => {
+    if (location.pathname.startsWith(paths.workbench.create)) {
+      return "create";
     }
-
-    if (!menus.some((menu) => menu.key === activeSurface)) {
-      setActiveSurface(menus[0].key as SurfaceKey);
+    if (location.pathname.startsWith(paths.workbench.tasks)) {
+      return "tasks";
     }
-  }, [activeSurface, menus]);
+    return "overview";
+  }, [location.pathname]);
 
-  // 侧栏折叠属于工作台级偏好，后续接入用户设置 API 后应从服务端恢复并跨设备同步。
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [isSidebarTransitioning, setIsSidebarTransitioning] = useState(false);
-  const [activeWorkbenchTab, setActiveWorkbenchTab] = useState<WorkbenchTab>("overview");
-  const sidebarTransitionTimer = useRef<number | null>(null);
-  const isSidebarCompact = isSidebarCollapsed || isSidebarTransitioning;
-  const showSidebarText = !isSidebarCompact;
+  const availablePage = parsePositiveInt(searchParams.get("page"), 1);
+  const availableKeyword = searchParams.get("q") ?? "";
+  const availableKeywordInput = searchParams.get("q") ?? "";
+  const activeTasksPage = parsePositiveInt(searchParams.get("activePage"), 1);
+  const taskRunsPage = parsePositiveInt(searchParams.get("historyPage"), 1);
 
   // 业务工作台真实数据：概览统计、待办、最近运行均由 /api/tenants/{tenantId}/workbench/summary 返回。
   const [summary, setSummary] = useState<WorkbenchSummary | null>(null);
@@ -157,21 +126,17 @@ export function WorkbenchShell() {
   // 可发起的已发布工作流来自后端分页查询，结合 keyword 在前端搜索。
   const [availableWorkflows, setAvailableWorkflows] = useState<WorkbenchAvailableWorkflowRow[]>([]);
   const [availableTotal, setAvailableTotal] = useState(0);
-  const [availablePage, setAvailablePage] = useState(1);
   const [availableLoading, setAvailableLoading] = useState(false);
-  const [availableKeyword, setAvailableKeyword] = useState("");
-  const [availableKeywordInput, setAvailableKeywordInput] = useState("");
   const [availableError, setAvailableError] = useState<string | null>(null);
   const [activeTasks, setActiveTasks] = useState<WorkbenchTaskRunRow[]>([]);
   const [activeTasksTotal, setActiveTasksTotal] = useState(0);
-  const [activeTasksPage, setActiveTasksPage] = useState(1);
   const [activeTasksLoading, setActiveTasksLoading] = useState(false);
   const [activeTasksError, setActiveTasksError] = useState<string | null>(null);
   const [taskRuns, setTaskRuns] = useState<WorkbenchTaskRunRow[]>([]);
   const [taskRunsTotal, setTaskRunsTotal] = useState(0);
-  const [taskRunsPage, setTaskRunsPage] = useState(1);
   const [taskRunsLoading, setTaskRunsLoading] = useState(false);
   const [taskRunsError, setTaskRunsError] = useState<string | null>(null);
+  const [availableKeywordDraft, setAvailableKeywordDraft] = useState(availableKeyword);
   const [openedRunDetail, setOpenedRunDetail] = useState<WorkbenchRunDetail | null>(null);
   const [openedRunLoading, setOpenedRunLoading] = useState(false);
   const [creatingWorkflowId, setCreatingWorkflowId] = useState<string | null>(null);
@@ -194,11 +159,33 @@ export function WorkbenchShell() {
     };
   });
 
-  useEffect(() => () => {
-    if (sidebarTransitionTimer.current !== null) {
-      window.clearTimeout(sidebarTransitionTimer.current);
+  useEffect(() => {
+    setAvailableKeywordDraft(availableKeyword);
+  }, [availableKeyword]);
+
+  function updateSearchParam(key: string, value: string | null) {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (!value) {
+        next.delete(key);
+      } else {
+        next.set(key, value);
+      }
+      return next;
+    }, { replace: key !== "page" && key !== "activePage" && key !== "historyPage" });
+  }
+
+  function navigateWorkbenchTab(tab: WorkbenchTab) {
+    if (tab === "overview") {
+      navigate(paths.workbench.root);
+      return;
     }
-  }, []);
+    if (tab === "create") {
+      navigate(paths.workbench.create);
+      return;
+    }
+    navigate(paths.workbench.tasks);
+  }
 
   // 仅当业务工作台 surface 处于激活态、并且已有有效 tenantId / token 时，才发起概览请求。
   // 系统管理员入口没有 tenantId，业务工作台暂不为系统管理员渲染。
@@ -236,7 +223,6 @@ export function WorkbenchShell() {
       const data = await workbenchApi.listAvailableWorkflows(tenantId, token, keyword, page, AVAILABLE_PAGE_SIZE);
       setAvailableWorkflows(data.items);
       setAvailableTotal(data.total);
-      setAvailablePage(data.page);
     } catch (error) {
       const reason = error instanceof AgentumApiError ? error.message : "可发起流程加载失败";
       console.warn("[workbench] 可发起流程加载失败", {
@@ -263,7 +249,6 @@ export function WorkbenchShell() {
       const data = await workbenchApi.listActiveRuns(tenantId, token, "", page, TASK_RUN_PAGE_SIZE);
       setActiveTasks(data.items);
       setActiveTasksTotal(data.total);
-      setActiveTasksPage(data.page);
     } catch (error) {
       const reason = error instanceof AgentumApiError ? error.message : "待办列表加载失败";
       console.warn("[workbench] 待办列表加载失败", {
@@ -290,7 +275,6 @@ export function WorkbenchShell() {
       const data = await workbenchApi.listRuns(tenantId, token, "", page, TASK_RUN_PAGE_SIZE);
       setTaskRuns(data.items);
       setTaskRunsTotal(data.total);
-      setTaskRunsPage(data.page);
     } catch (error) {
       const reason = error instanceof AgentumApiError ? error.message : "任务记录加载失败";
       console.warn("[workbench] 任务记录加载失败", {
@@ -305,44 +289,39 @@ export function WorkbenchShell() {
   }, [tenantId, token]);
 
   useEffect(() => {
-    if (activeSurface !== "workbench") {
-      return;
-    }
     void loadSummary();
-  }, [activeSurface, loadSummary]);
+  }, [loadSummary]);
 
   useEffect(() => {
-    if (activeSurface !== "workbench") {
+    if (activeWorkbenchTab !== "create") {
       return;
     }
     void loadAvailableWorkflows(availablePage, availableKeyword);
-  }, [activeSurface, availableKeyword, availablePage, loadAvailableWorkflows]);
+  }, [activeWorkbenchTab, availableKeyword, availablePage, loadAvailableWorkflows]);
 
   useEffect(() => {
-    if (activeSurface !== "workbench") {
+    if (activeWorkbenchTab !== "tasks") {
       return;
     }
     void loadActiveTasks(activeTasksPage);
-  }, [activeSurface, activeTasksPage, loadActiveTasks]);
+  }, [activeWorkbenchTab, activeTasksPage, loadActiveTasks]);
 
   useEffect(() => {
-    if (activeSurface !== "workbench") {
+    if (activeWorkbenchTab !== "tasks") {
       return;
     }
     void loadTaskRuns(taskRunsPage);
-  }, [activeSurface, taskRunsPage, loadTaskRuns]);
+  }, [activeWorkbenchTab, taskRunsPage, loadTaskRuns]);
 
-  function handleToggleSidebar() {
-    if (sidebarTransitionTimer.current !== null) {
-      window.clearTimeout(sidebarTransitionTimer.current);
+  useEffect(() => {
+    if (!runId || !tenantId || !token) {
+      setOpenedRunDetail(null);
+      return;
     }
-    setIsSidebarTransitioning(true);
-    setIsSidebarCollapsed((current) => !current);
-    sidebarTransitionTimer.current = window.setTimeout(() => {
-      setIsSidebarTransitioning(false);
-      sidebarTransitionTimer.current = null;
-    }, 320);
-  }
+    void handleOpenRun(runId);
+    // runId 变化时重新加载运行详情
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runId, tenantId, token]);
 
   async function handleLaunchTask(workflow: WorkbenchAvailableWorkflowRow) {
     if (!tenantId || !token) {
@@ -356,9 +335,9 @@ export function WorkbenchShell() {
     setCreatingWorkflowId(workflow.id);
     try {
       const detail = await workbenchApi.createRun(tenantId, token, workflow.id, workflow.name);
-      setOpenedRunDetail(detail);
       setWorkflowDrawer(null);
       messageApi.success(`已发起「${detail.title}」，请先保存后才会进入待办`);
+      navigate(paths.workbench.run(detail.id));
     } catch (error) {
       const reason = error instanceof AgentumApiError ? error.message : "任务创建失败";
       console.warn("[workbench] 任务创建失败", { code: error instanceof AgentumApiError ? error.code : "unknown" });
@@ -368,18 +347,19 @@ export function WorkbenchShell() {
     }
   }
 
-  async function handleOpenRun(runId: string) {
+  async function handleOpenRun(targetRunId: string) {
     if (!tenantId || !token) {
       return;
     }
     setOpenedRunLoading(true);
     try {
-      const detail = await workbenchApi.getRun(tenantId, token, runId);
+      const detail = await workbenchApi.getRun(tenantId, token, targetRunId);
       setOpenedRunDetail(detail);
     } catch (error) {
       const reason = error instanceof AgentumApiError ? error.message : "任务详情加载失败";
       console.warn("[workbench] 任务详情加载失败", { code: error instanceof AgentumApiError ? error.code : "unknown" });
       messageApi.error(reason);
+      navigate(paths.workbench.tasks, { replace: true });
     } finally {
       setOpenedRunLoading(false);
     }
@@ -423,10 +403,10 @@ export function WorkbenchShell() {
       void loadSummary();
       if (savedDetail.readOnly) {
         void loadTaskRuns(1);
-        setTaskRunsPage(1);
+        updateSearchParam("historyPage", "1");
       } else {
         void loadActiveTasks(1);
-        setActiveTasksPage(1);
+        updateSearchParam("activePage", "1");
       }
     } catch (error) {
       const reason = error instanceof AgentumApiError ? error.message : "任务保存失败";
@@ -444,7 +424,7 @@ export function WorkbenchShell() {
       if (openedRunDetail?.id === runId) {
         setOpenedRunDetail(null);
         if (closeWorkspace) {
-          setActiveWorkbenchTab("tasks");
+          navigate(paths.workbench.tasks);
         }
       }
       messageApi.success("任务已删除");
@@ -480,8 +460,7 @@ export function WorkbenchShell() {
 
   async function handleBackFromRun() {
     if (!tenantId || !token || !openedRunDetail) {
-      setOpenedRunDetail(null);
-      setActiveWorkbenchTab("tasks");
+      navigate(paths.workbench.tasks);
       return;
     }
     if (!openedRunDetail.saved) {
@@ -491,17 +470,16 @@ export function WorkbenchShell() {
         console.warn("[workbench] 未保存任务清理失败", error);
       }
     }
-    setOpenedRunDetail(null);
-    setActiveWorkbenchTab("tasks");
+    navigate(paths.workbench.tasks);
     void loadSummary();
     void loadActiveTasks(activeTasksPage);
     void loadTaskRuns(taskRunsPage);
   }
 
   function handleSubmitKeyword() {
-    const trimmed = availableKeywordInput.trim();
-    setAvailableKeyword(trimmed);
-    setAvailablePage(1);
+    const trimmed = availableKeywordDraft.trim();
+    updateSearchParam("q", trimmed || null);
+    updateSearchParam("page", "1");
   }
 
   // 概览指标卡片基于真实 summary.metrics 渲染。
@@ -541,211 +519,82 @@ export function WorkbenchShell() {
 
   const recentRuns = summary?.recentRuns ?? [];
 
+  if (runId) {
+    if (openedRunLoading || !openedRunDetail) {
+      return (
+        <>
+          {messageContextHolder}
+          <div className="flex min-h-[60vh] items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-[var(--color-primary)]" aria-hidden="true" />
+          </div>
+        </>
+      );
+    }
+
+    return (
+      <>
+        {messageContextHolder}
+        <div className="workbench-task-run-host flex flex-col h-[calc(100vh-var(--topbar-height,0px))] overflow-hidden">
+          <div className="workbench-immersive-topbar shrink-0">
+            <WorkbenchGlobalActions />
+          </div>
+          <div className="workbench-task-run-host-inner flex-1 overflow-hidden p-6">
+            <TaskRunWorkspace
+              run={openedRunDetail}
+              tenantId={tenantId!}
+              token={token || ""}
+              onBack={() => void handleBackFromRun()}
+              onSave={() => void handleSaveRun()}
+              onDelete={() => void handleDeleteRun(openedRunDetail.id, true)}
+              onReload={(updated) => {
+                setOpenedRunDetail(updated);
+                void loadSummary();
+                void loadActiveTasks(activeTasksPage);
+                void loadTaskRuns(taskRunsPage);
+              }}
+            />
+          </div>
+        </div>
+      </>
+    );
+  }
+
   return (
-    <main className={`min-h-screen bg-[var(--color-bg-page)] text-[var(--color-text-primary)] transition-colors duration-300 ${isDarkMode ? "dark" : ""}`}>
+    <>
       {messageContextHolder}
-      <div className="flex min-h-screen">
-        {/* ===== 侧边栏 ===== */}
-        <aside
-          className={`workbench-sidebar hidden shrink-0 sticky top-0 z-20 h-screen max-h-screen border-r border-[var(--color-sidebar-border)] bg-[var(--color-bg-sidebar)] text-[var(--color-text-sidebar)] transition-[width,background-color] duration-300 lg:flex lg:flex-col ${isSidebarCollapsed ? "workbench-sidebar--collapsed w-[var(--sidebar-collapsed-width)]" : "w-[var(--sidebar-width)]"}`}
-        >
-          {/* 侧栏头：展开时右侧收起并悬停提示；收起时 Logo 位悬停/聚焦替换为侧栏图标，右侧浮出「打开边栏」 */}
-          <div
-            className={`workbench-sidebar-header shrink-0 ${isSidebarCollapsed ? "workbench-sidebar-header--compact" : "workbench-sidebar-header--expanded"}`}
-          >
-            {isSidebarCollapsed ? (
-              <>
-                <button
-                  type="button"
-                  onClick={handleToggleSidebar}
-                  className="workbench-sidebar-compact-brand"
-                  aria-label="打开边栏"
-                >
-                  <span className="workbench-sidebar-mark-slot overflow-hidden rounded-lg shadow-sm">
-                    <AgentumMark className="workbench-sidebar-mark-logo h-9 w-9 shrink-0 object-contain" />
-                    <span className="workbench-sidebar-mark-toggle" aria-hidden="true">
-                      <PanelLeft className="h-4 w-4" />
-                    </span>
-                  </span>
-                </button>
-                <span className="workbench-sidebar-expand-hint" aria-hidden="true">
-                  打开边栏
-                </span>
-              </>
-            ) : (
-              <>
-                <div className="workbench-sidebar-brand">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg shadow-sm">
-                    <AgentumMark className="h-9 w-9 shrink-0 object-contain" />
-                  </div>
-                  {showSidebarText ? (
-                    <div className="workbench-sidebar-text workbench-sidebar-text--visible">
-                      <p className="text-lg font-bold text-[var(--color-sidebar-logo-text)]">Agentum</p>
-                    </div>
-                  ) : null}
-                </div>
-                <button
-                  type="button"
-                  onClick={handleToggleSidebar}
-                  className="workbench-sidebar-toggle workbench-sidebar-hint-below"
-                  aria-label="关闭边栏"
-                  data-hint="关闭边栏"
-                >
-                  <PanelLeft className="h-4 w-4" aria-hidden="true" />
-                </button>
-              </>
-            )}
+      <SurfacePageLayout
+        markClassName="workbench-page-mark"
+        icon={LayoutDashboard}
+        title="业务工作台"
+        badge="任务运行"
+        description="面向业务用户的任务入口：从总览进入任务创建、待办处理和任务续办；全部开放智能体流程可查看，有创建范围的流程才可发起任务。"
+      >
+        <div className="system-mgmt-module-switch mb-5">
+          <div className="system-mgmt-segmented-scroll">
+            <Segmented<WorkbenchTab>
+              aria-label="业务工作台模块"
+              value={activeWorkbenchTab}
+              options={workbenchSegmentedOptions}
+              onChange={navigateWorkbenchTab}
+              className="login-portal-segmented login-portal-segmented--business system-mgmt-segmented"
+            />
           </div>
-
-          {/* 导航菜单 —— 由后端 menus 驱动，不再硬编码 visibleFor */}
-          <nav className="flex-1 overflow-y-auto min-h-0 space-y-1 px-3 py-3" aria-label="主导航">
-            <p className={`px-3 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--color-sidebar-section-title)] ${showSidebarText ? "" : "sr-only"}`}>
-              主工作区
-            </p>
-            {menus.map((menuItem) => {
-              const Icon = ICON_MAP[menuItem.icon] ?? LayoutDashboard;
-              const isActive = activeSurface === menuItem.key;
-
-              return (
-                <button
-                  key={menuItem.key}
-                  type="button"
-                  onClick={() => setActiveSurface(menuItem.key as SurfaceKey)}
-                  className={`relative flex w-full items-center rounded-lg text-left transition-all duration-200 ${isSidebarCompact ? "h-11 justify-center px-0" : "gap-3 px-3 py-2.5"} ${
-                    isActive
-                      ? "bg-[var(--color-bg-sidebar-active)] font-medium text-[var(--color-text-sidebar-active)]"
-                      : "text-[var(--color-text-sidebar)] hover:bg-[var(--color-bg-sidebar-hover)] hover:text-[var(--color-text-primary)]"
-                  }`}
-                  title={menuItem.description}
-                >
-                  <Icon className={`h-5 w-5 shrink-0 ${isActive ? "text-[var(--color-primary)]" : ""}`} aria-hidden="true" />
-                  <span className={`workbench-sidebar-text min-w-0 ${showSidebarText ? "workbench-sidebar-text--visible" : ""}`} aria-hidden={!showSidebarText}>
-                    <span className="block text-sm font-medium">{menuItem.label}</span>
-                    <span className="block text-xs text-[var(--color-text-tertiary)]">{menuItem.description}</span>
-                  </span>
-                  {isActive ? <span className="absolute right-0 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-l bg-[var(--color-primary)]" /> : null}
-                </button>
-              );
-            })}
-          </nav>
-
-          {/* 底部用户区域 */}
-          <div className={`border-t border-[var(--color-border-light)] p-3 ${isSidebarCompact ? "flex justify-center" : ""}`}>
-            {isSidebarCompact ? (
-              <button
-                type="button"
-                onClick={logout}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-danger)]"
-                title="退出登录"
-              >
-                <LogOut className="h-4 w-4" />
-              </button>
-            ) : (
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--color-primary-bg)] text-[var(--color-primary)]">
-                  <User className="h-4.5 w-4.5" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-[var(--color-text-primary)]">{user?.displayName ?? "未登录"}</p>
-                  <p className="truncate text-xs text-[var(--color-text-tertiary)]">{user?.organization ?? ""}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={logout}
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-danger)]"
-                  title="退出登录"
-                >
-                  <LogOut className="h-4 w-4" />
-                </button>
-              </div>
-            )}
+          <div className="login-portal-description login-portal-description--business">
+            <span className="login-portal-description-dot" />
+            {activeWorkbenchTabMeta.description}
           </div>
-        </aside>
+        </div>
 
-        {/* ===== 主内容区 ===== */}
-        <section className={`min-w-0 flex-1${activeSurface === "workbench" && tenantId && openedRunDetail ? " overflow-hidden" : ""}`}>
-          {activeSurface === null ? (
-            <div className="min-h-screen bg-[var(--color-bg-page)] pb-10">
-              <div className="mx-auto max-w-[1400px] px-5 lg:px-6">
-                <header className="surface-page-chrome surface-page-chrome--actions-only flex justify-end pb-2 pt-4">
-                  <WorkbenchGlobalActions />
-                </header>
-              <section
-                className="agent-card mt-16 flex min-h-[360px] items-center justify-center p-8 text-center sm:mt-20"
-                aria-label="无可访问页签"
-              >
-                <div>
-                  <ShieldCheck className="mx-auto h-10 w-10 text-[var(--color-text-tertiary)]" aria-hidden="true" />
-                  <h2 className="mt-4 text-base font-semibold text-[var(--color-text-primary)]">{currentBusinessRoleHasNoEntry ? "业务入口尚未配置" : "暂无可访问页签"}</h2>
-                  <p className="agent-muted mt-2 text-sm">
-                    {currentBusinessRoleHasNoEntry && hasTenantAdminRoleForCurrentTenant
-                      ? "当前业务用户身份尚未获得页签分配，请切回租户管理，在资源分配中为人员、部门或角色配置业务入口。"
-                      : "当前账号尚未获得租户内页签分配，请联系租户管理员配置业务入口。"}
-                  </p>
-                </div>
-              </section>
-              </div>
+        {!tenantId ? (
+          <section className="sys-preview-card" aria-label="业务工作台不可用">
+            <div className="flex flex-col items-center gap-3 py-10 text-center">
+              <ShieldAlert className="h-10 w-10 text-[var(--color-text-tertiary)]" aria-hidden="true" />
+              <p className="text-sm font-semibold text-[var(--color-text-primary)]">业务工作台需要租户上下文</p>
+              <p className="agent-muted text-xs">系统管理员入口不绑定租户，请切换到业务用户或租户管理员角色后访问。</p>
             </div>
-          ) : null}
-
-          {/* 业务工作台内容 */}
-          {activeSurface === "workbench" ? (
-            tenantId && openedRunDetail ? (
-              <div className="workbench-task-run-host flex flex-col h-[calc(100vh-var(--topbar-height,0px))] overflow-hidden">
-                <div className="workbench-immersive-topbar shrink-0">
-                  <WorkbenchGlobalActions />
-                </div>
-                <div className="workbench-task-run-host-inner flex-1 overflow-hidden p-6">
-                  <TaskRunWorkspace
-                    run={openedRunDetail}
-                    tenantId={tenantId}
-                    token={token || ""}
-                    onBack={() => void handleBackFromRun()}
-                    onSave={() => void handleSaveRun()}
-                    onDelete={() => void handleDeleteRun(openedRunDetail.id, true)}
-                    onReload={(updated) => {
-                      setOpenedRunDetail(updated);
-                      void loadSummary();
-                      void loadActiveTasks(activeTasksPage);
-                      void loadTaskRuns(taskRunsPage);
-                    }}
-                  />
-                </div>
-              </div>
-            ) : (
-            <SurfacePageLayout
-              markClassName="workbench-page-mark"
-              icon={LayoutDashboard}
-              title="业务工作台"
-              badge="任务运行"
-              description="面向业务用户的任务入口：从总览进入任务创建、待办处理和任务续办；全部开放智能体流程可查看，有创建范围的流程才可发起任务。"
-            >
-                <div className="system-mgmt-module-switch mb-5">
-                  <div className="system-mgmt-segmented-scroll">
-                    <Segmented<WorkbenchTab>
-                      aria-label="业务工作台模块"
-                      value={activeWorkbenchTab}
-                      options={workbenchSegmentedOptions}
-                      onChange={setActiveWorkbenchTab}
-                      className="login-portal-segmented login-portal-segmented--business system-mgmt-segmented"
-                    />
-                  </div>
-                  <div className="login-portal-description login-portal-description--business">
-                    <span className="login-portal-description-dot" />
-                    {activeWorkbenchTabMeta.description}
-                  </div>
-                </div>
-
-                {!tenantId ? (
-                  <section className="sys-preview-card" aria-label="业务工作台不可用">
-                    <div className="flex flex-col items-center gap-3 py-10 text-center">
-                      <ShieldAlert className="h-10 w-10 text-[var(--color-text-tertiary)]" aria-hidden="true" />
-                      <p className="text-sm font-semibold text-[var(--color-text-primary)]">业务工作台需要租户上下文</p>
-                      <p className="agent-muted text-xs">系统管理员入口不绑定租户，请切换到业务用户或租户管理员角色后访问。</p>
-                    </div>
-                  </section>
-                ) : (
-                  <>
+          </section>
+        ) : (
+          <>
                     {summaryError ? (
                       <section className="sys-preview-card mb-4 border-rose-200 dark:border-rose-900/40" aria-label="业务工作台加载失败">
                         <div className="flex items-start gap-3 text-sm text-[var(--color-text-primary)]">
@@ -778,21 +627,21 @@ export function WorkbenchShell() {
                                 title="创建任务"
                                 description="浏览全部已发布智能体流程，按版本和创建权限发起业务任务。"
                                 meta={summary ? `${summary.metrics.availableWorkflowTotal} 个可发起流程` : "加载中..."}
-                                onClick={() => setActiveWorkbenchTab("create")}
+                                onClick={() => navigate(paths.workbench.create)}
                               />
                               <WorkbenchFeatureCard
                                 icon={ListTodo}
                                 title="我的待办"
                                 description="处理已保存且未完成的任务，可继续推进、回退步骤或删除。"
                                 meta={summary ? `${summary.metrics.pendingTodoTotal} 个待办` : "加载中..."}
-                                onClick={() => setActiveWorkbenchTab("tasks")}
+                                onClick={() => navigate(paths.workbench.tasks)}
                               />
                               <WorkbenchFeatureCard
                                 icon={History}
                                 title="任务记录"
                                 description="查看已完成任务与交付结果，仅支持只读查看。"
                                 meta={summary ? `${recentRuns.length} 个最近完成` : "加载中..."}
-                                onClick={() => setActiveWorkbenchTab("tasks")}
+                                onClick={() => navigate(paths.workbench.tasks)}
                               />
                             </div>
                           </section>
@@ -804,7 +653,7 @@ export function WorkbenchShell() {
                             ) : (
                               <div className="space-y-2">
                                 {recentRuns.slice(0, 4).map((record) => (
-                                  <RecentRunListItem key={record.id} record={record} onOpen={() => void handleOpenRun(record.id)} />
+                                  <RecentRunListItem key={record.id} record={record} onOpen={() => navigate(paths.workbench.run(record.id))} />
                                 ))}
                               </div>
                             )}
@@ -821,8 +670,8 @@ export function WorkbenchShell() {
                               <Search className="h-[18px] w-[18px]" aria-hidden="true" />
                               <span className="sr-only">搜索流程</span>
                               <input
-                                value={availableKeywordInput}
-                                onChange={(event) => setAvailableKeywordInput(event.target.value)}
+                                value={availableKeywordDraft}
+                                onChange={(event) => setAvailableKeywordDraft(event.target.value)}
                                 onKeyDown={(event) => {
                                   if (event.key === "Enter") handleSubmitKeyword();
                                 }}
@@ -907,7 +756,7 @@ export function WorkbenchShell() {
                               total={availableTotal}
                               pageSize={AVAILABLE_PAGE_SIZE}
                               showSizeChanger={false}
-                              onChange={(page) => setAvailablePage(page)}
+                                onChange={(page) => updateSearchParam("page", String(page))}
                             />
                           </div>
                         ) : null}
@@ -933,7 +782,7 @@ export function WorkbenchShell() {
                                 <ActiveTaskListItem
                                   key={record.id}
                                   record={record}
-                                  onOpen={() => void handleOpenRun(record.id)}
+                                  onOpen={() => navigate(paths.workbench.run(record.id))}
                                   onDelete={() => void handleDeleteRun(record.id)}
                                 />
                               ))}
@@ -947,7 +796,7 @@ export function WorkbenchShell() {
                                 total={activeTasksTotal}
                                 pageSize={TASK_RUN_PAGE_SIZE}
                                 showSizeChanger={false}
-                                onChange={(page) => setActiveTasksPage(page)}
+                                onChange={(page) => updateSearchParam("activePage", String(page))}
                               />
                             </div>
                           ) : null}
@@ -970,7 +819,7 @@ export function WorkbenchShell() {
                                 <TaskRunListItem
                                   key={record.id}
                                   record={record}
-                                  onOpen={() => void handleOpenRun(record.id)}
+                                  onOpen={() => navigate(paths.workbench.run(record.id))}
                                 />
                               ))}
                             </div>
@@ -983,7 +832,7 @@ export function WorkbenchShell() {
                                 total={taskRunsTotal}
                                 pageSize={TASK_RUN_PAGE_SIZE}
                                 showSizeChanger={false}
-                                onChange={(page) => setTaskRunsPage(page)}
+                                onChange={(page) => updateSearchParam("historyPage", String(page))}
                               />
                             </div>
                           ) : null}
@@ -991,29 +840,17 @@ export function WorkbenchShell() {
                       </section>
                     ) : null}
 
-                  </>
-                )}
-                <WorkflowLaunchDrawer
-                  workflow={workflowDrawer}
-                  rootClassName={isDarkMode ? "agent-admin-drawer agent-admin-drawer--dark" : "agent-admin-drawer"}
-                  onClose={() => setWorkflowDrawer(null)}
-                  onLaunch={handleLaunchTask}
-                  launching={creatingWorkflowId === workflowDrawer?.id}
-                />
-            </SurfacePageLayout>
-            )
-          ) : null}
-
-          {activeSurface === "designer" ? <WorkflowDraftsPage /> : null}
-
-          {activeSurface === "assets" ? <AssetsPage /> : null}
-
-          {activeSurface === "tenant" ? <TenantManagementPage /> : null}
-
-          {activeSurface === "system" ? <SystemManagementPage /> : null}
-        </section>
-      </div>
-    </main>
+          </>
+        )}
+        <WorkflowLaunchDrawer
+          workflow={workflowDrawer}
+          rootClassName={isDarkMode ? "agent-admin-drawer agent-admin-drawer--dark" : "agent-admin-drawer"}
+          onClose={() => setWorkflowDrawer(null)}
+          onLaunch={handleLaunchTask}
+          launching={creatingWorkflowId === workflowDrawer?.id}
+        />
+      </SurfacePageLayout>
+    </>
   );
 }
 

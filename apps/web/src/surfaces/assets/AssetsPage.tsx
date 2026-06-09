@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import type { ReactNode } from "react";
 import { ArrowRight, Bot, Boxes, BrainCircuit, CheckCircle2, ChevronDown, CircleAlert, Clock, Edit3, Eye, FileText, Hash, Library, PlusCircle, RotateCcw, Save, Search, Send, ShieldCheck, Tag, Trash2, UserRoundCog, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Empty, Pagination, Segmented, Select, Spin, message, Drawer } from "antd";
 import { SurfacePageLayout } from "../../components/workbench/SurfacePageLayout";
 import { AgentumApiError, assetApi } from "../../services/apiClient";
+import { paths } from "../../routes/paths";
 import { useAuthStore } from "../../stores/authStore";
 import type { AccessScope, AssetSummary, AssetType, CreatableAssetType, CreateMyAssetRequest, MyAssetDetail, MyAssetRow, ShareableMemberRow, SystemCapabilityAssetRow, UpdateMyAssetRequest } from "../../types/asset";
 
@@ -73,6 +75,17 @@ const adminSelectClassNames = { popup: { root: "agent-select-dropdown agent-admi
 const adminSelectSuffixIcon = <ChevronDown className="h-[18px] w-[18px] text-[var(--color-text-tertiary)]" aria-hidden="true" />;
 
 export function AssetsPage() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const activeTab = useMemo<AssetTab>(() => {
+    if (location.pathname.startsWith(paths.assets.open)) {
+      return "system";
+    }
+    if (location.pathname.startsWith(paths.assets.mine)) {
+      return "mine";
+    }
+    return "overview";
+  }, [location.pathname]);
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
   const themeMode = useAuthStore((s) => s.themeMode);
@@ -81,8 +94,6 @@ export function AssetsPage() {
 
   const [systemDetailOpen, setSystemDetailOpen] = useState(false);
   const [selectedSystemAsset, setSelectedSystemAsset] = useState<SystemCapabilityAssetRow | null>(null);
-
-  const [activeTab, setActiveTab] = useState<AssetTab>("overview");
   const [loading, setLoading] = useState(false);
   const [summary, setSummary] = useState<AssetSummary | null>(null);
   const [systemAssets, setSystemAssets] = useState<SystemCapabilityAssetRow[]>([]);
@@ -321,7 +332,7 @@ export function AssetsPage() {
       setCreateOpen(false);
       setDraft({ assetType: "prompt_template", name: "", version: "v1", description: "", riskLevel: "low", readScope: "self", editScope: "self", config: { promptContent: "" } });
       await Promise.all([loadSummary(), loadMyAssets(1, minePage.size, keyword)]);
-      setActiveTab("mine");
+      navigate(paths.assets.mine);
     } catch (error) {
       handleApiError(error, "创建能力草稿失败");
     } finally {
@@ -536,7 +547,11 @@ export function AssetsPage() {
             <Segmented
               className="login-portal-segmented login-portal-segmented--business system-mgmt-segmented"
               value={activeTab}
-              onChange={(value) => setActiveTab(value as AssetTab)}
+              onChange={(value) => {
+                if (value === "overview") navigate(paths.assets.root);
+                else if (value === "system") navigate(paths.assets.open);
+                else navigate(paths.assets.mine);
+              }}
               options={tabSegmentedOptions}
             />
           </div>
@@ -553,11 +568,11 @@ export function AssetsPage() {
               systemAssets={assignedSystemAssets}
               myAssets={myAssets}
               draftAssets={draftAssets}
-              onOpenSystem={() => setActiveTab("system")}
-              onOpenMine={() => setActiveTab("mine")}
+              onOpenSystem={() => navigate(paths.assets.open)}
+              onOpenMine={() => navigate(paths.assets.mine)}
               onOpenDrafts={() => {
                 setMineStatusFilter("draft");
-                setActiveTab("mine");
+                navigate(paths.assets.mine);
               }}
               onCreateDraft={() => setCreateOpen(true)}
               onOpenSystemAsset={(asset) => {

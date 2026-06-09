@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   AlertCircle,
   ArrowRight,
@@ -40,7 +41,7 @@ import type {
   WorkflowStatus,
   CollaborationAccessScope,
 } from "../../types/workflow-contract";
-import { WorkflowEditorPage } from "./WorkflowEditorPage";
+import { parsePositiveInt, paths } from "../../routes/paths";
 
 // 工作流草稿列表是设计态入口，不等同于运行实例；发布后需要生成不可变 WorkflowVersion。
 export type WorkflowDraft = WorkflowDraftRow;
@@ -89,13 +90,27 @@ function formatPaginationTotal(count: number, range: [number, number], pageSize:
 }
 
 export function WorkflowDraftsPage() {
-  // 草稿列表已接入工作流草稿 API；编辑态改为阶段积木编排，运行实例会在后续独立建模。
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = useMemo<WorkflowDesignerTab>(() => {
+    if (location.pathname.startsWith(paths.designer.shared)) {
+      return "all";
+    }
+    if (location.pathname.startsWith(paths.designer.mine)) {
+      return "mine";
+    }
+    return "overview";
+  }, [location.pathname]);
+  const page = parsePositiveInt(searchParams.get("page"), 1);
+  const pageSize = parsePositiveInt(searchParams.get("size"), 8);
+  const searchValue = searchParams.get("q") ?? "";
+  const workflowStatusFilter = (searchParams.get("status") as WorkflowStatusFilter | null) ?? "all";
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
   const themeMode = useAuthStore((s) => s.themeMode);
   const [messageApi, messageContextHolder] = message.useMessage();
   const [workflows, setWorkflows] = useState<WorkflowDraft[]>([]);
-  const [searchValue, setSearchValue] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [draftName, setDraftName] = useState("");
   const [draftDescription, setDraftDescription] = useState("");
@@ -106,10 +121,7 @@ export function WorkflowDraftsPage() {
     editUserIds: [] as string[],
   });
   const [shareableMembers, setShareableMembers] = useState<WorkflowShareableMemberRow[]>([]);
-  const [editingWorkflow, setEditingWorkflow] = useState<WorkflowDraft | null>(null);
   const [loading, setLoading] = useState(false);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(8);
   const [total, setTotal] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [validatingWorkflowId, setValidatingWorkflowId] = useState("");
@@ -119,7 +131,6 @@ export function WorkflowDraftsPage() {
   } | null>(null);
   const [publishingWorkflowId, setPublishingWorkflowId] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<WorkflowDraft | null>(null);
-  const [activeTab, setActiveTab] = useState<WorkflowDesignerTab>("overview");
   const [detailWorkflow, setDetailWorkflow] = useState<WorkflowDraft | null>(null);
   const [drawerDetail, setDrawerDetail] = useState<WorkflowDraftDetail | null>(null);
   const [drawerDetailLoading, setDrawerDetailLoading] = useState(false);
@@ -131,7 +142,21 @@ export function WorkflowDraftsPage() {
     readUserIds: [] as string[],
     editUserIds: [] as string[],
   });
-  const [workflowStatusFilter, setWorkflowStatusFilter] = useState<WorkflowStatusFilter>("all");
+  const [searchDraft, setSearchDraft] = useState(searchValue);
+
+  function updateSearchParams(next: Record<string, string | null>, replace = false) {
+    setSearchParams((current) => {
+      const params = new URLSearchParams(current);
+      Object.entries(next).forEach(([key, value]) => {
+        if (!value) {
+          params.delete(key);
+        } else {
+          params.set(key, value);
+        }
+      });
+      return params;
+    }, { replace });
+  }
 
   const currentUserId = user?.id ?? "";
   const currentScope: WorkflowListScope = activeTab === "mine" ? "mine" : activeTab === "all" ? "shared" : "all";
@@ -152,8 +177,6 @@ export function WorkflowDraftsPage() {
     try {
       const result = await workflowApi.listDrafts(user.tenantId, token, nextPage, nextPageSize, keyword, scope, status);
       setWorkflows(result.items);
-      setPage(result.page);
-      setPageSize(result.size);
       setTotal(result.total);
     } catch (error) {
       console.warn("[workflow] 工作流草稿加载失败", getWorkflowErrorContext(error, user.tenantId));
@@ -173,8 +196,12 @@ export function WorkflowDraftsPage() {
   }, [token, user?.tenantId]);
 
   useEffect(() => {
-    void loadDrafts(1, searchValue, pageSize, currentScope);
-  }, [loadDrafts]);
+    setSearchDraft(searchValue);
+  }, [searchValue]);
+
+  useEffect(() => {
+    void loadDrafts(page, searchValue, pageSize, currentScope, workflowStatusFilter);
+  }, [page, pageSize, searchValue, currentScope, workflowStatusFilter, loadDrafts]);
 
   useEffect(() => {
     if (!detailWorkflow) {
@@ -443,36 +470,27 @@ export function WorkflowDraftsPage() {
   }
 
   function resetWorkflowFilters() {
-    setSearchValue("");
-    setWorkflowStatusFilter("all");
-    setPage(1);
+    updateSearchParams({ q: null, status: null, page: "1" });
   }
 
   function handleSwitchTab(nextTab: WorkflowDesignerTab) {
-    if (nextTab === "all" || nextTab === "mine") {
-      resetWorkflowFilters();
+    if (nextTab === "overview") {
+      navigate(paths.designer.root);
+      return;
     }
-    setActiveTab(nextTab);
+    if (nextTab === "all") {
+      navigate(`${paths.designer.shared}?page=1`);
+      return;
+    }
+    navigate(`${paths.designer.mine}?page=1`);
   }
 
   function handleOpenPublishGovernance() {
-    setSearchValue("");
-    setWorkflowStatusFilter("review");
-    setPage(1);
-    setActiveTab("mine");
+    navigate(`${paths.designer.mine}?status=review&page=1`);
   }
 
-  if (editingWorkflow) {
-    return (
-      <WorkflowEditorPage
-        workflow={editingWorkflow}
-        onBack={() => setEditingWorkflow(null)}
-        onDraftSaved={(draft) => {
-          setEditingWorkflow(draft);
-          setWorkflows((currentWorkflows) => currentWorkflows.map((item) => item.id === draft.id ? draft : item));
-        }}
-      />
-    );
+  function openWorkflowEditor(workflow: WorkflowDraft) {
+    navigate(paths.designer.workflow(workflow.id));
   }
 
   return (
@@ -574,14 +592,13 @@ export function WorkflowDraftsPage() {
                   <Search className="h-[18px] w-[18px]" aria-hidden="true" />
                   <span className="sr-only">搜索工作流</span>
                   <input
-                    value={searchValue}
+                    value={searchDraft}
                     onChange={(event) => {
-                      setSearchValue(event.target.value);
-                      setPage(1);
+                      setSearchDraft(event.target.value);
                     }}
                     onKeyDown={(event) => {
                       if (event.key === "Enter") {
-                        void loadDrafts(1, searchValue, pageSize, currentScope, workflowStatusFilter);
+                        updateSearchParams({ q: searchDraft.trim() || null, page: "1" });
                       }
                     }}
                     placeholder="搜索名称或说明"
@@ -593,7 +610,7 @@ export function WorkflowDraftsPage() {
                   suffixIcon={workflowSelectSuffixIcon}
                   value={workflowStatusFilter}
                   options={workflowStatusOptions}
-                  onChange={(value) => setWorkflowStatusFilter(value as WorkflowStatusFilter)}
+                  onChange={(value) => updateSearchParams({ status: value === "all" ? null : value, page: "1" })}
                 />
                 <button type="button" className="sys-btn sys-btn--default" onClick={() => void loadDrafts(1, searchValue, pageSize, currentScope, workflowStatusFilter)}>
                   <Search size={18} aria-hidden="true" />
@@ -648,8 +665,12 @@ export function WorkflowDraftsPage() {
                   pageSizeOptions={["8", "16", "32"]}
                   showTotal={(count, range) => formatPaginationTotal(count, range, pageSize)}
                   disabled={loading}
-                  onChange={(nextPage, nextPageSize) => void loadDrafts(nextPage, searchValue, nextPageSize, currentScope, workflowStatusFilter)}
-                  onShowSizeChange={(nextPage, nextPageSize) => void loadDrafts(nextPage, searchValue, nextPageSize, currentScope, workflowStatusFilter)}
+                  onChange={(nextPage, nextPageSize) => {
+                    updateSearchParams({ page: String(nextPage), size: String(nextPageSize) });
+                  }}
+                  onShowSizeChange={(nextPage, nextPageSize) => {
+                    updateSearchParams({ page: String(nextPage), size: String(nextPageSize) });
+                  }}
                 />
               </div>
             ) : null}
@@ -780,7 +801,7 @@ export function WorkflowDraftsPage() {
                     <ListChecks size={14} aria-hidden="true" />
                     {validatingWorkflowId === detailWorkflow.id ? "校验中" : "发布校验"}
                   </button>
-                  <button type="button" className="sys-btn sys-btn--primary sys-btn--sm" onClick={() => { setEditingWorkflow(detailWorkflow); setDetailWorkflow(null); }}>
+                  <button type="button" className="sys-btn sys-btn--primary sys-btn--sm" onClick={() => { openWorkflowEditor(detailWorkflow); setDetailWorkflow(null); }}>
                     <PanelRightOpen size={14} aria-hidden="true" />
                     进入设计
                   </button>

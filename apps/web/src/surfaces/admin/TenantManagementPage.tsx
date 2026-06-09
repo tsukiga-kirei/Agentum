@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Empty, Segmented, Select, message, Pagination, Drawer } from "antd";
 import {
   AlertTriangle,
@@ -24,6 +25,7 @@ import {
   X,
 } from "lucide-react";
 import { SurfacePageLayout } from "../../components/workbench/SurfacePageLayout";
+import { paths } from "../../routes/paths";
 import { AgentumApiError, organizationApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import { isValidUsername, usernameRuleMessage } from "../../utils/username";
@@ -193,8 +195,17 @@ function AdminPagination({
 }
 
 export function TenantManagementPage() {
-  // 租户管理页按租户管理员的日常任务组织展示，动作码只作为后端策略标识露出在次级文本中。
-  const [activeTab, setActiveTab] = useState<TenantManagementTabKey>("organization");
+  const navigate = useNavigate();
+  const location = useLocation();
+  const activeTab = useMemo<TenantManagementTabKey>(() => {
+    if (location.pathname.startsWith(paths.tenant.roles)) {
+      return "roles";
+    }
+    if (location.pathname.startsWith(paths.tenant.resources)) {
+      return "resources";
+    }
+    return "organization";
+  }, [location.pathname]);
   const user = useAuthStore((s) => s.user);
   const token = useAuthStore((s) => s.token);
   const themeMode = useAuthStore((s) => s.themeMode);
@@ -833,7 +844,11 @@ export function TenantManagementPage() {
             <Segmented<TenantManagementTabKey>
               aria-label="租户管理模块"
               value={activeTab}
-              onChange={(key) => setActiveTab(key as TenantManagementTabKey)}
+              onChange={(key) => {
+                if (key === "organization") navigate(paths.tenant.organization);
+                else if (key === "roles") navigate(paths.tenant.roles);
+                else navigate(paths.tenant.resources);
+              }}
               options={tabSegmentedOptions}
               className="login-portal-segmented login-portal-segmented--tenant_admin system-mgmt-segmented"
             />

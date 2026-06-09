@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   Boxes,
   Building2,
@@ -30,6 +31,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { Empty, Segmented, Spin, message, Drawer, Pagination } from "antd";
 import { SurfacePageLayout } from "../../components/workbench/SurfacePageLayout";
+import { paths } from "../../routes/paths";
 import { AgentumApiError, organizationApi, systemApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import type { OrganizationMembership, TenantOrganizationOverview } from "../../types/organization";
@@ -298,12 +300,33 @@ function AdminPagination({
 
 // 系统管理：系统管理员默认入口
 export function SystemManagementPage() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const section = useMemo<SystemSection>(() => {
+    if (location.pathname.startsWith(paths.system.tenants)) {
+      return "tenants";
+    }
+    if (location.pathname.startsWith(paths.system.models)) {
+      return "models";
+    }
+    if (location.pathname.startsWith(paths.system.capabilities)) {
+      return "capabilities";
+    }
+    return "overview";
+  }, [location.pathname]);
+
+  function navigateSection(next: SystemSection) {
+    if (next === "overview") navigate(paths.system.overview);
+    else if (next === "tenants") navigate(paths.system.tenants);
+    else if (next === "models") navigate(paths.system.models);
+    else navigate(paths.system.capabilities);
+  }
+
   const token = useAuthStore((s) => s.token);
   const themeMode = useAuthStore((s) => s.themeMode);
   const [messageApi, messageContextHolder] = message.useMessage();
   const drawerRootClassName = themeMode === "dark" ? "agent-admin-drawer agent-admin-drawer--dark" : "agent-admin-drawer";
 
-  const [section, setSection] = useState<SystemSection>("overview");
   const [loading, setLoading] = useState(false);
 
   const [summary, setSummary] = useState<SystemSummary | null>(null);
@@ -1044,7 +1067,7 @@ export function SystemManagementPage() {
               <Segmented<SystemSection>
                 aria-label="系统管理模块"
                 value={section}
-                onChange={(key) => setSection(key as SystemSection)}
+                onChange={(key) => navigateSection(key as SystemSection)}
                 options={moduleSegmentedOptions}
                 className="login-portal-segmented login-portal-segmented--system_admin system-mgmt-segmented"
               />
@@ -1081,7 +1104,7 @@ export function SystemManagementPage() {
                       </div>
                     ) : (<>
                       {previewTenants.map(t=>(
-                        <div key={t.id} className="sys-preview-item" style={{cursor:"pointer"}} onClick={()=>{setSection("tenants");setSelectedTenant(t);setTenantDrawerOpen(true);}}>
+                        <div key={t.id} className="sys-preview-item" style={{cursor:"pointer"}} onClick={()=>{navigateSection("tenants");setSelectedTenant(t);setTenantDrawerOpen(true);}}>
                           <div className="sys-preview-item-left">
                             <div className="sys-preview-item-icon sys-card-avatar--tenant"><Building2 size={16}/></div>
                             <div><div className="sys-preview-item-name">{t.name}</div><div className="sys-preview-item-sub">{t.code}</div></div>
@@ -1089,7 +1112,7 @@ export function SystemManagementPage() {
                           <div className={`sys-status sys-status--${t.status==='active'?'active':'inactive'}`}><span className="sys-status-dot"/>{t.status==='active'?'运行中':'已停用'}</div>
                         </div>
                       ))}
-                      {(summary?.tenantTotal ?? 0)>4&&<button className="sys-btn sys-btn--link" onClick={()=>setSection("tenants")} style={{marginTop:8}}>查看全部 {summary?.tenantTotal ?? 0} 个租户 →</button>}
+                      {(summary?.tenantTotal ?? 0)>4&&<button className="sys-btn sys-btn--link" onClick={()=>navigateSection("tenants")} style={{marginTop:8}}>查看全部 {summary?.tenantTotal ?? 0} 个租户 →</button>}
                     </>)}
                   </div>
                   <div className={`sys-preview-card${previewModelProviders.length === 0 ? " sys-preview-card--empty" : ""}`}>
@@ -1101,7 +1124,7 @@ export function SystemManagementPage() {
                     ) : (<>
                       {previewModelProviders.map(m=>(
                         <div key={m.id} className="sys-preview-item" style={{cursor:"pointer"}} onClick={()=>{
-                          setSection("models");
+                          navigateSection("models");
                           openModelModal(m);
                         }}>
                           <div className="sys-preview-item-left">
@@ -1114,7 +1137,7 @@ export function SystemManagementPage() {
                           </CardStatusStack>
                         </div>
                       ))}
-                      {(summary?.modelProviderTotal ?? 0)>4&&<button className="sys-btn sys-btn--link" onClick={()=>setSection("models")} style={{marginTop:8}}>查看全部 {summary?.modelProviderTotal ?? 0} 个供应商 →</button>}
+                      {(summary?.modelProviderTotal ?? 0)>4&&<button className="sys-btn sys-btn--link" onClick={()=>navigateSection("models")} style={{marginTop:8}}>查看全部 {summary?.modelProviderTotal ?? 0} 个供应商 →</button>}
                     </>)}
                   </div>
                   <div className={`sys-preview-card${previewCapabilities.length === 0 ? " sys-preview-card--empty" : ""}`}>
@@ -1126,7 +1149,7 @@ export function SystemManagementPage() {
                     ) : (<>
                       {previewCapabilities.map(c=>(
                         <div key={c.id} className="sys-preview-item" style={{cursor:"pointer"}} onClick={()=>{
-                          setSection("capabilities");
+                          navigateSection("capabilities");
                           openCapabilityModal(c);
                         }}>
                           <div className="sys-preview-item-left">
@@ -1136,7 +1159,7 @@ export function SystemManagementPage() {
                           <RiskTag level={c.riskLevel}/>
                         </div>
                       ))}
-                      {(summary?.systemCapabilityTotal ?? 0)>4&&<button className="sys-btn sys-btn--link" onClick={()=>setSection("capabilities")} style={{marginTop:8}}>查看全部 {summary?.systemCapabilityTotal ?? 0} 项能力 →</button>}
+                      {(summary?.systemCapabilityTotal ?? 0)>4&&<button className="sys-btn sys-btn--link" onClick={()=>navigateSection("capabilities")} style={{marginTop:8}}>查看全部 {summary?.systemCapabilityTotal ?? 0} 项能力 →</button>}
                     </>)}
                   </div>
                 </div>
