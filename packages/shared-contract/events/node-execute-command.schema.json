@@ -1,0 +1,66 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "NodeExecuteCommand",
+  "description": "RabbitMQ 消息：触发单个工作流节点执行（agent / parallel_group / delivery 等）。",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "jobId",
+    "tenantId",
+    "runId",
+    "nodeRunId",
+    "nodeType",
+    "operatorUserId",
+    "idempotencyKey",
+    "attempt",
+    "enqueuedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "jobId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tenantId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "runId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "nodeRunId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "nodeType": {
+      "type": "string",
+      "description": "与 workflow_node_runs.node_type 一致，如 agent、parallel_group、delivery"
+    },
+    "operatorUserId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "requestId": {
+      "type": "string",
+      "maxLength": 64
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "maxLength": 200,
+      "description": "建议格式 runId:nodeRunId:attempt"
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "enqueuedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false
+}

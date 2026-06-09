@@ -507,6 +507,12 @@ SSE 事件目前包括：
 - Worker 异步长任务、复杂文档生成
 - 完整运行审计独立页面（当前工作台只做业务处理视图）
 
+### 13.3 异步执行演进（设计中）
+
+当前 `@Async` + 内存 SSE 在单实例下可用，但多实例、进程重启与页面重进仍存在 stale `running` 与流式丢失风险。目标方案为 **RabbitMQ 执行节点作业 + Redis Stream 进度回放 + PostgreSQL 事实源**，分阶段落地，并保留 `inline` 模式兼容本地开发。
+
+详见：[运行态异步执行设计（MQ + Redis）](./runtime-async-execution-design.md)
+
 ---
 
 ## 14. 关键代码索引

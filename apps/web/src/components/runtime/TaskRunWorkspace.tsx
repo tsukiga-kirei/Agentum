@@ -273,9 +273,11 @@ export function TaskRunWorkspace({
   }, [isFlowCompleted, activeRunTab]);
 
   const initialAutoStartRef = useRef(false);
+  const [isWaitingBackendProgress, setIsWaitingBackendProgress] = useState(false);
 
   useEffect(() => {
     initialAutoStartRef.current = false;
+    setIsWaitingBackendProgress(false);
   }, [runDetail.id]);
 
   // 智能体/多智能体/交付执行完成后切到「当前处理」，展示结果与「确认并执行下一步」。
@@ -290,6 +292,52 @@ export function TaskRunWorkspace({
       setActiveRunTab("current");
     }
   }, [activeStep.nodeRunId, activeStep.state, activeStep.kind, isFlowCompleted, runDetail.readOnly]);
+
+  // 刷新后节点仍为 running：只重连 SSE 并轮询 DB，不自动再次 advance（避免重复调模型或误断 SSE）。
+  useEffect(() => {
+    if (runDetail.readOnly || isAdvancing || streamInterrupted) {
+      return;
+    }
+    if (activeStep.state !== "running") {
+      setIsWaitingBackendProgress(false);
+      return;
+    }
+    if (activeStep.kind !== "agent" && activeStep.kind !== "multiAgent") {
+      return;
+    }
+    if (isLiveExecuting) {
+      setIsWaitingBackendProgress(false);
+      return;
+    }
+
+    setIsWaitingBackendProgress(true);
+    void stream.ensureConnected().catch((error: unknown) => {
+      console.warn("恢复运行流连接失败", error);
+    });
+
+    let cancelled = false;
+    const poll = window.setInterval(() => {
+      if (cancelled) {
+        return;
+      }
+      void reloadRunDetail();
+    }, 4000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(poll);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    runDetail.id,
+    runDetail.readOnly,
+    activeStep.nodeRunId,
+    activeStep.state,
+    activeStep.kind,
+    isAdvancing,
+    streamInterrupted,
+    isLiveExecuting,
+  ]);
 
   // 仅在首次进入任务且当前步骤为待执行智能体时自动启动；完成后不再因下一步 pending 而链式推进。
   useEffect(() => {
@@ -508,14 +556,27 @@ export function TaskRunWorkspace({
     setStreamInterrupted(false);
     setAdvanceError(null);
     try {
+      await stream.ensureConnected();
+      // 节点仍为 running 时仅重连 SSE，等待后台继续推送；只有用户明确「重新执行」才再次 advance。
       if (activeStep.state === "running") {
-        await stream.ensureConnected();
+        setIsWaitingBackendProgress(true);
         await reloadRunDetail();
         return;
       }
       await handleAdvanceStep();
     } catch (error: unknown) {
       console.error("重新开始执行失败", error);
+    }
+  }
+
+  async function handleForceReExecuteStep() {
+    setStreamInterrupted(false);
+    setAdvanceError(null);
+    setIsWaitingBackendProgress(false);
+    try {
+      await handleAdvanceStep();
+    } catch (error: unknown) {
+      console.error("重新执行当前节点失败", error);
     }
   }
 
@@ -803,6 +864,7 @@ export function TaskRunWorkspace({
               isStreaming={isLiveExecuting}
               isAdvancing={isAdvancing}
               streamInterrupted={streamInterrupted}
+              isWaitingBackendProgress={isWaitingBackendProgress}
               isRunCompleted={isFlowCompleted}
               isRunFailed={runDetail.state === "failed" || activeStep.state === "failed"}
               readOnly={runDetail.readOnly}
@@ -815,6 +877,7 @@ export function TaskRunWorkspace({
               onBack={onBack}
               onInterrupt={handleInterruptStream}
               onRestartStream={handleRestartStream}
+              onForceReExecute={handleForceReExecuteStep}
             />
           )}
         </section>
@@ -1667,6 +1730,14 @@ async function waitForAdvanceResult(options: WaitForAdvanceResultOptions): Promi
     const failedNode = updated.nodes.find((node) => node.state === "failed");
     if (failedNode) {
       return;
+    }
+    // 重复 advance 或刷新后重连：后台仍在执行时节点保持 running，不应等到超时。
+    if (attempt >= 1) {
+      const stillRunning = updated.nodes.some((node) => node.state === "running");
+      const hasTerminalEvent = newEvents.some((event) => terminalEvents.has(event.type));
+      if (stillRunning && !hasTerminalEvent) {
+        return;
+      }
     }
     if (updated.progressPercent > progressBefore || updated.state !== runStateBefore) {
       return;

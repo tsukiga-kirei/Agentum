@@ -8,6 +8,7 @@ interface StepActionBarProps {
   isStreaming: boolean;
   isAdvancing?: boolean;
   streamInterrupted?: boolean;
+  isWaitingBackendProgress?: boolean;
   isRunCompleted: boolean;
   isRunFailed: boolean;
   readOnly: boolean;
@@ -20,6 +21,7 @@ interface StepActionBarProps {
   onBack: () => void;
   onInterrupt?: () => void;
   onRestartStream?: () => void;
+  onForceReExecute?: () => void;
 }
 
 export function StepActionBar({
@@ -27,6 +29,7 @@ export function StepActionBar({
   isStreaming,
   isAdvancing = false,
   streamInterrupted = false,
+  isWaitingBackendProgress = false,
   isRunCompleted,
   isRunFailed,
   readOnly,
@@ -39,6 +42,7 @@ export function StepActionBar({
   onBack,
   onInterrupt,
   onRestartStream,
+  onForceReExecute,
 }: StepActionBarProps) {
   
   if (readOnly) {
@@ -102,6 +106,41 @@ export function StepActionBar({
         >
           <RotateCw size={14} /> {restartLabel}
         </button>
+      </div>
+    );
+  }
+
+  // 3b. 节点 running 但页面尚未收到流式：多为刷新后重连，后台可能仍在执行。
+  if (
+    activeStep.state === "running"
+    && (activeStep.kind === "agent" || activeStep.kind === "multiAgent")
+    && !isStreaming
+    && !isAdvancing
+  ) {
+    const waitingHint = isWaitingBackendProgress
+      ? "后台可能仍在执行，已重连流式通道并同步状态；流式内容会在收到推送后恢复显示。"
+      : "当前步骤显示为执行中，正在等待流式输出。";
+    return (
+      <div className="step-action-bar flex justify-between items-center p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
+        <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
+          {waitingHint}
+        </span>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            className="sys-btn sys-btn--default flex items-center gap-2 text-xs"
+            onClick={onRestartStream}
+          >
+            <RotateCw size={14} /> 重新连接
+          </button>
+          <button
+            type="button"
+            className="sys-btn sys-btn--primary flex items-center gap-2 text-xs"
+            onClick={onForceReExecute ?? onRestartStream}
+          >
+            <Play size={14} fill="currentColor" /> 重新执行
+          </button>
+        </div>
       </div>
     );
   }

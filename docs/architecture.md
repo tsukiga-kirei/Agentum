@@ -299,6 +299,10 @@ pending -> running -> paused -> resumed -> running -> completed
 - 管理员介入：取消、重试、补偿和故障处理，来自运行监控。
 - 审计查看：执行链路、节点输入输出快照、工具调用、审核和交付记录，只读展示，不修改运行状态。
 
+**异步执行演进（阶段二目标）**
+
+当前第一版在 API 进程内以 `@Async` 同步调用模型并通过内存 SSE 推送进度。目标架构将节点执行投递到 RabbitMQ，由 Runtime Worker 消费；Redis Stream 承载热进度与 SSE 回放；PostgreSQL 仍为事实源。支持 `inline` / `async` 双模式切换。详见 [运行态异步执行设计](./runtime-async-execution-design.md)。
+
 ### 5.6 智能体运行时
 
 智能体运行时不是一次模型调用，而是一条可审计管线。

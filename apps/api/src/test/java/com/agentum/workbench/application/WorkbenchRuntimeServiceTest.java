@@ -255,7 +255,8 @@ class WorkbenchRuntimeServiceTest {
             workflowRuntimeExecutor,
             Clock.fixed(NOW, ZoneOffset.UTC),
             agentRuntimeService,
-            deliveryRuntimeService
+            deliveryRuntimeService,
+            new RunStreamEmitterRegistry()
         );
     }
 

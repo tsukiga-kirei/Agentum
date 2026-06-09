@@ -4,12 +4,12 @@ import com.agentum.auth.application.CurrentUserPrincipal;
 import com.agentum.shared.api.ClientDisconnectSupport;
 import com.agentum.shared.api.ApiResponse;
 import com.agentum.shared.api.RequestIds;
+import com.agentum.workbench.application.RunStreamEmitterRegistry;
 import com.agentum.workbench.application.WorkbenchAccess;
 import com.agentum.workbench.application.WorkbenchRuntimeService;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -34,14 +34,16 @@ public class RuntimeSseController {
 
     private final WorkbenchAccess workbenchAccess;
     private final WorkbenchRuntimeService workbenchRuntimeService;
-    private final Map<UUID, SseEmitter> emitters = new ConcurrentHashMap<>();
+    private final RunStreamEmitterRegistry runStreamEmitterRegistry;
 
     public RuntimeSseController(
         WorkbenchAccess workbenchAccess,
-        WorkbenchRuntimeService workbenchRuntimeService
+        WorkbenchRuntimeService workbenchRuntimeService,
+        RunStreamEmitterRegistry runStreamEmitterRegistry
     ) {
         this.workbenchAccess = workbenchAccess;
         this.workbenchRuntimeService = workbenchRuntimeService;
+        this.runStreamEmitterRegistry = runStreamEmitterRegistry;
     }
 
     /**
@@ -57,14 +59,13 @@ public class RuntimeSseController {
         log.info("用户建立 SSE 连接 tenantId={} userId={} runId={} requestId={}",
             tenantId, principal.userId(), runId, RequestIds.current());
 
-        // 同一 run 只允许保留最新连接；旧连接由客户端断开或 complete 自然结束。
-        SseEmitter oldEmitter = emitters.put(runId, createEmitter(runId));
+        SseEmitter emitter = createEmitter(runId);
+        SseEmitter oldEmitter = runStreamEmitterRegistry.register(runId, emitter);
         if (oldEmitter != null) {
             log.debug("替换已有 SSE 连接 runId={}", runId);
             closeEmitterQuietly(oldEmitter);
         }
 
-        SseEmitter emitter = emitters.get(runId);
         sendConnectedEvent(runId, emitter);
         return emitter;
     }
@@ -73,11 +74,11 @@ public class RuntimeSseController {
         SseEmitter emitter = new SseEmitter(300_000L);
         emitter.onCompletion(() -> {
             log.info("SSE 连接完成 runId={}", runId);
-            emitters.remove(runId, emitter);
+            runStreamEmitterRegistry.remove(runId, emitter);
         });
         emitter.onTimeout(() -> {
             log.warn("SSE 连接超时 runId={}", runId);
-            emitters.remove(runId, emitter);
+            runStreamEmitterRegistry.remove(runId, emitter);
         });
         emitter.onError(ex -> {
             if (ClientDisconnectSupport.isClientDisconnect(ex)) {
@@ -85,13 +86,13 @@ public class RuntimeSseController {
             } else {
                 log.warn("SSE 连接异常 runId={} message={}", runId, ex.getMessage());
             }
-            emitters.remove(runId, emitter);
+            runStreamEmitterRegistry.remove(runId, emitter);
         });
         return emitter;
     }
 
     private void sendConnectedEvent(UUID runId, SseEmitter emitter) {
-        if (emitter == null || emitters.get(runId) != emitter) {
+        if (runStreamEmitterRegistry.current(runId) != emitter) {
             return;
         }
         try {
@@ -103,7 +104,7 @@ public class RuntimeSseController {
                     "timestamp", java.time.Instant.now().toString()
                 ), MediaType.APPLICATION_JSON));
         } catch (Exception exception) {
-            emitters.remove(runId, emitter);
+            runStreamEmitterRegistry.remove(runId, emitter);
             if (ClientDisconnectSupport.isClientDisconnect(exception)) {
                 log.debug("SSE 初始推送时客户端已断开 runId={}", runId);
             } else {
@@ -132,19 +133,13 @@ public class RuntimeSseController {
         HttpServletRequest request
     ) {
         workbenchAccess.assertCanAccessWorkbench(principal, tenantId);
-        log.info("用户触发人工步进推进流程 tenantId={} userId={} runId={} requestId={}", 
+        log.info("用户触发人工步进推进流程 tenantId={} userId={} runId={} requestId={}",
             tenantId, principal.userId(), runId, RequestIds.current(request));
 
-        // 异步推进单个节点，并通过对应 SSE emitter 推送事件；若前端尚未建立 SSE，仍继续执行节点逻辑。
-        SseEmitter emitter = emitters.get(runId);
-        if (emitter == null) {
-            log.warn("推进步骤时未找到 SSE 连接 runId={} requestId={}", runId, RequestIds.current(request));
-        }
-        workbenchRuntimeService.advanceSingleStep(tenantId, principal, runId, emitter);
+        workbenchRuntimeService.advanceSingleStep(tenantId, principal, runId);
 
-        // 立即返回当前节点状态快照
         return ApiResponse.success(
-            workbenchRuntimeService.getRunDetail(tenantId, principal, runId), 
+            workbenchRuntimeService.getRunDetail(tenantId, principal, runId),
             RequestIds.current(request)
         );
     }

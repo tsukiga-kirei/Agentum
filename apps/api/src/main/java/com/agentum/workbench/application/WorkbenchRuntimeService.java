@@ -98,8 +98,9 @@ public class WorkbenchRuntimeService {
     private final Clock clock;
     private final AgentRuntimeService agentRuntimeService;
     private final DeliveryRuntimeService deliveryRuntimeService;
-    /** SSE 连接关闭后跳过后续推送，避免 cluster_agent 等事件刷屏告警。 */
-    private final ConcurrentHashMap<SseEmitter, AtomicBoolean> sseEmitterOpenStates = new ConcurrentHashMap<>();
+    private final RunStreamEmitterRegistry runStreamEmitterRegistry;
+    /** 防止同一任务并发重复推进，导致子智能体双开。 */
+    private final Set<UUID> advancingRuns = ConcurrentHashMap.newKeySet();
 
     public WorkbenchRuntimeService(
         TenantRepository tenantRepository,
@@ -117,7 +118,8 @@ public class WorkbenchRuntimeService {
         WorkflowRuntimeExecutor workflowRuntimeExecutor,
         Clock clock,
         AgentRuntimeService agentRuntimeService,
-        DeliveryRuntimeService deliveryRuntimeService
+        DeliveryRuntimeService deliveryRuntimeService,
+        RunStreamEmitterRegistry runStreamEmitterRegistry
     ) {
         this.tenantRepository = tenantRepository;
         this.workflowDefinitionRepository = workflowDefinitionRepository;
@@ -135,6 +137,7 @@ public class WorkbenchRuntimeService {
         this.clock = clock;
         this.agentRuntimeService = agentRuntimeService;
         this.deliveryRuntimeService = deliveryRuntimeService;
+        this.runStreamEmitterRegistry = runStreamEmitterRegistry;
     }
 
     @Transactional(readOnly = true)
@@ -1362,44 +1365,42 @@ public class WorkbenchRuntimeService {
     }
 
     @Async
-    public void advanceSingleStep(UUID tenantId, CurrentUserPrincipal principal, UUID runId, SseEmitter emitter) {
+    public void advanceSingleStep(UUID tenantId, CurrentUserPrincipal principal, UUID runId) {
+        if (!advancingRuns.add(runId)) {
+            // 刷新页面后前端可能再次 POST /advance；此时后台仍在执行，禁止向 SSE 发 [DONE]，
+            // 否则会误断开用户刚建立的新连接，导致页面与真实执行进度脱节。
+            log.info("任务正在推进中，跳过重复请求 runId={} userId={} requestId={}", runId, principal.userId(), RequestIds.current());
+            return;
+        }
         UUID nodeRunId = null;
         boolean nodeSucceeded = false;
-        if (emitter == null) {
-            log.warn(
-                "推进步骤时缺少 SSE 连接，将仅执行节点逻辑 runId={} userId={} requestId={}",
-                runId,
-                principal.userId(),
-                RequestIds.current()
-            );
-        }
         try {
             String nowStr = clock.instant().toString();
-            sendSseEvent(emitter, "connected", eventPayload(runId, null, nowStr, Map.of(
+            sendSseEvent(runId, "connected", eventPayload(runId, null, nowStr, Map.of(
                 "currentState", "connected"
             )));
 
             NextNodeResult nextNode = prepareNextNode(tenantId, runId, principal.userId());
 
             if (!nextNode.hasNext()) {
-                sendSseEvent(emitter, "run_completed", eventPayload(runId, null, clock.instant().toString(), Map.of(
+                sendSseEvent(runId, "run_completed", eventPayload(runId, null, clock.instant().toString(), Map.of(
                     "totalDurationMs", 0,
                     "completedNodeCount", 0
                 )));
-                sendSseEvent(emitter, "message", "[DONE]");
-                completeSseEmitter(emitter);
+                sendSseEvent(runId, "message", "[DONE]");
+                completeSseEmitter(runId);
                 return;
             }
 
             if (nextNode.paused()) {
-                sendSseEvent(emitter, "run_paused", eventPayload(runId, null, clock.instant().toString(), Map.of(
+                sendSseEvent(runId, "run_paused", eventPayload(runId, null, clock.instant().toString(), Map.of(
                     "nextNodeRunId", nextNode.nodeRunId().toString(),
                     "nextNodeName", nextNode.nodeName(),
                     "nextNodeType", nextNode.nodeType(),
                     "reason", waitingReason(nextNode.nodeType())
                 )));
-                sendSseEvent(emitter, "message", "[DONE]");
-                completeSseEmitter(emitter);
+                sendSseEvent(runId, "message", "[DONE]");
+                completeSseEmitter(runId);
                 return;
             }
 
@@ -1407,7 +1408,7 @@ public class WorkbenchRuntimeService {
             String nodeType = nextNode.nodeType();
             String nodeName = nextNode.nodeName();
 
-            sendSseEvent(emitter, "node_started", eventPayload(runId, nodeRunId, clock.instant().toString(), Map.of(
+            sendSseEvent(runId, "node_started", eventPayload(runId, nodeRunId, clock.instant().toString(), Map.of(
                 "nodeType", nodeType,
                 "nodeName", nodeName
             )));
@@ -1417,9 +1418,9 @@ public class WorkbenchRuntimeService {
 
             Map<String, Object> outputs;
             if ("agent".equals(nodeType)) {
-                outputs = executeStreamingAgent(runId, nodeRun, variables, principal.userId(), emitter);
+                outputs = executeStreamingAgent(runId, nodeRun, variables, principal.userId());
             } else if ("parallel_group".equals(nodeType)) {
-                outputs = executeStreamingParallelGroup(runId, nodeRun, variables, principal.userId(), emitter);
+                outputs = executeStreamingParallelGroup(runId, nodeRun, variables, principal.userId());
             } else if ("delivery".equals(nodeType)) {
                 WorkflowRunEntity run = workflowRunRepository.findById(runId).get();
                 outputs = deliveryRuntimeService.execute(new DeliveryRuntimeRequest(
@@ -1442,14 +1443,14 @@ public class WorkbenchRuntimeService {
             saveNodeSuccess(runId, nodeRunId, outputs, principal.userId());
             nodeSucceeded = true;
 
-            sendSseEvent(emitter, "node_completed", eventPayload(runId, nodeRunId, clock.instant().toString(), Map.of(
+            sendSseEvent(runId, "node_completed", eventPayload(runId, nodeRunId, clock.instant().toString(), Map.of(
                 "outputs", outputs
             )));
 
             List<WorkflowNodeRunEntity> allNodes = workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(runId);
             WorkflowNodeRunEntity finishedNode = workflowNodeRunRepository.findById(nodeRunId).orElse(null);
             if (finishedNode != null && requiresManualAdvance(finishedNode.getNodeType())) {
-                sendSseEvent(emitter, "run_paused", eventPayload(runId, null, clock.instant().toString(), Map.of(
+                sendSseEvent(runId, "run_paused", eventPayload(runId, null, clock.instant().toString(), Map.of(
                     "nextNodeRunId", nodeRunId.toString(),
                     "nextNodeName", nodeName,
                     "nextNodeType", nodeType,
@@ -1459,22 +1460,22 @@ public class WorkbenchRuntimeService {
                 int nextIndex = finishedNode == null ? allNodes.size() : finishedNode.getSortOrder() + 1;
                 if (nextIndex < allNodes.size()) {
                     WorkflowNodeRunEntity next = allNodes.get(nextIndex);
-                    sendSseEvent(emitter, "run_paused", eventPayload(runId, null, clock.instant().toString(), Map.of(
+                    sendSseEvent(runId, "run_paused", eventPayload(runId, null, clock.instant().toString(), Map.of(
                         "nextNodeRunId", next.getId().toString(),
                         "nextNodeName", next.getName(),
                         "nextNodeType", next.getNodeType(),
                         "reason", "等待用户点击下一步"
                     )));
                 } else {
-                    sendSseEvent(emitter, "run_completed", eventPayload(runId, null, clock.instant().toString(), Map.of(
+                    sendSseEvent(runId, "run_completed", eventPayload(runId, null, clock.instant().toString(), Map.of(
                         "totalDurationMs", 0,
                         "completedNodeCount", allNodes.size()
                     )));
                 }
             }
 
-            sendSseEvent(emitter, "message", "[DONE]");
-            completeSseEmitter(emitter);
+            sendSseEvent(runId, "message", "[DONE]");
+            completeSseEmitter(runId);
 
         } catch (ApiException e) {
             log.warn("执行流式步骤 API 异常 runId={} code={} msg={}", runId, e.getCode(), e.getMessage());
@@ -1485,12 +1486,12 @@ public class WorkbenchRuntimeService {
                     log.error("保存节点失败状态时出错 runId={} nodeRunId={} requestId={}", runId, nodeRunId, RequestIds.current(), saveException);
                 }
             }
-            sendSseEvent(emitter, "node_failed", eventPayload(runId, nodeRunId, clock.instant().toString(), Map.of(
+            sendSseEvent(runId, "node_failed", eventPayload(runId, nodeRunId, clock.instant().toString(), Map.of(
                 "errorCode", e.getCode(),
                 "errorMessage", e.getMessage()
             )));
-            sendSseEvent(emitter, "message", "[DONE]");
-            completeSseEmitter(emitter);
+            sendSseEvent(runId, "message", "[DONE]");
+            completeSseEmitter(runId);
         } catch (Exception e) {
             log.error("执行流式步骤系统异常 runId={}", runId, e);
             if (nodeRunId != null && !nodeSucceeded) {
@@ -1500,12 +1501,14 @@ public class WorkbenchRuntimeService {
                     log.error("保存节点失败状态时出错 runId={} nodeRunId={} requestId={}", runId, nodeRunId, RequestIds.current(), saveException);
                 }
             }
-            sendSseEvent(emitter, "node_failed", eventPayload(runId, nodeRunId, clock.instant().toString(), Map.of(
+            sendSseEvent(runId, "node_failed", eventPayload(runId, nodeRunId, clock.instant().toString(), Map.of(
                 "errorCode", "WORKBENCH_NODE_EXECUTION_FAILED",
                 "errorMessage", "执行异常: " + e.getMessage()
             )));
-            sendSseEvent(emitter, "message", "[DONE]");
-            completeSseEmitter(emitter);
+            sendSseEvent(runId, "message", "[DONE]");
+            completeSseEmitter(runId);
+        } finally {
+            advancingRuns.remove(runId);
         }
     }
 
@@ -1521,9 +1524,9 @@ public class WorkbenchRuntimeService {
         return variables;
     }
 
-    private Map<String, Object> executeStreamingAgent(UUID runId, WorkflowNodeRunEntity nodeRun, Map<String, Object> variables, UUID operatorUserId, SseEmitter emitter) {
+    private Map<String, Object> executeStreamingAgent(UUID runId, WorkflowNodeRunEntity nodeRun, Map<String, Object> variables, UUID operatorUserId) {
         WorkflowRunEntity run = workflowRunRepository.findById(runId).get();
-        sendSseEvent(emitter, "agent_thinking", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
+        sendSseEvent(runId, "agent_thinking", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
             "phase", "preparing",
             "message", "正在装配 Agent 工具箱与上下文..."
         )));
@@ -1542,7 +1545,7 @@ public class WorkbenchRuntimeService {
 
             @Override
             public void onPhase(String phase, String message) {
-                sendSseEvent(emitter, "agent_thinking", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
+                sendSseEvent(runId, "agent_thinking", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
                     "phase", phase,
                     "message", message
                 )));
@@ -1550,7 +1553,7 @@ public class WorkbenchRuntimeService {
 
             @Override
             public void onToolCall(String toolName, String toolType, String status, String result, long durationMs) {
-                sendSseEvent(emitter, "agent_tool_call", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
+                sendSseEvent(runId, "agent_tool_call", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
                     "toolName", toolName,
                     "toolType", toolType,
                     "status", status,
@@ -1567,7 +1570,7 @@ public class WorkbenchRuntimeService {
                 } else if (deltaContent != null && !deltaContent.isBlank()) {
                     accumulated.append(deltaContent);
                 }
-                sendSseEvent(emitter, "agent_streaming", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
+                sendSseEvent(runId, "agent_streaming", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
                     "deltaContent", deltaContent == null ? "" : deltaContent,
                     "accumulatedContent", accumulated.toString()
                 )));
@@ -1577,11 +1580,11 @@ public class WorkbenchRuntimeService {
             public void onCompleted(String answer) {
                 accumulated.setLength(0);
                 accumulated.append(answer == null ? "" : answer);
-                sendSseEvent(emitter, "agent_streaming", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
+                sendSseEvent(runId, "agent_streaming", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
                     "deltaContent", "",
                     "accumulatedContent", accumulated.toString()
                 )));
-                sendSseEvent(emitter, "agent_thinking", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
+                sendSseEvent(runId, "agent_thinking", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
                     "phase", "completed",
                     "message", "智能体已完成 final_answer。"
                 )));
@@ -1589,7 +1592,7 @@ public class WorkbenchRuntimeService {
 
             @Override
             public void onFailed(String code, String message) {
-                sendSseEvent(emitter, "agent_thinking", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
+                sendSseEvent(runId, "agent_thinking", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
                     "phase", "failed",
                     "message", "智能体执行出错: " + message
                 )));
@@ -1598,7 +1601,7 @@ public class WorkbenchRuntimeService {
     }
 
     @SuppressWarnings("unchecked")
-    private Map<String, Object> executeStreamingParallelGroup(UUID runId, WorkflowNodeRunEntity nodeRun, Map<String, Object> variables, UUID operatorUserId, SseEmitter emitter) {
+    private Map<String, Object> executeStreamingParallelGroup(UUID runId, WorkflowNodeRunEntity nodeRun, Map<String, Object> variables, UUID operatorUserId) {
         WorkflowRunEntity run = workflowRunRepository.findById(runId).get();
         String nowStr = clock.instant().toString();
 
@@ -1620,7 +1623,7 @@ public class WorkbenchRuntimeService {
             Map<String, Object> agentConfig = new LinkedHashMap<>((Map<String, Object>) rawMap);
             String agentName = stringValue(agentConfig.get("name"), "子智能体");
 
-            sendSseEvent(emitter, "cluster_agent", eventPayload(runId, nodeRun.getId(), nowStr, Map.of(
+            sendSseEvent(runId, "cluster_agent", eventPayload(runId, nodeRun.getId(), nowStr, Map.of(
                 "agentIndex", agentIndex,
                 "agentName", agentName,
                 "eventType", "started"
@@ -1645,7 +1648,7 @@ public class WorkbenchRuntimeService {
 
                 @Override
                 public void onPhase(String phase, String message) {
-                    sendSseEvent(emitter, "cluster_agent", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
+                    sendSseEvent(runId, "cluster_agent", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
                         "agentIndex", idx,
                         "agentName", name,
                         "eventType", "phase",
@@ -1656,7 +1659,7 @@ public class WorkbenchRuntimeService {
 
                 @Override
                 public void onToolCall(String toolName, String toolType, String status, String result, long durationMs) {
-                    sendSseEvent(emitter, "cluster_agent", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
+                    sendSseEvent(runId, "cluster_agent", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
                         "agentIndex", idx,
                         "agentName", name,
                         "eventType", "tool_call",
@@ -1676,7 +1679,7 @@ public class WorkbenchRuntimeService {
                     } else if (deltaContent != null && !deltaContent.isBlank()) {
                         subAccumulated.append(deltaContent);
                     }
-                    sendSseEvent(emitter, "cluster_agent", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
+                    sendSseEvent(runId, "cluster_agent", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
                         "agentIndex", idx,
                         "agentName", name,
                         "eventType", "streaming",
@@ -1689,7 +1692,7 @@ public class WorkbenchRuntimeService {
                 public void onCompleted(String answer) {
                     subAccumulated.setLength(0);
                     subAccumulated.append(answer == null ? "" : answer);
-                    sendSseEvent(emitter, "cluster_agent", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
+                    sendSseEvent(runId, "cluster_agent", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
                         "agentIndex", idx,
                         "agentName", name,
                         "eventType", "streaming",
@@ -1700,7 +1703,7 @@ public class WorkbenchRuntimeService {
 
                 @Override
                 public void onFailed(String code, String message) {
-                    sendSseEvent(emitter, "cluster_agent", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
+                    sendSseEvent(runId, "cluster_agent", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
                         "agentIndex", idx,
                         "agentName", name,
                         "eventType", "failed",
@@ -1726,7 +1729,7 @@ public class WorkbenchRuntimeService {
                     RequestIds.current(),
                     exception
                 );
-                sendSseEvent(emitter, "cluster_agent", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
+                sendSseEvent(runId, "cluster_agent", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
                     "agentIndex", idx,
                     "agentName", name,
                     "eventType", "failed",
@@ -1749,7 +1752,7 @@ public class WorkbenchRuntimeService {
                 "summary", summaryText
             ));
 
-            sendSseEvent(emitter, "cluster_agent", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
+            sendSseEvent(runId, "cluster_agent", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
                 "agentIndex", idx,
                 "agentName", name,
                 "eventType", "completed",
@@ -1767,11 +1770,15 @@ public class WorkbenchRuntimeService {
         return currentVars;
     }
 
-    private void sendSseEvent(SseEmitter emitter, String eventType, Object data) {
+    private void sendSseEvent(UUID runId, String eventType, Object data) {
+        if (runId == null) {
+            return;
+        }
+        SseEmitter emitter = runStreamEmitterRegistry.current(runId);
         if (emitter == null) {
             return;
         }
-        AtomicBoolean open = sseEmitterOpenStates.computeIfAbsent(emitter, ignored -> new AtomicBoolean(true));
+        AtomicBoolean open = runStreamEmitterRegistry.openState(emitter);
         if (!open.get()) {
             return;
         }
@@ -1781,30 +1788,32 @@ public class WorkbenchRuntimeService {
                 .data(data, org.springframework.http.MediaType.APPLICATION_JSON));
         } catch (Exception exception) {
             open.set(false);
+            runStreamEmitterRegistry.markClosed(emitter);
             if (ClientDisconnectSupport.isClientDisconnect(exception)) {
-                log.debug("SSE 连接已关闭，跳过推送 eventType={}", eventType);
+                log.debug("SSE 连接已关闭，跳过推送 eventType={} runId={}", eventType, runId);
                 return;
             }
-            log.warn("发送 SSE 事件失败 eventType={} error={}", eventType, exception.getMessage());
+            log.warn("发送 SSE 事件失败 eventType={} runId={} error={}", eventType, runId, exception.getMessage());
         }
     }
 
-    private void completeSseEmitter(SseEmitter emitter) {
+    private void completeSseEmitter(UUID runId) {
+        if (runId == null) {
+            return;
+        }
+        SseEmitter emitter = runStreamEmitterRegistry.current(runId);
         if (emitter == null) {
             return;
         }
-        AtomicBoolean open = sseEmitterOpenStates.get(emitter);
-        if (open != null) {
-            open.set(false);
-        }
+        AtomicBoolean open = runStreamEmitterRegistry.openState(emitter);
+        open.set(false);
+        runStreamEmitterRegistry.markClosed(emitter);
         try {
             emitter.complete();
         } catch (Exception exception) {
             if (!ClientDisconnectSupport.isClientDisconnect(exception)) {
-                log.debug("关闭 SSE 连接失败 message={}", exception.getMessage());
+                log.debug("关闭 SSE 连接失败 runId={} message={}", runId, exception.getMessage());
             }
-        } finally {
-            sseEmitterOpenStates.remove(emitter);
         }
     }
 
