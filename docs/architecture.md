@@ -369,7 +369,7 @@ pending -> running -> paused -> resumed -> running -> completed
 
 当前运行态已支持标准 MCP SSE 接入：系统管理登记 `sseUrl` 后，运行节点按租户能力池授权复核，通过 `initialize` / `notifications/initialized` / `tools/call` 执行工具，并将工具名、脱敏参数、结果、耗时和失败原因写入 `mcp_call_logs`。
 
-智能体节点不再由工作台层预先调用 MCP。`AgentRuntimeService` 会把当前节点可用的 Skill 与 MCP 转成模型工具声明，模型选择具体工具后，后端再执行 `SkillRuntimeService` 或 `McpRuntimeService.executeResolvedTool`，并把观察结果作为 tool message 回写到下一轮模型推理。最终输出必须通过 `final_answer` 工具提交。
+智能体节点的 MCP 由 `AgentRuntimeService` 在 ReAct 循环中处理：`McpRuntimeService.resolveMcpTools` 把当前节点可用 MCP 转成模型工具声明，模型选择具体工具后执行 `McpRuntimeService.executeResolvedTool`，观察结果作为 tool message 回写到下一轮模型推理。最终输出必须通过 `final_answer` 工具提交。
 
 ### 5.9 模型供应商模块
 
