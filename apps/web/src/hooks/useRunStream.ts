@@ -52,6 +52,11 @@ export function useRunStream(
     }
     setConnectionState("disconnected");
     setIsStreaming(false);
+    setActiveNodeInfo(null);
+    setStreamingText("");
+    setCurrentPhase(null);
+    setToolCalls([]);
+    setClusterAgents([]);
   }, []);
 
   const resolvePendingConnectors = useCallback(() => {

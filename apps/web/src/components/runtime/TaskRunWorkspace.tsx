@@ -6,7 +6,8 @@ import type {
   RuntimeNodeKind,
   RuntimeNodeField,
   RuntimeChatMessage,
-  RuntimeCapabilityItem
+  RuntimeCapabilityItem,
+  StreamEvent,
 } from "../../types/runtime-types";
 import type { WorkbenchRunDetail } from "../../types/workbench";
 import { useRunStream } from "../../hooks/useRunStream";
@@ -53,6 +54,8 @@ export function TaskRunWorkspace({
   const [runDetail, setRunDetail] = useState<WorkbenchRunDetail>(initialRun);
   const [activeRunTab, setActiveRunTab] = useState<RunWorkspaceTab>("current");
   const [selectedTraceStepIndex, setSelectedTraceStepIndex] = useState<number | null>(null);
+  const [isAdvancing, setIsAdvancing] = useState(false);
+  const [advanceError, setAdvanceError] = useState<string | null>(null);
   const processedStreamEventsRef = useRef(0);
   
   // 1. Establish SSE Connection via useRunStream hook
@@ -87,15 +90,26 @@ export function TaskRunWorkspace({
   }, [stream.events, tenantId, token, runDetail.id, onReload]);
 
   useEffect(() => {
+    processedStreamEventsRef.current = 0;
+    setAdvanceError(null);
+    stream.disconnect();
+  }, [runDetail.id, stream.disconnect]);
+
+  useEffect(() => {
     return () => {
       stream.disconnect();
     };
-  }, [runDetail.id, stream.disconnect]);
+  }, [stream.disconnect]);
 
   // Sync state if initialRun updates from parent
   useEffect(() => {
     setRunDetail(initialRun);
   }, [initialRun]);
+
+  const streamEventsRef = useRef(stream.events);
+  useEffect(() => {
+    streamEventsRef.current = stream.events;
+  }, [stream.events]);
 
   // 2. Derive preview representation from raw run detail
   const basePreview = useMemo(() => {
@@ -105,15 +119,15 @@ export function TaskRunWorkspace({
   // 3. Merge live SSE stream states into the preview steps list
   const preview = useMemo((): RuntimePreview => {
     if (!basePreview) return basePreview;
-    
-    // Find if the currently streaming node matches any step
+
+    const streamActiveNodeId = stream.activeNodeInfo?.nodeRunId;
+    const mergingLiveStep =
+      stream.isStreaming
+      && stream.connectionState === "connected"
+      && !!streamActiveNodeId;
+
     const updatedSteps = basePreview.steps.map((step) => {
-      if (
-        stream.isStreaming
-        && stream.activeNodeInfo
-        && step.nodeRunId === stream.activeNodeInfo.nodeRunId
-      ) {
-        // Build updated messages
+      if (mergingLiveStep && step.nodeRunId === streamActiveNodeId) {
         const chatMessages = [...(step.chatMessages || [])];
         if (stream.streamingText) {
           const lastMsg = chatMessages[chatMessages.length - 1];
@@ -146,13 +160,34 @@ export function TaskRunWorkspace({
 
     return {
       ...basePreview,
-      statusLabel: stream.connectionState === "connected" && stream.isStreaming ? "正在执行" : basePreview.statusLabel,
+      statusLabel: mergingLiveStep
+        ? "正在执行"
+        : runDetail.state === "paused"
+        ? "已暂停"
+        : basePreview.statusLabel,
       steps: updatedSteps,
     };
-  }, [basePreview, stream.activeNodeInfo, stream.streamingText, stream.currentPhase, stream.toolCalls, stream.isStreaming, stream.connectionState]);
+  }, [
+    basePreview,
+    stream.activeNodeInfo,
+    stream.streamingText,
+    stream.currentPhase,
+    stream.toolCalls,
+    stream.isStreaming,
+    stream.connectionState,
+    runDetail.state,
+  ]);
 
-  const currentStepIndex = resolveActiveStepIndex(preview.steps);
-  const activeStep = preview.steps[currentStepIndex] ?? preview.steps[0];
+  const backendStepIndex = resolveActiveStepIndex(preview.steps, runDetail);
+  const streamingStepIndex = stream.activeNodeInfo
+    ? preview.steps.findIndex((step) => step.nodeRunId === stream.activeNodeInfo?.nodeRunId)
+    : -1;
+  const currentStepIndex = streamingStepIndex >= 0 ? streamingStepIndex : backendStepIndex;
+  const activeStep = preview.steps[currentStepIndex] ?? preview.steps[backendStepIndex] ?? preview.steps[0];
+  const isLiveExecuting =
+    stream.isStreaming
+    && stream.connectionState === "connected"
+    && stream.activeNodeInfo?.nodeRunId === activeStep.nodeRunId;
 
   const clusterAgentsForPanel = useMemo(() => {
     if (stream.clusterAgents.length > 0) {
@@ -180,7 +215,7 @@ export function TaskRunWorkspace({
 
     const stepRunning =
       activeStep.state === "running"
-      || (stream.isStreaming && stream.activeNodeInfo?.nodeRunId === activeStep.nodeRunId);
+      || isLiveExecuting;
 
     return configAgents.map((agent, index) => ({
       index,
@@ -192,8 +227,7 @@ export function TaskRunWorkspace({
     }));
   }, [
     stream.clusterAgents,
-    stream.isStreaming,
-    stream.activeNodeInfo,
+    isLiveExecuting,
     activeStep,
   ]);
 
@@ -219,12 +253,23 @@ export function TaskRunWorkspace({
 
   // 4. Action Handlers: Advance Step
   async function handleAdvanceStep() {
+    if (isAdvancing) {
+      return;
+    }
+    setIsAdvancing(true);
+    setAdvanceError(null);
+    const eventCountBefore = stream.events.length;
     try {
       await stream.ensureConnected();
       await workbenchApi.advanceStep(tenantId, token, runDetail.id);
-    } catch (e: unknown) {
-      console.error("推进步骤失败", e);
+      await waitForAdvanceResult(eventCountBefore, streamEventsRef, reloadRunDetail);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "推进步骤失败";
+      console.error("推进步骤失败", error);
+      setAdvanceError(message);
       await reloadRunDetail();
+    } finally {
+      setIsAdvancing(false);
     }
   }
 
@@ -411,22 +456,40 @@ export function TaskRunWorkspace({
                   <div>
                     <h3 className="text-xs font-bold text-slate-800 dark:text-slate-200">当前节点：{activeStep.title}</h3>
                     <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">{activeStep.description}</p>
+                    {runDetail.state === "paused" && !isLiveExecuting && !isAdvancing ? (
+                      <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1">
+                        任务已暂停，停在「{runDetail.currentNodeName ?? activeStep.title}」。点击底部按钮继续执行。
+                      </p>
+                    ) : null}
+                    {advanceError ? (
+                      <p className="text-[10px] text-rose-600 dark:text-rose-400 mt-1">{advanceError}</p>
+                    ) : null}
                   </div>
                   <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
-                    activeStep.state === "waiting"
+                    isAdvancing
+                      ? "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400"
+                      : activeStep.state === "waiting"
                       ? "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400"
                       : activeStep.state === "failed"
                       ? "bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400"
                       : activeStep.state === "done"
                       ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400"
+                      : activeStep.state === "pending"
+                      ? "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
                       : "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400"
                   }`}>
-                    {activeStep.state === "waiting"
+                    {isAdvancing
+                      ? "启动中"
+                      : isLiveExecuting
+                      ? "运行中"
+                      : activeStep.state === "waiting"
                       ? "等待输入"
                       : activeStep.state === "failed"
                       ? "执行错误"
                       : activeStep.state === "done"
                       ? "已完成"
+                      : activeStep.state === "pending"
+                      ? "待执行"
                       : "运行中"}
                   </span>
                 </header>
@@ -442,7 +505,7 @@ export function TaskRunWorkspace({
                   <AgentChatPanel
                     activeStep={activeStep}
                     streamingText={stream.streamingText}
-                    isStreaming={stream.isStreaming}
+                    isStreaming={isLiveExecuting}
                     currentPhase={stream.currentPhase}
                     toolCalls={stream.toolCalls}
                   />
@@ -450,7 +513,7 @@ export function TaskRunWorkspace({
                   <MultiAgentPanel
                     activeStep={activeStep}
                     clusterAgents={clusterAgentsForPanel}
-                    isStreaming={stream.isStreaming}
+                    isStreaming={isLiveExecuting}
                   />
                 ) : activeStep.kind === "approval" ? (
                   <div className="bg-white dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-850 p-5 space-y-4 max-w-2xl mx-auto">
@@ -492,7 +555,8 @@ export function TaskRunWorkspace({
           {/* 5c. Action Controller bar */}
           <StepActionBar
             activeStep={activeStep}
-            isStreaming={stream.isStreaming}
+            isStreaming={isLiveExecuting}
+            isAdvancing={isAdvancing}
             isRunCompleted={preview.statusLabel === "已完成" || runDetail.state === "completed"}
             isRunFailed={runDetail.state === "failed" || activeStep.state === "failed"}
             isRunSaved={runDetail.saved}
@@ -744,6 +808,7 @@ function buildRuntimePreviewFromRun(run: WorkbenchRunDetail): RuntimePreview {
     const state = mapNodeState(node.state);
     return {
       nodeRunId: node.id,
+      nodeKey: node.nodeId,
       title: node.name,
       subtitle: node.stateLabel,
       state,
@@ -927,7 +992,20 @@ function parseClusterAgentSummaries(outputs: RuntimePreviewStep["outputs"]): Arr
   }
 }
 
-function resolveActiveStepIndex(steps: RuntimePreviewStep[]): number {
+function resolveActiveStepIndex(steps: RuntimePreviewStep[], run: WorkbenchRunDetail): number {
+  if (run.currentNodeKey) {
+    const byKey = steps.findIndex((step) => step.nodeKey === run.currentNodeKey);
+    if (byKey >= 0) {
+      return byKey;
+    }
+  }
+  if (run.currentNodeName) {
+    const byName = steps.findIndex((step) => step.title === run.currentNodeName);
+    if (byName >= 0) {
+      return byName;
+    }
+  }
+
   const failedIndex = steps.findIndex((step) => step.state === "failed");
   if (failedIndex >= 0) {
     return failedIndex;
@@ -941,6 +1019,31 @@ function resolveActiveStepIndex(steps: RuntimePreviewStep[]): number {
     return pendingIndex;
   }
   return lastExecutableStepIndex(steps);
+}
+
+async function waitForAdvanceResult(
+  eventCountBefore: number,
+  streamEventsRef: React.MutableRefObject<StreamEvent[]>,
+  reloadRunDetail: () => Promise<void>
+) {
+  const terminalEvents = new Set(["node_completed", "run_paused", "run_completed", "node_failed"]);
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    await sleep(2000);
+    const newEvents = streamEventsRef.current.slice(eventCountBefore);
+    if (newEvents.some((event) => terminalEvents.has(event.type))) {
+      await reloadRunDetail();
+      return;
+    }
+    if (attempt % 2 === 1) {
+      await reloadRunDetail();
+    }
+  }
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
 }
 
 function lastExecutableStepIndex(steps: RuntimePreviewStep[]): number {

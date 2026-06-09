@@ -177,7 +177,13 @@ export function AgentChatPanel({
           {mergedMessages.length === 0 ? (
             <div className="text-center py-8 text-slate-400 text-xs">
               <Bot size={28} className="mx-auto mb-2 opacity-50" />
-              正在启动智能体节点推理...
+              {isStreaming
+                ? "正在启动智能体节点推理..."
+                : activeStep.state === "pending"
+                ? "当前智能体尚未执行，请点击底部「执行此步骤」开始。"
+                : activeStep.state === "done"
+                ? "该节点已完成，可在上方输出区查看结果。"
+                : "等待执行或暂无对话内容。"}
             </div>
           ) : (
             mergedMessages.map((msg) => (

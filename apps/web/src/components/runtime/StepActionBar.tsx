@@ -5,6 +5,7 @@ import { Play, RotateCw, Check, X, ArrowLeft, Ban } from "lucide-react";
 interface StepActionBarProps {
   activeStep: RuntimePreviewStep;
   isStreaming: boolean;
+  isAdvancing?: boolean;
   isRunCompleted: boolean;
   isRunFailed: boolean;
   isRunSaved: boolean;
@@ -22,6 +23,7 @@ interface StepActionBarProps {
 export function StepActionBar({
   activeStep,
   isStreaming,
+  isAdvancing = false,
   isRunCompleted,
   isRunFailed,
   isRunSaved,
@@ -82,7 +84,7 @@ export function StepActionBar({
   }
 
   // 3. Executing / Streaming State
-  if (isStreaming) {
+  if (isStreaming || isAdvancing) {
     return (
       <div className="step-action-bar flex justify-between items-center p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
         <div className="flex items-center gap-2">
@@ -90,15 +92,19 @@ export function StepActionBar({
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
             <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
           </span>
-          <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">AI 智能体正在流式输出中...</span>
+          <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">
+            {isAdvancing && !isStreaming ? "正在连接并启动节点..." : "AI 智能体正在流式输出中..."}
+          </span>
         </div>
-        <button 
-          type="button" 
-          className="sys-btn sys-btn--default flex items-center gap-2 text-xs border border-slate-200 text-slate-500 hover:text-rose-600 hover:border-rose-300"
-          onClick={onInterrupt}
-        >
-          <Ban size={14} /> 中断执行
-        </button>
+        {isStreaming ? (
+          <button
+            type="button"
+            className="sys-btn sys-btn--default flex items-center gap-2 text-xs border border-slate-200 text-slate-500 hover:text-rose-600 hover:border-rose-300"
+            onClick={onInterrupt}
+          >
+            <Ban size={14} /> 中断执行
+          </button>
+        ) : null}
       </div>
     );
   }
@@ -113,7 +119,12 @@ export function StepActionBar({
         <span className="text-xs text-slate-500 dark:text-slate-400">
           当前节点尚未开始执行，点击下方按钮启动{activeStep.kind === "multiAgent" ? "智能体集群" : "智能体"}。
         </span>
-        <button type="button" className="sys-btn sys-btn--primary step-advance-btn flex items-center gap-2 text-xs" onClick={onAdvance}>
+        <button
+          type="button"
+          className="sys-btn sys-btn--primary step-advance-btn flex items-center gap-2 text-xs disabled:opacity-60"
+          onClick={onAdvance}
+          disabled={isAdvancing}
+        >
           <Play size={14} fill="currentColor" /> 执行此步骤
         </button>
       </div>
@@ -134,7 +145,12 @@ export function StepActionBar({
               <RotateCw size={14} /> 重新生成
             </button>
           )}
-          <button type="button" className="sys-btn sys-btn--primary step-advance-btn flex items-center gap-2 text-xs" onClick={onAdvance}>
+          <button
+            type="button"
+            className="sys-btn sys-btn--primary step-advance-btn flex items-center gap-2 text-xs disabled:opacity-60"
+            onClick={onAdvance}
+            disabled={isAdvancing}
+          >
             <Play size={14} fill="currentColor" /> 执行下一步
           </button>
         </div>

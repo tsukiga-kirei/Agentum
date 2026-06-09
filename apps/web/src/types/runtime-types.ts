@@ -76,6 +76,8 @@ export type RuntimeCapabilityItem = {
 /** 单个步骤的运行预览数据 */
 export type RuntimePreviewStep = {
   nodeRunId: string;
+  /** 工作流节点 key，与 run.currentNodeKey 对齐 */
+  nodeKey: string;
   title: string;
   subtitle: string;
   state: RuntimeStepState;
