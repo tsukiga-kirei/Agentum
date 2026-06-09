@@ -16,10 +16,13 @@ public class RunStreamEmitterRegistry {
     private final Map<UUID, SseEmitter> emitters = new ConcurrentHashMap<>();
     private final Map<SseEmitter, AtomicBoolean> openStates = new ConcurrentHashMap<>();
 
-    public SseEmitter register(UUID runId, SseEmitter emitter) {
+    public void register(UUID runId, SseEmitter emitter) {
         SseEmitter previous = emitters.put(runId, emitter);
         openStates.put(emitter, new AtomicBoolean(true));
-        return previous;
+        if (previous != null && previous != emitter) {
+            // 刷新页面时旧连接由客户端 abort，仅标记关闭，避免 complete() 触发 Tomcat 非回收请求告警。
+            markClosed(previous);
+        }
     }
 
     public SseEmitter current(UUID runId) {

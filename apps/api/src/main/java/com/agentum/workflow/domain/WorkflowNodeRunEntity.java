@@ -135,6 +135,20 @@ public class WorkflowNodeRunEntity {
         this.updatedAt = now;
     }
 
+    /**
+     * 运行中增量写入输出快照（如智能体集群已完成子智能体），不改变节点终态。
+     */
+    public void patchOutputSnapshot(Map<String, Object> partialOutput, Instant now) {
+        if (partialOutput == null || partialOutput.isEmpty()) {
+            return;
+        }
+        if (this.outputSnapshot == null) {
+            this.outputSnapshot = new HashMap<>();
+        }
+        this.outputSnapshot.putAll(partialOutput);
+        this.updatedAt = now;
+    }
+
     public void waitForInput(Instant now) {
         this.state = "waiting";
         this.stateLabel = "等待处理";

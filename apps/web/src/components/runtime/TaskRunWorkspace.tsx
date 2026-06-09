@@ -20,7 +20,8 @@ import { MultiAgentPanel } from "./MultiAgentPanel";
 import { DeliveryPreviewPanel } from "./DeliveryPreviewPanel";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { workbenchApi } from "../../services/apiClient";
-import { formatRuntimeErrorMessage, isClusterAgentFailureSummary } from "../../utils/runtimeErrors";
+import { formatRuntimeErrorMessage } from "../../utils/runtimeErrors";
+import { mergeClusterAgents, parseClusterAgentSummariesFromOutputs } from "../../utils/clusterAgentsMerge";
 import { WorkbenchGlobalActions } from "../workbench/SurfacePageLayout";
 import { 
   Save, 
@@ -314,6 +315,7 @@ export function TaskRunWorkspace({
     void stream.ensureConnected().catch((error: unknown) => {
       console.warn("恢复运行流连接失败", error);
     });
+    void reloadRunDetail();
 
     let cancelled = false;
     const poll = window.setInterval(() => {
@@ -359,46 +361,23 @@ export function TaskRunWorkspace({
   }, [runDetail.id, activeStep.nodeRunId, activeStep.state, activeStep.kind]);
 
   const clusterAgentsForPanel = useMemo(() => {
-    if (stream.clusterAgents.length > 0) {
-      return stream.clusterAgents;
-    }
     if (activeStep.kind !== "multiAgent") {
       return [];
     }
     const configAgents = Array.isArray(activeStep.configSnapshot?.clusterAgents)
       ? (activeStep.configSnapshot?.clusterAgents as Array<Record<string, unknown>>)
       : [];
-    const outputAgents = parseClusterAgentSummaries(activeStep.outputs);
-
-    if (activeStep.state === "done") {
-      const completed = outputAgents ?? configAgents;
-      return completed.map((agent: Record<string, unknown>, index: number) => {
-        const summary = stringifyValue(agent.summary || agent.outputSummary || "已完成");
-        const failed = isClusterAgentFailureSummary(summary);
-        return {
-          index,
-          name: stringifyValue(agent.name || agent.label || `子智能体 ${index + 1}`),
-          status: failed ? ("failed" as const) : ("completed" as const),
-          streamingText: "",
-          outputSummary: summary,
-          errorMessage: failed ? summary : undefined,
-          toolCalls: [],
-        };
-      });
-    }
-
     const stepRunning =
       activeStep.state === "running"
       || isLiveExecuting;
 
-    return configAgents.map((agent, index) => ({
-      index,
-      name: stringifyValue(agent.name || `子智能体 ${index + 1}`),
-      status: stepRunning ? ("running" as const) : ("pending" as const),
-      streamingText: "",
-      outputSummary: "",
-      toolCalls: [],
-    }));
+    return mergeClusterAgents({
+      configAgents,
+      outputs: activeStep.outputs,
+      streamAgents: stream.clusterAgents,
+      stepState: activeStep.state,
+      stepRunning,
+    });
   }, [
     stream.clusterAgents,
     isLiveExecuting,
@@ -731,25 +710,11 @@ export function TaskRunWorkspace({
                   >
                     <p className="font-semibold">当前步骤执行失败</p>
                     <p className="mt-1 text-xs leading-relaxed whitespace-pre-wrap">{stepErrorMessage}</p>
-                    <p className="mt-2 text-xs text-rose-700/80 dark:text-rose-300/80">
-                      流程已停止在本步骤，不会自动继续。可使用底部「重试当前节点」或「回退上一步」。
-                    </p>
                   </div>
                 ) : null}
-                <header className="flex justify-between items-center border-b border-slate-100 dark:border-slate-850 pb-3 mb-2">
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">当前节点：{activeStep.title}</h3>
-                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">{activeStep.description}</p>
-                    {runDetail.state === "paused" && !isLiveExecuting && !isAdvancing ? (
-                      <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
-                        任务已暂停，停在「{runDetail.currentNodeName ?? activeStep.title}」。点击底部按钮继续执行。
-                      </p>
-                    ) : null}
-                    {advanceError ? (
-                      <p className="text-xs text-rose-600 dark:text-rose-400 mt-1">{advanceError}</p>
-                    ) : null}
-                  </div>
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                <header className="flex justify-between items-center gap-3 border-b border-slate-100 dark:border-slate-850 pb-3 mb-2">
+                  <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate">{activeStep.title}</h3>
+                  <span className={`shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${
                     isAdvancing
                       ? "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400"
                       : activeStep.state === "waiting"
@@ -800,10 +765,9 @@ export function TaskRunWorkspace({
                     isStreaming={isLiveExecuting}
                   />
                 ) : activeStep.kind === "approval" ? (
-                  <div className="bg-white dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-850 p-5 space-y-4 max-w-2xl mx-auto">
-                    <div className="text-center py-8 text-slate-400 text-xs">
+                  <div className="bg-white dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-850 p-5 max-w-2xl mx-auto">
+                    <div className="text-center py-10 text-slate-400">
                       <FileCheck size={28} className="mx-auto mb-2 text-amber-500" />
-                      当前节点正等待人工审核。请点击下方操作按钮决定批准或驳回。
                     </div>
                   </div>
                 ) : activeStep.kind === "delivery" ? (
@@ -1077,13 +1041,18 @@ function RunTracePanel({
               <div className="space-y-4">
                 <h5 className="text-sm font-bold text-slate-700 dark:text-slate-350">智能体集群执行报告</h5>
                 <div className="space-y-3">
-                  {parseClusterAgentSummaries(step.outputs)?.map((agent: any, idx: number) => (
+                  {parseClusterAgentSummariesFromOutputs(step.outputs).map((agent: Record<string, unknown>, idx: number) => (
                     <div key={idx} className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 p-4">
                       <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-850 pb-2 mb-3">
-                        <span className="text-sm font-bold text-slate-800 dark:text-slate-200">{agent.name || `子智能体 ${idx + 1}`}</span>
+                        <span className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                          {stringifyValue(agent.name) || `子智能体 ${idx + 1}`}
+                        </span>
                         <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400 font-medium">已完成</span>
                       </div>
-                      <MarkdownRenderer content={agent.summary || agent.outputSummary || "已完成"} compact />
+                      <MarkdownRenderer
+                        content={stringifyValue(agent.summary || agent.outputSummary) || "已完成"}
+                        compact
+                      />
                     </div>
                   ))}
                 </div>
@@ -1639,16 +1608,8 @@ function nodeCapabilities(node: any): RuntimeCapabilityItem[] {
 }
 
 function parseClusterAgentSummaries(outputs: RuntimePreviewStep["outputs"]): Array<Record<string, unknown>> | null {
-  const field = outputs?.find((item) => item.label === "clusterAgents");
-  if (!field?.value) {
-    return null;
-  }
-  try {
-    const parsed = JSON.parse(field.value);
-    return Array.isArray(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
+  const parsed = parseClusterAgentSummariesFromOutputs(outputs);
+  return parsed.length > 0 ? parsed : null;
 }
 
 function resolveStepErrorMessage(step: RuntimePreviewStep): string | null {

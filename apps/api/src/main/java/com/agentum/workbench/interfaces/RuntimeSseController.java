@@ -60,18 +60,16 @@ public class RuntimeSseController {
             tenantId, principal.userId(), runId, RequestIds.current());
 
         SseEmitter emitter = createEmitter(runId);
-        SseEmitter oldEmitter = runStreamEmitterRegistry.register(runId, emitter);
-        if (oldEmitter != null) {
-            log.debug("替换已有 SSE 连接 runId={}", runId);
-            closeEmitterQuietly(oldEmitter);
-        }
+        runStreamEmitterRegistry.register(runId, emitter);
 
         sendConnectedEvent(runId, emitter);
+        workbenchRuntimeService.replayActiveNodeProgress(tenantId, runId);
         return emitter;
     }
 
     private SseEmitter createEmitter(UUID runId) {
-        SseEmitter emitter = new SseEmitter(300_000L);
+        // 0 表示不设超时，避免长任务 AI 调用期间 SSE 被 Tomcat 提前断开。
+        SseEmitter emitter = new SseEmitter(0L);
         emitter.onCompletion(() -> {
             log.info("SSE 连接完成 runId={}", runId);
             runStreamEmitterRegistry.remove(runId, emitter);
@@ -121,6 +119,8 @@ public class RuntimeSseController {
             // 客户端已断开时 complete 也可能失败，忽略即可。
         }
     }
+
+    // register 已改为 markClosed 旧连接，此处保留供必要时显式关闭。
 
     /**
      * 手动触发推进下一步执行。

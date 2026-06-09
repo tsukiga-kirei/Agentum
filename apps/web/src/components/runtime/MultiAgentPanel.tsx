@@ -4,6 +4,7 @@ import { Users, Bot, Terminal } from "lucide-react";
 import { Drawer } from "antd";
 import { useAuthStore } from "../../stores/authStore";
 import { MarkdownRenderer } from "./MarkdownRenderer";
+import { mergeClusterAgents } from "../../utils/clusterAgentsMerge";
 import { formatRuntimeErrorMessage } from "../../utils/runtimeErrors";
 
 interface MultiAgentPanelProps {
@@ -37,43 +38,25 @@ export function MultiAgentPanel({
     : [];
 
   const agents = useMemo((): DrawerAgent[] => {
-    const baseAgents = configAgents.length > 0
-      ? configAgents.map((agent, idx) => ({
-          index: idx,
-          name: String(agent.name || agent.label || `子智能体 ${idx + 1}`),
-          systemPrompt: String(agent.systemPrompt || ""),
-          userPrompt: String(agent.userPrompt || agent.prompt || ""),
-        }))
-      : clusterAgents.map((agent) => ({
-          index: agent.index,
-          name: agent.name,
-          systemPrompt: "",
-          userPrompt: "",
-        }));
+    const merged = mergeClusterAgents({
+      configAgents,
+      outputs: activeStep.outputs,
+      streamAgents: clusterAgents,
+      stepState: activeStep.state,
+      stepRunning: activeStep.state === "running" || isStreaming,
+    });
 
-    return baseAgents.map((base) => {
-      const liveAgent = clusterAgents.find((a) => a.index === base.index || a.name === base.name);
-      if (liveAgent) {
-        return {
-          ...base,
-          ...liveAgent,
-          name: base.name,
-          systemPrompt: base.systemPrompt,
-          userPrompt: base.userPrompt,
-        };
-      }
+    return merged.map((agent) => {
+      const config = configAgents[agent.index] ?? configAgents.find(
+        (item) => String(item.name || item.label || "") === agent.name
+      );
       return {
-        index: base.index,
-        name: base.name,
-        status: "pending" as const,
-        streamingText: "",
-        outputSummary: "",
-        toolCalls: [],
-        systemPrompt: base.systemPrompt,
-        userPrompt: base.userPrompt,
+        ...agent,
+        systemPrompt: config ? String(config.systemPrompt || "") : "",
+        userPrompt: config ? String(config.userPrompt || config.prompt || "") : "",
       };
     });
-  }, [configAgents, clusterAgents]);
+  }, [configAgents, clusterAgents, activeStep.outputs, activeStep.state, isStreaming]);
 
   const completedCount = agents.filter((a) => a.status === "completed").length;
   const runningCount = agents.filter((a) => a.status === "running").length;
@@ -107,11 +90,6 @@ export function MultiAgentPanel({
             共 {totalCount} 个子智能体 · 已完成 {completedCount} · 运行中 {runningCount}
           </small>
         </div>
-        {stepPending ? (
-          <p className="text-xs text-blue-600 dark:text-blue-400 mb-3">
-            进入本步骤后将自动开始执行子智能体，完成后请确认再进入下一步。
-          </p>
-        ) : null}
         <div className="flex items-center gap-3">
           <div className="h-2 flex-1 bg-slate-200/60 dark:bg-slate-800 rounded-full overflow-hidden">
             <div
@@ -213,7 +191,6 @@ export function MultiAgentPanel({
                   </div>
                 ) : null}
 
-                <p className="text-xs text-slate-400 dark:text-slate-500">点击查看完整提示词与输出</p>
               </div>
             </div>
           );

@@ -29,7 +29,7 @@ export function StepActionBar({
   isStreaming,
   isAdvancing = false,
   streamInterrupted = false,
-  isWaitingBackendProgress = false,
+  isWaitingBackendProgress: _isWaitingBackendProgress = false,
   isRunCompleted,
   isRunFailed,
   readOnly,
@@ -93,12 +93,9 @@ export function StepActionBar({
 
   // 3. 用户中断 SSE 后暂停，需手动重新连接或从当前节点重新开始。
   if (streamInterrupted && !isStreaming && !isAdvancing) {
-    const restartLabel = activeStep.state === "running" ? "重新连接并继续" : "重新开始执行";
+    const restartLabel = activeStep.state === "running" ? "重新连接" : "重新开始";
     return (
-      <div className="step-action-bar flex justify-between items-center p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
-        <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
-          执行已中断并暂停，点击右侧按钮从当前节点继续。
-        </span>
+      <div className="step-action-bar flex justify-end gap-2 p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
         <button
           type="button"
           className="sys-btn sys-btn--primary flex items-center gap-2 text-xs"
@@ -117,30 +114,22 @@ export function StepActionBar({
     && !isStreaming
     && !isAdvancing
   ) {
-    const waitingHint = isWaitingBackendProgress
-      ? "后台可能仍在执行，已重连流式通道并同步状态；流式内容会在收到推送后恢复显示。"
-      : "当前步骤显示为执行中，正在等待流式输出。";
     return (
-      <div className="step-action-bar flex justify-between items-center p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
-        <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
-          {waitingHint}
-        </span>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            className="sys-btn sys-btn--default flex items-center gap-2 text-xs"
-            onClick={onRestartStream}
-          >
-            <RotateCw size={14} /> 重新连接
-          </button>
-          <button
-            type="button"
-            className="sys-btn sys-btn--primary flex items-center gap-2 text-xs"
-            onClick={onForceReExecute ?? onRestartStream}
-          >
-            <Play size={14} fill="currentColor" /> 重新执行
-          </button>
-        </div>
+      <div className="step-action-bar flex justify-end gap-2 p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
+        <button
+          type="button"
+          className="sys-btn sys-btn--default flex items-center gap-2 text-xs"
+          onClick={onRestartStream}
+        >
+          <RotateCw size={14} /> 重新连接
+        </button>
+        <button
+          type="button"
+          className="sys-btn sys-btn--primary flex items-center gap-2 text-xs"
+          onClick={onForceReExecute ?? onRestartStream}
+        >
+          <Play size={14} fill="currentColor" /> 重新执行
+        </button>
       </div>
     );
   }
@@ -155,7 +144,7 @@ export function StepActionBar({
             <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
           </span>
           <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">
-            {isAdvancing && !isStreaming ? "正在连接并启动节点..." : "AI 智能体正在流式输出中..."}
+            {isAdvancing && !isStreaming ? "启动中…" : "执行中…"}
           </span>
         </div>
         {isStreaming ? (
@@ -175,20 +164,16 @@ export function StepActionBar({
   if (activeStep.state === "pending") {
     if (activeStep.kind === "agent" || activeStep.kind === "multiAgent") {
       return (
-        <div className="step-action-bar flex justify-between items-center p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
+        <div className="step-action-bar flex justify-end p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
           <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">
-            {isAdvancing ? "正在自动启动智能体执行..." : "智能体将自动开始执行，请稍候"}
+            {isAdvancing ? "启动中…" : "等待启动…"}
           </span>
         </div>
       );
     }
 
-    const pendingHint = activeStep.kind === "delivery" ? "交付" : "当前步骤";
     return (
-      <div className="step-action-bar flex justify-between items-center p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
-        <span className="text-xs text-slate-500 dark:text-slate-400">
-          请先在上方预览交付内容，确认无误后再执行{pendingHint}。
-        </span>
+      <div className="step-action-bar flex justify-end p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
         <button
           type="button"
           className="sys-btn sys-btn--primary step-advance-btn flex items-center gap-2 text-xs disabled:opacity-60"
@@ -205,25 +190,20 @@ export function StepActionBar({
   if (activeStep.state === "done") {
     const canRegenerate = activeStep.allowsRegenerate;
     return (
-      <div className="step-action-bar flex justify-between items-center p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
-        <span className="text-xs text-slate-500 dark:text-slate-400">
-          当前节点已执行完毕，请确认结果无误后再继续推进下一步。
-        </span>
-        <div className="flex items-center gap-3">
-          {canRegenerate && (
-            <button type="button" className="sys-btn sys-btn--default flex items-center gap-2 text-xs" onClick={onRetry}>
-              <RotateCw size={14} /> 重新生成
-            </button>
-          )}
-          <button
-            type="button"
-            className="sys-btn sys-btn--primary step-advance-btn flex items-center gap-2 text-xs disabled:opacity-60"
-            onClick={onAdvance}
-            disabled={isAdvancing}
-          >
-            <Play size={14} fill="currentColor" /> 确认并执行下一步
+      <div className="step-action-bar flex justify-end items-center gap-3 p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
+        {canRegenerate ? (
+          <button type="button" className="sys-btn sys-btn--default flex items-center gap-2 text-xs" onClick={onRetry}>
+            <RotateCw size={14} /> 重新生成
           </button>
-        </div>
+        ) : null}
+        <button
+          type="button"
+          className="sys-btn sys-btn--primary step-advance-btn flex items-center gap-2 text-xs disabled:opacity-60"
+          onClick={onAdvance}
+          disabled={isAdvancing}
+        >
+          <Play size={14} fill="currentColor" /> 执行下一步
+        </button>
       </div>
     );
   }
@@ -231,8 +211,7 @@ export function StepActionBar({
   // 7. Waiting User Input
   if (activeStep.state === "waiting" && activeStep.kind === "input") {
     return (
-      <div className="step-action-bar flex justify-between items-center p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
-        <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">请在上方表单中填写资料并提交</span>
+      <div className="step-action-bar flex justify-end p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
         <button
           type="submit"
           form="workbench-user-input-form"
@@ -248,16 +227,13 @@ export function StepActionBar({
   // 8. Waiting Human Review / Approval
   if (activeStep.state === "waiting" && activeStep.kind === "approval") {
     return (
-      <div className="step-action-bar flex justify-between items-center p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
-        <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">🔍 正在等待人工审核本步骤结论</span>
-        <div className="flex gap-3">
-          <button type="button" className="sys-btn sys-btn--danger flex items-center gap-2 text-xs" onClick={() => onReject("拒绝并通过")}>
+      <div className="step-action-bar flex justify-end gap-3 p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
+        <button type="button" className="sys-btn sys-btn--danger flex items-center gap-2 text-xs" onClick={() => onReject("拒绝并通过")}>
             <X size={14} /> 驳回
           </button>
           <button type="button" className="sys-btn sys-btn--primary flex items-center gap-2 text-xs" onClick={() => onApprove("审核通过")}>
             <Check size={14} /> 审核通过
           </button>
-        </div>
       </div>
     );
   }

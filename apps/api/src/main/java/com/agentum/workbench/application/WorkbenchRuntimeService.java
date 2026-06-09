@@ -1350,6 +1350,95 @@ public class WorkbenchRuntimeService {
     }
 
     @Transactional
+    public void saveNodeProgress(UUID runId, UUID nodeRunId, Map<String, Object> partialOutputs) {
+        Instant now = clock.instant();
+        WorkflowNodeRunEntity node = workflowNodeRunRepository.findById(nodeRunId)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_NODE_RUN_NOT_FOUND", "节点运行不存在"));
+        if (!"running".equals(node.getState())) {
+            return;
+        }
+        node.patchOutputSnapshot(partialOutputs, now);
+        workflowNodeRunRepository.save(node);
+    }
+
+    public boolean isRunAdvancing(UUID runId) {
+        return advancingRuns.contains(runId);
+    }
+
+    /**
+     * SSE 重连时回放运行中节点已持久化的集群进度，避免刷新后子智能体卡片空白。
+     */
+    public void replayActiveNodeProgress(UUID tenantId, UUID runId) {
+        workflowRunRepository.findByIdAndTenantId(runId, tenantId).ifPresent(run -> {
+            if (!"running".equals(run.getState()) && !"paused".equals(run.getState())) {
+                return;
+            }
+            List<WorkflowNodeRunEntity> nodes = workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(runId);
+            WorkflowNodeRunEntity activeNode = nodes.stream()
+                .filter(node -> "running".equals(node.getState()))
+                .findFirst()
+                .orElse(null);
+            if (activeNode == null || !"parallel_group".equals(activeNode.getNodeType())) {
+                return;
+            }
+            Map<String, Object> output = activeNode.getOutputSnapshot();
+            if (output == null || output.isEmpty()) {
+                if (isRunAdvancing(runId)) {
+                    sendSseEvent(runId, "node_started", eventPayload(runId, activeNode.getId(), clock.instant().toString(), Map.of(
+                        "nodeType", activeNode.getNodeType(),
+                        "nodeName", activeNode.getName()
+                    )));
+                }
+                return;
+            }
+
+            sendSseEvent(runId, "node_started", eventPayload(runId, activeNode.getId(), clock.instant().toString(), Map.of(
+                "nodeType", activeNode.getNodeType(),
+                "nodeName", activeNode.getName()
+            )));
+
+            Object rawSummaries = output.get("clusterAgents");
+            if (rawSummaries instanceof List<?> summaries) {
+                for (int index = 0; index < summaries.size(); index++) {
+                    Object item = summaries.get(index);
+                    if (!(item instanceof Map<?, ?> summaryMap)) {
+                        continue;
+                    }
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> summary = (Map<String, Object>) summaryMap;
+                    String agentName = stringValue(summary.get("name"), "子智能体 " + (index + 1));
+                    String summaryText = stringValue(summary.get("summary"), "已完成");
+                    sendSseEvent(runId, "cluster_agent", eventPayload(runId, activeNode.getId(), clock.instant().toString(), Map.of(
+                        "agentIndex", index,
+                        "agentName", agentName,
+                        "eventType", "completed",
+                        "outputSummary", summaryText
+                    )));
+                }
+            }
+
+            if (isRunAdvancing(runId)) {
+                int nextIndex = readClusterNextAgentIndex(output);
+                Object rawAgents = activeNode.getConfigSnapshot().get("clusterAgents");
+                if (rawAgents instanceof List<?> agents && nextIndex >= 0 && nextIndex < agents.size()) {
+                    Object rawAgent = agents.get(nextIndex);
+                    String agentName = "子智能体 " + (nextIndex + 1);
+                    if (rawAgent instanceof Map<?, ?> rawMap) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> agentConfig = (Map<String, Object>) rawMap;
+                        agentName = stringValue(agentConfig.get("name"), agentName);
+                    }
+                    sendSseEvent(runId, "cluster_agent", eventPayload(runId, activeNode.getId(), clock.instant().toString(), Map.of(
+                        "agentIndex", nextIndex,
+                        "agentName", agentName,
+                        "eventType", "started"
+                    )));
+                }
+            }
+        });
+    }
+
+    @Transactional
     public void saveNodeFailure(UUID runId, UUID nodeRunId, String errorCode, String errorMessage, UUID operatorUserId) {
         Instant now = clock.instant();
         WorkflowRunEntity run = workflowRunRepository.findById(runId)
@@ -1740,6 +1829,7 @@ public class WorkbenchRuntimeService {
                     "name", name,
                     "summary", errorMessage
                 ));
+                persistClusterProgress(runId, nodeRun.getId(), summaries, agentIndex + 1);
                 agentIndex++;
                 continue;
             }
@@ -1751,6 +1841,7 @@ public class WorkbenchRuntimeService {
                 "name", agentName,
                 "summary", summaryText
             ));
+            persistClusterProgress(runId, nodeRun.getId(), summaries, agentIndex + 1);
 
             sendSseEvent(runId, "cluster_agent", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
                 "agentIndex", idx,
@@ -1808,6 +1899,7 @@ public class WorkbenchRuntimeService {
         AtomicBoolean open = runStreamEmitterRegistry.openState(emitter);
         open.set(false);
         runStreamEmitterRegistry.markClosed(emitter);
+        runStreamEmitterRegistry.remove(runId, emitter);
         try {
             emitter.complete();
         } catch (Exception exception) {
@@ -1815,6 +1907,52 @@ public class WorkbenchRuntimeService {
                 log.debug("关闭 SSE 连接失败 runId={} message={}", runId, exception.getMessage());
             }
         }
+    }
+
+    private void persistClusterProgress(UUID runId, UUID nodeRunId, List<Map<String, Object>> summaries, int nextAgentIndex) {
+        Map<String, Object> partial = new LinkedHashMap<>();
+        partial.put("clusterAgents", new ArrayList<>(summaries));
+        partial.put("clusterProgress", Map.of(
+            "completedCount", summaries.size(),
+            "nextAgentIndex", nextAgentIndex
+        ));
+        try {
+            workflowNodeRunRepository.findById(nodeRunId).ifPresent(node -> {
+                if (!"running".equals(node.getState())) {
+                    return;
+                }
+                node.patchOutputSnapshot(partial, clock.instant());
+                workflowNodeRunRepository.save(node);
+            });
+        } catch (Exception exception) {
+            log.warn(
+                "保存智能体集群增量进度失败 runId={} nodeRunId={} requestId={}",
+                runId,
+                nodeRunId,
+                RequestIds.current(),
+                exception
+            );
+        }
+    }
+
+    private static int readClusterNextAgentIndex(Map<String, Object> output) {
+        Object rawProgress = output.get("clusterProgress");
+        if (!(rawProgress instanceof Map<?, ?> progressMap)) {
+            Object rawSummaries = output.get("clusterAgents");
+            if (rawSummaries instanceof List<?> summaries) {
+                return summaries.size();
+            }
+            return 0;
+        }
+        Object nextIndex = progressMap.get("nextAgentIndex");
+        if (nextIndex instanceof Number number) {
+            return number.intValue();
+        }
+        Object completedCount = progressMap.get("completedCount");
+        if (completedCount instanceof Number number) {
+            return number.intValue();
+        }
+        return 0;
     }
 
     private Map<String, Object> eventPayload(UUID runId, UUID nodeRunId, String timestamp, Map<String, Object> extra) {
