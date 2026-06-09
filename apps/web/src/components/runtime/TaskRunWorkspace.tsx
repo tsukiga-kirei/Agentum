@@ -263,16 +263,19 @@ export function TaskRunWorkspace({
   }
 
   function handleStepSelect(step: RuntimePreviewStep, index: number) {
+    if (index === currentStepIndex) {
+      setActiveRunTab("current");
+      return;
+    }
+
     if (step.state === "done") {
       setSelectedTraceStepIndex(index);
       setActiveRunTab("trace");
       return;
     }
 
-    if (step.state === "running" || step.state === "waiting") {
-      setSelectedTraceStepIndex(index);
-      setActiveRunTab("current");
-    }
+    setSelectedTraceStepIndex(index);
+    setActiveRunTab("current");
   }
 
   // 4. Action Handlers: Advance Step
@@ -413,16 +416,16 @@ export function TaskRunWorkspace({
     return {
       value: tab.key,
       label: (
-        <span className="flex items-center gap-1.5 py-0.5 text-xs font-semibold">
-          <Icon size={14} />
-          {tab.label}
+        <span className="login-portal-option">
+          <Icon className="login-portal-option-icon" aria-hidden="true" />
+          <span>{tab.label}</span>
         </span>
       ),
     };
   });
 
   return (
-    <section className="workbench-task-workspace sys-fade-in flex flex-col h-full bg-[var(--color-bg-page)] dark:bg-slate-900 overflow-hidden" aria-label="任务处理工作区">
+    <section className="workbench-task-workspace sys-fade-in flex flex-col h-full bg-[var(--color-bg-page)] overflow-hidden" aria-label="任务处理工作区">
       {/* 5a. Topbar bar actions */}
       <header className="surface-page-chrome pb-4 border-b border-[var(--color-border-light)] flex flex-col gap-4">
         {/* Row 1: Title, Page Actions, and Global Actions (Theme/Role switcher) */}

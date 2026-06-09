@@ -45,7 +45,7 @@ export function StepProgressRail({
         />
       </div>
 
-      <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+      <div className="flex-1 overflow-y-auto space-y-4 pt-1.5 pl-1.5 pr-1 pb-6">
         {preview.steps.map((step, index) => {
           const stepsForTrace = preview.steps.filter((s) => s.state !== "pending");
           const fallbackIndex = stepsForTrace.length > 0 
