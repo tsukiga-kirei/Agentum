@@ -20,6 +20,7 @@ import { MultiAgentPanel } from "./MultiAgentPanel";
 import { DeliveryPreviewPanel } from "./DeliveryPreviewPanel";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { workbenchApi } from "../../services/apiClient";
+import { formatRuntimeErrorMessage, isClusterAgentFailureSummary } from "../../utils/runtimeErrors";
 import { WorkbenchGlobalActions } from "../workbench/SurfacePageLayout";
 import { 
   Save, 
@@ -93,10 +94,23 @@ export function TaskRunWorkspace({
         || event.type === "run_completed"
         || event.type === "node_failed"
     );
+    const failedEvent = newEvents.find((event) => event.type === "node_failed");
+    if (failedEvent && failedEvent.type === "node_failed") {
+      setAdvanceError(formatRuntimeErrorMessage(failedEvent.data.errorCode, failedEvent.data.errorMessage));
+      setActiveRunTab("current");
+      stream.disconnect();
+    }
     if (shouldReload) {
       void reloadRunDetail();
     }
-  }, [stream.events, tenantId, token, runDetail.id, onReload]);
+  }, [stream.events, tenantId, token, runDetail.id, onReload, stream.disconnect]);
+
+  useEffect(() => {
+    if (stream.error) {
+      setAdvanceError(stream.error);
+      setActiveRunTab("current");
+    }
+  }, [stream.error]);
 
   useEffect(() => {
     processedStreamEventsRef.current = 0;
@@ -136,6 +150,10 @@ export function TaskRunWorkspace({
       && !!streamActiveNodeId;
 
     const updatedSteps = basePreview.steps.map((step) => {
+      // 后端已标记失败/完成时，不再被 SSE 流式态覆盖为「运行中」。
+      if (step.state === "failed" || step.state === "done") {
+        return step;
+      }
       if (mergingLiveStep && step.nodeRunId === streamActiveNodeId) {
         const chatMessages = [...(step.chatMessages || [])];
         if (stream.streamingText) {
@@ -203,6 +221,15 @@ export function TaskRunWorkspace({
     || runDetail.progressPercent >= 100
     || preview.statusLabel === "已完成";
 
+  const stepErrorMessage =
+    resolveStepErrorMessage(activeStep)
+    ?? advanceError
+    ?? stream.error;
+
+  const showExecutionErrorBanner =
+    !!stepErrorMessage
+    && (activeStep.state === "failed" || !!advanceError || !!stream.error);
+
   const isStreamableStep =
     activeStep.kind === "agent" || activeStep.kind === "multiAgent";
 
@@ -232,6 +259,12 @@ export function TaskRunWorkspace({
       setStreamInterrupted(false);
     }
   }, [activeStep.nodeRunId, activeStep.state]);
+
+  useEffect(() => {
+    if (activeStep.state === "failed" && !isFlowCompleted && !runDetail.readOnly) {
+      setActiveRunTab("current");
+    }
+  }, [activeStep.nodeRunId, activeStep.state, isFlowCompleted, runDetail.readOnly]);
 
   useEffect(() => {
     if (isFlowCompleted && activeRunTab === "current") {
@@ -291,14 +324,19 @@ export function TaskRunWorkspace({
 
     if (activeStep.state === "done") {
       const completed = outputAgents ?? configAgents;
-      return completed.map((agent: Record<string, unknown>, index: number) => ({
-        index,
-        name: stringifyValue(agent.name || agent.label || `子智能体 ${index + 1}`),
-        status: "completed" as const,
-        streamingText: "",
-        outputSummary: stringifyValue(agent.summary || agent.outputSummary || "已完成"),
-        toolCalls: [],
-      }));
+      return completed.map((agent: Record<string, unknown>, index: number) => {
+        const summary = stringifyValue(agent.summary || agent.outputSummary || "已完成");
+        const failed = isClusterAgentFailureSummary(summary);
+        return {
+          index,
+          name: stringifyValue(agent.name || agent.label || `子智能体 ${index + 1}`),
+          status: failed ? ("failed" as const) : ("completed" as const),
+          streamingText: "",
+          outputSummary: summary,
+          errorMessage: failed ? summary : undefined,
+          toolCalls: [],
+        };
+      });
     }
 
     const stepRunning =
@@ -388,6 +426,7 @@ export function TaskRunWorkspace({
       const message = error instanceof Error ? error.message : "推进步骤失败";
       console.error("推进步骤失败", error);
       setAdvanceError(message);
+      setActiveRunTab("current");
       await reloadRunDetail();
     } finally {
       setIsAdvancing(false);
@@ -624,6 +663,18 @@ export function TaskRunWorkspace({
 
             {activeRunTab === "current" && (
               <div className="space-y-4 max-w-4xl mx-auto">
+                {showExecutionErrorBanner ? (
+                  <div
+                    role="alert"
+                    className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200"
+                  >
+                    <p className="font-semibold">当前步骤执行失败</p>
+                    <p className="mt-1 text-xs leading-relaxed whitespace-pre-wrap">{stepErrorMessage}</p>
+                    <p className="mt-2 text-xs text-rose-700/80 dark:text-rose-300/80">
+                      流程已停止在本步骤，不会自动继续。可使用底部「重试当前节点」或「回退上一步」。
+                    </p>
+                  </div>
+                ) : null}
                 <header className="flex justify-between items-center border-b border-slate-100 dark:border-slate-850 pb-3 mb-2">
                   <div>
                     <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">当前节点：{activeStep.title}</h3>
@@ -1542,11 +1593,8 @@ function resolveStepErrorMessage(step: RuntimePreviewStep): string | null {
     return null;
   }
   const errorMessage = step.outputs?.find((field) => field.label === "errorMessage")?.value;
-  if (errorMessage) {
-    return errorMessage;
-  }
   const errorCode = step.outputs?.find((field) => field.label === "errorCode")?.value;
-  return errorCode || null;
+  return formatRuntimeErrorMessage(errorCode, errorMessage);
 }
 
 function resolveActiveStepIndex(steps: RuntimePreviewStep[], run?: WorkbenchRunDetail | null): number {
@@ -1587,7 +1635,7 @@ interface WaitForAdvanceResultOptions {
   nodeStatesBefore: Map<string, string>;
 }
 
-async function waitForAdvanceResult(options: WaitForAdvanceResultOptions) {
+async function waitForAdvanceResult(options: WaitForAdvanceResultOptions): Promise<void> {
   const {
     eventCountBefore,
     streamEventsRef,
@@ -1616,6 +1664,10 @@ async function waitForAdvanceResult(options: WaitForAdvanceResultOptions) {
     if (updated.state === "completed" || updated.state === "failed") {
       return;
     }
+    const failedNode = updated.nodes.find((node) => node.state === "failed");
+    if (failedNode) {
+      return;
+    }
     if (updated.progressPercent > progressBefore || updated.state !== runStateBefore) {
       return;
     }
@@ -1628,6 +1680,8 @@ async function waitForAdvanceResult(options: WaitForAdvanceResultOptions) {
       return;
     }
   }
+
+  throw new Error("节点执行超时或连接中断，请刷新页面查看最新状态；若步骤已失败，请使用底部重试。");
 }
 
 function sleep(ms: number) {

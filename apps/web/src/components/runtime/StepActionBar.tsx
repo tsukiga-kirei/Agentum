@@ -1,5 +1,6 @@
 import React from "react";
 import type { RuntimePreviewStep } from "../../types/runtime-types";
+import { formatRuntimeErrorMessage } from "../../utils/runtimeErrors";
 import { Play, RotateCw, Check, X, ArrowLeft, Ban, Send } from "lucide-react";
 
 interface StepActionBarProps {
@@ -66,8 +67,9 @@ export function StepActionBar({
 
   // 2. Run Failed State
   if (isRunFailed) {
-    const failureMessage = activeStep.outputs?.find((field) => field.label === "errorMessage")?.value
-      ?? activeStep.outputs?.find((field) => field.label === "errorCode")?.value;
+    const errorCode = activeStep.outputs?.find((field) => field.label === "errorCode")?.value;
+    const errorMessage = activeStep.outputs?.find((field) => field.label === "errorMessage")?.value;
+    const failureMessage = formatRuntimeErrorMessage(errorCode, errorMessage);
     return (
       <div className="step-action-bar flex justify-between items-center p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
         <span className="text-xs text-rose-600 dark:text-rose-400 font-medium">

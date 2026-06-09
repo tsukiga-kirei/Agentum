@@ -7,6 +7,7 @@ import type {
   RuntimeCapabilityItem,
 } from "../types/runtime-types";
 import { API_BASE_URL } from "../services/apiClient";
+import { formatRuntimeErrorMessage } from "../utils/runtimeErrors";
 
 export function useRunStream(
   tenantId: string,
@@ -312,6 +313,8 @@ export function useRunStream(
           outputSummary,
           result,
           durationMs,
+          errorCode,
+          errorMessage,
         } = event.data;
 
         setClusterAgents((prev) => {
@@ -345,6 +348,8 @@ export function useRunStream(
             agent.outputSummary = outputSummary || "";
           } else if (eventType === "failed") {
             agent.status = "failed";
+            agent.errorMessage = formatRuntimeErrorMessage(errorCode, errorMessage);
+            agent.outputSummary = agent.errorMessage;
           } else if (eventType === "tool_call" && toolName) {
             const existingToolIdx = agent.toolCalls.findIndex((t) => t.name === toolName);
             const updatedTool: RuntimeCapabilityItem = {
@@ -377,11 +382,11 @@ export function useRunStream(
         break;
 
       case "node_failed": {
-        const { errorMessage } = event.data;
+        const { errorCode, errorMessage } = event.data;
         setIsStreaming(false);
         setCurrentPhase("failed");
         setActiveNodeInfo(null);
-        setError(errorMessage);
+        setError(formatRuntimeErrorMessage(errorCode, errorMessage));
         break;
       }
 

@@ -386,7 +386,8 @@ class SystemManagementServiceTest {
             "https://api.example.com/v1",
             "gpt-4o-mini",
             null,
-            "draft"
+            "draft",
+            8192
         )))
             .isInstanceOf(ApiException.class)
             .hasMessageContaining("已被租户启用");
@@ -421,11 +422,13 @@ class SystemManagementServiceTest {
             "",
             "gpt-4o-mini",
             "sk-test-secret",
-            "active"
+            "active",
+            8192
         ));
 
         assertThat(savedProviders).hasSize(1);
         ModelProviderEntity provider = savedProviders.getFirst();
+        assertThat(provider.getSettings().get("maxTokens")).isEqualTo(8192);
         String encryptedApiKey = provider.getEncryptedApiKey();
         assertThat(encryptedApiKey).isNotBlank();
         assertThat(encryptedApiKey).doesNotContain("sk-test-secret");

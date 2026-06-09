@@ -107,6 +107,7 @@ type ClusterAgentConfig = {
   systemPrompt: string;
   userPrompt: string;
   output: string;
+  maxTokens?: number;
 };
 
 type WorkflowCapabilityOption = {
@@ -1626,6 +1627,7 @@ function SingleAgentConfigModal({
     userPrompt: readString(config.userPrompt, "请基于已产生的可引用内容完成本步骤任务。"),
     mcpIds: readStringArray(config.mcpIds ?? config.mcpServices, []),
     skillIds: readStringArray(config.skillIds ?? config.skills, []),
+    maxTokens: readOptionalInt(config.maxTokens),
     outputMode: node.data.outputMode,
     allowQuestion: node.data.allowQuestion,
   });
@@ -1692,6 +1694,10 @@ function SingleAgentConfigModal({
               onChange={(values) => setDraft({ ...draft, skillIds: values })}
             />
           </div>
+          <MaxTokensField
+            value={draft.maxTokens}
+            onChange={(value) => setDraft({ ...draft, maxTokens: value })}
+          />
           <div className="workflow-modal-section grid gap-3 lg:grid-cols-2">
             <label className="workflow-toggle-row">
               <span>允许重新生成</span>
@@ -1726,6 +1732,7 @@ function SingleAgentConfigModal({
               userPrompt: draft.userPrompt,
               mcpIds: draft.mcpIds,
               skillIds: draft.skillIds,
+              ...(draft.maxTokens ? { maxTokens: draft.maxTokens } : {}),
             }, {
               toolCount: draft.mcpIds.length + draft.skillIds.length,
               outputMode: draft.outputMode,
@@ -1836,12 +1843,54 @@ function ClusterAgentModal({
               onChange={(values) => setDraft({ ...draft, mcpIds: values })}
             />
           </div>
+          <MaxTokensField
+            value={draft.maxTokens}
+            onChange={(value) => setDraft({ ...draft, maxTokens: value })}
+          />
         </div>
         <div className="sys-modal-footer">
           <button type="button" className="sys-btn sys-btn--default" onClick={onClose}>取消</button>
           <button type="button" className="sys-btn sys-btn--primary" onClick={() => onSave({ ...draft, output: normalizeVariableName(draft.output) || "agent_output" })}>保存</button>
         </div>
       </section>
+    </div>
+  );
+}
+
+function MaxTokensField({
+  value,
+  onChange,
+}: {
+  value?: number;
+  onChange: (value: number | undefined) => void;
+}) {
+  return (
+    <div className="workflow-modal-section">
+      <label className="sys-field">
+        <span className="sys-field-label">最大输出 Token（可选）</span>
+        <div className="sys-field-input-wrap">
+          <Hash size={16} className="sys-field-prefix" aria-hidden="true" />
+          <input
+            className="sys-field-input"
+            type="number"
+            min={256}
+            max={131072}
+            step={256}
+            placeholder="留空则沿用模型供应商配置"
+            value={value ?? ""}
+            onChange={(event) => {
+              const raw = event.target.value.trim();
+              if (!raw) {
+                onChange(undefined);
+                return;
+              }
+              const parsed = Number.parseInt(raw, 10);
+              onChange(Number.isFinite(parsed) ? parsed : undefined);
+            }}
+          />
+        </div>
+        <span className="sys-field-hint">节点级覆盖供应商默认值；长报告建议 8192 或以上。</span>
+      </label>
     </div>
   );
 }
@@ -2421,6 +2470,7 @@ function readClusterAgents(value: unknown): ClusterAgentConfig[] {
         mcpIds: readStringArray(agent.mcpIds, []),
         systemPrompt: readString(agent.systemPrompt, "请配置这个智能体的角色、任务边界和输出要求。"),
         userPrompt: readString(agent.userPrompt ?? (agent as unknown as { prompt?: unknown }).prompt, "请基于已产生的可引用内容完成本智能体任务。"),
+        maxTokens: readOptionalInt(agent.maxTokens),
       }));
     }
   }
@@ -2436,6 +2486,17 @@ function normalizeVariableName(value: string) {
 
 function cloneRecord(value: Record<string, unknown>): Record<string, unknown> {
   return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
+}
+
+function readOptionalInt(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return Math.trunc(value);
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number.parseInt(value.trim(), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+  }
+  return undefined;
 }
 
 function readString(value: unknown, fallback: string): string {

@@ -335,6 +335,7 @@ public class SystemManagementService {
         if (apiKey != null) {
             entity.storeEncryptedApiKey(fieldEncryptionService.encrypt(apiKey), clock.instant());
         }
+        applyMaxTokensSetting(entity, request.maxTokens());
         modelProviderRepository.save(entity);
         log.info(
             "系统管理注册模型供应商成功 providerId={} name={} type={} requestId={}",
@@ -372,6 +373,7 @@ public class SystemManagementService {
         if (apiKey != null) {
             entity.storeEncryptedApiKey(fieldEncryptionService.encrypt(apiKey), clock.instant());
         }
+        applyMaxTokensSetting(entity, request.maxTokens());
         modelProviderRepository.save(entity);
         log.info("系统管理更新模型供应商成功 providerId={} type={} requestId={}", entity.getId(), entity.getProviderType(), RequestIds.current());
         return toModelRow(entity);
@@ -1152,8 +1154,36 @@ public class SystemManagementService {
             entity.hasCredentialRef(),
             entity.getStatus(),
             entity.getConnectivityStatus(),
-            entity.getConnectivityCheckedAt()
+            entity.getConnectivityCheckedAt(),
+            readMaxTokens(entity.getSettings())
         );
+    }
+
+    private static Integer readMaxTokens(Map<String, Object> settings) {
+        if (settings == null) {
+            return null;
+        }
+        Object value = settings.get("maxTokens");
+        if (value instanceof Number number && number.intValue() > 0) {
+            return number.intValue();
+        }
+        if (value == null) {
+            return null;
+        }
+        try {
+            int parsed = Integer.parseInt(value.toString().trim());
+            return parsed > 0 ? parsed : null;
+        } catch (NumberFormatException exception) {
+            return null;
+        }
+    }
+
+    private void applyMaxTokensSetting(ModelProviderEntity entity, Integer maxTokens) {
+        if (maxTokens == null || maxTokens <= 0) {
+            entity.getSettings().remove("maxTokens");
+            return;
+        }
+        entity.getSettings().put("maxTokens", maxTokens);
     }
 
     private static SystemManagementApi.ModelProviderTypeRow toModelProviderTypeRow(ModelProviderTypeEntity entity) {

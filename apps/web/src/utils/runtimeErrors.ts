@@ -1,0 +1,38 @@
+const RUNTIME_ERROR_HINTS: Record<string, string> = {
+  MODEL_MAX_TOKENS_REQUIRED:
+    "未配置最大输出 Token。请前往系统管理 > 模型供应商填写「最大输出 Token」（建议 8192 或以上），或在流程设计器的智能体节点中单独指定。",
+  AGENT_LOOP_FAILED: "智能体执行失败，请查看下方错误说明后重试或回退上一步。",
+  MODEL_CALL_FAILED: "模型调用失败，请检查供应商连通性、API Key 与模型名称。",
+  MODEL_RESPONSE_INVALID: "模型返回无法解析，请稍后重试或更换模型。",
+  CLUSTER_AGENT_FAILED: "子智能体执行失败，请展开对应子智能体查看原因。",
+  WORKBENCH_NODE_EXECUTION_FAILED: "节点执行异常，请重试或联系管理员查看运行日志。",
+};
+
+/** 将后端 errorCode / errorMessage 转为用户可读文案。 */
+export function formatRuntimeErrorMessage(errorCode?: string | null, errorMessage?: string | null): string {
+  const code = errorCode?.trim() || "";
+  const message = errorMessage?.trim() || "";
+  if (code && RUNTIME_ERROR_HINTS[code]) {
+    return message && !message.includes(RUNTIME_ERROR_HINTS[code].slice(0, 8))
+      ? `${RUNTIME_ERROR_HINTS[code]}（${message}）`
+      : RUNTIME_ERROR_HINTS[code];
+  }
+  if (message) {
+    return message;
+  }
+  if (code) {
+    return `执行失败（${code}）`;
+  }
+  return "节点执行失败，请重试或回退上一步。";
+}
+
+export function isClusterAgentFailureSummary(summary: unknown): boolean {
+  const text = typeof summary === "string" ? summary.trim() : "";
+  if (!text) {
+    return false;
+  }
+  return text.includes("失败")
+    || text.includes("未配置")
+    || text.includes("MODEL_")
+    || text.includes("AGENT_");
+}

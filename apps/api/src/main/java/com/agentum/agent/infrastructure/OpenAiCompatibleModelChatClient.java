@@ -204,6 +204,11 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
                                 }
                             }
                         }
+                        // 部分供应商在最后一个 chunk 才下发完整 tool_calls，此处补推一次累积 answer，避免运行态丢失流式正文。
+                        String flushedFinalAnswer = finalAnswerStreamer.accumulatedAnswer();
+                        if (!flushedFinalAnswer.isEmpty()) {
+                            callback.onFinalAnswerDelta("", flushedFinalAnswer);
+                        }
                         long latency = Duration.between(startedAt, Instant.now()).toMillis();
                         List<ModelChatClient.ToolCall> toolCalls = toolCallAssembler.toToolCalls();
                         Map<String, Object> responseSnapshot = OpenAiStreamSupport.buildResponseSnapshot(
@@ -294,10 +299,19 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
             payload.put("parallel_tool_calls", booleanOption(request.options(), "parallelToolCalls", false));
         }
         if (isReasoningModel(request.modelName())) {
-            payload.put("max_completion_tokens", numberOption(request.options(), "maxCompletionTokens", numberOption(request.options(), "maxTokens", 2048)));
+            Integer maxCompletionTokens = optionalIntegerOption(request.options(), "maxCompletionTokens");
+            if (maxCompletionTokens == null) {
+                maxCompletionTokens = optionalIntegerOption(request.options(), "maxTokens");
+            }
+            if (maxCompletionTokens != null) {
+                payload.put("max_completion_tokens", maxCompletionTokens);
+            }
         } else {
             payload.put("temperature", decimalOption(request.options(), "temperature", 0.2));
-            payload.put("max_tokens", numberOption(request.options(), "maxTokens", 2048));
+            Integer maxTokens = optionalIntegerOption(request.options(), "maxTokens");
+            if (maxTokens != null) {
+                payload.put("max_tokens", maxTokens);
+            }
         }
         mergeProviderExtensions(payload, request.options());
         return payload;
@@ -471,16 +485,24 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
         return text.isBlank() ? fallback : text;
     }
 
-    private static int numberOption(Map<String, Object> options, String key, int fallback) {
+    private static Integer optionalIntegerOption(Map<String, Object> options, String key) {
+        if (options == null || !options.containsKey(key)) {
+            return null;
+        }
         Object value = options.get(key);
         if (value instanceof Number number) {
             return number.intValue();
         }
         try {
-            return value == null ? fallback : Integer.parseInt(value.toString());
+            return value == null ? null : Integer.parseInt(value.toString());
         } catch (NumberFormatException exception) {
-            return fallback;
+            return null;
         }
+    }
+
+    private static int numberOption(Map<String, Object> options, String key, int fallback) {
+        Integer parsed = optionalIntegerOption(options, key);
+        return parsed == null ? fallback : parsed;
     }
 
     private static double decimalOption(Map<String, Object> options, String key, double fallback) {

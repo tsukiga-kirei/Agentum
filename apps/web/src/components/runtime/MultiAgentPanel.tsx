@@ -4,6 +4,7 @@ import { Users, Bot, Terminal } from "lucide-react";
 import { Drawer } from "antd";
 import { useAuthStore } from "../../stores/authStore";
 import { MarkdownRenderer } from "./MarkdownRenderer";
+import { formatRuntimeErrorMessage } from "../../utils/runtimeErrors";
 
 interface MultiAgentPanelProps {
   activeStep: RuntimePreviewStep;
@@ -17,6 +18,7 @@ type DrawerAgent = {
   status: "pending" | "running" | "completed" | "failed";
   streamingText: string;
   outputSummary: string;
+  errorMessage?: string;
   toolCalls: RunStreamState["clusterAgents"][number]["toolCalls"];
   systemPrompt: string;
   userPrompt: string;
@@ -126,7 +128,9 @@ export function MultiAgentPanel({
           const isRunning = agent.status === "running";
           const isCompleted = agent.status === "completed";
           const isFailed = agent.status === "failed";
-          const previewText = isRunning
+          const previewText = isFailed
+            ? (agent.errorMessage || agent.outputSummary)
+            : isRunning
             ? agent.streamingText
             : isCompleted
               ? agent.outputSummary
@@ -141,7 +145,9 @@ export function MultiAgentPanel({
                   ? "bg-blue-50/10 border-blue-200 dark:bg-blue-950/10 dark:border-blue-900/50 shadow-sm ring-1 ring-blue-500/10"
                   : isCompleted
                   ? "bg-emerald-50/10 border-emerald-100 dark:bg-emerald-950/5 dark:border-emerald-950/20"
-                  : "bg-white dark:bg-slate-950 border-slate-100 dark:border-slate-800"
+                  : isFailed
+                ? "bg-rose-50/10 border-rose-200 dark:bg-rose-950/10 dark:border-rose-900/50"
+                : "bg-white dark:bg-slate-950 border-slate-100 dark:border-slate-800"
               }`}
             >
               <header className="p-4 border-b border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-3 bg-slate-50/20 dark:bg-slate-900/10 rounded-t-xl">
@@ -257,8 +263,14 @@ export function MultiAgentPanel({
             ) : null}
 
             <section className="bg-white dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-800 p-4">
-              <span className="text-xs text-slate-400 font-bold block mb-2">执行输出</span>
-              {selectedAgent.status === "running" && selectedAgent.streamingText ? (
+              <span className="text-xs text-slate-400 font-bold block mb-2">
+                {selectedAgent.status === "failed" ? "失败原因" : "执行输出"}
+              </span>
+              {selectedAgent.status === "failed" ? (
+                <p className="text-sm text-rose-700 dark:text-rose-300 whitespace-pre-wrap">
+                  {formatRuntimeErrorMessage(undefined, selectedAgent.errorMessage || selectedAgent.outputSummary)}
+                </p>
+              ) : selectedAgent.status === "running" && selectedAgent.streamingText ? (
                 <div className="text-sm bg-slate-50 dark:bg-slate-900 p-3 rounded-lg border border-slate-100 dark:border-slate-800">
                   <MarkdownRenderer content={selectedAgent.streamingText} />
                   <span className="inline-block w-1.5 h-3.5 bg-blue-500 dark:bg-blue-400 ml-1 animate-pulse" />

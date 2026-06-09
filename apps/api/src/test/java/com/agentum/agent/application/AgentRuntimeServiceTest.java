@@ -66,6 +66,7 @@ class AgentRuntimeServiceTest {
             "active",
             NOW
         );
+        provider.getSettings().put("maxTokens", 8192);
         TenantModelAssignmentEntity assignment = TenantModelAssignmentEntity.create(TENANT_ID, provider.getId(), "gpt-4o-mini", "enabled", NOW);
         WorkflowRunEntity run = WorkflowRunEntity.create(
             TENANT_ID,

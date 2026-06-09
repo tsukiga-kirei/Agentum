@@ -236,6 +236,7 @@ function buildModelFormValues(provider: ModelProviderRow): Record<string, string
     baseUrl: provider.baseUrl || "",
     defaultModel: provider.defaultModel || "",
     status: provider.status,
+    maxTokens: provider.maxTokens != null ? String(provider.maxTokens) : "",
   };
 }
 
@@ -638,7 +639,7 @@ export function SystemManagementPage() {
 
   const openModelModal = (provider: ModelProviderRow | null) => {
     setEditingModelProvider(provider);
-    modelRef.current = provider ? buildModelFormValues(provider) : {};
+    modelRef.current = provider ? buildModelFormValues(provider) : { maxTokens: "8192" };
     setSelectedModelProviderType(provider?.providerType ?? "");
     setModelFormKey((key) => key + 1);
     setModelModalOpen(true);
@@ -704,6 +705,11 @@ export function SystemManagementPage() {
     if (!d.name?.trim()) { messageApi.warning("请输入名称"); return; }
     if (!d.providerType?.trim()) { messageApi.warning("请选择供应商类型"); return; }
     if (!d.defaultModel?.trim()) { messageApi.warning("请输入默认模型"); return; }
+    const maxTokens = Number.parseInt(d.maxTokens?.trim() || "", 10);
+    if (!Number.isFinite(maxTokens) || maxTokens < 256 || maxTokens > 131072) {
+      messageApi.warning("最大输出 Token 需在 256～131072 之间");
+      return;
+    }
     try {
       const request: CreateModelProviderRequest = {
         name: d.name.trim(),
@@ -712,6 +718,7 @@ export function SystemManagementPage() {
         defaultModel: d.defaultModel.trim(),
         apiKey: d.apiKey?.trim() || undefined,
         status: d.status?.trim() || "draft",
+        maxTokens,
       };
       if (editingModelProvider) {
         const updated = await systemApi.updateModelProvider(token, editingModelProvider.id, request);
@@ -1570,6 +1577,7 @@ export function SystemManagementPage() {
           )}
           <div className="sys-field"><label className="sys-field-label">基址 URL</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder={modelProviderTypes.find((type)=>type.code===selectedModelProviderType)?.defaultBaseUrl || "https://api.example.com/v1"} maxLength={500} defaultValue={modelRef.current.baseUrl || ""} onChange={e=>{modelRef.current.baseUrl=e.target.value;}}/></div><div className="sys-field-hint">不填写时沿用供应商类型的默认基址</div></div>
           <div className="sys-field"><label className="sys-field-label sys-field-label--required">默认模型</label><div className="sys-field-input-wrap"><DatabaseZap size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如 qwen-max" maxLength={160} defaultValue={modelRef.current.defaultModel || ""} onChange={e=>{modelRef.current.defaultModel=e.target.value;}}/></div></div>
+          <div className="sys-field"><label className="sys-field-label sys-field-label--required">最大输出 Token</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={256} max={131072} step={256} placeholder="例如 8192" defaultValue={modelRef.current.maxTokens || ""} onChange={e=>{modelRef.current.maxTokens=e.target.value;}}/></div><div className="sys-field-hint">控制单次模型回复上限；长报告建议 8192 或以上，不再由后端写死默认值。</div></div>
           <div className="sys-field"><label className="sys-field-label">API Key</label><div className="sys-field-input-wrap"><KeyRound size={16} className="sys-field-prefix"/><input className="sys-field-input" type="password" placeholder={editingModelProvider?.apiKeyConfigured ? "已配置，留空则保持不变" : "部分供应商需要填写"} maxLength={2000} onChange={e=>{modelRef.current.apiKey=e.target.value;}}/></div><div className="sys-field-hint">密钥由后端加密保存，不会在列表、日志或响应中回显；后续可替换为凭证托管。</div></div>
           <div className="sys-field"><label className="sys-field-label">状态</label><SysSelect icon={Check} placeholder="请选择状态" defaultValue={modelRef.current.status || ""} options={[{value:"draft",label:"草稿"},{value:"active",label:"可用"}]} onChange={v=>{modelRef.current.status=v;}}/></div>
           {editingModelProvider ? (

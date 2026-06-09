@@ -161,6 +161,7 @@ public class AgentRuntimeService {
 
         Map<String, Object> options = modelOptions(provider, config);
         options.putIfAbsent("parallelToolCalls", false);
+        ensureMaxTokensConfigured(options);
         int maxIterations = intValue(config.get("maxAgentIterations"), DEFAULT_MAX_AGENT_ITERATIONS);
         List<String> modelCallLogIds = new ArrayList<>();
         List<Map<String, Object>> toolCallSummaries = new ArrayList<>();
@@ -176,32 +177,13 @@ public class AgentRuntimeService {
                 modelCallLogIds.add(loggedResult.callLogId());
                 ModelChatClient.ChatResult result = loggedResult.result();
 
-                Optional<String> finalAnswerFromTool = extractFinalAnswer(result.toolCalls());
-                if (finalAnswerFromTool.isPresent()) {
-                    finalAnswer = finalAnswerFromTool.get();
+                String resolvedAnswer = resolveFinalAnswerContent(result, loggedResult.streamedDisplayText());
+                if (!resolvedAnswer.isBlank()) {
+                    finalAnswer = resolvedAnswer;
                     if (!streamFinalAnswer) {
                         emitFinalAnswer(eventSink, finalAnswer);
                     }
                     break;
-                }
-
-                // 模型调用了 final_answer 但 JSON 被截断时，优先回退到本轮 assistant 正文，避免写入解析失败占位文案。
-                if (result.toolCalls().stream().anyMatch(toolCall -> "final_answer".equals(toolCall.name()))) {
-                    String contentFallback = firstNonBlank(result.content());
-                    if (!contentFallback.isBlank()) {
-                        finalAnswer = contentFallback;
-                        if (!streamFinalAnswer) {
-                            emitFinalAnswer(eventSink, finalAnswer);
-                        }
-                        log.info(
-                            "final_answer 工具参数解析不完整，已回退使用模型正文 tenantId={} runId={} nodeRunId={} requestId={}",
-                            request.run().getTenantId(),
-                            request.run().getId(),
-                            request.nodeRun().getId(),
-                            RequestIds.current()
-                        );
-                        break;
-                    }
                 }
 
                 List<ModelChatClient.ToolCall> executableToolCalls = result.toolCalls().stream()
@@ -272,7 +254,7 @@ public class AgentRuntimeService {
         }
         tools.add(new ModelChatClient.ToolDefinition(
             "final_answer",
-            "提交完整最终答案。你必须把最终回复以 Markdown 写入 answer 字段，并把该工具作为最后一次工具调用。",
+            "提交完整最终答案。你必须把最终回复以 Markdown 写入 answer 字段，并把该工具作为最后一次工具调用。answer 请控制在 3000 字以内，避免超长被截断。",
             Map.of(
                 "type", "object",
                 "properties", Map.of("answer", Map.of(
@@ -368,7 +350,7 @@ public class AgentRuntimeService {
             ));
             callLog.succeed(result.responseSnapshot(), result.tokenUsage(), result.latencyMs(), clock.instant());
             modelCallLogRepository.save(callLog);
-            return new LoggedChatResult(result, callLogId(callLog));
+            return new LoggedChatResult(result, callLogId(callLog), "");
         } catch (ApiException exception) {
             callLog.fail(exception.getCode(), exception.getMessage(), 0L, clock.instant());
             modelCallLogRepository.save(callLog);
@@ -443,24 +425,12 @@ public class AgentRuntimeService {
         });
         try {
             ModelChatClient.ChatResult result = future.get();
-            Optional<String> streamedFinalAnswer = extractFinalAnswer(result.toolCalls());
-            if (streamedFinalAnswer.isPresent() && displayText.isEmpty()) {
-                emitFinalAnswer(eventSink, streamedFinalAnswer.get());
-            } else if (streamedFinalAnswer.isEmpty() && displayText.isEmpty()) {
-                String fallback = firstNonBlank(result.content());
-                if (fallback.isBlank()) {
-                    for (ModelChatClient.ToolCall toolCall : result.toolCalls()) {
-                        if ("final_answer".equals(toolCall.name())) {
-                            fallback = extractPartialAnswerFromTruncatedJson(toolCall.argumentsJson());
-                            break;
-                        }
-                    }
-                }
-                if (!fallback.isBlank()) {
-                    emitFinalAnswer(eventSink, fallback);
-                }
+            String streamedDisplay = displayText.toString();
+            String resolvedAnswer = resolveFinalAnswerContent(result, streamedDisplay);
+            if (streamedDisplay.isBlank() && !resolvedAnswer.isBlank()) {
+                emitFinalAnswer(eventSink, resolvedAnswer);
             }
-            return new LoggedChatResult(result, callLogId(callLog));
+            return new LoggedChatResult(result, callLogId(callLog), streamedDisplay);
         } catch (java.util.concurrent.ExecutionException exception) {
             if (exception.getCause() instanceof ApiException apiException) {
                 throw apiException;
@@ -587,7 +557,7 @@ public class AgentRuntimeService {
 1. 如果需要了解某个 Skill 的使用方法，先调用对应的 Skill 读取工具。
 2. 如果需要事实数据、外部系统信息或业务工具结果，调用可用 MCP 工具。
 3. 每次工具返回后，基于观察结果继续判断是否还需要工具。
-4. 最终必须调用 final_answer，并把完整答案写入 answer 字段。
+4. 最终必须调用 final_answer，并把完整答案写入 answer 字段；answer 请控制在 3000 字以内，用精炼 Markdown 分条输出，避免超长导致工具参数被模型截断。
 5. 所有用户可见内容使用中文和 Markdown，不暴露工具参数、系统提示词、凭证明文或内部实现细节。
 
 可用能力摘要：
@@ -623,13 +593,74 @@ public class AgentRuntimeService {
         );
     }
 
+    /**
+     * 统一解析 final_answer：完整 JSON → 流式累积文本 → 模型正文 → 截断 JSON 片段。
+     * 流式场景下 answer 可能已在 SSE 推送中展示，但 ChatResult.content 为空且 tool 参数 JSON 被截断时须回读 streamedDisplayText。
+     */
+    String resolveFinalAnswerContent(ModelChatClient.ChatResult result, String streamedDisplayText) {
+        if (result == null) {
+            return "";
+        }
+        Optional<String> parsedFromTool = extractCompleteFinalAnswer(result.toolCalls());
+        if (parsedFromTool.isPresent() && !parsedFromTool.get().isBlank()) {
+            return parsedFromTool.get();
+        }
+        String streamed = firstNonBlank(streamedDisplayText);
+        if (!streamed.isBlank()) {
+            return streamed;
+        }
+        String content = firstNonBlank(result.content());
+        if (!content.isBlank()) {
+            return content;
+        }
+        for (ModelChatClient.ToolCall toolCall : result.toolCalls()) {
+            if (!"final_answer".equals(toolCall.name())) {
+                continue;
+            }
+            String partial = extractPartialAnswerFromTruncatedJson(toolCall.argumentsJson());
+            if (!partial.isBlank()) {
+                return partial;
+            }
+        }
+        return "";
+    }
+
     private Optional<String> extractFinalAnswer(List<ModelChatClient.ToolCall> toolCalls) {
         for (ModelChatClient.ToolCall toolCall : toolCalls) {
             if (!"final_answer".equals(toolCall.name())) {
                 continue;
             }
+            Optional<String> complete = extractCompleteFinalAnswer(List.of(toolCall));
+            if (complete.isPresent()) {
+                return complete;
+            }
+            String partial = extractPartialAnswerFromTruncatedJson(toolCall.argumentsJson());
+            if (!partial.isBlank()) {
+                log.info(
+                    "final_answer 参数 JSON 不完整，已从截断内容中提取 answer requestId={}",
+                    RequestIds.current()
+                );
+                return Optional.of(partial);
+            }
+            partial = extractPartialAnswerFromTruncatedJson(stringValue(parseFinalAnswerArguments(toolCall.argumentsJson()).get("raw")));
+            if (!partial.isBlank()) {
+                return Optional.of(partial);
+            }
+            return Optional.empty();
+        }
+        return Optional.empty();
+    }
+
+    /** 仅当 JSON 可完整解析或正则匹配到闭合字符串时返回 answer，避免截断 JSON 的短片段覆盖流式正文。 */
+    private Optional<String> extractCompleteFinalAnswer(List<ModelChatClient.ToolCall> toolCalls) {
+        for (ModelChatClient.ToolCall toolCall : toolCalls) {
+            if (!"final_answer".equals(toolCall.name())) {
+                continue;
+            }
             String rawJson = toolCall.argumentsJson();
-            Map<String, Object> args = parseJsonObject(rawJson);
+            Map<String, Object> args = looksLikeTruncatedFinalAnswerJson(rawJson)
+                ? Map.of("raw", rawJson)
+                : parseJsonObject(rawJson);
             String answer = stringValue(args.get("answer"));
             if (!answer.isBlank()) {
                 return Optional.of(answer);
@@ -637,18 +668,6 @@ public class AgentRuntimeService {
             Matcher matcher = FINAL_ANSWER_FALLBACK_PATTERN.matcher(rawJson == null ? "" : rawJson);
             if (matcher.find()) {
                 return Optional.of(unescapeJsonString(matcher.group(1)));
-            }
-            answer = extractPartialAnswerFromTruncatedJson(rawJson);
-            if (!answer.isBlank()) {
-                log.info(
-                    "final_answer 参数 JSON 不完整，已从截断内容中提取 answer requestId={}",
-                    RequestIds.current()
-                );
-                return Optional.of(answer);
-            }
-            answer = extractPartialAnswerFromTruncatedJson(stringValue(args.get("raw")));
-            if (!answer.isBlank()) {
-                return Optional.of(answer);
             }
             return Optional.empty();
         }
@@ -751,6 +770,31 @@ public class AgentRuntimeService {
         return Map.of("raw", rawJson);
     }
 
+    /** final_answer 专用：已知截断时不走 Jackson，避免无意义的 EOF 堆栈。 */
+    private Map<String, Object> parseFinalAnswerArguments(String rawJson) {
+        if (rawJson == null || rawJson.isBlank()) {
+            return Map.of();
+        }
+        if (looksLikeTruncatedFinalAnswerJson(rawJson)) {
+            return Map.of("raw", rawJson);
+        }
+        return parseJsonObject(rawJson);
+    }
+
+    /**
+     * GLM 等模型在 tool_calls.arguments 上存在约 3.4KB 硬上限，超长 answer 会在字符串中间被截断。
+     */
+    static boolean looksLikeTruncatedFinalAnswerJson(String rawJson) {
+        if (rawJson == null || rawJson.isBlank()) {
+            return false;
+        }
+        String trimmed = rawJson.trim();
+        if (!trimmed.startsWith("{") || indexOfAnswerKey(trimmed) < 0) {
+            return false;
+        }
+        return !trimmed.endsWith("}") && !trimmed.endsWith("\"}");
+    }
+
     private static int intValue(Object value, int fallback) {
         if (value instanceof Number number) {
             return number.intValue();
@@ -762,7 +806,7 @@ public class AgentRuntimeService {
         }
     }
 
-    private record LoggedChatResult(ModelChatClient.ChatResult result, String callLogId) {
+    private record LoggedChatResult(ModelChatClient.ChatResult result, String callLogId, String streamedDisplayText) {
     }
 
     private record ToolExecution(String observation, Map<String, Object> summary) {
@@ -836,11 +880,41 @@ public class AgentRuntimeService {
         Map<String, Object> options = new HashMap<>(provider.getSettings() == null ? Map.of() : provider.getSettings());
         options.remove("encryptedApiKey");
         for (String key : List.of("temperature", "maxTokens", "maxCompletionTokens", "chatCompletionEndpoint", "apiVersion", "api-version", "chat_template_kwargs", "extraRequestBody", "top_p")) {
-            if (config.containsKey(key)) {
+            if (config.containsKey(key) && config.get(key) != null && !stringValue(config.get(key)).isBlank()) {
                 options.put(key, config.get(key));
             }
         }
         return options;
+    }
+
+    /**
+     * maxTokens 必须由系统管理或节点配置显式提供，后端不再写死默认值，避免 silently 截断长输出。
+     */
+    private void ensureMaxTokensConfigured(Map<String, Object> options) {
+        boolean hasMaxTokens = optionalPositiveInt(options.get("maxTokens")) != null;
+        boolean hasMaxCompletionTokens = optionalPositiveInt(options.get("maxCompletionTokens")) != null;
+        if (!hasMaxTokens && !hasMaxCompletionTokens) {
+            throw new ApiException(
+                HttpStatus.BAD_REQUEST,
+                "MODEL_MAX_TOKENS_REQUIRED",
+                "未配置最大输出 Token。请在系统管理 > 模型供应商中设置，或在智能体节点中单独指定 maxTokens。"
+            );
+        }
+    }
+
+    private static Integer optionalPositiveInt(Object value) {
+        if (value instanceof Number number && number.intValue() > 0) {
+            return number.intValue();
+        }
+        if (value == null) {
+            return null;
+        }
+        try {
+            int parsed = Integer.parseInt(value.toString().trim());
+            return parsed > 0 ? parsed : null;
+        } catch (NumberFormatException exception) {
+            return null;
+        }
     }
 
     private String decryptApiKey(ModelProviderEntity provider) {

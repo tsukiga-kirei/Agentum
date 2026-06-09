@@ -1,5 +1,7 @@
 package com.agentum.system.interfaces;
 
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -73,7 +75,8 @@ public final class SystemManagementApi {
         boolean apiKeyConfigured,
         String status,
         String connectivityStatus,
-        Instant connectivityCheckedAt
+        Instant connectivityCheckedAt,
+        Integer maxTokens
     ) {
     }
 
@@ -104,7 +107,8 @@ public final class SystemManagementApi {
         @Size(max = 500) String baseUrl,
         @NotBlank @Size(max = 160) String defaultModel,
         @Size(max = 2000) String apiKey,
-        @Size(max = 30) String status
+        @Size(max = 30) String status,
+        @NotNull @Min(256) @Max(131072) Integer maxTokens
     ) {
     }
 
@@ -114,7 +118,8 @@ public final class SystemManagementApi {
         @Size(max = 500) String baseUrl,
         @NotBlank @Size(max = 160) String defaultModel,
         @Size(max = 2000) String apiKey,
-        @Size(max = 30) String status
+        @Size(max = 30) String status,
+        @NotNull @Min(256) @Max(131072) Integer maxTokens
     ) {
     }
 

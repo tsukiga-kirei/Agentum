@@ -219,6 +219,10 @@ export type ClusterAgentEvent = {
   durationMs?: number;
   /** completed 时的输出摘要 */
   outputSummary?: string;
+  /** failed 时的错误码 */
+  errorCode?: string;
+  /** failed 时的错误说明 */
+  errorMessage?: string;
   timestamp: string;
 };
 
@@ -356,6 +360,7 @@ export type RunStreamState = {
     status: "pending" | "running" | "completed" | "failed";
     streamingText: string;
     outputSummary: string;
+    errorMessage?: string;
     toolCalls: RuntimeCapabilityItem[];
   }>;
   /** 连接状态 */

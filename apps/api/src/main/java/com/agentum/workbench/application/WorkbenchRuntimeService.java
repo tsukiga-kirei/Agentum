@@ -1479,7 +1479,11 @@ public class WorkbenchRuntimeService {
         } catch (ApiException e) {
             log.warn("执行流式步骤 API 异常 runId={} code={} msg={}", runId, e.getCode(), e.getMessage());
             if (nodeRunId != null && !nodeSucceeded) {
-                saveNodeFailure(runId, nodeRunId, e.getCode(), e.getMessage(), principal.userId());
+                try {
+                    saveNodeFailure(runId, nodeRunId, e.getCode(), e.getMessage(), principal.userId());
+                } catch (Exception saveException) {
+                    log.error("保存节点失败状态时出错 runId={} nodeRunId={} requestId={}", runId, nodeRunId, RequestIds.current(), saveException);
+                }
             }
             sendSseEvent(emitter, "node_failed", eventPayload(runId, nodeRunId, clock.instant().toString(), Map.of(
                 "errorCode", e.getCode(),
@@ -1490,7 +1494,11 @@ public class WorkbenchRuntimeService {
         } catch (Exception e) {
             log.error("执行流式步骤系统异常 runId={}", runId, e);
             if (nodeRunId != null && !nodeSucceeded) {
-                saveNodeFailure(runId, nodeRunId, "WORKBENCH_NODE_EXECUTION_FAILED", e.getMessage(), principal.userId());
+                try {
+                    saveNodeFailure(runId, nodeRunId, "WORKBENCH_NODE_EXECUTION_FAILED", e.getMessage(), principal.userId());
+                } catch (Exception saveException) {
+                    log.error("保存节点失败状态时出错 runId={} nodeRunId={} requestId={}", runId, nodeRunId, RequestIds.current(), saveException);
+                }
             }
             sendSseEvent(emitter, "node_failed", eventPayload(runId, nodeRunId, clock.instant().toString(), Map.of(
                 "errorCode", "WORKBENCH_NODE_EXECUTION_FAILED",
@@ -1629,8 +1637,10 @@ public class WorkbenchRuntimeService {
 
             final int idx = agentIndex;
             final String name = agentName;
-            
-            Map<String, Object> agentOutput = agentRuntimeService.executeStreaming(agentRequest, new AgentRuntimeService.AgentRuntimeEventSink() {
+
+            Map<String, Object> agentOutput;
+            try {
+                agentOutput = agentRuntimeService.executeStreaming(agentRequest, new AgentRuntimeService.AgentRuntimeEventSink() {
                 private final StringBuilder subAccumulated = new StringBuilder();
 
                 @Override
@@ -1699,6 +1709,37 @@ public class WorkbenchRuntimeService {
                     )));
                 }
             }).outputs();
+            } catch (Exception exception) {
+                String errorCode = exception instanceof ApiException apiException
+                    ? apiException.getCode()
+                    : "CLUSTER_AGENT_FAILED";
+                String errorMessage = exception instanceof ApiException apiException
+                    ? apiException.getMessage()
+                    : "子智能体执行失败，请稍后重试";
+                log.warn(
+                    "智能体集群子智能体执行失败 runId={} nodeRunId={} agentIndex={} agentName={} errorCode={} requestId={}",
+                    runId,
+                    nodeRun.getId(),
+                    idx,
+                    name,
+                    errorCode,
+                    RequestIds.current(),
+                    exception
+                );
+                sendSseEvent(emitter, "cluster_agent", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
+                    "agentIndex", idx,
+                    "agentName", name,
+                    "eventType", "failed",
+                    "errorCode", errorCode,
+                    "errorMessage", errorMessage
+                )));
+                summaries.add(Map.of(
+                    "name", name,
+                    "summary", errorMessage
+                ));
+                agentIndex++;
+                continue;
+            }
 
             currentVars.putAll(agentOutput);
             
