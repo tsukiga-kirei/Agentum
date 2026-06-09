@@ -341,7 +341,7 @@ export function TaskRunWorkspace({
   }
 
   async function handleRegenerateStep() {
-    const targetStep = preview.steps[resolveActiveStepIndex(preview.steps)];
+    const targetStep = preview.steps[resolveActiveStepIndex(preview.steps, runDetail)];
     if (!targetStep?.nodeRunId) {
       return;
     }
@@ -360,7 +360,7 @@ export function TaskRunWorkspace({
   }
 
   async function handleRollbackPrevious() {
-    const currentIdx = resolveActiveStepIndex(preview.steps);
+    const currentIdx = resolveActiveStepIndex(preview.steps, runDetail);
     for (let index = currentIdx - 1; index >= 0; index -= 1) {
       if (preview.steps[index].state === "done") {
         await handleRollback(preview.steps[index].nodeRunId);
@@ -1010,14 +1010,14 @@ function parseClusterAgentSummaries(outputs: RuntimePreviewStep["outputs"]): Arr
   }
 }
 
-function resolveActiveStepIndex(steps: RuntimePreviewStep[], run: WorkbenchRunDetail): number {
-  if (run.currentNodeKey) {
+function resolveActiveStepIndex(steps: RuntimePreviewStep[], run?: WorkbenchRunDetail | null): number {
+  if (run?.currentNodeKey) {
     const byKey = steps.findIndex((step) => step.nodeKey === run.currentNodeKey);
     if (byKey >= 0) {
       return byKey;
     }
   }
-  if (run.currentNodeName) {
+  if (run?.currentNodeName) {
     const byName = steps.findIndex((step) => step.title === run.currentNodeName);
     if (byName >= 0) {
       return byName;
