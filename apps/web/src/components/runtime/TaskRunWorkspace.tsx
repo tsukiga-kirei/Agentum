@@ -27,7 +27,9 @@ import {
   FileText, 
   Package, 
   FileCheck,
-  RotateCcw
+  RotateCcw,
+  CheckCircle2,
+  Send
 } from "lucide-react";
 
 interface TaskRunWorkspaceProps {
@@ -190,6 +192,24 @@ export function TaskRunWorkspace({
     stream.isStreaming
     && stream.connectionState === "connected"
     && stream.activeNodeInfo?.nodeRunId === activeStep.nodeRunId;
+
+  // Auto advance for agent / parallel group / delivery steps if paused
+  useEffect(() => {
+    if (runDetail.readOnly || isAdvancing || isLiveExecuting) {
+      return;
+    }
+    const autoAdvanceKinds = ["agent", "multiAgent", "delivery"];
+    if (
+      runDetail.state === "paused" &&
+      activeStep &&
+      autoAdvanceKinds.includes(activeStep.kind) &&
+      activeStep.state !== "failed" &&
+      activeStep.state !== "done"
+    ) {
+      void handleAdvanceStep();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runDetail.state, activeStep, isAdvancing, isLiveExecuting, runDetail.readOnly]);
 
   const clusterAgentsForPanel = useMemo(() => {
     if (stream.clusterAgents.length > 0) {
@@ -383,7 +403,7 @@ export function TaskRunWorkspace({
     { key: "overview" as const, label: "任务总览", icon: LayoutDashboard },
     { key: "current" as const, label: "当前处理", icon: Activity },
     { key: "trace" as const, label: "执行历史", icon: FileText },
-    { key: "deliveries" as const, label: "生成报告", icon: Package },
+    { key: "deliveries" as const, label: "产品交付", icon: Package },
   ];
 
   return (
@@ -425,7 +445,7 @@ export function TaskRunWorkspace({
       </header>
 
       {/* 5b. Main Workspace Stepper and Tabs */}
-      <div className="workbench-task-layout flex flex-1 overflow-hidden min-h-0">
+      <div className="workbench-task-layout overflow-hidden">
         <StepProgressRail
           preview={preview}
           activeStepIndex={currentStepIndex}
@@ -578,23 +598,25 @@ export function TaskRunWorkspace({
           </div>
 
           {/* 5c. Action Controller bar */}
-          <StepActionBar
-            activeStep={activeStep}
-            isStreaming={isLiveExecuting}
-            isAdvancing={isAdvancing}
-            isRunCompleted={preview.statusLabel === "已完成" || runDetail.state === "completed"}
-            isRunFailed={runDetail.state === "failed" || activeStep.state === "failed"}
-            isRunSaved={runDetail.saved}
-            readOnly={runDetail.readOnly}
-            onAdvance={handleAdvanceStep}
-            onCompleteTodo={(comment) => handleCompleteTodo({ comment })}
-            onApprove={handleApprove}
-            onReject={handleReject}
-            onRetry={handleRegenerateStep}
-            onRollback={handleRollbackPrevious}
-            onBack={onBack}
-            onInterrupt={() => stream.disconnect()}
-          />
+          {activeRunTab === "current" && (
+            <StepActionBar
+              activeStep={activeStep}
+              isStreaming={isLiveExecuting}
+              isAdvancing={isAdvancing}
+              isRunCompleted={preview.statusLabel === "已完成" || runDetail.state === "completed"}
+              isRunFailed={runDetail.state === "failed" || activeStep.state === "failed"}
+              isRunSaved={runDetail.saved}
+              readOnly={runDetail.readOnly}
+              onAdvance={handleAdvanceStep}
+              onCompleteTodo={(comment) => handleCompleteTodo({ comment })}
+              onApprove={handleApprove}
+              onReject={handleReject}
+              onRetry={handleRegenerateStep}
+              onRollback={handleRollbackPrevious}
+              onBack={onBack}
+              onInterrupt={() => stream.disconnect()}
+            />
+          )}
         </section>
       </div>
     </section>
@@ -609,7 +631,7 @@ function RunOverviewPanel({ run, preview }: { run: WorkbenchRunDetail; preview: 
   return (
     <div className="workbench-panel-grid max-w-4xl mx-auto space-y-4">
       <section className="bg-white dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 p-5">
-        <h3 className="text-xs font-semibold text-slate-800 dark:text-slate-200 mb-2 flex items-center gap-1.5">
+        <h3 className="text-xs font-semibold text-slate-805 dark:text-slate-250 mb-2 flex items-center gap-1.5">
           <LayoutDashboard size={16} className="text-blue-500" /> 任务概览
         </h3>
         <p className="text-[10px] text-slate-400 mb-4">
@@ -618,21 +640,48 @@ function RunOverviewPanel({ run, preview }: { run: WorkbenchRunDetail; preview: 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800">
             <span className="text-[10px] text-slate-400 block">运行编号</span>
-            <strong className="text-xs text-slate-700 dark:text-slate-300 font-mono mt-0.5 block">{preview.runId}</strong>
+            <strong className="text-xs text-slate-700 dark:text-slate-350 font-mono mt-0.5 block">{preview.runId}</strong>
           </div>
           <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800">
             <span className="text-[10px] text-slate-400 block">流程版本</span>
-            <strong className="text-xs text-slate-700 dark:text-slate-300 font-mono mt-0.5 block">v{preview.workflowVersion}</strong>
+            <strong className="text-xs text-slate-700 dark:text-slate-350 font-mono mt-0.5 block">v{preview.workflowVersion}</strong>
           </div>
           <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800">
             <span className="text-[10px] text-slate-400 block">发起人</span>
-            <strong className="text-xs text-slate-700 dark:text-slate-300 mt-0.5 block">{preview.ownerName}</strong>
+            <strong className="text-xs text-slate-700 dark:text-slate-350 mt-0.5 block">{preview.ownerName}</strong>
           </div>
           <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800">
             <span className="text-[10px] text-slate-400 block">开始时间</span>
-            <strong className="text-xs text-slate-700 dark:text-slate-300 mt-0.5 block">{preview.startedAt}</strong>
+            <strong className="text-xs text-slate-700 dark:text-slate-350 mt-0.5 block">{preview.startedAt}</strong>
           </div>
         </div>
+      </section>
+
+      {/* Global Event Timeline */}
+      <section className="bg-white dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 p-5">
+        <h3 className="text-xs font-semibold text-slate-850 dark:text-slate-250 mb-4 flex items-center gap-1.5">
+          <History size={16} className="text-indigo-500" /> 任务日志与时间线
+        </h3>
+        {preview.events.length === 0 ? (
+          <div className="text-center py-6 text-slate-400 text-xs">暂无任务日志。</div>
+        ) : (
+          <div className="space-y-3">
+            {preview.events.map((event) => (
+              <div key={event.id} className="flex gap-3 text-xs">
+                <div className={`mt-1 h-2 w-2 rounded-full shrink-0 ${
+                  event.tone === "success" ? "bg-emerald-500" : event.tone === "warning" ? "bg-amber-500" : "bg-blue-500"
+                }`} />
+                <div className="min-w-0 flex-1 border-b border-slate-100 dark:border-slate-850 pb-2 last:border-b-0">
+                  <div className="flex items-center gap-2">
+                    <strong className="text-slate-850 dark:text-slate-200 font-bold">{event.title}</strong>
+                    <span className="text-[10px] text-slate-400">{event.time}</span>
+                  </div>
+                  <p className="text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">{event.description}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
     </div>
   );
@@ -654,11 +703,16 @@ function RunTracePanel({
   const steps = preview.steps.filter((s) => s.state !== "pending");
   const fallbackIndex = Math.max(0, lastExecutableStepIndex(steps));
   const selectedIdx = selectedStepIndex !== null ? selectedStepIndex : fallbackIndex;
-  const step = preview.steps[selectedIdx] && preview.steps[selectedIdx].state !== "pending"
+  
+  // Trace panel defaults to hiding step details if selectedStepIndex is null
+  const step = selectedStepIndex !== null && preview.steps[selectedIdx] && preview.steps[selectedIdx].state !== "pending"
     ? preview.steps[selectedIdx]
-    : steps[fallbackIndex];
-  const relatedEvents = preview.events.filter((event) => !step || event.stepTitle === step.title || event.stepTitle === "任务");
-  const events = relatedEvents.length > 0 ? relatedEvents : preview.events;
+    : null;
+
+  // Filter events: strictly display events related to this step by matching event.nodeId === step.nodeKey
+  const events = step
+    ? preview.events.filter((event) => event.nodeId === step.nodeKey)
+    : [];
 
   return (
     <div className="max-w-5xl mx-auto space-y-4">
@@ -695,54 +749,214 @@ function RunTracePanel({
               )}
             </header>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <SnapshotFieldList title="输入参数" fields={step.inputs || []} monospace />
-              <SnapshotFieldList title="输出快照" fields={step.outputs || []} markdown />
-            </div>
+            {/* Custom tailored layouts for different step kinds */}
+            {step.kind === "input" && (
+              <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 p-4">
+                <h5 className="text-xs font-bold text-slate-700 dark:text-slate-350 mb-3">输入项配置与录入结果</h5>
+                <div className="space-y-3">
+                  {step.inputs?.map((input) => (
+                    <CollapsibleField 
+                      key={input.label} 
+                      label={input.label} 
+                      value={input.value || "—"} 
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {step.kind === "agent" && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800">
+                    <span className="text-[10px] text-slate-400 block">执行模型</span>
+                    <strong className="text-xs text-slate-700 dark:text-slate-300 mt-1 block">
+                      {step.outputs?.find((f) => f.label === "modelName")?.value || "GLM-5.1"}
+                    </strong>
+                  </div>
+                  <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800">
+                    <span className="text-[10px] text-slate-400 block">执行模式</span>
+                    <strong className="text-xs text-slate-700 dark:text-slate-300 mt-1 block">ReAct 智能体模式</strong>
+                  </div>
+                </div>
+
+                {step.capabilities && step.capabilities.length > 0 && (
+                  <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 p-4">
+                    <h5 className="text-xs font-bold text-slate-700 dark:text-slate-350 mb-3">工具与 MCP 调用记录</h5>
+                    <div className="space-y-2">
+                      {step.capabilities.map((tool) => (
+                        <div 
+                          key={tool.id}
+                          className="p-3 rounded bg-white dark:bg-slate-950 border border-slate-100 dark:border-slate-850 text-xs flex justify-between items-center"
+                        >
+                          <div>
+                            <span className="text-[9px] font-bold text-slate-400 uppercase">{tool.kind}</span>
+                            <strong className="text-xs text-slate-800 dark:text-slate-200 block mt-0.5">{tool.name}</strong>
+                          </div>
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                            tool.status === "done" ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400" : "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400"
+                          }`}>
+                            {tool.statusLabel}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 p-4">
+                  <h5 className="text-xs font-bold text-slate-700 dark:text-slate-350 mb-2">输出结论</h5>
+                  <div className="bg-white dark:bg-slate-950 border border-slate-150 dark:border-slate-850 p-4 rounded-lg">
+                    <MarkdownRenderer content={step.outputs?.find((f) => f.label === "final_answer" || f.label === "agent_response")?.value || "—"} />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {step.kind === "multiAgent" && (
+              <div className="space-y-4">
+                <h5 className="text-xs font-bold text-slate-700 dark:text-slate-350">智能体集群执行报告</h5>
+                <div className="space-y-3">
+                  {parseClusterAgentSummaries(step.outputs)?.map((agent: any, idx: number) => (
+                    <div key={idx} className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 p-4">
+                      <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-850 pb-2 mb-3">
+                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200">{agent.name || `子智能体 ${idx + 1}`}</span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400 font-medium">已完成</span>
+                      </div>
+                      <MarkdownRenderer content={agent.summary || agent.outputSummary || "已完成"} compact />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {step.kind === "approval" && (
+              <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 p-4 space-y-4">
+                <h5 className="text-xs font-bold text-slate-700 dark:text-slate-350">审核结果汇总</h5>
+                <div className="bg-white dark:bg-slate-950 border border-slate-150 dark:border-slate-850 p-4 rounded-lg flex items-start gap-4">
+                  <span className={`text-xs px-2.5 py-1 rounded-full font-bold ${
+                    step.outputs?.find((f) => f.label === "approved")?.value === "false"
+                      ? "bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400"
+                      : "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400"
+                  }`}>
+                    {step.outputs?.find((f) => f.label === "approved")?.value === "false" ? "审核驳回" : "审核通过"}
+                  </span>
+                  <div className="flex-1">
+                    <span className="text-[10px] text-slate-400 font-semibold block">审核批注</span>
+                    <p className="text-xs text-slate-800 dark:text-slate-200 mt-1 italic">
+                      "{step.outputs?.find((f) => f.label === "comment")?.value || "无批注内容"}"
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {step.kind === "delivery" && (
+              <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 p-4 space-y-4">
+                <h5 className="text-xs font-bold text-slate-700 dark:text-slate-350">产品交付结果</h5>
+                <div className="bg-white dark:bg-slate-950 border border-slate-150 dark:border-slate-850 p-4 rounded-lg">
+                  <span className="text-[10px] text-slate-400 font-semibold block">交付状态</span>
+                  <strong className="text-xs text-slate-800 dark:text-slate-200 mt-1 block font-mono">
+                    {step.outputs?.find((f) => f.label === "summary")?.value || "交付文件已生成并归档。"}
+                  </strong>
+                </div>
+              </div>
+            )}
+
+            {/* Fallback to original layout for custom kinds */}
+            {step.kind !== "input" && step.kind !== "agent" && step.kind !== "multiAgent" && step.kind !== "approval" && step.kind !== "delivery" && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <SnapshotFieldList title="输入参数" fields={step.inputs || []} monospace />
+                <SnapshotFieldList title="输出快照" fields={step.outputs || []} markdown />
+              </div>
+            )}
           </div>
         ) : (
           <div className="text-center py-12 text-slate-400 text-xs">
-            左侧流程轨选择已执行步骤后，可查看对应输入、输出和事件。
+            左侧流程轨选择已执行步骤后，可查看该步骤专属的历史数据和快照。
           </div>
         )}
       </section>
 
-      <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">事件时间线</h4>
-            <p className="text-[10px] text-slate-400 mt-1">按真实运行事件展示，左侧流程轨负责节点选择。</p>
+      {step && (
+        <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">步骤运行日志</h4>
+              <p className="text-[10px] text-slate-400 mt-1">仅显示与当前选中步骤相关的事件线记录。</p>
+            </div>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+              {events.length} 条事件
+            </span>
           </div>
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-            {events.length} 条事件
-          </span>
-        </div>
-        {events.length === 0 ? (
-          <div className="text-center py-8 text-slate-400 text-xs">暂无执行事件。</div>
-        ) : (
-          <div className="space-y-3">
-            {events.map((event) => (
-              <div key={event.id} className="flex gap-3">
-                <div className={`mt-1 h-2 w-2 rounded-full shrink-0 ${
-                  event.tone === "success"
-                    ? "bg-emerald-500"
-                    : event.tone === "warning"
-                    ? "bg-amber-500"
-                    : "bg-blue-500"
-                }`} />
-                <div className="min-w-0 flex-1 border-b border-slate-100 dark:border-slate-850 pb-3 last:border-b-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <strong className="text-xs text-slate-800 dark:text-slate-200">{event.title}</strong>
-                    <span className="text-[10px] text-slate-400">{event.time}</span>
-                    <span className="text-[10px] text-slate-400">· {event.stepTitle}</span>
+          {events.length === 0 ? (
+            <div className="text-center py-8 text-slate-400 text-xs">当前步骤暂无特定运行事件。</div>
+          ) : (
+            <div className="space-y-3">
+              {events.map((event) => (
+                <div key={event.id} className="flex gap-3">
+                  <div className={`mt-1 h-2 w-2 rounded-full shrink-0 ${
+                    event.tone === "success"
+                      ? "bg-emerald-500"
+                      : event.tone === "warning"
+                      ? "bg-amber-500"
+                      : "bg-blue-500"
+                  }`} />
+                  <div className="min-w-0 flex-1 border-b border-slate-100 dark:border-slate-850 pb-3 last:border-b-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <strong className="text-xs text-slate-800 dark:text-slate-200">{event.title}</strong>
+                      <span className="text-[10px] text-slate-400">{event.time}</span>
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">{event.description}</p>
                   </div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">{event.description}</p>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+    </div>
+  );
+}
+
+function CollapsibleField({
+  label,
+  value,
+  monospace = false,
+  markdown = false,
+}: {
+  label: string;
+  value: string;
+  monospace?: boolean;
+  markdown?: boolean;
+}) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const shouldCollapse = value.length > 250;
+
+  return (
+    <div className="text-xs min-w-0 relative mb-3 last:mb-0">
+      <span className="text-slate-400 block text-[10px]">{label}</span>
+      <div className={`mt-0.5 relative transition-all duration-200 ${shouldCollapse && !isExpanded ? "max-h-24 overflow-hidden" : ""}`}>
+        {markdown ? (
+          <MarkdownRenderer content={value || "—"} compact className="mt-1" />
+        ) : (
+          <p className={`text-slate-755 dark:text-slate-350 mt-0.5 break-words ${monospace ? "font-mono" : "font-sans whitespace-pre-wrap"}`}>
+            {value || "—"}
+          </p>
         )}
-      </section>
+        {shouldCollapse && !isExpanded && (
+          <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-slate-50 dark:from-slate-900 to-transparent pointer-events-none" />
+        )}
+      </div>
+      {shouldCollapse && (
+        <button
+          type="button"
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="text-blue-500 hover:text-blue-600 dark:text-blue-400 mt-1 text-[10px] font-semibold flex items-center gap-0.5"
+        >
+          {isExpanded ? "收起内容" : "展开全文"}
+        </button>
+      )}
     </div>
   );
 }
@@ -766,16 +980,13 @@ function SnapshotFieldList({
           <p className="text-xs text-slate-400">无快照数据。</p>
         ) : (
           fields.map((field) => (
-            <div key={field.label} className="text-xs min-w-0">
-              <span className="text-slate-400 block text-[10px]">{field.label}</span>
-              {markdown ? (
-                <MarkdownRenderer content={field.value || "—"} compact className="mt-1" />
-              ) : (
-                <p className={`text-slate-700 dark:text-slate-300 mt-0.5 break-words ${monospace ? "font-mono" : "font-sans whitespace-pre-wrap"}`}>
-                  {field.value || "—"}
-                </p>
-              )}
-            </div>
+            <CollapsibleField
+              key={field.label}
+              label={field.label}
+              value={field.value}
+              monospace={monospace}
+              markdown={markdown}
+            />
           ))
         )}
       </div>
@@ -785,30 +996,64 @@ function SnapshotFieldList({
 
 function RunDeliveriesPanel({ preview }: { preview: RuntimePreview }) {
   const list = preview.deliveries || [];
-  return (
-    <div className="max-w-xl mx-auto space-y-4">
-      <div className="bg-white dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 p-5 space-y-4">
-        <h4 className="text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-          <Package size={16} className="text-emerald-500" /> 交付物与文档归档
-        </h4>
-        <p className="text-[10px] text-slate-400">
-          当工作流运行到交付节点时，系统会自动将智能体生成的业务结论保存到对应的目标物中。
-        </p>
+  
+  // Find final output markdown to display for "直接输出交付" (Direct Delivery)
+  const finalAgentStep = preview.steps.find((s) => (s.kind === "agent" || s.kind === "multiAgent") && s.state === "done");
+  const finalAnswer = finalAgentStep?.outputs?.find((f) => f.label === "final_answer" || f.label === "agent_response")?.value;
 
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    if (finalAnswer) {
+      navigator.clipboard.writeText(finalAnswer);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  return (
+    <div className="max-w-3xl mx-auto space-y-5">
+      {/* Top Status Card */}
+      <div className="bg-white dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 p-5 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-emerald-50 dark:bg-emerald-950/40 flex items-center justify-center text-emerald-500">
+            <CheckCircle2 size={22} />
+          </div>
+          <div>
+            <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">产品交付成功</h4>
+            <p className="text-[10px] text-slate-400 mt-1">业务流程已顺利执行完毕，交付结果已成功归档并输出。</p>
+          </div>
+        </div>
+        <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
+          已交付
+        </span>
+      </div>
+
+      {/* Delivery Channels List */}
+      <div className="bg-white dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 p-5 space-y-3">
+        <h4 className="text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+          <Send size={16} className="text-emerald-500" /> 交付通道与方式
+        </h4>
         {list.length === 0 ? (
-          <div className="text-center py-8 text-slate-400 text-xs">
-            暂无生成报告归档记录。
+          <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 flex justify-between items-center text-xs">
+            <div>
+              <strong className="text-slate-800 dark:text-slate-200 font-medium block">直接输出交付</strong>
+              <span className="text-slate-400 block mt-0.5">直接在平台内展示智能体推理结论。</span>
+            </div>
+            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
+              就绪
+            </span>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-2">
             {list.map((item, index) => (
               <div 
                 key={index} 
-                className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 flex justify-between items-center"
+                className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 flex justify-between items-center text-xs"
               >
                 <div>
-                  <strong className="text-xs text-slate-800 dark:text-slate-200 font-medium block">{item.name}</strong>
-                  <span className="text-[10px] text-slate-400 block mt-0.5">{item.meta}</span>
+                  <strong className="text-slate-800 dark:text-slate-200 font-medium block">{item.name}</strong>
+                  <span className="text-slate-400 block mt-0.5">{item.meta}</span>
                 </div>
                 <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
                   {item.status}
@@ -818,6 +1063,27 @@ function RunDeliveriesPanel({ preview }: { preview: RuntimePreview }) {
           </div>
         )}
       </div>
+
+      {/* Premium Document Output Viewer */}
+      {finalAnswer && (
+        <div className="bg-white dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+          <header className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/10">
+            <h4 className="text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+              <FileText size={16} className="text-blue-500" /> 直接输出交付结论 (Markdown)
+            </h4>
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="text-xs font-semibold text-blue-500 hover:text-blue-650 dark:text-blue-400 flex items-center gap-1"
+            >
+              {copied ? "已复制" : "复制报告内容"}
+            </button>
+          </header>
+          <div className="p-6 overflow-y-auto max-h-[500px] prose dark:prose-invert max-w-none bg-white dark:bg-slate-950">
+            <MarkdownRenderer content={finalAnswer} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -829,27 +1095,29 @@ function RunDeliveriesPanel({ preview }: { preview: RuntimePreview }) {
 function buildRuntimePreviewFromRun(run: WorkbenchRunDetail): RuntimePreview {
   const activeNode = run.currentNodeName ?? run.nodes.find((node: any) => node.state === "waiting" || node.state === "running")?.name ?? "已结束";
   
-  const steps = run.nodes.map((node: any): RuntimePreviewStep => {
-    const state = mapNodeState(node.state);
-    return {
-      nodeRunId: node.id,
-      nodeKey: node.nodeId,
-      title: node.name,
-      subtitle: node.stateLabel,
-      state,
-      kind: mapNodeKind(node.nodeType),
-      description: nodeDescription(node.nodeType, node.config),
-      inputs: resolveStepInputs(node),
-      outputs: objectToFields(node.outputs),
-      completedAt: state === "done" ? formatTime(run.updatedAt) : undefined,
-      chatMessages: nodeMessages(node),
-      capabilities: nodeCapabilities(node),
-      configSnapshot: node.config,
-      allowsFollowUp: node.nodeType === "agent" || node.nodeType === "parallel_group",
-      allowsRegenerate: node.nodeType === "agent" || node.nodeType === "parallel_group",
-      allowsInterrupt: node.state === "running",
-    };
-  });
+  const steps = run.nodes
+    .filter((node: any) => node.nodeType !== "trigger")
+    .map((node: any): RuntimePreviewStep => {
+      const state = mapNodeState(node.state);
+      return {
+        nodeRunId: node.id,
+        nodeKey: node.nodeId,
+        title: node.name,
+        subtitle: node.stateLabel,
+        state,
+        kind: mapNodeKind(node.nodeType),
+        description: nodeDescription(node.nodeType, node.config),
+        inputs: resolveStepInputs(node),
+        outputs: objectToFields(node.outputs),
+        completedAt: state === "done" ? formatTime(run.updatedAt) : undefined,
+        chatMessages: nodeMessages(node),
+        capabilities: nodeCapabilities(node),
+        configSnapshot: node.config,
+        allowsFollowUp: node.nodeType === "agent" || node.nodeType === "parallel_group",
+        allowsRegenerate: node.nodeType === "agent" || node.nodeType === "parallel_group",
+        allowsInterrupt: node.state === "running",
+      };
+    });
 
   return {
     runId: run.runNumber,
@@ -877,6 +1145,7 @@ function buildRuntimePreviewFromRun(run: WorkbenchRunDetail): RuntimePreview {
       description: event.description,
       tone: event.eventType === "node_failed" ? "warning" : event.eventType === "node_waiting" ? "warning" : event.eventType === "node_completed" || event.eventType === "run_completed" ? "success" : "info",
       stepTitle: run.nodes.find((node: any) => node.nodeId === event.nodeId)?.name ?? "任务",
+      nodeId: event.nodeId,
     })),
     deliveries: run.nodes
       .filter((node: any) => node.nodeType === "delivery")

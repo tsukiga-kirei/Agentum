@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import type { RuntimePreviewStep, RunStreamState } from "../../types/runtime-types";
 import { Users, Bot, ChevronDown, ChevronUp, Terminal } from "lucide-react";
+import { Drawer } from "antd";
+import { useAuthStore } from "../../stores/authStore";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 
 interface MultiAgentPanelProps {
@@ -15,21 +17,34 @@ export function MultiAgentPanel({
   isStreaming = false,
 }: MultiAgentPanelProps) {
   const [expandedAgentIdx, setExpandedAgentIdx] = useState<number | null>(null);
+  const [selectedAgentForDrawer, setSelectedAgentForDrawer] = useState<any | null>(null);
+  const themeMode = useAuthStore((s) => s.themeMode);
 
   const configAgents = Array.isArray(activeStep.configSnapshot?.clusterAgents)
     ? (activeStep.configSnapshot?.clusterAgents as Array<Record<string, unknown>>)
     : [];
 
-  const agents = clusterAgents.length > 0
-    ? clusterAgents
-    : configAgents.map((agent, idx) => ({
-        index: idx,
-        name: String(agent.name || `子智能体 ${idx + 1}`),
-        status: "pending" as const,
-        streamingText: "",
-        outputSummary: "",
-        toolCalls: [],
-      }));
+  const baseAgents = configAgents.length > 0
+    ? configAgents.map((agent, idx) => ({ index: idx, name: String(agent.name || agent.label || `子智能体 ${idx + 1}`) }))
+    : clusterAgents.map((agent) => ({ index: agent.index, name: agent.name }));
+
+  const agents = baseAgents.map((base) => {
+    const liveAgent = clusterAgents.find((a) => a.index === base.index || a.name === base.name);
+    if (liveAgent) {
+      return {
+        ...liveAgent,
+        name: base.name,
+      };
+    }
+    return {
+      index: base.index,
+      name: base.name,
+      status: "pending" as const,
+      streamingText: "",
+      outputSummary: "",
+      toolCalls: [],
+    };
+  });
 
   const completedCount = agents.filter((a) => a.status === "completed").length;
   const runningCount = agents.filter((a) => a.status === "running").length;
@@ -80,7 +95,7 @@ export function MultiAgentPanel({
         </div>
       </section>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4">
         {agents.map((agent) => {
           const isSelected = expandedAgentIdx === agent.index;
           const isRunning = agent.status === "running";
@@ -90,7 +105,8 @@ export function MultiAgentPanel({
           return (
             <div
               key={agent.index}
-              className={`rounded-xl border transition-all duration-300 flex flex-col ${
+              onClick={() => setSelectedAgentForDrawer(agent)}
+              className={`rounded-xl border cursor-pointer hover:shadow-md transition-all duration-300 flex flex-col ${
                 isRunning
                   ? "bg-blue-50/10 border-blue-200 dark:bg-blue-950/10 dark:border-blue-900/50 shadow-sm ring-1 ring-blue-500/10"
                   : isCompleted
@@ -150,7 +166,7 @@ export function MultiAgentPanel({
                           tool.status === "done"
                             ? "bg-emerald-50/50 border-emerald-100 text-emerald-600 dark:bg-emerald-950/20 dark:border-emerald-900 dark:text-emerald-400"
                             : tool.status === "error"
-                            ? "bg-rose-50/50 border-rose-100 text-rose-600 dark:bg-rose-950/20 dark:border-rose-900 dark:text-rose-450"
+                            ? "bg-rose-50/50 border-rose-100 text-rose-600 dark:bg-rose-950/20 dark:border-rose-900 dark:text-rose-455"
                             : "bg-blue-50/50 border-blue-100 text-blue-600 dark:bg-blue-950/20 dark:border-blue-900 dark:text-blue-400 animate-pulse"
                         }`}
                       >
@@ -165,7 +181,10 @@ export function MultiAgentPanel({
               {isCompleted && agent.outputSummary ? (
                 <button
                   type="button"
-                  onClick={() => toggleExpand(agent.index)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleExpand(agent.index);
+                  }}
                   className="w-full text-center py-2 text-[10px] font-medium text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 hover:bg-slate-50/40 dark:hover:bg-slate-900/30 border-t border-slate-100 dark:border-slate-800 rounded-b-xl flex items-center justify-center gap-1"
                 >
                   {isSelected ? "收起详细报告" : "展开详细报告"}
@@ -174,7 +193,10 @@ export function MultiAgentPanel({
               ) : null}
 
               {isSelected && isCompleted ? (
-                <div className="p-4 bg-slate-50/40 dark:bg-slate-900/10 border-t border-slate-100 dark:border-slate-800 max-h-[250px] overflow-y-auto">
+                <div 
+                  onClick={(e) => e.stopPropagation()}
+                  className="p-4 bg-slate-50/40 dark:bg-slate-900/10 border-t border-slate-100 dark:border-slate-800 max-h-[250px] overflow-y-auto"
+                >
                   <MarkdownRenderer content={agent.outputSummary} compact />
                 </div>
               ) : null}
@@ -182,6 +204,78 @@ export function MultiAgentPanel({
           );
         })}
       </div>
+
+      {selectedAgentForDrawer && (
+        <Drawer
+          title={`子智能体详情: ${selectedAgentForDrawer.name}`}
+          width={560}
+          open
+          onClose={() => setSelectedAgentForDrawer(null)}
+          rootClassName={themeMode === "dark" ? "agent-admin-drawer agent-admin-drawer--dark" : "agent-admin-drawer"}
+        >
+          <div className="space-y-4">
+            <section className="bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-slate-100 dark:border-slate-800 p-4">
+              <span className="text-[10px] text-slate-400 font-bold block mb-1">执行状态</span>
+              <span className={`inline-block text-xs px-2.5 py-0.5 rounded-full font-semibold ${
+                selectedAgentForDrawer.status === "completed"
+                  ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/45 dark:text-emerald-400"
+                  : selectedAgentForDrawer.status === "failed"
+                  ? "bg-rose-50 text-rose-600 dark:bg-rose-950/45 dark:text-rose-400"
+                  : selectedAgentForDrawer.status === "running"
+                  ? "bg-blue-50 text-blue-600 dark:bg-blue-950/45 dark:text-blue-400 animate-pulse"
+                  : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+              }`}>
+                {selectedAgentForDrawer.status === "completed" ? "已完成" : selectedAgentForDrawer.status === "failed" ? "执行失败" : selectedAgentForDrawer.status === "running" ? "执行中" : "等待中"}
+              </span>
+            </section>
+
+            <section className="bg-white dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-800 p-4">
+              <span className="text-[10px] text-slate-400 font-bold block mb-2">智能体回答 (Output)</span>
+              {selectedAgentForDrawer.status === "running" && selectedAgentForDrawer.streamingText ? (
+                <div className="prose dark:prose-invert text-xs bg-slate-50 dark:bg-slate-900 p-3 rounded-lg border border-slate-100 dark:border-slate-800">
+                  <MarkdownRenderer content={selectedAgentForDrawer.streamingText} compact />
+                  <span className="inline-block w-1.5 h-3.5 bg-blue-500 dark:bg-blue-400 ml-1 animate-pulse" />
+                </div>
+              ) : selectedAgentForDrawer.outputSummary ? (
+                <div className="prose dark:prose-invert text-xs">
+                  <MarkdownRenderer content={selectedAgentForDrawer.outputSummary} />
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400 italic">暂无输出结果</p>
+              )}
+            </section>
+
+            {selectedAgentForDrawer.toolCalls && selectedAgentForDrawer.toolCalls.length > 0 && (
+              <section className="bg-white dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-800 p-4">
+                <span className="text-[10px] text-slate-400 font-bold block mb-3">工具/MCP 调用记录</span>
+                <div className="space-y-2">
+                  {selectedAgentForDrawer.toolCalls.map((tool: any) => (
+                    <div 
+                      key={tool.id}
+                      className="p-3 rounded-lg border border-slate-100 dark:border-slate-800 bg-slate-50/20 dark:bg-slate-900/20 text-xs flex justify-between items-center"
+                    >
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[9px] font-bold text-slate-450 uppercase">{tool.kind}</span>
+                          <strong className="text-xs text-slate-850 dark:text-slate-200">{tool.name}</strong>
+                        </div>
+                        {tool.resultSummary && <p className="text-[10px] text-slate-400 mt-1 font-mono">{tool.resultSummary}</p>}
+                      </div>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                        tool.status === "done" 
+                          ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400" 
+                          : "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400"
+                      }`}>
+                        {tool.statusLabel}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+          </div>
+        </Drawer>
+      )}
     </div>
   );
 }

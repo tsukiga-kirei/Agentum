@@ -33,7 +33,7 @@ export function StepProgressRail({
   }
 
   return (
-    <aside className="workbench-task-rail border-r border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 p-4 w-80 flex-shrink-0 flex flex-col" aria-label="任务流程进度">
+    <aside className="workbench-task-rail border-r border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 p-4 w-full flex-shrink-0 flex flex-col" aria-label="任务流程进度">
       <div className="flex justify-between items-center mb-2">
         <strong className="text-sm font-semibold text-slate-800 dark:text-slate-200">流程进度</strong>
         <span className="text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 px-2 py-0.5 rounded-full">{preview.progress}%</span>
@@ -41,13 +41,24 @@ export function StepProgressRail({
       <div className="h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden mb-6">
         <div 
           className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-500" 
-          style={{ width: `${preview.progress}%` }} 
+          style={{ width: `${Math.min(100, Math.max(0, preview.progress))}%` }} 
         />
       </div>
 
       <div className="flex-1 overflow-y-auto space-y-4 pr-1">
         {preview.steps.map((step, index) => {
-          const isSelected = selectedStepIndex === index || (activeRunTab === "current" && activeStepIndex === index);
+          const stepsForTrace = preview.steps.filter((s) => s.state !== "pending");
+          const fallbackIndex = stepsForTrace.length > 0 
+            ? preview.steps.indexOf(stepsForTrace[stepsForTrace.length - 1]) 
+            : 0;
+          const selectedIdx = selectedStepIndex !== null ? selectedStepIndex : fallbackIndex;
+          
+          const isSelected = activeRunTab === "current"
+            ? activeStepIndex === index
+            : activeRunTab === "trace"
+            ? selectedIdx === index
+            : false;
+            
           const isPending = step.state === "pending";
           const isCurrent = step.state === "running" || step.state === "waiting" || step.state === "failed";
           const isDone = step.state === "done";

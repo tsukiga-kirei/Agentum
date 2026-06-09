@@ -118,6 +118,7 @@ export type RuntimePreviewEvent = {
   description: string;
   tone: "info" | "success" | "warning";
   stepTitle: string;
+  nodeId?: string;
 };
 
 /** 交付物预览 */

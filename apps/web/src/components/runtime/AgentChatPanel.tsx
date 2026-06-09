@@ -19,6 +19,14 @@ export function AgentChatPanel({
   toolCalls,
 }: AgentChatPanelProps) {
   const [showPromptSnapshot, setShowPromptSnapshot] = useState(false);
+  const [expandedToolIds, setExpandedToolIds] = useState<Record<string, boolean>>({});
+
+  const toggleToolExpand = (toolId: string) => {
+    setExpandedToolIds((prev) => ({
+      ...prev,
+      [toolId]: !prev[toolId],
+    }));
+  };
 
   const mergedMessages = [...(activeStep.chatMessages || [])];
   
@@ -41,68 +49,8 @@ export function AgentChatPanel({
     }
   }
 
-  // Get active phase info for the thinking loader
-  const phase = currentPhase || activeStep.agentPhase || "preparing";
-
-  const phaseDetails = [
-    { key: "preparing", label: "准备阶段", desc: "装配输入变量与加载提示词模板" },
-    { key: "tool_calling", label: "工具调用", desc: "智能体正在调用 MCP/Skill 获取实时数据" },
-    { key: "model_calling", label: "模型推理", desc: "正在请求大语言模型生成业务分析..." },
-    { key: "validating", label: "输出验证", desc: "校验响应格式与脱敏规则" },
-  ];
-
-  const activePhaseIndex = phaseDetails.findIndex((p) => p.key === phase);
-
   return (
     <div className="space-y-4">
-      {/* 1. Header & Thinking Process Steps */}
-      <section className="bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-100 dark:border-slate-800 p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <Bot className="text-blue-500" size={18} />
-          <h3 className="text-xs font-semibold text-slate-800 dark:text-slate-200">执行过程</h3>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          {phaseDetails.map((pd, index) => {
-            const isCompleted = index < activePhaseIndex || phase === "completed";
-            const isActive = index === activePhaseIndex && phase !== "completed" && phase !== "failed";
-            const isPending = index > activePhaseIndex && phase !== "completed";
-
-            return (
-              <div 
-                key={pd.key} 
-                className={`p-2.5 rounded-lg border transition-all duration-300 ${
-                  isActive 
-                    ? "bg-blue-50/50 border-blue-200 dark:bg-blue-950/20 dark:border-blue-900 shadow-sm" 
-                    : isCompleted 
-                    ? "bg-emerald-50/20 border-emerald-100 dark:bg-emerald-950/10 dark:border-emerald-950/30" 
-                    : "bg-white dark:bg-slate-950 border-slate-100 dark:border-slate-850"
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                    isCompleted 
-                      ? "bg-emerald-500 text-white" 
-                      : isActive 
-                      ? "bg-blue-500 text-white animate-pulse" 
-                      : "bg-slate-100 dark:bg-slate-800 text-slate-400"
-                  }`}>
-                    {isCompleted ? "✓" : index + 1}
-                  </span>
-                  <strong className={`text-xs font-semibold ${
-                    isActive ? "text-blue-600 dark:text-blue-400" : "text-slate-700 dark:text-slate-350"
-                  }`}>{pd.label}</strong>
-                </div>
-                <small className="text-[10px] text-slate-400 dark:text-slate-500 block mt-1 leading-tight">
-                  {isActive && pd.key === "model_calling" && isStreaming && streamingText
-                    ? `${streamingText.slice(0, 80)}${streamingText.length > 80 ? "…" : ""}`
-                    : pd.desc}
-                </small>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
       {/* 2. Capability Dock (MCP / Tools) */}
       {toolCalls.length > 0 || (activeStep.capabilities && activeStep.capabilities.length > 0) ? (
         <section className="bg-white dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-800 p-4">
@@ -111,38 +59,59 @@ export function AgentChatPanel({
               <Terminal className="text-indigo-500" size={16} />
               <h4 className="text-xs font-semibold text-slate-800 dark:text-slate-200">调用详情</h4>
             </div>
-            <small className="text-[10px] text-slate-400">智能体实时工具调用状态</small>
+            <small className="text-[10px] text-slate-400">智能体实时工具调用状态（可点击展开详情）</small>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {(toolCalls.length > 0 ? toolCalls : activeStep.capabilities || []).map((tool) => (
-              <div 
-                key={tool.id} 
-                className={`p-3 rounded-lg border flex items-center justify-between gap-3 ${
-                  tool.status === "error" 
-                    ? "bg-rose-50/30 border-rose-100 dark:bg-rose-950/10 dark:border-rose-950/40" 
-                    : tool.status === "done" 
-                    ? "bg-slate-50/40 border-slate-100 dark:bg-slate-900/40 dark:border-slate-800"
-                    : "bg-blue-50/20 border-blue-100 dark:bg-blue-950/10 dark:border-blue-900/30 animate-pulse"
-                }`}
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase">{tool.kind}</span>
-                    <strong className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate block">{tool.name}</strong>
-                  </div>
-                  <small className="text-[10px] text-slate-400 dark:text-slate-500 truncate block mt-0.5">{tool.summary}</small>
+          <div className="grid grid-cols-1 gap-3">
+            {(toolCalls.length > 0 ? toolCalls : activeStep.capabilities || []).map((tool) => {
+              const isExpanded = !!expandedToolIds[tool.id];
+              return (
+                <div 
+                  key={tool.id} 
+                  className="flex flex-col border border-slate-150 dark:border-slate-800 rounded-lg overflow-hidden"
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggleToolExpand(tool.id)}
+                    className={`p-3 w-full text-left flex items-center justify-between gap-3 transition-colors ${
+                      tool.status === "error" 
+                        ? "bg-rose-50/10 hover:bg-rose-50/20 dark:bg-rose-950/5 dark:hover:bg-rose-950/10" 
+                        : tool.status === "done" 
+                        ? "bg-slate-50/30 hover:bg-slate-50/50 dark:bg-slate-900/20 dark:hover:bg-slate-900/40"
+                        : "bg-blue-50/10 hover:bg-blue-50/20 dark:bg-blue-950/5 dark:hover:bg-blue-950/10 animate-pulse"
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase">{tool.kind}</span>
+                        <strong className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate block">{tool.name}</strong>
+                      </div>
+                      <small className="text-[10px] text-slate-400 dark:text-slate-500 truncate block mt-0.5">{tool.summary}</small>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                        tool.status === "done" 
+                          ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400" 
+                          : tool.status === "error" 
+                          ? "bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400" 
+                          : "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400"
+                      }`}>
+                        {tool.statusLabel}
+                      </span>
+                      {isExpanded ? <ChevronUp size={12} className="text-slate-400" /> : <ChevronDown size={12} className="text-slate-400" />}
+                    </div>
+                  </button>
+                  {isExpanded && (
+                    <div className="p-3 bg-slate-50/50 dark:bg-slate-900/40 border-t border-slate-100 dark:border-slate-800 text-[11px] space-y-2 max-h-56 overflow-y-auto font-mono text-slate-650 dark:text-slate-350">
+                      {tool.durationMs ? <div className="text-slate-400">调用耗时: {tool.durationMs}ms</div> : null}
+                      <div>
+                        <span className="text-slate-400 block mb-1">执行结果观察 (Observation):</span>
+                        <pre className="whitespace-pre-wrap text-[10px] bg-white dark:bg-slate-950 border border-slate-100 dark:border-slate-850 p-2 rounded leading-relaxed">{tool.resultSummary || "无返回结果"}</pre>
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
-                  tool.status === "done" 
-                    ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400" 
-                    : tool.status === "error" 
-                    ? "bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400" 
-                    : "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400"
-                }`}>
-                  {tool.statusLabel}
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       ) : null}
