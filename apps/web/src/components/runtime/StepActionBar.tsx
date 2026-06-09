@@ -64,10 +64,12 @@ export function StepActionBar({
 
   // 2. Run Failed State
   if (isRunFailed) {
+    const failureMessage = activeStep.outputs?.find((field) => field.label === "errorMessage")?.value
+      ?? activeStep.outputs?.find((field) => field.label === "errorCode")?.value;
     return (
       <div className="step-action-bar flex justify-between items-center p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
         <span className="text-xs text-rose-600 dark:text-rose-400 font-medium">
-          节点执行发生错误{isRunSaved ? "" : "，请先保存任务后再重试"}
+          节点执行发生错误{failureMessage ? `：${failureMessage}` : ""}{isRunSaved ? "" : "，请先保存任务后再重试"}
         </span>
         {isRunSaved && (
           <div className="flex gap-3">

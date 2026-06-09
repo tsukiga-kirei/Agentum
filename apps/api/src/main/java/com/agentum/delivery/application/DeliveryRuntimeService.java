@@ -15,6 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,6 +31,8 @@ import org.springframework.web.client.RestClientException;
 public class DeliveryRuntimeService {
 
     private static final Logger log = LoggerFactory.getLogger(DeliveryRuntimeService.class);
+    /** 设计器占位值：表示未绑定具体交付能力，运行时应降级为站内直接交付。 */
+    private static final Set<String> CAPABILITY_SENTINEL_VALUES = Set.of("none", "custom");
 
     private final SystemCapabilityRepository systemCapabilityRepository;
     private final TenantCapabilityGrantRepository tenantCapabilityGrantRepository;
@@ -60,8 +63,16 @@ public class DeliveryRuntimeService {
     }
 
     public DeliveryRuntimeResult execute(DeliveryRuntimeRequest request) {
-        String mode = firstNonBlank(stringValue(request.nodeConfig().get("deliveryMode")), "direct");
-        if ("direct".equals(mode)) {
+        if (shouldUseDirectDelivery(request.nodeConfig())) {
+            if ("capability".equals(stringValue(request.nodeConfig().get("deliveryMode")))) {
+                log.info(
+                    "交付节点未绑定有效交付能力，降级为站内直接交付 tenantId={} runId={} nodeRunId={} requestId={}",
+                    request.run().getTenantId(),
+                    request.run().getId(),
+                    request.nodeRun().getId(),
+                    RequestIds.current()
+                );
+            }
             return completeDirectDelivery(request);
         }
         SystemCapabilityEntity capability = resolveDeliveryCapability(request);
@@ -182,6 +193,9 @@ public class DeliveryRuntimeService {
             stringValue(request.nodeConfig().get("deliveryCapabilityId")),
             stringValue(request.nodeConfig().get("capabilityId"))
         );
+        if (capabilityIdText.isBlank() || CAPABILITY_SENTINEL_VALUES.contains(capabilityIdText.toLowerCase())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "DELIVERY_CAPABILITY_REQUIRED", "请为交付节点配置交付能力");
+        }
         UUID capabilityId = parseUuid(capabilityIdText)
             .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "DELIVERY_CAPABILITY_REQUIRED", "请为交付节点配置交付能力"));
         SystemCapabilityEntity capability = systemCapabilityRepository.findById(capabilityId)
@@ -196,6 +210,22 @@ public class DeliveryRuntimeService {
             throw new ApiException(HttpStatus.FORBIDDEN, "DELIVERY_CAPABILITY_NOT_ASSIGNED", "该交付能力未分配给当前租户");
         }
         return capability;
+    }
+
+    /**
+     * 判断是否走站内直接交付：显式 direct 模式，或未配置/占位交付能力 ID。
+     * 设计器默认「使用交付能力 + none」属于后者，避免演示流程在交付节点必然失败。
+     */
+    private static boolean shouldUseDirectDelivery(Map<String, Object> nodeConfig) {
+        String mode = firstNonBlank(stringValue(nodeConfig.get("deliveryMode")), "direct");
+        if ("direct".equals(mode)) {
+            return true;
+        }
+        String capabilityId = firstNonBlank(
+            stringValue(nodeConfig.get("deliveryCapabilityId")),
+            stringValue(nodeConfig.get("capabilityId"))
+        );
+        return capabilityId.isBlank() || CAPABILITY_SENTINEL_VALUES.contains(capabilityId.toLowerCase());
     }
 
     private Map<String, Object> buildPayload(DeliveryRuntimeRequest request) {

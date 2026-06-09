@@ -539,12 +539,19 @@ export function TaskRunWorkspace({
                 ) : activeStep.kind === "delivery" ? (
                   <div className="bg-white dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-850 p-5 space-y-4 max-w-2xl mx-auto">
                     <div className="text-center py-8 text-slate-400 text-xs">
-                      <Package size={28} className="mx-auto mb-2 text-emerald-500" />
-                      {activeStep.state === "done"
-                        ? "交付步骤已完成，可在「生成报告」页签查看归档结果。"
-                        : isAdvancing
-                          ? "正在执行交付步骤，请稍候..."
-                          : "当前为系统交付步骤，请点击下方「执行此步骤」生成并归档交付物。"}
+                      <Package size={28} className={`mx-auto mb-2 ${activeStep.state === "failed" ? "text-rose-500" : "text-emerald-500"}`} />
+                      {activeStep.state === "failed"
+                        ? (
+                          <>
+                            <p className="text-rose-600 dark:text-rose-400 font-medium mb-2">交付执行失败</p>
+                            <p>{resolveStepErrorMessage(activeStep) ?? "请检查交付能力配置，或改用「直接输出交付」模式。"}</p>
+                          </>
+                        )
+                        : activeStep.state === "done"
+                          ? "交付步骤已完成，可在「生成报告」页签查看归档结果。"
+                          : isAdvancing
+                            ? "正在执行交付步骤，请稍候..."
+                            : "当前为系统交付步骤，请点击下方「执行此步骤」生成并归档交付物。"}
                     </div>
                   </div>
                 ) : (
@@ -1008,6 +1015,18 @@ function parseClusterAgentSummaries(outputs: RuntimePreviewStep["outputs"]): Arr
   } catch {
     return null;
   }
+}
+
+function resolveStepErrorMessage(step: RuntimePreviewStep): string | null {
+  if (step.state !== "failed") {
+    return null;
+  }
+  const errorMessage = step.outputs?.find((field) => field.label === "errorMessage")?.value;
+  if (errorMessage) {
+    return errorMessage;
+  }
+  const errorCode = step.outputs?.find((field) => field.label === "errorCode")?.value;
+  return errorCode || null;
 }
 
 function resolveActiveStepIndex(steps: RuntimePreviewStep[], run?: WorkbenchRunDetail | null): number {
