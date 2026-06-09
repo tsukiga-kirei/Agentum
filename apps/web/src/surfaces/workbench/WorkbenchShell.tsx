@@ -772,7 +772,7 @@ export function WorkbenchShell() {
                         <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]" aria-label="业务工作台总览">
                           <section className="sys-preview-card">
                             <div className="sys-preview-card-title"><LayoutDashboard size={16} /> 工作台功能入口</div>
-                            <div className="grid gap-3 md:grid-cols-2">
+                            <div className="grid gap-3 lg:grid-cols-2">
                               <WorkbenchFeatureCard
                                 icon={PlayCircle}
                                 title="创建任务"
@@ -1062,15 +1062,15 @@ function WorkbenchFeatureCard({
   onClick: () => void;
 }) {
   return (
-    <button type="button" onClick={onClick} className="workflow-feature-card">
-      <span className="workflow-feature-card-head">
-        <span className="workflow-feature-card-icon">
+    <button type="button" onClick={onClick} className="asset-feature-card">
+      <div className="flex items-center gap-2">
+        <span className="asset-feature-card-icon sys-preview-item-icon sys-card-avatar--cap">
           <Icon size={16} aria-hidden="true" />
         </span>
-        <span className="workflow-feature-card-title">{title}</span>
-      </span>
-      <span className="workflow-feature-card-description">{description}</span>
-      <span className="workflow-feature-card-meta">
+        <h3 className="asset-feature-card-title text-sm font-semibold">{title}</h3>
+      </div>
+      <p className="asset-feature-card-detail agent-muted mt-3 text-sm leading-6">{description}</p>
+      <span className="asset-feature-card-meta">
         {meta}
         <ArrowRight size={14} aria-hidden="true" />
       </span>
