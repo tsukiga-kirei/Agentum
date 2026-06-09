@@ -18,12 +18,14 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 
 @Component
 public class HttpModelProviderConnectionTester implements ModelProviderConnectionTester {
 
     private static final Logger log = LoggerFactory.getLogger(HttpModelProviderConnectionTester.class);
     private static final int MODEL_PREVIEW_LIMIT = 20;
+    private static final int LOG_RESPONSE_BODY_MAX_LENGTH = 4000;
 
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
@@ -48,18 +50,53 @@ public class HttpModelProviderConnectionTester implements ModelProviderConnectio
     public ModelProviderTestOutcome test(ModelProviderTestRequest request) {
         Instant startedAt = Instant.now();
         URI uri = buildModelListUri(request.baseUrl(), request.modelListEndpoint());
+        boolean hasApiKey = request.apiKey() != null && !request.apiKey().isBlank();
+        log.debug(
+            "模型供应商连接测试请求 providerId={} type={} uri={} hasApiKey={}",
+            request.providerId(),
+            request.providerType(),
+            uri,
+            hasApiKey
+        );
         try {
             String body = restClient.get()
                 .uri(uri)
                 .headers(headers -> applyAuthHeaders(headers, request))
                 .retrieve()
                 .body(String.class);
+            log.debug(
+                "模型供应商连接测试响应 providerId={} uri={} body={}",
+                request.providerId(),
+                uri,
+                truncateForLog(body, LOG_RESPONSE_BODY_MAX_LENGTH)
+            );
             List<String> models = parseModelIds(body);
             long latency = Duration.between(startedAt, Instant.now()).toMillis();
             String summary = models.isEmpty()
                 ? "模型供应商连接成功，但未从模型列表响应中解析到模型 ID"
                 : "模型供应商连接成功，已解析到 " + models.size() + " 个模型";
             return new ModelProviderTestOutcome("success", summary, models, latency);
+        } catch (RestClientResponseException ex) {
+            long latency = Duration.between(startedAt, Instant.now()).toMillis();
+            log.warn(
+                "模型供应商连接测试失败 providerId={} type={} baseUrl={} endpoint={} status={} errorType={}",
+                request.providerId(),
+                request.providerType(),
+                request.baseUrl(),
+                request.modelListEndpoint(),
+                ex.getStatusCode().value(),
+                ex.getClass().getSimpleName()
+            );
+            log.debug(
+                "模型供应商连接测试 HTTP 响应 providerId={} uri={} hasApiKey={} status={} responseBody={} message={}",
+                request.providerId(),
+                uri,
+                hasApiKey,
+                ex.getStatusCode().value(),
+                truncateForLog(ex.getResponseBodyAsString(), LOG_RESPONSE_BODY_MAX_LENGTH),
+                ex.getMessage()
+            );
+            return new ModelProviderTestOutcome("failed", "模型供应商连接失败，请检查基址 URL、默认模型和 API Key 配置", List.of(), latency);
         } catch (RestClientException ex) {
             long latency = Duration.between(startedAt, Instant.now()).toMillis();
             log.warn(
@@ -69,6 +106,14 @@ public class HttpModelProviderConnectionTester implements ModelProviderConnectio
                 request.baseUrl(),
                 request.modelListEndpoint(),
                 ex.getClass().getSimpleName()
+            );
+            log.debug(
+                "模型供应商连接测试网络异常 providerId={} uri={} hasApiKey={} message={}",
+                request.providerId(),
+                uri,
+                hasApiKey,
+                ex.getMessage(),
+                ex
             );
             return new ModelProviderTestOutcome("failed", "模型供应商连接失败，请检查基址 URL、默认模型和 API Key 配置", List.of(), latency);
         } catch (IllegalArgumentException ex) {
@@ -138,5 +183,15 @@ public class HttpModelProviderConnectionTester implements ModelProviderConnectio
             log.warn("模型供应商列表响应解析失败 errorType={}", ex.getClass().getSimpleName());
             return List.of();
         }
+    }
+
+    private static String truncateForLog(String value, int maxLength) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        if (value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength) + "...(truncated)";
     }
 }
