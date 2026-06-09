@@ -29,14 +29,15 @@ export function AgentChatPanel({
   };
 
   const mergedMessages = [...(activeStep.chatMessages || [])];
-  
-  // Append streaming chunk if actively streaming
-  if (isStreaming && streamingText) {
+
+  // 流式进行中或用户中断 SSE 后：保留已收到的 partial 输出，避免界面瞬间空白。
+  if (streamingText && activeStep.state !== "done") {
     const lastMsg = mergedMessages[mergedMessages.length - 1];
-    if (lastMsg && lastMsg.role === "assistant" && lastMsg.streaming) {
+    if (lastMsg && lastMsg.role === "assistant") {
       mergedMessages[mergedMessages.length - 1] = {
         ...lastMsg,
         content: streamingText,
+        streaming: isStreaming,
       };
     } else {
       mergedMessages.push({
@@ -44,7 +45,7 @@ export function AgentChatPanel({
         role: "assistant",
         author: activeStep.title || "智能体",
         content: streamingText,
-        streaming: true,
+        streaming: isStreaming,
       });
     }
   }

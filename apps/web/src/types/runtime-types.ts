@@ -372,5 +372,12 @@ export type RunStreamState = {
   /** 等待 SSE 已连接后再推进步骤 */
   ensureConnected: (timeoutMs?: number) => Promise<void>;
   /** 断开连接 */
-  disconnect: () => void;
+  disconnect: (options?: { preserveProgress?: boolean }) => void;
+  /** 从 session 快照恢复中断前的流式进度（刷新后展示用） */
+  restoreProgress: (snapshot: {
+    streamingText?: string;
+    clusterAgents?: RunStreamState["clusterAgents"];
+    toolCalls?: RuntimeCapabilityItem[];
+    activeNodeInfo?: { nodeRunId: string; nodeName: string; nodeType: string } | null;
+  }) => void;
 };

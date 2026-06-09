@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import type { RuntimePreviewStep, RuntimePreview, RuntimeStepState } from "../../types/runtime-types";
 import { Zap, FileEdit, Bot, Users, Search, Package, Check, AlertTriangle } from "lucide-react";
 
@@ -55,6 +55,14 @@ export function StepProgressRail({
   activeRunTab,
   onStepSelect,
 }: StepProgressRailProps) {
+  const activeStepRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (activeRunTab !== "current") {
+      return;
+    }
+    activeStepRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [activeRunTab, activeStepIndex]);
 
   function getStepIcon(kind: string, state: string) {
     if (state === "done") return <Check size={15} strokeWidth={2.5} className="text-white" />;
@@ -118,7 +126,11 @@ export function StepProgressRail({
           const visual = STEP_STATE_VISUALS[step.state] ?? STEP_STATE_VISUALS.pending;
 
           return (
-            <div key={step.nodeRunId || step.title} className="relative flex gap-3 group pb-3 last:pb-0">
+            <div
+              key={step.nodeRunId || step.title}
+              ref={activeRunTab === "current" && activeStepIndex === index ? activeStepRef : undefined}
+              className="relative flex gap-3 group pb-3 last:pb-0"
+            >
               {/* 时间轴连接线：已完成节点向下延伸为绿色渐变并叠加向下流光，其余为浅灰 */}
               {!isLast && (
                 <div

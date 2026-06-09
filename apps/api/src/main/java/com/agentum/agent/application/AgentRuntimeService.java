@@ -9,6 +9,7 @@ import com.agentum.mcp.application.McpRuntimeService;
 import com.agentum.shared.api.ApiException;
 import com.agentum.shared.api.RequestIds;
 import com.agentum.shared.security.FieldEncryptionService;
+import com.agentum.workbench.application.RunExecutionCancellationRegistry;
 import com.agentum.system.domain.ModelProviderEntity;
 import com.agentum.system.domain.SystemCapabilityEntity;
 import com.agentum.system.domain.TenantModelAssignmentEntity;
@@ -52,6 +53,7 @@ public class AgentRuntimeService {
     private final ModelChatClient modelChatClient;
     private final ObjectMapper objectMapper;
     private final Clock clock;
+    private final RunExecutionCancellationRegistry cancellationRegistry;
 
     public AgentRuntimeService(
         TenantModelAssignmentRepository tenantModelAssignmentRepository,
@@ -64,7 +66,8 @@ public class AgentRuntimeService {
         ModelCallLogRepository modelCallLogRepository,
         ModelChatClient modelChatClient,
         ObjectMapper objectMapper,
-        Clock clock
+        Clock clock,
+        RunExecutionCancellationRegistry cancellationRegistry
     ) {
         this.tenantModelAssignmentRepository = tenantModelAssignmentRepository;
         this.modelProviderRepository = modelProviderRepository;
@@ -77,6 +80,7 @@ public class AgentRuntimeService {
         this.modelChatClient = modelChatClient;
         this.objectMapper = objectMapper;
         this.clock = clock;
+        this.cancellationRegistry = cancellationRegistry;
     }
 
     public AgentRuntimeResult execute(AgentRuntimeRequest request) {
@@ -170,6 +174,7 @@ public class AgentRuntimeService {
 
         try {
             for (int iteration = 0; iteration < maxIterations; iteration++) {
+                assertRunNotCancelled(request.run().getId());
                 eventSink.onPhase("model_calling", iteration == 0 ? "正在让智能体规划下一步。" : "正在基于工具观察结果继续推理。");
                 LoggedChatResult loggedResult = streamFinalAnswer
                     ? callModelStreamWithLog(request, provider, modelName, messages, options, toolDefinitions, eventSink)
@@ -200,6 +205,7 @@ public class AgentRuntimeService {
                 messages.add(ModelChatClient.ChatMessage.assistantToolCalls(result.content(), result.toolCalls()));
                 eventSink.onPhase("tool_calling", "智能体已选择工具，正在执行并回写观察结果。");
                 for (ModelChatClient.ToolCall toolCall : executableToolCalls) {
+                    assertRunNotCancelled(request.run().getId());
                     ToolExecution toolExecution = executeToolCall(request, toolCall, mcpToolByName, skillToolByName, eventSink);
                     toolCallSummaries.add(toolExecution.summary());
                     messages.add(ModelChatClient.ChatMessage.toolResult(toolCall.id(), toolExecution.observation()));
@@ -207,6 +213,7 @@ public class AgentRuntimeService {
             }
 
             if (finalAnswer.isBlank()) {
+                assertRunNotCancelled(request.run().getId());
                 eventSink.onPhase("model_calling", "工具循环达到上限，正在汇总最终答案。");
                 finalAnswer = synthesizeFinalAnswer(request, provider, modelName, messages, options, streamFinalAnswer, eventSink, modelCallLogIds);
             }
@@ -972,6 +979,12 @@ public class AgentRuntimeService {
             }
         }
         return "";
+    }
+
+    private void assertRunNotCancelled(UUID runId) {
+        if (cancellationRegistry.isCancelled(runId)) {
+            throw new ApiException(HttpStatus.CONFLICT, "RUN_CANCELLED", "任务已中断");
+        }
     }
 
     private static String stringValue(Object value) {

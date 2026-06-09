@@ -17,6 +17,7 @@ import com.agentum.system.infrastructure.SystemCapabilityRepository;
 import com.agentum.system.infrastructure.TenantModelAssignmentRepository;
 import com.agentum.workflow.domain.WorkflowNodeRunEntity;
 import com.agentum.workflow.domain.WorkflowRunEntity;
+import com.agentum.workbench.application.RunExecutionCancellationRegistry;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.time.Instant;
@@ -55,7 +56,8 @@ class AgentRuntimeServiceTest {
             callLogRepository,
             modelChatClient,
             new ObjectMapper(),
-            Clock.fixed(NOW, ZoneOffset.UTC)
+            Clock.fixed(NOW, ZoneOffset.UTC),
+            new RunExecutionCancellationRegistry()
         );
 
         ModelProviderEntity provider = ModelProviderEntity.create(

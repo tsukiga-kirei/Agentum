@@ -21,7 +21,12 @@ import { DeliveryPreviewPanel } from "./DeliveryPreviewPanel";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { workbenchApi } from "../../services/apiClient";
 import { formatRuntimeErrorMessage } from "../../utils/runtimeErrors";
-import { mergeClusterAgents, parseClusterAgentSummariesFromOutputs } from "../../utils/clusterAgentsMerge";
+import { mergeClusterAgents, parseClusterAgentSummariesFromOutputs, clusterAgentDisplayText } from "../../utils/clusterAgentsMerge";
+import {
+  clearStreamPausedByUser,
+  isStreamPausedByUser,
+  markStreamPausedByUser,
+} from "../../utils/streamProgressStorage";
 import { WorkbenchGlobalActions } from "../workbench/SurfacePageLayout";
 import { 
   Save, 
@@ -49,6 +54,18 @@ interface TaskRunWorkspaceProps {
 
 type RunWorkspaceTab = "overview" | "current" | "trace" | "deliveries";
 
+function isRunFlowCompleted(run: WorkbenchRunDetail): boolean {
+  return run.state === "completed" || run.progressPercent >= 100;
+}
+
+/** 重新进入/刷新时：未完成且可编辑的任务默认打开「当前处理」。 */
+function resolveInitialRunTab(run: WorkbenchRunDetail): RunWorkspaceTab {
+  if (run.readOnly || isRunFlowCompleted(run)) {
+    return "overview";
+  }
+  return "current";
+}
+
 export function TaskRunWorkspace({
   run: initialRun,
   tenantId,
@@ -59,16 +76,17 @@ export function TaskRunWorkspace({
   onReload,
 }: TaskRunWorkspaceProps) {
   const [runDetail, setRunDetail] = useState<WorkbenchRunDetail>(initialRun);
-  const [activeRunTab, setActiveRunTab] = useState<RunWorkspaceTab>("overview");
+  const [activeRunTab, setActiveRunTab] = useState<RunWorkspaceTab>(() => resolveInitialRunTab(initialRun));
   const [selectedTraceStepIndex, setSelectedTraceStepIndex] = useState<number | null>(null);
   const [isAdvancing, setIsAdvancing] = useState(false);
   const [advanceError, setAdvanceError] = useState<string | null>(null);
-  // 用户主动中断 SSE 后暂停自动推进，需手动「重新连接/重新开始」才能继续观看或重跑当前节点。
-  const [streamInterrupted, setStreamInterrupted] = useState(false);
+  // 同步读取 sessionStorage，避免首屏 effect 竞态导致刷新后自动重连 SSE。
+  const [streamInterrupted, setStreamInterrupted] = useState(() => isStreamPausedByUser(initialRun.id));
+  const userPausedRef = useRef(streamInterrupted);
+  userPausedRef.current = streamInterrupted;
   const processedStreamEventsRef = useRef(0);
   
-  // 1. Establish SSE Connection via useRunStream hook
-  const stream = useRunStream(tenantId, runDetail.id, token);
+  const stream = useRunStream(tenantId, runDetail.id, token, { userPausedRef });
 
   async function reloadRunDetail(): Promise<WorkbenchRunDetail | null> {
     try {
@@ -116,8 +134,17 @@ export function TaskRunWorkspace({
   useEffect(() => {
     processedStreamEventsRef.current = 0;
     setAdvanceError(null);
-    stream.disconnect();
+    if (!isStreamPausedByUser(runDetail.id)) {
+      stream.disconnect();
+    }
   }, [runDetail.id, stream.disconnect]);
+
+  useEffect(() => {
+    if (isStreamPausedByUser(runDetail.id)) {
+      setStreamInterrupted(true);
+      userPausedRef.current = true;
+    }
+  }, [runDetail.id]);
 
   useEffect(() => {
     return () => {
@@ -129,6 +156,12 @@ export function TaskRunWorkspace({
   useEffect(() => {
     setRunDetail(initialRun);
   }, [initialRun]);
+
+  // 切换任务或刷新后，未完成流程默认回到「当前处理」页签。
+  useEffect(() => {
+    setActiveRunTab(resolveInitialRunTab(runDetail));
+    setSelectedTraceStepIndex(null);
+  }, [runDetail.id]);
 
   const streamEventsRef = useRef(stream.events);
   useEffect(() => {
@@ -218,8 +251,7 @@ export function TaskRunWorkspace({
     && stream.activeNodeInfo?.nodeRunId === activeStep.nodeRunId;
 
   const isFlowCompleted =
-    runDetail.state === "completed"
-    || runDetail.progressPercent >= 100
+    isRunFlowCompleted(runDetail)
     || preview.statusLabel === "已完成";
 
   const stepErrorMessage =
@@ -234,32 +266,45 @@ export function TaskRunWorkspace({
   const isStreamableStep =
     activeStep.kind === "agent" || activeStep.kind === "multiAgent";
 
-  // 重新进入任务页时，若后端节点仍在运行且用户未主动中断，自动重连 SSE 以接上实时输出。
+  // 后台仍在跑但前端未连流时，视为中断态，只展示「重新生成」。
   useEffect(() => {
     if (runDetail.readOnly || streamInterrupted || !isStreamableStep) {
       return;
     }
-    if (activeStep.state === "running" && stream.connectionState === "disconnected" && !stream.isStreaming) {
-      void stream.ensureConnected().catch((error: unknown) => {
-        console.warn("重连运行流失败", error);
-      });
+    if (activeStep.state !== "running") {
+      return;
     }
+    if (stream.connectionState !== "disconnected" || stream.isStreaming) {
+      return;
+    }
+    markStreamPausedByUser(runDetail.id);
+    userPausedRef.current = true;
+    setStreamInterrupted(true);
   }, [
     runDetail.readOnly,
+    runDetail.id,
     streamInterrupted,
     isStreamableStep,
     activeStep.state,
     activeStep.nodeRunId,
     stream.connectionState,
     stream.isStreaming,
-    stream.ensureConnected,
   ]);
 
   useEffect(() => {
-    if (activeStep.state === "done" || activeStep.state === "pending" || activeStep.state === "failed") {
+    if (activeStep.state === "done" || activeStep.state === "failed") {
       setStreamInterrupted(false);
+      userPausedRef.current = false;
+      clearStreamPausedByUser(runDetail.id);
     }
-  }, [activeStep.nodeRunId, activeStep.state]);
+  }, [activeStep.nodeRunId, activeStep.state, runDetail.id]);
+
+  useEffect(() => {
+    if (isStreamPausedByUser(runDetail.id)) {
+      setStreamInterrupted(true);
+      userPausedRef.current = true;
+    }
+  }, [runDetail.id]);
 
   useEffect(() => {
     if (activeStep.state === "failed" && !isFlowCompleted && !runDetail.readOnly) {
@@ -274,12 +319,10 @@ export function TaskRunWorkspace({
   }, [isFlowCompleted, activeRunTab]);
 
   const initialAutoStartRef = useRef(false);
-  const [isWaitingBackendProgress, setIsWaitingBackendProgress] = useState(false);
 
   useEffect(() => {
     initialAutoStartRef.current = false;
-    setIsWaitingBackendProgress(false);
-  }, [runDetail.id]);
+  }, [runDetail.id, runDetail.nodes]);
 
   // 智能体/多智能体/交付执行完成后切到「当前处理」，展示结果与「确认并执行下一步」。
   useEffect(() => {
@@ -294,54 +337,7 @@ export function TaskRunWorkspace({
     }
   }, [activeStep.nodeRunId, activeStep.state, activeStep.kind, isFlowCompleted, runDetail.readOnly]);
 
-  // 刷新后节点仍为 running：只重连 SSE 并轮询 DB，不自动再次 advance（避免重复调模型或误断 SSE）。
-  useEffect(() => {
-    if (runDetail.readOnly || isAdvancing || streamInterrupted) {
-      return;
-    }
-    if (activeStep.state !== "running") {
-      setIsWaitingBackendProgress(false);
-      return;
-    }
-    if (activeStep.kind !== "agent" && activeStep.kind !== "multiAgent") {
-      return;
-    }
-    if (isLiveExecuting) {
-      setIsWaitingBackendProgress(false);
-      return;
-    }
-
-    setIsWaitingBackendProgress(true);
-    void stream.ensureConnected().catch((error: unknown) => {
-      console.warn("恢复运行流连接失败", error);
-    });
-    void reloadRunDetail();
-
-    let cancelled = false;
-    const poll = window.setInterval(() => {
-      if (cancelled) {
-        return;
-      }
-      void reloadRunDetail();
-    }, 4000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(poll);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    runDetail.id,
-    runDetail.readOnly,
-    activeStep.nodeRunId,
-    activeStep.state,
-    activeStep.kind,
-    isAdvancing,
-    streamInterrupted,
-    isLiveExecuting,
-  ]);
-
-  // 仅在首次进入任务且当前步骤为待执行智能体时自动启动；完成后不再因下一步 pending 而链式推进。
+  // 仅在首次进入任务且当前步骤为待执行智能体时自动启动；中断后需手动重新生成。
   useEffect(() => {
     if (initialAutoStartRef.current) {
       return;
@@ -355,10 +351,13 @@ export function TaskRunWorkspace({
     if (activeStep.kind !== "agent" && activeStep.kind !== "multiAgent") {
       return;
     }
+    if (isStreamPausedByUser(runDetail.id)) {
+      return;
+    }
     initialAutoStartRef.current = true;
     void handleAdvanceStep();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runDetail.id, activeStep.nodeRunId, activeStep.state, activeStep.kind]);
+  }, [runDetail.id, activeStep.nodeRunId, activeStep.state, activeStep.kind, streamInterrupted]);
 
   const clusterAgentsForPanel = useMemo(() => {
     if (activeStep.kind !== "multiAgent") {
@@ -525,37 +524,38 @@ export function TaskRunWorkspace({
     }
   }
 
-  function handleInterruptStream() {
+  async function handleInterruptStream() {
+    markStreamPausedByUser(runDetail.id);
+    userPausedRef.current = true;
     stream.disconnect();
     setStreamInterrupted(true);
-    void reloadRunDetail();
-  }
-
-  async function handleRestartStream() {
-    setStreamInterrupted(false);
-    setAdvanceError(null);
     try {
-      await stream.ensureConnected();
-      // 节点仍为 running 时仅重连 SSE，等待后台继续推送；只有用户明确「重新执行」才再次 advance。
-      if (activeStep.state === "running") {
-        setIsWaitingBackendProgress(true);
-        await reloadRunDetail();
-        return;
-      }
-      await handleAdvanceStep();
+      const updated = await workbenchApi.interruptRun(tenantId, token, runDetail.id);
+      setRunDetail(updated);
+      onReload(updated);
     } catch (error: unknown) {
-      console.error("重新开始执行失败", error);
+      const message = error instanceof Error ? error.message : "中断执行失败";
+      console.error("中断执行失败", error);
+      setAdvanceError(message);
     }
   }
 
-  async function handleForceReExecuteStep() {
+  async function handleRegenerateCurrentStep() {
+    clearStreamPausedByUser(runDetail.id);
+    userPausedRef.current = false;
     setStreamInterrupted(false);
+    stream.disconnect();
     setAdvanceError(null);
-    setIsWaitingBackendProgress(false);
     try {
+      const hasRunningNode = runDetail.nodes.some((node) => node.state === "running");
+      if (hasRunningNode) {
+        const updated = await workbenchApi.interruptRun(tenantId, token, runDetail.id);
+        setRunDetail(updated);
+        onReload(updated);
+      }
       await handleAdvanceStep();
     } catch (error: unknown) {
-      console.error("重新执行当前节点失败", error);
+      console.error("重新生成当前步骤失败", error);
     }
   }
 
@@ -828,7 +828,6 @@ export function TaskRunWorkspace({
               isStreaming={isLiveExecuting}
               isAdvancing={isAdvancing}
               streamInterrupted={streamInterrupted}
-              isWaitingBackendProgress={isWaitingBackendProgress}
               isRunCompleted={isFlowCompleted}
               isRunFailed={runDetail.state === "failed" || activeStep.state === "failed"}
               readOnly={runDetail.readOnly}
@@ -840,8 +839,7 @@ export function TaskRunWorkspace({
               onRollback={handleRollbackPrevious}
               onBack={onBack}
               onInterrupt={handleInterruptStream}
-              onRestartStream={handleRestartStream}
-              onForceReExecute={handleForceReExecuteStep}
+              onRegenerateCurrent={handleRegenerateCurrentStep}
             />
           )}
         </section>
@@ -1050,8 +1048,7 @@ function RunTracePanel({
                         <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400 font-medium">已完成</span>
                       </div>
                       <MarkdownRenderer
-                        content={stringifyValue(agent.summary || agent.outputSummary) || "已完成"}
-                        compact
+                        content={clusterAgentDisplayText(agent) || "已完成"}
                       />
                     </div>
                   ))}

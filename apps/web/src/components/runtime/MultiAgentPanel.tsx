@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import type { RuntimePreviewStep, RunStreamState } from "../../types/runtime-types";
 import { Users, Bot, Terminal } from "lucide-react";
 import { Drawer } from "antd";
@@ -6,6 +6,7 @@ import { useAuthStore } from "../../stores/authStore";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { mergeClusterAgents } from "../../utils/clusterAgentsMerge";
 import { formatRuntimeErrorMessage } from "../../utils/runtimeErrors";
+import { pickBestAgentOutput } from "../../utils/agentOutputText";
 
 interface MultiAgentPanelProps {
   activeStep: RuntimePreviewStep;
@@ -58,6 +59,16 @@ export function MultiAgentPanel({
     });
   }, [configAgents, clusterAgents, activeStep.outputs, activeStep.state, isStreaming]);
 
+  useEffect(() => {
+    if (!selectedAgent) {
+      return;
+    }
+    const fresh = agents.find((agent) => agent.index === selectedAgent.index);
+    if (fresh) {
+      setSelectedAgent(fresh);
+    }
+  }, [agents, selectedAgent?.index]);
+
   const completedCount = agents.filter((a) => a.status === "completed").length;
   const runningCount = agents.filter((a) => a.status === "running").length;
   const totalCount = agents.length;
@@ -73,7 +84,7 @@ export function MultiAgentPanel({
       return "等待调度执行";
     }
     if (agentStatus === "running") {
-      return "正在初始化任务变量...";
+      return "正在执行...";
     }
     return "等待调度执行";
   }
@@ -106,13 +117,7 @@ export function MultiAgentPanel({
           const isRunning = agent.status === "running";
           const isCompleted = agent.status === "completed";
           const isFailed = agent.status === "failed";
-          const previewText = isFailed
-            ? (agent.errorMessage || agent.outputSummary)
-            : isRunning
-            ? agent.streamingText
-            : isCompleted
-              ? agent.outputSummary
-              : agent.userPrompt || agent.systemPrompt;
+          const previewText = resolveClusterAgentPreview(agent);
 
           return (
             <div
@@ -158,8 +163,8 @@ export function MultiAgentPanel({
               <div className="p-4 flex-1 flex flex-col justify-between space-y-3 min-h-[120px]">
                 <div className="space-y-2">
                   {previewText ? (
-                    <div className="max-h-[160px] overflow-hidden">
-                      <MarkdownRenderer content={previewText} compact className="line-clamp-6" />
+                    <div className="max-h-[280px] overflow-y-auto">
+                      <MarkdownRenderer content={previewText} />
                       {isRunning ? (
                         <span className="inline-block w-1.5 h-3 bg-blue-500 dark:bg-blue-400 ml-0.5 animate-pulse" />
                       ) : null}
@@ -224,18 +229,14 @@ export function MultiAgentPanel({
             {selectedAgent.systemPrompt ? (
               <section className="bg-white dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-800 p-4">
                 <span className="text-xs text-slate-400 font-bold block mb-2">系统提示词</span>
-                <div className="prose dark:prose-invert max-w-none text-sm">
-                  <MarkdownRenderer content={selectedAgent.systemPrompt} />
-                </div>
+                <MarkdownRenderer content={selectedAgent.systemPrompt} compact />
               </section>
             ) : null}
 
             {selectedAgent.userPrompt ? (
               <section className="bg-white dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-800 p-4">
                 <span className="text-xs text-slate-400 font-bold block mb-2">任务提示词</span>
-                <div className="prose dark:prose-invert max-w-none text-sm">
-                  <MarkdownRenderer content={selectedAgent.userPrompt} />
-                </div>
+                <MarkdownRenderer content={selectedAgent.userPrompt} compact />
               </section>
             ) : null}
 
@@ -247,14 +248,12 @@ export function MultiAgentPanel({
                 <p className="text-sm text-rose-700 dark:text-rose-300 whitespace-pre-wrap">
                   {formatRuntimeErrorMessage(undefined, selectedAgent.errorMessage || selectedAgent.outputSummary)}
                 </p>
-              ) : selectedAgent.status === "running" && selectedAgent.streamingText ? (
+              ) : resolveClusterAgentPreview(selectedAgent) ? (
                 <div className="text-sm bg-slate-50 dark:bg-slate-900 p-3 rounded-lg border border-slate-100 dark:border-slate-800">
-                  <MarkdownRenderer content={selectedAgent.streamingText} />
-                  <span className="inline-block w-1.5 h-3.5 bg-blue-500 dark:bg-blue-400 ml-1 animate-pulse" />
-                </div>
-              ) : selectedAgent.outputSummary ? (
-                <div className="text-sm">
-                  <MarkdownRenderer content={selectedAgent.outputSummary} />
+                  <MarkdownRenderer content={resolveClusterAgentPreview(selectedAgent)} />
+                  {selectedAgent.status === "running" ? (
+                    <span className="inline-block w-1.5 h-3.5 bg-blue-500 dark:bg-blue-400 ml-1 animate-pulse" />
+                  ) : null}
                 </div>
               ) : (
                 <p className="text-sm text-slate-400 italic">暂无输出结果</p>
@@ -294,4 +293,19 @@ export function MultiAgentPanel({
       ) : null}
     </div>
   );
+}
+
+function resolveClusterAgentPreview(agent: {
+  status: DrawerAgent["status"];
+  streamingText: string;
+  outputSummary: string;
+  errorMessage?: string;
+}): string {
+  if (agent.status === "failed") {
+    return agent.errorMessage || agent.outputSummary || "";
+  }
+  if (agent.status === "running" || agent.status === "completed") {
+    return pickBestAgentOutput(agent.streamingText, agent.outputSummary);
+  }
+  return "";
 }

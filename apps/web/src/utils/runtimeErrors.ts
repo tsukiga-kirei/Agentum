@@ -26,13 +26,51 @@ export function formatRuntimeErrorMessage(errorCode?: string | null, errorMessag
   return "节点执行失败，请重试或回退上一步。";
 }
 
-export function isClusterAgentFailureSummary(summary: unknown): boolean {
-  const text = typeof summary === "string" ? summary.trim() : "";
-  if (!text) {
+/** 判断持久化的子智能体快照是否表示执行失败（不扫描 final_answer 正文关键词）。 */
+export function isPersistedClusterAgentFailed(agent: Record<string, unknown>): boolean {
+  const status = agent.status ?? agent.state;
+  if (status === "failed") {
+    return true;
+  }
+  if (status === "completed" || status === "success") {
     return false;
   }
-  return text.includes("失败")
-    || text.includes("未配置")
-    || text.includes("MODEL_")
-    || text.includes("AGENT_");
+
+  const errorCode = agent.errorCode ?? agent.error_code;
+  if (typeof errorCode === "string" && errorCode.trim()) {
+    return true;
+  }
+
+  const finalAnswer = agent.final_answer ?? agent.finalAnswer;
+  if (typeof finalAnswer === "string" && finalAnswer.trim().length > 0) {
+    return false;
+  }
+
+  const summary = typeof agent.summary === "string" ? agent.summary.trim() : "";
+  if (!summary) {
+    return false;
+  }
+
+  // 失败快照通常只有短错误摘要，不含完整 Markdown 输出。
+  if (summary.length > 240) {
+    return false;
+  }
+
+  return (
+    summary.startsWith("执行失败")
+    || summary.includes("CLUSTER_AGENT_FAILED")
+    || summary.includes("MODEL_MAX_TOKENS")
+    || summary.includes("MODEL_CALL_FAILED")
+    || summary.includes("AGENT_LOOP_FAILED")
+    || summary.includes("未配置最大输出 Token")
+  );
+}
+
+/** @deprecated 请改用 isPersistedClusterAgentFailed，避免把正文里的「失败」误判为状态。 */
+export function isClusterAgentFailureSummary(summary: unknown): boolean {
+  const text = typeof summary === "string" ? summary.trim() : "";
+  if (!text || text.length > 240) {
+    return false;
+  }
+  return isPersistedClusterAgentFailed({ summary: text });
 }

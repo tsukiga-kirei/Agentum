@@ -406,6 +406,11 @@ export const workbenchApi = {
       method: "POST",
       token,
     }),
+  interruptRun: (tenantId: string, token: string, runId: string) =>
+    apiRequest<WorkbenchRunDetail>(`/api/tenants/${tenantId}/workbench/runs/${runId}/interrupt`, {
+      method: "POST",
+      token,
+    }),
   completeTodoWithPayload: (tenantId: string, token: string, todoId: string, payload: Record<string, unknown>) =>
     apiRequest<WorkbenchRunDetail>(`/api/tenants/${tenantId}/workbench/todos/${todoId}/complete`, {
       method: "POST",

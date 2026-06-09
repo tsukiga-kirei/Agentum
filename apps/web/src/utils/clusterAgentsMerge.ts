@@ -1,5 +1,6 @@
 import type { RunStreamState } from "../types/runtime-types";
-import { isClusterAgentFailureSummary } from "./runtimeErrors";
+import { isPersistedClusterAgentFailed } from "./runtimeErrors";
+import { pickBestAgentOutput } from "./agentOutputText";
 
 type ClusterAgentView = RunStreamState["clusterAgents"][number];
 
@@ -43,8 +44,16 @@ export function parseClusterProgressFromOutputs(
 }
 
 function summaryFromPersisted(agent: Record<string, unknown>): string {
+  const finalAnswer = agent.final_answer ?? agent.finalAnswer;
+  if (typeof finalAnswer === "string" && finalAnswer.trim()) {
+    return finalAnswer.trim();
+  }
   const text = agent.summary ?? agent.outputSummary ?? "";
   return typeof text === "string" ? text : String(text ?? "");
+}
+
+export function clusterAgentDisplayText(agent: Record<string, unknown>): string {
+  return summaryFromPersisted(agent);
 }
 
 function nameFromPersisted(agent: Record<string, unknown>, index: number): string {
@@ -101,17 +110,28 @@ export function mergeClusterAgents(options: {
         && !merged.outputSummary
         && !merged.streamingText
       ) {
-        merged.status = isClusterAgentFailureSummary(persistedSummary) ? "failed" : "completed";
+        merged.status = persistedAgent && isPersistedClusterAgentFailed(persistedAgent) ? "failed" : "completed";
         merged.outputSummary = persistedSummary;
         if (merged.status === "failed") {
           merged.errorMessage = persistedSummary;
         }
       }
+      if (merged.status === "completed" || merged.status === "running") {
+        const bestText = pickBestAgentOutput(
+          merged.outputSummary,
+          merged.streamingText,
+          persistedSummary
+        );
+        if (bestText) {
+          merged.outputSummary = bestText;
+          merged.streamingText = bestText;
+        }
+      }
       return merged;
     }
 
-    if (persistedSummary) {
-      const failed = isClusterAgentFailureSummary(persistedSummary);
+    if (persistedSummary && persistedAgent) {
+      const failed = isPersistedClusterAgentFailed(persistedAgent);
       return {
         index: base.index,
         name: base.name,
@@ -123,11 +143,11 @@ export function mergeClusterAgents(options: {
       };
     }
 
-    if (stepState === "done") {
+    if (stepState === "done" || stepState === "failed") {
       return {
         index: base.index,
         name: base.name,
-        status: "pending",
+        status: stepState === "failed" ? "failed" : "completed",
         streamingText: "",
         outputSummary: "",
         toolCalls: [],

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, type RefObject } from "react";
 import type {
   StreamEvent,
   RunStreamState,
@@ -8,11 +8,13 @@ import type {
 } from "../types/runtime-types";
 import { API_BASE_URL } from "../services/apiClient";
 import { formatRuntimeErrorMessage } from "../utils/runtimeErrors";
+import { pickBestAgentOutput } from "../utils/agentOutputText";
 
 export function useRunStream(
   tenantId: string,
   runId: string,
-  token: string
+  token: string,
+  options?: { userPausedRef?: RefObject<boolean> }
 ): RunStreamState {
   const [events, setEvents] = useState<StreamEvent[]>([]);
   const [streamingText, setStreamingText] = useState<string>("");
@@ -38,8 +40,32 @@ export function useRunStream(
   const connectSessionRef = useRef(0);
   const connectReadyRef = useRef<Promise<void> | null>(null);
   const pendingConnectResolversRef = useRef<Array<() => void>>([]);
+  const activeNodeRunIdRef = useRef<string | null>(null);
+  const userPausedRef = options?.userPausedRef;
 
-  const disconnect = useCallback(() => {
+  const restoreProgress = useCallback((snapshot: {
+    streamingText?: string;
+    clusterAgents?: RunStreamState["clusterAgents"];
+    toolCalls?: RuntimeCapabilityItem[];
+    activeNodeInfo?: { nodeRunId: string; nodeName: string; nodeType: string } | null;
+  }) => {
+    if (snapshot.streamingText) {
+      setStreamingText(snapshot.streamingText);
+    }
+    if (snapshot.clusterAgents && snapshot.clusterAgents.length > 0) {
+      setClusterAgents(snapshot.clusterAgents);
+    }
+    if (snapshot.toolCalls && snapshot.toolCalls.length > 0) {
+      setToolCalls(snapshot.toolCalls);
+    }
+    if (snapshot.activeNodeInfo) {
+      activeNodeRunIdRef.current = snapshot.activeNodeInfo.nodeRunId;
+      setActiveNodeInfo(snapshot.activeNodeInfo);
+    }
+  }, []);
+
+  const disconnect = useCallback((options?: { preserveProgress?: boolean }) => {
+    const preserveProgress = options?.preserveProgress === true;
     connectSessionRef.current += 1;
     connectReadyRef.current = null;
     connectionStateRef.current = "disconnected";
@@ -57,10 +83,12 @@ export function useRunStream(
     setConnectionState("disconnected");
     setIsStreaming(false);
     setActiveNodeInfo(null);
-    setStreamingText("");
-    setCurrentPhase(null);
-    setToolCalls([]);
-    setClusterAgents([]);
+    if (!preserveProgress) {
+      setStreamingText("");
+      setCurrentPhase(null);
+      setToolCalls([]);
+      setClusterAgents([]);
+    }
   }, []);
 
   const resolvePendingConnectors = useCallback(() => {
@@ -69,6 +97,9 @@ export function useRunStream(
   }, []);
 
   const connect = useCallback((): Promise<void> => {
+    if (userPausedRef?.current) {
+      return Promise.resolve();
+    }
     if (connectionStateRef.current === "connected" && isStreamActiveRef.current) {
       return Promise.resolve();
     }
@@ -225,9 +256,12 @@ export function useRunStream(
     });
 
     return connectReadyRef.current;
-  }, [tenantId, runId, token, disconnect, resolvePendingConnectors]);
+  }, [tenantId, runId, token, disconnect, resolvePendingConnectors, userPausedRef]);
 
   const ensureConnected = useCallback(async (timeoutMs = 8000) => {
+    if (userPausedRef?.current) {
+      return;
+    }
     if (connectionStateRef.current === "connected" && isStreamActiveRef.current) {
       return;
     }
@@ -239,7 +273,7 @@ export function useRunStream(
         }, timeoutMs);
       }),
     ]);
-  }, [connect]);
+  }, [connect, userPausedRef]);
 
   const handleStreamEvent = (event: StreamEvent) => {
     switch (event.type) {
@@ -249,12 +283,17 @@ export function useRunStream(
 
       case "node_started": {
         const { nodeRunId, nodeName, nodeType } = event.data;
+        const isSameNode = activeNodeRunIdRef.current === nodeRunId;
+        activeNodeRunIdRef.current = nodeRunId;
         setActiveNodeInfo({ nodeRunId, nodeName, nodeType });
-        setStreamingText("");
         setIsStreaming(true);
         setCurrentPhase("preparing");
-        setToolCalls([]);
-        setClusterAgents([]);
+        // SSE 重连会再次收到 node_started：同一节点不清空已展示的流式/集群进度。
+        if (!isSameNode) {
+          setStreamingText("");
+          setToolCalls([]);
+          setClusterAgents([]);
+        }
         break;
       }
 
@@ -345,7 +384,14 @@ export function useRunStream(
             agent.streamingText = accumulatedContent;
           } else if (eventType === "completed") {
             agent.status = "completed";
-            agent.outputSummary = outputSummary || "";
+            const bestText = pickBestAgentOutput(
+              outputSummary,
+              accumulatedContent,
+              agent.streamingText,
+              agent.outputSummary
+            );
+            agent.outputSummary = bestText;
+            agent.streamingText = bestText;
           } else if (eventType === "failed") {
             agent.status = "failed";
             agent.errorMessage = formatRuntimeErrorMessage(errorCode, errorMessage);
@@ -379,6 +425,7 @@ export function useRunStream(
         setIsStreaming(false);
         setCurrentPhase("completed");
         setActiveNodeInfo(null);
+        activeNodeRunIdRef.current = null;
         break;
 
       case "node_failed": {
@@ -425,5 +472,6 @@ export function useRunStream(
     connect,
     ensureConnected,
     disconnect,
+    restoreProgress,
   };
 }

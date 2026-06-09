@@ -256,7 +256,8 @@ class WorkbenchRuntimeServiceTest {
             Clock.fixed(NOW, ZoneOffset.UTC),
             agentRuntimeService,
             deliveryRuntimeService,
-            new RunStreamEmitterRegistry()
+            new RunStreamEmitterRegistry(),
+            new RunExecutionCancellationRegistry()
         );
     }
 

@@ -143,4 +143,24 @@ public class RuntimeSseController {
             RequestIds.current(request)
         );
     }
+
+    /**
+     * 中断当前运行中的智能体步骤并重置为待执行。
+     */
+    @PostMapping("/runs/{runId}/interrupt")
+    public ApiResponse<WorkbenchApi.RunDetail> interrupt(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID runId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        workbenchAccess.assertCanAccessWorkbench(principal, tenantId);
+        log.info("用户中断任务步骤 tenantId={} userId={} runId={} requestId={}",
+            tenantId, principal.userId(), runId, RequestIds.current(request));
+
+        return ApiResponse.success(
+            workbenchRuntimeService.interruptRun(tenantId, principal, runId),
+            RequestIds.current(request)
+        );
+    }
 }

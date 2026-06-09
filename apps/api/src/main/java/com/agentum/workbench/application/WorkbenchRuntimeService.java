@@ -99,6 +99,7 @@ public class WorkbenchRuntimeService {
     private final AgentRuntimeService agentRuntimeService;
     private final DeliveryRuntimeService deliveryRuntimeService;
     private final RunStreamEmitterRegistry runStreamEmitterRegistry;
+    private final RunExecutionCancellationRegistry cancellationRegistry;
     /** 防止同一任务并发重复推进，导致子智能体双开。 */
     private final Set<UUID> advancingRuns = ConcurrentHashMap.newKeySet();
 
@@ -119,7 +120,8 @@ public class WorkbenchRuntimeService {
         Clock clock,
         AgentRuntimeService agentRuntimeService,
         DeliveryRuntimeService deliveryRuntimeService,
-        RunStreamEmitterRegistry runStreamEmitterRegistry
+        RunStreamEmitterRegistry runStreamEmitterRegistry,
+        RunExecutionCancellationRegistry cancellationRegistry
     ) {
         this.tenantRepository = tenantRepository;
         this.workflowDefinitionRepository = workflowDefinitionRepository;
@@ -138,6 +140,7 @@ public class WorkbenchRuntimeService {
         this.agentRuntimeService = agentRuntimeService;
         this.deliveryRuntimeService = deliveryRuntimeService;
         this.runStreamEmitterRegistry = runStreamEmitterRegistry;
+        this.cancellationRegistry = cancellationRegistry;
     }
 
     @Transactional(readOnly = true)
@@ -496,6 +499,73 @@ public class WorkbenchRuntimeService {
             RequestIds.current()
         );
         return getRunDetail(tenantId, principal, runId);
+    }
+
+    /**
+     * 用户中断当前正在执行的智能体步骤：协作式取消后台任务，并将运行中节点重置为待执行。
+     */
+    @Transactional
+    public WorkbenchApi.RunDetail interruptRun(UUID tenantId, CurrentUserPrincipal principal, UUID runId) {
+        ensureActiveTenant(tenantId);
+        ensureAuthenticated(principal);
+        WorkflowRunEntity run = requireOwnedRun(tenantId, principal, runId);
+        if ("completed".equals(run.getState())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_RUN_INTERRUPT_FORBIDDEN", "已完成任务无需中断");
+        }
+
+        cancellationRegistry.requestCancel(runId);
+        advancingRuns.remove(runId);
+
+        List<WorkflowNodeRunEntity> nodes = workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(runId);
+        WorkflowNodeRunEntity runningNode = nodes.stream()
+            .filter(node -> "running".equals(node.getState()))
+            .findFirst()
+            .orElse(null);
+
+        Instant now = clock.instant();
+        if (runningNode != null) {
+            runningNode.resetToPending(now);
+            workflowNodeRunRepository.save(runningNode);
+            workflowVariableSnapshotRepository.deleteByRunIdAndNodeRunIdIn(run.getId(), List.of(runningNode.getId()));
+            int completedBefore = (int) nodes.stream()
+                .filter(node -> node.getSortOrder() < runningNode.getSortOrder() && "completed".equals(node.getState()))
+                .count();
+            run.pauseAt(runningNode.getNodeKey(), runningNode.getName(), runningNode.getNodeType(), completedBefore, now);
+            workflowRunRepository.save(run);
+            workflowRunEventRepository.save(WorkflowRunEventEntity.create(
+                run.getId(),
+                tenantId,
+                "run_interrupted",
+                "步骤已中断",
+                "用户已中断「" + runningNode.getName() + "」，可重新生成整步执行。",
+                runningNode.getNodeKey(),
+                principal.userId(),
+                Map.of("nodeRunId", runningNode.getId().toString()),
+                now
+            ));
+            log.info(
+                "用户中断任务步骤 tenantId={} userId={} runId={} nodeRunId={} requestId={}",
+                tenantId,
+                principal.userId(),
+                runId,
+                runningNode.getId(),
+                RequestIds.current()
+            );
+        }
+
+        sendSseEvent(runId, "run_paused", eventPayload(runId, null, now.toString(), Map.of(
+            "reason", "用户已中断当前步骤，可点击重新生成整步重做"
+        )));
+        sendSseEvent(runId, "message", "[DONE]");
+        completeSseEmitter(runId);
+
+        return getRunDetail(tenantId, principal, runId);
+    }
+
+    private void assertRunNotCancelled(UUID runId) {
+        if (cancellationRegistry.isCancelled(runId)) {
+            throw new ApiException(HttpStatus.CONFLICT, "RUN_CANCELLED", "任务已中断");
+        }
     }
 
     @Transactional
@@ -1407,12 +1477,15 @@ public class WorkbenchRuntimeService {
                     @SuppressWarnings("unchecked")
                     Map<String, Object> summary = (Map<String, Object>) summaryMap;
                     String agentName = stringValue(summary.get("name"), "子智能体 " + (index + 1));
-                    String summaryText = stringValue(summary.get("summary"), "已完成");
+                    String displayText = stringValue(summary.get("final_answer"), "");
+                    if (displayText.isBlank()) {
+                        displayText = stringValue(summary.get("summary"), "已完成");
+                    }
                     sendSseEvent(runId, "cluster_agent", eventPayload(runId, activeNode.getId(), clock.instant().toString(), Map.of(
                         "agentIndex", index,
                         "agentName", agentName,
                         "eventType", "completed",
-                        "outputSummary", summaryText
+                        "outputSummary", displayText
                     )));
                 }
             }
@@ -1455,6 +1528,7 @@ public class WorkbenchRuntimeService {
 
     @Async
     public void advanceSingleStep(UUID tenantId, CurrentUserPrincipal principal, UUID runId) {
+        cancellationRegistry.clearCancel(runId);
         if (!advancingRuns.add(runId)) {
             // 刷新页面后前端可能再次 POST /advance；此时后台仍在执行，禁止向 SSE 发 [DONE]，
             // 否则会误断开用户刚建立的新连接，导致页面与真实执行进度脱节。
@@ -1529,6 +1603,8 @@ public class WorkbenchRuntimeService {
                 )).outputs();
             }
 
+            assertRunNotCancelled(runId);
+
             saveNodeSuccess(runId, nodeRunId, outputs, principal.userId());
             nodeSucceeded = true;
 
@@ -1567,6 +1643,12 @@ public class WorkbenchRuntimeService {
             completeSseEmitter(runId);
 
         } catch (ApiException e) {
+            if ("RUN_CANCELLED".equals(e.getCode())) {
+                log.info("流式步骤已用户中断 runId={} requestId={}", runId, RequestIds.current());
+                sendSseEvent(runId, "message", "[DONE]");
+                completeSseEmitter(runId);
+                return;
+            }
             log.warn("执行流式步骤 API 异常 runId={} code={} msg={}", runId, e.getCode(), e.getMessage());
             if (nodeRunId != null && !nodeSucceeded) {
                 try {
@@ -1614,6 +1696,7 @@ public class WorkbenchRuntimeService {
     }
 
     private Map<String, Object> executeStreamingAgent(UUID runId, WorkflowNodeRunEntity nodeRun, Map<String, Object> variables, UUID operatorUserId) {
+        assertRunNotCancelled(runId);
         WorkflowRunEntity run = workflowRunRepository.findById(runId).get();
         sendSseEvent(runId, "agent_thinking", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
             "phase", "preparing",
@@ -1691,6 +1774,7 @@ public class WorkbenchRuntimeService {
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> executeStreamingParallelGroup(UUID runId, WorkflowNodeRunEntity nodeRun, Map<String, Object> variables, UUID operatorUserId) {
+        assertRunNotCancelled(runId);
         WorkflowRunEntity run = workflowRunRepository.findById(runId).get();
         String nowStr = clock.instant().toString();
 
@@ -1706,6 +1790,7 @@ public class WorkbenchRuntimeService {
         
         int agentIndex = 0;
         for (Object rawAgent : agents) {
+            assertRunNotCancelled(runId);
             if (!(rawAgent instanceof Map<?, ?> rawMap)) {
                 continue;
             }
@@ -1827,6 +1912,9 @@ public class WorkbenchRuntimeService {
                 )));
                 summaries.add(Map.of(
                     "name", name,
+                    "status", "failed",
+                    "errorCode", errorCode,
+                    "errorMessage", errorMessage,
                     "summary", errorMessage
                 ));
                 persistClusterProgress(runId, nodeRun.getId(), summaries, agentIndex + 1);
@@ -1835,19 +1923,24 @@ public class WorkbenchRuntimeService {
             }
 
             currentVars.putAll(agentOutput);
-            
-            String summaryText = stringValue(agentOutput.get("summary"), "已完成");
-            summaries.add(Map.of(
-                "name", agentName,
-                "summary", summaryText
-            ));
+
+            String finalAnswer = stringValue(agentOutput.get("final_answer"), "");
+            String displayText = !finalAnswer.isBlank()
+                ? finalAnswer
+                : stringValue(agentOutput.get("summary"), "已完成");
+            Map<String, Object> summaryEntry = new LinkedHashMap<>();
+            summaryEntry.put("name", agentName);
+            summaryEntry.put("status", "completed");
+            summaryEntry.put("final_answer", displayText);
+            summaryEntry.put("summary", summarizeText(displayText));
+            summaries.add(summaryEntry);
             persistClusterProgress(runId, nodeRun.getId(), summaries, agentIndex + 1);
 
             sendSseEvent(runId, "cluster_agent", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
                 "agentIndex", idx,
                 "agentName", name,
                 "eventType", "completed",
-                "outputSummary", summaryText
+                "outputSummary", displayText
             )));
 
             agentIndex++;
@@ -1987,10 +2080,14 @@ public class WorkbenchRuntimeService {
         }
         StringBuilder result = new StringBuilder("## 智能体集群结论\n");
         for (Map<String, Object> summary : summaries) {
+            String body = stringValue(summary.get("final_answer"), "");
+            if (body.isBlank()) {
+                body = stringValue(summary.get("summary"), "已完成");
+            }
             result.append("\n### ")
                 .append(stringValue(summary.get("name"), "子智能体"))
                 .append("\n")
-                .append(stringValue(summary.get("summary"), "已完成"))
+                .append(body)
                 .append("\n");
         }
         return result.toString();

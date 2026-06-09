@@ -8,7 +8,6 @@ interface StepActionBarProps {
   isStreaming: boolean;
   isAdvancing?: boolean;
   streamInterrupted?: boolean;
-  isWaitingBackendProgress?: boolean;
   isRunCompleted: boolean;
   isRunFailed: boolean;
   readOnly: boolean;
@@ -20,8 +19,7 @@ interface StepActionBarProps {
   onRollback: () => void;
   onBack: () => void;
   onInterrupt?: () => void;
-  onRestartStream?: () => void;
-  onForceReExecute?: () => void;
+  onRegenerateCurrent?: () => void;
 }
 
 export function StepActionBar({
@@ -29,20 +27,18 @@ export function StepActionBar({
   isStreaming,
   isAdvancing = false,
   streamInterrupted = false,
-  isWaitingBackendProgress: _isWaitingBackendProgress = false,
   isRunCompleted,
   isRunFailed,
   readOnly,
   onAdvance,
-  onCompleteTodo,
+  onCompleteTodo: _onCompleteTodo,
   onApprove,
   onReject,
   onRetry,
   onRollback,
   onBack,
   onInterrupt,
-  onRestartStream,
-  onForceReExecute,
+  onRegenerateCurrent,
 }: StepActionBarProps) {
   
   if (readOnly) {
@@ -55,7 +51,6 @@ export function StepActionBar({
     );
   }
 
-  // 1. Run Completed State
   if (isRunCompleted) {
     return (
       <div className="step-action-bar flex justify-between items-center p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
@@ -69,7 +64,6 @@ export function StepActionBar({
     );
   }
 
-  // 2. Run Failed State
   if (isRunFailed) {
     const errorCode = activeStep.outputs?.find((field) => field.label === "errorCode")?.value;
     const errorMessage = activeStep.outputs?.find((field) => field.label === "errorMessage")?.value;
@@ -91,50 +85,27 @@ export function StepActionBar({
     );
   }
 
-  // 3. 用户中断 SSE 后暂停，需手动重新连接或从当前节点重新开始。
-  if (streamInterrupted && !isStreaming && !isAdvancing) {
-    const restartLabel = activeStep.state === "running" ? "重新连接" : "重新开始";
-    return (
-      <div className="step-action-bar flex justify-end gap-2 p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
-        <button
-          type="button"
-          className="sys-btn sys-btn--primary flex items-center gap-2 text-xs"
-          onClick={onRestartStream}
-        >
-          <RotateCw size={14} /> {restartLabel}
-        </button>
-      </div>
-    );
-  }
-
-  // 3b. 节点 running 但页面尚未收到流式：多为刷新后重连，后台可能仍在执行。
-  if (
-    activeStep.state === "running"
-    && (activeStep.kind === "agent" || activeStep.kind === "multiAgent")
+  // 中断后或后台仍在跑但前端未连流：仅提供「重新生成」整步重做，不提供重连/重新执行。
+  const showRegenerateCurrent =
+    (streamInterrupted
+      || (activeStep.state === "running" && (activeStep.kind === "agent" || activeStep.kind === "multiAgent")))
     && !isStreaming
-    && !isAdvancing
-  ) {
+    && !isAdvancing;
+
+  if (showRegenerateCurrent) {
     return (
       <div className="step-action-bar flex justify-end gap-2 p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
         <button
           type="button"
-          className="sys-btn sys-btn--default flex items-center gap-2 text-xs"
-          onClick={onRestartStream}
-        >
-          <RotateCw size={14} /> 重新连接
-        </button>
-        <button
-          type="button"
           className="sys-btn sys-btn--primary flex items-center gap-2 text-xs"
-          onClick={onForceReExecute ?? onRestartStream}
+          onClick={onRegenerateCurrent}
         >
-          <Play size={14} fill="currentColor" /> 重新执行
+          <RotateCw size={14} /> 重新生成
         </button>
       </div>
     );
   }
 
-  // 4. Executing / Streaming State
   if (isStreaming || isAdvancing) {
     return (
       <div className="step-action-bar flex justify-between items-center p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
@@ -160,13 +131,12 @@ export function StepActionBar({
     );
   }
 
-  // 5. Pending step — delivery 需先预览再手动执行；智能体类节点由页面自动触发启动。
   if (activeStep.state === "pending") {
     if (activeStep.kind === "agent" || activeStep.kind === "multiAgent") {
       return (
         <div className="step-action-bar flex justify-end p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
           <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">
-            {isAdvancing ? "启动中…" : "等待启动…"}
+            {isAdvancing ? "启动中…" : streamInterrupted ? "已中断，可点击重新生成整步执行" : "等待启动…"}
           </span>
         </div>
       );
@@ -186,7 +156,6 @@ export function StepActionBar({
     );
   }
 
-  // 6. Completed but ready to advance to next step — 需用户确认后再推进。
   if (activeStep.state === "done") {
     const canRegenerate = activeStep.allowsRegenerate;
     return (
@@ -208,7 +177,6 @@ export function StepActionBar({
     );
   }
 
-  // 7. Waiting User Input
   if (activeStep.state === "waiting" && activeStep.kind === "input") {
     return (
       <div className="step-action-bar flex justify-end p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
@@ -224,7 +192,6 @@ export function StepActionBar({
     );
   }
 
-  // 8. Waiting Human Review / Approval
   if (activeStep.state === "waiting" && activeStep.kind === "approval") {
     return (
       <div className="step-action-bar flex justify-end gap-3 p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
@@ -238,6 +205,5 @@ export function StepActionBar({
     );
   }
 
-  // Fallback
   return null;
 }
