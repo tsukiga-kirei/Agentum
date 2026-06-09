@@ -31,6 +31,9 @@ import com.agentum.workflow.infrastructure.WorkflowRunRepository;
 import com.agentum.workflow.infrastructure.WorkflowVersionRepository;
 import com.agentum.workflow.infrastructure.WorkflowVariableSnapshotRepository;
 import com.agentum.workflow.infrastructure.WorkflowWaitingEventRepository;
+import com.agentum.agent.application.AgentRuntimeService;
+import com.agentum.mcp.application.McpRuntimeService;
+import com.agentum.delivery.application.DeliveryRuntimeService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.time.Instant;
@@ -63,6 +66,9 @@ class WorkbenchRuntimeServiceTest {
     private final WorkflowVariableSnapshotRepository workflowVariableSnapshotRepository = mock(WorkflowVariableSnapshotRepository.class);
     private final UserAccountRepository userAccountRepository = mock(UserAccountRepository.class);
     private final WorkflowRuntimeExecutor workflowRuntimeExecutor = mock(WorkflowRuntimeExecutor.class);
+    private final AgentRuntimeService agentRuntimeService = mock(AgentRuntimeService.class);
+    private final McpRuntimeService mcpRuntimeService = mock(McpRuntimeService.class);
+    private final DeliveryRuntimeService deliveryRuntimeService = mock(DeliveryRuntimeService.class);
 
     @Test
     void shouldListAllPublishedWorkflowsAndMarkLockedRows() {
@@ -112,7 +118,7 @@ class WorkbenchRuntimeServiceTest {
         assertThat(preview.nodes()).extracting(WorkbenchApi.AvailableWorkflowNodeRow::nodeType)
             .containsExactly("user_input", "agent", "delivery");
         assertThat(preview.nodes()).extracting(WorkbenchApi.AvailableWorkflowNodeRow::name)
-            .containsExactly("补充授信资料", "智能体分析", "生成授信报告");
+            .containsExactly("补充授信资料", "智能体分析", "交付报告");
     }
 
     @Test
@@ -274,7 +280,10 @@ class WorkbenchRuntimeServiceTest {
             new CollaborationAccessPolicy(),
             new ObjectMapper(),
             workflowRuntimeExecutor,
-            Clock.fixed(NOW, ZoneOffset.UTC)
+            Clock.fixed(NOW, ZoneOffset.UTC),
+            agentRuntimeService,
+            mcpRuntimeService,
+            deliveryRuntimeService
         );
     }
 

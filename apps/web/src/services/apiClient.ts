@@ -401,6 +401,17 @@ export const workbenchApi = {
       token,
       body: { action: "complete", comment, payload },
     }),
+  advanceStep: (tenantId: string, token: string, runId: string) =>
+    apiRequest<WorkbenchRunDetail>(`/api/tenants/${tenantId}/workbench/runs/${runId}/advance`, {
+      method: "POST",
+      token,
+    }),
+  completeTodoWithPayload: (tenantId: string, token: string, todoId: string, payload: Record<string, unknown>) =>
+    apiRequest<WorkbenchRunDetail>(`/api/tenants/${tenantId}/workbench/todos/${todoId}/complete`, {
+      method: "POST",
+      token,
+      body: { action: "complete", comment: "提交表单数据并继续下一步", payload },
+    }),
 };
 
 export const workflowApi = {

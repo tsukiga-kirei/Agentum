@@ -85,6 +85,118 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
         }
     }
 
+    @Override
+    public void chatStream(ChatRequest request, StreamingCallback callback) {
+        if ("anthropic-compatible".equals(request.providerType())) {
+            callback.onError("MODEL_PROVIDER_TYPE_UNSUPPORTED", "当前运行态暂不支持 Anthropic Messages 协议，请改用 OpenAI 兼容网关");
+            return;
+        }
+        Instant startedAt = Instant.now();
+        URI uri = buildChatCompletionUri(request);
+        Map<String, Object> payload = buildPayload(request);
+        Map<String, Object> streamPayload = new LinkedHashMap<>(payload);
+        streamPayload.put("stream", true);
+
+        try {
+            String requestBodyJson = objectMapper.writeValueAsString(streamPayload);
+            restClient.post()
+                .uri(uri)
+                .contentType(MediaType.APPLICATION_JSON)
+                .headers(headers -> applyAuthHeaders(headers, request))
+                .body(requestBodyJson)
+                .exchange((clientRequest, response) -> {
+                    if (response.getStatusCode().isError()) {
+                        byte[] bodyBytes = response.getBody().readAllBytes();
+                        String errorBody = new String(bodyBytes, java.nio.charset.StandardCharsets.UTF_8);
+                        log.warn("模型聊天流请求 HTTP 错误: {} - {}", response.getStatusCode(), errorBody);
+                        callback.onError("MODEL_HTTP_ERROR", "HTTP " + response.getStatusCode() + ": " + errorBody);
+                        return null;
+                    }
+                    try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                            new java.io.InputStreamReader(response.getBody(), java.nio.charset.StandardCharsets.UTF_8))) {
+                        String line;
+                        StringBuilder accumulated = new StringBuilder();
+                        String responseId = "";
+                        String finishReason = "";
+                        Map<String, Object> usage = new LinkedHashMap<>();
+
+                        while ((line = reader.readLine()) != null) {
+                            String trimmed = line.trim();
+                            if (trimmed.isEmpty()) {
+                                continue;
+                            }
+                            if (trimmed.startsWith("data:")) {
+                                String data = trimmed.substring(5).trim();
+                                if ("[DONE]".equals(data)) {
+                                    break;
+                                }
+                                try {
+                                    JsonNode node = objectMapper.readTree(data);
+                                    if (node.has("id")) {
+                                        responseId = node.get("id").asText("");
+                                    }
+                                    JsonNode choices = node.path("choices");
+                                    if (choices.isArray() && !choices.isEmpty()) {
+                                        JsonNode firstChoice = choices.get(0);
+                                        if (firstChoice.has("finish_reason")) {
+                                            finishReason = firstChoice.get("finish_reason").asText("");
+                                        }
+                                        JsonNode delta = firstChoice.path("delta");
+                                        if (delta.has("content")) {
+                                            String content = delta.get("content").asText("");
+                                            if (!content.isEmpty()) {
+                                                accumulated.append(content);
+                                                callback.onChunk(content);
+                                            }
+                                        }
+                                    }
+                                    if (node.has("usage") && !node.get("usage").isNull()) {
+                                        usage = objectMapper.convertValue(node.get("usage"), new TypeReference<Map<String, Object>>() {});
+                                    }
+                                } catch (Exception e) {
+                                    log.debug("解析流式 chunk 失败: {}", trimmed, e);
+                                }
+                            }
+                        }
+                        long latency = Duration.between(startedAt, Instant.now()).toMillis();
+                        Map<String, Object> responseSnapshot = new LinkedHashMap<>();
+                        responseSnapshot.put("content", accumulated.toString());
+                        responseSnapshot.put("finishReason", finishReason);
+                        responseSnapshot.put("id", responseId);
+
+                        ChatResult result = new ChatResult(accumulated.toString(), responseSnapshot, usage, latency);
+                        callback.onComplete(result);
+                    } catch (Exception e) {
+                        log.warn("处理模型聊天流异常", e);
+                        callback.onError("MODEL_STREAM_PROCESSING_ERROR", e.getMessage());
+                    }
+                    return null;
+                });
+        } catch (ApiException exception) {
+            callback.onError(exception.getCode(), exception.getMessage());
+        } catch (RestClientException exception) {
+            log.warn(
+                "模型聊天请求流失败 providerId={} providerType={} model={} errorType={} requestId={}",
+                request.providerId(),
+                request.providerType(),
+                request.modelName(),
+                exception.getClass().getSimpleName(),
+                RequestIds.current()
+            );
+            callback.onError("MODEL_CALL_FAILED", "模型流式调用失败，请检查供应商连通性、模型名称或额度");
+        } catch (Exception exception) {
+            log.warn(
+                "模型聊天响应流处理失败 providerId={} providerType={} model={} errorType={} requestId={}",
+                request.providerId(),
+                request.providerType(),
+                request.modelName(),
+                exception.getClass().getSimpleName(),
+                RequestIds.current()
+            );
+            callback.onError("MODEL_RESPONSE_INVALID", "模型流式响应无法解析");
+        }
+    }
+
     private URI buildChatCompletionUri(ChatRequest request) {
         String baseUrl = request.baseUrl() == null ? "" : request.baseUrl().trim();
         if (baseUrl.isBlank()) {

@@ -1,0 +1,132 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AgentumRuntimeEvents",
+  "description": "Schema definitions for Agentum runtime SSE stream events.",
+  "type": "object",
+  "definitions": {
+    "ConnectedEvent": {
+      "type": "object",
+      "required": ["runId", "currentState", "timestamp"],
+      "properties": {
+        "runId": { "type": "string", "format": "uuid" },
+        "currentState": { "type": "string" },
+        "currentNodeName": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    },
+    "NodeStartedEvent": {
+      "type": "object",
+      "required": ["runId", "nodeRunId", "nodeType", "nodeName", "timestamp"],
+      "properties": {
+        "runId": { "type": "string", "format": "uuid" },
+        "nodeRunId": { "type": "string", "format": "uuid" },
+        "nodeType": { "type": "string" },
+        "nodeName": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    },
+    "AgentThinkingEvent": {
+      "type": "object",
+      "required": ["runId", "nodeRunId", "phase", "message", "timestamp"],
+      "properties": {
+        "runId": { "type": "string", "format": "uuid" },
+        "nodeRunId": { "type": "string", "format": "uuid" },
+        "phase": { "type": "string", "enum": ["preparing", "tool_calling", "model_calling", "validating", "completed", "failed"] },
+        "message": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    },
+    "AgentStreamingEvent": {
+      "type": "object",
+      "required": ["runId", "nodeRunId", "deltaContent", "accumulatedContent", "timestamp"],
+      "properties": {
+        "runId": { "type": "string", "format": "uuid" },
+        "nodeRunId": { "type": "string", "format": "uuid" },
+        "deltaContent": { "type": "string" },
+        "accumulatedContent": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    },
+    "AgentToolCallEvent": {
+      "type": "object",
+      "required": ["runId", "nodeRunId", "toolName", "toolType", "status", "timestamp"],
+      "properties": {
+        "runId": { "type": "string", "format": "uuid" },
+        "nodeRunId": { "type": "string", "format": "uuid" },
+        "toolName": { "type": "string" },
+        "toolType": { "type": "string", "enum": ["mcp", "skill"] },
+        "status": { "type": "string", "enum": ["started", "completed", "failed"] },
+        "result": { "type": "string" },
+        "durationMs": { "type": "integer" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    },
+    "ClusterAgentEvent": {
+      "type": "object",
+      "required": ["runId", "nodeRunId", "agentIndex", "agentName", "eventType", "timestamp"],
+      "properties": {
+        "runId": { "type": "string", "format": "uuid" },
+        "nodeRunId": { "type": "string", "format": "uuid" },
+        "agentIndex": { "type": "integer" },
+        "agentName": { "type": "string" },
+        "eventType": { "type": "string", "enum": ["started", "streaming", "tool_call", "completed", "failed"] },
+        "deltaContent": { "type": "string" },
+        "accumulatedContent": { "type": "string" },
+        "toolName": { "type": "string" },
+        "toolStatus": { "type": "string", "enum": ["started", "completed", "failed"] },
+        "outputSummary": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    },
+    "NodeCompletedEvent": {
+      "type": "object",
+      "required": ["runId", "nodeRunId", "outputs", "timestamp"],
+      "properties": {
+        "runId": { "type": "string", "format": "uuid" },
+        "nodeRunId": { "type": "string", "format": "uuid" },
+        "outputs": { "type": "object" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    },
+    "NodeFailedEvent": {
+      "type": "object",
+      "required": ["runId", "nodeRunId", "errorCode", "errorMessage", "timestamp"],
+      "properties": {
+        "runId": { "type": "string", "format": "uuid" },
+        "nodeRunId": { "type": "string", "format": "uuid" },
+        "errorCode": { "type": "string" },
+        "errorMessage": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    },
+    "RunPausedEvent": {
+      "type": "object",
+      "required": ["runId", "reason", "timestamp"],
+      "properties": {
+        "runId": { "type": "string", "format": "uuid" },
+        "nextNodeRunId": { "type": "string", "format": "uuid" },
+        "nextNodeName": { "type": "string" },
+        "nextNodeType": { "type": "string" },
+        "reason": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    },
+    "RunCompletedEvent": {
+      "type": "object",
+      "required": ["runId", "totalDurationMs", "completedNodeCount", "timestamp"],
+      "properties": {
+        "runId": { "type": "string", "format": "uuid" },
+        "totalDurationMs": { "type": "integer" },
+        "completedNodeCount": { "type": "integer" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    },
+    "HeartbeatEvent": {
+      "type": "object",
+      "required": ["timestamp"],
+      "properties": {
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

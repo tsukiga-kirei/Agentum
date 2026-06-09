@@ -128,6 +128,13 @@ public class WorkflowNodeRunEntity {
         this.updatedAt = now;
     }
 
+    public void start(Instant now) {
+        this.state = "running";
+        this.stateLabel = "运行中";
+        this.startedAt = now;
+        this.updatedAt = now;
+    }
+
     public void waitForInput(Instant now) {
         this.state = "waiting";
         this.stateLabel = "等待处理";

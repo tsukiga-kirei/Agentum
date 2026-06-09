@@ -8,6 +8,22 @@ public interface ModelChatClient {
 
     ChatResult chat(ChatRequest request);
 
+    interface StreamingCallback {
+        void onChunk(String deltaContent);
+        void onComplete(ChatResult result);
+        void onError(String code, String message);
+    }
+
+    default void chatStream(ChatRequest request, StreamingCallback callback) {
+        try {
+            ChatResult result = chat(request);
+            callback.onChunk(result.content());
+            callback.onComplete(result);
+        } catch (Exception e) {
+            callback.onError("MODEL_STREAM_ERROR", e.getMessage());
+        }
+    }
+
     record ChatRequest(
         UUID providerId,
         String providerType,

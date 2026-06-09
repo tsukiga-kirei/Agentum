@@ -29,6 +29,16 @@ import com.agentum.workflow.infrastructure.WorkflowRunRepository;
 import com.agentum.workflow.infrastructure.WorkflowVersionRepository;
 import com.agentum.workflow.infrastructure.WorkflowVariableSnapshotRepository;
 import com.agentum.workflow.infrastructure.WorkflowWaitingEventRepository;
+import com.agentum.agent.application.AgentRuntimeService;
+import com.agentum.agent.application.AgentRuntimeRequest;
+import com.agentum.agent.application.ModelChatClient;
+import com.agentum.mcp.application.McpRuntimeService;
+import com.agentum.mcp.application.McpRuntimeRequest;
+import com.agentum.delivery.application.DeliveryRuntimeService;
+import com.agentum.delivery.application.DeliveryRuntimeRequest;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import org.springframework.scheduling.annotation.Async;
+import java.util.LinkedHashMap;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -86,6 +96,9 @@ public class WorkbenchRuntimeService {
     private final ObjectMapper objectMapper;
     private final WorkflowRuntimeExecutor workflowRuntimeExecutor;
     private final Clock clock;
+    private final AgentRuntimeService agentRuntimeService;
+    private final McpRuntimeService mcpRuntimeService;
+    private final DeliveryRuntimeService deliveryRuntimeService;
 
     public WorkbenchRuntimeService(
         TenantRepository tenantRepository,
@@ -101,7 +114,10 @@ public class WorkbenchRuntimeService {
         CollaborationAccessPolicy collaborationAccessPolicy,
         ObjectMapper objectMapper,
         WorkflowRuntimeExecutor workflowRuntimeExecutor,
-        Clock clock
+        Clock clock,
+        AgentRuntimeService agentRuntimeService,
+        McpRuntimeService mcpRuntimeService,
+        DeliveryRuntimeService deliveryRuntimeService
     ) {
         this.tenantRepository = tenantRepository;
         this.workflowDefinitionRepository = workflowDefinitionRepository;
@@ -117,6 +133,9 @@ public class WorkbenchRuntimeService {
         this.objectMapper = objectMapper;
         this.workflowRuntimeExecutor = workflowRuntimeExecutor;
         this.clock = clock;
+        this.agentRuntimeService = agentRuntimeService;
+        this.mcpRuntimeService = mcpRuntimeService;
+        this.deliveryRuntimeService = deliveryRuntimeService;
     }
 
     @Transactional(readOnly = true)
@@ -511,8 +530,25 @@ public class WorkbenchRuntimeService {
             output,
             now
         ));
+        persistVariableSnapshots(run, nodeRun, output, now);
         int nextIndex = Math.max(0, nodeRun.getSortOrder() + 1);
-        WorkflowWaitingEventEntity openTodo = advanceUntilPause(run, nodes, nextIndex, principal.userId(), now, new ArrayList<>());
+        if (nextIndex < nodes.size()) {
+            WorkflowNodeRunEntity nextNode = nodes.get(nextIndex);
+            run.pauseAt(nextNode.getNodeKey(), nextNode.getName(), nextNode.getNodeType(), nextIndex, now);
+        } else {
+            run.complete(nodes.size(), now);
+            workflowRunEventRepository.save(WorkflowRunEventEntity.create(
+                run.getId(),
+                run.getTenantId(),
+                "run_completed",
+                "任务已完成",
+                "全部节点已完成，任务进入历史完成记录。",
+                null,
+                principal.userId(),
+                Map.of(),
+                now
+            ));
+        }
         workflowRunRepository.save(run);
         return getRunDetail(tenantId, principal, run.getId());
     }
@@ -1119,5 +1155,538 @@ public class WorkbenchRuntimeService {
             outputVariables = outputVariables == null ? List.of() : List.copyOf(outputVariables);
             config = config == null ? Map.of() : Map.copyOf(config);
         }
+    }
+
+    public record NextNodeResult(boolean hasNext, UUID nodeRunId, String nodeType, String nodeName, boolean paused) {}
+
+    @Transactional
+    public NextNodeResult prepareNextNode(UUID tenantId, UUID runId, UUID operatorUserId) {
+        Instant now = clock.instant();
+        WorkflowRunEntity run = workflowRunRepository.findByIdAndTenantId(runId, tenantId)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_RUN_NOT_FOUND", "任务运行不存在"));
+        
+        if ("completed".equals(run.getState()) || "failed".equals(run.getState())) {
+            return new NextNodeResult(false, null, null, null, false);
+        }
+
+        List<WorkflowNodeRunEntity> nodeRuns = workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(runId);
+        WorkflowNodeRunEntity nextNode = null;
+        int completed = 0;
+        for (WorkflowNodeRunEntity node : nodeRuns) {
+            if ("completed".equals(node.getState())) {
+                completed++;
+            } else if (nextNode == null) {
+                nextNode = node;
+            }
+        }
+
+        if (nextNode == null) {
+            run.complete(completed, now);
+            workflowRunRepository.save(run);
+            WorkflowRunEventEntity completedEvent = WorkflowRunEventEntity.create(
+                run.getId(),
+                run.getTenantId(),
+                "run_completed",
+                "任务已完成",
+                "全部节点已完成，任务进入历史完成记录。",
+                null,
+                operatorUserId,
+                Map.of(),
+                now
+            );
+            workflowRunEventRepository.save(completedEvent);
+            return new NextNodeResult(false, null, null, null, false);
+        }
+
+        if (isWaitable(nextNode.getNodeType())) {
+            if (!"waiting".equals(nextNode.getState())) {
+                nextNode.waitForInput(now);
+                workflowNodeRunRepository.save(nextNode);
+            }
+            run.pauseAt(nextNode.getNodeKey(), nextNode.getName(), nextNode.getNodeType(), completed, now);
+            workflowRunRepository.save(run);
+
+            resolveOpenTodos(run.getId(), operatorUserId, now);
+
+            WorkflowWaitingEventEntity todo = WorkflowWaitingEventEntity.openForUser(
+                run.getId(),
+                nextNode.getId(),
+                run.getTenantId(),
+                run.getWorkflowId(),
+                nextNode.getNodeKey(),
+                nextNode.getName(),
+                waitingReason(nextNode.getNodeType()),
+                operatorUserId,
+                actionLabel(nextNode.getNodeType()),
+                Map.of("nodeType", nextNode.getNodeType()),
+                now
+            );
+            workflowWaitingEventRepository.save(todo);
+
+            WorkflowRunEventEntity event = WorkflowRunEventEntity.create(
+                run.getId(),
+                run.getTenantId(),
+                "node_waiting",
+                "节点等待处理",
+                nextNode.getName() + "需要" + actionLabel(nextNode.getNodeType()) + "后继续。",
+                nextNode.getNodeKey(),
+                operatorUserId,
+                Map.of("nodeType", nextNode.getNodeType()),
+                now
+            );
+            workflowRunEventRepository.save(event);
+            return new NextNodeResult(true, nextNode.getId(), nextNode.getNodeType(), nextNode.getName(), true);
+        }
+
+        if ("trigger".equals(nextNode.getNodeType()) || "condition".equals(nextNode.getNodeType()) || "merge".equals(nextNode.getNodeType())) {
+            run.markRunning(nextNode.getNodeKey(), nextNode.getName(), nextNode.getNodeType(), completed, now);
+            workflowRunRepository.save(run);
+            try {
+                Map<String, Object> output = workflowRuntimeExecutor.execute(new WorkflowRuntimeExecutor.ExecutionRequest(
+                    run,
+                    nextNode,
+                    currentVariables(nodeRuns),
+                    operatorUserId
+                )).outputs();
+                nextNode.complete(output, now);
+                workflowNodeRunRepository.save(nextNode);
+                persistVariableSnapshots(run, nextNode, output, now);
+
+                WorkflowRunEventEntity event = WorkflowRunEventEntity.create(
+                    run.getId(),
+                    run.getTenantId(),
+                    "node_completed",
+                    "节点已完成",
+                    executionEventDescription(nextNode, output),
+                    nextNode.getNodeKey(),
+                    operatorUserId,
+                    Map.of("nodeType", nextNode.getNodeType()),
+                    now
+                );
+                workflowRunEventRepository.save(event);
+                return prepareNextNode(tenantId, runId, operatorUserId);
+            } catch (ApiException exception) {
+                failNode(run, nextNode, completed, operatorUserId, now, exception.getCode(), exception.getMessage(), new ArrayList<>());
+                return new NextNodeResult(true, nextNode.getId(), nextNode.getNodeType(), nextNode.getName(), false);
+            } catch (Exception exception) {
+                failNode(run, nextNode, completed, operatorUserId, now, "WORKBENCH_NODE_EXECUTION_FAILED", "节点执行失败", new ArrayList<>());
+                return new NextNodeResult(true, nextNode.getId(), nextNode.getNodeType(), nextNode.getName(), false);
+            }
+        }
+
+        nextNode.start(now);
+        workflowNodeRunRepository.save(nextNode);
+        run.markRunning(nextNode.getNodeKey(), nextNode.getName(), nextNode.getNodeType(), completed, now);
+        workflowRunRepository.save(run);
+        return new NextNodeResult(true, nextNode.getId(), nextNode.getNodeType(), nextNode.getName(), false);
+    }
+
+    @Transactional
+    public void saveNodeSuccess(UUID runId, UUID nodeRunId, Map<String, Object> outputs, UUID operatorUserId) {
+        Instant now = clock.instant();
+        WorkflowRunEntity run = workflowRunRepository.findById(runId)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_RUN_NOT_FOUND", "任务运行不存在"));
+        WorkflowNodeRunEntity node = workflowNodeRunRepository.findById(nodeRunId)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_NODE_RUN_NOT_FOUND", "节点运行不存在"));
+
+        node.complete(outputs, now);
+        workflowNodeRunRepository.save(node);
+        persistVariableSnapshots(run, node, outputs, now);
+
+        List<WorkflowNodeRunEntity> nodes = workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(runId);
+        int completed = (int) nodes.stream().filter(n -> "completed".equals(n.getState())).count();
+
+        int nextIndex = node.getSortOrder() + 1;
+        if (nextIndex < nodes.size()) {
+            WorkflowNodeRunEntity nextNode = nodes.get(nextIndex);
+            run.pauseAt(nextNode.getNodeKey(), nextNode.getName(), nextNode.getNodeType(), completed, now);
+        } else {
+            run.complete(completed, now);
+        }
+        workflowRunRepository.save(run);
+
+        WorkflowRunEventEntity event = WorkflowRunEventEntity.create(
+            run.getId(),
+            run.getTenantId(),
+            "node_completed",
+            "节点已完成",
+            executionEventDescription(node, outputs),
+            node.getNodeKey(),
+            operatorUserId,
+            Map.of("nodeType", node.getNodeType()),
+            now
+        );
+        workflowRunEventRepository.save(event);
+    }
+
+    @Transactional
+    public void saveNodeFailure(UUID runId, UUID nodeRunId, String errorCode, String errorMessage, UUID operatorUserId) {
+        Instant now = clock.instant();
+        WorkflowRunEntity run = workflowRunRepository.findById(runId)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_RUN_NOT_FOUND", "任务运行不存在"));
+        WorkflowNodeRunEntity node = workflowNodeRunRepository.findById(nodeRunId)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_NODE_RUN_NOT_FOUND", "节点运行不存在"));
+
+        List<WorkflowNodeRunEntity> nodes = workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(runId);
+        int completed = (int) nodes.stream().filter(n -> "completed".equals(n.getState())).count();
+
+        failNode(run, node, completed, operatorUserId, now, errorCode, errorMessage, new ArrayList<>());
+        workflowRunRepository.save(run);
+    }
+
+    @Async
+    public void advanceSingleStep(UUID tenantId, CurrentUserPrincipal principal, UUID runId, SseEmitter emitter) {
+        UUID nodeRunId = null;
+        try {
+            String nowStr = clock.instant().toString();
+            sendSseEvent(emitter, "connected", eventPayload(runId, null, nowStr, Map.of(
+                "currentState", "connected"
+            )));
+
+            NextNodeResult nextNode = prepareNextNode(tenantId, runId, principal.userId());
+
+            if (!nextNode.hasNext()) {
+                sendSseEvent(emitter, "run_completed", eventPayload(runId, null, clock.instant().toString(), Map.of(
+                    "totalDurationMs", 0,
+                    "completedNodeCount", 0
+                )));
+                sendSseEvent(emitter, "message", "[DONE]");
+                emitter.complete();
+                return;
+            }
+
+            if (nextNode.paused()) {
+                sendSseEvent(emitter, "run_paused", eventPayload(runId, null, clock.instant().toString(), Map.of(
+                    "nextNodeRunId", nextNode.nodeRunId().toString(),
+                    "nextNodeName", nextNode.nodeName(),
+                    "nextNodeType", nextNode.nodeType(),
+                    "reason", waitingReason(nextNode.nodeType())
+                )));
+                sendSseEvent(emitter, "message", "[DONE]");
+                emitter.complete();
+                return;
+            }
+
+            nodeRunId = nextNode.nodeRunId();
+            String nodeType = nextNode.nodeType();
+            String nodeName = nextNode.nodeName();
+
+            sendSseEvent(emitter, "node_started", eventPayload(runId, nodeRunId, clock.instant().toString(), Map.of(
+                "nodeType", nodeType,
+                "nodeName", nodeName
+            )));
+
+            WorkflowNodeRunEntity nodeRun = workflowNodeRunRepository.findById(nodeRunId).get();
+            Map<String, Object> variables = getVariablesBeforeNode(runId, nodeRun.getSortOrder());
+
+            Map<String, Object> outputs;
+            if ("agent".equals(nodeType)) {
+                outputs = executeStreamingAgent(runId, nodeRun, variables, principal.userId(), emitter);
+            } else if ("parallel_group".equals(nodeType)) {
+                outputs = executeStreamingParallelGroup(runId, nodeRun, variables, principal.userId(), emitter);
+            } else if ("delivery".equals(nodeType)) {
+                WorkflowRunEntity run = workflowRunRepository.findById(runId).get();
+                outputs = deliveryRuntimeService.execute(new DeliveryRuntimeRequest(
+                    run,
+                    nodeRun,
+                    nodeRun.getConfigSnapshot(),
+                    variables,
+                    principal.userId()
+                )).outputs();
+            } else {
+                WorkflowRunEntity run = workflowRunRepository.findById(runId).get();
+                outputs = workflowRuntimeExecutor.execute(new WorkflowRuntimeExecutor.ExecutionRequest(
+                    run,
+                    nodeRun,
+                    variables,
+                    principal.userId()
+                )).outputs();
+            }
+
+            saveNodeSuccess(runId, nodeRunId, outputs, principal.userId());
+
+            sendSseEvent(emitter, "node_completed", eventPayload(runId, nodeRunId, clock.instant().toString(), Map.of(
+                "outputs", outputs
+            )));
+
+            List<WorkflowNodeRunEntity> allNodes = workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(runId);
+            int nextIndex = nodeRun.getSortOrder() + 1;
+            if (nextIndex < allNodes.size()) {
+                WorkflowNodeRunEntity next = allNodes.get(nextIndex);
+                sendSseEvent(emitter, "run_paused", eventPayload(runId, null, clock.instant().toString(), Map.of(
+                    "nextNodeRunId", next.getId().toString(),
+                    "nextNodeName", next.getName(),
+                    "nextNodeType", next.getNodeType(),
+                    "reason", "等待用户点击下一步"
+                )));
+            } else {
+                sendSseEvent(emitter, "run_completed", eventPayload(runId, null, clock.instant().toString(), Map.of(
+                    "totalDurationMs", 0,
+                    "completedNodeCount", allNodes.size()
+                )));
+            }
+
+            sendSseEvent(emitter, "message", "[DONE]");
+            emitter.complete();
+
+        } catch (ApiException e) {
+            log.warn("执行流式步骤 API 异常 runId={} code={} msg={}", runId, e.getCode(), e.getMessage());
+            if (nodeRunId != null) {
+                saveNodeFailure(runId, nodeRunId, e.getCode(), e.getMessage(), principal.userId());
+            }
+            sendSseEvent(emitter, "node_failed", eventPayload(runId, nodeRunId, clock.instant().toString(), Map.of(
+                "errorCode", e.getCode(),
+                "errorMessage", e.getMessage()
+            )));
+            sendSseEvent(emitter, "message", "[DONE]");
+            emitter.complete();
+        } catch (Exception e) {
+            log.error("执行流式步骤系统异常 runId={}", runId, e);
+            if (nodeRunId != null) {
+                saveNodeFailure(runId, nodeRunId, "WORKBENCH_NODE_EXECUTION_FAILED", e.getMessage(), principal.userId());
+            }
+            sendSseEvent(emitter, "node_failed", eventPayload(runId, nodeRunId, clock.instant().toString(), Map.of(
+                "errorCode", "WORKBENCH_NODE_EXECUTION_FAILED",
+                "errorMessage", "执行异常: " + e.getMessage()
+            )));
+            sendSseEvent(emitter, "message", "[DONE]");
+            emitter.complete();
+        }
+    }
+
+    private Map<String, Object> getVariablesBeforeNode(UUID runId, int sortOrder) {
+        List<WorkflowNodeRunEntity> completedNodes = workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(runId)
+            .stream()
+            .filter(n -> "completed".equals(n.getState()) && n.getSortOrder() < sortOrder)
+            .toList();
+        Map<String, Object> variables = new HashMap<>();
+        for (WorkflowNodeRunEntity node : completedNodes) {
+            variables.putAll(node.getOutputSnapshot());
+        }
+        return variables;
+    }
+
+    private Map<String, Object> executeStreamingAgent(UUID runId, WorkflowNodeRunEntity nodeRun, Map<String, Object> variables, UUID operatorUserId, SseEmitter emitter) {
+        WorkflowRunEntity run = workflowRunRepository.findById(runId).get();
+        String nowStr = clock.instant().toString();
+        
+        sendSseEvent(emitter, "agent_thinking", eventPayload(runId, nodeRun.getId(), nowStr, Map.of(
+            "phase", "preparing",
+            "message", "正在装配变量与解析模型配置..."
+        )));
+
+        sendSseEvent(emitter, "agent_thinking", eventPayload(runId, nodeRun.getId(), nowStr, Map.of(
+            "phase", "tool_calling",
+            "message", "正在调用 MCP 工具..."
+        )));
+
+        Map<String, Object> toolOutputs = mcpRuntimeService.executeConfiguredMcps(new McpRuntimeRequest(
+            run,
+            nodeRun,
+            nodeRun.getConfigSnapshot(),
+            variables,
+            operatorUserId
+        )).outputs();
+
+        for (Map.Entry<String, Object> entry : toolOutputs.entrySet()) {
+            sendSseEvent(emitter, "agent_tool_call", eventPayload(runId, nodeRun.getId(), nowStr, Map.of(
+                "toolName", entry.getKey(),
+                "toolType", "mcp",
+                "status", "completed",
+                "result", summarizeText(entry.getValue() != null ? entry.getValue().toString() : ""),
+                "durationMs", 200
+            )));
+        }
+
+        sendSseEvent(emitter, "agent_thinking", eventPayload(runId, nodeRun.getId(), nowStr, Map.of(
+            "phase", "model_calling",
+            "message", "正在向模型发送推理请求..."
+        )));
+
+        Map<String, Object> outputs = new LinkedHashMap<>(toolOutputs);
+        
+        AgentRuntimeRequest agentRequest = new AgentRuntimeRequest(
+            run,
+            nodeRun,
+            nodeRun.getConfigSnapshot(),
+            variables,
+            toolOutputs,
+            operatorUserId
+        );
+
+        outputs.putAll(agentRuntimeService.executeStreaming(agentRequest, new ModelChatClient.StreamingCallback() {
+            private final StringBuilder accumulated = new StringBuilder();
+
+            @Override
+            public void onChunk(String deltaContent) {
+                accumulated.append(deltaContent);
+                sendSseEvent(emitter, "agent_streaming", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
+                    "deltaContent", deltaContent,
+                    "accumulatedContent", accumulated.toString()
+                )));
+            }
+
+            @Override
+            public void onComplete(ModelChatClient.ChatResult result) {
+                sendSseEvent(emitter, "agent_thinking", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
+                    "phase", "completed",
+                    "message", "模型推理已完成。"
+                )));
+            }
+
+            @Override
+            public void onError(String code, String message) {
+                sendSseEvent(emitter, "agent_thinking", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
+                    "phase", "failed",
+                    "message", "模型调用出错: " + message
+                )));
+            }
+        }).outputs());
+
+        return outputs;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> executeStreamingParallelGroup(UUID runId, WorkflowNodeRunEntity nodeRun, Map<String, Object> variables, UUID operatorUserId, SseEmitter emitter) {
+        WorkflowRunEntity run = workflowRunRepository.findById(runId).get();
+        String nowStr = clock.instant().toString();
+
+        Object rawAgents = nodeRun.getConfigSnapshot().get("clusterAgents");
+        if (!(rawAgents instanceof List<?> agents) || agents.isEmpty()) {
+            Map<String, Object> output = new LinkedHashMap<>(variables);
+            output.put("summary", "智能体集群未配置子智能体，已透传上游变量。");
+            return output;
+        }
+
+        Map<String, Object> currentVars = new LinkedHashMap<>(variables);
+        List<Map<String, Object>> summaries = new ArrayList<>();
+        
+        int agentIndex = 0;
+        for (Object rawAgent : agents) {
+            if (!(rawAgent instanceof Map<?, ?> rawMap)) {
+                continue;
+            }
+            Map<String, Object> agentConfig = new LinkedHashMap<>((Map<String, Object>) rawMap);
+            String agentName = stringValue(agentConfig.get("name"), "子智能体");
+
+            sendSseEvent(emitter, "cluster_agent", eventPayload(runId, nodeRun.getId(), nowStr, Map.of(
+                "agentIndex", agentIndex,
+                "agentName", agentName,
+                "eventType", "started"
+            )));
+
+            Map<String, Object> toolOutputs = mcpRuntimeService.executeConfiguredMcps(new McpRuntimeRequest(
+                run,
+                nodeRun,
+                agentConfig,
+                currentVars,
+                operatorUserId
+            )).outputs();
+
+            for (Map.Entry<String, Object> entry : toolOutputs.entrySet()) {
+                sendSseEvent(emitter, "cluster_agent", eventPayload(runId, nodeRun.getId(), nowStr, Map.of(
+                    "agentIndex", agentIndex,
+                    "agentName", agentName,
+                    "eventType", "tool_call",
+                    "toolName", entry.getKey(),
+                    "toolStatus", "completed"
+                )));
+            }
+
+            AgentRuntimeRequest agentRequest = new AgentRuntimeRequest(
+                run,
+                nodeRun,
+                agentConfig,
+                currentVars,
+                toolOutputs,
+                operatorUserId
+            );
+
+            final int idx = agentIndex;
+            final String name = agentName;
+            
+            Map<String, Object> agentOutput = agentRuntimeService.executeStreaming(agentRequest, new ModelChatClient.StreamingCallback() {
+                private final StringBuilder subAccumulated = new StringBuilder();
+
+                @Override
+                public void onChunk(String deltaContent) {
+                    subAccumulated.append(deltaContent);
+                    sendSseEvent(emitter, "cluster_agent", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
+                        "agentIndex", idx,
+                        "agentName", name,
+                        "eventType", "streaming",
+                        "deltaContent", deltaContent,
+                        "accumulatedContent", subAccumulated.toString()
+                    )));
+                }
+
+                @Override
+                public void onComplete(ModelChatClient.ChatResult result) {
+                }
+
+                @Override
+                public void onError(String code, String message) {
+                }
+            }).outputs();
+
+            currentVars.putAll(toolOutputs);
+            currentVars.putAll(agentOutput);
+            
+            String summaryText = stringValue(agentOutput.get("summary"), "已完成");
+            summaries.add(Map.of(
+                "name", agentName,
+                "summary", summaryText
+            ));
+
+            sendSseEvent(emitter, "cluster_agent", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
+                "agentIndex", idx,
+                "agentName", name,
+                "eventType", "completed",
+                "outputSummary", summaryText
+            )));
+
+            agentIndex++;
+        }
+
+        currentVars.put("clusterAgents", summaries);
+        currentVars.put("summary", "智能体集群已完成 " + summaries.size() + " 个子智能体。");
+        return currentVars;
+    }
+
+    private void sendSseEvent(SseEmitter emitter, String eventType, Object data) {
+        if (emitter == null) return;
+        try {
+            emitter.send(SseEmitter.event()
+                .name(eventType)
+                .data(data, org.springframework.http.MediaType.APPLICATION_JSON));
+        } catch (Exception e) {
+            log.warn("发送 SSE 事件失败 eventType={} error={}", eventType, e.getMessage());
+        }
+    }
+
+    private Map<String, Object> eventPayload(UUID runId, UUID nodeRunId, String timestamp, Map<String, Object> extra) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("runId", runId.toString());
+        if (nodeRunId != null) {
+            payload.put("nodeRunId", nodeRunId.toString());
+        }
+        payload.put("timestamp", timestamp);
+        if (extra != null) {
+            payload.putAll(extra);
+        }
+        return payload;
+    }
+
+    private static String stringValue(Object value, String fallback) {
+        String text = value == null ? "" : value.toString().trim();
+        return text.isBlank() ? fallback : text;
+    }
+
+    private static String summarizeText(String content) {
+        String normalized = content == null ? "" : content.replaceAll("\\s+", " ").trim();
+        if (normalized.isBlank()) {
+            return "智能体已完成模型调用。";
+        }
+        return normalized.length() > 120 ? normalized.substring(0, 120) + "..." : normalized;
     }
 }

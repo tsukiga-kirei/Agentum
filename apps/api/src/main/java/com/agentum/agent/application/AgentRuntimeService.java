@@ -159,6 +159,113 @@ public class AgentRuntimeService {
         }
     }
 
+    public record AgentStreamingRequest(
+        AgentRuntimeRequest baseRequest,
+        ModelChatClient.StreamingCallback streamCallback
+    ) {}
+
+    public AgentRuntimeResult executeStreaming(AgentRuntimeRequest request, ModelChatClient.StreamingCallback clientCallback) {
+        Map<String, Object> config = expandAgentConfig(request);
+        TenantModelAssignmentEntity assignment = resolveTenantModelAssignment(request.run().getTenantId());
+        ModelProviderEntity provider = modelProviderRepository.findById(assignment.getProviderId())
+            .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "MODEL_PROVIDER_NOT_FOUND", "租户分配的模型供应商不存在"));
+        if (!"active".equals(provider.getStatus())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "MODEL_PROVIDER_NOT_ACTIVE", "租户分配的模型供应商未启用");
+        }
+
+        String modelName = firstNonBlank(
+            stringValue(config.get("modelName")),
+            stringValue(config.get("model")),
+            assignment.getDefaultModel(),
+            provider.getDefaultModel()
+        );
+        if (modelName.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "MODEL_NAME_REQUIRED", "租户模型分配未配置默认模型");
+        }
+
+        String systemPrompt = resolvePromptContent(request.run().getTenantId(), config, "systemPromptTemplateId", "systemPrompt",
+            "你是 Agentum 平台中的业务智能体，请严格基于输入变量完成当前节点任务。");
+        String userPrompt = resolvePromptContent(request.run().getTenantId(), config, "userPromptTemplateId", "userPrompt",
+            firstNonBlank(stringValue(config.get("prompt")), "请基于上游变量 and 工具结果完成当前步骤，并输出结构化业务结论。"));
+        String renderedSystemPrompt = renderTemplate(systemPrompt, request.variables(), request.toolOutputs());
+        String renderedUserPrompt = renderTemplate(userPrompt, request.variables(), request.toolOutputs()) +
+            "\n\n上游变量：\n" + toJson(request.variables()) +
+            "\n\nMCP 工具结果：\n" + toJson(request.toolOutputs());
+
+        List<ModelChatClient.ChatMessage> messages = List.of(
+            new ModelChatClient.ChatMessage("system", renderedSystemPrompt),
+            new ModelChatClient.ChatMessage("user", renderedUserPrompt)
+        );
+        Map<String, Object> promptSnapshot = Map.of(
+            "messages", messages.stream().map(message -> Map.of("role", message.role(), "content", truncate(message.content(), 4000))).toList(),
+            "variableKeys", new ArrayList<>(request.variables().keySet()),
+            "toolKeys", new ArrayList<>(request.toolOutputs().keySet())
+        );
+        Map<String, Object> options = modelOptions(provider, config);
+        Instant now = clock.instant();
+        ModelCallLogEntity callLog = ModelCallLogEntity.started(
+            request.run(),
+            request.nodeRun(),
+            provider.getId(),
+            provider.getProviderType(),
+            modelName,
+            promptSnapshot,
+            now
+        );
+        modelCallLogRepository.save(callLog);
+
+        java.util.concurrent.CompletableFuture<ModelChatClient.ChatResult> future = new java.util.concurrent.CompletableFuture<>();
+        modelChatClient.chatStream(new ModelChatClient.ChatRequest(
+            provider.getId(),
+            provider.getProviderType(),
+            provider.getBaseUrl(),
+            decryptApiKey(provider),
+            modelName,
+            messages,
+            options
+        ), new ModelChatClient.StreamingCallback() {
+            @Override
+            public void onChunk(String deltaContent) {
+                clientCallback.onChunk(deltaContent);
+            }
+
+            @Override
+            public void onComplete(ModelChatClient.ChatResult result) {
+                callLog.succeed(result.responseSnapshot(), result.tokenUsage(), result.latencyMs(), clock.instant());
+                modelCallLogRepository.save(callLog);
+                future.complete(result);
+                clientCallback.onComplete(result);
+            }
+
+            @Override
+            public void onError(String code, String message) {
+                callLog.fail(code, message, 0L, clock.instant());
+                modelCallLogRepository.save(callLog);
+                future.completeExceptionally(new ApiException(HttpStatus.BAD_GATEWAY, code, message));
+                clientCallback.onError(code, message);
+            }
+        });
+
+        try {
+            ModelChatClient.ChatResult result = future.get();
+            Map<String, Object> outputs = new LinkedHashMap<>();
+            String outputName = firstNonBlank(stringValue(config.get("output")), stringValue(config.get("outputVariable")), "agent_response");
+            outputs.put(outputName, result.content());
+            outputs.put("modelCallLogId", callLogId(callLog));
+            outputs.put("modelName", modelName);
+            outputs.put("summary", summarizeText(result.content()));
+            return new AgentRuntimeResult(outputs);
+        } catch (java.util.concurrent.ExecutionException e) {
+            if (e.getCause() instanceof ApiException apiException) {
+                throw apiException;
+            }
+            throw new ApiException(HttpStatus.BAD_GATEWAY, "MODEL_CALL_FAILED", e.getCause().getMessage());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "STREAM_INTERRUPTED", "流式调用被中断");
+        }
+    }
+
     private TenantModelAssignmentEntity resolveTenantModelAssignment(UUID tenantId) {
         return tenantModelAssignmentRepository.findByTenantIdOrderByCreatedAtDesc(tenantId)
             .stream()
