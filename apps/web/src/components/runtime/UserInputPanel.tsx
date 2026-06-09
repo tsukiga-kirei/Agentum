@@ -1,11 +1,26 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import type { RuntimePreviewStep } from "../../types/runtime-types";
-import { Send, AlertCircle, FileText } from "lucide-react";
+import { AlertCircle, FileText } from "lucide-react";
+
+type InputFieldShape = {
+  id: string;
+  label: string;
+  variable: string;
+  placeholder: string;
+  defaultValue?: string;
+};
 
 interface UserInputPanelProps {
   activeStep: RuntimePreviewStep;
   readOnly: boolean;
   onSubmit: (payload: Record<string, unknown>) => void;
+}
+
+function isInputFieldShape(value: unknown): value is InputFieldShape {
+  return typeof value === "object"
+    && value !== null
+    && typeof (value as InputFieldShape).label === "string"
+    && typeof (value as InputFieldShape).variable === "string";
 }
 
 export function UserInputPanel({
@@ -16,86 +31,107 @@ export function UserInputPanel({
   const [formValues, setFormValues] = useState<Record<string, string>>({});
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const fields = activeStep.inputs || [];
+  const fieldConfigs = useMemo((): InputFieldShape[] => {
+    const configs = activeStep.configSnapshot?.inputFields;
+    if (Array.isArray(configs)) {
+      return configs.filter(isInputFieldShape).map((field, index) => ({
+        id: field.id || `field-${index}`,
+        label: field.label,
+        variable: field.variable || field.label,
+        placeholder: field.placeholder || `请输入${field.label}`,
+        defaultValue: field.defaultValue,
+      }));
+    }
+    return (activeStep.inputs || []).map((field, index) => ({
+      id: `field-${index}`,
+      label: field.label,
+      variable: field.label,
+      placeholder: `请输入${field.label}`,
+      defaultValue: field.value,
+    }));
+  }, [activeStep.configSnapshot, activeStep.inputs]);
 
   useEffect(() => {
     const initial: Record<string, string> = {};
-    fields.forEach((field) => {
-      initial[field.label] = field.value || "";
+    fieldConfigs.forEach((field) => {
+      const matched = activeStep.inputs?.find((item) => item.label === field.label);
+      initial[field.id] = matched?.value || field.defaultValue || "";
     });
     setFormValues(initial);
     setErrorMsg(null);
-  }, [activeStep.inputs]);
+  }, [activeStep.nodeRunId, fieldConfigs, activeStep.inputs]);
 
-  function handleInputChange(label: string, val: string) {
-    setFormValues((prev) => ({ ...prev, [label]: val }));
+  function handleInputChange(fieldId: string, val: string) {
+    setFormValues((prev) => ({ ...prev, [fieldId]: val }));
     setErrorMsg(null);
   }
 
   function handleFormSubmit(e: React.FormEvent) {
     e.preventDefault();
-    
-    // Check if any field is empty (basic required validation)
-    const emptyField = fields.find((f) => !formValues[f.label]?.trim());
+
+    const emptyField = fieldConfigs.find((field) => !formValues[field.id]?.trim());
     if (emptyField) {
       setErrorMsg(`请填写「${emptyField.label}」`);
       return;
     }
 
-    // Convert payload keys
     const payload: Record<string, unknown> = {};
-    Object.entries(formValues).forEach(([k, v]) => {
-      payload[k] = v.trim();
+    fieldConfigs.forEach((field) => {
+      payload[field.variable] = formValues[field.id]?.trim() ?? "";
     });
 
     onSubmit(payload);
   }
 
   return (
-    <div className="bg-white dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-800 p-5 space-y-4 max-w-2xl mx-auto shadow-sm">
-      <header className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
-        <FileText className="text-amber-500" size={18} />
+    <div className="bg-white dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-800 p-6 space-y-5 max-w-3xl mx-auto shadow-sm">
+      <header className="flex items-center gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
+        <FileText className="text-amber-500 shrink-0" size={22} />
         <div>
-          <h3 className="text-xs font-semibold text-slate-800 dark:text-slate-200">信息填写</h3>
-          <p className="text-[10px] text-slate-400 mt-0.5">请填写当前步骤所需的业务资料，提交后流程将继续推进。</p>
+          <h3 className="text-base font-semibold text-slate-800 dark:text-slate-200">信息填写</h3>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">请填写当前步骤所需的业务资料，提交后流程将继续推进。</p>
         </div>
       </header>
 
-      <form onSubmit={handleFormSubmit} className="space-y-4">
-        {fields.length === 0 ? (
-          <div className="text-center py-6 text-slate-400 text-xs">
+      <form id="workbench-user-input-form" onSubmit={handleFormSubmit} className="space-y-5">
+        {fieldConfigs.length === 0 ? (
+          <div className="text-center py-8 text-slate-400 text-sm">
             本步骤不需要填写额外资料，直接提交即可。
           </div>
         ) : (
-          <div className="space-y-3">
-            {fields.map((field, index) => {
-              const val = formValues[field.label] || "";
-              const isLargeText = field.label.includes("描述") || field.label.includes("材料") || field.label.includes("内容");
-              
+          <div className="space-y-5">
+            {fieldConfigs.map((field) => {
+              const val = formValues[field.id] || "";
+              const isLargeText =
+                field.label.includes("描述")
+                || field.label.includes("材料")
+                || field.label.includes("内容")
+                || field.placeholder.length > 20;
+
               return (
-                <div key={`${field.label}-${index}`} className="flex flex-col gap-1.5">
-                  <label className="text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                <div key={field.id} className="flex flex-col gap-2">
+                  <label className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1">
                     {field.label}
                     <span className="text-rose-500">*</span>
                   </label>
-                  
+
                   {isLargeText ? (
                     <textarea
-                      rows={4}
+                      rows={6}
                       value={val}
                       disabled={readOnly || activeStep.state !== "waiting"}
-                      placeholder={`请输入${field.label}`}
-                      onChange={(e) => handleInputChange(field.label, e.target.value)}
-                      className="sys-input w-full p-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/20 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 resize-y"
+                      placeholder={field.placeholder}
+                      onChange={(e) => handleInputChange(field.id, e.target.value)}
+                      className="sys-input w-full p-3.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/20 text-sm leading-relaxed focus:ring-1 focus:ring-blue-500 focus:border-blue-500 resize-y min-h-[140px]"
                     />
                   ) : (
                     <input
                       type="text"
                       value={val}
                       disabled={readOnly || activeStep.state !== "waiting"}
-                      placeholder={`请输入${field.label}`}
-                      onChange={(e) => handleInputChange(field.label, e.target.value)}
-                      className="sys-input w-full p-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/20 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder={field.placeholder}
+                      onChange={(e) => handleInputChange(field.id, e.target.value)}
+                      className="sys-input w-full p-3.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/20 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                     />
                   )}
                 </div>
@@ -105,21 +141,9 @@ export function UserInputPanel({
         )}
 
         {errorMsg && (
-          <div className="p-2.5 rounded-lg bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/40 text-rose-600 dark:text-rose-450 text-[10px] flex items-center gap-1.5">
-            <AlertCircle size={14} />
+          <div className="p-3 rounded-lg bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/40 text-rose-600 dark:text-rose-450 text-sm flex items-center gap-2">
+            <AlertCircle size={16} />
             <span>{errorMsg}</span>
-          </div>
-        )}
-
-        {!readOnly && activeStep.state === "waiting" && (
-          <div className="flex justify-end pt-2">
-            <button 
-              type="submit" 
-              className="sys-btn sys-btn--primary flex items-center justify-center gap-2 px-5 py-2 text-xs w-full sm:w-auto font-medium"
-            >
-              <Send size={14} />
-              提交资料并继续
-            </button>
           </div>
         )}
       </form>

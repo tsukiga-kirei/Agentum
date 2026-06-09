@@ -1,6 +1,6 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import type { RuntimePreviewStep, RunStreamState } from "../../types/runtime-types";
-import { Users, Bot, ChevronDown, ChevronUp, Terminal } from "lucide-react";
+import { Users, Bot, Terminal } from "lucide-react";
 import { Drawer } from "antd";
 import { useAuthStore } from "../../stores/authStore";
 import { MarkdownRenderer } from "./MarkdownRenderer";
@@ -11,40 +11,67 @@ interface MultiAgentPanelProps {
   isStreaming?: boolean;
 }
 
+type DrawerAgent = {
+  index: number;
+  name: string;
+  status: "pending" | "running" | "completed" | "failed";
+  streamingText: string;
+  outputSummary: string;
+  toolCalls: RunStreamState["clusterAgents"][number]["toolCalls"];
+  systemPrompt: string;
+  userPrompt: string;
+};
+
 export function MultiAgentPanel({
   activeStep,
   clusterAgents,
   isStreaming = false,
 }: MultiAgentPanelProps) {
-  const [expandedAgentIdx, setExpandedAgentIdx] = useState<number | null>(null);
-  const [selectedAgentForDrawer, setSelectedAgentForDrawer] = useState<any | null>(null);
+  const [selectedAgent, setSelectedAgent] = useState<DrawerAgent | null>(null);
   const themeMode = useAuthStore((s) => s.themeMode);
 
   const configAgents = Array.isArray(activeStep.configSnapshot?.clusterAgents)
     ? (activeStep.configSnapshot?.clusterAgents as Array<Record<string, unknown>>)
     : [];
 
-  const baseAgents = configAgents.length > 0
-    ? configAgents.map((agent, idx) => ({ index: idx, name: String(agent.name || agent.label || `子智能体 ${idx + 1}`) }))
-    : clusterAgents.map((agent) => ({ index: agent.index, name: agent.name }));
+  const agents = useMemo((): DrawerAgent[] => {
+    const baseAgents = configAgents.length > 0
+      ? configAgents.map((agent, idx) => ({
+          index: idx,
+          name: String(agent.name || agent.label || `子智能体 ${idx + 1}`),
+          systemPrompt: String(agent.systemPrompt || ""),
+          userPrompt: String(agent.userPrompt || agent.prompt || ""),
+        }))
+      : clusterAgents.map((agent) => ({
+          index: agent.index,
+          name: agent.name,
+          systemPrompt: "",
+          userPrompt: "",
+        }));
 
-  const agents = baseAgents.map((base) => {
-    const liveAgent = clusterAgents.find((a) => a.index === base.index || a.name === base.name);
-    if (liveAgent) {
+    return baseAgents.map((base) => {
+      const liveAgent = clusterAgents.find((a) => a.index === base.index || a.name === base.name);
+      if (liveAgent) {
+        return {
+          ...base,
+          ...liveAgent,
+          name: base.name,
+          systemPrompt: base.systemPrompt,
+          userPrompt: base.userPrompt,
+        };
+      }
       return {
-        ...liveAgent,
+        index: base.index,
         name: base.name,
+        status: "pending" as const,
+        streamingText: "",
+        outputSummary: "",
+        toolCalls: [],
+        systemPrompt: base.systemPrompt,
+        userPrompt: base.userPrompt,
       };
-    }
-    return {
-      index: base.index,
-      name: base.name,
-      status: "pending" as const,
-      streamingText: "",
-      outputSummary: "",
-      toolCalls: [],
-    };
-  });
+    });
+  }, [configAgents, clusterAgents]);
 
   const completedCount = agents.filter((a) => a.status === "completed").length;
   const runningCount = agents.filter((a) => a.status === "running").length;
@@ -53,16 +80,15 @@ export function MultiAgentPanel({
   const stepPending = activeStep.state === "pending";
   const stepRunning = activeStep.state === "running" || isStreaming;
 
-  function toggleExpand(index: number) {
-    setExpandedAgentIdx(expandedAgentIdx === index ? null : index);
-  }
-
-  function pendingMessage() {
+  function pendingMessage(agentStatus: DrawerAgent["status"]) {
     if (stepPending) {
-      return "尚未启动：请点击下方「执行此步骤」开始运行子智能体。";
+      return "等待集群节点启动...";
     }
-    if (stepRunning && runningCount === 0 && completedCount === 0) {
-      return "集群节点已启动，正在初始化子智能体...";
+    if (stepRunning && agentStatus === "pending") {
+      return "等待调度执行";
+    }
+    if (agentStatus === "running") {
+      return "正在初始化任务变量...";
     }
     return "等待调度执行";
   }
@@ -73,15 +99,15 @@ export function MultiAgentPanel({
         <div className="flex justify-between items-center mb-3">
           <div className="flex items-center gap-2">
             <Users className="text-blue-500" size={18} />
-            <h3 className="text-xs font-semibold text-slate-800 dark:text-slate-200">智能体集群进度</h3>
+            <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">智能体集群进度</h3>
           </div>
-          <small className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
+          <small className="text-xs text-slate-500 dark:text-slate-400 font-medium">
             共 {totalCount} 个子智能体 · 已完成 {completedCount} · 运行中 {runningCount}
           </small>
         </div>
         {stepPending ? (
-          <p className="text-xs text-amber-600 dark:text-amber-400 mb-3">
-            智能体集群不会自动开始，需要人工点击「执行此步骤」后才会逐个运行子智能体。
+          <p className="text-xs text-blue-600 dark:text-blue-400 mb-3">
+            进入本步骤后将自动开始执行子智能体，完成后请确认再进入下一步。
           </p>
         ) : null}
         <div className="flex items-center gap-3">
@@ -97,15 +123,19 @@ export function MultiAgentPanel({
 
       <div className="grid grid-cols-1 gap-4">
         {agents.map((agent) => {
-          const isSelected = expandedAgentIdx === agent.index;
           const isRunning = agent.status === "running";
           const isCompleted = agent.status === "completed";
           const isFailed = agent.status === "failed";
+          const previewText = isRunning
+            ? agent.streamingText
+            : isCompleted
+              ? agent.outputSummary
+              : agent.userPrompt || agent.systemPrompt;
 
           return (
             <div
               key={agent.index}
-              onClick={() => setSelectedAgentForDrawer(agent)}
+              onClick={() => setSelectedAgent(agent)}
               className={`rounded-xl border cursor-pointer hover:shadow-md transition-all duration-300 flex flex-col ${
                 isRunning
                   ? "bg-blue-50/10 border-blue-200 dark:bg-blue-950/10 dark:border-blue-900/50 shadow-sm ring-1 ring-blue-500/10"
@@ -125,10 +155,10 @@ export function MultiAgentPanel({
                   }`}>
                     <Bot size={13} />
                   </div>
-                  <strong className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">{agent.name}</strong>
+                  <strong className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{agent.name}</strong>
                 </div>
 
-                <span className={`text-[9px] px-2 py-0.5 rounded-full font-medium ${
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                   isCompleted
                     ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400"
                     : isFailed
@@ -143,16 +173,16 @@ export function MultiAgentPanel({
 
               <div className="p-4 flex-1 flex flex-col justify-between space-y-3 min-h-[120px]">
                 <div className="space-y-2">
-                  {isRunning && agent.streamingText ? (
-                    <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-2.5 border border-slate-100 dark:border-slate-800 max-h-[150px] overflow-y-auto">
-                      <MarkdownRenderer content={agent.streamingText} compact />
-                      <span className="inline-block w-1.5 h-3 bg-blue-500 dark:bg-blue-400 ml-0.5 animate-pulse" />
+                  {previewText ? (
+                    <div className="max-h-[160px] overflow-hidden">
+                      <MarkdownRenderer content={previewText} compact className="line-clamp-6" />
+                      {isRunning ? (
+                        <span className="inline-block w-1.5 h-3 bg-blue-500 dark:bg-blue-400 ml-0.5 animate-pulse" />
+                      ) : null}
                     </div>
-                  ) : isCompleted ? (
-                    <MarkdownRenderer content={agent.outputSummary} compact className="line-clamp-4" />
                   ) : (
-                    <p className="text-xs text-slate-400 dark:text-slate-500 italic">
-                      {isRunning ? "正在初始化任务变量..." : pendingMessage()}
+                    <p className="text-sm text-slate-400 dark:text-slate-500 italic">
+                      {pendingMessage(agent.status)}
                     </p>
                   )}
                 </div>
@@ -162,7 +192,7 @@ export function MultiAgentPanel({
                     {agent.toolCalls.map((tool) => (
                       <span
                         key={tool.id}
-                        className={`inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded border ${
+                        className={`inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded border ${
                           tool.status === "done"
                             ? "bg-emerald-50/50 border-emerald-100 text-emerald-600 dark:bg-emerald-950/20 dark:border-emerald-900 dark:text-emerald-400"
                             : tool.status === "error"
@@ -176,94 +206,91 @@ export function MultiAgentPanel({
                     ))}
                   </div>
                 ) : null}
+
+                <p className="text-xs text-slate-400 dark:text-slate-500">点击查看完整提示词与输出</p>
               </div>
-
-              {isCompleted && agent.outputSummary ? (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleExpand(agent.index);
-                  }}
-                  className="w-full text-center py-2 text-[10px] font-medium text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 hover:bg-slate-50/40 dark:hover:bg-slate-900/30 border-t border-slate-100 dark:border-slate-800 rounded-b-xl flex items-center justify-center gap-1"
-                >
-                  {isSelected ? "收起详细报告" : "展开详细报告"}
-                  {isSelected ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                </button>
-              ) : null}
-
-              {isSelected && isCompleted ? (
-                <div 
-                  onClick={(e) => e.stopPropagation()}
-                  className="p-4 bg-slate-50/40 dark:bg-slate-900/10 border-t border-slate-100 dark:border-slate-800 max-h-[250px] overflow-y-auto"
-                >
-                  <MarkdownRenderer content={agent.outputSummary} compact />
-                </div>
-              ) : null}
             </div>
           );
         })}
       </div>
 
-      {selectedAgentForDrawer && (
+      {selectedAgent ? (
         <Drawer
-          title={`子智能体详情: ${selectedAgentForDrawer.name}`}
-          width={560}
+          title={`${selectedAgent.name} · 详情`}
+          width={640}
           open
-          onClose={() => setSelectedAgentForDrawer(null)}
+          onClose={() => setSelectedAgent(null)}
           rootClassName={themeMode === "dark" ? "agent-admin-drawer agent-admin-drawer--dark" : "agent-admin-drawer"}
         >
           <div className="space-y-4">
             <section className="bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-slate-100 dark:border-slate-800 p-4">
-              <span className="text-[10px] text-slate-400 font-bold block mb-1">执行状态</span>
+              <span className="text-xs text-slate-400 font-bold block mb-1">执行状态</span>
               <span className={`inline-block text-xs px-2.5 py-0.5 rounded-full font-semibold ${
-                selectedAgentForDrawer.status === "completed"
+                selectedAgent.status === "completed"
                   ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/45 dark:text-emerald-400"
-                  : selectedAgentForDrawer.status === "failed"
+                  : selectedAgent.status === "failed"
                   ? "bg-rose-50 text-rose-600 dark:bg-rose-950/45 dark:text-rose-400"
-                  : selectedAgentForDrawer.status === "running"
+                  : selectedAgent.status === "running"
                   ? "bg-blue-50 text-blue-600 dark:bg-blue-950/45 dark:text-blue-400 animate-pulse"
                   : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
               }`}>
-                {selectedAgentForDrawer.status === "completed" ? "已完成" : selectedAgentForDrawer.status === "failed" ? "执行失败" : selectedAgentForDrawer.status === "running" ? "执行中" : "等待中"}
+                {selectedAgent.status === "completed" ? "已完成" : selectedAgent.status === "failed" ? "执行失败" : selectedAgent.status === "running" ? "执行中" : "等待中"}
               </span>
             </section>
 
+            {selectedAgent.systemPrompt ? (
+              <section className="bg-white dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-800 p-4">
+                <span className="text-xs text-slate-400 font-bold block mb-2">系统提示词</span>
+                <div className="prose dark:prose-invert max-w-none text-sm">
+                  <MarkdownRenderer content={selectedAgent.systemPrompt} />
+                </div>
+              </section>
+            ) : null}
+
+            {selectedAgent.userPrompt ? (
+              <section className="bg-white dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-800 p-4">
+                <span className="text-xs text-slate-400 font-bold block mb-2">任务提示词</span>
+                <div className="prose dark:prose-invert max-w-none text-sm">
+                  <MarkdownRenderer content={selectedAgent.userPrompt} />
+                </div>
+              </section>
+            ) : null}
+
             <section className="bg-white dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-800 p-4">
-              <span className="text-[10px] text-slate-400 font-bold block mb-2">智能体回答 (Output)</span>
-              {selectedAgentForDrawer.status === "running" && selectedAgentForDrawer.streamingText ? (
-                <div className="prose dark:prose-invert text-xs bg-slate-50 dark:bg-slate-900 p-3 rounded-lg border border-slate-100 dark:border-slate-800">
-                  <MarkdownRenderer content={selectedAgentForDrawer.streamingText} compact />
+              <span className="text-xs text-slate-400 font-bold block mb-2">执行输出</span>
+              {selectedAgent.status === "running" && selectedAgent.streamingText ? (
+                <div className="text-sm bg-slate-50 dark:bg-slate-900 p-3 rounded-lg border border-slate-100 dark:border-slate-800">
+                  <MarkdownRenderer content={selectedAgent.streamingText} />
                   <span className="inline-block w-1.5 h-3.5 bg-blue-500 dark:bg-blue-400 ml-1 animate-pulse" />
                 </div>
-              ) : selectedAgentForDrawer.outputSummary ? (
-                <div className="prose dark:prose-invert text-xs">
-                  <MarkdownRenderer content={selectedAgentForDrawer.outputSummary} />
+              ) : selectedAgent.outputSummary ? (
+                <div className="text-sm">
+                  <MarkdownRenderer content={selectedAgent.outputSummary} />
                 </div>
               ) : (
-                <p className="text-xs text-slate-400 italic">暂无输出结果</p>
+                <p className="text-sm text-slate-400 italic">暂无输出结果</p>
               )}
             </section>
 
-            {selectedAgentForDrawer.toolCalls && selectedAgentForDrawer.toolCalls.length > 0 && (
+            {selectedAgent.toolCalls && selectedAgent.toolCalls.length > 0 ? (
               <section className="bg-white dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-800 p-4">
-                <span className="text-[10px] text-slate-400 font-bold block mb-3">工具/MCP 调用记录</span>
+                <span className="text-xs text-slate-400 font-bold block mb-3">工具/MCP 调用记录</span>
                 <div className="space-y-2">
-                  {selectedAgentForDrawer.toolCalls.map((tool: any) => (
-                    <div 
+                  {selectedAgent.toolCalls.map((tool) => (
+                    <div
                       key={tool.id}
                       className="p-3 rounded-lg border border-slate-100 dark:border-slate-800 bg-slate-50/20 dark:bg-slate-900/20 text-xs flex justify-between items-center"
                     >
                       <div>
                         <div className="flex items-center gap-1.5">
-                          <span className="text-[9px] font-bold text-slate-450 uppercase">{tool.kind}</span>
+                          <span className="text-[10px] font-bold text-slate-450 uppercase">{tool.kind}</span>
                           <strong className="text-xs text-slate-850 dark:text-slate-200">{tool.name}</strong>
                         </div>
-                        {tool.resultSummary && <p className="text-[10px] text-slate-400 mt-1 font-mono">{tool.resultSummary}</p>}
+                        {tool.resultSummary ? <p className="text-[10px] text-slate-400 mt-1 font-mono">{tool.resultSummary}</p> : null}
                       </div>
                       <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
-                        tool.status === "done" 
-                          ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400" 
+                        tool.status === "done"
+                          ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400"
                           : "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400"
                       }`}>
                         {tool.statusLabel}
@@ -272,10 +299,10 @@ export function MultiAgentPanel({
                   ))}
                 </div>
               </section>
-            )}
+            ) : null}
           </div>
         </Drawer>
-      )}
+      ) : null}
     </div>
   );
 }

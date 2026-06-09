@@ -77,7 +77,12 @@ export function StepProgressRail({
     <aside className="workbench-task-rail border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 p-4 w-full flex-shrink-0 flex flex-col rounded-xl shadow-sm" aria-label="任务流程进度">
       <div className="flex justify-between items-center mb-3">
         <strong className="text-base font-semibold text-slate-800 dark:text-slate-200 tracking-tight">流程进度</strong>
-        <span className="text-sm font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 px-2.5 py-0.5 rounded-full tabular-nums">{progressValue}%</span>
+        <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 px-2.5 py-0.5 rounded-full tabular-nums">
+          {progressValue >= 100 ? (
+            <Check size={14} strokeWidth={2.5} className="text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+          ) : null}
+          {progressValue}%
+        </span>
       </div>
       <div className="h-3 w-full bg-slate-100 dark:bg-slate-800/80 rounded-full overflow-hidden mb-7 ring-1 ring-inset ring-slate-200/70 dark:ring-slate-800 shadow-inner">
         <div
@@ -93,14 +98,17 @@ export function StepProgressRail({
             ? preview.steps.indexOf(stepsForTrace[stepsForTrace.length - 1])
             : 0;
           const selectedIdx = selectedStepIndex !== null ? selectedStepIndex : fallbackIndex;
+          const deliveryStepIndex = preview.steps.findIndex((item) => item.kind === "delivery");
 
           const isSelected = activeRunTab === "current"
             ? activeStepIndex === index
+            : activeRunTab === "deliveries"
+            ? step.kind === "delivery" && (selectedStepIndex === index || (selectedStepIndex === null && index === deliveryStepIndex))
             : activeRunTab === "trace"
             ? selectedIdx === index
             : false;
 
-          const isPending = step.state === "pending";
+          const isFuturePending = step.state === "pending" && index !== activeStepIndex;
           const isDone = step.state === "done";
           const isFailed = step.state === "failed";
           const isRunning = step.state === "running";
@@ -125,12 +133,12 @@ export function StepProgressRail({
               {/* 状态指示圆点：根据状态着色，失败显示告警图标 */}
               <button
                 type="button"
-                disabled={isPending}
+                disabled={isFuturePending}
                 onClick={() => onStepSelect(step, index)}
                 aria-current={isSelected ? "step" : undefined}
                 className={`w-8 h-8 rounded-full flex items-center justify-center border transition-all duration-300 z-10 ${visual.indicator} ${
                   isSelected ? "ring-4 ring-blue-500/15 dark:ring-blue-400/15 scale-105" : ""
-                } ${!isPending ? "cursor-pointer" : "cursor-not-allowed"}`}
+                } ${!isFuturePending ? "cursor-pointer" : "cursor-not-allowed"}`}
               >
                 {getStepIcon(step.kind, step.state)}
               </button>
@@ -138,12 +146,12 @@ export function StepProgressRail({
               {/* 步骤信息卡片 */}
               <button
                 type="button"
-                disabled={isPending}
+                disabled={isFuturePending}
                 onClick={() => onStepSelect(step, index)}
                 className={`flex-1 text-left px-3 py-2.5 rounded-lg border transition-all duration-200 ${
                   isSelected
                     ? visual.cardActive
-                    : isPending
+                    : isFuturePending
                     ? "opacity-60 cursor-not-allowed border-transparent"
                     : "bg-transparent border-transparent hover:border-slate-200 dark:hover:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900/60"
                 }`}

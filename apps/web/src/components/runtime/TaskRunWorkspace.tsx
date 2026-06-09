@@ -17,6 +17,7 @@ import { StepActionBar } from "./StepActionBar";
 import { AgentChatPanel } from "./AgentChatPanel";
 import { UserInputPanel } from "./UserInputPanel";
 import { MultiAgentPanel } from "./MultiAgentPanel";
+import { DeliveryPreviewPanel } from "./DeliveryPreviewPanel";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { workbenchApi } from "../../services/apiClient";
 import { WorkbenchGlobalActions } from "../workbench/SurfacePageLayout";
@@ -56,10 +57,12 @@ export function TaskRunWorkspace({
   onReload,
 }: TaskRunWorkspaceProps) {
   const [runDetail, setRunDetail] = useState<WorkbenchRunDetail>(initialRun);
-  const [activeRunTab, setActiveRunTab] = useState<RunWorkspaceTab>("current");
+  const [activeRunTab, setActiveRunTab] = useState<RunWorkspaceTab>("overview");
   const [selectedTraceStepIndex, setSelectedTraceStepIndex] = useState<number | null>(null);
   const [isAdvancing, setIsAdvancing] = useState(false);
   const [advanceError, setAdvanceError] = useState<string | null>(null);
+  // 用户主动中断 SSE 后暂停自动推进，需手动「重新连接/重新开始」才能继续观看或重跑当前节点。
+  const [streamInterrupted, setStreamInterrupted] = useState(false);
   const processedStreamEventsRef = useRef(0);
   
   // 1. Establish SSE Connection via useRunStream hook
@@ -195,23 +198,63 @@ export function TaskRunWorkspace({
     && stream.connectionState === "connected"
     && stream.activeNodeInfo?.nodeRunId === activeStep.nodeRunId;
 
-  // Auto advance for agent / parallel group / delivery steps if paused
+  const isFlowCompleted =
+    runDetail.state === "completed"
+    || runDetail.progressPercent >= 100
+    || preview.statusLabel === "已完成";
+
+  const isStreamableStep =
+    activeStep.kind === "agent" || activeStep.kind === "multiAgent";
+
+  // 重新进入任务页时，若后端节点仍在运行且用户未主动中断，自动重连 SSE 以接上实时输出。
   useEffect(() => {
-    if (runDetail.readOnly || isAdvancing || isLiveExecuting) {
+    if (runDetail.readOnly || streamInterrupted || !isStreamableStep) {
       return;
     }
-    const autoAdvanceKinds = ["agent", "multiAgent", "delivery"];
+    if (activeStep.state === "running" && stream.connectionState === "disconnected" && !stream.isStreaming) {
+      void stream.ensureConnected().catch((error: unknown) => {
+        console.warn("重连运行流失败", error);
+      });
+    }
+  }, [
+    runDetail.readOnly,
+    streamInterrupted,
+    isStreamableStep,
+    activeStep.state,
+    activeStep.nodeRunId,
+    stream.connectionState,
+    stream.isStreaming,
+    stream.ensureConnected,
+  ]);
+
+  useEffect(() => {
+    if (activeStep.state === "done" || activeStep.state === "pending" || activeStep.state === "failed") {
+      setStreamInterrupted(false);
+    }
+  }, [activeStep.nodeRunId, activeStep.state]);
+
+  useEffect(() => {
+    if (isFlowCompleted && activeRunTab === "current") {
+      setActiveRunTab("overview");
+    }
+  }, [isFlowCompleted, activeRunTab]);
+
+  // 智能体/多智能体到达当前步骤后自动开始执行；完成后仍由用户确认再推进下一步。
+  useEffect(() => {
+    if (runDetail.readOnly || isAdvancing || isLiveExecuting || streamInterrupted) {
+      return;
+    }
+    const autoStartKinds = ["agent", "multiAgent"];
     if (
-      runDetail.state === "paused" &&
-      activeStep &&
-      autoAdvanceKinds.includes(activeStep.kind) &&
-      activeStep.state !== "failed" &&
-      activeStep.state !== "done"
+      runDetail.state === "paused"
+      && activeStep
+      && autoStartKinds.includes(activeStep.kind)
+      && activeStep.state === "pending"
     ) {
       void handleAdvanceStep();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runDetail.state, activeStep, isAdvancing, isLiveExecuting, runDetail.readOnly]);
+  }, [runDetail.state, activeStep?.nodeRunId, activeStep?.state, activeStep?.kind, isAdvancing, isLiveExecuting, streamInterrupted, runDetail.readOnly]);
 
   const clusterAgentsForPanel = useMemo(() => {
     if (stream.clusterAgents.length > 0) {
@@ -263,7 +306,23 @@ export function TaskRunWorkspace({
   }
 
   function handleStepSelect(step: RuntimePreviewStep, index: number) {
+    // 交付节点完成后进入「产品交付」页签，避免流程结束时误跳「当前处理」再被重定向到总览。
+    if (step.kind === "delivery" && step.state === "done") {
+      setSelectedTraceStepIndex(index);
+      setActiveRunTab("deliveries");
+      return;
+    }
+
     if (index === currentStepIndex) {
+      if (isFlowCompleted) {
+        if (step.state === "done") {
+          setSelectedTraceStepIndex(index);
+          setActiveRunTab("trace");
+        } else {
+          setActiveRunTab("overview");
+        }
+        return;
+      }
       setActiveRunTab("current");
       return;
     }
@@ -275,7 +334,9 @@ export function TaskRunWorkspace({
     }
 
     setSelectedTraceStepIndex(index);
-    setActiveRunTab("current");
+    if (!isFlowCompleted) {
+      setActiveRunTab("current");
+    }
   }
 
   // 4. Action Handlers: Advance Step
@@ -365,6 +426,27 @@ export function TaskRunWorkspace({
     }
   }
 
+  function handleInterruptStream() {
+    stream.disconnect();
+    setStreamInterrupted(true);
+    void reloadRunDetail();
+  }
+
+  async function handleRestartStream() {
+    setStreamInterrupted(false);
+    setAdvanceError(null);
+    try {
+      if (activeStep.state === "running") {
+        await stream.ensureConnected();
+        await reloadRunDetail();
+        return;
+      }
+      await handleAdvanceStep();
+    } catch (error: unknown) {
+      console.error("重新开始执行失败", error);
+    }
+  }
+
   async function handleRegenerateStep() {
     const targetStep = preview.steps[resolveActiveStepIndex(preview.steps, runDetail)];
     if (!targetStep?.nodeRunId) {
@@ -410,7 +492,7 @@ export function TaskRunWorkspace({
 
   const runWorkspaceTabs = [
     { key: "overview" as const, label: "任务总览", icon: LayoutDashboard },
-    { key: "current" as const, label: "当前处理", icon: Activity },
+    ...(!isFlowCompleted ? [{ key: "current" as const, label: "当前处理", icon: Activity }] : []),
     { key: "trace" as const, label: "执行历史", icon: FileText },
     { key: "deliveries" as const, label: "产品交付", icon: Package },
   ];
@@ -580,8 +662,11 @@ export function TaskRunWorkspace({
                     </div>
                   </div>
                 ) : activeStep.kind === "delivery" ? (
+                  activeStep.state === "pending" && !isAdvancing ? (
+                    <DeliveryPreviewPanel activeStep={activeStep} runDetail={runDetail} />
+                  ) : (
                   <div className="bg-white dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-850 p-5 space-y-4 max-w-2xl mx-auto">
-                    <div className="text-center py-8 text-slate-400 text-xs">
+                    <div className="text-center py-8 text-slate-500 dark:text-slate-400 text-sm leading-relaxed">
                       <Package size={28} className={`mx-auto mb-2 ${activeStep.state === "failed" ? "text-rose-500" : "text-emerald-500"}`} />
                       {activeStep.state === "failed"
                         ? (
@@ -591,12 +676,13 @@ export function TaskRunWorkspace({
                           </>
                         )
                         : activeStep.state === "done"
-                          ? "交付步骤已完成，可在「生成报告」页签查看归档结果。"
+                          ? "交付步骤已完成，可在「产品交付」页签查看归档结果。"
                           : isAdvancing
                             ? "正在执行交付步骤，请稍候..."
-                            : "当前为系统交付步骤，请点击下方「执行此步骤」生成并归档交付物。"}
+                            : "交付步骤执行中，请稍候..."}
                     </div>
                   </div>
+                  )
                 ) : (
                   <div className="text-center py-8 text-slate-400 text-xs">
                     正在执行后台自动系统节点...
@@ -609,14 +695,20 @@ export function TaskRunWorkspace({
               <RunTracePanel
                 preview={preview}
                 readOnly={runDetail.readOnly}
-                saved={runDetail.saved}
                 selectedStepIndex={selectedTraceStepIndex}
                 onRollback={handleRollback}
+                onOpenDeliveries={() => {
+                  const deliveryIndex = preview.steps.findIndex((item) => item.kind === "delivery");
+                  if (deliveryIndex >= 0) {
+                    setSelectedTraceStepIndex(deliveryIndex);
+                  }
+                  setActiveRunTab("deliveries");
+                }}
               />
             )}
 
             {activeRunTab === "deliveries" && (
-              <RunDeliveriesPanel preview={preview} />
+              <RunDeliveriesPanel preview={preview} isFlowCompleted={isFlowCompleted} />
             )}
           </div>
 
@@ -626,9 +718,9 @@ export function TaskRunWorkspace({
               activeStep={activeStep}
               isStreaming={isLiveExecuting}
               isAdvancing={isAdvancing}
-              isRunCompleted={preview.statusLabel === "已完成" || runDetail.state === "completed"}
+              streamInterrupted={streamInterrupted}
+              isRunCompleted={isFlowCompleted}
               isRunFailed={runDetail.state === "failed" || activeStep.state === "failed"}
-              isRunSaved={runDetail.saved}
               readOnly={runDetail.readOnly}
               onAdvance={handleAdvanceStep}
               onCompleteTodo={(comment) => handleCompleteTodo({ comment })}
@@ -637,7 +729,8 @@ export function TaskRunWorkspace({
               onRetry={handleRegenerateStep}
               onRollback={handleRollbackPrevious}
               onBack={onBack}
-              onInterrupt={() => stream.disconnect()}
+              onInterrupt={handleInterruptStream}
+              onRestartStream={handleRestartStream}
             />
           )}
         </section>
@@ -657,9 +750,6 @@ function RunOverviewPanel({ run, preview }: { run: WorkbenchRunDetail; preview: 
         <h3 className="text-sm font-bold text-slate-805 dark:text-slate-250 mb-2 flex items-center gap-1.5">
           <LayoutDashboard size={16} className="text-blue-500" /> 任务概览
         </h3>
-        <p className="text-xs text-slate-400 mb-4">
-          任务运行详情来自后端运行实例，节点状态、输入输出和事件链路均按发布版本快照生成。
-        </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800">
             <span className="text-xs text-slate-400 block">运行编号</span>
@@ -713,15 +803,15 @@ function RunOverviewPanel({ run, preview }: { run: WorkbenchRunDetail; preview: 
 function RunTracePanel({
   preview,
   readOnly,
-  saved,
   selectedStepIndex,
   onRollback,
+  onOpenDeliveries,
 }: {
   preview: RuntimePreview;
   readOnly: boolean;
-  saved: boolean;
   selectedStepIndex: number | null;
   onRollback: (nodeRunId: string) => void;
+  onOpenDeliveries?: () => void;
 }) {
   const steps = preview.steps.filter((s) => s.state !== "pending");
   const fallbackIndex = Math.max(0, lastExecutableStepIndex(steps));
@@ -760,7 +850,7 @@ function RunTracePanel({
                   {step.description} · 完成时间：{step.completedAt || "—"}
                 </small>
               </div>
-              {!readOnly && saved && (step.state === "done" || step.state === "failed") && (
+              {!readOnly && (step.state === "done" || step.state === "failed") && (
                 <button
                   type="button"
                   onClick={() => onRollback(step.nodeRunId)}
@@ -876,12 +966,29 @@ function RunTracePanel({
 
             {step.kind === "delivery" && (
               <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 p-4 space-y-4">
-                <h5 className="text-sm font-bold text-slate-700 dark:text-slate-350">产品交付结果</h5>
-                <div className="bg-white dark:bg-slate-950 border border-slate-150 dark:border-slate-850 p-4 rounded-lg">
+                <div className="flex items-center justify-between gap-3">
+                  <h5 className="text-sm font-bold text-slate-700 dark:text-slate-350">产品交付结果</h5>
+                  {onOpenDeliveries ? (
+                    <button
+                      type="button"
+                      className="sys-btn sys-btn--default text-xs px-2.5 py-1"
+                      onClick={onOpenDeliveries}
+                    >
+                      查看完整产品交付
+                    </button>
+                  ) : null}
+                </div>
+                <div className="bg-white dark:bg-slate-950 border border-slate-150 dark:border-slate-850 p-4 rounded-lg space-y-3">
                   <span className="text-xs text-slate-400 font-semibold block">交付状态</span>
-                  <strong className="text-sm text-slate-800 dark:text-slate-200 mt-1 block font-mono">
+                  <strong className="text-sm text-slate-800 dark:text-slate-200 block font-mono">
                     {step.outputs?.find((f) => f.label === "summary")?.value || "交付文件已生成并归档。"}
                   </strong>
+                  {resolveDirectDeliveryContent(step) ? (
+                    <div className="pt-2 border-t border-slate-100 dark:border-slate-850">
+                      <span className="text-xs text-slate-400 font-semibold block mb-2">交付配置输出</span>
+                      <MarkdownRenderer content={resolveDirectDeliveryContent(step)} />
+                    </div>
+                  ) : null}
                 </div>
               </div>
             )}
@@ -1031,18 +1138,35 @@ function SnapshotFieldList({
   );
 }
 
-function RunDeliveriesPanel({ preview }: { preview: RuntimePreview }) {
+function RunDeliveriesPanel({
+  preview,
+  isFlowCompleted,
+}: {
+  preview: RuntimePreview;
+  isFlowCompleted: boolean;
+}) {
   const list = preview.deliveries || [];
-  
-  // Find final output markdown to display for "直接输出交付" (Direct Delivery)
-  const finalAgentStep = preview.steps.find((s) => (s.kind === "agent" || s.kind === "multiAgent") && s.state === "done");
-  const finalAnswer = finalAgentStep?.outputs?.find((f) => f.label === "final_answer" || f.label === "agent_response")?.value;
+  const deliveryStep = preview.steps.find((step) => step.kind === "delivery");
+  const deliveryConfig = deliveryStep?.configSnapshot ?? {};
+  const deliveryMode = readConfigString(deliveryConfig.deliveryMode, "direct");
+  const capabilityId = readConfigString(deliveryConfig.deliveryCapabilityId, "none").toLowerCase();
+  const isDirectDelivery =
+    deliveryMode === "direct"
+    || capabilityId === "none"
+    || capabilityId === "custom"
+    || capabilityId === "";
+
+  const directDeliveryContent = resolveDirectDeliveryContent(deliveryStep);
+  const inProgressDeliveryHint = readConfigString(
+    deliveryConfig.deliveryTarget,
+    "交付配置尚未执行，流程完成后将按此处配置输出。"
+  );
 
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
-    if (finalAnswer) {
-      navigator.clipboard.writeText(finalAnswer);
+    if (directDeliveryContent) {
+      navigator.clipboard.writeText(directDeliveryContent);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
@@ -1050,21 +1174,37 @@ function RunDeliveriesPanel({ preview }: { preview: RuntimePreview }) {
 
   return (
     <div className="max-w-3xl mx-auto space-y-5">
-      {/* Top Status Card */}
-      <div className="bg-white dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 p-5 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-emerald-50 dark:bg-emerald-950/40 flex items-center justify-center text-emerald-500">
-            <CheckCircle2 size={22} />
+      {isFlowCompleted ? (
+        <div className="bg-white dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 p-5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-emerald-50 dark:bg-emerald-950/40 flex items-center justify-center text-emerald-500">
+              <CheckCircle2 size={22} />
+            </div>
+            <div>
+              <h4 className="text-base font-bold text-slate-800 dark:text-slate-200">产品交付成功</h4>
+              <p className="text-xs text-slate-400 mt-1">业务流程已顺利执行完毕，交付结果已成功归档并输出。</p>
+            </div>
           </div>
-          <div>
-            <h4 className="text-base font-bold text-slate-800 dark:text-slate-200">产品交付成功</h4>
-            <p className="text-xs text-slate-400 mt-1">业务流程已顺利执行完毕，交付结果已成功归档并输出。</p>
-          </div>
+          <span className="text-sm px-2.5 py-1 rounded-full font-bold bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
+            已交付
+          </span>
         </div>
-        <span className="text-sm px-2.5 py-1 rounded-full font-bold bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
-          已交付
-        </span>
-      </div>
+      ) : (
+        <div className="bg-white dark:bg-slate-950 rounded-xl border border-amber-200 dark:border-amber-900/50 p-5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-amber-50 dark:bg-amber-950/40 flex items-center justify-center text-amber-500">
+              <Package size={22} />
+            </div>
+            <div>
+              <h4 className="text-base font-bold text-slate-800 dark:text-slate-200">交付进行中</h4>
+              <p className="text-xs text-slate-400 mt-1">流程尚未完成，交付结果将在全部步骤执行完毕后展示。</p>
+            </div>
+          </div>
+          <span className="text-sm px-2.5 py-1 rounded-full font-bold bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400">
+            待完成
+          </span>
+        </div>
+      )}
 
       {/* Delivery Channels List */}
       <div className="bg-white dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 p-5 space-y-3">
@@ -1075,10 +1215,18 @@ function RunDeliveriesPanel({ preview }: { preview: RuntimePreview }) {
           <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 flex justify-between items-center text-sm">
             <div>
               <strong className="text-slate-800 dark:text-slate-200 font-medium block">直接输出交付</strong>
-              <span className="text-slate-400 block mt-0.5">直接在平台内展示智能体推理结论。</span>
+              <span className="text-slate-400 block mt-0.5 whitespace-pre-wrap">
+                {isDirectDelivery
+                  ? (isFlowCompleted ? "按流程「交付配置」渲染并输出正文。" : inProgressDeliveryHint)
+                  : "按流程配置的交付能力通道输出。"}
+              </span>
             </div>
-            <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
-              就绪
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+              isFlowCompleted
+                ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400"
+                : "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400"
+            }`}>
+              {isFlowCompleted ? "就绪" : "待执行"}
             </span>
           </div>
         ) : (
@@ -1101,26 +1249,25 @@ function RunDeliveriesPanel({ preview }: { preview: RuntimePreview }) {
         )}
       </div>
 
-      {/* Premium Document Output Viewer */}
-      {finalAnswer && (
+      {isDirectDelivery && directDeliveryContent ? (
         <div className="bg-white dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
           <header className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/10">
             <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-              <FileText size={16} className="text-blue-500" /> 直接输出交付结论 (Markdown)
+              <FileText size={16} className="text-blue-500" /> 直接输出交付（交付配置）
             </h4>
             <button
               type="button"
               onClick={handleCopy}
               className="text-sm font-semibold text-blue-500 hover:text-blue-650 dark:text-blue-400 flex items-center gap-1"
             >
-              {copied ? "已复制" : "复制报告内容"}
+              {copied ? "已复制" : "复制交付内容"}
             </button>
           </header>
           <div className="p-6 overflow-y-auto max-h-[500px] prose dark:prose-invert max-w-none bg-white dark:bg-slate-950">
-            <MarkdownRenderer content={finalAnswer} />
+            <MarkdownRenderer content={directDeliveryContent} />
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -1232,14 +1379,48 @@ function isInputFieldConfig(value: unknown): value is InputFieldConfigShape {
 
 function resolveStepInputs(node: any): RuntimeNodeField[] {
   const configs = node.config?.inputFields;
-  const outputs = node.inputs || {};
+  // 用户输入提交后写入 outputSnapshot，历史回看需合并 inputs 与 outputs。
+  const submittedValues = { ...(node.inputs || {}), ...(node.outputs || {}) };
   if (Array.isArray(configs)) {
     return configs.filter(isInputFieldConfig).map((cfg) => ({
       label: cfg.label,
-      value: stringifyValue(outputs[cfg.variable] ?? outputs[cfg.label] ?? cfg.defaultValue ?? ""),
+      value: stringifyValue(submittedValues[cfg.variable] ?? submittedValues[cfg.label] ?? cfg.defaultValue ?? ""),
     }));
   }
+  if (node.nodeType === "user_input") {
+    return objectToFields(submittedValues);
+  }
   return [];
+}
+
+function readConfigString(value: unknown, fallback = ""): string {
+  if (value === null || value === undefined) {
+    return fallback;
+  }
+  const text = String(value).trim();
+  return text || fallback;
+}
+
+function resolveDirectDeliveryContent(deliveryStep?: RuntimePreviewStep): string {
+  if (!deliveryStep) {
+    return "";
+  }
+  const payloadField = deliveryStep.outputs?.find((field) => field.label === "deliveryPayload")?.value;
+  if (payloadField) {
+    try {
+      const parsed = JSON.parse(payloadField) as Record<string, unknown>;
+      const body = readConfigString(parsed.body);
+      const target = readConfigString(parsed.deliveryTarget);
+      return body || target;
+    } catch {
+      return payloadField;
+    }
+  }
+  const summary = deliveryStep.outputs?.find((field) => field.label === "summary")?.value;
+  if (summary) {
+    return summary;
+  }
+  return readConfigString(deliveryStep.configSnapshot?.deliveryTarget);
 }
 
 function nodeDescription(nodeType: string, config: any): string {

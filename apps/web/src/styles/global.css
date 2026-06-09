@@ -4583,6 +4583,18 @@ textarea:focus-visible {
   min-height: 0;
 }
 
+.workbench-task-workspace,
+.workbench-task-workspace * {
+  scrollbar-width: none;
+}
+
+.workbench-task-workspace::-webkit-scrollbar,
+.workbench-task-workspace *::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 .workbench-task-topbar {
   flex-shrink: 0;
   display: flex;
@@ -4843,6 +4855,39 @@ textarea:focus-visible {
 .workbench-current-layout {
   display: grid;
   gap: 16px;
+}
+
+/* 任务中心：待办与任务记录各自独立高度与滚动，避免一侧列表撑高另一侧 */
+.workbench-task-center-grid {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+@media (min-width: 1280px) {
+  .workbench-task-center-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+.workbench-task-center-card {
+  align-self: start;
+  max-height: min(560px, calc(100vh - 280px));
+  min-height: 220px;
+}
+
+.workbench-task-center-card-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.workbench-task-center-card-body::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .workbench-current-layout {

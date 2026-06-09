@@ -149,7 +149,7 @@ export function AgentChatPanel({
               {isStreaming
                 ? "正在启动智能体节点推理..."
                 : activeStep.state === "pending"
-                ? "当前智能体尚未执行，请点击底部「执行此步骤」开始。"
+                ? "智能体即将自动开始执行，请稍候..."
                 : activeStep.state === "done"
                 ? "该节点已完成，可在上方输出区查看结果。"
                 : "等待执行或暂无对话内容。"}

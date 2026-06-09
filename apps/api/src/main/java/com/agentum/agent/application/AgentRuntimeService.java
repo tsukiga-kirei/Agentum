@@ -185,6 +185,25 @@ public class AgentRuntimeService {
                     break;
                 }
 
+                // 模型调用了 final_answer 但 JSON 被截断时，优先回退到本轮 assistant 正文，避免写入解析失败占位文案。
+                if (result.toolCalls().stream().anyMatch(toolCall -> "final_answer".equals(toolCall.name()))) {
+                    String contentFallback = firstNonBlank(result.content());
+                    if (!contentFallback.isBlank()) {
+                        finalAnswer = contentFallback;
+                        if (!streamFinalAnswer) {
+                            emitFinalAnswer(eventSink, finalAnswer);
+                        }
+                        log.info(
+                            "final_answer 工具参数解析不完整，已回退使用模型正文 tenantId={} runId={} nodeRunId={} requestId={}",
+                            request.run().getTenantId(),
+                            request.run().getId(),
+                            request.nodeRun().getId(),
+                            RequestIds.current()
+                        );
+                        break;
+                    }
+                }
+
                 List<ModelChatClient.ToolCall> executableToolCalls = result.toolCalls().stream()
                     .filter(toolCall -> !"final_answer".equals(toolCall.name()))
                     .toList();
@@ -427,8 +446,19 @@ public class AgentRuntimeService {
             Optional<String> streamedFinalAnswer = extractFinalAnswer(result.toolCalls());
             if (streamedFinalAnswer.isPresent() && displayText.isEmpty()) {
                 emitFinalAnswer(eventSink, streamedFinalAnswer.get());
-            } else if (streamedFinalAnswer.isEmpty() && !result.content().isBlank() && displayText.isEmpty()) {
-                emitFinalAnswer(eventSink, result.content());
+            } else if (streamedFinalAnswer.isEmpty() && displayText.isEmpty()) {
+                String fallback = firstNonBlank(result.content());
+                if (fallback.isBlank()) {
+                    for (ModelChatClient.ToolCall toolCall : result.toolCalls()) {
+                        if ("final_answer".equals(toolCall.name())) {
+                            fallback = extractPartialAnswerFromTruncatedJson(toolCall.argumentsJson());
+                            break;
+                        }
+                    }
+                }
+                if (!fallback.isBlank()) {
+                    emitFinalAnswer(eventSink, fallback);
+                }
             }
             return new LoggedChatResult(result, callLogId(callLog));
         } catch (java.util.concurrent.ExecutionException exception) {
@@ -598,18 +628,104 @@ public class AgentRuntimeService {
             if (!"final_answer".equals(toolCall.name())) {
                 continue;
             }
-            Map<String, Object> args = parseJsonObject(toolCall.argumentsJson());
+            String rawJson = toolCall.argumentsJson();
+            Map<String, Object> args = parseJsonObject(rawJson);
             String answer = stringValue(args.get("answer"));
             if (!answer.isBlank()) {
                 return Optional.of(answer);
             }
-            Matcher matcher = FINAL_ANSWER_FALLBACK_PATTERN.matcher(toolCall.argumentsJson());
+            Matcher matcher = FINAL_ANSWER_FALLBACK_PATTERN.matcher(rawJson == null ? "" : rawJson);
             if (matcher.find()) {
-                return Optional.of(matcher.group(1).replace("\\n", "\n").replace("\\\"", "\""));
+                return Optional.of(unescapeJsonString(matcher.group(1)));
             }
-            return Optional.of("模型已提交最终答案，但内容解析失败，请重新生成。");
+            answer = extractPartialAnswerFromTruncatedJson(rawJson);
+            if (!answer.isBlank()) {
+                log.info(
+                    "final_answer 参数 JSON 不完整，已从截断内容中提取 answer requestId={}",
+                    RequestIds.current()
+                );
+                return Optional.of(answer);
+            }
+            answer = extractPartialAnswerFromTruncatedJson(stringValue(args.get("raw")));
+            if (!answer.isBlank()) {
+                return Optional.of(answer);
+            }
+            return Optional.empty();
         }
         return Optional.empty();
+    }
+
+    /**
+     * 从被截断的 final_answer JSON 中提取 answer 字符串值（即使没有闭合引号）。
+     * 部分模型在超长输出时会在 tool_calls.arguments 处截断，导致 Jackson 解析 EOF。
+     */
+    static String extractPartialAnswerFromTruncatedJson(String rawJson) {
+        if (rawJson == null || rawJson.isBlank()) {
+            return "";
+        }
+        int answerKey = indexOfAnswerKey(rawJson);
+        if (answerKey < 0) {
+            return "";
+        }
+        int colon = rawJson.indexOf(':', answerKey);
+        if (colon < 0) {
+            return "";
+        }
+        int start = colon + 1;
+        while (start < rawJson.length() && Character.isWhitespace(rawJson.charAt(start))) {
+            start++;
+        }
+        if (start >= rawJson.length()) {
+            return "";
+        }
+        char quote = rawJson.charAt(start);
+        if (quote != '"' && quote != '\'') {
+            return "";
+        }
+        start++;
+        StringBuilder builder = new StringBuilder();
+        boolean escaped = false;
+        for (int index = start; index < rawJson.length(); index++) {
+            char current = rawJson.charAt(index);
+            if (escaped) {
+                appendEscapedChar(builder, current);
+                escaped = false;
+                continue;
+            }
+            if (current == '\\') {
+                escaped = true;
+                continue;
+            }
+            if (current == quote) {
+                break;
+            }
+            builder.append(current);
+        }
+        return builder.toString().trim();
+    }
+
+    private static int indexOfAnswerKey(String rawJson) {
+        int answerKey = rawJson.indexOf("\"answer\"");
+        if (answerKey >= 0) {
+            return answerKey;
+        }
+        return rawJson.indexOf("'answer'");
+    }
+
+    private static void appendEscapedChar(StringBuilder builder, char current) {
+        switch (current) {
+            case 'n' -> builder.append('\n');
+            case 't' -> builder.append('\t');
+            case 'r' -> builder.append('\r');
+            default -> builder.append(current);
+        }
+    }
+
+    private static String unescapeJsonString(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        return value.replace("\\n", "\n").replace("\\t", "\t").replace("\\r", "\r").replace("\\\"", "\"").replace("\\\\", "\\");
     }
 
     private void emitFinalAnswer(AgentRuntimeEventSink eventSink, String finalAnswer) {

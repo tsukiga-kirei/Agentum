@@ -1277,7 +1277,7 @@ function DeliveryBrickConfig({
 
   return (
     <PanelGroup title="交付配置" icon={PackageCheck} className="xl:col-span-2">
-      <CapabilityStateBanner state={capabilityState} />
+      {deliveryMode === "capability" ? <CapabilityStateBanner state={capabilityState} loadingOnly /> : null}
       <div className="grid gap-4 lg:grid-cols-2">
         <SelectLikeField
           label="交付模式"
@@ -1391,7 +1391,7 @@ function CapabilityMultiSelectField({
   );
 }
 
-function CapabilityStateBanner({ state }: { state: WorkflowCapabilityState }) {
+function CapabilityStateBanner({ state, loadingOnly = false }: { state: WorkflowCapabilityState; loadingOnly?: boolean }) {
   if (state.loading) {
     return <p className="workflow-capability-state">正在加载可引用能力...</p>;
   }
@@ -1400,7 +1400,7 @@ function CapabilityStateBanner({ state }: { state: WorkflowCapabilityState }) {
     return <p className="workflow-capability-state workflow-capability-state--danger">{state.error}</p>;
   }
 
-  if (state.capabilities.length === 0) {
+  if (!loadingOnly && state.capabilities.length === 0) {
     return <p className="workflow-capability-state">当前账号暂无可引用能力。请先在系统管理把能力放入租户能力池，再由租户管理分配给当前用户、部门或角色；也可以在能力资产中创建自己的智能体或提示词模板。</p>;
   }
 

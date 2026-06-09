@@ -761,9 +761,10 @@ export function WorkbenchShell() {
                     ) : null}
 
                     {activeWorkbenchTab === "tasks" ? (
-                      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]" aria-label="任务中心">
-                        <section className="sys-preview-card">
+                      <section className="workbench-task-center-grid" aria-label="任务中心">
+                        <section className="sys-preview-card workbench-task-center-card">
                           <div className="sys-preview-card-title"><UserRoundCheck size={16} /> 我的待办</div>
+                          <div className="workbench-task-center-card-body">
                           {activeTasksError ? (
                             <RuntimePlaceholder label="待办加载失败" hint={activeTasksError} />
                           ) : activeTasksLoading ? (
@@ -785,6 +786,7 @@ export function WorkbenchShell() {
                               ))}
                             </div>
                           )}
+                          </div>
                           {activeTasksTotal > TASK_RUN_PAGE_SIZE ? (
                             <div className="agent-admin-pagination-wrap mt-4">
                               <Pagination
@@ -799,8 +801,9 @@ export function WorkbenchShell() {
                           ) : null}
                         </section>
 
-                        <section className="sys-preview-card">
+                        <section className="sys-preview-card workbench-task-center-card">
                           <div className="sys-preview-card-title"><History size={16} /> 任务记录</div>
+                          <div className="workbench-task-center-card-body">
                           {taskRunsError ? (
                             <RuntimePlaceholder label="任务记录加载失败" hint={taskRunsError} />
                           ) : taskRunsLoading ? (
@@ -821,6 +824,7 @@ export function WorkbenchShell() {
                               ))}
                             </div>
                           )}
+                          </div>
                           {taskRunsTotal > TASK_RUN_PAGE_SIZE ? (
                             <div className="agent-admin-pagination-wrap mt-4">
                               <Pagination

@@ -1,14 +1,14 @@
 import React from "react";
 import type { RuntimePreviewStep } from "../../types/runtime-types";
-import { Play, RotateCw, Check, X, ArrowLeft, Ban } from "lucide-react";
+import { Play, RotateCw, Check, X, ArrowLeft, Ban, Send } from "lucide-react";
 
 interface StepActionBarProps {
   activeStep: RuntimePreviewStep;
   isStreaming: boolean;
   isAdvancing?: boolean;
+  streamInterrupted?: boolean;
   isRunCompleted: boolean;
   isRunFailed: boolean;
-  isRunSaved: boolean;
   readOnly: boolean;
   onAdvance: () => void;
   onCompleteTodo: (comment: string) => void;
@@ -18,15 +18,16 @@ interface StepActionBarProps {
   onRollback: () => void;
   onBack: () => void;
   onInterrupt?: () => void;
+  onRestartStream?: () => void;
 }
 
 export function StepActionBar({
   activeStep,
   isStreaming,
   isAdvancing = false,
+  streamInterrupted = false,
   isRunCompleted,
   isRunFailed,
-  isRunSaved,
   readOnly,
   onAdvance,
   onCompleteTodo,
@@ -36,6 +37,7 @@ export function StepActionBar({
   onRollback,
   onBack,
   onInterrupt,
+  onRestartStream,
 }: StepActionBarProps) {
   
   if (readOnly) {
@@ -69,23 +71,40 @@ export function StepActionBar({
     return (
       <div className="step-action-bar flex justify-between items-center p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
         <span className="text-xs text-rose-600 dark:text-rose-400 font-medium">
-          节点执行发生错误{failureMessage ? `：${failureMessage}` : ""}{isRunSaved ? "" : "，请先保存任务后再重试"}
+          节点执行发生错误{failureMessage ? `：${failureMessage}` : ""}
         </span>
-        {isRunSaved && (
-          <div className="flex gap-3">
-            <button type="button" className="sys-btn sys-btn--default flex items-center gap-2 text-xs" onClick={onRollback}>
-              <ArrowLeft size={14} /> 回退上一步
-            </button>
-            <button type="button" className="sys-btn sys-btn--primary flex items-center gap-2 text-xs" onClick={onRetry}>
-              <RotateCw size={14} /> 重试当前节点
-            </button>
-          </div>
-        )}
+        <div className="flex gap-3">
+          <button type="button" className="sys-btn sys-btn--default flex items-center gap-2 text-xs" onClick={onRollback}>
+            <ArrowLeft size={14} /> 回退上一步
+          </button>
+          <button type="button" className="sys-btn sys-btn--primary flex items-center gap-2 text-xs" onClick={onRetry}>
+            <RotateCw size={14} /> 重试当前节点
+          </button>
+        </div>
       </div>
     );
   }
 
-  // 3. Executing / Streaming State
+  // 3. 用户中断 SSE 后暂停，需手动重新连接或从当前节点重新开始。
+  if (streamInterrupted && !isStreaming && !isAdvancing) {
+    const restartLabel = activeStep.state === "running" ? "重新连接并继续" : "重新开始执行";
+    return (
+      <div className="step-action-bar flex justify-between items-center p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
+        <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
+          执行已中断并暂停，点击右侧按钮从当前节点继续。
+        </span>
+        <button
+          type="button"
+          className="sys-btn sys-btn--primary flex items-center gap-2 text-xs"
+          onClick={onRestartStream}
+        >
+          <RotateCw size={14} /> {restartLabel}
+        </button>
+      </div>
+    );
+  }
+
+  // 4. Executing / Streaming State
   if (isStreaming || isAdvancing) {
     return (
       <div className="step-action-bar flex justify-between items-center p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
@@ -111,20 +130,23 @@ export function StepActionBar({
     );
   }
 
-  // 4. Pending step — needs manual advance to start execution
+  // 5. Pending step — delivery 需先预览再手动执行；智能体类节点由页面自动触发启动。
   if (activeStep.state === "pending") {
-    const pendingHint =
-      activeStep.kind === "multiAgent"
-        ? "智能体集群"
-        : activeStep.kind === "delivery"
-          ? "交付"
-          : activeStep.kind === "agent"
-            ? "智能体"
-            : "当前步骤";
+    if (activeStep.kind === "agent" || activeStep.kind === "multiAgent") {
+      return (
+        <div className="step-action-bar flex justify-between items-center p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
+          <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">
+            {isAdvancing ? "正在自动启动智能体执行..." : "智能体将自动开始执行，请稍候"}
+          </span>
+        </div>
+      );
+    }
+
+    const pendingHint = activeStep.kind === "delivery" ? "交付" : "当前步骤";
     return (
       <div className="step-action-bar flex justify-between items-center p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
         <span className="text-xs text-slate-500 dark:text-slate-400">
-          当前节点尚未开始执行，点击下方按钮启动{pendingHint}。
+          请先在上方预览交付内容，确认无误后再执行{pendingHint}。
         </span>
         <button
           type="button"
@@ -138,13 +160,13 @@ export function StepActionBar({
     );
   }
 
-  // 5. Completed but ready to advance to next step
+  // 6. Completed but ready to advance to next step — 需用户确认后再推进。
   if (activeStep.state === "done") {
-    const canRegenerate = isRunSaved && activeStep.allowsRegenerate;
+    const canRegenerate = activeStep.allowsRegenerate;
     return (
       <div className="step-action-bar flex justify-between items-center p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
         <span className="text-xs text-slate-500 dark:text-slate-400">
-          当前节点已执行完毕{canRegenerate ? "，可重新生成或继续推进。" : "，点击下一步继续推进。"}
+          当前节点已执行完毕，请确认结果无误后再继续推进下一步。
         </span>
         <div className="flex items-center gap-3">
           {canRegenerate && (
@@ -158,23 +180,31 @@ export function StepActionBar({
             onClick={onAdvance}
             disabled={isAdvancing}
           >
-            <Play size={14} fill="currentColor" /> 执行下一步
+            <Play size={14} fill="currentColor" /> 确认并执行下一步
           </button>
         </div>
       </div>
     );
   }
 
-  // 5. Waiting User Input
+  // 7. Waiting User Input
   if (activeStep.state === "waiting" && activeStep.kind === "input") {
     return (
       <div className="step-action-bar flex justify-between items-center p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
-        <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">📝 请在上方表单中填写资料并提交</span>
+        <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">请在上方表单中填写资料并提交</span>
+        <button
+          type="submit"
+          form="workbench-user-input-form"
+          className="sys-btn sys-btn--primary flex items-center gap-2 text-sm px-5 py-2"
+        >
+          <Send size={14} />
+          提交资料并继续
+        </button>
       </div>
     );
   }
 
-  // 6. Waiting Human Review / Approval
+  // 8. Waiting Human Review / Approval
   if (activeStep.state === "waiting" && activeStep.kind === "approval") {
     return (
       <div className="step-action-bar flex justify-between items-center p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
