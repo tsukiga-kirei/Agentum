@@ -399,6 +399,10 @@ export function TaskRunWorkspace({
       const updated = await workbenchApi.rollbackRun(tenantId, token, runDetail.id, nodeRunId);
       setRunDetail(updated);
       onReload(updated);
+      // 回退成功后流程回到目标节点，顺势切回“当前处理”页签并清除历史选中，
+      // 避免停留在“执行历史”页签让用户误以为还在查看旧快照。
+      setSelectedTraceStepIndex(null);
+      setActiveRunTab("current");
     } catch (e: any) {
       console.error("回退步骤失败", e);
     }
@@ -891,8 +895,22 @@ function RunTracePanel({
             )}
           </div>
         ) : (
-          <div className="text-center py-12 text-slate-400 text-sm">
-            左侧流程轨选择已执行步骤后，可查看该步骤专属的历史数据和快照。
+          <div className="trace-empty-enter flex flex-col items-center justify-center text-center py-16 px-6">
+            {/* 浮动图标 + 扩散光环，营造“等待选择步骤”的轻量引导感 */}
+            <div className="relative mb-6 flex items-center justify-center">
+              <span className="trace-empty-ring absolute h-24 w-24 rounded-full bg-blue-400/15 dark:bg-blue-500/15" />
+              <span className="trace-empty-orb relative flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-blue-950/50 dark:to-indigo-950/40 ring-1 ring-blue-100 dark:ring-blue-900/60 shadow-sm">
+                <History size={34} className="text-blue-500 dark:text-blue-400" />
+              </span>
+            </div>
+            <h4 className="text-lg font-semibold text-slate-700 dark:text-slate-200">查看步骤历史与快照</h4>
+            <p className="mt-2 max-w-md text-sm leading-relaxed text-slate-400 dark:text-slate-500">
+              在左侧流程轨中选择一个已执行的步骤，这里会展示该步骤专属的输入输出快照、执行记录和事件线。
+            </p>
+            <div className="mt-6 flex items-center gap-2 rounded-full bg-slate-50 dark:bg-slate-900 px-3.5 py-1.5 text-xs font-medium text-slate-400 dark:text-slate-500 ring-1 ring-inset ring-slate-100 dark:ring-slate-800">
+              <span className="inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
+              已完成与失败的步骤均可回看
+            </div>
           </div>
         )}
       </section>

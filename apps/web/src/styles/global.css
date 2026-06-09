@@ -4969,6 +4969,96 @@ textarea:focus-visible {
   50% { opacity: 0; }
 }
 
+/* 流程进度条：渐变填充上叠加缓慢流光，增强“正在推进”的运行态质感 */
+.rail-progress-fill {
+  position: relative;
+  overflow: hidden;
+}
+
+.rail-progress-fill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.45) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  transform: translateX(-100%);
+  animation: rail-progress-shimmer 2.4s ease-in-out infinite;
+}
+
+@keyframes rail-progress-shimmer {
+  0% { transform: translateX(-100%); }
+  60%, 100% { transform: translateX(100%); }
+}
+
+/* 时间轴已完成连接线：一束高光自上而下流动，强化“进度向下推进”的视觉引导 */
+/* 注意：连接线元素本身已是 absolute（Tailwind），可直接作为 ::after 的定位上下文， */
+/* 这里不能再设 position，否则会覆盖 absolute 使其回到文档流，挤偏圆圈布局。 */
+.rail-flow-line {
+  overflow: hidden;
+}
+
+.rail-flow-line::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 55%;
+  top: -55%;
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.85) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  animation: rail-flow-down 2s linear infinite;
+}
+
+@keyframes rail-flow-down {
+  0% { top: -55%; }
+  100% { top: 100%; }
+}
+
+/* 执行历史空态：图标轻微浮动 + 内容淡入上移，缓解大面积留白的单调感 */
+.trace-empty-enter {
+  animation: trace-empty-in 0.45s ease-out both;
+}
+
+@keyframes trace-empty-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.trace-empty-orb {
+  animation: trace-empty-float 4.5s ease-in-out infinite;
+}
+
+@keyframes trace-empty-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+.trace-empty-ring {
+  animation: trace-empty-ring 3.2s ease-out infinite;
+}
+
+@keyframes trace-empty-ring {
+  0% { transform: scale(0.85); opacity: 0.55; }
+  70%, 100% { transform: scale(1.45); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rail-progress-fill::after,
+  .rail-flow-line::after,
+  .trace-empty-orb,
+  .trace-empty-ring {
+    animation: none;
+  }
+}
+
 .workbench-ai-composer {
   display: grid;
   gap: 10px;
