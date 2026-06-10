@@ -34,6 +34,56 @@ class WorkflowNodeConfigValidatorTest {
     private AssetManagementService assetManagementService;
 
     @Test
+    void shouldRejectAgentNodeWhenCustomPromptsAreBlank() {
+        WorkflowDraftApi.WorkflowNodeRow node = new WorkflowDraftApi.WorkflowNodeRow(
+            "agent_1",
+            "agent",
+            "合同分析",
+            0,
+            0,
+            List.of(),
+            List.of(),
+            Map.of(
+                "systemPromptTemplateId", "none",
+                "userPromptTemplateId", "none",
+                "systemPrompt", "",
+                "userPrompt", ""
+            )
+        );
+
+        List<WorkflowDraftApi.WorkflowValidationIssue> issues = validator().validateCapabilityReferences(TENANT_ID, USER_ID, List.of(node));
+
+        assertThat(issues).extracting(WorkflowDraftApi.WorkflowValidationIssue::code)
+            .containsExactlyInAnyOrder(
+                "WORKFLOW_VALIDATION_SYSTEM_PROMPT_REQUIRED",
+                "WORKFLOW_VALIDATION_USER_PROMPT_REQUIRED"
+            );
+    }
+
+    @Test
+    void shouldAcceptAgentNodeWhenCustomPromptsAreProvided() {
+        WorkflowDraftApi.WorkflowNodeRow node = new WorkflowDraftApi.WorkflowNodeRow(
+            "agent_1",
+            "agent",
+            "合同分析",
+            0,
+            0,
+            List.of(),
+            List.of(),
+            Map.of(
+                "systemPromptTemplateId", "none",
+                "userPromptTemplateId", "none",
+                "systemPrompt", WorkflowPromptDefaults.DEFAULT_SYSTEM_PROMPT,
+                "userPrompt", WorkflowPromptDefaults.DEFAULT_USER_PROMPT
+            )
+        );
+
+        List<WorkflowDraftApi.WorkflowValidationIssue> issues = validator().validateCapabilityReferences(TENANT_ID, USER_ID, List.of(node));
+
+        assertThat(issues).isEmpty();
+    }
+
+    @Test
     void shouldRejectSystemCapabilityNotAssignedToCurrentEditor() {
         SystemCapabilityEntity skill = SystemCapabilityEntity.create(
             "skill", "合同解析", "contract_parse", "v1", "", "low", "active", Map.of(), NOW

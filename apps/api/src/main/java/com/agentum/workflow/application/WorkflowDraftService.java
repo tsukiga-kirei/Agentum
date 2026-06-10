@@ -34,6 +34,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -394,7 +395,9 @@ public class WorkflowDraftService {
         WorkflowDraftApi.SaveWorkflowDraftGraphRequest request
     ) {
         WorkflowDefinitionEntity definition = findDefinitionForEdit(tenantId, workflowId, operatorUserId);
-        List<WorkflowDraftApi.WorkflowNodeDraft> nodes = request.nodes() == null ? List.of() : request.nodes();
+        List<WorkflowDraftApi.WorkflowNodeDraft> nodes = WorkflowNodeConfigNormalizer.normalizeNodes(
+            request.nodes() == null ? List.of() : request.nodes()
+        );
         List<WorkflowDraftApi.WorkflowEdgeDraft> edges = request.edges() == null ? List.of() : request.edges();
         List<WorkflowDraftApi.WorkflowVariableDraft> variables = request.variables() == null ? List.of() : request.variables();
         validateGraph(tenantId, workflowId, nodes, edges);
@@ -405,12 +408,7 @@ public class WorkflowDraftService {
             nodes.stream().map(this::toNodeRow).toList()
         );
         if (!referenceIssues.isEmpty()) {
-            throw new ApiException(
-                HttpStatus.BAD_REQUEST,
-                "WORKFLOW_CAPABILITY_REFERENCE_NOT_AVAILABLE",
-                "流程引用了当前编辑者不可使用的能力",
-                Map.of("issueCount", referenceIssues.size())
-            );
+            throwConfigValidationFailed(referenceIssues);
         }
 
         Instant now = clock.instant();
@@ -853,6 +851,45 @@ public class WorkflowDraftService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "WORKFLOW_ACCESS_SCOPE_INVALID", "权限范围不受支持");
         }
         return normalized;
+    }
+
+    private void throwConfigValidationFailed(List<WorkflowDraftApi.WorkflowValidationIssue> issues) {
+        String message = issues.stream()
+            .map(WorkflowDraftApi.WorkflowValidationIssue::message)
+            .filter(value -> value != null && !value.isBlank())
+            .findFirst()
+            .orElse("流程配置校验未通过");
+        List<Map<String, Object>> issueDetails = issues.stream()
+            .map(issue -> {
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("code", issue.code());
+                item.put("message", issue.message());
+                item.put("nodeId", issue.nodeId() == null ? "" : issue.nodeId());
+                item.put("nodeName", issue.nodeName() == null ? "" : issue.nodeName());
+                return item;
+            })
+            .toList();
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("issueCount", issues.size());
+        details.put("issues", issueDetails);
+        throw new ApiException(HttpStatus.BAD_REQUEST, resolveConfigValidationErrorCode(issues), message, details);
+    }
+
+    private static String resolveConfigValidationErrorCode(List<WorkflowDraftApi.WorkflowValidationIssue> issues) {
+        boolean hasPromptIssue = issues.stream().anyMatch(issue -> issue.code() != null && issue.code().contains("PROMPT"));
+        boolean hasCapabilityIssue = issues.stream().anyMatch(issue -> issue.code() != null && (
+            issue.code().contains("CAPABILITY")
+                || issue.code().contains("TENANT_ASSET")
+                || issue.code().contains("ASSIGNED")
+                || issue.code().contains("POOL")
+        ));
+        if (hasPromptIssue && !hasCapabilityIssue) {
+            return "WORKFLOW_VALIDATION_PROMPT_INVALID";
+        }
+        if (hasPromptIssue) {
+            return "WORKFLOW_VALIDATION_CONFIG_INVALID";
+        }
+        return "WORKFLOW_CAPABILITY_REFERENCE_NOT_AVAILABLE";
     }
 
     private record WorkflowVersionSnapshot(

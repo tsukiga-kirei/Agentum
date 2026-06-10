@@ -24,6 +24,7 @@ import {
   readFinalAnswer,
   summarizeExecutionSteps,
 } from "../../utils/agentExecutionSteps";
+import { formatDisplayPrompt, resolveSystemDisplayPrompt, resolveUserDisplayPrompt } from "../../utils/resolveDisplayPrompts";
 
 interface SingleAgentPanelProps {
   activeStep: RuntimePreviewStep;
@@ -162,8 +163,8 @@ export function SingleAgentPanel({
     || (toolCalls.find((tool) => tool.kind === "agent")?.name ?? "")
     || "租户分配模型";
 
-  const systemPrompt = String(config.systemPrompt ?? "").trim();
-  const userPrompt = String(config.userPrompt ?? config.prompt ?? "").trim();
+  const systemPrompt = resolveSystemDisplayPrompt(config);
+  const userPrompt = resolveUserDisplayPrompt(config);
   const stepSummary = summarizeExecutionSteps(steps);
   const showRunningHero = activeStep.state === "running" || activeStep.state === "pending" || isStreaming;
   const isAnswerReady = activeStep.state === "done" && !!finalAnswer.trim();
@@ -385,7 +386,7 @@ export function SingleAgentPanel({
                   <textarea
                     className="sys-field-textarea sys-readonly-textarea min-h-[72px]"
                     readOnly
-                    value={systemPrompt || "（未配置）"}
+                    value={formatDisplayPrompt(systemPrompt)}
                   />
                 </label>
                 <label className="sys-field">
@@ -393,7 +394,7 @@ export function SingleAgentPanel({
                   <textarea
                     className="sys-field-textarea sys-readonly-textarea min-h-[72px]"
                     readOnly
-                    value={userPrompt || "（未配置）"}
+                    value={formatDisplayPrompt(userPrompt)}
                   />
                 </label>
               </div>

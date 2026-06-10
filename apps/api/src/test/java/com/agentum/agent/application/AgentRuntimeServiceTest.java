@@ -57,7 +57,8 @@ class AgentRuntimeServiceTest {
             modelChatClient,
             new ObjectMapper(),
             Clock.fixed(NOW, ZoneOffset.UTC),
-            mock(RunCancellationGuard.class)
+            mock(RunCancellationGuard.class),
+            new PromptContentResolver(capabilityRepository, assetRepository)
         );
 
         ModelProviderEntity provider = ModelProviderEntity.create(

@@ -7,6 +7,7 @@ import { MarkdownRenderer } from "./MarkdownRenderer";
 import { mergeClusterAgents } from "../../utils/clusterAgentsMerge";
 import { formatRuntimeErrorMessage } from "../../utils/runtimeErrors";
 import { pickBestAgentOutput } from "../../utils/agentOutputText";
+import { formatDisplayPrompt, resolveSystemDisplayPrompt, resolveUserDisplayPrompt } from "../../utils/resolveDisplayPrompts";
 
 interface MultiAgentPanelProps {
   activeStep: RuntimePreviewStep;
@@ -53,8 +54,8 @@ export function MultiAgentPanel({
       );
       return {
         ...agent,
-        systemPrompt: config ? String(config.systemPrompt || "") : "",
-        userPrompt: config ? String(config.userPrompt || config.prompt || "") : "",
+        systemPrompt: config ? resolveSystemDisplayPrompt(config) : resolveSystemDisplayPrompt(undefined),
+        userPrompt: config ? resolveUserDisplayPrompt(config) : resolveUserDisplayPrompt(undefined),
       };
     });
   }, [configAgents, clusterAgents, activeStep.outputs, activeStep.state, isStreaming]);
@@ -226,19 +227,15 @@ export function MultiAgentPanel({
               </span>
             </section>
 
-            {selectedAgent.systemPrompt ? (
-              <section className="bg-white dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-800 p-4">
-                <span className="text-xs text-slate-400 font-bold block mb-2">系统提示词</span>
-                <MarkdownRenderer content={selectedAgent.systemPrompt} compact />
-              </section>
-            ) : null}
+            <section className="bg-white dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-800 p-4">
+              <span className="text-xs text-slate-400 font-bold block mb-2">系统提示词</span>
+              <MarkdownRenderer content={formatDisplayPrompt(selectedAgent.systemPrompt)} compact />
+            </section>
 
-            {selectedAgent.userPrompt ? (
-              <section className="bg-white dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-800 p-4">
-                <span className="text-xs text-slate-400 font-bold block mb-2">任务提示词</span>
-                <MarkdownRenderer content={selectedAgent.userPrompt} compact />
-              </section>
-            ) : null}
+            <section className="bg-white dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-800 p-4">
+              <span className="text-xs text-slate-400 font-bold block mb-2">用户提示词</span>
+              <MarkdownRenderer content={formatDisplayPrompt(selectedAgent.userPrompt)} compact />
+            </section>
 
             <section className="bg-white dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-800 p-4">
               <span className="text-xs text-slate-400 font-bold block mb-2">

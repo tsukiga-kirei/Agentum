@@ -82,7 +82,10 @@ public class WorkflowDesignerCatalogService {
                 "agentSource", "custom",
                 "agentAssetId", "custom",
                 "promptTemplateId", "none",
-                "systemPrompt", "请配置这个智能体的角色、任务边界和输出要求。",
+                "systemPromptTemplateId", "none",
+                "userPromptTemplateId", "none",
+                "systemPrompt", WorkflowPromptDefaults.DEFAULT_SYSTEM_PROMPT,
+                "userPrompt", WorkflowPromptDefaults.DEFAULT_USER_PROMPT,
                 "mcpServices", List.of(),
                 "skills", List.of()
             ),
@@ -143,16 +146,19 @@ public class WorkflowDesignerCatalogService {
     }
 
     private Map<String, Object> clusterAgent(int index) {
-        return Map.of(
-            "id", "cluster_agent_" + index,
-            "name", "子智能体 " + index,
-            "agentAssetId", "custom",
-            "promptTemplateId", "none",
-            "skillIds", List.of(),
-            "mcpIds", List.of(),
-            "prompt", "请补充该智能体的任务提示词。",
-            "output", "agent_" + index + "_output"
-        );
+        Map<String, Object> agent = new java.util.LinkedHashMap<>();
+        agent.put("id", "cluster_agent_" + index);
+        agent.put("name", "子智能体 " + index);
+        agent.put("agentAssetId", "custom");
+        agent.put("promptTemplateId", "none");
+        agent.put("systemPromptTemplateId", "none");
+        agent.put("userPromptTemplateId", "none");
+        agent.put("skillIds", List.of());
+        agent.put("mcpIds", List.of());
+        agent.put("systemPrompt", WorkflowPromptDefaults.DEFAULT_SYSTEM_PROMPT);
+        agent.put("userPrompt", WorkflowPromptDefaults.DEFAULT_CLUSTER_USER_PROMPT);
+        agent.put("output", "agent_" + index + "_output");
+        return agent;
     }
 
     private Map<String, WorkflowDraftApi.WorkflowVariableTemplate> variableMetadata() {

@@ -1,5 +1,6 @@
 package com.agentum.workbench.application;
 
+import com.agentum.agent.application.PromptContentResolver;
 import com.agentum.auth.application.CurrentUserPrincipal;
 import com.agentum.auth.domain.UserAccount;
 import com.agentum.auth.infrastructure.UserAccountRepository;
@@ -105,6 +106,7 @@ public class WorkbenchRuntimeService {
     private final RunProgressStreamWriter streamWriter;
     private final RunCancellationGuard cancellationGuard;
     private final RuntimeExecutionProperties runtimeProperties;
+    private final PromptContentResolver promptContentResolver;
 
     public WorkbenchRuntimeService(
         TenantRepository tenantRepository,
@@ -126,7 +128,8 @@ public class WorkbenchRuntimeService {
         NodeExecuteCommandPublisher commandPublisher,
         RunProgressStreamWriter streamWriter,
         RunCancellationGuard cancellationGuard,
-        RuntimeExecutionProperties runtimeProperties
+        RuntimeExecutionProperties runtimeProperties,
+        PromptContentResolver promptContentResolver
     ) {
         this.tenantRepository = tenantRepository;
         this.workflowDefinitionRepository = workflowDefinitionRepository;
@@ -148,6 +151,7 @@ public class WorkbenchRuntimeService {
         this.streamWriter = streamWriter;
         this.cancellationGuard = cancellationGuard;
         this.runtimeProperties = runtimeProperties;
+        this.promptContentResolver = promptContentResolver;
     }
 
     @Transactional(readOnly = true)
@@ -280,7 +284,7 @@ public class WorkbenchRuntimeService {
                 node.name(),
                 snapshotVariables(node.inputVariables(), "等待上游输入"),
                 Map.of(),
-                node.config(),
+                promptContentResolver.enrichConfigSnapshot(tenantId, node.nodeType(), node.config()),
                 index,
                 now
             ));

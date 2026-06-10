@@ -64,7 +64,9 @@ public class WorkflowNodeConfigValidator {
             if ("agent".equals(nodeType)) {
                 validateTenantAssetId(tenantId, operatorUserId, extractString(config, "agentAssetId"), "agent_template", "智能体模板", node, issues);
                 validateTenantAssetId(tenantId, operatorUserId, extractString(config, "systemPromptTemplateId"), "prompt_template", "系统提示词模板", node, issues);
+                validateTenantAssetId(tenantId, operatorUserId, extractString(config, "promptTemplateId"), "prompt_template", "系统提示词模板", node, issues);
                 validateTenantAssetId(tenantId, operatorUserId, extractString(config, "userPromptTemplateId"), "prompt_template", "用户提示词模板", node, issues);
+                validateAgentPromptConfiguration(config, node, "节点[" + node.name() + "]", issues);
                 validateIds(tenantId, operatorUserId, extractStringList(config, "mcpIds", "mcpServices"), "mcp", "MCP", node, poolCapabilities, issues);
                 validateIds(tenantId, operatorUserId, extractStringList(config, "skillIds", "skills"), "skill", "Skill", node, poolCapabilities, issues);
             } else if ("parallel_group".equals(nodeType)) {
@@ -77,9 +79,18 @@ public class WorkflowNodeConfigValidator {
                     ));
                 }
                 List<Map<String, Object>> agents = extractMapList(config, "clusterAgents");
-                for (Map<String, Object> agent : agents) {
+                for (int index = 0; index < agents.size(); index++) {
+                    Map<String, Object> agent = agents.get(index);
+                    String agentName = rawString(agent.get("name"));
+                    if (agentName.isBlank()) {
+                        agentName = "子智能体 " + (index + 1);
+                    }
+                    String subject = "节点[" + node.name() + "]的子智能体「" + agentName + "」";
                     validateTenantAssetId(tenantId, operatorUserId, extractString(agent, "agentAssetId"), "agent_template", "智能体模板", node, issues);
-                    validateTenantAssetId(tenantId, operatorUserId, extractString(agent, "systemPromptTemplateId"), "prompt_template", "提示词模板", node, issues);
+                    validateTenantAssetId(tenantId, operatorUserId, extractString(agent, "systemPromptTemplateId"), "prompt_template", "系统提示词模板", node, issues);
+                    validateTenantAssetId(tenantId, operatorUserId, extractString(agent, "promptTemplateId"), "prompt_template", "系统提示词模板", node, issues);
+                    validateTenantAssetId(tenantId, operatorUserId, extractString(agent, "userPromptTemplateId"), "prompt_template", "用户提示词模板", node, issues);
+                    validateAgentPromptConfiguration(agent, node, subject, issues);
                     validateIds(tenantId, operatorUserId, extractStringList(agent, "mcpIds", "mcpServices"), "mcp", "MCP", node, poolCapabilities, issues);
                     validateIds(tenantId, operatorUserId, extractStringList(agent, "skillIds", "skills"), "skill", "Skill", node, poolCapabilities, issues);
                 }
@@ -193,6 +204,51 @@ public class WorkflowNodeConfigValidator {
                 ));
             }
         }
+    }
+
+    /**
+     * 自定义提示词模式下必须填写正文；选择模板时由模板资产提供正文。
+     */
+    private void validateAgentPromptConfiguration(
+        Map<String, Object> config,
+        WorkflowDraftApi.WorkflowNodeRow node,
+        String subject,
+        List<WorkflowDraftApi.WorkflowValidationIssue> issues
+    ) {
+        if (resolveTemplateReference(config, "systemPromptTemplateId", "promptTemplateId") == null
+            && rawString(config.get("systemPrompt")).isBlank()) {
+            issues.add(issue(
+                "WORKFLOW_VALIDATION_SYSTEM_PROMPT_REQUIRED",
+                subject + "的系统提示词为自定义时必须填写正文，或选择系统提示词模板",
+                node
+            ));
+        }
+        if (resolveTemplateReference(config, "userPromptTemplateId") == null
+            && rawString(config.get("userPrompt")).isBlank()) {
+            issues.add(issue(
+                "WORKFLOW_VALIDATION_USER_PROMPT_REQUIRED",
+                subject + "的用户提示词为自定义时必须填写正文，或选择用户提示词模板",
+                node
+            ));
+        }
+    }
+
+    private static String resolveTemplateReference(Map<String, Object> config, String primaryKey, String... fallbackKeys) {
+        String templateId = extractString(config, primaryKey);
+        if (templateId != null) {
+            return templateId;
+        }
+        for (String fallbackKey : fallbackKeys) {
+            templateId = extractString(config, fallbackKey);
+            if (templateId != null) {
+                return templateId;
+            }
+        }
+        return null;
+    }
+
+    private static String rawString(Object value) {
+        return value == null ? "" : String.valueOf(value).trim();
     }
 
     // ---- 配置解析辅助 ----

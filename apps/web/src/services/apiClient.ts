@@ -94,12 +94,14 @@ export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localho
 export class AgentumApiError extends Error {
   readonly code: string;
   readonly requestId: string;
+  readonly details?: Record<string, unknown>;
 
-  constructor(message: string, code: string, requestId: string) {
+  constructor(message: string, code: string, requestId: string, details?: Record<string, unknown>) {
     super(message);
     this.name = "AgentumApiError";
     this.code = code;
     this.requestId = requestId;
+    this.details = details;
   }
 }
 
@@ -139,7 +141,12 @@ async function apiRequest<T>(path: string, options: RequestOptions = {}): Promis
 
   if (!response.ok || !envelope.success) {
     console.warn("[api] 请求失败", { path, status: response.status, code: envelope.error?.code, requestId: envelope.requestId });
-    throw new AgentumApiError(envelope.error?.message ?? "请求失败，请稍后重试", envelope.error?.code ?? "SYSTEM_REQUEST_FAILED", envelope.requestId);
+    throw new AgentumApiError(
+      envelope.error?.message ?? "请求失败，请稍后重试",
+      envelope.error?.code ?? "SYSTEM_REQUEST_FAILED",
+      envelope.requestId,
+      envelope.error?.details,
+    );
   }
 
   if (envelope.data === null) {

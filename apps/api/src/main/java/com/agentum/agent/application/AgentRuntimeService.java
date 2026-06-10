@@ -11,7 +11,6 @@ import com.agentum.shared.api.ApiException;
 import com.agentum.shared.api.RequestIds;
 import com.agentum.shared.security.FieldEncryptionService;
 import com.agentum.system.domain.ModelProviderEntity;
-import com.agentum.system.domain.SystemCapabilityEntity;
 import com.agentum.system.domain.TenantModelAssignmentEntity;
 import com.agentum.system.infrastructure.ModelProviderRepository;
 import com.agentum.system.infrastructure.SystemCapabilityRepository;
@@ -54,6 +53,7 @@ public class AgentRuntimeService {
     private final ObjectMapper objectMapper;
     private final Clock clock;
     private final RunCancellationGuard cancellationGuard;
+    private final PromptContentResolver promptContentResolver;
 
     public AgentRuntimeService(
         TenantModelAssignmentRepository tenantModelAssignmentRepository,
@@ -67,7 +67,8 @@ public class AgentRuntimeService {
         ModelChatClient modelChatClient,
         ObjectMapper objectMapper,
         Clock clock,
-        RunCancellationGuard cancellationGuard
+        RunCancellationGuard cancellationGuard,
+        PromptContentResolver promptContentResolver
     ) {
         this.tenantModelAssignmentRepository = tenantModelAssignmentRepository;
         this.modelProviderRepository = modelProviderRepository;
@@ -81,6 +82,7 @@ public class AgentRuntimeService {
         this.objectMapper = objectMapper;
         this.clock = clock;
         this.cancellationGuard = cancellationGuard;
+        this.promptContentResolver = promptContentResolver;
     }
 
     public AgentRuntimeResult execute(AgentRuntimeRequest request) {
@@ -144,10 +146,8 @@ public class AgentRuntimeService {
         Map<String, SkillRuntimeService.SkillToolBinding> skillToolByName = skillTools.stream()
             .collect(java.util.stream.Collectors.toMap(SkillRuntimeService.SkillToolBinding::functionName, tool -> tool, (left, right) -> left, LinkedHashMap::new));
 
-        String systemPrompt = resolvePromptContent(request.run().getTenantId(), config, "systemPromptTemplateId", "systemPrompt",
-            "你是 Agentum 平台中的业务智能体，请严格基于输入变量完成当前节点任务。");
-        String userPrompt = resolvePromptContent(request.run().getTenantId(), config, "userPromptTemplateId", "userPrompt",
-            firstNonBlank(stringValue(config.get("prompt")), "请基于上游变量和可用工具完成当前步骤，并输出结构化业务结论。"));
+        String systemPrompt = promptContentResolver.resolveSystemPrompt(request.run().getTenantId(), config);
+        String userPrompt = promptContentResolver.resolveUserPrompt(request.run().getTenantId(), config);
         // 运行态只使用流程设计中的 system/user 提示词，并通过 {{变量名}} 替换上游变量；
         // Skill/MCP 通过 tools 声明暴露给模型，不再向提示词追加平台规则或整包 JSON 上下文。
         String renderedSystemPrompt = renderTemplate(systemPrompt, request.variables(), request.toolOutputs());
@@ -818,27 +818,6 @@ public class AgentRuntimeService {
         }
         result.putAll(request.nodeConfig());
         return result;
-    }
-
-    private String resolvePromptContent(UUID tenantId, Map<String, Object> config, String templateKey, String inlineKey, String fallback) {
-        String templateId = stringValue(config.get(templateKey));
-        if (!templateId.isBlank() && !"none".equals(templateId)) {
-            Optional<UUID> uuid = parseUuid(templateId);
-            if (uuid.isPresent()) {
-                UUID id = uuid.get();
-                Optional<SystemCapabilityEntity> systemPrompt = systemCapabilityRepository.findById(id)
-                    .filter(capability -> "active".equals(capability.getStatus()) && "prompt_template".equals(capability.getCapabilityType()));
-                if (systemPrompt.isPresent()) {
-                    return firstNonBlank(stringValue(systemPrompt.get().getConfig().get("promptContent")), fallback);
-                }
-                Optional<TenantAssetCapabilityEntity> tenantPrompt = tenantAssetCapabilityRepository.findByIdAndTenantId(id, tenantId)
-                    .filter(asset -> "published".equals(asset.getStatus()) && "prompt_template".equals(asset.getAssetType()));
-                if (tenantPrompt.isPresent()) {
-                    return firstNonBlank(stringValue(tenantPrompt.get().getConfig().get("promptContent")), fallback);
-                }
-            }
-        }
-        return firstNonBlank(stringValue(config.get(inlineKey)), fallback);
     }
 
     private Map<String, Object> modelOptions(ModelProviderEntity provider, Map<String, Object> config) {

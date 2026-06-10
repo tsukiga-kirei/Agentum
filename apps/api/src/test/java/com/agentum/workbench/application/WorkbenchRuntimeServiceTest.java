@@ -11,7 +11,10 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.agentum.agent.application.PromptContentResolver;
 import com.agentum.auth.application.CurrentUserPrincipal;
+import com.agentum.asset.infrastructure.TenantAssetCapabilityRepository;
+import com.agentum.system.infrastructure.SystemCapabilityRepository;
 import com.agentum.auth.domain.UserAccount;
 import com.agentum.auth.infrastructure.UserAccountRepository;
 import com.agentum.permission.application.CollaborationAccessPolicy;
@@ -502,7 +505,8 @@ class WorkbenchRuntimeServiceTest {
             commandPublisher,
             streamWriter,
             cancellationGuard,
-            new RuntimeExecutionProperties()
+            new RuntimeExecutionProperties(),
+            new PromptContentResolver(mock(SystemCapabilityRepository.class), mock(TenantAssetCapabilityRepository.class))
         );
     }
 

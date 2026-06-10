@@ -255,10 +255,6 @@ export function TaskRunWorkspace({
     ?? advanceError
     ?? stream.error;
 
-  const showExecutionErrorBanner =
-    !!stepErrorMessage
-    && (activeStep.state === "failed" || !!advanceError || !!stream.error);
-
   const isStreamableStep =
     activeStep.kind === "agent" || activeStep.kind === "multiAgent";
 
@@ -788,15 +784,6 @@ export function TaskRunWorkspace({
 
             {activeRunTab === "current" && (
               <div className="space-y-4 max-w-4xl mx-auto">
-                {showExecutionErrorBanner ? (
-                  <div
-                    role="alert"
-                    className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200"
-                  >
-                    <p className="font-semibold">当前步骤执行失败</p>
-                    <p className="mt-1 text-xs leading-relaxed whitespace-pre-wrap">{stepErrorMessage}</p>
-                  </div>
-                ) : null}
                 <header className="flex justify-between items-center gap-3 border-b border-slate-100 dark:border-slate-850 pb-3 mb-2">
                   <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate">{activeStep.title}</h3>
                   <span className={`shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${

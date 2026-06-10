@@ -34,7 +34,8 @@ class AgentRuntimeExtractFinalAnswerTest {
             mock(ModelChatClient.class),
             new ObjectMapper(),
             Clock.systemUTC(),
-            mock(RunCancellationGuard.class)
+            mock(RunCancellationGuard.class),
+            new PromptContentResolver(mock(SystemCapabilityRepository.class), mock(TenantAssetCapabilityRepository.class))
         );
     }
 
