@@ -2752,6 +2752,12 @@ textarea:focus-visible {
   box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
 }
 .sys-btn--sm { height: 28px; padding: 0 12px; font-size: 12px; }
+.sys-btn--icon.sys-btn--sm {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  min-width: 28px;
+}
 .sys-btn--link {
   background: transparent; color: var(--color-primary); padding: 4px 0;
   border: none; font-size: 13px; height: auto;
@@ -3418,7 +3424,26 @@ textarea:focus-visible {
   flex-shrink: 0;
   padding: 14px 16px;
   border-bottom: 1px solid var(--color-border-light);
-  background: var(--color-bg-hover);
+  background: transparent;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.tenant-dept-tree-info {
+  flex: 1;
+  min-width: 0;
+}
+.tenant-dept-tree-info h3 {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tenant-dept-tree-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 .tenant-dept-tree-header h3,
 .tenant-member-toolbar h3 {
@@ -3550,6 +3575,11 @@ textarea:focus-visible {
   gap: 12px;
   padding: 14px 16px;
   border-bottom: 1px solid var(--color-border-light);
+}
+.tenant-member-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 .tenant-member-search {
   width: min(320px, 100%);

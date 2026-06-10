@@ -13,6 +13,7 @@ import {
   Edit,
   Info,
   LockKeyhole,
+  Plus,
   PlusCircle,
   Save,
   Search,
@@ -860,21 +861,17 @@ export function TenantManagementPage() {
         </div>
 
         {activeTab === "organization" ? (
-          <div className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] shadow-[var(--shadow-sm)]">
-            <div className="p-5">
-              <OrganizationPanel
-                overview={organizationOverview}
-                loading={organizationLoading}
-                error={organizationError}
-                hasTenantContext={Boolean(user?.tenantId)}
-                onCreateMember={() => { setMemberDraft(emptyMemberForm); setCreateMemberOpen(true); }}
-                onCreateDepartment={() => { setEditingDepartment(null); setDepartmentDraft(emptyDepartmentForm); setCreateDepartmentOpen(true); }}
-                onEditDepartment={openEditDepartmentModal}
-                membershipUpdatingId={membershipUpdatingId}
-                onEditMembership={openEditMemberModal}
-              />
-            </div>
-          </div>
+          <OrganizationPanel
+            overview={organizationOverview}
+            loading={organizationLoading}
+            error={organizationError}
+            hasTenantContext={Boolean(user?.tenantId)}
+            onCreateMember={() => { setMemberDraft(emptyMemberForm); setCreateMemberOpen(true); }}
+            onCreateDepartment={() => { setEditingDepartment(null); setDepartmentDraft(emptyDepartmentForm); setCreateDepartmentOpen(true); }}
+            onEditDepartment={openEditDepartmentModal}
+            membershipUpdatingId={membershipUpdatingId}
+            onEditMembership={openEditMemberModal}
+          />
         ) : null}
         {activeTab === "roles" ? (
           <RoleManagementPanel
@@ -1534,25 +1531,6 @@ function OrganizationPanel({
 
   return (
     <div className="space-y-4">
-      <div className="tenant-org-actionbar">
-        <div className="tenant-org-actionbar-buttons">
-          {selectedDepartment ? (
-            <button className="sys-btn sys-btn--default" onClick={() => onEditDepartment(selectedDepartment)} disabled={!overview}>
-              <Edit size={14} />
-              编辑当前部门
-            </button>
-          ) : null}
-          <button className="sys-btn sys-btn--default" onClick={onCreateDepartment} disabled={!overview}>
-            <Building2 size={14} />
-            新增部门
-          </button>
-          <button className="sys-btn sys-btn--primary" onClick={onCreateMember} disabled={!overview}>
-            <UserPlus size={14} />
-            新增成员
-          </button>
-        </div>
-      </div>
-
       {loading ? (
         <div className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] p-4 text-sm text-[var(--color-text-secondary)]">正在加载人员组织数据…</div>
       ) : null}
@@ -1565,9 +1543,29 @@ function OrganizationPanel({
         <div className="tenant-org-layout">
           <aside className="tenant-dept-tree">
             <div className="tenant-dept-tree-header">
-              <div>
+              <div className="tenant-dept-tree-info">
                 <h3>{overview.tenantName}</h3>
                 <p>{overview.departments.length} 个部门 · {overview.memberships.length} 名成员</p>
+              </div>
+              <div className="tenant-dept-tree-header-actions">
+                <button
+                  className="sys-btn sys-btn--icon sys-btn--sm sys-btn--default"
+                  title="新增部门"
+                  onClick={onCreateDepartment}
+                  disabled={!overview}
+                >
+                  <Plus size={15} />
+                </button>
+                {selectedDepartment ? (
+                  <button
+                    className="sys-btn sys-btn--icon sys-btn--sm sys-btn--default"
+                    title="编辑当前部门"
+                    onClick={() => onEditDepartment(selectedDepartment)}
+                    disabled={!overview}
+                  >
+                    <Edit size={14} />
+                  </button>
+                ) : null}
               </div>
             </div>
             <div className="tenant-dept-tree-list">
@@ -1624,13 +1622,19 @@ function OrganizationPanel({
                 <h3>成员列表</h3>
                 <p>当前筛选 {visibleMemberships.length} 人</p>
               </div>
-              <div className="tenant-member-search">
-                <Search size={15} />
-                <input
-                  value={memberKeyword}
-                  placeholder="搜索成员、部门或角色"
-                  onChange={(event) => setMemberKeyword(event.target.value)}
-                />
+              <div className="tenant-member-toolbar-actions">
+                <div className="tenant-member-search">
+                  <Search size={15} />
+                  <input
+                    value={memberKeyword}
+                    placeholder="搜索成员、部门或角色"
+                    onChange={(event) => setMemberKeyword(event.target.value)}
+                  />
+                </div>
+                <button className="sys-btn sys-btn--primary sys-btn--sm" onClick={onCreateMember} disabled={!overview}>
+                  <UserPlus size={13} />
+                  新增成员
+                </button>
               </div>
             </div>
             <div className="tenant-member-table-wrap">
