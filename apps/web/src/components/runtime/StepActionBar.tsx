@@ -8,6 +8,8 @@ interface StepActionBarProps {
   isAdvancing?: boolean;
   isReconnecting?: boolean;
   isRunCompleted: boolean;
+  /** 当前步骤是否为流程最后一步（完成后按钮文案为「确认完成」） */
+  isLastStep?: boolean;
   /** 节点被用户主动中断（canceled）：仅展示「重新执行」 */
   stepCanceled?: boolean;
   /** 节点执行失败（failed）：仅展示「恢复进度」 */
@@ -36,6 +38,7 @@ export function StepActionBar({
   isAdvancing = false,
   isReconnecting = false,
   isRunCompleted,
+  isLastStep = false,
   stepCanceled = false,
   stepFailed = false,
   watchdogStale = false,
@@ -184,7 +187,7 @@ export function StepActionBar({
           onClick={onAdvance}
           disabled={isAdvancing}
         >
-          <Play size={14} fill="currentColor" /> 执行下一步
+          <Play size={14} fill="currentColor" /> {isLastStep ? "确认完成" : "执行下一步"}
         </button>
       </div>
     );

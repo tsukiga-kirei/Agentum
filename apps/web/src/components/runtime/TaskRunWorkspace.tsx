@@ -18,6 +18,8 @@ import { AgentChatPanel } from "./AgentChatPanel";
 import { UserInputPanel } from "./UserInputPanel";
 import { MultiAgentPanel } from "./MultiAgentPanel";
 import { DeliveryPreviewPanel } from "./DeliveryPreviewPanel";
+import { DeliveryResultPanel } from "./DeliveryResultPanel";
+import { resolveDirectDeliveryContent } from "../../utils/deliveryContent";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { workbenchApi } from "../../services/apiClient";
 import { formatRuntimeErrorMessage } from "../../utils/runtimeErrors";
@@ -55,7 +57,8 @@ const WATCHDOG_STALE_THRESHOLD_MS = 60_000;
 const WATCHDOG_RECONNECT_FAILURE_LIMIT = 3;
 
 function isRunFlowCompleted(run: WorkbenchRunDetail): boolean {
-  return run.state === "completed" || run.progressPercent >= 100;
+  // 仅以任务终态为准；progress=100% 但 state=paused 表示最后节点待确认，不能误判为已完成。
+  return run.state === "completed";
 }
 
 /** 后端在途作业是否仍活跃（queued/running）。 */
@@ -120,6 +123,10 @@ export function TaskRunWorkspace({
     if (failedEvent && failedEvent.type === "node_failed") {
       setAdvanceError(formatRuntimeErrorMessage(failedEvent.data.errorCode, failedEvent.data.errorMessage));
       setActiveRunTab("current");
+      stream.disconnect();
+    }
+    if (newEvents.some((event) => event.type === "run_completed")) {
+      setActiveRunTab("deliveries");
       stream.disconnect();
     }
     if (shouldReload) {
@@ -235,14 +242,13 @@ export function TaskRunWorkspace({
     : -1;
   const currentStepIndex = streamingStepIndex >= 0 ? streamingStepIndex : backendStepIndex;
   const activeStep = preview.steps[currentStepIndex] ?? preview.steps[backendStepIndex] ?? preview.steps[0];
+  const isLastStep = currentStepIndex === preview.steps.length - 1;
   const isLiveExecuting =
     stream.isStreaming
     && stream.connectionState === "connected"
     && stream.activeNodeInfo?.nodeRunId === activeStep.nodeRunId;
 
-  const isFlowCompleted =
-    isRunFlowCompleted(runDetail)
-    || preview.statusLabel === "已完成";
+  const isFlowCompleted = isRunFlowCompleted(runDetail);
 
   const stepErrorMessage =
     resolveStepErrorMessage(activeStep)
@@ -441,13 +447,6 @@ export function TaskRunWorkspace({
   }
 
   function handleStepSelect(step: RuntimePreviewStep, index: number) {
-    // 交付节点完成后进入「产品交付」页签，避免流程结束时误跳「当前处理」再被重定向到总览。
-    if (step.kind === "delivery" && step.state === "done") {
-      setSelectedTraceStepIndex(index);
-      setActiveRunTab("deliveries");
-      return;
-    }
-
     if (index === currentStepIndex) {
       if (isFlowCompleted) {
         if (step.state === "done") {
@@ -841,6 +840,8 @@ export function TaskRunWorkspace({
                 ) : activeStep.kind === "delivery" ? (
                   activeStep.state === "pending" && !isAdvancing ? (
                     <DeliveryPreviewPanel activeStep={activeStep} runDetail={runDetail} />
+                  ) : activeStep.state === "done" ? (
+                    <DeliveryResultPanel activeStep={activeStep} />
                   ) : (
                   <div className="bg-white dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-850 p-5 space-y-4 max-w-2xl mx-auto">
                     <div className="text-center py-8 text-slate-500 dark:text-slate-400 text-sm leading-relaxed">
@@ -852,11 +853,9 @@ export function TaskRunWorkspace({
                             <p>{resolveStepErrorMessage(activeStep) ?? "请检查交付能力配置，或改用「直接输出交付」模式。"}</p>
                           </>
                         )
-                        : activeStep.state === "done"
-                          ? "交付步骤已完成，可在「产品交付」页签查看归档结果。"
-                          : isAdvancing
-                            ? "正在执行交付步骤，请稍候..."
-                            : "交付步骤执行中，请稍候..."}
+                        : isAdvancing
+                          ? "正在执行交付步骤，请稍候..."
+                          : "交付步骤执行中，请稍候..."}
                     </div>
                   </div>
                   )
@@ -897,6 +896,7 @@ export function TaskRunWorkspace({
               isAdvancing={isAdvancing}
               isReconnecting={isStreamReconnecting}
               isRunCompleted={isFlowCompleted}
+              isLastStep={isLastStep}
               stepCanceled={stepCanceled}
               stepFailed={runDetail.state === "failed" || activeStep.state === "failed"}
               watchdogStale={!!watchdogStaleMessage}
@@ -1341,10 +1341,6 @@ function RunDeliveriesPanel({
     || capabilityId === "";
 
   const directDeliveryContent = resolveDirectDeliveryContent(deliveryStep);
-  const inProgressDeliveryHint = readConfigString(
-    deliveryConfig.deliveryTarget,
-    "交付配置尚未执行，流程完成后将按此处配置输出。"
-  );
 
   const [copied, setCopied] = useState(false);
 
@@ -1400,9 +1396,9 @@ function RunDeliveriesPanel({
             <div>
               <strong className="text-slate-800 dark:text-slate-200 font-medium block">直接输出交付</strong>
               <span className="text-slate-400 block mt-0.5 whitespace-pre-wrap">
-                {isDirectDelivery
-                  ? (isFlowCompleted ? "按流程「交付配置」渲染并输出正文。" : inProgressDeliveryHint)
-                  : "按流程配置的交付能力通道输出。"}
+                {isFlowCompleted
+                  ? "按流程「交付配置」渲染并输出正文。"
+                  : "交付步骤执行后需先在「当前处理」确认完成，归档结果才会在此展示。"}
               </span>
             </div>
             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
@@ -1410,7 +1406,7 @@ function RunDeliveriesPanel({
                 ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400"
                 : "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400"
             }`}>
-              {isFlowCompleted ? "就绪" : "待执行"}
+              {isFlowCompleted ? "已归档" : "待确认"}
             </span>
           </div>
         ) : (
@@ -1422,10 +1418,18 @@ function RunDeliveriesPanel({
               >
                 <div>
                   <strong className="text-slate-800 dark:text-slate-200 font-medium block">{item.name}</strong>
-                  <span className="text-slate-400 block mt-0.5">{item.meta}</span>
+                  <span className="text-slate-400 block mt-0.5">
+                    {isFlowCompleted
+                      ? item.meta
+                      : "交付已生成，待您在「当前处理」点击「确认完成」后归档展示。"}
+                  </span>
                 </div>
-                <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
-                  {item.status}
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                  isFlowCompleted
+                    ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400"
+                    : "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400"
+                }`}>
+                  {isFlowCompleted ? item.status : "待确认"}
                 </span>
               </div>
             ))}
@@ -1433,7 +1437,7 @@ function RunDeliveriesPanel({
         )}
       </div>
 
-      {isDirectDelivery && directDeliveryContent ? (
+      {isDirectDelivery && isFlowCompleted && directDeliveryContent ? (
         <div className="bg-white dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
           <header className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/10">
             <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
@@ -1584,28 +1588,6 @@ function readConfigString(value: unknown, fallback = ""): string {
   }
   const text = String(value).trim();
   return text || fallback;
-}
-
-function resolveDirectDeliveryContent(deliveryStep?: RuntimePreviewStep): string {
-  if (!deliveryStep) {
-    return "";
-  }
-  const payloadField = deliveryStep.outputs?.find((field) => field.label === "deliveryPayload")?.value;
-  if (payloadField) {
-    try {
-      const parsed = JSON.parse(payloadField) as Record<string, unknown>;
-      const body = readConfigString(parsed.body);
-      const target = readConfigString(parsed.deliveryTarget);
-      return body || target;
-    } catch {
-      return payloadField;
-    }
-  }
-  const summary = deliveryStep.outputs?.find((field) => field.label === "summary")?.value;
-  if (summary) {
-    return summary;
-  }
-  return readConfigString(deliveryStep.configSnapshot?.deliveryTarget);
 }
 
 function nodeDescription(nodeType: string, config: any): string {

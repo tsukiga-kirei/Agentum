@@ -1554,20 +1554,8 @@ public class WorkbenchRuntimeService {
         }
 
         if (nextNode == null) {
-            run.complete(completed, now);
-            workflowRunRepository.save(run);
-            WorkflowRunEventEntity completedEvent = WorkflowRunEventEntity.create(
-                run.getId(),
-                run.getTenantId(),
-                "run_completed",
-                "任务已完成",
-                "全部节点已完成，任务进入历史完成记录。",
-                null,
-                operatorUserId,
-                Map.of(),
-                now
-            );
-            workflowRunEventRepository.save(completedEvent);
+            // 用户确认最后一步后：标记 completed，未保存过的任务自动保存到任务记录。
+            finalizeRunCompletion(run, completed, operatorUserId, now);
             return new NextNodeResult(false, null, null, null, false);
         }
 
@@ -1666,8 +1654,13 @@ public class WorkbenchRuntimeService {
         return new NextNodeResult(true, nextNode.getId(), nextNode.getNodeType(), nextNode.getName(), false);
     }
 
+    /**
+     * Worker 节点执行成功后的状态落库。
+     *
+     * @return 若全部节点已完成并进入任务终态，返回 true（调用方应发 run_completed 而非 run_paused）
+     */
     @Transactional
-    public void saveNodeSuccess(UUID runId, UUID nodeRunId, Map<String, Object> outputs, UUID operatorUserId) {
+    public boolean saveNodeSuccess(UUID runId, UUID nodeRunId, Map<String, Object> outputs, UUID operatorUserId) {
         Instant now = clock.instant();
         WorkflowRunEntity run = workflowRunRepository.findById(runId)
             .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_RUN_NOT_FOUND", "任务运行不存在"));
@@ -1681,19 +1674,20 @@ public class WorkbenchRuntimeService {
         List<WorkflowNodeRunEntity> nodes = workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(runId);
         int completed = (int) nodes.stream().filter(n -> "completed".equals(n.getState())).count();
 
-        // 智能体/多智能体/交付完成后停在当前节点，等待用户确认后再 prepareNextNode 推进下一步。
+        // 智能体/多智能体/交付（含最后一步）执行完成后均停在当前节点，等待用户点击确认后再推进或完结。
         if (requiresManualAdvance(node.getNodeType())) {
             run.pauseAt(node.getNodeKey(), node.getName(), node.getNodeType(), completed, now);
+            workflowRunRepository.save(run);
         } else {
             int nextIndex = node.getSortOrder() + 1;
             if (nextIndex < nodes.size()) {
                 WorkflowNodeRunEntity nextNode = nodes.get(nextIndex);
                 run.pauseAt(nextNode.getNodeKey(), nextNode.getName(), nextNode.getNodeType(), completed, now);
             } else {
-                run.complete(completed, now);
+                finalizeRunCompletion(run, completed, operatorUserId, now);
             }
+            workflowRunRepository.save(run);
         }
-        workflowRunRepository.save(run);
 
         WorkflowRunEventEntity event = WorkflowRunEventEntity.create(
             run.getId(),
@@ -1707,6 +1701,41 @@ public class WorkbenchRuntimeService {
             now
         );
         workflowRunEventRepository.save(event);
+        return false;
+    }
+
+    /**
+     * 全部节点执行完成后的统一收尾：标记 completed，未保存过的任务自动保存到任务记录。
+     */
+    private void finalizeRunCompletion(WorkflowRunEntity run, int completed, UUID operatorUserId, Instant now) {
+        run.complete(completed, now);
+        workflowRunRepository.save(run);
+        if (!run.isSaved()) {
+            run.markSaved(now);
+            workflowRunRepository.save(run);
+            workflowRunEventRepository.save(WorkflowRunEventEntity.create(
+                run.getId(),
+                run.getTenantId(),
+                "run_saved",
+                "任务已保存",
+                "任务已全部完成，已自动保存到任务记录。",
+                null,
+                operatorUserId,
+                Map.of("runNumber", run.getRunNumber(), "state", run.getState(), "autoSaved", true),
+                now
+            ));
+        }
+        workflowRunEventRepository.save(WorkflowRunEventEntity.create(
+            run.getId(),
+            run.getTenantId(),
+            "run_completed",
+            "任务已完成",
+            "全部节点已完成，任务进入历史完成记录。",
+            null,
+            operatorUserId,
+            Map.of(),
+            now
+        ));
     }
 
 }

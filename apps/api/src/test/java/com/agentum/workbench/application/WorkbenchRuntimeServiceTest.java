@@ -339,6 +339,83 @@ class WorkbenchRuntimeServiceTest {
     }
 
     @Test
+    void shouldPauseAtLastDeliveryNodeUntilUserConfirms() {
+        WorkbenchRuntimeService service = newService();
+        WorkflowRunEntity run = ownedRun(2);
+        run.markRunning("agent_review", "智能体分析", "agent", 1, NOW);
+        WorkflowNodeRunEntity agentNode = nodeAt(run, "agent_review", "agent", "智能体分析", 1, NOW);
+        agentNode.complete(Map.of("summary", "分析完成"), NOW);
+        WorkflowNodeRunEntity deliveryNode = nodeAt(run, "delivery_report", "delivery", "交付结果", 2, NOW);
+        deliveryNode.start(NOW);
+
+        when(workflowRunRepository.findById(run.getId())).thenReturn(Optional.of(run));
+        when(workflowNodeRunRepository.findById(deliveryNode.getId())).thenReturn(Optional.of(deliveryNode));
+        when(workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(run.getId()))
+            .thenReturn(List.of(agentNode, deliveryNode));
+
+        boolean completed = service.saveNodeSuccess(
+            run.getId(),
+            deliveryNode.getId(),
+            Map.of("summary", "交付完成", "deliveryPayload", Map.of("body", "月报正文")),
+            OPERATOR_ID
+        );
+
+        assertThat(completed).isFalse();
+        assertThat(run.getState()).isEqualTo("paused");
+        assertThat(run.isSaved()).isFalse();
+        assertThat(run.getProgressPercent()).isEqualTo(100);
+        assertThat(deliveryNode.getState()).isEqualTo("completed");
+    }
+
+    @Test
+    void shouldCompleteAndAutoSaveWhenUserConfirmsAfterAllNodesDone() {
+        WorkbenchRuntimeService service = newService();
+        WorkflowRunEntity run = ownedRun(2);
+        WorkflowNodeRunEntity agentNode = nodeAt(run, "agent_review", "agent", "智能体分析", 1, NOW);
+        agentNode.complete(Map.of("summary", "分析完成"), NOW);
+        WorkflowNodeRunEntity deliveryNode = nodeAt(run, "delivery_report", "delivery", "交付结果", 2, NOW);
+        deliveryNode.complete(Map.of("summary", "交付完成"), NOW);
+        run.pauseAt("delivery_report", "交付结果", "delivery", 2, NOW);
+
+        when(workflowRunRepository.findByIdAndTenantId(run.getId(), TENANT_ID)).thenReturn(Optional.of(run));
+        when(workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(run.getId()))
+            .thenReturn(List.of(agentNode, deliveryNode));
+
+        WorkbenchRuntimeService.NextNodeResult result = service.prepareNextNode(TENANT_ID, run.getId(), OPERATOR_ID);
+
+        assertThat(result.hasNext()).isFalse();
+        assertThat(run.getState()).isEqualTo("completed");
+        assertThat(run.isSaved()).isTrue();
+        verify(workflowRunEventRepository, atLeastOnce()).save(any());
+    }
+
+    @Test
+    void shouldPauseAtAgentNodeWhenMoreStepsRemain() {
+        WorkbenchRuntimeService service = newService();
+        WorkflowRunEntity run = ownedRun(2);
+        WorkflowNodeRunEntity agentNode = nodeAt(run, "agent_review", "agent", "智能体分析", 1, NOW);
+        agentNode.start(NOW);
+        WorkflowNodeRunEntity deliveryNode = nodeAt(run, "delivery_report", "delivery", "交付结果", 2, NOW);
+
+        when(workflowRunRepository.findById(run.getId())).thenReturn(Optional.of(run));
+        when(workflowNodeRunRepository.findById(agentNode.getId())).thenReturn(Optional.of(agentNode));
+        when(workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(run.getId()))
+            .thenReturn(List.of(agentNode, deliveryNode));
+
+        boolean completed = service.saveNodeSuccess(
+            run.getId(),
+            agentNode.getId(),
+            Map.of("summary", "分析完成"),
+            OPERATOR_ID
+        );
+
+        assertThat(completed).isFalse();
+        assertThat(run.getState()).isEqualTo("paused");
+        assertThat(run.isSaved()).isFalse();
+        assertThat(run.getCurrentNodeName()).isEqualTo("智能体分析");
+    }
+
+    @Test
     void shouldRejectAdvanceWhenExecutionAlreadyInFlight() {
         WorkbenchRuntimeService service = newService();
         WorkflowRunEntity run = ownedRun();
@@ -358,6 +435,10 @@ class WorkbenchRuntimeServiceTest {
     }
 
     private WorkflowRunEntity ownedRun() {
+        return ownedRun(3);
+    }
+
+    private WorkflowRunEntity ownedRun(int totalNodeCount) {
         return WorkflowRunEntity.create(
             TENANT_ID,
             UUID.randomUUID(),
@@ -366,26 +447,37 @@ class WorkbenchRuntimeServiceTest {
             "授信复核",
             "授信报告流程",
             OPERATOR_ID,
-            3,
+            totalNodeCount,
             "20260610-TEST",
             NOW
         );
     }
 
     private WorkflowNodeRunEntity clusterNode(WorkflowRunEntity run) {
+        return nodeAt(run, "cluster_analysis", "parallel_group", "智能体集群分析", 2, NOW);
+    }
+
+    private WorkflowNodeRunEntity nodeAt(
+        WorkflowRunEntity run,
+        String nodeKey,
+        String nodeType,
+        String name,
+        int sortOrder,
+        Instant now
+    ) {
         return WorkflowNodeRunEntity.pending(
             run.getId(),
             TENANT_ID,
             run.getWorkflowId(),
             run.getWorkflowVersionId(),
-            "cluster_analysis",
-            "parallel_group",
-            "智能体集群分析",
+            nodeKey,
+            nodeType,
+            name,
             Map.of(),
             Map.of(),
-            Map.of("executionMode", "parallel"),
-            2,
-            NOW
+            nodeType.equals("parallel_group") ? Map.of("executionMode", "parallel") : Map.of(),
+            sortOrder,
+            now
         );
     }
 
