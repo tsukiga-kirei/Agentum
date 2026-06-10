@@ -47,6 +47,11 @@ public class RunExecutionLeaseService {
         return Boolean.TRUE.equals(redisTemplate.hasKey(leaseKey(runId)));
     }
 
+    /** 恢复进度等兜底路径：强制释放僵死租约，避免 queued 作业永久占锁。 */
+    public void forceRelease(UUID runId) {
+        redisTemplate.delete(leaseKey(runId));
+    }
+
     private static String leaseKey(UUID runId) {
         return "run:" + runId + ":lease";
     }

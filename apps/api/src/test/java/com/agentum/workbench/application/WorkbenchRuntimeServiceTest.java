@@ -42,6 +42,7 @@ import com.agentum.workflow.infrastructure.WorkflowVariableSnapshotRepository;
 import com.agentum.workflow.infrastructure.WorkflowWaitingEventRepository;
 import com.agentum.runtime.cancel.RunCancellationGuard;
 import com.agentum.runtime.execution.RuntimeExecutionProperties;
+import com.agentum.runtime.lease.RunExecutionLeaseService;
 import com.agentum.runtime.messaging.NodeExecuteCommand;
 import com.agentum.runtime.messaging.NodeExecuteCommandPublisher;
 import com.agentum.runtime.stream.RunProgressStreamWriter;
@@ -84,6 +85,7 @@ class WorkbenchRuntimeServiceTest {
     private final NodeExecuteCommandPublisher commandPublisher = mock(NodeExecuteCommandPublisher.class);
     private final RunProgressStreamWriter streamWriter = mock(RunProgressStreamWriter.class);
     private final RunCancellationGuard cancellationGuard = mock(RunCancellationGuard.class);
+    private final RunExecutionLeaseService leaseService = mock(RunExecutionLeaseService.class);
 
     @Test
     void shouldListAllPublishedWorkflowsAndMarkLockedRows() {
@@ -316,6 +318,43 @@ class WorkbenchRuntimeServiceTest {
         verify(commandPublisher).publish(commandCaptor.capture());
         assertThat(commandCaptor.getValue().attempt()).isEqualTo(3);
         assertThat(commandCaptor.getValue().nodeRunId()).isEqualTo(node.getId());
+    }
+
+    @Test
+    void shouldRecoverWhenStaleQueuedJobBlocksExecution() {
+        WorkbenchRuntimeService service = newService();
+        WorkflowRunEntity run = ownedRun();
+        WorkflowNodeRunEntity node = clusterNode(run);
+        node.start(NOW);
+
+        WorkflowRunExecutionJobEntity staleJob = WorkflowRunExecutionJobEntity.queued(
+            TENANT_ID,
+            run.getId(),
+            node.getId(),
+            15,
+            OPERATOR_ID,
+            "req-stale",
+            NOW.plusSeconds(1800),
+            NOW.minusSeconds(120)
+        );
+
+        stubTenant();
+        when(workflowRunRepository.findByIdAndTenantId(run.getId(), TENANT_ID)).thenReturn(Optional.of(run));
+        when(workflowNodeRunRepository.findByIdAndRunId(node.getId(), run.getId())).thenReturn(Optional.of(node));
+        when(workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(run.getId())).thenReturn(List.of(node));
+        when(jobRepository.findByRunIdAndStatusIn(eq(run.getId()), any()))
+            .thenReturn(List.of(staleJob))
+            .thenReturn(List.of());
+        when(leaseService.hasActiveLease(run.getId())).thenReturn(true);
+        when(jobRepository.findFirstByNodeRunIdOrderByAttemptDesc(node.getId())).thenReturn(Optional.of(staleJob));
+
+        service.recoverNode(TENANT_ID, businessPrincipal(), run.getId(), node.getId());
+
+        assertThat(staleJob.getStatus()).isEqualTo(WorkflowRunExecutionJobEntity.STATUS_FAILED);
+        verify(leaseService).forceRelease(run.getId());
+        verify(cancellationGuard).requestCancel(run.getId());
+        verify(commandPublisher).publish(any(NodeExecuteCommand.class));
+        assertThat(node.getState()).isEqualTo("running");
     }
 
     @Test
@@ -568,7 +607,8 @@ class WorkbenchRuntimeServiceTest {
             streamWriter,
             cancellationGuard,
             new RuntimeExecutionProperties(),
-            new PromptContentResolver(mock(SystemCapabilityRepository.class), mock(TenantAssetCapabilityRepository.class))
+            new PromptContentResolver(mock(SystemCapabilityRepository.class), mock(TenantAssetCapabilityRepository.class)),
+            leaseService
         );
     }
 

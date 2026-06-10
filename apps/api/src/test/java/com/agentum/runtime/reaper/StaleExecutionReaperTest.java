@@ -135,7 +135,7 @@ class StaleExecutionReaperTest {
     @Test
     void shouldKeepRecentQueuedJob() {
         WorkflowRunExecutionJobEntity job = WorkflowRunExecutionJobEntity.queued(
-            TENANT_ID, RUN_ID, NODE_RUN_ID, 1, null, "req-1", NOW.plusSeconds(3600), NOW.minusSeconds(60)
+            TENANT_ID, RUN_ID, NODE_RUN_ID, 1, null, "req-1", NOW.plusSeconds(3600), NOW.minusSeconds(10)
         );
         when(jobRepository.findByStatusInAndEnqueuedAtBefore(anyList(), any())).thenReturn(List.of(job));
 

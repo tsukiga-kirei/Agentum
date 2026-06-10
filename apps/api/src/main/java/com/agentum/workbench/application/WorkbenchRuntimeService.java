@@ -8,6 +8,7 @@ import com.agentum.permission.application.CollaborationAccessPolicy;
 import com.agentum.permission.application.CollaborationAccessPolicy.AccessLevel;
 import com.agentum.runtime.cancel.RunCancellationGuard;
 import com.agentum.runtime.execution.RuntimeExecutionProperties;
+import com.agentum.runtime.lease.RunExecutionLeaseService;
 import com.agentum.runtime.messaging.NodeExecuteCommand;
 import com.agentum.runtime.messaging.NodeExecuteCommandPublisher;
 import com.agentum.runtime.stream.RunProgressStreamWriter;
@@ -85,6 +86,10 @@ public class WorkbenchRuntimeService {
         )
     );
     private static final SortWhitelist RUN_SORT = SortWhitelist.of("updatedAt", "title", "workflowName", "state", "startedAt", "updatedAt");
+    /** 与前端看门狗（60s 无心跳）对齐：超过该时长仍未启动的 queued 作业视为僵死。 */
+    private static final long RECOVER_STALE_JOB_SECONDS = 60;
+    /** queued 且从未 markRunning，超过该窗口仍占租约/无消费，判定为僵尸作业。 */
+    private static final long QUEUED_ZOMBIE_JOB_SECONDS = 30;
 
     private final TenantRepository tenantRepository;
     private final WorkflowDefinitionRepository workflowDefinitionRepository;
@@ -107,6 +112,7 @@ public class WorkbenchRuntimeService {
     private final RunCancellationGuard cancellationGuard;
     private final RuntimeExecutionProperties runtimeProperties;
     private final PromptContentResolver promptContentResolver;
+    private final RunExecutionLeaseService leaseService;
 
     public WorkbenchRuntimeService(
         TenantRepository tenantRepository,
@@ -129,7 +135,8 @@ public class WorkbenchRuntimeService {
         RunProgressStreamWriter streamWriter,
         RunCancellationGuard cancellationGuard,
         RuntimeExecutionProperties runtimeProperties,
-        PromptContentResolver promptContentResolver
+        PromptContentResolver promptContentResolver,
+        RunExecutionLeaseService leaseService
     ) {
         this.tenantRepository = tenantRepository;
         this.workflowDefinitionRepository = workflowDefinitionRepository;
@@ -152,6 +159,7 @@ public class WorkbenchRuntimeService {
         this.cancellationGuard = cancellationGuard;
         this.runtimeProperties = runtimeProperties;
         this.promptContentResolver = promptContentResolver;
+        this.leaseService = leaseService;
     }
 
     @Transactional(readOnly = true)
@@ -629,6 +637,7 @@ public class WorkbenchRuntimeService {
         if ("completed".equals(run.getState())) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_RUN_READONLY", "已完成任务只能查看，不能重新执行");
         }
+        terminateRecoverableStaleJobs(runId);
         assertNoExecutionInFlight(runId);
         WorkflowNodeRunEntity node = workflowNodeRunRepository.findByIdAndRunId(nodeRunId, runId)
             .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_NODE_RUN_NOT_FOUND", "节点运行不存在"));
@@ -789,6 +798,7 @@ public class WorkbenchRuntimeService {
         if ("completed".equals(run.getState())) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_RUN_READONLY", "已完成任务只能查看，不能恢复执行");
         }
+        terminateRecoverableStaleJobs(runId);
         assertNoExecutionInFlight(runId);
         WorkflowNodeRunEntity node = workflowNodeRunRepository.findByIdAndRunId(nodeRunId, runId)
             .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_NODE_RUN_NOT_FOUND", "节点运行不存在"));
@@ -920,6 +930,57 @@ public class WorkbenchRuntimeService {
     private static boolean isExecutionJobInFlight(WorkflowRunExecutionJobEntity job) {
         return WorkflowRunExecutionJobEntity.STATUS_QUEUED.equals(job.getStatus())
             || WorkflowRunExecutionJobEntity.STATUS_RUNNING.equals(job.getStatus());
+    }
+
+    /**
+     * 恢复/重新执行前终止僵死作业：queued 长期未启动、或 running 无租约。
+     * 与前端「超过 1 分钟无心跳可恢复进度」语义对齐，避免 409 ALREADY_IN_FLIGHT。
+     */
+    private void terminateRecoverableStaleJobs(UUID runId) {
+        Instant now = clock.instant();
+        List<WorkflowRunExecutionJobEntity> inFlight = jobRepository.findByRunIdAndStatusIn(
+            runId,
+            List.of(WorkflowRunExecutionJobEntity.STATUS_QUEUED, WorkflowRunExecutionJobEntity.STATUS_RUNNING)
+        );
+        for (WorkflowRunExecutionJobEntity job : inFlight) {
+            if (!isRecoverablyStaleJob(job, now)) {
+                continue;
+            }
+            cancellationGuard.requestCancel(runId);
+            if (leaseService.hasActiveLease(runId)) {
+                leaseService.forceRelease(runId);
+            }
+            job.markFailed(
+                "WORKBENCH_NODE_EXECUTION_STALE",
+                "执行作业长时间无进展，已终止以允许恢复进度",
+                now
+            );
+            jobRepository.save(job);
+            log.warn(
+                "僵死执行作业已终止 runId={} jobId={} jobStatus={} enqueuedAt={} requestId={}",
+                runId,
+                job.getId(),
+                job.getStatus(),
+                job.getEnqueuedAt(),
+                RequestIds.current()
+            );
+        }
+    }
+
+    private boolean isRecoverablyStaleJob(WorkflowRunExecutionJobEntity job, Instant now) {
+        if (WorkflowRunExecutionJobEntity.STATUS_QUEUED.equals(job.getStatus())) {
+            if (job.getEnqueuedAt().isBefore(now.minusSeconds(RECOVER_STALE_JOB_SECONDS))) {
+                return true;
+            }
+            return job.getStartedAt() == null
+                && job.getEnqueuedAt().isBefore(now.minusSeconds(QUEUED_ZOMBIE_JOB_SECONDS));
+        }
+        if (WorkflowRunExecutionJobEntity.STATUS_RUNNING.equals(job.getStatus())) {
+            return !leaseService.hasActiveLease(job.getRunId())
+                && job.getStartedAt() != null
+                && job.getStartedAt().isBefore(now.minusSeconds(runtimeProperties.getRedis().getStaleNodeThresholdSeconds()));
+        }
+        return false;
     }
 
     /** 同一任务同一时刻只允许一个在途执行作业，防止重复推进导致子智能体双开。 */

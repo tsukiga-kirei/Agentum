@@ -133,13 +133,11 @@ public class NodeExecutionService {
 
         String workerId = "worker-" + UUID.randomUUID();
         if (!leaseService.tryAcquire(runId, workerId)) {
-            // 同一任务已有执行在途（advance 层已防重复，此处兜底竞态）：稍后重新入队。
-            log.info("执行租约被占用，延迟重投 runId={} jobId={}", runId, command.jobId());
-            sleepQuietly(2000);
+            // 同一 run 已有 Worker 持有 Redis 租约并在执行（含模型长耗时）。丢弃本条重复消息即可，
+            // 切勿再次入队——否则多消费者会每 2 秒复制一条命令，形成日志风暴且无法推进。
             WorkflowRunExecutionJobEntity latest = jobRepository.findById(command.jobId()).orElse(null);
-            if (latest != null && WorkflowRunExecutionJobEntity.STATUS_QUEUED.equals(latest.getStatus())) {
-                commandPublisher.publish(command);
-            }
+            String jobStatus = latest == null ? "missing" : latest.getStatus();
+            log.info("执行租约被占用，跳过重复消费 runId={} jobId={} jobStatus={}", runId, command.jobId(), jobStatus);
             return;
         }
 
@@ -870,14 +868,6 @@ public class NodeExecutionService {
             return "智能体已完成模型调用。";
         }
         return normalized.length() > 120 ? normalized.substring(0, 120) + "..." : normalized;
-    }
-
-    private static void sleepQuietly(long millis) {
-        try {
-            Thread.sleep(millis);
-        } catch (InterruptedException interrupted) {
-            Thread.currentThread().interrupt();
-        }
     }
 
     private record ClusterAgentSlot(int index, String name, Map<String, Object> config) {

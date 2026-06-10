@@ -94,7 +94,19 @@ public class StaleExecutionReaper {
             }
             return;
         }
-        // queued 超过节点超时仍未被消费：MQ 消息丢失或 Worker 长期不可用。
+        long staleThresholdSeconds = properties.getRedis().getStaleNodeThresholdSeconds();
+        boolean staleQueued = job.getEnqueuedAt().isBefore(now.minusSeconds(staleThresholdSeconds));
+        // queued 且从未启动：租约占用或 MQ 重复投递留下的僵尸作业，不能等 30 分钟 nodeTimeout 才回收。
+        boolean zombieQueued = job.getStartedAt() == null
+            && job.getEnqueuedAt().isBefore(now.minusSeconds(30));
+        if (staleQueued || zombieQueued) {
+            if (leaseService.hasActiveLease(job.getRunId())) {
+                leaseService.forceRelease(job.getRunId());
+            }
+            failJob(job, "WORKBENCH_NODE_EXECUTION_STALE", "执行命令长时间未被处理，已自动中止，请重新执行", now);
+            return;
+        }
+        // queued 超过节点硬超时仍未被消费：MQ 消息丢失或 Worker 长期不可用。
         if (job.getEnqueuedAt().isBefore(now.minusSeconds(properties.getExecution().getNodeTimeoutSeconds()))) {
             failJob(job, "WORKBENCH_NODE_EXECUTION_STALE", "执行命令长时间未被处理，已自动中止，请重新执行", now);
         }
