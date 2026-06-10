@@ -319,6 +319,7 @@ public class WorkbenchRuntimeService {
         UUID tenantId,
         CurrentUserPrincipal principal,
         String keyword,
+        String state,
         int page,
         int size,
         String sort
@@ -331,6 +332,7 @@ public class WorkbenchRuntimeService {
             principal.userId(),
             isTenantManager(principal),
             keyword == null ? "" : keyword.trim(),
+            normalizeActiveRunStateFilter(state),
             pageable
         );
         return PageResponse.from(resultPage.map(run -> toTaskRunRow(run, Map.of(), hasOpenTodo(run.getId()))));
@@ -865,6 +867,7 @@ public class WorkbenchRuntimeService {
             tenantId,
             principal.userId(),
             isTenantManager(principal),
+            "",
             "",
             PageRequest.of(0, Math.max(1, limit), Sort.by(Sort.Direction.DESC, "updatedAt"))
         );
@@ -1477,6 +1480,17 @@ public class WorkbenchRuntimeService {
             case "failed" -> "已失败";
             case "canceled" -> "已取消";
             default -> state;
+        };
+    }
+
+    /** 待办列表只允许筛选未完成任务常见状态，空字符串表示不过滤。 */
+    private String normalizeActiveRunStateFilter(String state) {
+        if (state == null || state.isBlank()) {
+            return "";
+        }
+        return switch (state.trim()) {
+            case "running", "paused", "failed" -> state.trim();
+            default -> "";
         };
     }
 

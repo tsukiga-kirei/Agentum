@@ -53,12 +53,14 @@ public interface WorkflowRunRepository extends JpaRepository<WorkflowRunEntity, 
             or lower(run.runNumber) like lower(concat('%', :keyword, '%'))
             or lower(run.workflowName) like lower(concat('%', :keyword, '%'))
           )
+          and (:state = '' or run.state = :state)
         """)
     Page<WorkflowRunEntity> searchVisibleActiveRuns(
         @Param("tenantId") UUID tenantId,
         @Param("operatorUserId") UUID operatorUserId,
         @Param("tenantManager") boolean tenantManager,
         @Param("keyword") String keyword,
+        @Param("state") String state,
         Pageable pageable
     );
 

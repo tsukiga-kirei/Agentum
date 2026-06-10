@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   Bot,
   CheckCircle2,
+  ChevronDown,
   Clock3,
   FileText,
   GitBranch,
@@ -31,7 +32,7 @@ import {
   Wrench,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { Drawer, Empty, Pagination, Segmented, message } from "antd";
+import { Drawer, Empty, Pagination, Segmented, Select, message } from "antd";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { SurfacePageLayout, WorkbenchGlobalActions } from "../../components/workbench/SurfacePageLayout";
 import { TaskRunWorkspace } from "../../components/runtime/TaskRunWorkspace";
@@ -48,6 +49,7 @@ import type {
 } from "../../types/workbench";
 
 type WorkbenchTab = "overview" | "create" | "tasks";
+type TaskCenterTab = "active" | "history";
 
 type MetricTone = "primary" | "success" | "info" | "cap";
 
@@ -73,6 +75,23 @@ const workbenchTabs: WorkbenchTabMeta[] = [
   { key: "create", label: "创建任务", icon: PlayCircle, description: "浏览全部开放智能体流程，有权限的流程可创建任务" },
   { key: "tasks", label: "任务中心", icon: ListTodo, description: "待办处理未完成任务，任务记录仅查看已完成任务" },
 ];
+
+const taskCenterTabs: { key: TaskCenterTab; label: string; icon: LucideIcon }[] = [
+  { key: "active", label: "我的待办", icon: UserRoundCheck },
+  { key: "history", label: "任务记录", icon: History },
+];
+
+const activeTaskStateOptions = [
+  { value: "all", label: "全部状态" },
+  { value: "running", label: "运行中" },
+  { value: "paused", label: "已暂停" },
+  { value: "failed", label: "已失败" },
+] as const;
+
+type ActiveTaskStateFilter = (typeof activeTaskStateOptions)[number]["value"];
+
+const taskCenterSelectClassNames = { popup: { root: "agent-select-dropdown agent-admin-select-dropdown" } };
+const taskCenterSelectSuffixIcon = <ChevronDown className="h-[18px] w-[18px] text-[var(--color-text-tertiary)]" aria-hidden="true" />;
 
 
 
@@ -117,6 +136,10 @@ export function WorkbenchShell() {
   const availableKeywordInput = searchParams.get("q") ?? "";
   const activeTasksPage = parsePositiveInt(searchParams.get("activePage"), 1);
   const taskRunsPage = parsePositiveInt(searchParams.get("historyPage"), 1);
+  const taskCenterTab = searchParams.get("taskTab") === "history" ? "history" : "active";
+  const activeTasksKeyword = searchParams.get("activeQ") ?? "";
+  const historyKeyword = searchParams.get("historyQ") ?? "";
+  const activeTasksStateFilter = parseActiveTaskStateFilter(searchParams.get("activeState"));
 
   // 业务工作台真实数据：概览统计、待办、最近运行均由 /api/tenants/{tenantId}/workbench/summary 返回。
   const [summary, setSummary] = useState<WorkbenchSummary | null>(null);
@@ -137,6 +160,8 @@ export function WorkbenchShell() {
   const [taskRunsLoading, setTaskRunsLoading] = useState(false);
   const [taskRunsError, setTaskRunsError] = useState<string | null>(null);
   const [availableKeywordDraft, setAvailableKeywordDraft] = useState(availableKeyword);
+  const [activeTasksKeywordDraft, setActiveTasksKeywordDraft] = useState(activeTasksKeyword);
+  const [historyKeywordDraft, setHistoryKeywordDraft] = useState(historyKeyword);
   const [openedRunDetail, setOpenedRunDetail] = useState<WorkbenchRunDetail | null>(null);
   const [openedRunLoading, setOpenedRunLoading] = useState(false);
   const [creatingWorkflowId, setCreatingWorkflowId] = useState<string | null>(null);
@@ -158,10 +183,30 @@ export function WorkbenchShell() {
       ),
     };
   });
+  const taskCenterSegmentedOptions = taskCenterTabs.map((tab) => {
+    const Icon = tab.icon;
+    return {
+      value: tab.key,
+      label: (
+        <span className="login-portal-option">
+          <Icon className="login-portal-option-icon" aria-hidden="true" />
+          <span>{tab.label}</span>
+        </span>
+      ),
+    };
+  });
 
   useEffect(() => {
     setAvailableKeywordDraft(availableKeyword);
   }, [availableKeyword]);
+
+  useEffect(() => {
+    setActiveTasksKeywordDraft(activeTasksKeyword);
+  }, [activeTasksKeyword]);
+
+  useEffect(() => {
+    setHistoryKeywordDraft(historyKeyword);
+  }, [historyKeyword]);
 
   function updateSearchParam(key: string, value: string | null) {
     setSearchParams((current) => {
@@ -185,6 +230,18 @@ export function WorkbenchShell() {
       return;
     }
     navigate(paths.workbench.tasks);
+  }
+
+  function navigateTaskCenterTab(tab: TaskCenterTab) {
+    updateSearchParam("taskTab", tab === "active" ? null : tab);
+  }
+
+  function navigateTaskCenterWithTab(tab: TaskCenterTab) {
+    const next = new URLSearchParams();
+    if (tab === "history") {
+      next.set("taskTab", "history");
+    }
+    navigate({ pathname: paths.workbench.tasks, search: next.toString() ? `?${next.toString()}` : "" });
   }
 
   // 仅当业务工作台 surface 处于激活态、并且已有有效 tenantId / token 时，才发起概览请求。
@@ -236,7 +293,7 @@ export function WorkbenchShell() {
     }
   }, [tenantId, token]);
 
-  const loadActiveTasks = useCallback(async (page: number) => {
+  const loadActiveTasks = useCallback(async (page: number, keyword: string, state: ActiveTaskStateFilter) => {
     if (!tenantId || !token) {
       setActiveTasks([]);
       setActiveTasksTotal(0);
@@ -246,7 +303,15 @@ export function WorkbenchShell() {
     setActiveTasksLoading(true);
     setActiveTasksError(null);
     try {
-      const data = await workbenchApi.listActiveRuns(tenantId, token, "", page, TASK_RUN_PAGE_SIZE);
+      const data = await workbenchApi.listActiveRuns(
+        tenantId,
+        token,
+        keyword,
+        page,
+        TASK_RUN_PAGE_SIZE,
+        "updatedAt,desc",
+        state === "all" ? "" : state,
+      );
       setActiveTasks(data.items);
       setActiveTasksTotal(data.total);
     } catch (error) {
@@ -262,7 +327,7 @@ export function WorkbenchShell() {
     }
   }, [tenantId, token]);
 
-  const loadTaskRuns = useCallback(async (page: number) => {
+  const loadTaskRuns = useCallback(async (page: number, keyword: string) => {
     if (!tenantId || !token) {
       setTaskRuns([]);
       setTaskRunsTotal(0);
@@ -272,7 +337,7 @@ export function WorkbenchShell() {
     setTaskRunsLoading(true);
     setTaskRunsError(null);
     try {
-      const data = await workbenchApi.listRuns(tenantId, token, "", page, TASK_RUN_PAGE_SIZE);
+      const data = await workbenchApi.listRuns(tenantId, token, keyword, page, TASK_RUN_PAGE_SIZE);
       setTaskRuns(data.items);
       setTaskRunsTotal(data.total);
     } catch (error) {
@@ -300,18 +365,18 @@ export function WorkbenchShell() {
   }, [activeWorkbenchTab, availableKeyword, availablePage, loadAvailableWorkflows]);
 
   useEffect(() => {
-    if (activeWorkbenchTab !== "tasks") {
+    if (activeWorkbenchTab !== "tasks" || taskCenterTab !== "active") {
       return;
     }
-    void loadActiveTasks(activeTasksPage);
-  }, [activeWorkbenchTab, activeTasksPage, loadActiveTasks]);
+    void loadActiveTasks(activeTasksPage, activeTasksKeyword, activeTasksStateFilter);
+  }, [activeWorkbenchTab, taskCenterTab, activeTasksPage, activeTasksKeyword, activeTasksStateFilter, loadActiveTasks]);
 
   useEffect(() => {
-    if (activeWorkbenchTab !== "tasks") {
+    if (activeWorkbenchTab !== "tasks" || taskCenterTab !== "history") {
       return;
     }
-    void loadTaskRuns(taskRunsPage);
-  }, [activeWorkbenchTab, taskRunsPage, loadTaskRuns]);
+    void loadTaskRuns(taskRunsPage, historyKeyword);
+  }, [activeWorkbenchTab, taskCenterTab, taskRunsPage, historyKeyword, loadTaskRuns]);
 
   useEffect(() => {
     if (!runId || !tenantId || !token) {
@@ -379,8 +444,8 @@ export function WorkbenchShell() {
       setOpenedRunDetail(detail);
       messageApi.success("待办已提交，流程已继续推进");
       void loadSummary();
-      void loadActiveTasks(activeTasksPage);
-      void loadTaskRuns(taskRunsPage);
+      void loadActiveTasks(activeTasksPage, activeTasksKeyword, activeTasksStateFilter);
+      void loadTaskRuns(taskRunsPage, historyKeyword);
     } catch (error) {
       const reason = error instanceof AgentumApiError ? error.message : "待办提交失败";
       console.warn("[workbench] 待办提交失败", { code: error instanceof AgentumApiError ? error.code : "unknown" });
@@ -402,11 +467,13 @@ export function WorkbenchShell() {
       messageApi.success(savedDetail.readOnly ? "任务已保存，可在任务记录中查看" : "任务已保存，可在待办中继续处理");
       void loadSummary();
       if (savedDetail.readOnly) {
-        void loadTaskRuns(1);
+        void loadTaskRuns(1, historyKeyword);
         updateSearchParam("historyPage", "1");
+        updateSearchParam("taskTab", "history");
       } else {
-        void loadActiveTasks(1);
+        void loadActiveTasks(1, activeTasksKeyword, activeTasksStateFilter);
         updateSearchParam("activePage", "1");
+        updateSearchParam("taskTab", null);
       }
     } catch (error) {
       const reason = error instanceof AgentumApiError ? error.message : "任务保存失败";
@@ -429,7 +496,7 @@ export function WorkbenchShell() {
       }
       messageApi.success("任务已删除");
       void loadSummary();
-      void loadActiveTasks(activeTasksPage);
+      void loadActiveTasks(activeTasksPage, activeTasksKeyword, activeTasksStateFilter);
     } catch (error) {
       const reason = error instanceof AgentumApiError ? error.message : "任务删除失败";
       console.warn("[workbench] 任务删除失败", { code: error instanceof AgentumApiError ? error.code : "unknown" });
@@ -450,7 +517,7 @@ export function WorkbenchShell() {
       setOpenedRunDetail(detail);
       messageApi.success("已回退到选定步骤，流程将从此处重新开始");
       void loadSummary();
-      void loadActiveTasks(activeTasksPage);
+      void loadActiveTasks(activeTasksPage, activeTasksKeyword, activeTasksStateFilter);
     } catch (error) {
       const reason = error instanceof AgentumApiError ? error.message : "步骤回退失败";
       console.warn("[workbench] 步骤回退失败", { code: error instanceof AgentumApiError ? error.code : "unknown" });
@@ -472,14 +539,26 @@ export function WorkbenchShell() {
     }
     navigate(paths.workbench.tasks);
     void loadSummary();
-    void loadActiveTasks(activeTasksPage);
-    void loadTaskRuns(taskRunsPage);
+    void loadActiveTasks(activeTasksPage, activeTasksKeyword, activeTasksStateFilter);
+    void loadTaskRuns(taskRunsPage, historyKeyword);
   }
 
   function handleSubmitKeyword() {
     const trimmed = availableKeywordDraft.trim();
     updateSearchParam("q", trimmed || null);
     updateSearchParam("page", "1");
+  }
+
+  function handleSubmitTaskCenterSearch() {
+    if (taskCenterTab === "active") {
+      const trimmed = activeTasksKeywordDraft.trim();
+      updateSearchParam("activeQ", trimmed || null);
+      updateSearchParam("activePage", "1");
+      return;
+    }
+    const trimmed = historyKeywordDraft.trim();
+    updateSearchParam("historyQ", trimmed || null);
+    updateSearchParam("historyPage", "1");
   }
 
   // 概览指标卡片基于真实 summary.metrics 渲染。
@@ -546,8 +625,8 @@ export function WorkbenchShell() {
               onReload={(updated) => {
                 setOpenedRunDetail(updated);
                 void loadSummary();
-                void loadActiveTasks(activeTasksPage);
-                void loadTaskRuns(taskRunsPage);
+                void loadActiveTasks(activeTasksPage, activeTasksKeyword, activeTasksStateFilter);
+                void loadTaskRuns(taskRunsPage, historyKeyword);
               }}
             />
           </div>
@@ -632,7 +711,7 @@ export function WorkbenchShell() {
                                 title="我的待办"
                                 description="处理已保存且未完成的任务，可继续推进、回退步骤或删除。"
                                 meta={summary ? `${summary.metrics.pendingTodoTotal} 个待办` : "加载中..."}
-                                onClick={() => navigate(paths.workbench.tasks)}
+                                onClick={() => navigateTaskCenterWithTab("active")}
                                 index={1}
                               />
                               <WorkbenchFeatureCard
@@ -640,7 +719,7 @@ export function WorkbenchShell() {
                                 title="任务记录"
                                 description="查看已完成任务与交付结果，仅支持只读查看。"
                                 meta={summary ? `${recentRuns.length} 个最近完成` : "加载中..."}
-                                onClick={() => navigate(paths.workbench.tasks)}
+                                onClick={() => navigateTaskCenterWithTab("history")}
                                 index={2}
                               />
                             </div>
@@ -764,11 +843,61 @@ export function WorkbenchShell() {
                     ) : null}
 
                     {activeWorkbenchTab === "tasks" ? (
-                      <section className="workbench-task-center-grid" aria-label="任务中心">
-                        <section className="sys-preview-card workbench-task-center-card">
-                          <div className="sys-preview-card-title"><UserRoundCheck size={16} /> 我的待办</div>
-                          <div className="workbench-task-center-card-body">
-                          {activeTasksError ? (
+                      <section className="workbench-task-center sys-fade-in" aria-label="任务中心">
+                        <div className="workbench-task-center-head">
+                          <div className="system-mgmt-segmented-scroll">
+                            <Segmented<TaskCenterTab>
+                              aria-label="任务中心视图"
+                              value={taskCenterTab}
+                              options={taskCenterSegmentedOptions}
+                              onChange={navigateTaskCenterTab}
+                              className="login-portal-segmented login-portal-segmented--business system-mgmt-segmented"
+                            />
+                          </div>
+                        </div>
+
+                        <TaskCenterFilterBar>
+                          <div className="sys-field-input-wrap asset-filter-search workbench-task-center-search">
+                            <Search size={18} className="sys-field-prefix" aria-hidden="true" />
+                            <input
+                              className="sys-field-input"
+                              value={taskCenterTab === "active" ? activeTasksKeywordDraft : historyKeywordDraft}
+                              onChange={(event) => {
+                                if (taskCenterTab === "active") {
+                                  setActiveTasksKeywordDraft(event.target.value);
+                                  return;
+                                }
+                                setHistoryKeywordDraft(event.target.value);
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") handleSubmitTaskCenterSearch();
+                              }}
+                              placeholder="按任务名称、编号或流程名称"
+                              aria-label={taskCenterTab === "active" ? "搜索待办任务" : "搜索任务记录"}
+                            />
+                          </div>
+                          {taskCenterTab === "active" ? (
+                            <Select<ActiveTaskStateFilter>
+                              className="agent-admin-select workbench-task-center-state-select"
+                              classNames={taskCenterSelectClassNames}
+                              prefix={<Activity className="h-[18px] w-[18px] text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+                              suffixIcon={taskCenterSelectSuffixIcon}
+                              value={activeTasksStateFilter}
+                              options={activeTaskStateOptions.map((option) => ({ value: option.value, label: option.label }))}
+                              onChange={(value) => {
+                                updateSearchParam("activeState", value === "all" ? null : value);
+                                updateSearchParam("activePage", "1");
+                              }}
+                            />
+                          ) : null}
+                          <button type="button" className="sys-btn sys-btn--default workbench-task-center-query-btn" onClick={() => handleSubmitTaskCenterSearch()}>
+                            <Search size={18} aria-hidden="true" />
+                            查询
+                          </button>
+                        </TaskCenterFilterBar>
+
+                        {taskCenterTab === "active" ? (
+                          activeTasksError ? (
                             <RuntimePlaceholder label="待办加载失败" hint={activeTasksError} />
                           ) : activeTasksLoading ? (
                             <div className="workflow-definition-empty-state">
@@ -776,7 +905,19 @@ export function WorkbenchShell() {
                               <p>正在加载待办</p>
                             </div>
                           ) : activeTasks.length === 0 ? (
-                            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无已保存的未完成任务" />
+                            <TaskCenterEmptyState
+                              icon={activeTasksKeyword || activeTasksStateFilter !== "all" ? Search : Inbox}
+                              title={
+                                activeTasksKeyword || activeTasksStateFilter !== "all"
+                                  ? "当前暂无匹配的待办任务"
+                                  : "暂无已保存的未完成任务"
+                              }
+                              hint={
+                                activeTasksKeyword || activeTasksStateFilter !== "all"
+                                  ? "可以调整搜索词或状态筛选条件。"
+                                  : "发起任务并保存后，会出现在这里继续处理。"
+                              }
+                            />
                           ) : (
                             <div className="space-y-2">
                               {activeTasks.map((record, index) => (
@@ -789,60 +930,58 @@ export function WorkbenchShell() {
                                 />
                               ))}
                             </div>
-                          )}
+                          )
+                        ) : taskRunsError ? (
+                          <RuntimePlaceholder label="任务记录加载失败" hint={taskRunsError} />
+                        ) : taskRunsLoading ? (
+                          <div className="workflow-definition-empty-state">
+                            <Loader2 className="h-8 w-8 animate-spin" aria-hidden="true" />
+                            <p>正在加载任务记录</p>
                           </div>
-                          {activeTasksTotal > TASK_RUN_PAGE_SIZE ? (
-                            <div className="agent-admin-pagination-wrap mt-4">
-                              <Pagination
-                                className="agent-admin-pagination"
-                                current={activeTasksPage}
-                                total={activeTasksTotal}
-                                pageSize={TASK_RUN_PAGE_SIZE}
-                                showSizeChanger={false}
-                                onChange={(page) => updateSearchParam("activePage", String(page))}
+                        ) : taskRuns.length === 0 ? (
+                          <TaskCenterEmptyState
+                            icon={historyKeyword ? Search : History}
+                            title={historyKeyword ? "当前暂无匹配的任务记录" : "暂无已完成任务记录"}
+                            hint={historyKeyword ? "可以调整搜索词后重试。" : "任务全部节点完成后，会归档到这里只读查看。"}
+                          />
+                        ) : (
+                          <div className="space-y-2">
+                            {taskRuns.map((record, index) => (
+                              <TaskRunListItem
+                                key={record.id}
+                                record={record}
+                                onOpen={() => navigate(paths.workbench.run(record.id))}
+                                index={index}
                               />
-                            </div>
-                          ) : null}
-                        </section>
+                            ))}
+                          </div>
+                        )}
 
-                        <section className="sys-preview-card workbench-task-center-card">
-                          <div className="sys-preview-card-title"><History size={16} /> 任务记录</div>
-                          <div className="workbench-task-center-card-body">
-                          {taskRunsError ? (
-                            <RuntimePlaceholder label="任务记录加载失败" hint={taskRunsError} />
-                          ) : taskRunsLoading ? (
-                            <div className="workflow-definition-empty-state">
-                              <Loader2 className="h-8 w-8 animate-spin" aria-hidden="true" />
-                              <p>正在加载任务记录</p>
-                            </div>
-                          ) : taskRuns.length === 0 ? (
-                            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无已完成任务记录" />
-                          ) : (
-                            <div className="space-y-2">
-                              {taskRuns.map((record, index) => (
-                                <TaskRunListItem
-                                  key={record.id}
-                                  record={record}
-                                  onOpen={() => navigate(paths.workbench.run(record.id))}
-                                  index={index}
-                                />
-                              ))}
-                            </div>
-                          )}
+                        {taskCenterTab === "active" && activeTasksTotal > TASK_RUN_PAGE_SIZE ? (
+                          <div className="agent-admin-pagination-wrap mt-4">
+                            <Pagination
+                              className="agent-admin-pagination"
+                              current={activeTasksPage}
+                              total={activeTasksTotal}
+                              pageSize={TASK_RUN_PAGE_SIZE}
+                              showSizeChanger={false}
+                              onChange={(page) => updateSearchParam("activePage", String(page))}
+                            />
                           </div>
-                          {taskRunsTotal > TASK_RUN_PAGE_SIZE ? (
-                            <div className="agent-admin-pagination-wrap mt-4">
-                              <Pagination
-                                className="agent-admin-pagination"
-                                current={taskRunsPage}
-                                total={taskRunsTotal}
-                                pageSize={TASK_RUN_PAGE_SIZE}
-                                showSizeChanger={false}
-                                onChange={(page) => updateSearchParam("historyPage", String(page))}
-                              />
-                            </div>
-                          ) : null}
-                        </section>
+                        ) : null}
+
+                        {taskCenterTab === "history" && taskRunsTotal > TASK_RUN_PAGE_SIZE ? (
+                          <div className="agent-admin-pagination-wrap mt-4">
+                            <Pagination
+                              className="agent-admin-pagination"
+                              current={taskRunsPage}
+                              total={taskRunsTotal}
+                              pageSize={TASK_RUN_PAGE_SIZE}
+                              showSizeChanger={false}
+                              onChange={(page) => updateSearchParam("historyPage", String(page))}
+                            />
+                          </div>
+                        ) : null}
                       </section>
                     ) : null}
 
@@ -857,6 +996,35 @@ export function WorkbenchShell() {
         />
       </SurfacePageLayout>
     </>
+  );
+}
+
+function parseActiveTaskStateFilter(value: string | null): ActiveTaskStateFilter {
+  if (value && activeTaskStateOptions.some((option) => option.value === value)) {
+    return value as ActiveTaskStateFilter;
+  }
+  return "all";
+}
+
+function TaskCenterFilterBar({ children }: { children: ReactNode }) {
+  return <div className="asset-filter-bar">{children}</div>;
+}
+
+function TaskCenterEmptyState({
+  icon: Icon,
+  title,
+  hint,
+}: {
+  icon: LucideIcon;
+  title: string;
+  hint?: string;
+}) {
+  return (
+    <div className="workflow-definition-empty-state">
+      <Icon className="h-8 w-8 shrink-0" aria-hidden="true" />
+      <p>{title}</p>
+      {hint ? <span>{hint}</span> : null}
+    </div>
   );
 }
 

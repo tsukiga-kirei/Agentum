@@ -364,8 +364,12 @@ export const workbenchApi = {
     page = 1,
     size = 10,
     sort = "updatedAt,desc",
+    state = "",
   ) => {
     const params = new URLSearchParams({ keyword, page: String(page), size: String(size), sort });
+    if (state) {
+      params.set("state", state);
+    }
     return apiRequest<WorkbenchTaskRunPage>(`/api/tenants/${tenantId}/workbench/active-runs?${params.toString()}`, { token });
   },
   listRuns: (

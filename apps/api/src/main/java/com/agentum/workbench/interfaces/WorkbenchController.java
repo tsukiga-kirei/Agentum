@@ -101,6 +101,7 @@ public class WorkbenchController {
         @PathVariable UUID tenantId,
         @AuthenticationPrincipal CurrentUserPrincipal principal,
         @RequestParam(defaultValue = "") String keyword,
+        @RequestParam(defaultValue = "") String state,
         @RequestParam(defaultValue = "1") int page,
         @RequestParam(defaultValue = "10") int size,
         @RequestParam(defaultValue = "updatedAt,desc") String sort,
@@ -108,7 +109,7 @@ public class WorkbenchController {
     ) {
         workbenchAccess.assertCanAccessWorkbench(principal, tenantId);
         return ApiResponse.success(
-            workbenchRuntimeService.listActiveRuns(tenantId, principal, keyword, page, size, sort),
+            workbenchRuntimeService.listActiveRuns(tenantId, principal, keyword, state, page, size, sort),
             RequestIds.current(request)
         );
     }
