@@ -237,10 +237,13 @@ export function WorkbenchShell() {
     updateSearchParam("taskTab", tab === "active" ? null : tab);
   }
 
-  function navigateTaskCenterWithTab(tab: TaskCenterTab) {
+  function navigateTaskCenterWithTab(tab: TaskCenterTab, activeState?: string) {
     const next = new URLSearchParams();
     if (tab === "history") {
       next.set("taskTab", "history");
+    }
+    if (activeState) {
+      next.set("activeState", activeState);
     }
     navigate({ pathname: paths.workbench.tasks, search: next.toString() ? `?${next.toString()}` : "" });
   }
@@ -716,12 +719,20 @@ export function WorkbenchShell() {
                                 index={1}
                               />
                               <WorkbenchFeatureCard
+                                icon={Activity}
+                                title="运行中"
+                                description="查看当前正在执行中的智能体任务实例与运行进度。"
+                                meta={summary ? `${summary.metrics.runningRunTotal} 个运行中` : "加载中..."}
+                                onClick={() => navigateTaskCenterWithTab("active", "running")}
+                                index={2}
+                              />
+                              <WorkbenchFeatureCard
                                 icon={History}
                                 title="任务记录"
                                 description="查看已完成任务与交付结果，仅支持只读查看。"
                                 meta={summary ? `${recentRuns.length} 个最近完成` : "加载中..."}
                                 onClick={() => navigateTaskCenterWithTab("history")}
-                                index={2}
+                                index={3}
                               />
                             </div>
                           </section>
