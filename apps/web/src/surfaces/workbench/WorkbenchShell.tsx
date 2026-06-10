@@ -919,7 +919,7 @@ export function WorkbenchShell() {
                               }
                             />
                           ) : (
-                            <div className="space-y-2">
+                            <div className="workbench-task-center-list">
                               {activeTasks.map((record, index) => (
                                 <ActiveTaskListItem
                                   key={record.id}
@@ -945,7 +945,7 @@ export function WorkbenchShell() {
                             hint={historyKeyword ? "可以调整搜索词后重试。" : "任务全部节点完成后，会归档到这里只读查看。"}
                           />
                         ) : (
-                          <div className="space-y-2">
+                          <div className="workbench-task-center-list">
                             {taskRuns.map((record, index) => (
                               <TaskRunListItem
                                 key={record.id}
@@ -957,30 +957,22 @@ export function WorkbenchShell() {
                           </div>
                         )}
 
-                        {taskCenterTab === "active" && activeTasksTotal > TASK_RUN_PAGE_SIZE ? (
-                          <div className="agent-admin-pagination-wrap mt-4">
-                            <Pagination
-                              className="agent-admin-pagination"
-                              current={activeTasksPage}
-                              total={activeTasksTotal}
-                              pageSize={TASK_RUN_PAGE_SIZE}
-                              showSizeChanger={false}
-                              onChange={(page) => updateSearchParam("activePage", String(page))}
-                            />
-                          </div>
+                        {taskCenterTab === "active" && !activeTasksLoading && !activeTasksError ? (
+                          <TaskCenterPagination
+                            current={activeTasksPage}
+                            total={activeTasksTotal}
+                            pageSize={TASK_RUN_PAGE_SIZE}
+                            onChange={(page) => updateSearchParam("activePage", String(page))}
+                          />
                         ) : null}
 
-                        {taskCenterTab === "history" && taskRunsTotal > TASK_RUN_PAGE_SIZE ? (
-                          <div className="agent-admin-pagination-wrap mt-4">
-                            <Pagination
-                              className="agent-admin-pagination"
-                              current={taskRunsPage}
-                              total={taskRunsTotal}
-                              pageSize={TASK_RUN_PAGE_SIZE}
-                              showSizeChanger={false}
-                              onChange={(page) => updateSearchParam("historyPage", String(page))}
-                            />
-                          </div>
+                        {taskCenterTab === "history" && !taskRunsLoading && !taskRunsError ? (
+                          <TaskCenterPagination
+                            current={taskRunsPage}
+                            total={taskRunsTotal}
+                            pageSize={TASK_RUN_PAGE_SIZE}
+                            onChange={(page) => updateSearchParam("historyPage", String(page))}
+                          />
                         ) : null}
                       </section>
                     ) : null}
@@ -1007,7 +999,36 @@ function parseActiveTaskStateFilter(value: string | null): ActiveTaskStateFilter
 }
 
 function TaskCenterFilterBar({ children }: { children: ReactNode }) {
-  return <div className="asset-filter-bar">{children}</div>;
+  return <div className="asset-filter-bar workbench-task-center-filter">{children}</div>;
+}
+
+function TaskCenterPagination({
+  current,
+  total,
+  pageSize,
+  onChange,
+}: {
+  current: number;
+  total: number;
+  pageSize: number;
+  onChange: (page: number) => void;
+}) {
+  if (total <= 0) {
+    return null;
+  }
+  return (
+    <div className="agent-admin-pagination-wrap mt-4 px-0 py-4">
+      <Pagination
+        className="agent-admin-pagination"
+        current={current}
+        total={total}
+        pageSize={pageSize}
+        showSizeChanger={false}
+        showTotal={(count, range) => `当前 ${range[0]}-${range[1]} 条，共 ${count} 条`}
+        onChange={onChange}
+      />
+    </div>
+  );
 }
 
 function TaskCenterEmptyState({

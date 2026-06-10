@@ -1472,13 +1472,13 @@ public class WorkbenchRuntimeService {
         }
     }
 
+    /** 任务（workflow_runs）级状态中文标签；节点中断 canceled 不在此映射，任务中断后 state 为 paused。 */
     private String stateLabel(String state) {
         return switch (state) {
             case "running" -> "运行中";
             case "paused" -> "已暂停";
             case "completed" -> "已完成";
             case "failed" -> "已失败";
-            case "canceled" -> "已取消";
             default -> state;
         };
     }
