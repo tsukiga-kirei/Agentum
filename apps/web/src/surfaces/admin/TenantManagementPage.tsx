@@ -1183,7 +1183,7 @@ export function TenantManagementPage() {
         open={roleModalOpen}
         rootClassName={drawerRootClassName}
       >
-        <div className="sys-drawer-section">
+        <div className="sys-drawer-section sys-drawer-section-enter">
           <div className="sys-hint"><Info size={14} /> 角色编码由后端自动生成；编辑角色时可同步维护该角色下的启用成员。</div>
           <div className="sys-field">
             <label className="sys-field-label sys-field-label--required">角色名称</label>
@@ -1266,7 +1266,7 @@ export function TenantManagementPage() {
         open={pageGrantModalOpen}
         rootClassName={drawerRootClassName}
       >
-        <div className="sys-drawer-section">
+        <div className="sys-drawer-section sys-drawer-section-enter">
           <div className="sys-field">
             <label className="sys-field-label sys-field-label--required">分配名称</label>
             <div className="sys-field-input-wrap">
@@ -1343,7 +1343,7 @@ export function TenantManagementPage() {
         open={grantModalOpen}
         rootClassName={drawerRootClassName}
       >
-        <div className="sys-drawer-section">
+        <div className="sys-drawer-section sys-drawer-section-enter">
           <div className="sys-field">
             <label className="sys-field-label sys-field-label--required">分配名称</label>
             <div className="sys-field-input-wrap">
@@ -1769,8 +1769,8 @@ function RoleManagementPanel({
       {overview ? (
         <>
           <div className="sys-card-grid">
-            {rolePagination.pagedItems.map((role) => (
-              <article key={role.id} className="sys-card" onClick={() => onEditRole(role)}>
+            {rolePagination.pagedItems.map((role, index) => (
+              <article key={role.id} className="sys-card sys-card-enter" style={{ animationDelay: `${index * 40}ms` }} onClick={() => onEditRole(role)}>
               <div className="sys-card-header">
                 <div className="sys-card-avatar sys-card-avatar--tenant"><ShieldCheck size={22} /></div>
                 <div className="sys-card-info">
@@ -1856,8 +1856,8 @@ function ResourceAuthorizationPanel({
         ) : (
           <>
             <div className="sys-card-grid tenant-auth-card-grid">
-              {pageGrantPagination.pagedItems.map((grant) => (
-              <article key={grant.id} className="sys-card tenant-auth-card" onClick={() => onEditPageGrant(grant)}>
+              {pageGrantPagination.pagedItems.map((grant, index) => (
+              <article key={grant.id} className="sys-card tenant-auth-card sys-card-enter" style={{ animationDelay: `${index * 40}ms` }} onClick={() => onEditPageGrant(grant)}>
                 <div className="sys-card-header">
                   <div className="sys-card-avatar sys-card-avatar--tenant"><ShieldCheck size={22} /></div>
                   <div className="sys-card-info">
@@ -1914,8 +1914,8 @@ function ResourceAuthorizationPanel({
         ) : (
           <>
             <div className="sys-card-grid tenant-auth-card-grid">
-              {grantPagination.pagedItems.map((grant) => (
-              <article key={grant.id} className="sys-card tenant-auth-card" onClick={() => onEditGrant(grant)}>
+              {grantPagination.pagedItems.map((grant, index) => (
+              <article key={grant.id} className="sys-card tenant-auth-card sys-card-enter" style={{ animationDelay: `${index * 40}ms` }} onClick={() => onEditGrant(grant)}>
                 <div className="sys-card-header">
                   <div className="sys-card-avatar sys-card-avatar--tenant"><UserRoundCog size={22} /></div>
                   <div className="sys-card-info">

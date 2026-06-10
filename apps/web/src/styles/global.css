@@ -1984,17 +1984,17 @@ textarea:focus-visible {
   color: var(--color-text-primary);
   text-align: left;
   transition:
-    border-color var(--transition-fast),
-    background-color var(--transition-fast),
-    box-shadow var(--transition-fast),
-    transform var(--transition-fast);
+    border-color var(--transition-base),
+    background-color var(--transition-base),
+    box-shadow var(--transition-base),
+    transform var(--transition-base);
 }
 
 .asset-feature-card:hover {
-  transform: translateY(-2px);
+  transform: translateY(-4px) scale(1.01);
   border-color: var(--color-primary);
   background: var(--color-bg-card);
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 12px 24px -10px color-mix(in srgb, var(--color-primary) 18%, transparent), var(--shadow-lg);
 }
 
 .asset-feature-card-title {
@@ -2321,14 +2321,18 @@ textarea:focus-visible {
   border-radius: var(--radius-xl, 16px);
   border: 1px solid var(--color-border-light);
   padding: 18px;
-  transition: all var(--transition-base);
+  transition:
+    border-color var(--transition-base),
+    background-color var(--transition-base),
+    box-shadow var(--transition-base),
+    transform var(--transition-base);
   cursor: pointer;
   min-width: 0;
   max-width: 100%;
 }
 .sys-card:hover {
-  box-shadow: var(--shadow-lg);
-  transform: translateY(-3px);
+  box-shadow: 0 12px 24px -10px color-mix(in srgb, var(--color-primary) 18%, transparent), var(--shadow-lg);
+  transform: translateY(-4px) scale(1.01);
   border-color: var(--color-primary);
 }
 .sys-card--static { cursor: default; }
@@ -2402,7 +2406,11 @@ textarea:focus-visible {
   width: 7px; height: 7px; border-radius: 50%;
 }
 .sys-status--active { color: var(--color-success, #10b981); background: rgba(16, 185, 129, 0.10); }
-.sys-status--active .sys-status-dot { background: #10b981; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.20); }
+.sys-status--active .sys-status-dot {
+  background: #10b981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.20);
+  animation: status-pulse 2s infinite ease-in-out;
+}
 .sys-status--inactive { color: var(--color-text-tertiary); background: var(--color-bg-hover); }
 .sys-status--inactive .sys-status-dot { background: var(--color-text-tertiary); }
 
@@ -3611,15 +3619,15 @@ textarea:focus-visible {
   text-align: left;
   box-shadow: var(--shadow-xs);
   transition:
-    border-color var(--transition-fast),
-    box-shadow var(--transition-fast),
-    transform var(--transition-fast);
+    border-color var(--transition-base),
+    box-shadow var(--transition-base),
+    transform var(--transition-base);
 }
 
 .workflow-launch-card:hover {
-  transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--color-primary) 26%, var(--color-border-light));
-  box-shadow: var(--shadow-sm);
+  transform: translateY(-4px) scale(1.01);
+  border-color: var(--color-primary);
+  box-shadow: 0 12px 24px -10px color-mix(in srgb, var(--color-primary) 18%, transparent), var(--shadow-lg);
 }
 
 .workflow-launch-card-icon {
@@ -6249,9 +6257,9 @@ textarea:focus-visible {
   position: relative;
   overflow: hidden;
   transition:
-    border-color var(--transition-fast),
-    box-shadow var(--transition-fast),
-    transform var(--transition-fast);
+    border-color var(--transition-base),
+    box-shadow var(--transition-base),
+    transform var(--transition-base);
 }
 
 .workflow-step-row::before {
@@ -6264,9 +6272,9 @@ textarea:focus-visible {
 }
 
 .workflow-step-row:hover {
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--color-primary) 30%, var(--color-border-light));
-  box-shadow: var(--shadow-sm);
+  transform: translateY(-2px) scale(1.01);
+  border-color: var(--color-primary);
+  box-shadow: 0 8px 16px -6px color-mix(in srgb, var(--color-primary) 12%, transparent), var(--shadow-sm);
 }
 
 .workflow-step-row--selected {
@@ -6936,5 +6944,50 @@ textarea:focus-visible {
   .tenant-member-toolbar {
     align-items: flex-start;
     flex-direction: column;
+  }
+}
+
+/* ==================== 全局页面微动效与动画 ==================== */
+
+@keyframes sysCardAppear {
+  0% {
+    opacity: 0;
+    transform: translateY(20px) scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.sys-card-enter {
+  opacity: 0;
+  animation: sysCardAppear 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes sysSlideFadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.sys-drawer-section-enter {
+  animation: sysSlideFadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes status-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
   }
 }

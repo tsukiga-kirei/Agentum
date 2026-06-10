@@ -521,10 +521,10 @@ export function WorkflowDraftsPage() {
 
         {activeTab === "overview" ? (
           <section className="sys-overview-stats mb-5" aria-label="工作流概览">
-            <OverviewStat icon={GitBranch} label="可见工作流" value={String(total)} tone="primary" />
-            <OverviewStat icon={Clock3} label="当前页未发布" value={String(neverPublishedCount)} tone="info" />
-            <OverviewStat icon={CheckCircle2} label="当前页已发布" value={String(publishedCount)} tone="success" />
-            <OverviewStat icon={ListChecks} label="当前页待发布" value={String(pendingPublishCount)} tone="cap" />
+            <OverviewStat icon={GitBranch} label="可见工作流" value={String(total)} tone="primary" index={0} />
+            <OverviewStat icon={Clock3} label="当前页未发布" value={String(neverPublishedCount)} tone="info" index={1} />
+            <OverviewStat icon={CheckCircle2} label="当前页已发布" value={String(publishedCount)} tone="success" index={2} />
+            <OverviewStat icon={ListChecks} label="当前页待发布" value={String(pendingPublishCount)} tone="cap" index={3} />
           </section>
         ) : null}
 
@@ -539,6 +539,7 @@ export function WorkflowDraftsPage() {
                   description="查看他人开放给我的流程，先看详情抽屉，再进入具体积木设计。"
                   meta={`${sharedWorkflows.length} 个当前页协作流程`}
                   onClick={() => handleSwitchTab("all")}
+                  index={0}
                 />
                 <WorkflowFeatureCard
                   icon={UserRound}
@@ -546,6 +547,7 @@ export function WorkflowDraftsPage() {
                   description="处理自己创建或负责维护的流程草稿、发布校验和版本演进。"
                   meta={`${myOwnedWorkflows.length} 个当前页我的流程`}
                   onClick={() => handleSwitchTab("mine")}
+                  index={1}
                 />
                 <WorkflowFeatureCard
                   icon={ClipboardCheck}
@@ -553,6 +555,7 @@ export function WorkflowDraftsPage() {
                   description="进入流程抽屉后执行校验，查看阻塞项，通过后冻结正式版本。"
                   meta={`${pendingPublishCount} 个当前页待发布改动`}
                   onClick={handleOpenPublishGovernance}
+                  index={2}
                 />
                 <WorkflowFeatureCard
                   icon={FilePlus2}
@@ -560,6 +563,7 @@ export function WorkflowDraftsPage() {
                   description="创建新的流程草稿，随后进入阶段积木设计并引用能力资产。"
                   meta="创建后归入我的流程"
                   onClick={() => setIsCreating(true)}
+                  index={3}
                 />
               </div>
             </section>
@@ -626,7 +630,7 @@ export function WorkflowDraftsPage() {
             </div>
 
             <div className="sys-card-grid">
-              {filteredWorkflows.map((workflow) => (
+              {filteredWorkflows.map((workflow, index) => (
                 <WorkflowDesignCard
                   key={workflow.id}
                   workflow={workflow}
@@ -634,6 +638,7 @@ export function WorkflowDraftsPage() {
                   validating={validatingWorkflowId === workflow.id}
                   onOpenDetail={() => setDetailWorkflow(workflow)}
                   onValidate={workflow.accessLevel === "read" ? undefined : () => void handleValidateForPublish(workflow)}
+                  index={index}
                 />
               ))}
             </div>
@@ -688,7 +693,7 @@ export function WorkflowDraftsPage() {
       >
         {detailWorkflow ? (
           <>
-            <div className="sys-drawer-section">
+            <div className="sys-drawer-section sys-drawer-section-enter">
               <div className="workflow-detail-drawer-hero">
                 <div className="workflow-detail-drawer-hero-main">
                   <span className="workflow-detail-drawer-icon" aria-hidden="true">
@@ -922,15 +927,17 @@ function WorkflowFeatureCard({
   description,
   meta,
   onClick,
+  index,
 }: {
   icon: LucideIcon;
   title: string;
   description: string;
   meta: string;
   onClick: () => void;
+  index: number;
 }) {
   return (
-    <button type="button" onClick={onClick} className="asset-feature-card">
+    <button type="button" onClick={onClick} className="asset-feature-card sys-card-enter" style={{ animationDelay: `${index * 40}ms` }}>
       <div className="flex items-center gap-2">
         <span className="asset-feature-card-icon sys-preview-item-icon sys-card-avatar--cap">
           <Icon size={16} aria-hidden="true" />
@@ -954,8 +961,8 @@ function WorkflowSideList({ title, empty, workflows, onOpen }: { title: string; 
         {workflows.length === 0 ? (
           <p className="agent-muted text-sm">{empty}</p>
         ) : (
-          workflows.map((workflow) => (
-            <WorkflowPreviewItem key={workflow.id} workflow={workflow} onClick={() => onOpen(workflow)} />
+          workflows.map((workflow, index) => (
+            <WorkflowPreviewItem key={workflow.id} workflow={workflow} onClick={() => onOpen(workflow)} index={index} />
           ))
         )}
       </div>
@@ -963,11 +970,11 @@ function WorkflowSideList({ title, empty, workflows, onOpen }: { title: string; 
   );
 }
 
-function WorkflowPreviewItem({ workflow, onClick }: { workflow: WorkflowDraft; onClick: () => void }) {
+function WorkflowPreviewItem({ workflow, onClick, index }: { workflow: WorkflowDraft; onClick: () => void; index: number }) {
   const versionMeta = resolveWorkflowVersionMeta(workflow);
 
   return (
-    <button type="button" className="sys-preview-item workflow-preview-item" onClick={onClick}>
+    <button type="button" className="sys-preview-item workflow-preview-item sys-card-enter" style={{ animationDelay: `${index * 40}ms` }} onClick={onClick}>
       <span className="sys-preview-item-left">
         <span className="sys-preview-item-icon sys-card-avatar--cap">
           <GitBranch size={16} aria-hidden="true" />
@@ -992,17 +999,19 @@ function WorkflowDesignCard({
   validating,
   onOpenDetail,
   onValidate,
+  index,
 }: {
   workflow: WorkflowDraft;
   mine: boolean;
   validating: boolean;
   onOpenDetail: () => void;
   onValidate?: () => void;
+  index: number;
 }) {
   const versionMeta = resolveWorkflowVersionMeta(workflow);
 
   return (
-    <article className="sys-card workflow-design-card" onClick={onOpenDetail}>
+    <article className="sys-card workflow-design-card sys-card-enter" style={{ animationDelay: `${index * 40}ms` }} onClick={onOpenDetail}>
       <div className="sys-card-header">
         <div className="sys-card-avatar sys-card-avatar--cap">
           <GitBranch size={22} aria-hidden="true" />
@@ -1178,9 +1187,9 @@ function WorkflowAccessFields({
   );
 }
 
-function OverviewStat({ icon: Icon, label, value, tone }: { icon: typeof GitBranch; label: string; value: string; tone: "primary" | "success" | "info" | "cap" }) {
+function OverviewStat({ icon: Icon, label, value, tone, index }: { icon: typeof GitBranch; label: string; value: string; tone: "primary" | "success" | "info" | "cap"; index?: number }) {
   return (
-    <div className="sys-overview-stat">
+    <div className="sys-overview-stat sys-card-enter" style={index !== undefined ? { animationDelay: `${index * 40}ms` } : undefined}>
       <div className={`sys-overview-stat-icon sys-overview-stat-icon--${tone}`}><Icon size={20} aria-hidden="true" /></div>
       <div>
         <div className="sys-overview-stat-value">{value}</div>

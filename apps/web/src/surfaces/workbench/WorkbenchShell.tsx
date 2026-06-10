@@ -610,8 +610,8 @@ export function WorkbenchShell() {
                     {activeWorkbenchTab === "overview" ? (
                       <>
                         <section className="sys-overview-stats" aria-label="业务工作台概览">
-                          {metricCards.map((metric) => (
-                            <WorkbenchOverviewStat key={metric.label} icon={metric.icon} label={metric.label} value={metric.value} hint={metric.hint} tone={metric.tone} loading={summaryLoading} />
+                          {metricCards.map((metric, index) => (
+                            <WorkbenchOverviewStat key={metric.label} icon={metric.icon} label={metric.label} value={metric.value} hint={metric.hint} tone={metric.tone} loading={summaryLoading} index={index} />
                           ))}
                         </section>
 
@@ -625,6 +625,7 @@ export function WorkbenchShell() {
                                 description="浏览全部已发布智能体流程，按版本和创建权限发起业务任务。"
                                 meta={summary ? `${summary.metrics.availableWorkflowTotal} 个可发起流程` : "加载中..."}
                                 onClick={() => navigate(paths.workbench.create)}
+                                index={0}
                               />
                               <WorkbenchFeatureCard
                                 icon={ListTodo}
@@ -632,6 +633,7 @@ export function WorkbenchShell() {
                                 description="处理已保存且未完成的任务，可继续推进、回退步骤或删除。"
                                 meta={summary ? `${summary.metrics.pendingTodoTotal} 个待办` : "加载中..."}
                                 onClick={() => navigate(paths.workbench.tasks)}
+                                index={1}
                               />
                               <WorkbenchFeatureCard
                                 icon={History}
@@ -639,6 +641,7 @@ export function WorkbenchShell() {
                                 description="查看已完成任务与交付结果，仅支持只读查看。"
                                 meta={summary ? `${recentRuns.length} 个最近完成` : "加载中..."}
                                 onClick={() => navigate(paths.workbench.tasks)}
+                                index={2}
                               />
                             </div>
                           </section>
@@ -649,8 +652,8 @@ export function WorkbenchShell() {
                               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无已完成任务" />
                             ) : (
                               <div className="space-y-2">
-                                {recentRuns.slice(0, 4).map((record) => (
-                                  <RecentRunListItem key={record.id} record={record} onOpen={() => navigate(paths.workbench.run(record.id))} />
+                                {recentRuns.slice(0, 4).map((record, index) => (
+                                  <RecentRunListItem key={record.id} record={record} onOpen={() => navigate(paths.workbench.run(record.id))} index={index} />
                                 ))}
                               </div>
                             )}
@@ -714,8 +717,8 @@ export function WorkbenchShell() {
                               </div>
                               {launchableWorkflows.length > 0 ? (
                                 <div className="sys-card-grid">
-                                  {launchableWorkflows.map((workflow) => (
-                                    <WorkflowLaunchCard key={workflow.id} workflow={workflow} onOpen={() => setWorkflowDrawer(workflow)} />
+                                  {launchableWorkflows.map((workflow, index) => (
+                                    <WorkflowLaunchCard key={workflow.id} workflow={workflow} onOpen={() => setWorkflowDrawer(workflow)} index={index} />
                                   ))}
                                 </div>
                               ) : (
@@ -736,8 +739,8 @@ export function WorkbenchShell() {
                                   </p>
                                 </div>
                                 <div className="sys-card-grid">
-                                  {blockedWorkflows.map((workflow) => (
-                                    <WorkflowLaunchCard key={workflow.id} workflow={workflow} restricted onOpen={() => setWorkflowDrawer(workflow)} />
+                                  {blockedWorkflows.map((workflow, index) => (
+                                    <WorkflowLaunchCard key={workflow.id} workflow={workflow} restricted onOpen={() => setWorkflowDrawer(workflow)} index={index} />
                                   ))}
                                 </div>
                               </section>
@@ -776,12 +779,13 @@ export function WorkbenchShell() {
                             <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无已保存的未完成任务" />
                           ) : (
                             <div className="space-y-2">
-                              {activeTasks.map((record) => (
+                              {activeTasks.map((record, index) => (
                                 <ActiveTaskListItem
                                   key={record.id}
                                   record={record}
                                   onOpen={() => navigate(paths.workbench.run(record.id))}
                                   onDelete={() => void handleDeleteRun(record.id)}
+                                  index={index}
                                 />
                               ))}
                             </div>
@@ -815,11 +819,12 @@ export function WorkbenchShell() {
                             <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无已完成任务记录" />
                           ) : (
                             <div className="space-y-2">
-                              {taskRuns.map((record) => (
+                              {taskRuns.map((record, index) => (
                                 <TaskRunListItem
                                   key={record.id}
                                   record={record}
                                   onOpen={() => navigate(paths.workbench.run(record.id))}
+                                  index={index}
                                 />
                               ))}
                             </div>
@@ -862,6 +867,7 @@ function WorkbenchOverviewStat({
   hint,
   tone,
   loading,
+  index,
 }: {
   icon: LucideIcon;
   label: string;
@@ -869,9 +875,10 @@ function WorkbenchOverviewStat({
   hint?: string;
   tone: MetricTone;
   loading: boolean;
+  index?: number;
 }) {
   return (
-    <div className="sys-overview-stat">
+    <div className="sys-overview-stat sys-card-enter" style={index !== undefined ? { animationDelay: `${index * 40}ms` } : undefined}>
       <div className={`sys-overview-stat-icon sys-overview-stat-icon--${tone}`}>
         <Icon size={20} aria-hidden="true" />
       </div>
@@ -892,15 +899,17 @@ function WorkbenchFeatureCard({
   description,
   meta,
   onClick,
+  index,
 }: {
   icon: LucideIcon;
   title: string;
   description: string;
   meta: string;
   onClick: () => void;
+  index?: number;
 }) {
   return (
-    <button type="button" onClick={onClick} className="asset-feature-card">
+    <button type="button" onClick={onClick} className="asset-feature-card sys-card-enter" style={index !== undefined ? { animationDelay: `${index * 40}ms` } : undefined}>
       <div className="flex items-center gap-2">
         <span className="asset-feature-card-icon sys-preview-item-icon sys-card-avatar--cap">
           <Icon size={16} aria-hidden="true" />
@@ -920,10 +929,12 @@ function WorkflowLaunchCard({
   workflow,
   restricted = false,
   onOpen,
+  index,
 }: {
   workflow: WorkbenchAvailableWorkflowRow;
   restricted?: boolean;
   onOpen: () => void;
+  index?: number;
 }) {
   const publishedAt = workflow.publishedAt ? new Date(workflow.publishedAt) : null;
   const publishedLabel = publishedAt ? publishedAt.toLocaleString("zh-CN", { hour12: false }) : "—";
@@ -935,7 +946,7 @@ function WorkflowLaunchCard({
         : "已开放"
     : "无发起权限";
   return (
-    <button type="button" onClick={onOpen} className="workflow-launch-card">
+    <button type="button" onClick={onOpen} className="workflow-launch-card sys-card-enter" style={index !== undefined ? { animationDelay: `${index * 40}ms` } : undefined}>
       <span className="workflow-feature-card-head">
         <span className="workflow-launch-card-icon">
           <PlayCircle size={18} aria-hidden="true" />
@@ -1034,7 +1045,7 @@ function WorkflowLaunchDrawer({
       onClose={onClose}
       rootClassName={rootClassName}
     >
-      <div className="workbench-launch-drawer">
+      <div className="workbench-launch-drawer sys-drawer-section-enter">
         <section className="workbench-launch-drawer-hero">
           <span className="workflow-launch-card-icon">
             <PlayCircle size={18} aria-hidden="true" />
@@ -1161,15 +1172,17 @@ function ActiveTaskListItem({
   record,
   onOpen,
   onDelete,
+  index,
 }: {
   record: WorkbenchTaskRunRow;
   onOpen: () => void;
   onDelete: () => void;
+  index?: number;
 }) {
   const Icon = record.state === "failed" ? AlertCircle : record.hasOpenTodo ? UserRoundCheck : Activity;
   const updatedLabel = record.updatedAt ? new Date(record.updatedAt).toLocaleString("zh-CN", { hour12: false }) : "—";
   return (
-    <div className="sys-preview-item">
+    <div className="sys-preview-item sys-card-enter" style={index !== undefined ? { animationDelay: `${index * 40}ms` } : undefined}>
       <div className="sys-preview-item-left">
         <span className="sys-preview-item-icon sys-card-avatar--cap">
           <Icon size={16} aria-hidden="true" />
@@ -1195,11 +1208,11 @@ function ActiveTaskListItem({
   );
 }
 
-function RecentRunListItem({ record, onOpen }: { record: WorkbenchRecentRunRow; onOpen?: () => void }) {
+function RecentRunListItem({ record, onOpen, index }: { record: WorkbenchRecentRunRow; onOpen?: () => void; index?: number }) {
   const Icon = record.state === "completed" || record.stateLabel === "已完成" ? CheckCircle2 : record.state === "paused" || record.stateLabel === "已暂停" ? PauseCircle : Activity;
   const updatedLabel = record.updatedAt ? new Date(record.updatedAt).toLocaleString("zh-CN", { hour12: false }) : "—";
   return (
-    <div className="sys-preview-item">
+    <div className="sys-preview-item sys-card-enter" style={index !== undefined ? { animationDelay: `${index * 40}ms` } : undefined}>
       <div className="sys-preview-item-left">
         <span className="sys-preview-item-icon sys-card-avatar--cap">
           <Icon size={16} aria-hidden="true" />
@@ -1227,13 +1240,15 @@ function RecentRunListItem({ record, onOpen }: { record: WorkbenchRecentRunRow; 
 function TaskRunListItem({
   record,
   onOpen,
+  index,
 }: {
   record: WorkbenchTaskRunRow;
   onOpen: () => void;
+  index?: number;
 }) {
   const updatedLabel = record.updatedAt ? new Date(record.updatedAt).toLocaleString("zh-CN", { hour12: false }) : "—";
   return (
-    <div className="sys-preview-item">
+    <div className="sys-preview-item sys-card-enter" style={index !== undefined ? { animationDelay: `${index * 40}ms` } : undefined}>
       <div className="sys-preview-item-left">
         <span className="sys-preview-item-icon sys-card-avatar--cap">
           <CheckCircle2 size={16} aria-hidden="true" />

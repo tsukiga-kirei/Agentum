@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import type { ReactNode } from "react";
+import type { ReactNode, CSSProperties } from "react";
 import { ArrowRight, Bot, Boxes, BrainCircuit, CheckCircle2, ChevronDown, CircleAlert, Clock, Edit3, Eye, FileText, Hash, Library, PlusCircle, RotateCcw, Save, Search, Send, ShieldCheck, Tag, Trash2, UserRoundCog, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Empty, Pagination, Segmented, Select, Spin, message, Drawer } from "antd";
@@ -623,10 +623,11 @@ export function AssetsPage() {
                 </div>
               ) : (
                 <div className="sys-card-grid">
-                  {filteredSystemAssets.map((asset) => (
+                  {filteredSystemAssets.map((asset, index) => (
                     <SystemAssetCard
                       key={asset.id}
                       asset={asset}
+                      index={index}
                       onView={(a) => {
                         if (a.openSource === "user_shared") {
                           void openEdit(a.id);
@@ -703,7 +704,7 @@ export function AssetsPage() {
                 </div>
               ) : (
                 <div className="sys-card-grid">
-                  {filteredMyAssets.map((asset) => <MyAssetCard key={asset.id} asset={asset} onEdit={openEdit} onDelete={confirmDelete} />)}
+                  {filteredMyAssets.map((asset, index) => <MyAssetCard key={asset.id} asset={asset} index={index} onEdit={openEdit} onDelete={confirmDelete} />)}
                 </div>
               )}
               <AssetPagination pageState={minePage} onChange={(page, size) => void loadMyAssets(page, size, keyword)} />
@@ -721,7 +722,7 @@ export function AssetsPage() {
         open={createOpen}
         rootClassName={drawerRootClassName}
       >
-        <div className="sys-drawer-section">
+        <div className="sys-drawer-section sys-drawer-section-enter">
           <div className="sys-field">
             <label className="sys-field-label sys-field-label--required">能力类型</label>
             <Select
@@ -850,7 +851,7 @@ export function AssetsPage() {
       >
         {currentAsset ? (
           <>
-            <div className="sys-drawer-section">
+            <div className="sys-drawer-section sys-drawer-section-enter">
               {currentAsset.status === "published" ? (
                 <div className="sys-hint"><ShieldCheck size={14} /> 已发布能力当前为只读查看；如需修改，请先改回草稿。</div>
               ) : currentAsset.accessLevel === "read" ? (
@@ -1028,7 +1029,7 @@ export function AssetsPage() {
         rootClassName={drawerRootClassName}
       >
         {selectedSystemAsset ? (
-          <div className="sys-drawer-section">
+          <div className="sys-drawer-section sys-drawer-section-enter">
             <div className="sys-field">
               <label className="sys-field-label">能力名称</label>
               <div className="sys-field-input-wrap">
@@ -1126,20 +1127,20 @@ function OverviewPanel({
   return (
     <div className="sys-fade-in">
       <div className="sys-overview-stats">
-        <OverviewStat icon={CheckCircle2} value={summary?.openedToMeSystemTotal ?? 0} label="对我开放能力" tone="success" />
-        <OverviewStat icon={Boxes} value={summary?.tenantSystemPoolTotal ?? 0} label="租户能力池" tone="primary" />
-        <OverviewStat icon={Library} value={summary?.myAssetTotal ?? 0} label="我的能力" tone="cap" />
-        <OverviewStat icon={BrainCircuit} value={draftAssets.length} label="待完善草稿" tone="info" />
+        <OverviewStat style={{ animationDelay: "0ms" }} icon={CheckCircle2} value={summary?.openedToMeSystemTotal ?? 0} label="对我开放能力" tone="success" />
+        <OverviewStat style={{ animationDelay: "40ms" }} icon={Boxes} value={summary?.tenantSystemPoolTotal ?? 0} label="租户能力池" tone="primary" />
+        <OverviewStat style={{ animationDelay: "80ms" }} icon={Library} value={summary?.myAssetTotal ?? 0} label="我的能力" tone="cap" />
+        <OverviewStat style={{ animationDelay: "120ms" }} icon={BrainCircuit} value={draftAssets.length} label="待完善草稿" tone="info" />
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
         <section className="sys-preview-card">
           <div className="sys-preview-card-title"><ShieldCheck size={16} /> 能力功能入口</div>
           <div className="grid gap-3 lg:grid-cols-2">
-            <AssetFeatureCard icon={Boxes} title="对我开放" detail="查看租户分配的系统能力，以及同事开放给我的自建能力。" meta={`${systemAssets.length} 项当前页开放能力`} onClick={onOpenSystem} />
-            <AssetFeatureCard icon={Library} title="我的能力" detail="维护我创建的提示词模板和智能体模板草稿。" meta={`${summary?.myAssetTotal ?? myAssets.length} 项我的能力`} onClick={onOpenMine} />
-            <AssetFeatureCard icon={PlusCircle} title="新建能力草稿" detail="创建提示词模板或智能体模板，再通过发布进入复用链路。" meta="提示词模板 / 智能体模板" onClick={onCreateDraft} />
-            <AssetFeatureCard icon={BrainCircuit} title="待完善草稿" detail="回到我的能力处理未发布草稿和版本说明。" meta={`${draftAssets.length} 项待完善`} onClick={onOpenDrafts} />
+            <AssetFeatureCard style={{ animationDelay: "0ms" }} icon={Boxes} title="对我开放" detail="查看租户分配的系统能力，以及同事开放给我的自建能力。" meta={`${systemAssets.length} 项当前页开放能力`} onClick={onOpenSystem} />
+            <AssetFeatureCard style={{ animationDelay: "40ms" }} icon={Library} title="我的能力" detail="维护我创建的提示词模板和智能体模板草稿。" meta={`${summary?.myAssetTotal ?? myAssets.length} 项我的能力`} onClick={onOpenMine} />
+            <AssetFeatureCard style={{ animationDelay: "80ms" }} icon={PlusCircle} title="新建能力草稿" detail="创建提示词模板或智能体模板，再通过发布进入复用链路。" meta="提示词模板 / 智能体模板" onClick={onCreateDraft} />
+            <AssetFeatureCard style={{ animationDelay: "120ms" }} icon={BrainCircuit} title="待完善草稿" detail="回到我的能力处理未发布草稿和版本说明。" meta={`${draftAssets.length} 项待完善`} onClick={onOpenDrafts} />
           </div>
         </section>
 
@@ -1169,9 +1170,9 @@ function OverviewPanel({
   );
 }
 
-function OverviewStat({ icon: Icon, value, label, tone }: { icon: LucideIcon; value: number; label: string; tone: "primary" | "success" | "info" | "cap" }) {
+function OverviewStat({ icon: Icon, value, label, tone, style }: { icon: LucideIcon; value: number; label: string; tone: "primary" | "success" | "info" | "cap"; style?: React.CSSProperties }) {
   return (
-    <div className="sys-overview-stat">
+    <div className="sys-overview-stat sys-card-enter" style={style}>
       <div className={`sys-overview-stat-icon sys-overview-stat-icon--${tone}`}><Icon size={20} /></div>
       <div>
         <div className="sys-overview-stat-value">{value}</div>
@@ -1187,15 +1188,17 @@ function AssetFeatureCard({
   detail,
   meta,
   onClick,
+  style,
 }: {
   icon: LucideIcon;
   title: string;
   detail: string;
   meta: string;
   onClick: () => void;
+  style?: React.CSSProperties;
 }) {
   return (
-    <button type="button" className="asset-feature-card" onClick={onClick}>
+    <button type="button" className="asset-feature-card sys-card-enter" onClick={onClick} style={style}>
       <div className="flex items-center gap-2">
         <span className="asset-feature-card-icon sys-preview-item-icon sys-card-avatar--cap"><Icon size={16} /></span>
         <h3 className="asset-feature-card-title text-sm font-semibold">{title}</h3>
@@ -1209,9 +1212,9 @@ function AssetFeatureCard({
   );
 }
 
-function SystemAssetCard({ asset, onView }: { asset: SystemCapabilityAssetRow; onView: (asset: SystemCapabilityAssetRow) => void }) {
+function SystemAssetCard({ asset, index, onView }: { asset: SystemCapabilityAssetRow; index?: number; onView: (asset: SystemCapabilityAssetRow) => void }) {
   return (
-    <article className="sys-card" onClick={() => onView(asset)}>
+    <article className="sys-card sys-card-enter" onClick={() => onView(asset)} style={index !== undefined ? { animationDelay: `${index * 45}ms` } : undefined}>
       <div className="sys-card-header">
         <div className="sys-card-avatar sys-card-avatar--cap"><AssetTypeIcon type={asset.assetType} /></div>
         <div className="sys-card-info">
@@ -1248,9 +1251,9 @@ function SystemAssetCard({ asset, onView }: { asset: SystemCapabilityAssetRow; o
   );
 }
 
-function MyAssetCard({ asset, onEdit, onDelete }: { asset: MyAssetRow; onEdit: (assetId: string) => void; onDelete: (asset: MyAssetRow) => void }) {
+function MyAssetCard({ asset, index, onEdit, onDelete }: { asset: MyAssetRow; index?: number; onEdit: (assetId: string) => void; onDelete: (asset: MyAssetRow) => void }) {
   return (
-    <article className="sys-card" onClick={() => onEdit(asset.id)}>
+    <article className="sys-card sys-card-enter" onClick={() => onEdit(asset.id)} style={index !== undefined ? { animationDelay: `${index * 45}ms` } : undefined}>
       <div className="sys-card-header">
         <div className="sys-card-avatar sys-card-avatar--cap"><AssetTypeIcon type={asset.assetType} /></div>
         <div className="sys-card-info">

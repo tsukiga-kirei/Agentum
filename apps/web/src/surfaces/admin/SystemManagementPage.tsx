@@ -1095,15 +1095,15 @@ export function SystemManagementPage() {
                     { icon: Users, val: summary?.tenantActive, label: "活跃租户", cls: "success" },
                     { icon: DatabaseZap, val: summary?.modelProviderTotal, label: "模型供应商", cls: "info" },
                     { icon: Boxes, val: summary?.systemCapabilityTotal, label: "已注册能力", cls: "cap" },
-                  ].map((s) => { const I = s.icon; return (
-                    <div key={s.label} className="sys-overview-stat">
+                  ].map((s, index) => { const I = s.icon; return (
+                    <div key={s.label} className="sys-overview-stat sys-card-enter" style={{ animationDelay: `${index * 40}ms` }}>
                       <div className={`sys-overview-stat-icon sys-overview-stat-icon--${s.cls}`}><I size={20} /></div>
                       <div><div className="sys-overview-stat-value">{s.val ?? "—"}</div><div className="sys-overview-stat-label">{s.label}</div></div>
                     </div>
                   );})}
                 </div>
                 <div className="sys-preview-grid">
-                  <div className={`sys-preview-card${previewTenants.length === 0 ? " sys-preview-card--empty" : ""}`}>
+                  <div className={`sys-preview-card sys-card-enter ${previewTenants.length === 0 ? "sys-preview-card--empty" : ""}`} style={{ animationDelay: "160ms" }}>
                     <div className="sys-preview-card-title"><Building2 size={16}/> 最近入驻租户</div>
                     {previewTenants.length === 0 ? (
                       <div className="sys-preview-card-body--empty">
@@ -1122,7 +1122,7 @@ export function SystemManagementPage() {
                       {(summary?.tenantTotal ?? 0)>4&&<button className="sys-btn sys-btn--link" onClick={()=>navigateSection("tenants")} style={{marginTop:8}}>查看全部 {summary?.tenantTotal ?? 0} 个租户 →</button>}
                     </>)}
                   </div>
-                  <div className={`sys-preview-card${previewModelProviders.length === 0 ? " sys-preview-card--empty" : ""}`}>
+                  <div className={`sys-preview-card sys-card-enter ${previewModelProviders.length === 0 ? "sys-preview-card--empty" : ""}`} style={{ animationDelay: "200ms" }}>
                     <div className="sys-preview-card-title"><DatabaseZap size={16}/> 模型提供商一览</div>
                     {previewModelProviders.length === 0 ? (
                       <div className="sys-preview-card-body--empty">
@@ -1147,7 +1147,7 @@ export function SystemManagementPage() {
                       {(summary?.modelProviderTotal ?? 0)>4&&<button className="sys-btn sys-btn--link" onClick={()=>navigateSection("models")} style={{marginTop:8}}>查看全部 {summary?.modelProviderTotal ?? 0} 个供应商 →</button>}
                     </>)}
                   </div>
-                  <div className={`sys-preview-card${previewCapabilities.length === 0 ? " sys-preview-card--empty" : ""}`}>
+                  <div className={`sys-preview-card sys-card-enter ${previewCapabilities.length === 0 ? "sys-preview-card--empty" : ""}`} style={{ animationDelay: "240ms" }}>
                     <div className="sys-preview-card-title"><Boxes size={16}/> 核心能力一览</div>
                     {previewCapabilities.length === 0 ? (
                       <div className="sys-preview-card-body--empty">
@@ -1183,8 +1183,8 @@ export function SystemManagementPage() {
                 {tenants.length===0?<Empty description="暂无租户记录" style={{marginTop:48}}/>:(
                   <>
                     <div className="sys-card-grid">
-                      {tenants.map(t=>(
-                        <div key={t.id} className="sys-card" onClick={()=>{setSelectedTenant(t);setTenantActiveTab("default");setTenantDrawerOpen(true);}}>
+                      {tenants.map((t, index)=>(
+                        <div key={t.id} className="sys-card sys-card-enter" onClick={()=>{setSelectedTenant(t);setTenantActiveTab("default");setTenantDrawerOpen(true);}} style={{ animationDelay: `${index * 40}ms` }}>
                         <div className="sys-card-header">
                           <div className="sys-card-avatar sys-card-avatar--tenant"><Building2 size={22}/></div>
                           <div className="sys-card-info"><div className="sys-card-name">{t.name}</div><div className="sys-card-code">{t.code}</div></div>
@@ -1223,8 +1223,8 @@ export function SystemManagementPage() {
                 {modelProviders.length===0?<Empty description="暂无模型供应商" style={{marginTop:48}}/>:(
                   <>
                     <div className="sys-card-grid">
-                      {modelProviders.map(m=>(
-                      <div key={m.id} className="sys-card" onClick={()=>openModelModal(m)}>
+                      {modelProviders.map((m, index)=>(
+                      <div key={m.id} className="sys-card sys-card-enter" onClick={()=>openModelModal(m)} style={{ animationDelay: `${index * 40}ms` }}>
                         <div className="sys-card-header">
                           <div className="sys-card-avatar sys-card-avatar--model"><DatabaseZap size={22}/></div>
                           <div className="sys-card-info"><div className="sys-card-name">{m.name}</div><div className="sys-card-code">{m.providerType}</div></div>
@@ -1270,8 +1270,8 @@ export function SystemManagementPage() {
                 {capabilities.length===0?<Empty description="暂无全局能力" style={{marginTop:48}}/>:(
                   <>
                     <div className="sys-card-grid">
-                      {capabilities.map(c=>(
-                      <div key={c.id} className="sys-card" onClick={()=>openCapabilityModal(c)}>
+                      {capabilities.map((c, index)=>(
+                      <div key={c.id} className="sys-card sys-card-enter" onClick={()=>openCapabilityModal(c)} style={{ animationDelay: `${index * 40}ms` }}>
                         <div className="sys-card-header">
                           <div className="sys-card-avatar sys-card-avatar--cap"><Boxes size={22}/></div>
                           <div className="sys-card-info"><div className="sys-card-name">{c.name}</div><div className="sys-card-code">{c.code}</div></div>
@@ -1346,7 +1346,7 @@ export function SystemManagementPage() {
 
           {/* 基本信息 */}
           {tenantActiveTab === "default" && (
-            <div className="sys-drawer-section">
+            <div className="sys-drawer-section sys-drawer-section-enter">
               <div className="sys-section-header"><Building2 size={18}/> 基本信息</div>
               <div className="sys-config-group">
                 <div className="sys-form-row"><span className="sys-form-label">租户名称</span><span className="sys-form-value">{selectedTenant.name}</span></div>
@@ -1366,7 +1366,7 @@ export function SystemManagementPage() {
 
           {/* 能力配置 */}
           {tenantActiveTab === "capabilities" && (
-            <div className="sys-drawer-section">
+            <div className="sys-drawer-section sys-drawer-section-enter">
               <div className="sys-section-header"><Boxes size={18}/> 全局能力配置</div>
               <div className="sys-hint"><Info size={14}/> 这里配置该租户可用能力池；租户管理员后续再按用户、部门和租户自定义角色分配到具体人员范围。</div>
               {configCapabilities.length === 0 ? <Empty description="暂无可配置能力" /> : (
@@ -1396,7 +1396,7 @@ export function SystemManagementPage() {
 
           {/* 成员 / 角色 */}
           {tenantActiveTab === "members" && (
-            <div className="sys-drawer-section">
+            <div className="sys-drawer-section sys-drawer-section-enter">
               <div className="sys-section-header"><Users size={18}/> 租户管理员</div>
               <div className="sys-hint"><Info size={14}/> 租户管理员身份由系统管理维护；每个租户必须至少保留一名启用的租户管理员。普通成员、部门和业务角色仍由租户管理维护。</div>
               <Spin spinning={tenantOrganizationLoading}>
@@ -1448,7 +1448,7 @@ export function SystemManagementPage() {
 
           {/* 模型分配 */}
           {tenantActiveTab === "models" && (
-            <div className="sys-drawer-section">
+            <div className="sys-drawer-section sys-drawer-section-enter">
               <div className="sys-section-header"><DatabaseZap size={18}/> 模型分配</div>
               <div className="sys-hint"><Info size={14}/> 这里把平台级模型供应商分配给单个租户；默认模型可先沿用供应商配置，后续再扩展额度、成本和备用路由。</div>
               {modelProviders.length === 0 ? <Empty description="暂无可分配模型供应商" /> : (
@@ -1486,7 +1486,7 @@ export function SystemManagementPage() {
                 </div>
                 <div className="sys-modal-body">
                   <div className="sys-hint"><Info size={14}/> 租户管理员拥有租户管理入口。系统管理负责新增、启停和身份维护；租户管理只能修改基本联系方式。</div>
-                  <div className="sys-drawer-section">
+                  <div className="sys-drawer-section sys-drawer-section-enter">
                     <div className="sys-field-row">
                       <div className="sys-field"><label className="sys-field-label sys-field-label--required">管理员账号</label><div className="sys-field-input-wrap"><User size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如：tenant_admin" maxLength={50} defaultValue={tenantAdminRef.current.username || ""} onChange={(event) => { tenantAdminRef.current.username = event.target.value; }} /></div><div className="sys-field-hint">{usernameRuleMessage}</div></div>
                       <div className="sys-field"><label className="sys-field-label sys-field-label--required">管理员姓名</label><div className="sys-field-input-wrap"><Type size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="显示名称" maxLength={50} defaultValue={tenantAdminRef.current.displayName || ""} onChange={(event) => { tenantAdminRef.current.displayName = event.target.value; }} /></div></div>
@@ -1531,7 +1531,7 @@ export function SystemManagementPage() {
                 <button className={`sys-modal-tab ${createTenantTab==="admin"?"sys-modal-tab--active":""}`} onClick={()=>setCreateTenantTab("admin")}>管理员设置</button>
               </div>
               {createTenantTab==="basic"&&(
-                <div className="sys-drawer-section">
+                <div className="sys-drawer-section sys-drawer-section-enter">
                   <div className="sys-field-row">
                     <div className="sys-field"><label className="sys-field-label sys-field-label--required">租户名称</label><div className="sys-field-input-wrap"><Building2 size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如：某某科技有限公司" maxLength={160} defaultValue={ctRef.current.name||""} onChange={e=>{ctRef.current.name=e.target.value;}}/></div></div>
                     <div className="sys-field"><label className="sys-field-label sys-field-label--required">租户编码</label><div className="sys-field-input-wrap"><Code2 size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="英文数字标识，如 mx_tech" maxLength={100} defaultValue={ctRef.current.code||""} onChange={e=>{ctRef.current.code=e.target.value;}}/></div><div className="sys-field-hint">留空则由系统自动生成</div></div>
@@ -1539,7 +1539,7 @@ export function SystemManagementPage() {
                 </div>
               )}
               {createTenantTab==="admin"&&(
-                <div className="sys-drawer-section">
+                <div className="sys-drawer-section sys-drawer-section-enter">
                   <div className="sys-hint"><Info size={14}/> 必须为新租户指定一名初始租户管理员，该管理员登录后可继续在「租户管理」中添加其他成员。</div>
                   <div className="sys-field-row">
                     <div className="sys-field"><label className="sys-field-label sys-field-label--required">管理员账号</label><div className="sys-field-input-wrap"><User size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如：tenant_admin" maxLength={50} defaultValue={ctRef.current.admin_username||""} onChange={e=>{ctRef.current.admin_username=e.target.value;}}/></div><div className="sys-field-hint">{usernameRuleMessage}</div></div>
@@ -1569,7 +1569,7 @@ export function SystemManagementPage() {
         open={modelModalOpen}
         rootClassName={drawerRootClassName}
       >
-        <div className="sys-drawer-section" key={modelFormKey}>
+        <div className="sys-drawer-section sys-drawer-section-enter" key={modelFormKey}>
           <div className="sys-field"><label className="sys-field-label sys-field-label--required">名称</label><div className="sys-field-input-wrap"><Tag size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如：通义千问" maxLength={160} defaultValue={modelRef.current.name || ""} onChange={e=>{modelRef.current.name=e.target.value;}}/></div></div>
           <div className="sys-field"><label className="sys-field-label sys-field-label--required">模型供应商</label><SysSelect icon={ServerCog} placeholder="请选择模型供应商" defaultValue={modelRef.current.providerType || ""} options={modelProviderTypes.map((type)=>({value:type.code,label:type.name}))} onChange={v=>{modelRef.current.providerType=v;setSelectedModelProviderType(v);}}/></div>
           {selectedModelProviderType && (
@@ -1608,7 +1608,7 @@ export function SystemManagementPage() {
         open={capModalOpen}
         rootClassName={drawerRootClassName}
       >
-        <div className="sys-drawer-section" key={capFormKey}>
+        <div className="sys-drawer-section sys-drawer-section-enter" key={capFormKey}>
           <div className="sys-field"><label className="sys-field-label sys-field-label--required">能力类型</label><SysSelect icon={Boxes} placeholder="请选择能力类型" defaultValue={capRef.current.capabilityType || ""} options={capabilityTypeOptions} onChange={v=>{capRef.current.capabilityType=v;setSelectedCapabilityType(v);if(v==="delivery"&&!capRef.current.sourceType){capRef.current.sourceType="builtin";setSelectedDeliverySourceType("builtin");}}}/></div>
           <div className="sys-field-row">
             <div className="sys-field"><label className="sys-field-label sys-field-label--required">名称</label><div className="sys-field-input-wrap"><Tag size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如：文档解析器" maxLength={160} defaultValue={capRef.current.name || ""} onChange={e=>{capRef.current.name=e.target.value;}}/></div></div>
