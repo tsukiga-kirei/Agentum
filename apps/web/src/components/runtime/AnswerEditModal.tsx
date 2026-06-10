@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { X } from "lucide-react";
+import { Save, X } from "lucide-react";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 
 interface AnswerEditModalProps {
@@ -36,27 +36,21 @@ export function AnswerEditModal({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="sys-modal-header">
-          <div>
-            <div className="sys-field-label" style={{ marginBottom: 4 }}>最终答案</div>
-            <span id="answer-edit-modal-title" className="sys-modal-title">修改最终答案</span>
-          </div>
-          <button type="button" className="sys-modal-close" onClick={onClose} aria-label="关闭修改弹窗">
+          <span id="answer-edit-modal-title" className="sys-modal-title">修改最终答案</span>
+          <button type="button" className="sys-modal-close" onClick={onClose} aria-label="关闭">
             <X size={18} />
           </button>
         </div>
 
         <div className="sys-modal-body agent-answer-edit-modal-body">
-          <p className="mb-4 text-xs text-[var(--color-text-tertiary)]">
-            支持 Markdown 格式。保存后将基于修改内容重新生成。
-          </p>
           <div className="agent-answer-edit-modal-grid">
             <label className="sys-field min-h-0">
-              <span className="sys-field-label">编辑内容</span>
+              <span className="sys-field-label">编辑</span>
               <textarea
                 className="sys-field-textarea agent-answer-edit-textarea"
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
-                placeholder="输入或修改最终答案…"
+                placeholder="编辑最终答案…"
               />
             </label>
             <div className="agent-answer-edit-preview min-h-0">
@@ -70,10 +64,12 @@ export function AnswerEditModal({
 
         <div className="sys-modal-footer">
           <button type="button" className="sys-btn sys-btn--default" onClick={onClose}>
+            <X size={14} aria-hidden="true" />
             取消
           </button>
           <button type="button" className="sys-btn sys-btn--primary" onClick={() => onSave(draft)}>
-            保存并重新生成
+            <Save size={14} aria-hidden="true" />
+            保存
           </button>
         </div>
       </section>

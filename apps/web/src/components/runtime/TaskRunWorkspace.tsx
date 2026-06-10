@@ -632,6 +632,72 @@ export function TaskRunWorkspace({
     }
   }
 
+  async function handleSaveAnswer(content: string) {
+    const targetStep = preview.steps[resolveActiveStepIndex(preview.steps, runDetail)];
+    if (!targetStep?.nodeRunId || isAdvancing) {
+      return;
+    }
+
+    setIsAdvancing(true);
+    setAdvanceError(null);
+
+    try {
+      const updated = await workbenchApi.updateFinalAnswer(
+        tenantId,
+        token,
+        runDetail.id,
+        targetStep.nodeRunId,
+        content,
+      );
+      setRunDetail(updated);
+      onReload(updated);
+    } catch (error: unknown) {
+      const reason = error instanceof Error ? error.message : "保存最终答案失败";
+      setAdvanceError(reason);
+    } finally {
+      setIsAdvancing(false);
+    }
+  }
+
+  async function handleFollowUpStep(followUpMessage: string) {
+    const targetStep = preview.steps[resolveActiveStepIndex(preview.steps, runDetail)];
+    if (!targetStep?.nodeRunId || isAdvancing) {
+      return;
+    }
+
+    setIsAdvancing(true);
+    setAdvanceError(null);
+    setWatchdogStaleMessage(null);
+    initialAutoStartRef.current = true;
+    stream.disconnect();
+
+    try {
+      const updated = await workbenchApi.followUpNode(
+        tenantId,
+        token,
+        runDetail.id,
+        targetStep.nodeRunId,
+        followUpMessage,
+      );
+      setRunDetail(updated);
+      onReload(updated);
+      await stream.connect({ replay: true });
+      await stream.ensureConnected();
+    } catch (error: unknown) {
+      console.error("追问失败", error);
+      const reloaded = await reloadRunDetail();
+      if (reloaded && isActiveJobAlive(reloaded)) {
+        setAdvanceError(null);
+        return;
+      }
+      const reason = error instanceof Error ? error.message : "追问失败";
+      setAdvanceError(reason);
+      setActiveRunTab("current");
+    } finally {
+      setIsAdvancing(false);
+    }
+  }
+
   async function handleRegenerateStep() {
     const targetStep = preview.steps[resolveActiveStepIndex(preview.steps, runDetail)];
     if (!targetStep?.nodeRunId || isAdvancing) {
@@ -834,7 +900,8 @@ export function TaskRunWorkspace({
                     executionSteps={stream.executionSteps}
                     streamStartedAt={stream.streamStartedAt}
                     readOnly={runDetail.readOnly}
-                    onRegenerate={() => void handleRegenerateStep()}
+                    onSaveAnswer={(content) => handleSaveAnswer(content)}
+                    onFollowUp={(followUpMessage) => handleFollowUpStep(followUpMessage)}
                   />
                 ) : activeStep.kind === "multiAgent" ? (
                   <MultiAgentPanel
@@ -1622,16 +1689,33 @@ function nodeDescription(nodeType: string, config: any): string {
 function nodeMessages(node: any): RuntimeChatMessage[] {
   const messages: RuntimeChatMessage[] = [];
   const outputs = node.outputs || {};
-  
+
   if (node.nodeType === "agent" || node.nodeType === "parallel_group") {
-    const content = outputs.final_answer || outputs.agent_response || outputs.summary || "";
-    if (content && node.state !== "failed") {
-      messages.push({
-        id: node.id + "-msg",
-        role: "assistant",
-        author: node.name,
-        content,
+    if (Array.isArray(outputs.chatMessages)) {
+      outputs.chatMessages.forEach((item: any, index: number) => {
+        const role = item?.role === "user" ? "user" : "assistant";
+        const content = stringifyValue(item?.content ?? "");
+        if (!content) {
+          return;
+        }
+        messages.push({
+          id: `${node.id}-chat-${index}`,
+          role,
+          author: role === "user" ? "我" : node.name,
+          content,
+        });
       });
+    }
+    if (messages.length === 0 && node.state !== "failed") {
+      const content = outputs.final_answer || outputs.agent_response || outputs.summary || "";
+      if (content) {
+        messages.push({
+          id: node.id + "-msg",
+          role: "assistant",
+          author: node.name,
+          content,
+        });
+      }
     }
     if (node.state === "failed") {
       const errorMessage = stringifyValue(outputs.errorMessage || outputs.summary || "节点执行失败");

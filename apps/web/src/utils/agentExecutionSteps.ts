@@ -62,9 +62,10 @@ export function readFinalAnswer(step: RuntimePreviewStep, streamingText = ""): s
   if (streamingText.trim()) {
     return streamingText;
   }
-  const fromMessage = step.chatMessages?.find((message) => message.role === "assistant")?.content;
-  if (fromMessage?.trim()) {
-    return fromMessage;
+  const assistantMessages = (step.chatMessages ?? []).filter((message) => message.role === "assistant");
+  const latestAssistant = assistantMessages[assistantMessages.length - 1]?.content;
+  if (latestAssistant?.trim()) {
+    return latestAssistant;
   }
   const outputs = step.outputs ?? [];
   const finalField = outputs.find((field) => field.label === "final_answer" || field.label === "agent_response");

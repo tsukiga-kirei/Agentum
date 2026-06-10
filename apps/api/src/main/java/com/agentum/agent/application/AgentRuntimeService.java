@@ -153,9 +153,11 @@ public class AgentRuntimeService {
         String renderedSystemPrompt = renderTemplate(systemPrompt, request.variables(), request.toolOutputs());
         String renderedUserPrompt = renderTemplate(userPrompt, request.variables(), request.toolOutputs());
 
-        List<ModelChatClient.ChatMessage> messages = new ArrayList<>();
-        messages.add(new ModelChatClient.ChatMessage("system", renderedSystemPrompt));
-        messages.add(new ModelChatClient.ChatMessage("user", renderedUserPrompt));
+        List<ModelChatClient.ChatMessage> messages = buildConversationMessages(
+            config,
+            renderedSystemPrompt,
+            renderedUserPrompt
+        );
 
         Map<String, Object> options = modelOptions(provider, config);
         options.putIfAbsent("parallelToolCalls", false);
@@ -212,7 +214,14 @@ public class AgentRuntimeService {
                 finalAnswer = synthesizeFinalAnswer(request, provider, modelName, messages, options, streamFinalAnswer, eventSink, modelCallLogIds);
             }
             eventSink.onPhase("validating", "正在校验最终输出格式。");
-            Map<String, Object> outputs = buildOutputs(config, modelName, modelCallLogIds, toolCallSummaries, finalAnswer);
+            Map<String, Object> outputs = buildOutputs(
+                config,
+                modelName,
+                modelCallLogIds,
+                toolCallSummaries,
+                finalAnswer,
+                renderedUserPrompt
+            );
             eventSink.onPhase("completed", "智能体已完成最终回答。");
             eventSink.onCompleted(finalAnswer);
             return new AgentRuntimeResult(outputs);
@@ -519,12 +528,66 @@ public class AgentRuntimeService {
         }
     }
 
+    private List<ModelChatClient.ChatMessage> buildConversationMessages(
+        Map<String, Object> config,
+        String renderedSystemPrompt,
+        String renderedUserPrompt
+    ) {
+        List<ModelChatClient.ChatMessage> messages = new ArrayList<>();
+        messages.add(new ModelChatClient.ChatMessage("system", renderedSystemPrompt));
+        List<Map<String, Object>> history = readConversationHistory(config);
+        if (history.isEmpty()) {
+            messages.add(new ModelChatClient.ChatMessage("user", renderedUserPrompt));
+            return messages;
+        }
+        for (Map<String, Object> turn : history) {
+            String role = stringValue(turn.get("role"));
+            String content = stringValue(turn.get("content"));
+            if (("user".equals(role) || "assistant".equals(role)) && !content.isBlank()) {
+                messages.add(new ModelChatClient.ChatMessage(role, content));
+            }
+        }
+        return messages;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> readConversationHistory(Map<String, Object> config) {
+        Object rawHistory = config == null ? null : config.get("conversationHistory");
+        if (!(rawHistory instanceof List<?> history)) {
+            return List.of();
+        }
+        List<Map<String, Object>> normalized = new ArrayList<>();
+        for (Object item : history) {
+            if (item instanceof Map<?, ?> rawMap) {
+                normalized.add(new LinkedHashMap<>((Map<String, Object>) rawMap));
+            }
+        }
+        return normalized;
+    }
+
+    private List<Map<String, Object>> buildChatMessages(
+        Map<String, Object> config,
+        String renderedUserPrompt,
+        String finalAnswer
+    ) {
+        List<Map<String, Object>> messages = new ArrayList<>();
+        List<Map<String, Object>> history = readConversationHistory(config);
+        if (history.isEmpty()) {
+            messages.add(Map.of("role", "user", "content", renderedUserPrompt));
+        } else {
+            messages.addAll(history);
+        }
+        messages.add(Map.of("role", "assistant", "content", finalAnswer));
+        return messages;
+    }
+
     private Map<String, Object> buildOutputs(
         Map<String, Object> config,
         String modelName,
         List<String> modelCallLogIds,
         List<Map<String, Object>> toolCallSummaries,
-        String finalAnswer
+        String finalAnswer,
+        String renderedUserPrompt
     ) {
         Map<String, Object> outputs = new LinkedHashMap<>();
         String outputName = firstNonBlank(stringValue(config.get("output")), stringValue(config.get("outputVariable")), "agent_response");
@@ -535,6 +598,7 @@ public class AgentRuntimeService {
         outputs.put("agentMode", "react");
         outputs.put("toolCalls", toolCallSummaries);
         outputs.put("modelCallLogIds", modelCallLogIds);
+        outputs.put("chatMessages", buildChatMessages(config, renderedUserPrompt, finalAnswer));
         if (!modelCallLogIds.isEmpty()) {
             outputs.put("modelCallLogId", modelCallLogIds.get(modelCallLogIds.size() - 1));
         }

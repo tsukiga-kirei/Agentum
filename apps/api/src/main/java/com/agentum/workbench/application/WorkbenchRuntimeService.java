@@ -649,6 +649,139 @@ public class WorkbenchRuntimeService {
      * 被动「恢复进度」：保留已成功子智能体的落库结果，仅重跑失败/未完成部分，损失最小。
      * 若节点是用户主动中断（canceled），数据已被清空，自动降级为整步重新执行。
      */
+    /**
+     * 单智能体追问：节点已完成且开启「允许追问」时，追加用户消息并基于对话历史续跑。
+     */
+    public WorkbenchApi.RunDetail followUpNode(
+        UUID tenantId,
+        CurrentUserPrincipal principal,
+        UUID runId,
+        UUID nodeRunId,
+        String message
+    ) {
+        ensureActiveTenant(tenantId);
+        ensureAuthenticated(principal);
+        String followUpMessage = message == null ? "" : message.trim();
+        if (followUpMessage.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_FOLLOW_UP_EMPTY", "追问内容不能为空");
+        }
+        WorkflowRunEntity run = requireOwnedRun(tenantId, principal, runId);
+        if ("completed".equals(run.getState())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_RUN_READONLY", "已完成任务只能查看，不能追问");
+        }
+        assertNoExecutionInFlight(runId);
+        WorkflowNodeRunEntity node = workflowNodeRunRepository.findByIdAndRunId(nodeRunId, runId)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_NODE_RUN_NOT_FOUND", "节点运行不存在"));
+        if (!"agent".equals(node.getNodeType())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_FOLLOW_UP_UNSUPPORTED", "当前节点类型不支持追问");
+        }
+        if (!"completed".equals(node.getState())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_FOLLOW_UP_INVALID", "仅已完成的智能体步骤可追问");
+        }
+        if (!isFollowUpAllowed(node.getConfigSnapshot())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_FOLLOW_UP_FORBIDDEN", "流程未开启「允许追问」，无法继续对话");
+        }
+
+        Instant now = clock.instant();
+        cancellationGuard.clearCancel(run.getId());
+        Map<String, Object> nextConfig = new LinkedHashMap<>(node.getConfigSnapshot());
+        List<Map<String, Object>> conversationHistory = readChatMessagesForFollowUp(node.getOutputSnapshot(), nextConfig);
+        conversationHistory.add(Map.of("role", "user", "content", followUpMessage));
+        nextConfig.put("conversationHistory", conversationHistory);
+        node.prepareForFollowUp(nextConfig, now);
+        workflowNodeRunRepository.save(node);
+
+        List<WorkflowNodeRunEntity> nodes = workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(run.getId());
+        int completedBefore = (int) nodes.stream()
+            .filter(other -> other.getSortOrder() < node.getSortOrder() && "completed".equals(other.getState()))
+            .count();
+        run.markRunning(node.getNodeKey(), node.getName(), node.getNodeType(), completedBefore, now);
+        workflowRunRepository.save(run);
+        workflowRunEventRepository.save(WorkflowRunEventEntity.create(
+            run.getId(),
+            run.getTenantId(),
+            "run_node_follow_up",
+            "智能体追问",
+            "已向「" + node.getName() + "」追加追问并继续对话。",
+            node.getNodeKey(),
+            principal.userId(),
+            Map.of("nodeRunId", node.getId().toString()),
+            now
+        ));
+        enqueueExecution(tenantId, runId, node.getId(), node.getNodeType(), principal.userId());
+        log.info(
+            "用户追问智能体 tenantId={} userId={} runId={} nodeRunId={} requestId={}",
+            tenantId, principal.userId(), runId, nodeRunId, RequestIds.current()
+        );
+        return getRunDetail(tenantId, principal, runId);
+    }
+
+    /**
+     * 用户手动修改最终答案：仅更新输出快照与变量，不触发模型重新生成。
+     */
+    public WorkbenchApi.RunDetail updateFinalAnswer(
+        UUID tenantId,
+        CurrentUserPrincipal principal,
+        UUID runId,
+        UUID nodeRunId,
+        String content
+    ) {
+        ensureActiveTenant(tenantId);
+        ensureAuthenticated(principal);
+        String answer = content == null ? "" : content.trim();
+        if (answer.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_FINAL_ANSWER_EMPTY", "最终答案不能为空");
+        }
+        WorkflowRunEntity run = requireOwnedRun(tenantId, principal, runId);
+        if ("completed".equals(run.getState())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_RUN_READONLY", "已完成任务只能查看，不能修改答案");
+        }
+        WorkflowNodeRunEntity node = workflowNodeRunRepository.findByIdAndRunId(nodeRunId, runId)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_NODE_RUN_NOT_FOUND", "节点运行不存在"));
+        if (!"agent".equals(node.getNodeType())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_FINAL_ANSWER_UNSUPPORTED", "当前节点类型不支持修改最终答案");
+        }
+        if (!"completed".equals(node.getState())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_FINAL_ANSWER_INVALID", "仅已完成的智能体步骤可修改最终答案");
+        }
+        if (!isUserEditAllowed(node.getConfigSnapshot())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_FINAL_ANSWER_FORBIDDEN", "流程未开启「允许修改」，无法保存最终答案");
+        }
+
+        Instant now = clock.instant();
+        Map<String, Object> config = node.getConfigSnapshot() == null ? Map.of() : node.getConfigSnapshot();
+        Map<String, Object> outputs = new LinkedHashMap<>(node.getOutputSnapshot() == null ? Map.of() : node.getOutputSnapshot());
+        String outputName = firstNonBlank(
+            stringValue(config.get("output")),
+            stringValue(config.get("outputVariable")),
+            "agent_response"
+        );
+        outputs.put(outputName, answer);
+        outputs.put("final_answer", answer);
+        outputs.put("summary", summarizeAnswer(answer));
+        outputs.put("chatMessages", updateChatMessagesWithAnswer(outputs.get("chatMessages"), answer));
+        node.patchOutputSnapshot(outputs, now);
+        workflowNodeRunRepository.save(node);
+        workflowVariableSnapshotRepository.deleteByRunIdAndNodeRunIdIn(run.getId(), List.of(node.getId()));
+        persistVariableSnapshots(run, node, outputs, now);
+        workflowRunEventRepository.save(WorkflowRunEventEntity.create(
+            run.getId(),
+            run.getTenantId(),
+            "run_node_answer_updated",
+            "修改最终答案",
+            "已保存「" + node.getName() + "」的最终答案。",
+            node.getNodeKey(),
+            principal.userId(),
+            Map.of("nodeRunId", node.getId().toString()),
+            now
+        ));
+        log.info(
+            "用户修改最终答案 tenantId={} userId={} runId={} nodeRunId={} requestId={}",
+            tenantId, principal.userId(), runId, nodeRunId, RequestIds.current()
+        );
+        return getRunDetail(tenantId, principal, runId);
+    }
+
     public WorkbenchApi.RunDetail recoverNode(UUID tenantId, CurrentUserPrincipal principal, UUID runId, UUID nodeRunId) {
         ensureActiveTenant(tenantId);
         ensureAuthenticated(principal);
@@ -832,6 +965,108 @@ public class WorkbenchRuntimeService {
     private static boolean isRecoverableState(String state) {
         // running 允许恢复用于僵死兜底：作业已终态但节点仍停留 running 的极端情况。
         return "failed".equals(state) || "canceled".equals(state) || "pending".equals(state) || "running".equals(state);
+    }
+
+    private static boolean isUserEditAllowed(Map<String, Object> config) {
+        if (config == null || config.isEmpty()) {
+            return false;
+        }
+        Object allowUserEdit = config.get("allowUserEdit");
+        if (Boolean.TRUE.equals(allowUserEdit) || "true".equals(String.valueOf(allowUserEdit))) {
+            return true;
+        }
+        return "追问确认".equals(String.valueOf(config.get("outputMode")));
+    }
+
+    private static boolean isFollowUpAllowed(Map<String, Object> config) {
+        if (config == null || config.isEmpty()) {
+            return false;
+        }
+        Object allowQuestion = config.get("allowQuestion");
+        if (Boolean.TRUE.equals(allowQuestion) || "true".equals(String.valueOf(allowQuestion))) {
+            return true;
+        }
+        return "追问确认".equals(String.valueOf(config.get("outputMode")));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> readChatMessagesForFollowUp(
+        Map<String, Object> outputs,
+        Map<String, Object> config
+    ) {
+        List<Map<String, Object>> history = new ArrayList<>();
+        Object rawMessages = outputs == null ? null : outputs.get("chatMessages");
+        if (rawMessages instanceof List<?> messages) {
+            for (Object item : messages) {
+                if (item instanceof Map<?, ?> rawMap) {
+                    String role = String.valueOf(rawMap.get("role")).trim();
+                    String content = String.valueOf(rawMap.get("content")).trim();
+                    if (("user".equals(role) || "assistant".equals(role)) && !content.isBlank()) {
+                        history.add(Map.of("role", role, "content", content));
+                    }
+                }
+            }
+        }
+        if (!history.isEmpty()) {
+            return history;
+        }
+        String previousAnswer = "";
+        if (outputs != null) {
+            previousAnswer = firstNonBlank(
+                stringValue(outputs.get("final_answer")),
+                stringValue(outputs.get("agent_response")),
+                stringValue(outputs.get("summary"))
+            );
+        }
+        if (!previousAnswer.isBlank()) {
+            String initialUserPrompt = stringValue(config.get("userPrompt"));
+            if (!initialUserPrompt.isBlank()) {
+                history.add(Map.of("role", "user", "content", initialUserPrompt));
+            }
+            history.add(Map.of("role", "assistant", "content", previousAnswer));
+        }
+        return history;
+    }
+
+    private static String stringValue(Object value) {
+        return value == null ? "" : String.valueOf(value).trim();
+    }
+
+    private static String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return "";
+    }
+
+    private static String summarizeAnswer(String answer) {
+        String normalized = answer == null ? "" : answer.replaceAll("\\s+", " ").trim();
+        if (normalized.length() <= 160) {
+            return normalized;
+        }
+        return normalized.substring(0, 157) + "...";
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> updateChatMessagesWithAnswer(Object rawMessages, String answer) {
+        List<Map<String, Object>> messages = new ArrayList<>();
+        if (rawMessages instanceof List<?> history) {
+            for (Object item : history) {
+                if (item instanceof Map<?, ?> rawMap) {
+                    messages.add(new LinkedHashMap<>((Map<String, Object>) rawMap));
+                }
+            }
+        }
+        for (int index = messages.size() - 1; index >= 0; index--) {
+            if ("assistant".equals(String.valueOf(messages.get(index).get("role")))) {
+                messages.get(index).put("content", answer);
+                return messages;
+            }
+        }
+        messages.add(Map.of("role", "assistant", "content", answer));
+        return messages;
     }
 
     @Transactional

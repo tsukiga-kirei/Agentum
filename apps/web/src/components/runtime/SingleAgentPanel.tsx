@@ -6,12 +6,13 @@ import {
   ChevronDown,
   ChevronRight,
   Loader2,
+  MessageSquarePlus,
   PencilLine,
-  Send,
 } from "lucide-react";
-import type { AgentExecutionStep, RuntimePreviewStep } from "../../types/runtime-types";
+import type { AgentExecutionStep, RuntimeChatMessage, RuntimePreviewStep } from "../../types/runtime-types";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { AnswerEditModal } from "./AnswerEditModal";
+import { FollowUpModal } from "./FollowUpModal";
 import {
   buildPersistedExecutionSteps,
   filterUserVisibleSteps,
@@ -28,7 +29,8 @@ interface SingleAgentPanelProps {
   executionSteps: AgentExecutionStep[];
   streamStartedAt: number | null;
   readOnly?: boolean;
-  onRegenerate?: () => void;
+  onSaveAnswer?: (content: string) => void | Promise<void>;
+  onFollowUp?: (followUpMessage: string) => void | Promise<void>;
 }
 
 function formatElapsed(streamStartedAt: number | null, completedAt?: string): string {
@@ -91,6 +93,35 @@ function ExecutionStepRow({
   );
 }
 
+function ConversationMessageRow({ messageItem }: { messageItem: RuntimeChatMessage }) {
+  const isUser = messageItem.role === "user";
+  if (!isUser) {
+    return (
+      <div className="relative w-full">
+        <MarkdownRenderer
+          content={messageItem.content}
+          compact
+          className={messageItem.streaming ? "agent-markdown--streaming" : ""}
+        />
+        {messageItem.streaming ? (
+          <span className="agent-chat-cursor mt-1 inline-block h-4 w-0.5 animate-pulse bg-blue-500 align-middle" aria-hidden="true" />
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex justify-end gap-3">
+      <div className="max-w-[85%] rounded-xl bg-blue-500 px-3 py-2.5 text-white">
+        <p className="whitespace-pre-wrap text-sm leading-relaxed">{messageItem.content}</p>
+      </div>
+      <span className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-100 text-xs font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+        我
+      </span>
+    </div>
+  );
+}
+
 export function SingleAgentPanel({
   activeStep,
   isStreaming,
@@ -98,12 +129,13 @@ export function SingleAgentPanel({
   executionSteps,
   streamStartedAt,
   readOnly = false,
-  onRegenerate,
+  onSaveAnswer,
+  onFollowUp,
 }: SingleAgentPanelProps) {
   const [stepsExpanded, setStepsExpanded] = useState(true);
   const [expandedStepIds, setExpandedStepIds] = useState<Record<string, boolean>>({});
-  const [followUpText, setFollowUpText] = useState("");
   const [editModalOpen, setEditModalOpen] = useState(false);
+  const [followUpModalOpen, setFollowUpModalOpen] = useState(false);
   const [elapsedLabel, setElapsedLabel] = useState("");
 
   const config = (activeStep.configSnapshot ?? {}) as Record<string, unknown>;
@@ -120,8 +152,34 @@ export function SingleAgentPanel({
   const stepSummary = summarizeExecutionSteps(steps);
   const showRunningHero = activeStep.state === "running" || activeStep.state === "pending" || isStreaming;
   const isStreamingAnswer = showRunningHero && hasAnswerContent && isStreaming;
-  const canFollowUp = permissions.allowQuestion && activeStep.allowsFollowUp !== false && activeStep.state === "done" && !readOnly;
+  const canFollowUp = permissions.allowQuestion && activeStep.allowsFollowUp !== false && activeStep.state === "done" && !readOnly && !!onFollowUp;
   const canEditAnswer = permissions.allowUserEdit && activeStep.allowsRegenerate !== false && activeStep.state === "done" && !readOnly;
+
+  const conversationMessages = useMemo(() => {
+    const baseMessages = [...(activeStep.chatMessages ?? [])];
+    if (!streamingText.trim() || activeStep.state === "done") {
+      return baseMessages;
+    }
+    const lastMessage = baseMessages[baseMessages.length - 1];
+    if (lastMessage?.role === "assistant") {
+      return [
+        ...baseMessages.slice(0, -1),
+        { ...lastMessage, content: streamingText, streaming: isStreaming },
+      ];
+    }
+    return [
+      ...baseMessages,
+      {
+        id: "streaming-assistant",
+        role: "assistant" as const,
+        author: activeStep.title,
+        content: streamingText,
+        streaming: isStreaming,
+      },
+    ];
+  }, [activeStep.chatMessages, activeStep.state, activeStep.title, isStreaming, streamingText]);
+
+  const hasConversation = conversationMessages.length > 0;
 
   useEffect(() => {
     if (showRunningHero) {
@@ -145,30 +203,32 @@ export function SingleAgentPanel({
     setExpandedStepIds((prev) => ({ ...prev, [stepId]: !prev[stepId] }));
   }
 
-  function handleFollowUpSubmit() {
-    if (!followUpText.trim()) {
+  async function handleFollowUpSubmit(followUpMessage: string) {
+    if (!followUpMessage.trim()) {
       message.warning("请先输入追问内容");
       return;
     }
-    message.info("追问运行态接口建设中，当前请先通过「重新生成」或联系流程设计者调整提示词。");
+    if (!onFollowUp) {
+      return;
+    }
+    setFollowUpModalOpen(false);
+    await onFollowUp(followUpMessage.trim());
   }
 
-  function handleSaveEditedAnswer(value: string) {
+  async function handleSaveEditedAnswer(value: string) {
     if (!value.trim()) {
       message.warning("修改内容不能为空");
       return;
     }
-    setEditModalOpen(false);
-    if (!onRegenerate) {
+    if (!onSaveAnswer) {
       return;
     }
-    message.success("将基于修改后的内容重新生成");
-    onRegenerate();
+    setEditModalOpen(false);
+    await onSaveAnswer(value.trim());
   }
 
   return (
     <div className="agent-run-panel mx-auto flex max-w-3xl flex-col gap-4">
-      {/* 执行进度条：参考对话式助手，可折叠展示工具调用 */}
       <section className="agent-run-progress-card overflow-hidden rounded-xl border border-emerald-200 bg-emerald-50/60 dark:border-emerald-900/50 dark:bg-emerald-950/20">
         <div className="flex items-center gap-2">
           <button
@@ -191,16 +251,28 @@ export function SingleAgentPanel({
               {stepsExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
             </span>
           </button>
-          {canEditAnswer && hasAnswerContent ? (
-            <button
-              type="button"
-              className="sys-btn sys-btn--default sys-btn--sm mr-3 shrink-0"
-              onClick={() => setEditModalOpen(true)}
-            >
-              <PencilLine size={14} aria-hidden="true" />
-              修改
-            </button>
-          ) : null}
+          <div className="mr-3 flex shrink-0 items-center gap-2">
+            {canFollowUp ? (
+              <button
+                type="button"
+                className="sys-btn sys-btn--default sys-btn--sm"
+                onClick={() => setFollowUpModalOpen(true)}
+              >
+                <MessageSquarePlus size={14} aria-hidden="true" />
+                追问
+              </button>
+            ) : null}
+            {canEditAnswer && hasAnswerContent ? (
+              <button
+                type="button"
+                className="sys-btn sys-btn--default sys-btn--sm"
+                onClick={() => setEditModalOpen(true)}
+              >
+                <PencilLine size={14} aria-hidden="true" />
+                修改
+              </button>
+            ) : null}
+          </div>
         </div>
 
         {showRunningHero ? (
@@ -231,15 +303,20 @@ export function SingleAgentPanel({
         ) : null}
       </section>
 
-      {/* 最终答案主内容区：执行中也要实时渲染 streamingText */}
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-        {!hasAnswerContent && showRunningHero ? (
+        {!hasAnswerContent && !hasConversation && showRunningHero ? (
           <div className="flex items-start gap-3 py-6 text-slate-500 dark:text-slate-400">
             <Bot size={20} className="mt-0.5 shrink-0 text-blue-500" />
             <div>
               <p className="text-sm font-medium text-slate-700 dark:text-slate-200">智能体正在生成答案…</p>
               <p className="mt-1 text-xs">内容将在此处逐字输出。</p>
             </div>
+          </div>
+        ) : hasConversation ? (
+          <div className="space-y-4">
+            {conversationMessages.map((messageItem) => (
+              <ConversationMessageRow key={messageItem.id} messageItem={messageItem} />
+            ))}
           </div>
         ) : hasAnswerContent ? (
           <div className="relative">
@@ -253,41 +330,16 @@ export function SingleAgentPanel({
         )}
       </section>
 
-      {/* 追问：对话式输入框 */}
-      {canFollowUp ? (
-        <section className="agent-run-chat-composer rounded-xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-          <textarea
-            className="w-full resize-none border-0 bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400 dark:text-slate-100"
-            rows={3}
-            placeholder="继续追问智能体…"
-            value={followUpText}
-            onChange={(event) => setFollowUpText(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                handleFollowUpSubmit();
-              }
-            }}
-          />
-          <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-2 dark:border-slate-800">
-            <span className="text-[11px] text-slate-400">Enter 发送，Shift + Enter 换行</span>
-            <button
-              type="button"
-              className="sys-btn sys-btn--primary sys-btn--sm flex items-center gap-1.5"
-              onClick={handleFollowUpSubmit}
-            >
-              <Send size={14} aria-hidden="true" />
-              发送
-            </button>
-          </div>
-        </section>
-      ) : null}
-
       <AnswerEditModal
         open={editModalOpen}
         initialValue={finalAnswer}
         onClose={() => setEditModalOpen(false)}
         onSave={handleSaveEditedAnswer}
+      />
+      <FollowUpModal
+        open={followUpModalOpen}
+        onClose={() => setFollowUpModalOpen(false)}
+        onSubmit={(value) => void handleFollowUpSubmit(value)}
       />
     </div>
   );

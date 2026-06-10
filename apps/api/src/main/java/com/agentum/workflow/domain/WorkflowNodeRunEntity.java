@@ -173,6 +173,21 @@ public class WorkflowNodeRunEntity {
         this.updatedAt = now;
     }
 
+    /**
+     * 追问续聊：保留对话上下文配置，清空本轮输出并重新进入运行态。
+     */
+    public void prepareForFollowUp(Map<String, Object> nextConfigSnapshot, Instant now) {
+        this.configSnapshot = nextConfigSnapshot == null ? new HashMap<>() : new HashMap<>(nextConfigSnapshot);
+        this.outputSnapshot = new HashMap<>();
+        this.state = "running";
+        this.stateLabel = "运行中";
+        this.completedAt = null;
+        if (this.startedAt == null) {
+            this.startedAt = now;
+        }
+        this.updatedAt = now;
+    }
+
     // 回退到指定步骤时，将目标节点及后续节点重置为待执行，清除已写入的输出快照。
     public void resetToPending(Instant now) {
         this.state = "pending";

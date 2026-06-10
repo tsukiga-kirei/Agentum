@@ -135,6 +135,107 @@ class AgentRuntimeServiceTest {
         assertThat(modelChatClient.requests()).hasSize(2);
         assertThat(modelChatClient.requests().get(0).tools()).extracting(ModelChatClient.ToolDefinition::name)
             .contains("skill_credit_read", "final_answer");
+        assertThat(result.outputs().get("chatMessages")).asList().hasSize(2);
+    }
+
+    @Test
+    void shouldContinueConversationFromFollowUpHistory() {
+        TenantModelAssignmentRepository assignmentRepository = mock(TenantModelAssignmentRepository.class);
+        ModelProviderRepository providerRepository = mock(ModelProviderRepository.class);
+        SystemCapabilityRepository capabilityRepository = mock(SystemCapabilityRepository.class);
+        TenantAssetCapabilityRepository assetRepository = mock(TenantAssetCapabilityRepository.class);
+        McpRuntimeService mcpRuntimeService = mock(McpRuntimeService.class);
+        SkillRuntimeService skillRuntimeService = mock(SkillRuntimeService.class);
+        FieldEncryptionService encryptionService = mock(FieldEncryptionService.class);
+        ModelCallLogRepository callLogRepository = mock(ModelCallLogRepository.class);
+        FollowUpFinalAnswerChatClient modelChatClient = new FollowUpFinalAnswerChatClient();
+        AgentRuntimeService service = new AgentRuntimeService(
+            assignmentRepository,
+            providerRepository,
+            capabilityRepository,
+            assetRepository,
+            mcpRuntimeService,
+            skillRuntimeService,
+            encryptionService,
+            callLogRepository,
+            modelChatClient,
+            new ObjectMapper(),
+            Clock.fixed(NOW, ZoneOffset.UTC),
+            mock(RunCancellationGuard.class),
+            new PromptContentResolver(capabilityRepository, assetRepository)
+        );
+
+        ModelProviderEntity provider = ModelProviderEntity.create(
+            "OpenAI 兼容",
+            "openai-compatible",
+            "https://example.test",
+            "gpt-4o-mini",
+            "active",
+            NOW
+        );
+        provider.getSettings().put("maxTokens", 8192);
+        TenantModelAssignmentEntity assignment = TenantModelAssignmentEntity.create(TENANT_ID, provider.getId(), "gpt-4o-mini", "enabled", NOW);
+        WorkflowRunEntity run = WorkflowRunEntity.create(
+            TENANT_ID,
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            1,
+            "授信复核",
+            "授信报告流程",
+            OPERATOR_ID,
+            2,
+            "20260605-TEST",
+            NOW
+        );
+        Map<String, Object> config = new java.util.LinkedHashMap<>(Map.of(
+            "systemPrompt", "你是授信分析智能体",
+            "userPrompt", "请分析 {{company}}",
+            "conversationHistory", List.of(
+                Map.of("role", "user", "content", "请分析云程科技"),
+                Map.of("role", "assistant", "content", "初步结论：可授信。"),
+                Map.of("role", "user", "content", "担保条件有哪些？")
+            )
+        ));
+        WorkflowNodeRunEntity nodeRun = WorkflowNodeRunEntity.pending(
+            run.getId(),
+            TENANT_ID,
+            run.getWorkflowId(),
+            run.getWorkflowVersionId(),
+            "agent_review",
+            "agent",
+            "智能体分析",
+            Map.of(),
+            Map.of(),
+            config,
+            1,
+            NOW
+        );
+
+        when(assignmentRepository.findByTenantIdOrderByCreatedAtDesc(TENANT_ID)).thenReturn(List.of(assignment));
+        when(providerRepository.findById(provider.getId())).thenReturn(Optional.of(provider));
+        when(mcpRuntimeService.resolveMcpTools(any())).thenReturn(List.of());
+        when(skillRuntimeService.resolveSkillTools(TENANT_ID, config)).thenReturn(List.of());
+        when(callLogRepository.save(any(ModelCallLogEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        AgentRuntimeResult result = service.execute(new AgentRuntimeRequest(
+            run,
+            nodeRun,
+            config,
+            Map.of("company", "云程科技"),
+            Map.of(),
+            OPERATOR_ID
+        ));
+
+        assertThat(modelChatClient.requests()).hasSize(1);
+        assertThat(modelChatClient.requests().get(0).messages())
+            .extracting(ModelChatClient.ChatMessage::role)
+            .containsExactly("system", "user", "assistant", "user");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> chatMessages = (List<Map<String, Object>>) result.outputs().get("chatMessages");
+        assertThat(chatMessages)
+            .extracting(message -> message.get("role"))
+            .containsExactly("user", "assistant", "user", "assistant");
+        assertThat(result.outputs().get("final_answer")).asString().contains("担保");
     }
 
     private static final class ScriptedModelChatClient implements ModelChatClient {
@@ -160,6 +261,33 @@ class AgentRuntimeServiceTest {
                 Map.of(),
                 18L,
                 List.of(new ToolCall("call-final", "final_answer", "{\"answer\":\"## 结论\\n可授信，建议补充担保条件。\"}")),
+                "tool_calls"
+            );
+        }
+
+        private List<ChatRequest> requests() {
+            return requests;
+        }
+    }
+
+    /** 追问续聊测试专用：首轮直接提交 final_answer，避免工具循环干扰 messages 断言。 */
+    private static final class FollowUpFinalAnswerChatClient implements ModelChatClient {
+
+        private final java.util.ArrayList<ChatRequest> requests = new java.util.ArrayList<>();
+
+        @Override
+        public ChatResult chat(ChatRequest request) {
+            requests.add(request);
+            return new ChatResult(
+                "",
+                Map.of("finishReason", "tool_calls"),
+                Map.of(),
+                12L,
+                List.of(new ToolCall(
+                    "call-final",
+                    "final_answer",
+                    "{\"answer\":\"## 结论\\n可授信，建议补充担保条件。\"}"
+                )),
                 "tool_calls"
             );
         }

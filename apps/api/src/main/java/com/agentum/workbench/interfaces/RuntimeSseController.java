@@ -16,6 +16,7 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -138,6 +139,40 @@ public class RuntimeSseController {
         workbenchAccess.assertCanAccessWorkbench(principal, tenantId);
         return ApiResponse.success(
             workbenchRuntimeService.recoverNode(tenantId, principal, runId, nodeRunId),
+            RequestIds.current(request)
+        );
+    }
+
+    /** 保存用户修改后的最终答案，不重新调用模型。 */
+    @PostMapping("/runs/{runId}/nodes/{nodeRunId}/final-answer")
+    public ApiResponse<WorkbenchApi.RunDetail> updateFinalAnswer(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID runId,
+        @PathVariable UUID nodeRunId,
+        @RequestBody @jakarta.validation.Valid WorkbenchApi.UpdateFinalAnswerRequest body,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        workbenchAccess.assertCanAccessWorkbench(principal, tenantId);
+        return ApiResponse.success(
+            workbenchRuntimeService.updateFinalAnswer(tenantId, principal, runId, nodeRunId, body.content()),
+            RequestIds.current(request)
+        );
+    }
+
+    /** 单智能体追问：在已完成节点上追加用户消息并续跑对话。 */
+    @PostMapping("/runs/{runId}/nodes/{nodeRunId}/follow-up")
+    public ApiResponse<WorkbenchApi.RunDetail> followUp(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID runId,
+        @PathVariable UUID nodeRunId,
+        @RequestBody @jakarta.validation.Valid WorkbenchApi.FollowUpNodeRequest body,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        workbenchAccess.assertCanAccessWorkbench(principal, tenantId);
+        return ApiResponse.success(
+            workbenchRuntimeService.followUpNode(tenantId, principal, runId, nodeRunId, body.message()),
             RequestIds.current(request)
         );
     }

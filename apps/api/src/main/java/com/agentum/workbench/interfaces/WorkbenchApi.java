@@ -188,6 +188,16 @@ public final class WorkbenchApi {
     ) {
     }
 
+    public record FollowUpNodeRequest(
+        @jakarta.validation.constraints.NotBlank String message
+    ) {
+    }
+
+    public record UpdateFinalAnswerRequest(
+        @jakarta.validation.constraints.NotBlank String content
+    ) {
+    }
+
     public record NodeRunRow(
         UUID id,
         String nodeId,

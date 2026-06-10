@@ -3941,6 +3941,14 @@ textarea:focus-visible {
   min-height: 72px;
 }
 
+.agent-follow-up-modal {
+  width: min(640px, calc(100vw - 48px));
+}
+
+.agent-follow-up-textarea {
+  min-height: 180px;
+}
+
 .agent-answer-edit-modal {
   width: min(1180px, calc(100vw - 48px));
   max-height: 92vh;

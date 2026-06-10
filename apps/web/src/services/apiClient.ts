@@ -434,6 +434,18 @@ export const workbenchApi = {
       method: "POST",
       token,
     }),
+  followUpNode: (tenantId: string, token: string, runId: string, nodeRunId: string, message: string) =>
+    apiRequest<WorkbenchRunDetail>(`/api/tenants/${tenantId}/workbench/runs/${runId}/nodes/${nodeRunId}/follow-up`, {
+      method: "POST",
+      token,
+      body: { message },
+    }),
+  updateFinalAnswer: (tenantId: string, token: string, runId: string, nodeRunId: string, content: string) =>
+    apiRequest<WorkbenchRunDetail>(`/api/tenants/${tenantId}/workbench/runs/${runId}/nodes/${nodeRunId}/final-answer`, {
+      method: "POST",
+      token,
+      body: { content },
+    }),
   completeTodoWithPayload: (tenantId: string, token: string, todoId: string, payload: Record<string, unknown>) =>
     apiRequest<WorkbenchRunDetail>(`/api/tenants/${tenantId}/workbench/todos/${todoId}/complete`, {
       method: "POST",

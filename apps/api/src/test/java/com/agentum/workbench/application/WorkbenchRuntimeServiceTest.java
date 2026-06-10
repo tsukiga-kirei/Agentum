@@ -49,6 +49,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -339,6 +340,67 @@ class WorkbenchRuntimeServiceTest {
         verify(clusterAgentRunRepository, never()).deleteByNodeRunId(any());
         verify(commandPublisher).publish(any(NodeExecuteCommand.class));
         assertThat(node.getState()).isEqualTo("running");
+    }
+
+    @Test
+    void shouldAppendFollowUpMessageToConversationHistory() {
+        WorkbenchRuntimeService service = newService();
+        WorkflowRunEntity run = ownedRun(2);
+        run.markRunning("agent_review", "智能体分析", "agent", 0, NOW);
+        Map<String, Object> agentConfig = new LinkedHashMap<>(Map.of(
+            "allowQuestion", true,
+            "userPrompt", "Spring Boot 自动装配原理是什么？"
+        ));
+        WorkflowNodeRunEntity agentNode = WorkflowNodeRunEntity.pending(
+            run.getId(),
+            TENANT_ID,
+            run.getWorkflowId(),
+            run.getWorkflowVersionId(),
+            "agent_review",
+            "agent",
+            "智能体分析",
+            Map.of(),
+            Map.of(),
+            agentConfig,
+            1,
+            NOW
+        );
+        agentNode.complete(Map.of(
+            "final_answer", "Spring Boot 通过 @EnableAutoConfiguration...",
+            "chatMessages", List.of(
+                Map.of("role", "user", "content", "Spring Boot 自动装配原理是什么？"),
+                Map.of("role", "assistant", "content", "Spring Boot 通过 @EnableAutoConfiguration...")
+            )
+        ), NOW);
+        WorkflowNodeRunEntity deliveryNode = nodeAt(run, "delivery_report", "delivery", "交付结果", 2, NOW);
+
+        stubTenant();
+        when(workflowRunRepository.findByIdAndTenantId(run.getId(), TENANT_ID)).thenReturn(Optional.of(run));
+        when(workflowNodeRunRepository.findByIdAndRunId(agentNode.getId(), run.getId())).thenReturn(Optional.of(agentNode));
+        when(workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(run.getId()))
+            .thenReturn(List.of(agentNode, deliveryNode));
+        when(jobRepository.findByRunIdAndStatusIn(eq(run.getId()), any())).thenReturn(List.of());
+        when(jobRepository.findFirstByNodeRunIdOrderByAttemptDesc(agentNode.getId())).thenReturn(Optional.empty());
+
+        service.followUpNode(
+            TENANT_ID,
+            businessPrincipal(),
+            run.getId(),
+            agentNode.getId(),
+            "那它和 Spring IOC 有什么关系？"
+        );
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> history = (List<Map<String, Object>>) agentNode.getConfigSnapshot().get("conversationHistory");
+        assertThat(history).hasSize(3);
+        assertThat(history)
+            .extracting(message -> message.get("role"))
+            .containsExactly("user", "assistant", "user");
+        assertThat(history.get(2).get("content")).isEqualTo("那它和 Spring IOC 有什么关系？");
+        assertThat(agentNode.getState()).isEqualTo("running");
+        assertThat(agentNode.getOutputSnapshot()).isEmpty();
+        verify(cancellationGuard).clearCancel(run.getId());
+        verify(commandPublisher).publish(any(NodeExecuteCommand.class));
     }
 
     @Test
