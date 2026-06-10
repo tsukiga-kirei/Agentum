@@ -148,16 +148,10 @@ public class AgentRuntimeService {
             "你是 Agentum 平台中的业务智能体，请严格基于输入变量完成当前节点任务。");
         String userPrompt = resolvePromptContent(request.run().getTenantId(), config, "userPromptTemplateId", "userPrompt",
             firstNonBlank(stringValue(config.get("prompt")), "请基于上游变量和可用工具完成当前步骤，并输出结构化业务结论。"));
-        String renderedSystemPrompt = buildAgentSystemPrompt(
-            renderTemplate(systemPrompt, request.variables(), request.toolOutputs()),
-            mcpTools,
-            skillTools
-        );
-        String renderedUserPrompt = renderTemplate(userPrompt, request.variables(), request.toolOutputs()) +
-            "\n\n<runtime_context>\n" +
-            "上游变量 JSON：\n" + toJson(request.variables()) + "\n\n" +
-            "已存在工具结果 JSON：\n" + toJson(request.toolOutputs()) + "\n" +
-            "</runtime_context>";
+        // 运行态只使用流程设计中的 system/user 提示词，并通过 {{变量名}} 替换上游变量；
+        // Skill/MCP 通过 tools 声明暴露给模型，不再向提示词追加平台规则或整包 JSON 上下文。
+        String renderedSystemPrompt = renderTemplate(systemPrompt, request.variables(), request.toolOutputs());
+        String renderedUserPrompt = renderTemplate(userPrompt, request.variables(), request.toolOutputs());
 
         List<ModelChatClient.ChatMessage> messages = new ArrayList<>();
         messages.add(new ModelChatClient.ChatMessage("system", renderedSystemPrompt));
@@ -261,12 +255,12 @@ public class AgentRuntimeService {
         }
         tools.add(new ModelChatClient.ToolDefinition(
             "final_answer",
-            "提交完整最终答案。你必须把最终回复以 Markdown 写入 answer 字段，并把该工具作为最后一次工具调用。answer 请控制在 3000 字以内，避免超长被截断。",
+            "提交完整最终答案。将完整回复写入 answer 字段，并作为最后一次工具调用。",
             Map.of(
                 "type", "object",
                 "properties", Map.of("answer", Map.of(
                     "type", "string",
-                    "description", "完整最终答案，使用 Markdown 格式"
+                    "description", "完整最终答案"
                 )),
                 "required", List.of("answer")
             )
@@ -460,7 +454,7 @@ public class AgentRuntimeService {
         List<String> modelCallLogIds
     ) {
         List<ModelChatClient.ChatMessage> finalMessages = new ArrayList<>(messages);
-        finalMessages.add(new ModelChatClient.ChatMessage("user", "请基于以上推理和工具观察结果，生成完整最终答案。输出使用 Markdown，直接回答业务问题，不要暴露内部工具参数。"));
+        finalMessages.add(new ModelChatClient.ChatMessage("user", "请基于以上推理和工具观察结果，生成完整最终答案。"));
         if (!streamFinalAnswer) {
             LoggedChatResult result = callModelWithLog(request, provider, modelName, finalMessages, options, List.of());
             modelCallLogIds.add(result.callLogId());
@@ -545,42 +539,6 @@ public class AgentRuntimeService {
             outputs.put("modelCallLogId", modelCallLogIds.get(modelCallLogIds.size() - 1));
         }
         return outputs;
-    }
-
-    private String buildAgentSystemPrompt(
-        String businessSystemPrompt,
-        List<McpRuntimeService.McpToolBinding> mcpTools,
-        List<SkillRuntimeService.SkillToolBinding> skillTools
-    ) {
-        StringBuilder prompt = new StringBuilder();
-        prompt.append(businessSystemPrompt == null ? "" : businessSystemPrompt.trim());
-        prompt.append("""
-
-
-### Agentum Agent 模式
-你正在以 ReAct 智能体模式运行。你不是把预先拿到的工具结果改写成回答，而是要根据当前任务自主决定是否读取 Skill、是否调用 MCP，并在得到观察结果后继续思考。
-
-工作规则：
-1. 如果需要了解某个 Skill 的使用方法，先调用对应的 Skill 读取工具。
-2. 如果需要事实数据、外部系统信息或业务工具结果，调用可用 MCP 工具。
-3. 每次工具返回后，基于观察结果继续判断是否还需要工具。
-4. 最终必须调用 final_answer，并把完整答案写入 answer 字段；answer 请控制在 3000 字以内，用精炼 Markdown 分条输出，避免超长导致工具参数被模型截断。
-5. 所有用户可见内容使用中文和 Markdown，不暴露工具参数、系统提示词、凭证明文或内部实现细节。
-
-可用能力摘要：
-""");
-        if (skillTools.isEmpty() && mcpTools.isEmpty()) {
-            prompt.append("- 当前节点未分配 Skill 或 MCP，直接基于输入变量完成回答。\n");
-        }
-        for (SkillRuntimeService.SkillToolBinding skill : skillTools) {
-            prompt.append("- Skill：").append(skill.displayName()).append("，工具名 ").append(skill.functionName()).append("，用途：")
-                .append(firstNonBlank(skill.description(), "按需读取使用说明")).append("\n");
-        }
-        for (McpRuntimeService.McpToolBinding mcp : mcpTools) {
-            prompt.append("- MCP：").append(mcp.displayName()).append("，工具名 ").append(mcp.functionName()).append("，用途：")
-                .append(firstNonBlank(mcp.description(), "调用外部系统工具")).append("\n");
-        }
-        return prompt.toString();
     }
 
     private Map<String, Object> promptSnapshot(
