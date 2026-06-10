@@ -4864,8 +4864,10 @@ components:
           type: boolean
         nodeCount:
           type: integer
+          description: 业务积木数量，不含系统触发节点。
         edgeCount:
           type: integer
+          description: 设计态连线总数。
         issues:
           type: array
           items:

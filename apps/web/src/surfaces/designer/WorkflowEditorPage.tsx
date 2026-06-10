@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Select, message } from "antd";
+import { App, Select } from "antd";
 import {
   AlertTriangle,
   ArrowDown,
@@ -10,6 +10,7 @@ import {
   BrainCircuit,
   ChevronDown,
   ChevronLeft,
+  CheckCircle2,
   Clock3,
   FileText,
   Hash,
@@ -197,7 +198,9 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
   const [nodeSearchValue, setNodeSearchValue] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [messageApi, messageContextHolder] = message.useMessage();
+  const [saveSucceeded, setSaveSucceeded] = useState(false);
+  const saveSucceededTimerRef = useRef<number | null>(null);
+  const { message: messageApi } = App.useApp();
   const [designerCatalog, setDesignerCatalog] = useState<WorkflowDesignerCatalog | null>(null);
   const [capabilityOptions, setCapabilityOptions] = useState<WorkflowCapabilityOption[]>([]);
   const [capabilitiesLoading, setCapabilitiesLoading] = useState(false);
@@ -206,6 +209,12 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
   const [isAddBrickModalOpen, setIsAddBrickModalOpen] = useState(false);
   // 防止双击保存按钮导致并发 API 调用；useState 在同一渲染帧内可能未及时更新，需要额外的 ref 锁。
   const saveLockRef = useRef(false);
+
+  useEffect(() => () => {
+    if (saveSucceededTimerRef.current !== null) {
+      window.clearTimeout(saveSucceededTimerRef.current);
+    }
+  }, []);
 
   useEffect(() => {
     if (!token || !user?.tenantId) {
@@ -366,6 +375,14 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
       applyPersistedDetail(detail, designerCatalog, setNodes, setEdges, setSelectedNodeId);
       setDeclaredVariables(toWorkflowVariables(detail.variables, detail.nodes.map(toEditorNode)));
       messageApi.success("流程设计已保存");
+      setSaveSucceeded(true);
+      if (saveSucceededTimerRef.current !== null) {
+        window.clearTimeout(saveSucceededTimerRef.current);
+      }
+      saveSucceededTimerRef.current = window.setTimeout(() => {
+        setSaveSucceeded(false);
+        saveSucceededTimerRef.current = null;
+      }, 2500);
       onDraftSaved(detail.draft);
     } catch (error) {
       console.warn("[workflow] 工作流草稿保存失败", getWorkflowEditorErrorContext(error, user.tenantId, workflow.id));
@@ -498,7 +515,6 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
 
   return (
     <div className="flex h-screen flex-col bg-[var(--color-bg-layout)]">
-      {messageContextHolder}
       <div className="workflow-editor-toolbar flex flex-wrap items-center gap-3 border-b border-[var(--color-border-light)] px-4 py-2">
         <button type="button" onClick={onBack} className="agent-button h-7 px-2 text-xs">
           <ChevronLeft className="h-3.5 w-3.5" aria-hidden="true" />
@@ -524,9 +540,18 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
             placeholder="搜索积木"
           />
         </label>
-        <button type="button" onClick={() => void handleSaveWorkflow()} disabled={saving} className="agent-button agent-button-primary h-8 px-3 text-xs">
-          <Save className="h-3.5 w-3.5" aria-hidden="true" />
-          {saving ? "保存中" : "保存流程"}
+        <button
+          type="button"
+          onClick={() => void handleSaveWorkflow()}
+          disabled={saving}
+          className="agent-button agent-button-primary h-8 px-3 text-xs"
+        >
+          {saveSucceeded && !saving ? (
+            <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+          ) : (
+            <Save className="h-3.5 w-3.5" aria-hidden="true" />
+          )}
+          {saving ? "保存中" : saveSucceeded ? "已保存" : "保存流程"}
         </button>
         <WorkbenchGlobalActions />
       </div>

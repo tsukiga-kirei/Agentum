@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
-import { message } from "antd";
+import { App } from "antd";
 import { WorkflowEditorPage } from "../surfaces/designer/WorkflowEditorPage";
 import type { WorkflowDraft } from "../surfaces/designer/WorkflowDraftsPage";
 import { AgentumApiError, workflowApi } from "../services/apiClient";
@@ -15,7 +15,7 @@ export function WorkflowEditorRoute() {
   const tenantId = useAuthStore((state) => state.user?.tenantId ?? "");
   const [workflow, setWorkflow] = useState<WorkflowDraft | null>(null);
   const [loading, setLoading] = useState(true);
-  const [messageApi, messageContextHolder] = message.useMessage();
+  const { message: messageApi } = App.useApp();
 
   useEffect(() => {
     if (!workflowId || !token || !tenantId) {
@@ -55,19 +55,17 @@ export function WorkflowEditorRoute() {
   if (loading) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
-        {messageContextHolder}
         <Loader2 className="h-8 w-8 animate-spin text-[var(--color-primary)]" aria-hidden="true" />
       </div>
     );
   }
 
   if (!workflow) {
-    return messageContextHolder;
+    return null;
   }
 
   return (
     <>
-      {messageContextHolder}
       <WorkflowEditorPage
         workflow={workflow}
         onBack={() => navigate(paths.designer.mine)}

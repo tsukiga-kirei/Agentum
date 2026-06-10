@@ -866,7 +866,7 @@ export function WorkflowDraftsPage() {
               <div className={`workflow-validation-summary ${validationModal.result.valid ? "workflow-validation-summary--success" : "workflow-validation-summary--warning"}`}>
                 <p>{validationModal.result.valid ? "当前草稿已通过发布校验" : "当前草稿还不能进入发布流程"}</p>
                 <span>
-                  节点 {validationModal.result.nodeCount} 个，连线 {validationModal.result.edgeCount} 条，
+                  积木 {validationModal.result.nodeCount} 个，连线 {validationModal.result.edgeCount} 条，
                   {validationModal.result.issues.length === 0 ? "未发现阻塞项。" : `发现 ${validationModal.result.issues.length} 个阻塞项。`}
                 </span>
               </div>

@@ -69,9 +69,14 @@ public class WorkflowPublishValidator {
 
         validateVariables(nodesById, incoming, issues);
 
+        // 对外展示的节点数排除系统触发节点，与流程设计器「积木」计数和草稿列表 nodeCount 口径一致。
+        int brickCount = (int) nodes.stream()
+            .filter(node -> !"trigger".equals(node.nodeType()))
+            .count();
+
         return new WorkflowDraftApi.WorkflowPublishValidationResult(
             issues.stream().noneMatch(issue -> ERROR_LEVEL.equals(issue.level())),
-            nodes.size(),
+            brickCount,
             edges.size(),
             List.copyOf(issues)
         );

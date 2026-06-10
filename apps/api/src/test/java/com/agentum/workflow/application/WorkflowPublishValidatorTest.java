@@ -27,6 +27,8 @@ class WorkflowPublishValidatorTest {
 
         assertThat(result.valid()).isTrue();
         assertThat(result.issues()).isEmpty();
+        assertThat(result.nodeCount()).isEqualTo(2);
+        assertThat(result.edgeCount()).isEqualTo(2);
     }
 
     @Test
