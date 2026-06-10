@@ -1368,7 +1368,6 @@ export function SystemManagementPage() {
           {tenantActiveTab === "capabilities" && (
             <div className="sys-drawer-section sys-drawer-section-enter">
               <div className="sys-section-header"><Boxes size={18}/> 全局能力配置</div>
-              <div className="sys-hint"><Info size={14}/> 这里配置该租户可用能力池；租户管理员后续再按用户、部门和租户自定义角色分配到具体人员范围。</div>
               {configCapabilities.length === 0 ? <Empty description="暂无可配置能力" /> : (
                 <div className="sys-config-group">
                   {configCapabilities.map((cap) => {
@@ -1398,7 +1397,7 @@ export function SystemManagementPage() {
           {tenantActiveTab === "members" && (
             <div className="sys-drawer-section sys-drawer-section-enter">
               <div className="sys-section-header"><Users size={18}/> 租户管理员</div>
-              <div className="sys-hint"><Info size={14}/> 租户管理员身份由系统管理维护；每个租户必须至少保留一名启用的租户管理员。普通成员、部门和业务角色仍由租户管理维护。</div>
+
               <Spin spinning={tenantOrganizationLoading}>
                 {tenantOrganizationError ? (
                   <div className="rounded-[var(--radius-md)] border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-100">
@@ -1450,7 +1449,7 @@ export function SystemManagementPage() {
           {tenantActiveTab === "models" && (
             <div className="sys-drawer-section sys-drawer-section-enter">
               <div className="sys-section-header"><DatabaseZap size={18}/> 模型分配</div>
-              <div className="sys-hint"><Info size={14}/> 这里把平台级模型供应商分配给单个租户；默认模型可先沿用供应商配置，后续再扩展额度、成本和备用路由。</div>
+
               {modelProviders.length === 0 ? <Empty description="暂无可分配模型供应商" /> : (
                 <div className="sys-config-group">
                   {modelProviders.map((provider) => {
@@ -1510,9 +1509,7 @@ export function SystemManagementPage() {
 
           {/* 抽屉底部操作栏 */}
           <div className="sys-drawer-footer">
-            <div className="sys-drawer-footer-right">
-              <button className="sys-btn sys-btn--default" onClick={()=>setTenantDrawerOpen(false)}><X size={14}/> 关闭</button>
-            </div>
+            <button className="sys-btn sys-btn--default" onClick={()=>setTenantDrawerOpen(false)}><X size={14}/> 关闭</button>
           </div>
         </>)}
       </Drawer>
@@ -1572,9 +1569,13 @@ export function SystemManagementPage() {
         <div className="sys-drawer-section sys-drawer-section-enter" key={modelFormKey}>
           <div className="sys-field"><label className="sys-field-label sys-field-label--required">名称</label><div className="sys-field-input-wrap"><Tag size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如：通义千问" maxLength={160} defaultValue={modelRef.current.name || ""} onChange={e=>{modelRef.current.name=e.target.value;}}/></div></div>
           <div className="sys-field"><label className="sys-field-label sys-field-label--required">模型供应商</label><SysSelect icon={ServerCog} placeholder="请选择模型供应商" defaultValue={modelRef.current.providerType || ""} options={modelProviderTypes.map((type)=>({value:type.code,label:type.name}))} onChange={v=>{modelRef.current.providerType=v;setSelectedModelProviderType(v);}}/></div>
-          {selectedModelProviderType && (
-            <div className="sys-hint"><ServerCog size={14}/> {modelProviderTypes.find((type)=>type.code===selectedModelProviderType)?.description || "平台内置模型供应商类型"}</div>
-          )}
+          {selectedModelProviderType && (() => {
+            const desc = modelProviderTypes.find((type) => type.code === selectedModelProviderType)?.description;
+            if (!desc || desc.includes("兼容 OpenAI Chat Completions")) return null;
+            return (
+              <div className="sys-hint"><ServerCog size={14}/> {desc}</div>
+            );
+          })()}
           <div className="sys-field"><label className="sys-field-label">基址 URL</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder={modelProviderTypes.find((type)=>type.code===selectedModelProviderType)?.defaultBaseUrl || "https://api.example.com/v1"} maxLength={500} defaultValue={modelRef.current.baseUrl || ""} onChange={e=>{modelRef.current.baseUrl=e.target.value;}}/></div><div className="sys-field-hint">不填写时沿用供应商类型的默认基址</div></div>
           <div className="sys-field"><label className="sys-field-label sys-field-label--required">默认模型</label><div className="sys-field-input-wrap"><DatabaseZap size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如 qwen-max" maxLength={160} defaultValue={modelRef.current.defaultModel || ""} onChange={e=>{modelRef.current.defaultModel=e.target.value;}}/></div></div>
           <div className="sys-field"><label className="sys-field-label sys-field-label--required">最大输出 Token</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={256} max={131072} step={256} placeholder="例如 8192" defaultValue={modelRef.current.maxTokens || ""} onChange={e=>{modelRef.current.maxTokens=e.target.value;}}/></div><div className="sys-field-hint">控制单次模型回复上限；长报告建议 8192 或以上，不再由后端写死默认值。</div></div>
@@ -1591,9 +1592,9 @@ export function SystemManagementPage() {
           ) : null}
         </div>
         <div className="sys-drawer-footer">
+          <button className="sys-btn sys-btn--default" onClick={()=>{setModelModalOpen(false);setEditingModelProvider(null);}}><X size={14}/> 取消</button>
           <div className="sys-drawer-footer-right">
             <button className="sys-btn sys-btn--default" onClick={()=>void testModelProviderConnection()}><PlayCircle size={14}/> 测试连接</button>
-            <button className="sys-btn sys-btn--default" onClick={()=>{setModelModalOpen(false);setEditingModelProvider(null);}}><X size={14}/> 取消</button>
             <button className="sys-btn sys-btn--primary" onClick={()=>void submitModel()}><PlusCircle size={14}/> {editingModelProvider ? "保存修改" : "确认注册"}</button>
           </div>
         </div>
@@ -1687,11 +1688,11 @@ export function SystemManagementPage() {
           )}
         </div>
         <div className="sys-drawer-footer">
+          <button className="sys-btn sys-btn--default" onClick={()=>{setCapModalOpen(false);setEditingCapability(null);}}><X size={14}/> 取消</button>
           <div className="sys-drawer-footer-right">
             {editingCapability && capabilitySupportsConnectivityTest(editingCapability.capabilityType) ? (
               <button className="sys-btn sys-btn--default" onClick={()=>void testCapabilityConnection(editingCapability.id)}><PlayCircle size={14}/> 测试连通性</button>
             ) : null}
-            <button className="sys-btn sys-btn--default" onClick={()=>{setCapModalOpen(false);setEditingCapability(null);}}><X size={14}/> 取消</button>
             <button className="sys-btn sys-btn--primary" onClick={()=>void submitCapability()}><PlusCircle size={14}/> {editingCapability ? "保存修改" : "确认注册"}</button>
           </div>
         </div>

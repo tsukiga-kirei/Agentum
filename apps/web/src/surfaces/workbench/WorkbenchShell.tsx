@@ -30,6 +30,7 @@ import {
   UserRoundCheck,
   UsersRound,
   Wrench,
+  X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Drawer, Empty, Pagination, Segmented, Select, message } from "antd";
@@ -1235,55 +1236,60 @@ function WorkflowLaunchDrawer({
       rootClassName={rootClassName}
     >
       <div className="workbench-launch-drawer sys-drawer-section-enter">
-        <section className="workbench-launch-drawer-hero">
-          <span className="workflow-launch-card-icon">
-            <PlayCircle size={18} aria-hidden="true" />
-          </span>
-          <div>
-            <h2>{workflow.name}</h2>
-            <p>v{workflow.latestVersionNumber} · {workflow.nodeCount} 个节点 · 发布于 {publishedLabel}</p>
-          </div>
-        </section>
-
-        <section className="workbench-launch-drawer-section">
-          <h3>流程说明</h3>
-          <p>{workflow.description?.trim() ? workflow.description : "尚未填写流程说明，发起前请联系流程负责人或在流程设计中补充。"}</p>
-        </section>
-
-        <section className="workbench-launch-drawer-section">
-          <h3>流程节点</h3>
-          <p className="workbench-launch-drawer-section-lead">基于 v{workflow.latestVersionNumber} 发布快照，发起任务后将按以下步骤依次执行。</p>
-          {previewLoading ? (
-            <div className="workflow-drawer-loading">
-              <Loader2 size={16} className="animate-spin" aria-hidden="true" />
-              正在读取流程节点
+        <div className="workbench-launch-drawer-content">
+          <section className="workbench-launch-drawer-hero">
+            <span className="workflow-launch-card-icon">
+              <PlayCircle size={18} aria-hidden="true" />
+            </span>
+            <div>
+              <h2>{workflow.name}</h2>
+              <p>v{workflow.latestVersionNumber} · {workflow.nodeCount} 个节点 · 发布于 {publishedLabel}</p>
             </div>
-          ) : previewError ? (
-            <p className="agent-muted text-sm leading-6">{previewError}</p>
-          ) : previewNodes.length === 0 ? (
-            <p className="agent-muted text-sm leading-6">当前发布版本还没有可展示的业务节点。</p>
-          ) : (
-            <div className="workflow-drawer-step-list">
-              {previewNodes.map((node, index) => (
-                <LaunchPreviewStep key={node.nodeId} node={node} index={index} />
-              ))}
-            </div>
-          )}
-        </section>
+          </section>
 
-        <section className="workbench-launch-drawer-section">
-          <h3>权限状态</h3>
-          <p>{workflow.canLaunch ? "当前账号可以基于该发布版本创建任务，创建后会生成运行实例、节点链路和首个待办。" : workflow.launchBlockedReason || "当前账号没有该流程的读取或发起权限。"}</p>
-        </section>
+          <section className="workbench-launch-drawer-section">
+            <h3>流程说明</h3>
+            <p>{workflow.description?.trim() ? workflow.description : "尚未填写流程说明，发起前请联系流程负责人或在流程设计中补充。"}</p>
+          </section>
+
+          <section className="workbench-launch-drawer-section">
+            <h3>流程节点</h3>
+            <p className="workbench-launch-drawer-section-lead">基于 v{workflow.latestVersionNumber} 发布快照，发起任务后将按以下步骤依次执行。</p>
+            {previewLoading ? (
+              <div className="workflow-drawer-loading">
+                <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+                正在读取流程节点
+              </div>
+            ) : previewError ? (
+              <p className="agent-muted text-sm leading-6">{previewError}</p>
+            ) : previewNodes.length === 0 ? (
+              <p className="agent-muted text-sm leading-6">当前发布版本还没有可展示的业务节点。</p>
+            ) : (
+              <div className="workflow-drawer-step-list">
+                {previewNodes.map((node, index) => (
+                  <LaunchPreviewStep key={node.nodeId} node={node} index={index} />
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="workbench-launch-drawer-section">
+            <h3>权限状态</h3>
+            <p>{workflow.canLaunch ? "当前账号可以基于该发布版本创建任务，创建后会生成运行实例、节点链路和首个待办。" : workflow.launchBlockedReason || "当前账号没有该流程的读取或发起权限。"}</p>
+          </section>
+        </div>
 
         <div className="workbench-launch-drawer-footer">
           <button type="button" className="sys-btn sys-btn--default" onClick={onClose}>
+            <X size={14} />
             取消
           </button>
-          <button type="button" className="sys-btn sys-btn--primary" onClick={() => onLaunch(workflow)} disabled={!workflow.canLaunch || launching}>
-            {launching ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <PlayCircle size={16} aria-hidden="true" />}
-            {workflow.canLaunch ? "发起任务" : "无权限发起"}
-          </button>
+          <div className="sys-drawer-footer-right">
+            <button type="button" className="sys-btn sys-btn--primary" onClick={() => onLaunch(workflow)} disabled={!workflow.canLaunch || launching}>
+              {launching ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <PlayCircle size={16} aria-hidden="true" />}
+              {workflow.canLaunch ? "发起任务" : "无权限发起"}
+            </button>
+          </div>
         </div>
       </div>
     </Drawer>

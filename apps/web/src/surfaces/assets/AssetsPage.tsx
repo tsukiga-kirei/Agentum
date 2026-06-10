@@ -827,11 +827,11 @@ export function AssetsPage() {
           ) : null}
         </div>
         <div className="sys-drawer-footer">
+          <button type="button" className="sys-btn sys-btn--default" onClick={() => setCreateOpen(false)}>
+            <X size={14} />
+            取消
+          </button>
           <div className="sys-drawer-footer-right">
-            <button type="button" className="sys-btn sys-btn--default" onClick={() => setCreateOpen(false)}>
-              <X size={14} />
-              取消
-            </button>
             <button type="button" className="sys-btn sys-btn--primary" disabled={submitting} onClick={() => void handleCreate()}>
               <PlusCircle size={14} />
               创建草稿
@@ -954,17 +954,17 @@ export function AssetsPage() {
             <div className="sys-drawer-footer">
               {currentAsset.status === "draft" && currentAsset.accessLevel !== "read" ? (
                 <>
+                  <button type="button" className="sys-btn sys-btn--default" onClick={() => setEditOpen(false)}>
+                    <X size={14} />
+                    取消
+                  </button>
                   {currentAsset.canManageAccess ? (
-                    <button type="button" className="sys-btn sys-btn--danger" style={{ marginRight: "auto" }} disabled={submitting} onClick={() => confirmDelete(currentAsset)}>
+                    <button type="button" className="sys-btn sys-btn--danger" style={{ marginLeft: 8 }} disabled={submitting} onClick={() => confirmDelete(currentAsset)}>
                       <Trash2 size={14} />
                       删除
                     </button>
                   ) : null}
                   <div className="sys-drawer-footer-right">
-                    <button type="button" className="sys-btn sys-btn--default" onClick={() => setEditOpen(false)}>
-                      <X size={14} />
-                      取消
-                    </button>
                     <button type="button" className="sys-btn sys-btn--default" disabled={submitting} onClick={() => void handleSaveDraft()}>
                       <Save size={14} />
                       保存
@@ -977,17 +977,17 @@ export function AssetsPage() {
                 </>
               ) : currentAsset.status === "published" && currentAsset.accessLevel !== "read" ? (
                 <>
+                  <button type="button" className="sys-btn sys-btn--default" onClick={() => setEditOpen(false)}>
+                    <X size={14} />
+                    关闭
+                  </button>
                   {currentAsset.canManageAccess ? (
-                    <button type="button" className="sys-btn sys-btn--danger" style={{ marginRight: "auto" }} disabled={submitting} onClick={() => confirmDelete(currentAsset)}>
+                    <button type="button" className="sys-btn sys-btn--danger" style={{ marginLeft: 8 }} disabled={submitting} onClick={() => confirmDelete(currentAsset)}>
                       <Trash2 size={14} />
                       删除
                     </button>
                   ) : null}
                   <div className="sys-drawer-footer-right">
-                    <button type="button" className="sys-btn sys-btn--default" onClick={() => setEditOpen(false)}>
-                      <X size={14} />
-                      关闭
-                    </button>
                     {currentAsset.canManageAccess ? (
                       <button type="button" className="sys-btn sys-btn--default" disabled={submitting} onClick={() => void handleUpdateAccess()}>
                         <Save size={14} />
@@ -1001,18 +1001,20 @@ export function AssetsPage() {
                   </div>
                 </>
               ) : (
-                <div className="sys-drawer-footer-right">
+                <>
                   <button type="button" className="sys-btn sys-btn--default" onClick={() => setEditOpen(false)}>
                     <X size={14} />
                     关闭
                   </button>
-                  {currentAsset.canManageAccess ? (
-                    <button type="button" className="sys-btn sys-btn--primary" disabled={submitting} onClick={() => void handleUpdateAccess()}>
-                      <Save size={14} />
-                      保存
-                    </button>
-                  ) : null}
-                </div>
+                  <div className="sys-drawer-footer-right">
+                    {currentAsset.canManageAccess ? (
+                      <button type="button" className="sys-btn sys-btn--primary" disabled={submitting} onClick={() => void handleUpdateAccess()}>
+                        <Save size={14} />
+                        保存
+                      </button>
+                    ) : null}
+                  </div>
+                </>
               )}
             </div>
           </>
@@ -1089,12 +1091,10 @@ export function AssetsPage() {
           </div>
         ) : null}
         <div className="sys-drawer-footer">
-          <div className="sys-drawer-footer-right">
-            <button type="button" className="sys-btn sys-btn--default" onClick={() => { setSystemDetailOpen(false); setSelectedSystemAsset(null); }}>
-              <X size={14} />
-              关闭
-            </button>
-          </div>
+          <button type="button" className="sys-btn sys-btn--default" onClick={() => { setSystemDetailOpen(false); setSelectedSystemAsset(null); }}>
+            <X size={14} />
+            关闭
+          </button>
         </div>
       </Drawer>
     </>

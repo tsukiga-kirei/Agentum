@@ -210,7 +210,7 @@ export function MultiAgentPanel({
           onClose={() => setSelectedAgent(null)}
           rootClassName={themeMode === "dark" ? "agent-admin-drawer agent-admin-drawer--dark" : "agent-admin-drawer"}
         >
-          <div className="space-y-4">
+          <div className="space-y-4 sys-drawer-section">
             <section className="bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-slate-100 dark:border-slate-800 p-4">
               <span className="text-xs text-slate-400 font-bold block mb-1">执行状态</span>
               <span className={`inline-block text-xs px-2.5 py-0.5 rounded-full font-semibold ${

@@ -1184,7 +1184,6 @@ export function TenantManagementPage() {
         rootClassName={drawerRootClassName}
       >
         <div className="sys-drawer-section sys-drawer-section-enter">
-          <div className="sys-hint"><Info size={14} /> 角色编码由后端自动生成；编辑角色时可同步维护该角色下的启用成员。</div>
           <div className="sys-field">
             <label className="sys-field-label sys-field-label--required">角色名称</label>
             <div className="sys-field-input-wrap"><ShieldCheck size={16} className="sys-field-prefix" /><input className="sys-field-input" value={roleDraft.name} placeholder="例如：合同审核员" onChange={(event) => setRoleDraft((draft) => ({ ...draft, name: event.target.value }))} /></div>
@@ -1218,6 +1217,7 @@ export function TenantManagementPage() {
           ) : null}
         </div>
         <div className="sys-drawer-footer">
+          <button className="sys-btn sys-btn--default" onClick={() => setRoleModalOpen(false)}><X size={14} /> 取消</button>
           {editingRole ? (
             <div className="tenant-department-danger-actions">
               <button
@@ -1231,7 +1231,6 @@ export function TenantManagementPage() {
             </div>
           ) : null}
           <div className="sys-drawer-footer-right">
-            <button className="sys-btn sys-btn--default" onClick={() => setRoleModalOpen(false)}><X size={14} /> 取消</button>
             <button className="sys-btn sys-btn--primary" disabled={roleSubmitting} onClick={() => void handleSubmitRole()}><Save size={14} /> 保存角色</button>
           </div>
         </div>
@@ -1327,8 +1326,8 @@ export function TenantManagementPage() {
           </div>
         </div>
         <div className="sys-drawer-footer">
+          <button className="sys-btn sys-btn--default" onClick={() => setPageGrantModalOpen(false)}><X size={14} /> 取消</button>
           <div className="sys-drawer-footer-right">
-            <button className="sys-btn sys-btn--default" onClick={() => setPageGrantModalOpen(false)}><X size={14} /> 取消</button>
             <button className="sys-btn sys-btn--primary" disabled={pageGrantSubmitting} onClick={() => void handleSubmitPageGrant()}><Save size={14} /> 保存分配</button>
           </div>
         </div>
@@ -1410,8 +1409,8 @@ export function TenantManagementPage() {
           </div>
         </div>
         <div className="sys-drawer-footer">
+          <button className="sys-btn sys-btn--default" onClick={() => setGrantModalOpen(false)}><X size={14} /> 取消</button>
           <div className="sys-drawer-footer-right">
-            <button className="sys-btn sys-btn--default" onClick={() => setGrantModalOpen(false)}><X size={14} /> 取消</button>
             <button className="sys-btn sys-btn--primary" disabled={grantSubmitting} onClick={() => void handleSubmitGrant()}><Save size={14} /> 保存分配</button>
           </div>
         </div>
