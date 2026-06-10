@@ -289,6 +289,47 @@ class WorkbenchRuntimeServiceTest {
     }
 
     @Test
+    void shouldClearConversationHistoryWhenRestartingAgentNode() {
+        WorkbenchRuntimeService service = newService();
+        WorkflowRunEntity run = ownedRun(2);
+        Map<String, Object> agentConfig = new LinkedHashMap<>(Map.of(
+            "allowQuestion", true,
+            "conversationHistory", List.of(
+                Map.of("role", "user", "content", "第一轮"),
+                Map.of("role", "assistant", "content", "第一轮回答"),
+                Map.of("role", "user", "content", "追问内容")
+            )
+        ));
+        WorkflowNodeRunEntity agentNode = WorkflowNodeRunEntity.pending(
+            run.getId(),
+            TENANT_ID,
+            run.getWorkflowId(),
+            run.getWorkflowVersionId(),
+            "agent_review",
+            "agent",
+            "智能体分析",
+            Map.of(),
+            Map.of("final_answer", "追问后的答案"),
+            agentConfig,
+            1,
+            NOW
+        );
+        agentNode.cancel(NOW);
+
+        stubTenant();
+        when(workflowRunRepository.findByIdAndTenantId(run.getId(), TENANT_ID)).thenReturn(Optional.of(run));
+        when(workflowNodeRunRepository.findByIdAndRunId(agentNode.getId(), run.getId())).thenReturn(Optional.of(agentNode));
+        when(workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(run.getId())).thenReturn(List.of(agentNode));
+        when(jobRepository.findByRunIdAndStatusIn(eq(run.getId()), any())).thenReturn(List.of());
+        when(jobRepository.findFirstByNodeRunIdOrderByAttemptDesc(agentNode.getId())).thenReturn(Optional.empty());
+
+        service.restartNode(TENANT_ID, businessPrincipal(), run.getId(), agentNode.getId());
+
+        assertThat(agentNode.getConfigSnapshot()).doesNotContainKey("conversationHistory");
+        verify(commandPublisher).publish(any(NodeExecuteCommand.class));
+    }
+
+    @Test
     void shouldRestartCanceledNodeWithFullCleanupAndEnqueueNextAttempt() {
         WorkbenchRuntimeService service = newService();
         WorkflowRunEntity run = ownedRun();
@@ -379,6 +420,48 @@ class WorkbenchRuntimeServiceTest {
         verify(clusterAgentRunRepository, never()).deleteByNodeRunId(any());
         verify(commandPublisher).publish(any(NodeExecuteCommand.class));
         assertThat(node.getState()).isEqualTo("running");
+    }
+
+    @Test
+    void shouldUpdateFinalAnswerWithoutReExecutingAgent() {
+        WorkbenchRuntimeService service = newService();
+        WorkflowRunEntity run = ownedRun(2);
+        run.markRunning("agent_review", "智能体分析", "agent", 0, NOW);
+        Map<String, Object> agentConfig = new LinkedHashMap<>(Map.of("allowUserEdit", true));
+        WorkflowNodeRunEntity agentNode = WorkflowNodeRunEntity.pending(
+            run.getId(),
+            TENANT_ID,
+            run.getWorkflowId(),
+            run.getWorkflowVersionId(),
+            "agent_review",
+            "agent",
+            "智能体分析",
+            Map.of(),
+            Map.of(),
+            agentConfig,
+            1,
+            NOW
+        );
+        agentNode.complete(Map.of(
+            "final_answer", "原始答案",
+            "chatMessages", List.of(
+                Map.of("role", "user", "content", "测试问题"),
+                Map.of("role", "assistant", "content", "原始答案")
+            )
+        ), NOW);
+
+        stubTenant();
+        when(workflowRunRepository.findByIdAndTenantId(run.getId(), TENANT_ID)).thenReturn(Optional.of(run));
+        when(workflowNodeRunRepository.findByIdAndRunId(agentNode.getId(), run.getId())).thenReturn(Optional.of(agentNode));
+
+        service.updateFinalAnswer(TENANT_ID, businessPrincipal(), run.getId(), agentNode.getId(), "修改后的答案");
+
+        assertThat(agentNode.getOutputSnapshot().get("final_answer")).isEqualTo("修改后的答案");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> chatMessages = (List<Map<String, Object>>) agentNode.getOutputSnapshot().get("chatMessages");
+        assertThat(chatMessages.get(1).get("content")).isEqualTo("修改后的答案");
+        verify(workflowVariableSnapshotRepository).deleteByRunIdAndNodeRunIdIn(run.getId(), List.of(agentNode.getId()));
+        verify(commandPublisher, never()).publish(any());
     }
 
     @Test

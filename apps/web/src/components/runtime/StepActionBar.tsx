@@ -178,7 +178,7 @@ export function StepActionBar({
       <div className="step-action-bar flex justify-end items-center gap-3 p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
         {canRegenerate ? (
           <button type="button" className="sys-btn sys-btn--default flex items-center gap-2 text-xs" onClick={onRetry}>
-            <RotateCw size={14} /> 重新生成
+            <RotateCw size={14} /> 重新执行
           </button>
         ) : null}
         <button

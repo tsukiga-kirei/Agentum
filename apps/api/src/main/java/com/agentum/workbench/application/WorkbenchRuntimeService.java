@@ -487,6 +487,9 @@ public class WorkbenchRuntimeService {
         List<UUID> resetNodeIds = new ArrayList<>();
         for (WorkflowNodeRunEntity node : nodes) {
             if (node.getSortOrder() >= targetIndex) {
+                if ("agent".equals(node.getNodeType())) {
+                    clearAgentConversationHistory(node, now);
+                }
                 node.resetToPending(now);
                 resetNodeIds.add(node.getId());
             }
@@ -728,6 +731,7 @@ public class WorkbenchRuntimeService {
     /**
      * 用户手动修改最终答案：仅更新输出快照与变量，不触发模型重新生成。
      */
+    @Transactional
     public WorkbenchApi.RunDetail updateFinalAnswer(
         UUID tenantId,
         CurrentUserPrincipal principal,
@@ -834,6 +838,9 @@ public class WorkbenchRuntimeService {
     ) {
         Instant now = clock.instant();
         cancellationGuard.clearCancel(run.getId());
+        if ("agent".equals(node.getNodeType()) && fullRestart) {
+            clearAgentConversationHistory(node, now);
+        }
         if (fullRestart) {
             clusterAgentRunRepository.deleteByNodeRunId(node.getId());
         } else {
@@ -930,6 +937,17 @@ public class WorkbenchRuntimeService {
     private static boolean isExecutionJobInFlight(WorkflowRunExecutionJobEntity job) {
         return WorkflowRunExecutionJobEntity.STATUS_QUEUED.equals(job.getStatus())
             || WorkflowRunExecutionJobEntity.STATUS_RUNNING.equals(job.getStatus());
+    }
+
+    /** 整步重做时移除追问累积的 conversationHistory，避免「重新执行」仍续跑最后一轮追问。 */
+    private static void clearAgentConversationHistory(WorkflowNodeRunEntity node, Instant now) {
+        Map<String, Object> config = node.getConfigSnapshot();
+        if (config == null || config.isEmpty() || !config.containsKey("conversationHistory")) {
+            return;
+        }
+        Map<String, Object> nextConfig = new LinkedHashMap<>(config);
+        nextConfig.remove("conversationHistory");
+        node.replaceConfigSnapshot(nextConfig, now);
     }
 
     /**

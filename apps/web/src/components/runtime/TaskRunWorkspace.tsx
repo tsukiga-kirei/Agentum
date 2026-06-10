@@ -721,13 +721,13 @@ export function TaskRunWorkspace({
       setRunDetail(afterAdvance);
       onReload(afterAdvance);
     } catch (error: unknown) {
-      console.error("重新生成失败", error);
+      console.error("重新执行失败", error);
       const reloaded = await reloadRunDetail();
       if (reloaded && isActiveJobAlive(reloaded)) {
         setAdvanceError(null);
         return;
       }
-      const message = error instanceof Error ? error.message : "重新生成失败";
+      const message = error instanceof Error ? error.message : "重新执行失败";
       setAdvanceError(message);
       setActiveRunTab("current");
     } finally {

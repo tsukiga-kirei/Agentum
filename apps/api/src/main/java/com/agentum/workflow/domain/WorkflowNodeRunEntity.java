@@ -149,6 +149,12 @@ public class WorkflowNodeRunEntity {
         this.updatedAt = now;
     }
 
+    /** 整步重新执行时还原配置快照（如清除追问对话历史）。 */
+    public void replaceConfigSnapshot(Map<String, Object> nextConfigSnapshot, Instant now) {
+        this.configSnapshot = nextConfigSnapshot == null ? new HashMap<>() : new HashMap<>(nextConfigSnapshot);
+        this.updatedAt = now;
+    }
+
     public void waitForInput(Instant now) {
         this.state = "waiting";
         this.stateLabel = "等待处理";

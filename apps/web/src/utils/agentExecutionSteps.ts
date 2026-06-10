@@ -99,6 +99,21 @@ export function filterUserVisibleSteps(steps: AgentExecutionStep[]): AgentExecut
   return steps.filter((step) => step.kind === "tool" || step.kind === "final_answer");
 }
 
+export function summarizeToolSteps(steps: AgentExecutionStep[], elapsedLabel = "", running = false): string {
+  const tools = steps.filter((step) => step.kind === "tool");
+  const doneCount = tools.filter((step) => step.status === "done").length;
+  const hasRunning = running || tools.some((step) => step.status === "running");
+  if (hasRunning) {
+    const base = doneCount > 0 ? `正在执行，已完成 ${doneCount} 个步骤` : "正在执行";
+    return elapsedLabel ? `${base}，耗时 ${elapsedLabel}` : base;
+  }
+  if (tools.length === 0) {
+    return elapsedLabel ? `执行完成，耗时 ${elapsedLabel}` : "执行完成";
+  }
+  const base = `已完成 ${tools.length} 个步骤`;
+  return elapsedLabel ? `${base}，耗时 ${elapsedLabel}` : base;
+}
+
 export function summarizeExecutionSteps(steps: AgentExecutionStep[]): string {
   const visibleSteps = filterUserVisibleSteps(steps);
   const doneCount = visibleSteps.filter((step) => step.status === "done").length;

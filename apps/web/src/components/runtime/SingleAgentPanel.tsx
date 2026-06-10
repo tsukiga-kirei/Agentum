@@ -19,7 +19,7 @@ import {
   mergeExecutionSteps,
   readAgentPermissions,
   readFinalAnswer,
-  summarizeExecutionSteps,
+  summarizeToolSteps,
 } from "../../utils/agentExecutionSteps";
 
 interface SingleAgentPanelProps {
@@ -33,15 +33,116 @@ interface SingleAgentPanelProps {
   onFollowUp?: (followUpMessage: string) => void | Promise<void>;
 }
 
-function formatElapsed(streamStartedAt: number | null, completedAt?: string): string {
+type ConversationTurn = {
+  id: string;
+  userMessage: RuntimeChatMessage | null;
+  assistantMessage: RuntimeChatMessage | null;
+  toolSteps: AgentExecutionStep[];
+};
+
+function formatElapsed(streamStartedAt: number | null): string {
   if (!streamStartedAt) {
-    return completedAt ? "已完成" : "";
+    return "";
   }
   const seconds = Math.max(1, Math.round((Date.now() - streamStartedAt) / 1000));
   return `${seconds}s`;
 }
 
-function ExecutionStepRow({
+function readInitialUserPrompt(config: Record<string, unknown>): string {
+  const prompt = config.userPrompt ?? config.prompt ?? "";
+  return String(prompt).trim();
+}
+
+function buildConversationTurns(
+  messages: RuntimeChatMessage[],
+  toolSteps: AgentExecutionStep[],
+  options: {
+    initialUserPrompt: string;
+    finalAnswer: string;
+    streamingText: string;
+    isStreaming: boolean;
+    showRunningHero: boolean;
+  },
+): ConversationTurn[] {
+  const { initialUserPrompt, finalAnswer, streamingText, isStreaming, showRunningHero } = options;
+
+  if (messages.length === 0) {
+    const assistantContent = streamingText.trim() || finalAnswer.trim();
+    if (!initialUserPrompt && !assistantContent && toolSteps.length === 0 && !showRunningHero) {
+      return [];
+    }
+    return [
+      {
+        id: "turn-initial",
+        userMessage: initialUserPrompt
+          ? { id: "turn-initial-user", role: "user", author: "用户", content: initialUserPrompt }
+          : null,
+        assistantMessage: assistantContent
+          ? {
+              id: "turn-initial-assistant",
+              role: "assistant",
+              author: "智能体",
+              content: assistantContent,
+              streaming: isStreaming && !!streamingText.trim(),
+            }
+          : null,
+        toolSteps,
+      },
+    ];
+  }
+
+  const turns: ConversationTurn[] = [];
+  let pendingUser: RuntimeChatMessage | null = null;
+
+  for (const item of messages) {
+    if (item.role === "user") {
+      pendingUser = item;
+      continue;
+    }
+    if (item.role === "assistant") {
+      turns.push({
+        id: `turn-${item.id}`,
+        userMessage: pendingUser,
+        assistantMessage: item,
+        toolSteps: [],
+      });
+      pendingUser = null;
+    }
+  }
+
+  if (pendingUser) {
+    turns.push({
+      id: `turn-${pendingUser.id}-pending`,
+      userMessage: pendingUser,
+      assistantMessage: null,
+      toolSteps: [],
+    });
+  }
+
+  const lastTurn = turns[turns.length - 1];
+  if (lastTurn) {
+    lastTurn.toolSteps = toolSteps;
+    if (!lastTurn.assistantMessage && (streamingText.trim() || (showRunningHero && finalAnswer.trim()))) {
+      lastTurn.assistantMessage = {
+        id: "turn-streaming-assistant",
+        role: "assistant",
+        author: "智能体",
+        content: streamingText.trim() || finalAnswer,
+        streaming: isStreaming,
+      };
+    } else if (lastTurn.assistantMessage && isStreaming && streamingText.trim()) {
+      lastTurn.assistantMessage = {
+        ...lastTurn.assistantMessage,
+        content: streamingText,
+        streaming: true,
+      };
+    }
+  }
+
+  return turns;
+}
+
+function ToolStepRow({
   step,
   expanded,
   onToggle,
@@ -51,74 +152,159 @@ function ExecutionStepRow({
   onToggle: () => void;
 }) {
   const hasDetail = !!step.detail?.trim();
-  const canExpand = hasDetail && step.kind !== "final_answer";
 
   return (
-    <div className="rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
+    <div className="agent-tool-step">
       <button
         type="button"
-        className="flex w-full items-start gap-3 px-3 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-900/40"
-        onClick={canExpand ? onToggle : undefined}
-        disabled={!canExpand}
+        className="agent-tool-step-head"
+        onClick={hasDetail ? onToggle : undefined}
+        disabled={!hasDetail}
       >
-        <span className="mt-0.5 shrink-0 text-slate-400">
+        <span className="agent-tool-step-icon">
           {step.status === "running" ? (
-            <Loader2 size={14} className="animate-spin text-blue-500" />
+            <Loader2 size={12} className="animate-spin text-blue-500" />
           ) : step.status === "error" ? (
-            <span className="inline-block h-3.5 w-3.5 rounded-full bg-rose-500" />
+            <span className="agent-tool-step-dot agent-tool-step-dot--error" />
           ) : (
-            <CheckCircle2 size={14} className="text-emerald-500" />
+            <CheckCircle2 size={12} className="text-emerald-500" />
           )}
         </span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-sm text-slate-800 dark:text-slate-100">{step.title}</span>
-          {step.summary ? (
-            <span className="mt-0.5 block text-xs text-slate-500 dark:text-slate-400">{step.summary}</span>
-          ) : null}
-        </span>
-        {canExpand ? (
-          <span className="shrink-0 text-slate-400">
-            {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        <span className="agent-tool-step-title">{step.title}</span>
+        {step.summary ? <span className="agent-tool-step-summary">{step.summary}</span> : null}
+        {hasDetail ? (
+          <span className="agent-tool-step-chevron">
+            {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
           </span>
         ) : null}
       </button>
-      {canExpand && expanded && hasDetail ? (
-        <div className="border-t border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/30 px-3 py-3">
-          <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-md border border-slate-200 bg-white p-2 font-mono text-[11px] leading-relaxed text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
-            {step.detail}
-          </pre>
+      {hasDetail && expanded ? (
+        <pre className="agent-tool-step-detail">{step.detail}</pre>
+      ) : null}
+    </div>
+  );
+}
+
+function ToolStepsBlock({
+  steps,
+  headerTitle,
+  running,
+  headerActions,
+}: {
+  steps: AgentExecutionStep[];
+  headerTitle: string;
+  running: boolean;
+  headerActions?: React.ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const [expandedStepIds, setExpandedStepIds] = useState<Record<string, boolean>>({});
+
+  if (steps.length === 0 && !running) {
+    return headerActions ? (
+      <div className="agent-turn-tools agent-turn-tools--status-only">
+        <div className="agent-turn-tools-toggle agent-turn-tools-toggle--static">
+          <CheckCircle2 size={14} className="text-emerald-500" />
+          <span>{headerTitle}</span>
+          <div className="agent-turn-tools-actions">{headerActions}</div>
+        </div>
+      </div>
+    ) : null;
+  }
+
+  function toggleStep(stepId: string) {
+    setExpandedStepIds((prev) => ({ ...prev, [stepId]: !prev[stepId] }));
+  }
+
+  return (
+    <div className="agent-turn-tools">
+      <div className="agent-turn-tools-toggle">
+        <button type="button" className="agent-turn-tools-toggle-main" onClick={() => setExpanded((value) => !value)}>
+          {running ? (
+            <Loader2 size={14} className="animate-spin text-blue-500" />
+          ) : (
+            <CheckCircle2 size={14} className="text-emerald-500" />
+          )}
+          <span>{headerTitle}</span>
+          <span className="agent-turn-tools-chevron">{expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
+        </button>
+        {headerActions ? <div className="agent-turn-tools-actions">{headerActions}</div> : null}
+      </div>
+      {expanded ? (
+        <div className="agent-turn-tools-list">
+          {steps.length === 0 ? (
+            <p className="agent-turn-tools-empty">工具调用与输出将显示在这里</p>
+          ) : (
+            steps.map((step) => (
+              <ToolStepRow
+                key={step.id}
+                step={step}
+                expanded={!!expandedStepIds[step.id]}
+                onToggle={() => toggleStep(step.id)}
+              />
+            ))
+          )}
         </div>
       ) : null}
     </div>
   );
 }
 
-function ConversationMessageRow({ messageItem }: { messageItem: RuntimeChatMessage }) {
-  const isUser = messageItem.role === "user";
-  if (!isUser) {
-    return (
-      <div className="relative w-full">
-        <MarkdownRenderer
-          content={messageItem.content}
-          compact
-          className={messageItem.streaming ? "agent-markdown--streaming" : ""}
-        />
-        {messageItem.streaming ? (
-          <span className="agent-chat-cursor mt-1 inline-block h-4 w-0.5 animate-pulse bg-blue-500 align-middle" aria-hidden="true" />
-        ) : null}
-      </div>
-    );
-  }
+function ConversationTurnBlock({
+  turn,
+  isLast,
+  showRunningHero,
+  elapsedLabel,
+  headerActions,
+}: {
+  turn: ConversationTurn;
+  isLast: boolean;
+  showRunningHero: boolean;
+  elapsedLabel: string;
+  headerActions?: React.ReactNode;
+}) {
+  const running = isLast && showRunningHero;
+  const headerTitle = summarizeToolSteps(turn.toolSteps, elapsedLabel, running);
+  const waitingForAnswer = running && !turn.assistantMessage?.content?.trim();
 
   return (
-    <div className="flex justify-end gap-3">
-      <div className="max-w-[85%] rounded-xl bg-blue-500 px-3 py-2.5 text-white">
-        <p className="whitespace-pre-wrap text-sm leading-relaxed">{messageItem.content}</p>
+    <section className="agent-turn">
+      {turn.userMessage?.content?.trim() ? (
+        <div className="agent-turn-user-row">
+          <div className="agent-turn-user-bubble">
+            <p>{turn.userMessage.content}</p>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="agent-turn-assistant-panel">
+        {isLast ? (
+          <ToolStepsBlock
+            steps={turn.toolSteps}
+            headerTitle={headerTitle}
+            running={running}
+            headerActions={headerActions}
+          />
+        ) : null}
+
+        {turn.assistantMessage?.content?.trim() ? (
+          <div className="agent-turn-assistant">
+            <MarkdownRenderer
+              content={turn.assistantMessage.content}
+              compact
+              className={turn.assistantMessage.streaming ? "agent-markdown--streaming" : ""}
+            />
+            {turn.assistantMessage.streaming ? (
+              <span className="agent-chat-cursor mt-1 inline-block h-4 w-0.5 animate-pulse bg-blue-500 align-middle" aria-hidden="true" />
+            ) : null}
+          </div>
+        ) : waitingForAnswer ? (
+          <div className="agent-turn-waiting">
+            <Loader2 size={16} className="animate-spin text-blue-500" />
+            <span>智能体正在生成回复…</span>
+          </div>
+        ) : null}
       </div>
-      <span className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-slate-100 text-xs font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-        我
-      </span>
-    </div>
+    </section>
   );
 }
 
@@ -132,8 +318,6 @@ export function SingleAgentPanel({
   onSaveAnswer,
   onFollowUp,
 }: SingleAgentPanelProps) {
-  const [stepsExpanded, setStepsExpanded] = useState(true);
-  const [expandedStepIds, setExpandedStepIds] = useState<Record<string, boolean>>({});
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [followUpModalOpen, setFollowUpModalOpen] = useState(false);
   const [elapsedLabel, setElapsedLabel] = useState("");
@@ -146,12 +330,13 @@ export function SingleAgentPanel({
     () => mergeExecutionSteps(persistedSteps, executionSteps, isLiveForStep),
     [persistedSteps, executionSteps, isLiveForStep],
   );
-  const visibleSteps = useMemo(() => filterUserVisibleSteps(steps), [steps]);
+  const toolSteps = useMemo(
+    () => filterUserVisibleSteps(steps).filter((step) => step.kind === "tool"),
+    [steps],
+  );
   const finalAnswer = readFinalAnswer(activeStep, streamingText);
   const hasAnswerContent = !!finalAnswer.trim();
-  const stepSummary = summarizeExecutionSteps(steps);
   const showRunningHero = activeStep.state === "running" || activeStep.state === "pending" || isStreaming;
-  const isStreamingAnswer = showRunningHero && hasAnswerContent && isStreaming;
   const canFollowUp = permissions.allowQuestion && activeStep.allowsFollowUp !== false && activeStep.state === "done" && !readOnly && !!onFollowUp;
   const canEditAnswer = permissions.allowUserEdit && activeStep.allowsRegenerate !== false && activeStep.state === "done" && !readOnly;
 
@@ -167,41 +352,34 @@ export function SingleAgentPanel({
         { ...lastMessage, content: streamingText, streaming: isStreaming },
       ];
     }
-    return [
-      ...baseMessages,
-      {
-        id: "streaming-assistant",
-        role: "assistant" as const,
-        author: activeStep.title,
-        content: streamingText,
-        streaming: isStreaming,
-      },
-    ];
-  }, [activeStep.chatMessages, activeStep.state, activeStep.title, isStreaming, streamingText]);
+    return baseMessages;
+  }, [activeStep.chatMessages, activeStep.state, isStreaming, streamingText]);
 
-  const hasConversation = conversationMessages.length > 0;
+  const conversationTurns = useMemo(
+    () =>
+      buildConversationTurns(conversationMessages, toolSteps, {
+        initialUserPrompt: readInitialUserPrompt(config),
+        finalAnswer,
+        streamingText,
+        isStreaming,
+        showRunningHero,
+      }),
+    [conversationMessages, toolSteps, config, finalAnswer, streamingText, isStreaming, showRunningHero],
+  );
 
-  useEffect(() => {
-    if (showRunningHero) {
-      setStepsExpanded(true);
-    }
-  }, [showRunningHero, activeStep.nodeRunId]);
+  const hasContent = conversationTurns.length > 0 || showRunningHero;
 
   useEffect(() => {
     if (!showRunningHero || !streamStartedAt) {
-      setElapsedLabel(activeStep.completedAt ? "" : "");
+      setElapsedLabel("");
       return;
     }
     const timer = window.setInterval(() => {
-      setElapsedLabel(formatElapsed(streamStartedAt, activeStep.completedAt));
+      setElapsedLabel(formatElapsed(streamStartedAt));
     }, 1000);
-    setElapsedLabel(formatElapsed(streamStartedAt, activeStep.completedAt));
+    setElapsedLabel(formatElapsed(streamStartedAt));
     return () => window.clearInterval(timer);
-  }, [showRunningHero, streamStartedAt, activeStep.completedAt]);
-
-  function toggleStep(stepId: string) {
-    setExpandedStepIds((prev) => ({ ...prev, [stepId]: !prev[stepId] }));
-  }
+  }, [showRunningHero, streamStartedAt]);
 
   async function handleFollowUpSubmit(followUpMessage: string) {
     if (!followUpMessage.trim()) {
@@ -227,106 +405,53 @@ export function SingleAgentPanel({
     await onSaveAnswer(value.trim());
   }
 
-  return (
-    <div className="agent-run-panel mx-auto flex max-w-3xl flex-col gap-4">
-      <section className="agent-run-progress-card overflow-hidden rounded-xl border border-emerald-200 bg-emerald-50/60 dark:border-emerald-900/50 dark:bg-emerald-950/20">
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            className="flex min-w-0 flex-1 items-center gap-2 px-4 py-3 text-left"
-            onClick={() => setStepsExpanded((value) => !value)}
-          >
-            {showRunningHero ? (
-              <Loader2 size={16} className="shrink-0 animate-spin text-blue-500" />
-            ) : (
-              <CheckCircle2 size={16} className="shrink-0 text-emerald-500" />
-            )}
-            <span className="min-w-0 flex-1 text-sm text-slate-800 dark:text-slate-100">
-              {stepSummary}
-              {elapsedLabel ? (
-                <span className="text-slate-500 dark:text-slate-400">{`，耗时 ${elapsedLabel}`}</span>
-              ) : null}
-            </span>
-            <span className="shrink-0 text-slate-400">
-              {stepsExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-            </span>
+  const turnHeaderActions =
+    !showRunningHero && (canFollowUp || (canEditAnswer && hasAnswerContent)) ? (
+      <>
+        {canFollowUp ? (
+          <button type="button" className="sys-btn sys-btn--default sys-btn--sm" onClick={() => setFollowUpModalOpen(true)}>
+            <MessageSquarePlus size={14} aria-hidden="true" />
+            追问
           </button>
-          <div className="mr-3 flex shrink-0 items-center gap-2">
-            {canFollowUp ? (
-              <button
-                type="button"
-                className="sys-btn sys-btn--default sys-btn--sm"
-                onClick={() => setFollowUpModalOpen(true)}
-              >
-                <MessageSquarePlus size={14} aria-hidden="true" />
-                追问
-              </button>
-            ) : null}
-            {canEditAnswer && hasAnswerContent ? (
-              <button
-                type="button"
-                className="sys-btn sys-btn--default sys-btn--sm"
-                onClick={() => setEditModalOpen(true)}
-              >
-                <PencilLine size={14} aria-hidden="true" />
-                修改
-              </button>
-            ) : null}
+        ) : null}
+        {canEditAnswer && hasAnswerContent ? (
+          <button type="button" className="sys-btn sys-btn--default sys-btn--sm" onClick={() => setEditModalOpen(true)}>
+            <PencilLine size={14} aria-hidden="true" />
+            修改
+          </button>
+        ) : null}
+      </>
+    ) : null;
+
+  return (
+    <div className="agent-run-panel mx-auto flex max-w-3xl flex-col">
+      {showRunningHero ? (
+        <div className="agent-run-progress">
+          <div className="agent-execution-progress-track" aria-hidden="true">
+            <div className="agent-execution-progress-bar" />
           </div>
         </div>
+      ) : null}
 
-        {showRunningHero ? (
-          <div className="px-4 pb-3">
-            <div className="agent-execution-progress-track" aria-hidden="true">
-              <div className="agent-execution-progress-bar" />
-            </div>
-          </div>
-        ) : null}
-
-        {stepsExpanded ? (
-          <div className="space-y-2 border-t border-emerald-100 px-4 py-3 dark:border-emerald-900/40">
-            {visibleSteps.length === 0 ? (
-              <p className="py-2 text-center text-xs text-slate-400">
-                {showRunningHero ? "工具调用与输出将显示在这里" : "暂无工具调用记录"}
-              </p>
-            ) : (
-              visibleSteps.map((step) => (
-                <ExecutionStepRow
-                  key={step.id}
-                  step={step}
-                  expanded={!!expandedStepIds[step.id]}
-                  onToggle={() => toggleStep(step.id)}
-                />
-              ))
-            )}
-          </div>
-        ) : null}
-      </section>
-
-      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-        {!hasAnswerContent && !hasConversation && showRunningHero ? (
-          <div className="flex items-start gap-3 py-6 text-slate-500 dark:text-slate-400">
-            <Bot size={20} className="mt-0.5 shrink-0 text-blue-500" />
-            <div>
-              <p className="text-sm font-medium text-slate-700 dark:text-slate-200">智能体正在生成答案…</p>
-              <p className="mt-1 text-xs">内容将在此处逐字输出。</p>
-            </div>
-          </div>
-        ) : hasConversation ? (
-          <div className="space-y-4">
-            {conversationMessages.map((messageItem) => (
-              <ConversationMessageRow key={messageItem.id} messageItem={messageItem} />
-            ))}
-          </div>
-        ) : hasAnswerContent ? (
-          <div className="relative">
-            <MarkdownRenderer content={finalAnswer} />
-            {isStreamingAnswer ? (
-              <span className="agent-chat-cursor mt-1 inline-block h-4 w-0.5 animate-pulse bg-blue-500 align-middle" aria-hidden="true" />
-            ) : null}
+      <section className="agent-run-body">
+        {!hasContent ? (
+          <div className="agent-run-empty">
+            <Bot size={22} className="text-slate-300" />
+            <p>暂无输出内容</p>
           </div>
         ) : (
-          <div className="py-8 text-center text-sm text-slate-400">暂无输出内容</div>
+          <div className="agent-turn-list">
+            {conversationTurns.map((turn, index) => (
+              <ConversationTurnBlock
+                key={turn.id}
+                turn={turn}
+                isLast={index === conversationTurns.length - 1}
+                showRunningHero={showRunningHero}
+                elapsedLabel={elapsedLabel}
+                headerActions={index === conversationTurns.length - 1 ? turnHeaderActions : undefined}
+              />
+            ))}
+          </div>
         )}
       </section>
 
