@@ -15,8 +15,8 @@
 // 基础运行态类型
 // ============================================================
 
-/** 节点步骤的执行状态 */
-export type RuntimeStepState = "done" | "running" | "waiting" | "failed" | "pending";
+/** 节点步骤的执行状态；canceled 表示用户主动中断（数据已清空，只能整步重新执行） */
+export type RuntimeStepState = "done" | "running" | "waiting" | "failed" | "pending" | "canceled";
 
 /** 节点的业务分类，用于前端渲染不同的交互面板 */
 export type RuntimeNodeKind = "launch" | "input" | "agent" | "multiAgent" | "approval" | "delivery";
@@ -263,9 +263,12 @@ export type RunCompletedEvent = {
   timestamp: string;
 };
 
-/** 心跳保活事件 */
+/** 心跳保活事件：Worker 每 15s 发送一次，前端看门狗据此判定后台执行是否存活 */
 export type HeartbeatEvent = {
   timestamp: string;
+  runId?: string;
+  nodeRunId?: string;
+  workerId?: string;
 };
 
 /** SSE 连接成功事件 */
@@ -276,8 +279,8 @@ export type ConnectedEvent = {
   timestamp: string;
 };
 
-/** 所有 SSE 事件的联合类型 */
-export type StreamEvent =
+/** 所有 SSE 事件的联合类型；eventId 为 Redis Stream 记录 ID，用于断线续传 */
+export type StreamEvent = (
   | { type: "connected"; data: ConnectedEvent }
   | { type: "node_started"; data: NodeStartedEvent }
   | { type: "agent_thinking"; data: AgentThinkingEvent }
@@ -288,7 +291,8 @@ export type StreamEvent =
   | { type: "node_failed"; data: NodeFailedEvent }
   | { type: "run_paused"; data: RunPausedEvent }
   | { type: "run_completed"; data: RunCompletedEvent }
-  | { type: "heartbeat"; data: HeartbeatEvent };
+  | { type: "heartbeat"; data: HeartbeatEvent }
+) & { eventId?: string };
 
 // ============================================================
 // 步骤操作
@@ -339,6 +343,12 @@ export type StreamConnectionState =
   | "reconnecting"
   | "error";
 
+/** 建立连接时的选项 */
+export type RunStreamConnectOptions = {
+  /** true：回放当前步骤已产生的全部事件（进入/刷新页面场景）；默认只接收新事件 */
+  replay?: boolean;
+};
+
 /** useRunStream Hook 的返回值 */
 export type RunStreamState = {
   /** 已接收的全部事件 */
@@ -367,17 +377,14 @@ export type RunStreamState = {
   connectionState: StreamConnectionState;
   /** 连接错误信息 */
   error: string | null;
+  /** 最近一次收到任意事件（含 heartbeat）的本地时间戳（毫秒），看门狗活性判定依据 */
+  lastEventAt: number | null;
+  /** 连续重连失败次数：达到阈值时前端看门狗主动判定异常 */
+  reconnectFailures: number;
   /** 建立连接 */
-  connect: () => Promise<void>;
+  connect: (options?: RunStreamConnectOptions) => Promise<void>;
   /** 等待 SSE 已连接后再推进步骤 */
   ensureConnected: (timeoutMs?: number) => Promise<void>;
   /** 断开连接 */
   disconnect: (options?: { preserveProgress?: boolean }) => void;
-  /** 从 session 快照恢复中断前的流式进度（刷新后展示用） */
-  restoreProgress: (snapshot: {
-    streamingText?: string;
-    clusterAgents?: RunStreamState["clusterAgents"];
-    toolCalls?: RuntimeCapabilityItem[];
-    activeNodeInfo?: { nodeRunId: string; nodeName: string; nodeType: string } | null;
-  }) => void;
 };

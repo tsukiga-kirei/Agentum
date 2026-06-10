@@ -5,8 +5,12 @@ import com.agentum.auth.domain.UserAccount;
 import com.agentum.auth.infrastructure.UserAccountRepository;
 import com.agentum.permission.application.CollaborationAccessPolicy;
 import com.agentum.permission.application.CollaborationAccessPolicy.AccessLevel;
+import com.agentum.runtime.cancel.RunCancellationGuard;
+import com.agentum.runtime.execution.RuntimeExecutionProperties;
+import com.agentum.runtime.messaging.NodeExecuteCommand;
+import com.agentum.runtime.messaging.NodeExecuteCommandPublisher;
+import com.agentum.runtime.stream.RunProgressStreamWriter;
 import com.agentum.shared.api.ApiException;
-import com.agentum.shared.api.ClientDisconnectSupport;
 import com.agentum.shared.api.RequestIds;
 import com.agentum.shared.pagination.PageQuery;
 import com.agentum.shared.pagination.PageResponse;
@@ -15,27 +19,25 @@ import com.agentum.shared.pagination.SortWhitelist;
 import com.agentum.tenant.infrastructure.TenantRepository;
 import com.agentum.workbench.interfaces.WorkbenchApi;
 import com.agentum.workflow.domain.WorkflowAccessGrantEntity;
+import com.agentum.workflow.domain.WorkflowClusterAgentRunEntity;
 import com.agentum.workflow.domain.WorkflowDefinitionEntity;
 import com.agentum.workflow.domain.WorkflowNodeRunEntity;
 import com.agentum.workflow.domain.WorkflowRunEntity;
 import com.agentum.workflow.domain.WorkflowRunEventEntity;
+import com.agentum.workflow.domain.WorkflowRunExecutionJobEntity;
 import com.agentum.workflow.domain.WorkflowVariableSnapshotEntity;
 import com.agentum.workflow.domain.WorkflowVersionEntity;
 import com.agentum.workflow.domain.WorkflowWaitingEventEntity;
 import com.agentum.workflow.infrastructure.WorkflowAccessGrantRepository;
+import com.agentum.workflow.infrastructure.WorkflowClusterAgentRunRepository;
 import com.agentum.workflow.infrastructure.WorkflowDefinitionRepository;
 import com.agentum.workflow.infrastructure.WorkflowNodeRunRepository;
 import com.agentum.workflow.infrastructure.WorkflowRunEventRepository;
+import com.agentum.workflow.infrastructure.WorkflowRunExecutionJobRepository;
 import com.agentum.workflow.infrastructure.WorkflowRunRepository;
 import com.agentum.workflow.infrastructure.WorkflowVersionRepository;
 import com.agentum.workflow.infrastructure.WorkflowVariableSnapshotRepository;
 import com.agentum.workflow.infrastructure.WorkflowWaitingEventRepository;
-import com.agentum.agent.application.AgentRuntimeService;
-import com.agentum.agent.application.AgentRuntimeRequest;
-import com.agentum.delivery.application.DeliveryRuntimeService;
-import com.agentum.delivery.application.DeliveryRuntimeRequest;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-import org.springframework.scheduling.annotation.Async;
 import java.util.LinkedHashMap;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -46,14 +48,13 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -96,12 +97,12 @@ public class WorkbenchRuntimeService {
     private final ObjectMapper objectMapper;
     private final WorkflowRuntimeExecutor workflowRuntimeExecutor;
     private final Clock clock;
-    private final AgentRuntimeService agentRuntimeService;
-    private final DeliveryRuntimeService deliveryRuntimeService;
-    private final RunStreamEmitterRegistry runStreamEmitterRegistry;
-    private final RunExecutionCancellationRegistry cancellationRegistry;
-    /** 防止同一任务并发重复推进，导致子智能体双开。 */
-    private final Set<UUID> advancingRuns = ConcurrentHashMap.newKeySet();
+    private final WorkflowRunExecutionJobRepository jobRepository;
+    private final WorkflowClusterAgentRunRepository clusterAgentRunRepository;
+    private final NodeExecuteCommandPublisher commandPublisher;
+    private final RunProgressStreamWriter streamWriter;
+    private final RunCancellationGuard cancellationGuard;
+    private final RuntimeExecutionProperties runtimeProperties;
 
     public WorkbenchRuntimeService(
         TenantRepository tenantRepository,
@@ -118,10 +119,12 @@ public class WorkbenchRuntimeService {
         ObjectMapper objectMapper,
         WorkflowRuntimeExecutor workflowRuntimeExecutor,
         Clock clock,
-        AgentRuntimeService agentRuntimeService,
-        DeliveryRuntimeService deliveryRuntimeService,
-        RunStreamEmitterRegistry runStreamEmitterRegistry,
-        RunExecutionCancellationRegistry cancellationRegistry
+        WorkflowRunExecutionJobRepository jobRepository,
+        WorkflowClusterAgentRunRepository clusterAgentRunRepository,
+        NodeExecuteCommandPublisher commandPublisher,
+        RunProgressStreamWriter streamWriter,
+        RunCancellationGuard cancellationGuard,
+        RuntimeExecutionProperties runtimeProperties
     ) {
         this.tenantRepository = tenantRepository;
         this.workflowDefinitionRepository = workflowDefinitionRepository;
@@ -137,10 +140,12 @@ public class WorkbenchRuntimeService {
         this.objectMapper = objectMapper;
         this.workflowRuntimeExecutor = workflowRuntimeExecutor;
         this.clock = clock;
-        this.agentRuntimeService = agentRuntimeService;
-        this.deliveryRuntimeService = deliveryRuntimeService;
-        this.runStreamEmitterRegistry = runStreamEmitterRegistry;
-        this.cancellationRegistry = cancellationRegistry;
+        this.jobRepository = jobRepository;
+        this.clusterAgentRunRepository = clusterAgentRunRepository;
+        this.commandPublisher = commandPublisher;
+        this.streamWriter = streamWriter;
+        this.cancellationGuard = cancellationGuard;
+        this.runtimeProperties = runtimeProperties;
     }
 
     @Transactional(readOnly = true)
@@ -450,6 +455,9 @@ public class WorkbenchRuntimeService {
         if (nodeRunId == null) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_ROLLBACK_NODE_REQUIRED", "请选择要回退到的步骤");
         }
+        // 回退是显式重做：执行中禁止回退，且需清除遗留取消信号。
+        assertNoExecutionInFlight(runId);
+        cancellationGuard.clearCancel(runId);
         List<WorkflowNodeRunEntity> nodes = workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(runId);
         WorkflowNodeRunEntity targetNode = nodes.stream()
             .filter(node -> node.getId().equals(nodeRunId))
@@ -471,6 +479,8 @@ public class WorkbenchRuntimeService {
         resolveOpenTodos(run.getId(), principal.userId(), now);
         if (!resetNodeIds.isEmpty()) {
             workflowVariableSnapshotRepository.deleteByRunIdAndNodeRunIdIn(run.getId(), resetNodeIds);
+            // 回退节点的子智能体落库结果一并清空，重做时从头执行。
+            clusterAgentRunRepository.deleteByRunIdAndNodeRunIdIn(run.getId(), resetNodeIds);
         }
         int completedBefore = (int) nodes.stream()
             .filter(node -> node.getSortOrder() < targetIndex && "completed".equals(node.getState()))
@@ -502,7 +512,11 @@ public class WorkbenchRuntimeService {
     }
 
     /**
-     * 用户中断当前正在执行的智能体步骤：协作式取消后台任务，并将运行中节点重置为待执行。
+     * 用户主动中断当前正在执行的步骤。
+     *
+     * <p>语义约束（与被动失败恢复严格区分）：节点置为 canceled 并清空该节点全部运行数据
+     * （输出快照、变量快照、子智能体落库结果），之后只能通过「重新执行」从头重跑整个节点；
+     * 取消信号写入 Redis，执行 Worker 在模型轮次与流式回调间隙感知后协作式退出。</p>
      */
     @Transactional
     public WorkbenchApi.RunDetail interruptRun(UUID tenantId, CurrentUserPrincipal principal, UUID runId) {
@@ -513,8 +527,17 @@ public class WorkbenchRuntimeService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_RUN_INTERRUPT_FORBIDDEN", "已完成任务无需中断");
         }
 
-        cancellationRegistry.requestCancel(runId);
-        advancingRuns.remove(runId);
+        cancellationGuard.requestCancel(runId);
+        Instant now = clock.instant();
+
+        // 终态化在途作业：Worker 退出时据此识别「已被中断」，不再覆盖节点状态。
+        for (WorkflowRunExecutionJobEntity job : jobRepository.findByRunIdAndStatusIn(
+            runId,
+            List.of(WorkflowRunExecutionJobEntity.STATUS_QUEUED, WorkflowRunExecutionJobEntity.STATUS_RUNNING)
+        )) {
+            job.markCanceled(now);
+            jobRepository.save(job);
+        }
 
         List<WorkflowNodeRunEntity> nodes = workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(runId);
         WorkflowNodeRunEntity runningNode = nodes.stream()
@@ -522,11 +545,12 @@ public class WorkbenchRuntimeService {
             .findFirst()
             .orElse(null);
 
-        Instant now = clock.instant();
         if (runningNode != null) {
-            runningNode.resetToPending(now);
+            // 中断即放弃：清空该节点全部运行中数据（含已完成子智能体结果），只保留 run_events 审计。
+            runningNode.cancel(now);
             workflowNodeRunRepository.save(runningNode);
             workflowVariableSnapshotRepository.deleteByRunIdAndNodeRunIdIn(run.getId(), List.of(runningNode.getId()));
+            clusterAgentRunRepository.deleteByNodeRunId(runningNode.getId());
             int completedBefore = (int) nodes.stream()
                 .filter(node -> node.getSortOrder() < runningNode.getSortOrder() && "completed".equals(node.getState()))
                 .count();
@@ -537,7 +561,7 @@ public class WorkbenchRuntimeService {
                 tenantId,
                 "run_interrupted",
                 "步骤已中断",
-                "用户已中断「" + runningNode.getName() + "」，可重新生成整步执行。",
+                "用户已中断「" + runningNode.getName() + "」，该步骤数据已清空，可点击重新执行从头重跑。",
                 runningNode.getNodeKey(),
                 principal.userId(),
                 Map.of("nodeRunId", runningNode.getId().toString()),
@@ -553,19 +577,216 @@ public class WorkbenchRuntimeService {
             );
         }
 
-        sendSseEvent(runId, "run_paused", eventPayload(runId, null, now.toString(), Map.of(
-            "reason", "用户已中断当前步骤，可点击重新生成整步重做"
-        )));
-        sendSseEvent(runId, "message", "[DONE]");
-        completeSseEmitter(runId);
+        // 通知所有已连接的 SSE 中继收尾，前端按节点 canceled 状态展示「重新执行」。
+        Map<String, Object> pausedPayload = new LinkedHashMap<>();
+        pausedPayload.put("runId", runId.toString());
+        pausedPayload.put("timestamp", now.toString());
+        pausedPayload.put("reason", "用户已中断当前步骤，可点击重新执行从头重跑");
+        if (runningNode != null) {
+            pausedPayload.put("nodeRunId", runningNode.getId().toString());
+        }
+        streamWriter.append(runId, "run_paused", pausedPayload);
+        streamWriter.append(runId, "message", "[DONE]");
 
         return getRunDetail(tenantId, principal, runId);
     }
 
-    private void assertRunNotCancelled(UUID runId) {
-        if (cancellationRegistry.isCancelled(runId)) {
-            throw new ApiException(HttpStatus.CONFLICT, "RUN_CANCELLED", "任务已中断");
+    /**
+     * 推进执行下一节点：等待类节点同步落待办；智能体/集群/交付节点创建执行作业并投递 MQ（202 语义），
+     * 真实执行由 Worker 完成，进度通过 Redis Stream + SSE 中继回放。
+     */
+    public WorkbenchApi.RunDetail advanceRun(UUID tenantId, CurrentUserPrincipal principal, UUID runId) {
+        ensureActiveTenant(tenantId);
+        ensureAuthenticated(principal);
+        WorkflowRunEntity run = requireOwnedRun(tenantId, principal, runId);
+        if (!"completed".equals(run.getState())) {
+            assertNoExecutionInFlight(runId);
+            cancellationGuard.clearCancel(runId);
+            NextNodeResult next = prepareNextNode(tenantId, runId, principal.userId());
+            if (next.hasNext() && !next.paused() && requiresManualAdvance(next.nodeType())) {
+                enqueueExecution(tenantId, runId, next.nodeRunId(), next.nodeType(), principal.userId());
+            }
         }
+        return getRunDetail(tenantId, principal, runId);
+    }
+
+    /**
+     * 主动「重新执行」：清空节点全部数据（含已成功子智能体结果）后从头重跑整个节点。
+     * 用于用户主动中断（canceled）后的整步重做，优先级高于被动恢复。
+     */
+    public WorkbenchApi.RunDetail restartNode(UUID tenantId, CurrentUserPrincipal principal, UUID runId, UUID nodeRunId) {
+        ensureActiveTenant(tenantId);
+        ensureAuthenticated(principal);
+        WorkflowRunEntity run = requireOwnedRun(tenantId, principal, runId);
+        if ("completed".equals(run.getState())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_RUN_READONLY", "已完成任务只能查看，不能重新执行");
+        }
+        assertNoExecutionInFlight(runId);
+        WorkflowNodeRunEntity node = workflowNodeRunRepository.findByIdAndRunId(nodeRunId, runId)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_NODE_RUN_NOT_FOUND", "节点运行不存在"));
+        if (!isRestartableState(node.getState())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_NODE_RESTART_INVALID", "当前步骤状态不支持重新执行");
+        }
+        prepareNodeReExecution(run, node, true, principal.userId(), "run_node_restarted", "步骤重新执行",
+            "已清空「" + node.getName() + "」全部执行数据，开始从头重新执行。");
+        enqueueExecution(tenantId, runId, node.getId(), node.getNodeType(), principal.userId());
+        log.info(
+            "用户重新执行节点 tenantId={} userId={} runId={} nodeRunId={} requestId={}",
+            tenantId, principal.userId(), runId, nodeRunId, RequestIds.current()
+        );
+        return getRunDetail(tenantId, principal, runId);
+    }
+
+    /**
+     * 被动「恢复进度」：保留已成功子智能体的落库结果，仅重跑失败/未完成部分，损失最小。
+     * 若节点是用户主动中断（canceled），数据已被清空，自动降级为整步重新执行。
+     */
+    public WorkbenchApi.RunDetail recoverNode(UUID tenantId, CurrentUserPrincipal principal, UUID runId, UUID nodeRunId) {
+        ensureActiveTenant(tenantId);
+        ensureAuthenticated(principal);
+        WorkflowRunEntity run = requireOwnedRun(tenantId, principal, runId);
+        if ("completed".equals(run.getState())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_RUN_READONLY", "已完成任务只能查看，不能恢复执行");
+        }
+        assertNoExecutionInFlight(runId);
+        WorkflowNodeRunEntity node = workflowNodeRunRepository.findByIdAndRunId(nodeRunId, runId)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_NODE_RUN_NOT_FOUND", "节点运行不存在"));
+        if (!isRecoverableState(node.getState())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_NODE_RECOVER_INVALID", "当前步骤状态不支持恢复进度");
+        }
+        boolean fullRestart = "canceled".equals(node.getState());
+        prepareNodeReExecution(run, node, fullRestart, principal.userId(), "run_node_recovered", "步骤恢复执行",
+            fullRestart
+                ? "该步骤曾被主动中断，数据已清空，已降级为从头重新执行。"
+                : "已保留「" + node.getName() + "」已成功的子智能体结果，仅重跑失败或未完成部分。");
+        enqueueExecution(tenantId, runId, node.getId(), node.getNodeType(), principal.userId());
+        log.info(
+            "用户恢复节点执行 tenantId={} userId={} runId={} nodeRunId={} fullRestart={} requestId={}",
+            tenantId, principal.userId(), runId, nodeRunId, fullRestart, RequestIds.current()
+        );
+        return getRunDetail(tenantId, principal, runId);
+    }
+
+    /**
+     * 重新执行/恢复进度共用的节点复位逻辑。
+     *
+     * @param fullRestart true 时清空全部数据（含已成功子智能体结果）；false 时仅清理失败/未完成的子智能体行
+     */
+    private void prepareNodeReExecution(
+        WorkflowRunEntity run,
+        WorkflowNodeRunEntity node,
+        boolean fullRestart,
+        UUID operatorUserId,
+        String eventType,
+        String eventTitle,
+        String eventDescription
+    ) {
+        Instant now = clock.instant();
+        cancellationGuard.clearCancel(run.getId());
+        if (fullRestart) {
+            clusterAgentRunRepository.deleteByNodeRunId(node.getId());
+        } else {
+            clusterAgentRunRepository.deleteByNodeRunIdAndStatusNot(node.getId(), WorkflowClusterAgentRunEntity.STATUS_SUCCEEDED);
+        }
+        workflowVariableSnapshotRepository.deleteByRunIdAndNodeRunIdIn(run.getId(), List.of(node.getId()));
+        node.resetToPending(now);
+        node.start(now);
+        workflowNodeRunRepository.save(node);
+        List<WorkflowNodeRunEntity> nodes = workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(run.getId());
+        int completedBefore = (int) nodes.stream()
+            .filter(other -> other.getSortOrder() < node.getSortOrder() && "completed".equals(other.getState()))
+            .count();
+        run.markRunning(node.getNodeKey(), node.getName(), node.getNodeType(), completedBefore, now);
+        workflowRunRepository.save(run);
+        workflowRunEventRepository.save(WorkflowRunEventEntity.create(
+            run.getId(),
+            run.getTenantId(),
+            eventType,
+            eventTitle,
+            eventDescription,
+            node.getNodeKey(),
+            operatorUserId,
+            Map.of("nodeRunId", node.getId().toString(), "fullRestart", fullRestart),
+            now
+        ));
+    }
+
+    /**
+     * 创建执行作业并投递 MQ。先清空进度 Stream 保证回放内容只属于本次尝试，再发布命令。
+     */
+    private void enqueueExecution(UUID tenantId, UUID runId, UUID nodeRunId, String nodeType, UUID operatorUserId) {
+        Instant now = clock.instant();
+        int attempt = jobRepository.findFirstByNodeRunIdOrderByAttemptDesc(nodeRunId)
+            .map(previous -> previous.getAttempt() + 1)
+            .orElse(1);
+        WorkflowRunExecutionJobEntity job = WorkflowRunExecutionJobEntity.queued(
+            tenantId,
+            runId,
+            nodeRunId,
+            attempt,
+            operatorUserId,
+            RequestIds.current(),
+            now.plusSeconds(runtimeProperties.getExecution().getNodeTimeoutSeconds()),
+            now
+        );
+        jobRepository.save(job);
+        streamWriter.reset(runId);
+        commandPublisher.publish(NodeExecuteCommand.of(
+            job.getId(),
+            tenantId,
+            runId,
+            nodeRunId,
+            nodeType,
+            operatorUserId,
+            RequestIds.current(),
+            attempt,
+            now
+        ));
+    }
+
+    /** 同一任务同一时刻只允许一个在途执行作业，防止重复推进导致子智能体双开。 */
+    private void assertNoExecutionInFlight(UUID runId) {
+        boolean inFlight = !jobRepository.findByRunIdAndStatusIn(
+            runId,
+            List.of(WorkflowRunExecutionJobEntity.STATUS_QUEUED, WorkflowRunExecutionJobEntity.STATUS_RUNNING)
+        ).isEmpty();
+        if (inFlight) {
+            throw new ApiException(
+                HttpStatus.CONFLICT,
+                "WORKBENCH_ADVANCE_ALREADY_IN_FLIGHT",
+                "当前任务已有步骤正在执行，请等待完成或先中断后再操作"
+            );
+        }
+    }
+
+    /**
+     * 仅当节点仍处于活跃状态时标记失败（Worker 失败路径与回收器共用），
+     * 避免与中断清理、并发终态写入互相覆盖。
+     */
+    @Transactional
+    public boolean failNodeIfActive(UUID runId, UUID nodeRunId, String errorCode, String errorMessage) {
+        WorkflowNodeRunEntity node = workflowNodeRunRepository.findById(nodeRunId).orElse(null);
+        if (node == null || (!"running".equals(node.getState()) && !"pending".equals(node.getState()))) {
+            return false;
+        }
+        WorkflowRunEntity run = workflowRunRepository.findById(runId).orElse(null);
+        if (run == null) {
+            return false;
+        }
+        List<WorkflowNodeRunEntity> nodes = workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(runId);
+        int completed = (int) nodes.stream().filter(n -> "completed".equals(n.getState())).count();
+        failNode(run, node, completed, null, clock.instant(), errorCode, errorMessage, new ArrayList<>());
+        workflowRunRepository.save(run);
+        return true;
+    }
+
+    private static boolean isRestartableState(String state) {
+        return "canceled".equals(state) || "failed".equals(state) || "pending".equals(state);
+    }
+
+    private static boolean isRecoverableState(String state) {
+        // running 允许恢复用于僵死兜底：作业已终态但节点仍停留 running 的极端情况。
+        return "failed".equals(state) || "canceled".equals(state) || "pending".equals(state) || "running".equals(state);
     }
 
     @Transactional
@@ -890,8 +1111,29 @@ public class WorkbenchRuntimeService {
             run.getUpdatedAt(),
             nodes.stream().map(this::toNodeRunRow).toList(),
             events.stream().map(this::toRunEventRow).toList(),
-            openTodo == null ? null : toOpenTodoRow(openTodo, run)
+            openTodo == null ? null : toOpenTodoRow(openTodo, run),
+            activeJobInfo(run.getId())
         );
+    }
+
+    /**
+     * 当前在途执行作业摘要：前端据此判定「执行中」并触发 SSE 回放，而不是依赖本地内存状态。
+     */
+    private WorkbenchApi.ActiveJobInfo activeJobInfo(UUID runId) {
+        return jobRepository.findByRunIdAndStatusIn(
+                runId,
+                List.of(WorkflowRunExecutionJobEntity.STATUS_QUEUED, WorkflowRunExecutionJobEntity.STATUS_RUNNING)
+            ).stream()
+            .max(Comparator.comparing(WorkflowRunExecutionJobEntity::getEnqueuedAt))
+            .map(job -> new WorkbenchApi.ActiveJobInfo(
+                job.getId(),
+                job.getStatus(),
+                job.getNodeRunId(),
+                job.getAttempt(),
+                job.getEnqueuedAt(),
+                job.getStartedAt()
+            ))
+            .orElse(null);
     }
 
     private WorkbenchApi.TaskRunRow toTaskRunRow(WorkflowRunEntity run, Map<UUID, UserAccount> usersById, boolean hasOpenTodo) {
@@ -986,10 +1228,46 @@ public class WorkbenchRuntimeService {
             node.getState(),
             node.getStateLabel(),
             node.getInputSnapshot(),
-            node.getOutputSnapshot(),
+            enrichOutputsWithClusterRuns(node),
             node.getConfigSnapshot(),
             node.getSortOrder()
         );
+    }
+
+    /**
+     * 集群节点输出补全：节点未成功（运行中/失败/中断恢复前）时输出快照里没有 clusterAgents，
+     * 从子智能体落库结果合成，保证刷新后前端仍能展示每个子智能体的真实状态与已完成内容。
+     */
+    private Map<String, Object> enrichOutputsWithClusterRuns(WorkflowNodeRunEntity node) {
+        Map<String, Object> outputs = node.getOutputSnapshot() == null ? Map.of() : node.getOutputSnapshot();
+        if (!"parallel_group".equals(node.getNodeType()) || outputs.containsKey("clusterAgents")) {
+            return outputs;
+        }
+        List<WorkflowClusterAgentRunEntity> rows = clusterAgentRunRepository.findByNodeRunIdOrderByAgentIndexAsc(node.getId());
+        if (rows.isEmpty()) {
+            return outputs;
+        }
+        List<Map<String, Object>> summaries = new ArrayList<>();
+        for (WorkflowClusterAgentRunEntity row : rows) {
+            Map<String, Object> summary = new LinkedHashMap<>();
+            summary.put("agentIndex", row.getAgentIndex());
+            summary.put("name", row.getName());
+            summary.put("status", row.isSucceeded() ? "completed" : row.getStatus());
+            if (row.isSucceeded()) {
+                Object finalAnswer = row.getOutput() == null ? null : row.getOutput().get("final_answer");
+                summary.put("final_answer", finalAnswer == null ? "" : finalAnswer.toString());
+                Object rowSummary = row.getOutput() == null ? null : row.getOutput().get("summary");
+                summary.put("summary", rowSummary == null ? "已完成" : rowSummary.toString());
+            } else {
+                summary.put("errorCode", row.getErrorCode() == null ? "" : row.getErrorCode());
+                summary.put("errorMessage", row.getErrorMessage() == null ? "" : row.getErrorMessage());
+                summary.put("summary", row.getErrorMessage() == null ? "" : row.getErrorMessage());
+            }
+            summaries.add(summary);
+        }
+        Map<String, Object> enriched = new LinkedHashMap<>(outputs);
+        enriched.put("clusterAgents", summaries);
+        return enriched;
     }
 
     private WorkbenchApi.RunEventRow toRunEventRow(WorkflowRunEventEntity event) {
@@ -1369,6 +1647,18 @@ public class WorkbenchRuntimeService {
             }
         }
 
+        // 中断（canceled）/失败（failed）节点重新推进，或待执行节点残留输出快照时，整步重做前必须复位：
+        // 清空输出与变量快照，并清理非成功的子智能体行（已成功结果保留供恢复进度复用）。
+        boolean needsReset = "canceled".equals(nextNode.getState())
+            || "failed".equals(nextNode.getState())
+            || ("pending".equals(nextNode.getState())
+                && nextNode.getOutputSnapshot() != null
+                && !nextNode.getOutputSnapshot().isEmpty());
+        if (needsReset) {
+            nextNode.resetToPending(now);
+            clusterAgentRunRepository.deleteByNodeRunIdAndStatusNot(nextNode.getId(), WorkflowClusterAgentRunEntity.STATUS_SUCCEEDED);
+            workflowVariableSnapshotRepository.deleteByRunIdAndNodeRunIdIn(run.getId(), List.of(nextNode.getId()));
+        }
         nextNode.start(now);
         workflowNodeRunRepository.save(nextNode);
         run.markRunning(nextNode.getNodeKey(), nextNode.getName(), nextNode.getNodeType(), completed, now);
@@ -1419,677 +1709,4 @@ public class WorkbenchRuntimeService {
         workflowRunEventRepository.save(event);
     }
 
-    @Transactional
-    public void saveNodeProgress(UUID runId, UUID nodeRunId, Map<String, Object> partialOutputs) {
-        Instant now = clock.instant();
-        WorkflowNodeRunEntity node = workflowNodeRunRepository.findById(nodeRunId)
-            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_NODE_RUN_NOT_FOUND", "节点运行不存在"));
-        if (!"running".equals(node.getState())) {
-            return;
-        }
-        node.patchOutputSnapshot(partialOutputs, now);
-        workflowNodeRunRepository.save(node);
-    }
-
-    public boolean isRunAdvancing(UUID runId) {
-        return advancingRuns.contains(runId);
-    }
-
-    /**
-     * SSE 重连时回放运行中节点已持久化的集群进度，避免刷新后子智能体卡片空白。
-     */
-    public void replayActiveNodeProgress(UUID tenantId, UUID runId) {
-        workflowRunRepository.findByIdAndTenantId(runId, tenantId).ifPresent(run -> {
-            if (!"running".equals(run.getState()) && !"paused".equals(run.getState())) {
-                return;
-            }
-            List<WorkflowNodeRunEntity> nodes = workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(runId);
-            WorkflowNodeRunEntity activeNode = nodes.stream()
-                .filter(node -> "running".equals(node.getState()))
-                .findFirst()
-                .orElse(null);
-            if (activeNode == null || !"parallel_group".equals(activeNode.getNodeType())) {
-                return;
-            }
-            Map<String, Object> output = activeNode.getOutputSnapshot();
-            if (output == null || output.isEmpty()) {
-                if (isRunAdvancing(runId)) {
-                    sendSseEvent(runId, "node_started", eventPayload(runId, activeNode.getId(), clock.instant().toString(), Map.of(
-                        "nodeType", activeNode.getNodeType(),
-                        "nodeName", activeNode.getName()
-                    )));
-                }
-                return;
-            }
-
-            sendSseEvent(runId, "node_started", eventPayload(runId, activeNode.getId(), clock.instant().toString(), Map.of(
-                "nodeType", activeNode.getNodeType(),
-                "nodeName", activeNode.getName()
-            )));
-
-            Object rawSummaries = output.get("clusterAgents");
-            if (rawSummaries instanceof List<?> summaries) {
-                for (int index = 0; index < summaries.size(); index++) {
-                    Object item = summaries.get(index);
-                    if (!(item instanceof Map<?, ?> summaryMap)) {
-                        continue;
-                    }
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> summary = (Map<String, Object>) summaryMap;
-                    String agentName = stringValue(summary.get("name"), "子智能体 " + (index + 1));
-                    String displayText = stringValue(summary.get("final_answer"), "");
-                    if (displayText.isBlank()) {
-                        displayText = stringValue(summary.get("summary"), "已完成");
-                    }
-                    sendSseEvent(runId, "cluster_agent", eventPayload(runId, activeNode.getId(), clock.instant().toString(), Map.of(
-                        "agentIndex", index,
-                        "agentName", agentName,
-                        "eventType", "completed",
-                        "outputSummary", displayText
-                    )));
-                }
-            }
-
-            if (isRunAdvancing(runId)) {
-                int nextIndex = readClusterNextAgentIndex(output);
-                Object rawAgents = activeNode.getConfigSnapshot().get("clusterAgents");
-                if (rawAgents instanceof List<?> agents && nextIndex >= 0 && nextIndex < agents.size()) {
-                    Object rawAgent = agents.get(nextIndex);
-                    String agentName = "子智能体 " + (nextIndex + 1);
-                    if (rawAgent instanceof Map<?, ?> rawMap) {
-                        @SuppressWarnings("unchecked")
-                        Map<String, Object> agentConfig = (Map<String, Object>) rawMap;
-                        agentName = stringValue(agentConfig.get("name"), agentName);
-                    }
-                    sendSseEvent(runId, "cluster_agent", eventPayload(runId, activeNode.getId(), clock.instant().toString(), Map.of(
-                        "agentIndex", nextIndex,
-                        "agentName", agentName,
-                        "eventType", "started"
-                    )));
-                }
-            }
-        });
-    }
-
-    @Transactional
-    public void saveNodeFailure(UUID runId, UUID nodeRunId, String errorCode, String errorMessage, UUID operatorUserId) {
-        Instant now = clock.instant();
-        WorkflowRunEntity run = workflowRunRepository.findById(runId)
-            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_RUN_NOT_FOUND", "任务运行不存在"));
-        WorkflowNodeRunEntity node = workflowNodeRunRepository.findById(nodeRunId)
-            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_NODE_RUN_NOT_FOUND", "节点运行不存在"));
-
-        List<WorkflowNodeRunEntity> nodes = workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(runId);
-        int completed = (int) nodes.stream().filter(n -> "completed".equals(n.getState())).count();
-
-        failNode(run, node, completed, operatorUserId, now, errorCode, errorMessage, new ArrayList<>());
-        workflowRunRepository.save(run);
-    }
-
-    @Async
-    public void advanceSingleStep(UUID tenantId, CurrentUserPrincipal principal, UUID runId) {
-        cancellationRegistry.clearCancel(runId);
-        if (!advancingRuns.add(runId)) {
-            // 刷新页面后前端可能再次 POST /advance；此时后台仍在执行，禁止向 SSE 发 [DONE]，
-            // 否则会误断开用户刚建立的新连接，导致页面与真实执行进度脱节。
-            log.info("任务正在推进中，跳过重复请求 runId={} userId={} requestId={}", runId, principal.userId(), RequestIds.current());
-            return;
-        }
-        UUID nodeRunId = null;
-        boolean nodeSucceeded = false;
-        try {
-            String nowStr = clock.instant().toString();
-            sendSseEvent(runId, "connected", eventPayload(runId, null, nowStr, Map.of(
-                "currentState", "connected"
-            )));
-
-            NextNodeResult nextNode = prepareNextNode(tenantId, runId, principal.userId());
-
-            if (!nextNode.hasNext()) {
-                sendSseEvent(runId, "run_completed", eventPayload(runId, null, clock.instant().toString(), Map.of(
-                    "totalDurationMs", 0,
-                    "completedNodeCount", 0
-                )));
-                sendSseEvent(runId, "message", "[DONE]");
-                completeSseEmitter(runId);
-                return;
-            }
-
-            if (nextNode.paused()) {
-                sendSseEvent(runId, "run_paused", eventPayload(runId, null, clock.instant().toString(), Map.of(
-                    "nextNodeRunId", nextNode.nodeRunId().toString(),
-                    "nextNodeName", nextNode.nodeName(),
-                    "nextNodeType", nextNode.nodeType(),
-                    "reason", waitingReason(nextNode.nodeType())
-                )));
-                sendSseEvent(runId, "message", "[DONE]");
-                completeSseEmitter(runId);
-                return;
-            }
-
-            nodeRunId = nextNode.nodeRunId();
-            String nodeType = nextNode.nodeType();
-            String nodeName = nextNode.nodeName();
-
-            sendSseEvent(runId, "node_started", eventPayload(runId, nodeRunId, clock.instant().toString(), Map.of(
-                "nodeType", nodeType,
-                "nodeName", nodeName
-            )));
-
-            WorkflowNodeRunEntity nodeRun = workflowNodeRunRepository.findById(nodeRunId).get();
-            Map<String, Object> variables = getVariablesBeforeNode(runId, nodeRun.getSortOrder());
-
-            Map<String, Object> outputs;
-            if ("agent".equals(nodeType)) {
-                outputs = executeStreamingAgent(runId, nodeRun, variables, principal.userId());
-            } else if ("parallel_group".equals(nodeType)) {
-                outputs = executeStreamingParallelGroup(runId, nodeRun, variables, principal.userId());
-            } else if ("delivery".equals(nodeType)) {
-                WorkflowRunEntity run = workflowRunRepository.findById(runId).get();
-                outputs = deliveryRuntimeService.execute(new DeliveryRuntimeRequest(
-                    run,
-                    nodeRun,
-                    nodeRun.getConfigSnapshot(),
-                    variables,
-                    principal.userId()
-                )).outputs();
-            } else {
-                WorkflowRunEntity run = workflowRunRepository.findById(runId).get();
-                outputs = workflowRuntimeExecutor.execute(new WorkflowRuntimeExecutor.ExecutionRequest(
-                    run,
-                    nodeRun,
-                    variables,
-                    principal.userId()
-                )).outputs();
-            }
-
-            assertRunNotCancelled(runId);
-
-            saveNodeSuccess(runId, nodeRunId, outputs, principal.userId());
-            nodeSucceeded = true;
-
-            sendSseEvent(runId, "node_completed", eventPayload(runId, nodeRunId, clock.instant().toString(), Map.of(
-                "outputs", outputs
-            )));
-
-            List<WorkflowNodeRunEntity> allNodes = workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(runId);
-            WorkflowNodeRunEntity finishedNode = workflowNodeRunRepository.findById(nodeRunId).orElse(null);
-            if (finishedNode != null && requiresManualAdvance(finishedNode.getNodeType())) {
-                sendSseEvent(runId, "run_paused", eventPayload(runId, null, clock.instant().toString(), Map.of(
-                    "nextNodeRunId", nodeRunId.toString(),
-                    "nextNodeName", nodeName,
-                    "nextNodeType", nodeType,
-                    "reason", "等待用户确认后再执行下一步"
-                )));
-            } else {
-                int nextIndex = finishedNode == null ? allNodes.size() : finishedNode.getSortOrder() + 1;
-                if (nextIndex < allNodes.size()) {
-                    WorkflowNodeRunEntity next = allNodes.get(nextIndex);
-                    sendSseEvent(runId, "run_paused", eventPayload(runId, null, clock.instant().toString(), Map.of(
-                        "nextNodeRunId", next.getId().toString(),
-                        "nextNodeName", next.getName(),
-                        "nextNodeType", next.getNodeType(),
-                        "reason", "等待用户点击下一步"
-                    )));
-                } else {
-                    sendSseEvent(runId, "run_completed", eventPayload(runId, null, clock.instant().toString(), Map.of(
-                        "totalDurationMs", 0,
-                        "completedNodeCount", allNodes.size()
-                    )));
-                }
-            }
-
-            sendSseEvent(runId, "message", "[DONE]");
-            completeSseEmitter(runId);
-
-        } catch (ApiException e) {
-            if ("RUN_CANCELLED".equals(e.getCode())) {
-                log.info("流式步骤已用户中断 runId={} requestId={}", runId, RequestIds.current());
-                sendSseEvent(runId, "message", "[DONE]");
-                completeSseEmitter(runId);
-                return;
-            }
-            log.warn("执行流式步骤 API 异常 runId={} code={} msg={}", runId, e.getCode(), e.getMessage());
-            if (nodeRunId != null && !nodeSucceeded) {
-                try {
-                    saveNodeFailure(runId, nodeRunId, e.getCode(), e.getMessage(), principal.userId());
-                } catch (Exception saveException) {
-                    log.error("保存节点失败状态时出错 runId={} nodeRunId={} requestId={}", runId, nodeRunId, RequestIds.current(), saveException);
-                }
-            }
-            sendSseEvent(runId, "node_failed", eventPayload(runId, nodeRunId, clock.instant().toString(), Map.of(
-                "errorCode", e.getCode(),
-                "errorMessage", e.getMessage()
-            )));
-            sendSseEvent(runId, "message", "[DONE]");
-            completeSseEmitter(runId);
-        } catch (Exception e) {
-            log.error("执行流式步骤系统异常 runId={}", runId, e);
-            if (nodeRunId != null && !nodeSucceeded) {
-                try {
-                    saveNodeFailure(runId, nodeRunId, "WORKBENCH_NODE_EXECUTION_FAILED", e.getMessage(), principal.userId());
-                } catch (Exception saveException) {
-                    log.error("保存节点失败状态时出错 runId={} nodeRunId={} requestId={}", runId, nodeRunId, RequestIds.current(), saveException);
-                }
-            }
-            sendSseEvent(runId, "node_failed", eventPayload(runId, nodeRunId, clock.instant().toString(), Map.of(
-                "errorCode", "WORKBENCH_NODE_EXECUTION_FAILED",
-                "errorMessage", "执行异常: " + e.getMessage()
-            )));
-            sendSseEvent(runId, "message", "[DONE]");
-            completeSseEmitter(runId);
-        } finally {
-            advancingRuns.remove(runId);
-        }
-    }
-
-    private Map<String, Object> getVariablesBeforeNode(UUID runId, int sortOrder) {
-        List<WorkflowNodeRunEntity> completedNodes = workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(runId)
-            .stream()
-            .filter(n -> "completed".equals(n.getState()) && n.getSortOrder() < sortOrder)
-            .toList();
-        Map<String, Object> variables = new HashMap<>();
-        for (WorkflowNodeRunEntity node : completedNodes) {
-            variables.putAll(node.getOutputSnapshot());
-        }
-        return variables;
-    }
-
-    private Map<String, Object> executeStreamingAgent(UUID runId, WorkflowNodeRunEntity nodeRun, Map<String, Object> variables, UUID operatorUserId) {
-        assertRunNotCancelled(runId);
-        WorkflowRunEntity run = workflowRunRepository.findById(runId).get();
-        sendSseEvent(runId, "agent_thinking", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
-            "phase", "preparing",
-            "message", "正在装配 Agent 工具箱与上下文..."
-        )));
-
-        AgentRuntimeRequest agentRequest = new AgentRuntimeRequest(
-            run,
-            nodeRun,
-            nodeRun.getConfigSnapshot(),
-            variables,
-            Map.of(),
-            operatorUserId
-        );
-
-        return new LinkedHashMap<>(agentRuntimeService.executeStreaming(agentRequest, new AgentRuntimeService.AgentRuntimeEventSink() {
-            private final StringBuilder accumulated = new StringBuilder();
-
-            @Override
-            public void onPhase(String phase, String message) {
-                sendSseEvent(runId, "agent_thinking", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
-                    "phase", phase,
-                    "message", message
-                )));
-            }
-
-            @Override
-            public void onToolCall(String toolName, String toolType, String status, String result, long durationMs) {
-                sendSseEvent(runId, "agent_tool_call", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
-                    "toolName", toolName,
-                    "toolType", toolType,
-                    "status", status,
-                    "result", summarizeText(result),
-                    "durationMs", durationMs
-                )));
-            }
-
-            @Override
-            public void onToken(String deltaContent, String accumulatedContent) {
-                if (accumulatedContent != null && !accumulatedContent.isBlank()) {
-                    accumulated.setLength(0);
-                    accumulated.append(accumulatedContent);
-                } else if (deltaContent != null && !deltaContent.isBlank()) {
-                    accumulated.append(deltaContent);
-                }
-                sendSseEvent(runId, "agent_streaming", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
-                    "deltaContent", deltaContent == null ? "" : deltaContent,
-                    "accumulatedContent", accumulated.toString()
-                )));
-            }
-
-            @Override
-            public void onCompleted(String answer) {
-                accumulated.setLength(0);
-                accumulated.append(answer == null ? "" : answer);
-                sendSseEvent(runId, "agent_streaming", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
-                    "deltaContent", "",
-                    "accumulatedContent", accumulated.toString()
-                )));
-                sendSseEvent(runId, "agent_thinking", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
-                    "phase", "completed",
-                    "message", "智能体已完成 final_answer。"
-                )));
-            }
-
-            @Override
-            public void onFailed(String code, String message) {
-                sendSseEvent(runId, "agent_thinking", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
-                    "phase", "failed",
-                    "message", "智能体执行出错: " + message
-                )));
-            }
-        }).outputs());
-    }
-
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> executeStreamingParallelGroup(UUID runId, WorkflowNodeRunEntity nodeRun, Map<String, Object> variables, UUID operatorUserId) {
-        assertRunNotCancelled(runId);
-        WorkflowRunEntity run = workflowRunRepository.findById(runId).get();
-        String nowStr = clock.instant().toString();
-
-        Object rawAgents = nodeRun.getConfigSnapshot().get("clusterAgents");
-        if (!(rawAgents instanceof List<?> agents) || agents.isEmpty()) {
-            Map<String, Object> output = new LinkedHashMap<>(variables);
-            output.put("summary", "智能体集群未配置子智能体，已透传上游变量。");
-            return output;
-        }
-
-        Map<String, Object> currentVars = new LinkedHashMap<>(variables);
-        List<Map<String, Object>> summaries = new ArrayList<>();
-        
-        int agentIndex = 0;
-        for (Object rawAgent : agents) {
-            assertRunNotCancelled(runId);
-            if (!(rawAgent instanceof Map<?, ?> rawMap)) {
-                continue;
-            }
-            Map<String, Object> agentConfig = new LinkedHashMap<>((Map<String, Object>) rawMap);
-            String agentName = stringValue(agentConfig.get("name"), "子智能体");
-
-            sendSseEvent(runId, "cluster_agent", eventPayload(runId, nodeRun.getId(), nowStr, Map.of(
-                "agentIndex", agentIndex,
-                "agentName", agentName,
-                "eventType", "started"
-            )));
-
-            AgentRuntimeRequest agentRequest = new AgentRuntimeRequest(
-                run,
-                nodeRun,
-                agentConfig,
-                currentVars,
-                Map.of(),
-                operatorUserId
-            );
-
-            final int idx = agentIndex;
-            final String name = agentName;
-
-            Map<String, Object> agentOutput;
-            try {
-                agentOutput = agentRuntimeService.executeStreaming(agentRequest, new AgentRuntimeService.AgentRuntimeEventSink() {
-                private final StringBuilder subAccumulated = new StringBuilder();
-
-                @Override
-                public void onPhase(String phase, String message) {
-                    sendSseEvent(runId, "cluster_agent", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
-                        "agentIndex", idx,
-                        "agentName", name,
-                        "eventType", "phase",
-                        "phase", phase,
-                        "message", message
-                    )));
-                }
-
-                @Override
-                public void onToolCall(String toolName, String toolType, String status, String result, long durationMs) {
-                    sendSseEvent(runId, "cluster_agent", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
-                        "agentIndex", idx,
-                        "agentName", name,
-                        "eventType", "tool_call",
-                        "toolName", toolName,
-                        "toolType", toolType,
-                        "toolStatus", status,
-                        "result", summarizeText(result),
-                        "durationMs", durationMs
-                    )));
-                }
-
-                @Override
-                public void onToken(String deltaContent, String accumulatedContent) {
-                    if (accumulatedContent != null && !accumulatedContent.isBlank()) {
-                        subAccumulated.setLength(0);
-                        subAccumulated.append(accumulatedContent);
-                    } else if (deltaContent != null && !deltaContent.isBlank()) {
-                        subAccumulated.append(deltaContent);
-                    }
-                    sendSseEvent(runId, "cluster_agent", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
-                        "agentIndex", idx,
-                        "agentName", name,
-                        "eventType", "streaming",
-                        "deltaContent", deltaContent == null ? "" : deltaContent,
-                        "accumulatedContent", subAccumulated.toString()
-                    )));
-                }
-
-                @Override
-                public void onCompleted(String answer) {
-                    subAccumulated.setLength(0);
-                    subAccumulated.append(answer == null ? "" : answer);
-                    sendSseEvent(runId, "cluster_agent", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
-                        "agentIndex", idx,
-                        "agentName", name,
-                        "eventType", "streaming",
-                        "deltaContent", "",
-                        "accumulatedContent", subAccumulated.toString()
-                    )));
-                }
-
-                @Override
-                public void onFailed(String code, String message) {
-                    sendSseEvent(runId, "cluster_agent", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
-                        "agentIndex", idx,
-                        "agentName", name,
-                        "eventType", "failed",
-                        "errorCode", code,
-                        "errorMessage", message
-                    )));
-                }
-            }).outputs();
-            } catch (Exception exception) {
-                String errorCode = exception instanceof ApiException apiException
-                    ? apiException.getCode()
-                    : "CLUSTER_AGENT_FAILED";
-                String errorMessage = exception instanceof ApiException apiException
-                    ? apiException.getMessage()
-                    : "子智能体执行失败，请稍后重试";
-                log.warn(
-                    "智能体集群子智能体执行失败 runId={} nodeRunId={} agentIndex={} agentName={} errorCode={} requestId={}",
-                    runId,
-                    nodeRun.getId(),
-                    idx,
-                    name,
-                    errorCode,
-                    RequestIds.current(),
-                    exception
-                );
-                sendSseEvent(runId, "cluster_agent", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
-                    "agentIndex", idx,
-                    "agentName", name,
-                    "eventType", "failed",
-                    "errorCode", errorCode,
-                    "errorMessage", errorMessage
-                )));
-                summaries.add(Map.of(
-                    "name", name,
-                    "status", "failed",
-                    "errorCode", errorCode,
-                    "errorMessage", errorMessage,
-                    "summary", errorMessage
-                ));
-                persistClusterProgress(runId, nodeRun.getId(), summaries, agentIndex + 1);
-                agentIndex++;
-                continue;
-            }
-
-            currentVars.putAll(agentOutput);
-
-            String finalAnswer = stringValue(agentOutput.get("final_answer"), "");
-            String displayText = !finalAnswer.isBlank()
-                ? finalAnswer
-                : stringValue(agentOutput.get("summary"), "已完成");
-            Map<String, Object> summaryEntry = new LinkedHashMap<>();
-            summaryEntry.put("name", agentName);
-            summaryEntry.put("status", "completed");
-            summaryEntry.put("final_answer", displayText);
-            summaryEntry.put("summary", summarizeText(displayText));
-            summaries.add(summaryEntry);
-            persistClusterProgress(runId, nodeRun.getId(), summaries, agentIndex + 1);
-
-            sendSseEvent(runId, "cluster_agent", eventPayload(runId, nodeRun.getId(), clock.instant().toString(), Map.of(
-                "agentIndex", idx,
-                "agentName", name,
-                "eventType", "completed",
-                "outputSummary", displayText
-            )));
-
-            agentIndex++;
-        }
-
-        currentVars.put("clusterAgents", summaries);
-        String finalAnswer = clusterFinalAnswer(summaries);
-        currentVars.put("final_answer", finalAnswer);
-        currentVars.put("agent_response", finalAnswer);
-        currentVars.put("summary", "智能体集群已完成 " + summaries.size() + " 个子智能体。");
-        return currentVars;
-    }
-
-    private void sendSseEvent(UUID runId, String eventType, Object data) {
-        if (runId == null) {
-            return;
-        }
-        SseEmitter emitter = runStreamEmitterRegistry.current(runId);
-        if (emitter == null) {
-            return;
-        }
-        AtomicBoolean open = runStreamEmitterRegistry.openState(emitter);
-        if (!open.get()) {
-            return;
-        }
-        try {
-            emitter.send(SseEmitter.event()
-                .name(eventType)
-                .data(data, org.springframework.http.MediaType.APPLICATION_JSON));
-        } catch (Exception exception) {
-            open.set(false);
-            runStreamEmitterRegistry.markClosed(emitter);
-            if (ClientDisconnectSupport.isClientDisconnect(exception)) {
-                log.debug("SSE 连接已关闭，跳过推送 eventType={} runId={}", eventType, runId);
-                return;
-            }
-            log.warn("发送 SSE 事件失败 eventType={} runId={} error={}", eventType, runId, exception.getMessage());
-        }
-    }
-
-    private void completeSseEmitter(UUID runId) {
-        if (runId == null) {
-            return;
-        }
-        SseEmitter emitter = runStreamEmitterRegistry.current(runId);
-        if (emitter == null) {
-            return;
-        }
-        AtomicBoolean open = runStreamEmitterRegistry.openState(emitter);
-        open.set(false);
-        runStreamEmitterRegistry.markClosed(emitter);
-        runStreamEmitterRegistry.remove(runId, emitter);
-        try {
-            emitter.complete();
-        } catch (Exception exception) {
-            if (!ClientDisconnectSupport.isClientDisconnect(exception)) {
-                log.debug("关闭 SSE 连接失败 runId={} message={}", runId, exception.getMessage());
-            }
-        }
-    }
-
-    private void persistClusterProgress(UUID runId, UUID nodeRunId, List<Map<String, Object>> summaries, int nextAgentIndex) {
-        Map<String, Object> partial = new LinkedHashMap<>();
-        partial.put("clusterAgents", new ArrayList<>(summaries));
-        partial.put("clusterProgress", Map.of(
-            "completedCount", summaries.size(),
-            "nextAgentIndex", nextAgentIndex
-        ));
-        try {
-            workflowNodeRunRepository.findById(nodeRunId).ifPresent(node -> {
-                if (!"running".equals(node.getState())) {
-                    return;
-                }
-                node.patchOutputSnapshot(partial, clock.instant());
-                workflowNodeRunRepository.save(node);
-            });
-        } catch (Exception exception) {
-            log.warn(
-                "保存智能体集群增量进度失败 runId={} nodeRunId={} requestId={}",
-                runId,
-                nodeRunId,
-                RequestIds.current(),
-                exception
-            );
-        }
-    }
-
-    private static int readClusterNextAgentIndex(Map<String, Object> output) {
-        Object rawProgress = output.get("clusterProgress");
-        if (!(rawProgress instanceof Map<?, ?> progressMap)) {
-            Object rawSummaries = output.get("clusterAgents");
-            if (rawSummaries instanceof List<?> summaries) {
-                return summaries.size();
-            }
-            return 0;
-        }
-        Object nextIndex = progressMap.get("nextAgentIndex");
-        if (nextIndex instanceof Number number) {
-            return number.intValue();
-        }
-        Object completedCount = progressMap.get("completedCount");
-        if (completedCount instanceof Number number) {
-            return number.intValue();
-        }
-        return 0;
-    }
-
-    private Map<String, Object> eventPayload(UUID runId, UUID nodeRunId, String timestamp, Map<String, Object> extra) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("runId", runId.toString());
-        if (nodeRunId != null) {
-            payload.put("nodeRunId", nodeRunId.toString());
-        }
-        payload.put("timestamp", timestamp);
-        if (extra != null) {
-            payload.putAll(extra);
-        }
-        return payload;
-    }
-
-    private static String stringValue(Object value, String fallback) {
-        String text = value == null ? "" : value.toString().trim();
-        return text.isBlank() ? fallback : text;
-    }
-
-    private static String summarizeText(String content) {
-        String normalized = content == null ? "" : content.replaceAll("\\s+", " ").trim();
-        if (normalized.isBlank()) {
-            return "智能体已完成模型调用。";
-        }
-        return normalized.length() > 120 ? normalized.substring(0, 120) + "..." : normalized;
-    }
-
-    private static String clusterFinalAnswer(List<Map<String, Object>> summaries) {
-        if (summaries == null || summaries.isEmpty()) {
-            return "智能体集群未生成子智能体结论。";
-        }
-        StringBuilder result = new StringBuilder("## 智能体集群结论\n");
-        for (Map<String, Object> summary : summaries) {
-            String body = stringValue(summary.get("final_answer"), "");
-            if (body.isBlank()) {
-                body = stringValue(summary.get("summary"), "已完成");
-            }
-            result.append("\n### ")
-                .append(stringValue(summary.get("name"), "子智能体"))
-                .append("\n")
-                .append(body)
-                .append("\n");
-        }
-        return result.toString();
-    }
 }

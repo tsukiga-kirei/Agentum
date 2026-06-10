@@ -1,14 +1,12 @@
 package com.agentum.workbench.interfaces;
 
 import com.agentum.auth.application.CurrentUserPrincipal;
-import com.agentum.shared.api.ClientDisconnectSupport;
+import com.agentum.runtime.stream.RunStreamRelayService;
 import com.agentum.shared.api.ApiResponse;
 import com.agentum.shared.api.RequestIds;
-import com.agentum.workbench.application.RunStreamEmitterRegistry;
 import com.agentum.workbench.application.WorkbenchAccess;
 import com.agentum.workbench.application.WorkbenchRuntimeService;
 import jakarta.servlet.http.HttpServletRequest;
-import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,11 +17,15 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
- * 任务处理流式推送及步进控制控制器。
+ * 任务运行态控制器：SSE 进度流（Redis Stream 中继）与步进/中断/重新执行/恢复进度入口。
+ *
+ * <p>执行与浏览器连接完全解耦：advance 仅创建执行作业并投递 MQ，
+ * 真实执行由 Worker 完成，进度通过 Redis Stream 回放，刷新/断线均可无感恢复。</p>
  */
 @RestController
 @RequestMapping("/api/tenants/{tenantId}/workbench")
@@ -34,96 +36,40 @@ public class RuntimeSseController {
 
     private final WorkbenchAccess workbenchAccess;
     private final WorkbenchRuntimeService workbenchRuntimeService;
-    private final RunStreamEmitterRegistry runStreamEmitterRegistry;
+    private final RunStreamRelayService runStreamRelayService;
 
     public RuntimeSseController(
         WorkbenchAccess workbenchAccess,
         WorkbenchRuntimeService workbenchRuntimeService,
-        RunStreamEmitterRegistry runStreamEmitterRegistry
+        RunStreamRelayService runStreamRelayService
     ) {
         this.workbenchAccess = workbenchAccess;
         this.workbenchRuntimeService = workbenchRuntimeService;
-        this.runStreamEmitterRegistry = runStreamEmitterRegistry;
+        this.runStreamRelayService = runStreamRelayService;
     }
 
     /**
-     * 获取任务执行的 SSE 事件流。
+     * 获取任务执行的 SSE 事件流（Redis Stream 中继）。
+     *
+     * @param lastEventId 断线续传起点（上次收到的事件 ID），优先级高于 replay
+     * @param replay      true 时回放当前步骤已产生的全部事件（刷新/重进页面场景）
      */
     @GetMapping(value = "/runs/{runId}/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter stream(
         @PathVariable UUID tenantId,
         @PathVariable UUID runId,
+        @RequestParam(required = false) String lastEventId,
+        @RequestParam(defaultValue = "false") boolean replay,
         @AuthenticationPrincipal CurrentUserPrincipal principal
     ) {
         workbenchAccess.assertCanAccessWorkbench(principal, tenantId);
-        log.info("用户建立 SSE 连接 tenantId={} userId={} runId={} requestId={}",
-            tenantId, principal.userId(), runId, RequestIds.current());
-
-        SseEmitter emitter = createEmitter(runId);
-        runStreamEmitterRegistry.register(runId, emitter);
-
-        sendConnectedEvent(runId, emitter);
-        workbenchRuntimeService.replayActiveNodeProgress(tenantId, runId);
-        return emitter;
+        log.info("用户建立 SSE 连接 tenantId={} userId={} runId={} replay={} lastEventId={} requestId={}",
+            tenantId, principal.userId(), runId, replay, lastEventId, RequestIds.current());
+        return runStreamRelayService.openStream(runId, lastEventId, replay);
     }
-
-    private SseEmitter createEmitter(UUID runId) {
-        // 0 表示不设超时，避免长任务 AI 调用期间 SSE 被 Tomcat 提前断开。
-        SseEmitter emitter = new SseEmitter(0L);
-        emitter.onCompletion(() -> {
-            log.info("SSE 连接完成 runId={}", runId);
-            runStreamEmitterRegistry.remove(runId, emitter);
-        });
-        emitter.onTimeout(() -> {
-            log.warn("SSE 连接超时 runId={}", runId);
-            runStreamEmitterRegistry.remove(runId, emitter);
-        });
-        emitter.onError(ex -> {
-            if (ClientDisconnectSupport.isClientDisconnect(ex)) {
-                log.debug("SSE 客户端断开 runId={}", runId);
-            } else {
-                log.warn("SSE 连接异常 runId={} message={}", runId, ex.getMessage());
-            }
-            runStreamEmitterRegistry.remove(runId, emitter);
-        });
-        return emitter;
-    }
-
-    private void sendConnectedEvent(UUID runId, SseEmitter emitter) {
-        if (runStreamEmitterRegistry.current(runId) != emitter) {
-            return;
-        }
-        try {
-            emitter.send(SseEmitter.event()
-                .name("connected")
-                .data(Map.of(
-                    "runId", runId.toString(),
-                    "currentState", "connected",
-                    "timestamp", java.time.Instant.now().toString()
-                ), MediaType.APPLICATION_JSON));
-        } catch (Exception exception) {
-            runStreamEmitterRegistry.remove(runId, emitter);
-            if (ClientDisconnectSupport.isClientDisconnect(exception)) {
-                log.debug("SSE 初始推送时客户端已断开 runId={}", runId);
-            } else {
-                log.warn("推送初始 SSE 消息失败 runId={}", runId, exception);
-            }
-            closeEmitterQuietly(emitter);
-        }
-    }
-
-    private static void closeEmitterQuietly(SseEmitter emitter) {
-        try {
-            emitter.complete();
-        } catch (Exception ignored) {
-            // 客户端已断开时 complete 也可能失败，忽略即可。
-        }
-    }
-
-    // register 已改为 markClosed 旧连接，此处保留供必要时显式关闭。
 
     /**
-     * 手动触发推进下一步执行。
+     * 推进执行下一步：创建执行作业并投递 MQ，立即返回含 activeJob 的任务详情。
      */
     @PostMapping("/runs/{runId}/advance")
     public ApiResponse<WorkbenchApi.RunDetail> advance(
@@ -133,19 +79,16 @@ public class RuntimeSseController {
         HttpServletRequest request
     ) {
         workbenchAccess.assertCanAccessWorkbench(principal, tenantId);
-        log.info("用户触发人工步进推进流程 tenantId={} userId={} runId={} requestId={}",
+        log.info("用户触发步进推进流程 tenantId={} userId={} runId={} requestId={}",
             tenantId, principal.userId(), runId, RequestIds.current(request));
-
-        workbenchRuntimeService.advanceSingleStep(tenantId, principal, runId);
-
         return ApiResponse.success(
-            workbenchRuntimeService.getRunDetail(tenantId, principal, runId),
+            workbenchRuntimeService.advanceRun(tenantId, principal, runId),
             RequestIds.current(request)
         );
     }
 
     /**
-     * 中断当前运行中的智能体步骤并重置为待执行。
+     * 主动中断当前执行：节点置为 canceled 并清空该步骤全部运行数据。
      */
     @PostMapping("/runs/{runId}/interrupt")
     public ApiResponse<WorkbenchApi.RunDetail> interrupt(
@@ -157,9 +100,44 @@ public class RuntimeSseController {
         workbenchAccess.assertCanAccessWorkbench(principal, tenantId);
         log.info("用户中断任务步骤 tenantId={} userId={} runId={} requestId={}",
             tenantId, principal.userId(), runId, RequestIds.current(request));
-
         return ApiResponse.success(
             workbenchRuntimeService.interruptRun(tenantId, principal, runId),
+            RequestIds.current(request)
+        );
+    }
+
+    /**
+     * 主动「重新执行」：清空节点全部数据后从头重跑整个节点（用于中断后的整步重做）。
+     */
+    @PostMapping("/runs/{runId}/nodes/{nodeRunId}/restart")
+    public ApiResponse<WorkbenchApi.RunDetail> restart(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID runId,
+        @PathVariable UUID nodeRunId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        workbenchAccess.assertCanAccessWorkbench(principal, tenantId);
+        return ApiResponse.success(
+            workbenchRuntimeService.restartNode(tenantId, principal, runId, nodeRunId),
+            RequestIds.current(request)
+        );
+    }
+
+    /**
+     * 被动「恢复进度」：保留已成功子智能体结果，仅重跑失败/未完成部分（用于异常失败后的最小损失恢复）。
+     */
+    @PostMapping("/runs/{runId}/nodes/{nodeRunId}/recover")
+    public ApiResponse<WorkbenchApi.RunDetail> recover(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID runId,
+        @PathVariable UUID nodeRunId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        workbenchAccess.assertCanAccessWorkbench(principal, tenantId);
+        return ApiResponse.success(
+            workbenchRuntimeService.recoverNode(tenantId, principal, runId, nodeRunId),
             RequestIds.current(request)
         );
     }

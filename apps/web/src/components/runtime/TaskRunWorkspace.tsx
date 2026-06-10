@@ -22,11 +22,6 @@ import { MarkdownRenderer } from "./MarkdownRenderer";
 import { workbenchApi } from "../../services/apiClient";
 import { formatRuntimeErrorMessage } from "../../utils/runtimeErrors";
 import { mergeClusterAgents, parseClusterAgentSummariesFromOutputs, clusterAgentDisplayText } from "../../utils/clusterAgentsMerge";
-import {
-  clearStreamPausedByUser,
-  isStreamPausedByUser,
-  markStreamPausedByUser,
-} from "../../utils/streamProgressStorage";
 import { WorkbenchGlobalActions } from "../workbench/SurfacePageLayout";
 import { 
   Save, 
@@ -54,8 +49,18 @@ interface TaskRunWorkspaceProps {
 
 type RunWorkspaceTab = "overview" | "current" | "trace" | "deliveries";
 
+/** 看门狗判定：activeJob 显示运行中但超过该阈值无任何事件（含 heartbeat）即视为异常。 */
+const WATCHDOG_STALE_THRESHOLD_MS = 60_000;
+/** 看门狗判定：SSE 连续重连失败达到该次数即视为前后端关联失效。 */
+const WATCHDOG_RECONNECT_FAILURE_LIMIT = 3;
+
 function isRunFlowCompleted(run: WorkbenchRunDetail): boolean {
   return run.state === "completed" || run.progressPercent >= 100;
+}
+
+/** 后端在途作业是否仍活跃（queued/running）。 */
+function isActiveJobAlive(run: WorkbenchRunDetail): boolean {
+  return !!run.activeJob && (run.activeJob.status === "queued" || run.activeJob.status === "running");
 }
 
 /** 重新进入/刷新时：未完成且可编辑的任务默认打开「当前处理」。 */
@@ -80,13 +85,11 @@ export function TaskRunWorkspace({
   const [selectedTraceStepIndex, setSelectedTraceStepIndex] = useState<number | null>(null);
   const [isAdvancing, setIsAdvancing] = useState(false);
   const [advanceError, setAdvanceError] = useState<string | null>(null);
-  // 同步读取 sessionStorage，避免首屏 effect 竞态导致刷新后自动重连 SSE。
-  const [streamInterrupted, setStreamInterrupted] = useState(() => isStreamPausedByUser(initialRun.id));
-  const userPausedRef = useRef(streamInterrupted);
-  userPausedRef.current = streamInterrupted;
+  // 前端看门狗：SSE 连续失败或后台长时间无事件且探测失败时，主动亮出被动「恢复进度」按钮。
+  const [watchdogStaleMessage, setWatchdogStaleMessage] = useState<string | null>(null);
   const processedStreamEventsRef = useRef(0);
-  
-  const stream = useRunStream(tenantId, runDetail.id, token, { userPausedRef });
+
+  const stream = useRunStream(tenantId, runDetail.id, token);
 
   async function reloadRunDetail(): Promise<WorkbenchRunDetail | null> {
     try {
@@ -134,17 +137,9 @@ export function TaskRunWorkspace({
   useEffect(() => {
     processedStreamEventsRef.current = 0;
     setAdvanceError(null);
-    if (!isStreamPausedByUser(runDetail.id)) {
-      stream.disconnect();
-    }
+    setWatchdogStaleMessage(null);
+    stream.disconnect();
   }, [runDetail.id, stream.disconnect]);
-
-  useEffect(() => {
-    if (isStreamPausedByUser(runDetail.id)) {
-      setStreamInterrupted(true);
-      userPausedRef.current = true;
-    }
-  }, [runDetail.id]);
 
   useEffect(() => {
     return () => {
@@ -162,11 +157,6 @@ export function TaskRunWorkspace({
     setActiveRunTab(resolveInitialRunTab(runDetail));
     setSelectedTraceStepIndex(null);
   }, [runDetail.id]);
-
-  const streamEventsRef = useRef(stream.events);
-  useEffect(() => {
-    streamEventsRef.current = stream.events;
-  }, [stream.events]);
 
   // 2. Derive preview representation from raw run detail
   const basePreview = useMemo(() => {
@@ -266,51 +256,108 @@ export function TaskRunWorkspace({
   const isStreamableStep =
     activeStep.kind === "agent" || activeStep.kind === "multiAgent";
 
-  // 后台仍在跑但前端未连流时，视为中断态，只展示「重新生成」。
+  const activeJobAlive = isActiveJobAlive(runDetail);
+  const stepCanceled = activeStep.state === "canceled";
+
+  // 刷新/重进时：后端作业仍在执行（activeJob queued/running 或节点 running）→ 自动重连 SSE
+  // 并整步回放进度，做到无感恢复；绝不重复触发 advance。
   useEffect(() => {
-    if (runDetail.readOnly || streamInterrupted || !isStreamableStep) {
+    if (runDetail.readOnly) {
       return;
     }
-    if (activeStep.state !== "running") {
+    const backendStillExecuting = activeJobAlive || activeStep.state === "running";
+    if (!backendStillExecuting) {
       return;
     }
-    if (stream.connectionState !== "disconnected" || stream.isStreaming) {
+    if (stream.connectionState === "connected" || stream.connectionState === "connecting") {
       return;
     }
-    markStreamPausedByUser(runDetail.id);
-    userPausedRef.current = true;
-    setStreamInterrupted(true);
+    void stream.connect({ replay: true });
   }, [
     runDetail.readOnly,
     runDetail.id,
-    streamInterrupted,
-    isStreamableStep,
+    activeJobAlive,
     activeStep.state,
     activeStep.nodeRunId,
     stream.connectionState,
-    stream.isStreaming,
+    stream.connect,
   ]);
 
+  // 节点到达终态后清除看门狗异常标记（恢复进度/重新执行成功后不再残留提示）。
   useEffect(() => {
-    if (activeStep.state === "done" || activeStep.state === "failed") {
-      setStreamInterrupted(false);
-      userPausedRef.current = false;
-      clearStreamPausedByUser(runDetail.id);
+    if (activeStep.state === "done" || activeStep.state === "pending") {
+      setWatchdogStaleMessage(null);
     }
-  }, [activeStep.nodeRunId, activeStep.state, runDetail.id]);
+  }, [activeStep.nodeRunId, activeStep.state]);
 
+  // 失败或被中断的步骤自动切到「当前处理」，让用户第一时间看到恢复按钮。
   useEffect(() => {
-    if (isStreamPausedByUser(runDetail.id)) {
-      setStreamInterrupted(true);
-      userPausedRef.current = true;
-    }
-  }, [runDetail.id]);
-
-  useEffect(() => {
-    if (activeStep.state === "failed" && !isFlowCompleted && !runDetail.readOnly) {
+    if ((activeStep.state === "failed" || activeStep.state === "canceled") && !isFlowCompleted && !runDetail.readOnly) {
       setActiveRunTab("current");
     }
   }, [activeStep.nodeRunId, activeStep.state, isFlowCompleted, runDetail.readOnly]);
+
+  // activeJob 轮询兜底：后台执行期间每 10s 拉一次任务详情，即使 SSE 完全失效，
+  // 节点完成/失败的状态也能收敛到前端（同时为看门狗提供探测样本）。
+  useEffect(() => {
+    if (runDetail.readOnly || !activeJobAlive) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void reloadRunDetail();
+    }, 10_000);
+    return () => {
+      window.clearInterval(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runDetail.readOnly, runDetail.id, activeJobAlive]);
+
+  // 前端看门狗：满足任一条件即判定异常，亮出被动「恢复进度」按钮。
+  // 1) SSE 连续重连失败达到阈值（前后端关联失效）；
+  // 2) activeJob 显示运行中，但超过阈值无任何事件（含 heartbeat），且 getRun 探测后仍无进展。
+  useEffect(() => {
+    if (runDetail.readOnly || watchdogStaleMessage) {
+      return;
+    }
+    if (stream.reconnectFailures >= WATCHDOG_RECONNECT_FAILURE_LIMIT) {
+      setWatchdogStaleMessage("与执行服务的连接持续失败，页面已无法获取最新进度。");
+      return;
+    }
+    if (!activeJobAlive) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      const lastSeen = stream.lastEventAt;
+      const sinceLastEvent = lastSeen === null ? Number.POSITIVE_INFINITY : Date.now() - lastSeen;
+      if (stream.connectionState === "connected" && sinceLastEvent < WATCHDOG_STALE_THRESHOLD_MS) {
+        return;
+      }
+      // 长时间无事件：主动探测一次后端，若作业已消失则由轮询兜底收敛，否则判定执行无响应。
+      void (async () => {
+        const probed = await reloadRunDetail();
+        if (!probed) {
+          setWatchdogStaleMessage("无法从服务端获取任务状态，执行进度可能已中断。");
+          return;
+        }
+        const probeLastSeen = stream.lastEventAt;
+        const probeSince = probeLastSeen === null ? Number.POSITIVE_INFINITY : Date.now() - probeLastSeen;
+        if (isActiveJobAlive(probed) && probeSince >= WATCHDOG_STALE_THRESHOLD_MS) {
+          setWatchdogStaleMessage("后台执行长时间无响应（超过 1 分钟未收到任何进度心跳）。");
+        }
+      })();
+    }, 15_000);
+    return () => {
+      window.clearInterval(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    runDetail.readOnly,
+    runDetail.id,
+    activeJobAlive,
+    watchdogStaleMessage,
+    stream.reconnectFailures,
+    stream.connectionState,
+  ]);
 
   useEffect(() => {
     if (isFlowCompleted && activeRunTab === "current") {
@@ -337,12 +384,13 @@ export function TaskRunWorkspace({
     }
   }, [activeStep.nodeRunId, activeStep.state, activeStep.kind, isFlowCompleted, runDetail.readOnly]);
 
-  // 仅在首次进入任务且当前步骤为待执行智能体时自动启动；中断后需手动重新生成。
+  // 进入即执行：当前步骤为待执行智能体/集群且后端无在途作业时自动启动。
+  // 节点 canceled（主动中断）或 failed 时不自动启动，由用户点「重新执行 / 恢复进度」。
   useEffect(() => {
     if (initialAutoStartRef.current) {
       return;
     }
-    if (runDetail.readOnly || isAdvancing || isLiveExecuting || streamInterrupted) {
+    if (runDetail.readOnly || isAdvancing || isLiveExecuting || activeJobAlive) {
       return;
     }
     if (activeStep.state !== "pending") {
@@ -351,13 +399,15 @@ export function TaskRunWorkspace({
     if (activeStep.kind !== "agent" && activeStep.kind !== "multiAgent") {
       return;
     }
-    if (isStreamPausedByUser(runDetail.id)) {
-      return;
-    }
     initialAutoStartRef.current = true;
     void handleAdvanceStep();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runDetail.id, activeStep.nodeRunId, activeStep.state, activeStep.kind, streamInterrupted]);
+  }, [runDetail.id, activeStep.nodeRunId, activeStep.state, activeStep.kind, activeJobAlive]);
+
+  const isStreamReconnecting =
+    isStreamableStep
+    && activeStep.state === "running"
+    && (stream.connectionState === "connecting" || stream.connectionState === "reconnecting");
 
   const clusterAgentsForPanel = useMemo(() => {
     if (activeStep.kind !== "multiAgent") {
@@ -425,29 +475,21 @@ export function TaskRunWorkspace({
   }
 
   // 4. Action Handlers: Advance Step
+  // advance 仅创建执行作业并立即返回（202 语义），真实进度由 SSE 事件与 activeJob 轮询驱动，
+  // 不再阻塞等待节点完成。
   async function handleAdvanceStep() {
     if (isAdvancing) {
       return;
     }
     setIsAdvancing(true);
     setAdvanceError(null);
-    const eventCountBefore = stream.events.length;
-    const progressBefore = runDetail.progressPercent;
-    const runStateBefore = runDetail.state;
-    const nodeStatesBefore = new Map(runDetail.nodes.map((node) => [node.id, node.state]));
+    setWatchdogStaleMessage(null);
     try {
+      // 先建 SSE 连接再入队，确保 node_started 起的所有事件都能实时收到。
       await stream.ensureConnected();
       const afterAdvance = await workbenchApi.advanceStep(tenantId, token, runDetail.id);
       setRunDetail(afterAdvance);
       onReload(afterAdvance);
-      await waitForAdvanceResult({
-        eventCountBefore,
-        streamEventsRef,
-        reloadRunDetail,
-        progressBefore,
-        runStateBefore,
-        nodeStatesBefore,
-      });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "推进步骤失败";
       console.error("推进步骤失败", error);
@@ -524,11 +566,12 @@ export function TaskRunWorkspace({
     }
   }
 
+  // 主动中断：后端将节点置为 canceled 并清空该步骤全部运行数据，前端断开 SSE。
+  // 中断后只能「重新执行」整步重跑，状态由节点 canceled 驱动（不再使用 sessionStorage 标记）。
   async function handleInterruptStream() {
-    markStreamPausedByUser(runDetail.id);
-    userPausedRef.current = true;
     stream.disconnect();
-    setStreamInterrupted(true);
+    setAdvanceError(null);
+    setWatchdogStaleMessage(null);
     try {
       const updated = await workbenchApi.interruptRun(tenantId, token, runDetail.id);
       setRunDetail(updated);
@@ -537,25 +580,56 @@ export function TaskRunWorkspace({
       const message = error instanceof Error ? error.message : "中断执行失败";
       console.error("中断执行失败", error);
       setAdvanceError(message);
+      await reloadRunDetail();
     }
   }
 
-  async function handleRegenerateCurrentStep() {
-    clearStreamPausedByUser(runDetail.id);
-    userPausedRef.current = false;
-    setStreamInterrupted(false);
-    stream.disconnect();
+  // 主动「重新执行」：清空当前节点全部数据（含已成功子智能体）后从头重跑。
+  async function handleRestartStep() {
+    if (!activeStep.nodeRunId || isAdvancing) {
+      return;
+    }
+    setIsAdvancing(true);
     setAdvanceError(null);
+    setWatchdogStaleMessage(null);
+    stream.disconnect();
     try {
-      const hasRunningNode = runDetail.nodes.some((node) => node.state === "running");
-      if (hasRunningNode) {
-        const updated = await workbenchApi.interruptRun(tenantId, token, runDetail.id);
-        setRunDetail(updated);
-        onReload(updated);
-      }
-      await handleAdvanceStep();
+      const updated = await workbenchApi.restartNode(tenantId, token, runDetail.id, activeStep.nodeRunId);
+      setRunDetail(updated);
+      onReload(updated);
+      // restart 已重置 Redis Stream，回放即可拿到新一轮 node_started 起的全部事件。
+      await stream.connect({ replay: true });
     } catch (error: unknown) {
-      console.error("重新生成当前步骤失败", error);
+      const message = error instanceof Error ? error.message : "重新执行失败";
+      console.error("重新执行当前步骤失败", error);
+      setAdvanceError(message);
+      await reloadRunDetail();
+    } finally {
+      setIsAdvancing(false);
+    }
+  }
+
+  // 被动「恢复进度」：保留已成功子智能体结果，仅重跑失败/未完成部分，损失最小。
+  async function handleRecoverStep() {
+    if (!activeStep.nodeRunId || isAdvancing) {
+      return;
+    }
+    setIsAdvancing(true);
+    setAdvanceError(null);
+    setWatchdogStaleMessage(null);
+    stream.disconnect();
+    try {
+      const updated = await workbenchApi.recoverNode(tenantId, token, runDetail.id, activeStep.nodeRunId);
+      setRunDetail(updated);
+      onReload(updated);
+      await stream.connect({ replay: true });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "恢复进度失败";
+      console.error("恢复当前步骤进度失败", error);
+      setAdvanceError(message);
+      await reloadRunDetail();
+    } finally {
+      setIsAdvancing(false);
     }
   }
 
@@ -575,16 +649,6 @@ export function TaskRunWorkspace({
       onReload(afterAdvance);
     } catch (e: unknown) {
       console.error("重试节点失败", e);
-    }
-  }
-
-  async function handleRollbackPrevious() {
-    const currentIdx = resolveActiveStepIndex(preview.steps, runDetail);
-    for (let index = currentIdx - 1; index >= 0; index -= 1) {
-      if (preview.steps[index].state === "done") {
-        await handleRollback(preview.steps[index].nodeRunId);
-        return;
-      }
     }
   }
 
@@ -721,6 +785,8 @@ export function TaskRunWorkspace({
                       ? "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400"
                       : activeStep.state === "failed"
                       ? "bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400"
+                      : activeStep.state === "canceled"
+                      ? "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
                       : activeStep.state === "done"
                       ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400"
                       : activeStep.state === "pending"
@@ -735,6 +801,8 @@ export function TaskRunWorkspace({
                       ? "等待输入"
                       : activeStep.state === "failed"
                       ? "执行错误"
+                      : activeStep.state === "canceled"
+                      ? "已中断"
                       : activeStep.state === "done"
                       ? "已完成"
                       : activeStep.state === "pending"
@@ -827,19 +895,22 @@ export function TaskRunWorkspace({
               activeStep={activeStep}
               isStreaming={isLiveExecuting}
               isAdvancing={isAdvancing}
-              streamInterrupted={streamInterrupted}
+              isReconnecting={isStreamReconnecting}
               isRunCompleted={isFlowCompleted}
-              isRunFailed={runDetail.state === "failed" || activeStep.state === "failed"}
+              stepCanceled={stepCanceled}
+              stepFailed={runDetail.state === "failed" || activeStep.state === "failed"}
+              watchdogStale={!!watchdogStaleMessage}
+              failureMessage={watchdogStaleMessage ?? stepErrorMessage}
               readOnly={runDetail.readOnly}
               onAdvance={handleAdvanceStep}
               onCompleteTodo={(comment) => handleCompleteTodo({ comment })}
               onApprove={handleApprove}
               onReject={handleReject}
               onRetry={handleRegenerateStep}
-              onRollback={handleRollbackPrevious}
               onBack={onBack}
               onInterrupt={handleInterruptStream}
-              onRegenerateCurrent={handleRegenerateCurrentStep}
+              onRestart={handleRestartStep}
+              onRecover={handleRecoverStep}
             />
           )}
         </section>
@@ -1459,6 +1530,7 @@ function mapNodeState(state: string): RuntimeStepState {
   if (state === "waiting") return "waiting";
   if (state === "running") return "running";
   if (state === "failed") return "failed";
+  if (state === "canceled") return "canceled";
   return "pending";
 }
 
@@ -1632,7 +1704,7 @@ function resolveActiveStepIndex(steps: RuntimePreviewStep[], run?: WorkbenchRunD
     }
   }
 
-  const failedIndex = steps.findIndex((step) => step.state === "failed");
+  const failedIndex = steps.findIndex((step) => step.state === "failed" || step.state === "canceled");
   if (failedIndex >= 0) {
     return failedIndex;
   }
@@ -1647,81 +1719,10 @@ function resolveActiveStepIndex(steps: RuntimePreviewStep[], run?: WorkbenchRunD
   return lastExecutableStepIndex(steps);
 }
 
-interface WaitForAdvanceResultOptions {
-  eventCountBefore: number;
-  streamEventsRef: React.MutableRefObject<StreamEvent[]>;
-  reloadRunDetail: () => Promise<WorkbenchRunDetail | null>;
-  progressBefore: number;
-  runStateBefore: WorkbenchRunDetail["state"];
-  nodeStatesBefore: Map<string, string>;
-}
-
-async function waitForAdvanceResult(options: WaitForAdvanceResultOptions): Promise<void> {
-  const {
-    eventCountBefore,
-    streamEventsRef,
-    reloadRunDetail,
-    progressBefore,
-    runStateBefore,
-    nodeStatesBefore,
-  } = options;
-  const terminalEvents = new Set(["node_completed", "run_paused", "run_completed", "node_failed"]);
-
-  for (let attempt = 0; attempt < 30; attempt += 1) {
-    if (attempt > 0) {
-      await sleep(2000);
-    }
-
-    const newEvents = streamEventsRef.current.slice(eventCountBefore);
-    if (newEvents.some((event) => terminalEvents.has(event.type))) {
-      await reloadRunDetail();
-      return;
-    }
-
-    const updated = await reloadRunDetail();
-    if (!updated) {
-      continue;
-    }
-    if (updated.state === "completed" || updated.state === "failed") {
-      return;
-    }
-    const failedNode = updated.nodes.find((node) => node.state === "failed");
-    if (failedNode) {
-      return;
-    }
-    // 重复 advance 或刷新后重连：后台仍在执行时节点保持 running，不应等到超时。
-    if (attempt >= 1) {
-      const stillRunning = updated.nodes.some((node) => node.state === "running");
-      const hasTerminalEvent = newEvents.some((event) => terminalEvents.has(event.type));
-      if (stillRunning && !hasTerminalEvent) {
-        return;
-      }
-    }
-    if (updated.progressPercent > progressBefore || updated.state !== runStateBefore) {
-      return;
-    }
-    const nodeProgressed = updated.nodes.some((node) => {
-      const before = nodeStatesBefore.get(node.id);
-      return before !== node.state
-        && (node.state === "completed" || node.state === "failed" || node.state === "waiting");
-    });
-    if (nodeProgressed) {
-      return;
-    }
-  }
-
-  throw new Error("节点执行超时或连接中断，请刷新页面查看最新状态；若步骤已失败，请使用底部重试。");
-}
-
-function sleep(ms: number) {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, ms);
-  });
-}
-
 function lastExecutableStepIndex(steps: RuntimePreviewStep[]): number {
   for (let index = steps.length - 1; index >= 0; index--) {
-    if (steps[index].state === "failed" || steps[index].state === "running" || steps[index].state === "waiting" || steps[index].state === "done") {
+    const state = steps[index].state;
+    if (state === "failed" || state === "canceled" || state === "running" || state === "waiting" || state === "done") {
       return index;
     }
   }

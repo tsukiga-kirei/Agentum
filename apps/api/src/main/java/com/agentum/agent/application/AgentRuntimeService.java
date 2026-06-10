@@ -6,10 +6,10 @@ import com.agentum.asset.domain.TenantAssetCapabilityEntity;
 import com.agentum.asset.infrastructure.TenantAssetCapabilityRepository;
 import com.agentum.mcp.application.McpRuntimeRequest;
 import com.agentum.mcp.application.McpRuntimeService;
+import com.agentum.runtime.cancel.RunCancellationGuard;
 import com.agentum.shared.api.ApiException;
 import com.agentum.shared.api.RequestIds;
 import com.agentum.shared.security.FieldEncryptionService;
-import com.agentum.workbench.application.RunExecutionCancellationRegistry;
 import com.agentum.system.domain.ModelProviderEntity;
 import com.agentum.system.domain.SystemCapabilityEntity;
 import com.agentum.system.domain.TenantModelAssignmentEntity;
@@ -53,7 +53,7 @@ public class AgentRuntimeService {
     private final ModelChatClient modelChatClient;
     private final ObjectMapper objectMapper;
     private final Clock clock;
-    private final RunExecutionCancellationRegistry cancellationRegistry;
+    private final RunCancellationGuard cancellationGuard;
 
     public AgentRuntimeService(
         TenantModelAssignmentRepository tenantModelAssignmentRepository,
@@ -67,7 +67,7 @@ public class AgentRuntimeService {
         ModelChatClient modelChatClient,
         ObjectMapper objectMapper,
         Clock clock,
-        RunExecutionCancellationRegistry cancellationRegistry
+        RunCancellationGuard cancellationGuard
     ) {
         this.tenantModelAssignmentRepository = tenantModelAssignmentRepository;
         this.modelProviderRepository = modelProviderRepository;
@@ -80,7 +80,7 @@ public class AgentRuntimeService {
         this.modelChatClient = modelChatClient;
         this.objectMapper = objectMapper;
         this.clock = clock;
-        this.cancellationRegistry = cancellationRegistry;
+        this.cancellationGuard = cancellationGuard;
     }
 
     public AgentRuntimeResult execute(AgentRuntimeRequest request) {
@@ -982,9 +982,8 @@ public class AgentRuntimeService {
     }
 
     private void assertRunNotCancelled(UUID runId) {
-        if (cancellationRegistry.isCancelled(runId)) {
-            throw new ApiException(HttpStatus.CONFLICT, "RUN_CANCELLED", "任务已中断");
-        }
+        // 取消信号与执行截止时间均存放在 Redis：用户中断抛 RUN_CANCELLED，超时抛 WORKBENCH_NODE_EXECUTION_TIMEOUT。
+        cancellationGuard.assertExecutable(runId);
     }
 
     private static String stringValue(Object value) {

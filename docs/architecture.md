@@ -299,9 +299,9 @@ pending -> running -> paused -> resumed -> running -> completed
 - 管理员介入：取消、重试、补偿和故障处理，来自运行监控。
 - 审计查看：执行链路、节点输入输出快照、工具调用、审核和交付记录，只读展示，不修改运行状态。
 
-**异步执行演进（阶段二目标）**
+**异步执行（已落地，仅 async 模式）**
 
-当前第一版在 API 进程内以 `@Async` 同步调用模型并通过内存 SSE 推送进度。目标架构将节点执行投递到 RabbitMQ，由 Runtime Worker 消费；Redis Stream 承载热进度与 SSE 回放；PostgreSQL 仍为事实源。支持 `inline` / `async` 双模式切换。详见 [运行态异步执行设计](./runtime-async-execution-design.md)。
+运行态已重构为「RabbitMQ 执行 + Redis Stream 进度回放」：`POST /advance` 仅创建执行作业（`workflow_run_execution_jobs`）并投递 `NodeExecuteCommand`，同 JVM 的 `NodeExecutionService` Worker 消费执行；执行租约、取消信号、节点超时（`AGENTUM_RUNTIME_NODE_TIMEOUT_SECONDS`）与进度事件均放 Redis，PostgreSQL 仍为事实源。SSE 由 `RunStreamRelayService` 从 Redis Stream 中继，支持 `lastEventId` 断线续传与 `replay` 整步回放，刷新/重进页面无感恢复。`StaleExecutionReaper` 定时回收超时与失联作业。原 `@Async` + 内存 SSE 路径已删除，后端强依赖 Redis 与 RabbitMQ。中断/恢复语义：主动中断 → 节点 `canceled` 并清空该步数据，只能「重新执行」整步重跑；被动失败 → 节点 `failed`，已落库的子智能体结果（`workflow_cluster_agent_runs`）保留，「恢复进度」只重跑失败/未完成部分。智能体集群节点支持 `parallel`（真并发）与 `sequential`（顺序）两种执行方式。详见 [运行态异步执行设计](./runtime-async-execution-design.md)。
 
 ### 5.6 智能体运行时
 

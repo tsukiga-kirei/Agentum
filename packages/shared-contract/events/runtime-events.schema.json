@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "AgentumRuntimeEvents",
-  "description": "Schema definitions for Agentum runtime SSE stream events.",
+  "description": "Schema definitions for Agentum runtime SSE stream events. 事件由 Worker 写入 Redis Stream（run:{runId}:events），API 中继为 SSE 推送；每条 SSE 消息的 id 行携带 Redis Stream 记录 ID（eventId），前端用于断线续传（?lastEventId=）与整步回放（?replay=true）。",
   "type": "object",
   "definitions": {
     "ConnectedEvent": {
@@ -69,12 +69,19 @@
         "nodeRunId": { "type": "string", "format": "uuid" },
         "agentIndex": { "type": "integer" },
         "agentName": { "type": "string" },
-        "eventType": { "type": "string", "enum": ["started", "streaming", "tool_call", "completed", "failed"] },
+        "eventType": { "type": "string", "enum": ["started", "phase", "streaming", "tool_call", "completed", "failed"] },
+        "phase": { "type": "string", "description": "eventType=phase 时的子智能体执行阶段" },
+        "message": { "type": "string", "description": "eventType=phase 时的阶段说明" },
         "deltaContent": { "type": "string" },
         "accumulatedContent": { "type": "string" },
         "toolName": { "type": "string" },
+        "toolType": { "type": "string", "enum": ["mcp", "skill"] },
         "toolStatus": { "type": "string", "enum": ["started", "completed", "failed"] },
+        "result": { "type": "string" },
+        "durationMs": { "type": "integer" },
         "outputSummary": { "type": "string" },
+        "errorCode": { "type": "string" },
+        "errorMessage": { "type": "string" },
         "timestamp": { "type": "string", "format": "date-time" }
       }
     },
@@ -123,8 +130,12 @@
     },
     "HeartbeatEvent": {
       "type": "object",
+      "description": "Worker 执行期间每 15 秒发送一次；前端看门狗据此判定后台执行是否存活。",
       "required": ["timestamp"],
       "properties": {
+        "runId": { "type": "string", "format": "uuid" },
+        "nodeRunId": { "type": "string", "format": "uuid" },
+        "workerId": { "type": "string" },
         "timestamp": { "type": "string", "format": "date-time" }
       }
     }

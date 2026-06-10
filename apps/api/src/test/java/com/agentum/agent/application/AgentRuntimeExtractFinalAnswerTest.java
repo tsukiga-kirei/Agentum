@@ -12,7 +12,7 @@ import com.agentum.system.infrastructure.SystemCapabilityRepository;
 import com.agentum.system.infrastructure.TenantModelAssignmentRepository;
 import com.agentum.agent.application.ModelChatClient.ChatResult;
 import com.agentum.agent.application.ModelChatClient.ToolCall;
-import com.agentum.workbench.application.RunExecutionCancellationRegistry;
+import com.agentum.runtime.cancel.RunCancellationGuard;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.util.List;
@@ -34,7 +34,7 @@ class AgentRuntimeExtractFinalAnswerTest {
             mock(ModelChatClient.class),
             new ObjectMapper(),
             Clock.systemUTC(),
-            new RunExecutionCancellationRegistry()
+            mock(RunCancellationGuard.class)
         );
     }
 

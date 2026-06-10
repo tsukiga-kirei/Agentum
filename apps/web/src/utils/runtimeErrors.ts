@@ -6,6 +6,9 @@ const RUNTIME_ERROR_HINTS: Record<string, string> = {
   MODEL_RESPONSE_INVALID: "模型返回无法解析，请稍后重试或更换模型。",
   CLUSTER_AGENT_FAILED: "子智能体执行失败，请展开对应子智能体查看原因。",
   WORKBENCH_NODE_EXECUTION_FAILED: "节点执行异常，请重试或联系管理员查看运行日志。",
+  WORKBENCH_NODE_EXECUTION_TIMEOUT: "节点执行超过最大时长限制，已自动中止。已成功的子智能体结果已保留，可恢复进度继续执行。",
+  WORKBENCH_NODE_EXECUTION_STALE: "后台执行进程已失联（可能服务重启或异常退出）。已成功的部分已保留，可恢复进度继续执行。",
+  WORKBENCH_ADVANCE_ALREADY_IN_FLIGHT: "当前任务已有执行在进行中，请等待其完成或刷新页面查看最新进度。",
 };
 
 /** 将后端 errorCode / errorMessage 转为用户可读文案。 */

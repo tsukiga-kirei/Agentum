@@ -1207,7 +1207,10 @@ function AgentClusterBrickConfig({
           label="执行方式"
           icon={Layers3}
           value={readString(config.executionMode, "parallel")}
-          options={[{ value: "parallel", label: "并行执行" }]}
+          options={[
+            { value: "parallel", label: "并行执行" },
+            { value: "sequential", label: "顺序执行" },
+          ]}
           onChange={(value) => onUpdateConfig({ executionMode: value })}
         />
         <div className="workflow-cluster-agent-list">

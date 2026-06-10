@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from "react";
 import type { RuntimePreviewStep, RuntimePreview, RuntimeStepState } from "../../types/runtime-types";
-import { Zap, FileEdit, Bot, Users, Search, Package, Check, AlertTriangle } from "lucide-react";
+import { Zap, FileEdit, Bot, Users, Search, Package, Check, AlertTriangle, Ban } from "lucide-react";
 
 interface StepProgressRailProps {
   preview: RuntimePreview;
@@ -46,6 +46,12 @@ const STEP_STATE_VISUALS: Record<RuntimeStepState, StepStateVisual> = {
     cardActive: "bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700",
     titleActive: "text-slate-700 dark:text-slate-200",
   },
+  // 用户主动中断：中性灰展示，与失败（红色）严格区分，提示只能整步重新执行
+  canceled: {
+    indicator: "bg-slate-200 dark:bg-slate-800 border-slate-300 dark:border-slate-600 text-slate-500 dark:text-slate-400",
+    cardActive: "bg-slate-50 dark:bg-slate-900/70 border-slate-300 dark:border-slate-600 shadow-sm",
+    titleActive: "text-slate-600 dark:text-slate-300",
+  },
 };
 
 export function StepProgressRail({
@@ -67,6 +73,7 @@ export function StepProgressRail({
   function getStepIcon(kind: string, state: string) {
     if (state === "done") return <Check size={15} strokeWidth={2.5} className="text-white" />;
     if (state === "failed") return <AlertTriangle size={14} strokeWidth={2.5} className="text-white" />;
+    if (state === "canceled") return <Ban size={14} strokeWidth={2.5} />;
 
     switch (kind) {
       case "launch": return <Zap size={14} />;

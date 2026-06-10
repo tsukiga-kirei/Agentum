@@ -10,6 +10,24 @@ spring:
 server:
   port: 8080
 
+# 运行态异步执行（RabbitMQ 执行 + Redis Stream 进度回放）配置。
+# 节点执行超时通过环境变量 AGENTUM_RUNTIME_NODE_TIMEOUT_SECONDS 控制，防止单节点无限占用 Worker。
+agentum:
+  runtime:
+    execution:
+      node-timeout-seconds: ${AGENTUM_RUNTIME_NODE_TIMEOUT_SECONDS:1800}
+      worker-concurrency: ${AGENTUM_RUNTIME_WORKER_CONCURRENCY:4}
+      max-attempts: 3
+      cluster-parallelism: ${AGENTUM_RUNTIME_CLUSTER_PARALLELISM:4}
+    redis:
+      stream-max-len: 5000
+      lease-ttl-seconds: 300
+      stale-node-threshold-seconds: ${AGENTUM_RUNTIME_STALE_THRESHOLD_SECONDS:120}
+    rabbitmq:
+      exchange: agentum.runtime
+      queue-node-execute: runtime.node.execute
+      queue-node-execute-dlq: runtime.node.execute.dlq
+
 management:
   endpoints:
     web:

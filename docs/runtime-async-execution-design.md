@@ -1,8 +1,18 @@
 # 运行态异步执行设计（MQ + Redis）
 
-更新时间：2026-06-09
+更新时间：2026-06-10
 
 本文档描述 Agentum 工作流运行态从「单进程 `@Async` + 内存 SSE」演进到「RabbitMQ 执行 + Redis 协调与进度回放」的目标架构、消息契约、数据变更与分阶段落地计划。
+
+> **落地状态（2026-06-10）：核心架构已实现，且仅保留 async 模式。**
+>
+> - `@Async` 推进路径、内存 `RunStreamEmitterRegistry` / `RunExecutionCancellationRegistry` 已删除，运行态强依赖 Redis + RabbitMQ（本地先执行 `make dev-infra`）。
+> - 已落地组件：`com.agentum.runtime` 包（命令发布/消费、`RunExecutionLeaseService` 租约、`RunProgressStreamWriter` / `RunStreamRelayService` Redis Stream 进度回放、`StaleExecutionReaper`、`RedisRunCancellationGuard` 取消/超时信号）与 Worker 侧 `NodeExecutionService`。
+> - 新增数据表：`workflow_run_execution_jobs`（执行作业，幂等/重试/回收判定）、`workflow_cluster_agent_runs`（子智能体结果逐个落库，支撑部分恢复）。
+> - 交互语义：主动中断 → 节点 `canceled` + 数据清空 + 「重新执行」（`POST .../nodes/{nodeRunId}/restart`）；被动失败（模型错误/超时/失联）→ 节点 `failed` + 保留已成功子智能体 + 「恢复进度」（`.../recover`）。
+> - 集群节点 `config.executionMode` 支持 `parallel`（真并发，受 `cluster-parallelism` 限流）与 `sequential`（顺序链式变量）。
+> - 节点执行超时通过环境变量 `AGENTUM_RUNTIME_NODE_TIMEOUT_SECONDS`（默认 1800s）控制。
+> - 文中提到的 `inline` 模式与 `runtime.execution.mode` 开关为历史迁移方案，未予保留，仅作设计过程记录。
 
 相关文档：
 

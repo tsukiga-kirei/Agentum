@@ -3,6 +3,16 @@ spring:
     url: jdbc:postgresql://localhost:5432/agentum
     username: agentum
     password: agentum_dev_password
+  # 运行态异步执行强依赖本地中间件，请先执行 make dev-infra 启动 Redis 与 RabbitMQ。
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: agentum
+    password: agentum_dev_password
   flyway:
     locations:
       - classpath:db/migration/schema

@@ -122,6 +122,19 @@ export type WorkbenchRunEventRow = {
   eventTime: string;
 };
 
+/**
+ * 在途执行作业摘要：进入即执行 / 刷新无感恢复的判定依据。
+ * 存在 queued/running 作业说明后端仍在执行，前端只需连 SSE 回放，绝不重复触发推进。
+ */
+export type WorkbenchActiveJob = {
+  jobId: string;
+  status: "queued" | "running" | string;
+  nodeRunId: string;
+  attempt: number;
+  enqueuedAt: string | null;
+  startedAt: string | null;
+};
+
 export type WorkbenchRunDetail = {
   id: string;
   title: string;
@@ -143,6 +156,7 @@ export type WorkbenchRunDetail = {
   nodes: WorkbenchNodeRunRow[];
   events: WorkbenchRunEventRow[];
   openTodo: WorkbenchPendingTodoRow | null;
+  activeJob: WorkbenchActiveJob | null;
 };
 
 export type WorkbenchTaskRunPage = PageResponse<WorkbenchTaskRunRow>;

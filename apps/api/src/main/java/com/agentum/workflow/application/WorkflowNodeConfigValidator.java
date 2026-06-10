@@ -28,6 +28,8 @@ public class WorkflowNodeConfigValidator {
     private static final Logger log = LoggerFactory.getLogger(WorkflowNodeConfigValidator.class);
     private static final Set<String> SENTINEL_VALUES = Set.of("custom", "none", "");
     private static final String ACTIVE_STATUS = "active";
+    /** 智能体集群支持的执行方式枚举，后续扩展新策略时在此追加。 */
+    private static final Set<String> CLUSTER_EXECUTION_MODES = Set.of("parallel", "sequential");
 
     private final SystemCapabilityRepository systemCapabilityRepository;
     private final TenantCapabilityGrantRepository tenantCapabilityGrantRepository;
@@ -66,6 +68,14 @@ public class WorkflowNodeConfigValidator {
                 validateIds(tenantId, operatorUserId, extractStringList(config, "mcpIds", "mcpServices"), "mcp", "MCP", node, poolCapabilities, issues);
                 validateIds(tenantId, operatorUserId, extractStringList(config, "skillIds", "skills"), "skill", "Skill", node, poolCapabilities, issues);
             } else if ("parallel_group".equals(nodeType)) {
+                String executionMode = extractString(config, "executionMode");
+                if (executionMode != null && !CLUSTER_EXECUTION_MODES.contains(executionMode)) {
+                    issues.add(issue(
+                        "WORKFLOW_VALIDATION_EXECUTION_MODE_INVALID",
+                        "节点[" + node.name() + "]的执行方式不合法，仅支持并行执行（parallel）或顺序执行（sequential）",
+                        node
+                    ));
+                }
                 List<Map<String, Object>> agents = extractMapList(config, "clusterAgents");
                 for (Map<String, Object> agent : agents) {
                     validateTenantAssetId(tenantId, operatorUserId, extractString(agent, "agentAssetId"), "agent_template", "智能体模板", node, issues);

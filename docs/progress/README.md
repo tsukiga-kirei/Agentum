@@ -1,6 +1,6 @@
 # 当前进度与后续计划
 
-更新时间：2026-06-09（业务工作台 Agent 模式运行态：模型自主调用 Skill / MCP、SSE 流式输出、Markdown final_answer、变量快照和失败留痕）。
+更新时间：2026-06-10（运行态异步执行落地：RabbitMQ 节点作业 + Redis Stream 进度回放，刷新无感恢复，主动中断「重新执行」与被动失败「恢复进度」语义，集群并行/顺序执行）。
 
 本文档只记录当前施工状态、阶段计划和下一步任务。长期规范、系统说明和架构设计分别维护在：
 
@@ -206,6 +206,7 @@
 - 系统管理 API 新增模型供应商编辑、系统能力编辑、租户模型分配状态更新接口；模型供应商 API Key 加密保存，查询接口只回显已配置状态，避免在列表、日志和响应中回显明文。
 - 系统管理 API 新增 `POST /api/system/model-providers/{providerId}/test`，模型密钥通过通用字段加密服务保存为密文，测试接口只返回连接状态、脱敏摘要、模型 ID 预览和耗时。
 - 新增业务工作台 package（`workbench.application` / `workbench.interfaces`）：聚合租户内已发布工作流计数、对当前用户开放的能力资产计数、我的能力草稿计数，以及可发起的已发布工作流分页（含最新版本号、节点数、所有者）；运行态相关字段以空列表 + `runtimeAvailable=false` 返回，并补 `WorkbenchAccess` / `WorkbenchService` 单元测试覆盖访问校验、跨租户拒绝与最新版本号回填路径。
+- 运行态异步执行落地（2026-06-10）：新增 `com.agentum.runtime` 包（RabbitMQ 拓扑与命令发布/消费、Redis 执行租约、`RunProgressStreamWriter` / `RunStreamRelayService` Redis Stream 进度写入与 SSE 中继、`StaleExecutionReaper` 超时/失联回收、`RedisRunCancellationGuard` 取消与截止信号）与 Worker 侧 `NodeExecutionService`；新增迁移 `V202606100001`（`workflow_run_execution_jobs`、`workflow_cluster_agent_runs`）；`WorkbenchRuntimeService` 重构为 advance 入队化，删除 `@Async`、内存 `RunStreamEmitterRegistry` 与 `RunExecutionCancellationRegistry`；新增 `interrupt`（节点 `canceled` + 数据清空）、`restart`（整步重跑）、`recover`（保留已成功子智能体只重跑失败部分）端点；智能体集群支持 `parallel` 真并发与 `sequential` 顺序执行；模型瞬时错误自动重试（attempt ≤ 3）；节点执行超时由 `AGENTUM_RUNTIME_NODE_TIMEOUT_SECONDS` 控制。前端 `useRunStream` 支持 `replay` 整步回放、`lastEventId` 断线续传与 heartbeat 活性；`TaskRunWorkspace` 进入即执行、刷新无感恢复（activeJob 驱动）、看门狗异常判定；`StepActionBar` 重做「中断执行 / 重新执行 / 恢复进度」互斥按钮矩阵。本地开发必须先 `make dev-infra`。
 
 需要继续推进：
 
@@ -263,8 +264,8 @@
 | 4 | 工作流草稿 API | 已完成第一版创建、查询、详情、保存阶段积木、设计目录、最小发布校验、变量声明、正式发布和能力引用校验；后续补版本读取和更完整的分支路由 |
 | 5 | 变量系统 | 已完成设计态变量声明、上游引用校验和运行态变量快照；后续按变量声明增强敏感 / 交付可见标记 |
 | 6 | 能力资产 API | 智能体模板、Skills、MCP、提示词模板、交付能力 |
-| 7 | 运行状态机 | 已完成启动、待办暂停、恢复、完成和失败留痕；**运行态异步执行设计已完成**（见 [runtime-async-execution-design.md](../runtime-async-execution-design.md)）；待落地阶段 A 租约 + jobs 表，阶段 B MQ + Redis Stream |
-| 8 | 并行与合并 | 已完成智能体集群顺序执行和合并节点变量透传；后续引入真正并发 Worker 与分支路由 |
+| 7 | 运行状态机 | 已完成启动、待办暂停、恢复、完成和失败留痕；**运行态异步执行已落地**（MQ + Redis Stream + 租约 + jobs 表 + 超时回收 + 中断/恢复语义，见 [runtime-async-execution-design.md](../runtime-async-execution-design.md)），仅保留 async 模式 |
+| 8 | 并行与合并 | 已完成智能体集群 `parallel` 真并发（子智能体结果逐个落库、部分恢复）与 `sequential` 顺序执行；后续补分支路由 |
 | 9 | 审计日志 | 已完成运行事件、变量快照、模型 / MCP / 交付日志表；后续补独立运行审计页、权限操作审计和失败重试证据链 |
 | 10 | 基础交付 | 已完成站内交付记录、邮箱发送和 Webhook；后续补 Word / PDF、OA、IM 与失败重试 |
 | 11 | 自研能力示例 | 至少补一个示例 Skill 和一个示例 MCP Server，跑通登记、授权、调用和审计链路 |

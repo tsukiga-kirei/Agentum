@@ -1,44 +1,55 @@
 import React from "react";
 import type { RuntimePreviewStep } from "../../types/runtime-types";
-import { formatRuntimeErrorMessage } from "../../utils/runtimeErrors";
-import { Play, RotateCw, Check, X, ArrowLeft, Ban, Send } from "lucide-react";
+import { Play, RotateCw, Check, X, Ban, Send, History } from "lucide-react";
 
 interface StepActionBarProps {
   activeStep: RuntimePreviewStep;
   isStreaming: boolean;
   isAdvancing?: boolean;
-  streamInterrupted?: boolean;
+  isReconnecting?: boolean;
   isRunCompleted: boolean;
-  isRunFailed: boolean;
+  /** 节点被用户主动中断（canceled）：仅展示「重新执行」 */
+  stepCanceled?: boolean;
+  /** 节点执行失败（failed）：仅展示「恢复进度」 */
+  stepFailed?: boolean;
+  /** 前端看门狗判定执行异常（SSE 持续失败 / 长时间无心跳）：按被动失败处理 */
+  watchdogStale?: boolean;
+  /** 被动恢复场景展示在按钮左侧的人类可读错误原因 */
+  failureMessage?: string | null;
   readOnly: boolean;
   onAdvance: () => void;
   onCompleteTodo: (comment: string) => void;
   onApprove: (comment: string) => void;
   onReject: (comment: string) => void;
   onRetry: () => void;
-  onRollback: () => void;
   onBack: () => void;
   onInterrupt?: () => void;
-  onRegenerateCurrent?: () => void;
+  /** 主动「重新执行」：清空整个节点数据从头重跑 */
+  onRestart?: () => void;
+  /** 被动「恢复进度」：保留已成功子智能体，仅重跑失败/未完成部分 */
+  onRecover?: () => void;
 }
 
 export function StepActionBar({
   activeStep,
   isStreaming,
   isAdvancing = false,
-  streamInterrupted = false,
+  isReconnecting = false,
   isRunCompleted,
-  isRunFailed,
+  stepCanceled = false,
+  stepFailed = false,
+  watchdogStale = false,
+  failureMessage,
   readOnly,
   onAdvance,
   onCompleteTodo: _onCompleteTodo,
   onApprove,
   onReject,
   onRetry,
-  onRollback,
   onBack,
   onInterrupt,
-  onRegenerateCurrent,
+  onRestart,
+  onRecover,
 }: StepActionBarProps) {
   
   if (readOnly) {
@@ -64,44 +75,46 @@ export function StepActionBar({
     );
   }
 
-  if (isRunFailed) {
-    const errorCode = activeStep.outputs?.find((field) => field.label === "errorCode")?.value;
-    const errorMessage = activeStep.outputs?.find((field) => field.label === "errorMessage")?.value;
-    const failureMessage = formatRuntimeErrorMessage(errorCode, errorMessage);
+  // 按钮互斥矩阵：主动中断（canceled）优先级最高，只出「重新执行」；
+  // 其后是被动失败（failed / 看门狗判异常），只出「恢复进度」并在左侧展示错误原因。
+  if (stepCanceled && !isAdvancing && !isStreaming) {
     return (
       <div className="step-action-bar flex justify-between items-center p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
-        <span className="text-xs text-rose-600 dark:text-rose-400 font-medium">
-          节点执行发生错误{failureMessage ? `：${failureMessage}` : ""}
+        <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+          本步骤已被中断，数据已清空；重新执行将从头完整执行本步骤。
         </span>
-        <div className="flex gap-3">
-          <button type="button" className="sys-btn sys-btn--default flex items-center gap-2 text-xs" onClick={onRollback}>
-            <ArrowLeft size={14} /> 回退上一步
-          </button>
-          <button type="button" className="sys-btn sys-btn--primary flex items-center gap-2 text-xs" onClick={onRetry}>
-            <RotateCw size={14} /> 重试当前节点
-          </button>
-        </div>
+        <button
+          type="button"
+          className="sys-btn sys-btn--primary flex items-center gap-2 text-xs"
+          onClick={onRestart}
+        >
+          <RotateCw size={14} /> 重新执行
+        </button>
       </div>
     );
   }
 
-  // 中断后或后台仍在跑但前端未连流：仅提供「重新生成」整步重做，不提供重连/重新执行。
-  const showRegenerateCurrent =
-    (streamInterrupted
-      || (activeStep.state === "running" && (activeStep.kind === "agent" || activeStep.kind === "multiAgent")))
-    && !isStreaming
-    && !isAdvancing;
-
-  if (showRegenerateCurrent) {
+  if ((stepFailed || watchdogStale) && !isAdvancing && !isStreaming) {
     return (
-      <div className="step-action-bar flex justify-end gap-2 p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
+      <div className="step-action-bar flex justify-between items-center gap-4 p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
+        <span className="min-w-0 text-xs text-rose-600 dark:text-rose-400 font-medium leading-relaxed">
+          {failureMessage || "节点执行发生异常，可恢复进度继续执行。"}
+        </span>
         <button
           type="button"
-          className="sys-btn sys-btn--primary flex items-center gap-2 text-xs"
-          onClick={onRegenerateCurrent}
+          className="sys-btn sys-btn--primary shrink-0 flex items-center gap-2 text-xs"
+          onClick={onRecover}
         >
-          <RotateCw size={14} /> 重新生成
+          <History size={14} /> 恢复进度
         </button>
+      </div>
+    );
+  }
+
+  if (isReconnecting) {
+    return (
+      <div className="step-action-bar flex justify-end p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
+        <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">正在连接执行流…</span>
       </div>
     );
   }
@@ -136,7 +149,7 @@ export function StepActionBar({
       return (
         <div className="step-action-bar flex justify-end p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
           <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">
-            {isAdvancing ? "启动中…" : streamInterrupted ? "已中断，可点击重新生成整步执行" : "等待启动…"}
+            {isAdvancing ? "启动中…" : "等待启动…"}
           </span>
         </div>
       );

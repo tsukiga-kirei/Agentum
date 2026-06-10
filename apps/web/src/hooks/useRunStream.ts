@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef, useCallback, type RefObject } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import type {
   StreamEvent,
   RunStreamState,
+  RunStreamConnectOptions,
   StreamConnectionState,
   AgentPhase,
   RuntimeCapabilityItem,
@@ -10,11 +11,45 @@ import { API_BASE_URL } from "../services/apiClient";
 import { formatRuntimeErrorMessage } from "../utils/runtimeErrors";
 import { pickBestAgentOutput } from "../utils/agentOutputText";
 
+/** 断线续传：sessionStorage 中保存每个任务最近收到的 Redis Stream 事件 ID。 */
+function lastEventIdStorageKey(runId: string): string {
+  return `agentum:run-stream:${runId}`;
+}
+
+function readStoredLastEventId(runId: string): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  return window.sessionStorage.getItem(lastEventIdStorageKey(runId));
+}
+
+function storeLastEventId(runId: string, eventId: string): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.sessionStorage.setItem(lastEventIdStorageKey(runId), eventId);
+}
+
+function clearStoredLastEventId(runId: string): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.sessionStorage.removeItem(lastEventIdStorageKey(runId));
+}
+
+/**
+ * 任务运行态 SSE 流 Hook（Redis Stream 中继版）。
+ *
+ * 执行在后端 Worker 完成、事件落 Redis Stream，本 Hook 只负责连接中继并回放：
+ * - 进入/刷新页面用 `connect({ replay: true })` 回放当前步骤全部事件，做到无感恢复；
+ * - 断线自动重连时优先带 lastEventId 续传，避免漏事件；
+ * - heartbeat 事件刷新 lastEventAt，供上层看门狗判定后台执行是否存活；
+ * - 连续重连失败计数暴露给上层，达到阈值时亮出被动「恢复进度」按钮。
+ */
 export function useRunStream(
   tenantId: string,
   runId: string,
-  token: string,
-  options?: { userPausedRef?: RefObject<boolean> }
+  token: string
 ): RunStreamState {
   const [events, setEvents] = useState<StreamEvent[]>([]);
   const [streamingText, setStreamingText] = useState<string>("");
@@ -32,6 +67,8 @@ export function useRunStream(
   const [connectionState, setConnectionState] =
     useState<StreamConnectionState>("disconnected");
   const [error, setError] = useState<string | null>(null);
+  const [lastEventAt, setLastEventAt] = useState<number | null>(null);
+  const [reconnectFailures, setReconnectFailures] = useState(0);
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -41,28 +78,7 @@ export function useRunStream(
   const connectReadyRef = useRef<Promise<void> | null>(null);
   const pendingConnectResolversRef = useRef<Array<() => void>>([]);
   const activeNodeRunIdRef = useRef<string | null>(null);
-  const userPausedRef = options?.userPausedRef;
-
-  const restoreProgress = useCallback((snapshot: {
-    streamingText?: string;
-    clusterAgents?: RunStreamState["clusterAgents"];
-    toolCalls?: RuntimeCapabilityItem[];
-    activeNodeInfo?: { nodeRunId: string; nodeName: string; nodeType: string } | null;
-  }) => {
-    if (snapshot.streamingText) {
-      setStreamingText(snapshot.streamingText);
-    }
-    if (snapshot.clusterAgents && snapshot.clusterAgents.length > 0) {
-      setClusterAgents(snapshot.clusterAgents);
-    }
-    if (snapshot.toolCalls && snapshot.toolCalls.length > 0) {
-      setToolCalls(snapshot.toolCalls);
-    }
-    if (snapshot.activeNodeInfo) {
-      activeNodeRunIdRef.current = snapshot.activeNodeInfo.nodeRunId;
-      setActiveNodeInfo(snapshot.activeNodeInfo);
-    }
-  }, []);
+  const reconnectFailuresRef = useRef(0);
 
   const disconnect = useCallback((options?: { preserveProgress?: boolean }) => {
     const preserveProgress = options?.preserveProgress === true;
@@ -83,6 +99,7 @@ export function useRunStream(
     setConnectionState("disconnected");
     setIsStreaming(false);
     setActiveNodeInfo(null);
+    activeNodeRunIdRef.current = null;
     if (!preserveProgress) {
       setStreamingText("");
       setCurrentPhase(null);
@@ -96,10 +113,7 @@ export function useRunStream(
     pendingConnectResolversRef.current = [];
   }, []);
 
-  const connect = useCallback((): Promise<void> => {
-    if (userPausedRef?.current) {
-      return Promise.resolve();
-    }
+  const connect = useCallback((options?: RunStreamConnectOptions): Promise<void> => {
     if (connectionStateRef.current === "connected" && isStreamActiveRef.current) {
       return Promise.resolve();
     }
@@ -126,7 +140,20 @@ export function useRunStream(
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
-    const url = `${API_BASE_URL}/api/tenants/${tenantId}/workbench/runs/${runId}/stream`;
+    // 连接参数：进入/刷新页面要求整步回放（React 状态已丢失，断点续传会漏掉刷新前的事件），
+    // 同一页面会话内的断线重连才走 lastEventId 续传。
+    const params = new URLSearchParams();
+    if (options?.replay) {
+      clearStoredLastEventId(runId);
+      params.set("replay", "true");
+    } else {
+      const storedEventId = readStoredLastEventId(runId);
+      if (storedEventId) {
+        params.set("lastEventId", storedEventId);
+      }
+    }
+    const query = params.toString();
+    const url = `${API_BASE_URL}/api/tenants/${tenantId}/workbench/runs/${runId}/stream${query ? `?${query}` : ""}`;
 
     connectReadyRef.current = new Promise<void>((resolveReady, rejectReady) => {
       void (async function startStream() {
@@ -151,6 +178,8 @@ export function useRunStream(
 
           connectionStateRef.current = "connected";
           isStreamActiveRef.current = true;
+          reconnectFailuresRef.current = 0;
+          setReconnectFailures(0);
           setConnectionState("connected");
           resolveReady();
           resolvePendingConnectors();
@@ -163,6 +192,7 @@ export function useRunStream(
           const decoder = new TextDecoder("utf-8");
           let buffer = "";
           let currentEventType = "";
+          let currentEventId = "";
 
           while (true) {
             if (session !== connectSessionRef.current) {
@@ -185,11 +215,20 @@ export function useRunStream(
                 continue;
               }
 
-              if (trimmed.startsWith("event:")) {
+              if (trimmed.startsWith("id:")) {
+                currentEventId = trimmed.substring(3).trim();
+              } else if (trimmed.startsWith("event:")) {
                 currentEventType = trimmed.substring(6).trim();
               } else if (trimmed.startsWith("data:")) {
                 const dataStr = trimmed.substring(5).trim();
+                if (currentEventId) {
+                  storeLastEventId(runId, currentEventId);
+                }
+                setLastEventAt(Date.now());
+
                 if (dataStr === "[DONE]") {
+                  // 步骤终态：清除断点记录，下次进入重新整步回放。
+                  clearStoredLastEventId(runId);
                   if (session === connectSessionRef.current) {
                     disconnect();
                   }
@@ -201,6 +240,7 @@ export function useRunStream(
                   const streamEvent = {
                     type: currentEventType || "message",
                     data: parsedData,
+                    eventId: currentEventId || undefined,
                   } as StreamEvent;
 
                   setEvents((prev) => [...prev, streamEvent]);
@@ -210,6 +250,7 @@ export function useRunStream(
                 }
 
                 currentEventType = "";
+                currentEventId = "";
               }
             }
           }
@@ -231,6 +272,8 @@ export function useRunStream(
           console.error("SSE connection error:", err);
           connectionStateRef.current = "error";
           isStreamActiveRef.current = false;
+          reconnectFailuresRef.current += 1;
+          setReconnectFailures(reconnectFailuresRef.current);
           setConnectionState("error");
           setError(err instanceof Error ? err.message : "连接断开");
           resolvePendingConnectors();
@@ -244,6 +287,7 @@ export function useRunStream(
               }
               connectionStateRef.current = "disconnected";
               setConnectionState("disconnected");
+              // 重连优先走 lastEventId 续传（storage 中已有断点）。
               void connect();
             }, 3000);
           }
@@ -256,12 +300,9 @@ export function useRunStream(
     });
 
     return connectReadyRef.current;
-  }, [tenantId, runId, token, disconnect, resolvePendingConnectors, userPausedRef]);
+  }, [tenantId, runId, token, disconnect, resolvePendingConnectors]);
 
   const ensureConnected = useCallback(async (timeoutMs = 8000) => {
-    if (userPausedRef?.current) {
-      return;
-    }
     if (connectionStateRef.current === "connected" && isStreamActiveRef.current) {
       return;
     }
@@ -273,7 +314,7 @@ export function useRunStream(
         }, timeoutMs);
       }),
     ]);
-  }, [connect, userPausedRef]);
+  }, [connect]);
 
   const handleStreamEvent = (event: StreamEvent) => {
     switch (event.type) {
@@ -288,7 +329,7 @@ export function useRunStream(
         setActiveNodeInfo({ nodeRunId, nodeName, nodeType });
         setIsStreaming(true);
         setCurrentPhase("preparing");
-        // SSE 重连会再次收到 node_started：同一节点不清空已展示的流式/集群进度。
+        // SSE 重连/回放会再次收到 node_started：同一节点不清空已展示的流式/集群进度。
         if (!isSameNode) {
           setStreamingText("");
           setToolCalls([]);
@@ -344,7 +385,6 @@ export function useRunStream(
           agentIndex,
           agentName,
           eventType,
-          deltaContent,
           accumulatedContent,
           toolName,
           toolType,
@@ -449,6 +489,7 @@ export function useRunStream(
         break;
 
       case "heartbeat":
+        // 活性时间戳已在 data 行统一刷新，这里无需额外处理。
         break;
     }
   };
@@ -469,9 +510,10 @@ export function useRunStream(
     clusterAgents,
     connectionState,
     error,
+    lastEventAt,
+    reconnectFailures,
     connect,
     ensureConnected,
     disconnect,
-    restoreProgress,
   };
 }

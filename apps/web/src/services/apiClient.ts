@@ -411,6 +411,18 @@ export const workbenchApi = {
       method: "POST",
       token,
     }),
+  // 主动「重新执行」：清空节点全部数据后从头重跑整个节点（中断后的整步重做）。
+  restartNode: (tenantId: string, token: string, runId: string, nodeRunId: string) =>
+    apiRequest<WorkbenchRunDetail>(`/api/tenants/${tenantId}/workbench/runs/${runId}/nodes/${nodeRunId}/restart`, {
+      method: "POST",
+      token,
+    }),
+  // 被动「恢复进度」：保留已成功子智能体结果，仅重跑失败/未完成部分。
+  recoverNode: (tenantId: string, token: string, runId: string, nodeRunId: string) =>
+    apiRequest<WorkbenchRunDetail>(`/api/tenants/${tenantId}/workbench/runs/${runId}/nodes/${nodeRunId}/recover`, {
+      method: "POST",
+      token,
+    }),
   completeTodoWithPayload: (tenantId: string, token: string, todoId: string, payload: Record<string, unknown>) =>
     apiRequest<WorkbenchRunDetail>(`/api/tenants/${tenantId}/workbench/todos/${todoId}/complete`, {
       method: "POST",

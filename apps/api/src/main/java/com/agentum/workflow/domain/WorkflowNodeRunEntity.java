@@ -158,6 +158,21 @@ public class WorkflowNodeRunEntity {
         this.updatedAt = now;
     }
 
+    /**
+     * 用户主动中断：节点进入 canceled 终态并清空输出快照。
+     * canceled 与 failed 严格区分——前者只能「重新执行」整步重跑，后者可「恢复进度」复用已成功部分。
+     */
+    public void cancel(Instant now) {
+        this.state = "canceled";
+        this.stateLabel = "已中断";
+        this.outputSnapshot = new HashMap<>();
+        if (this.startedAt == null) {
+            this.startedAt = now;
+        }
+        this.completedAt = now;
+        this.updatedAt = now;
+    }
+
     // 回退到指定步骤时，将目标节点及后续节点重置为待执行，清除已写入的输出快照。
     public void resetToPending(Instant now) {
         this.state = "pending";

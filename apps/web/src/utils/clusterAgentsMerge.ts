@@ -1,4 +1,4 @@
-import type { RunStreamState } from "../types/runtime-types";
+import type { RunStreamState, RuntimeStepState } from "../types/runtime-types";
 import { isPersistedClusterAgentFailed } from "./runtimeErrors";
 import { pickBestAgentOutput } from "./agentOutputText";
 
@@ -71,7 +71,7 @@ export function mergeClusterAgents(options: {
   configAgents: Array<Record<string, unknown>>;
   outputs: Array<{ label: string; value: string }> | undefined;
   streamAgents: RunStreamState["clusterAgents"];
-  stepState: "pending" | "running" | "done" | "waiting" | "failed";
+  stepState: RuntimeStepState;
   stepRunning: boolean;
 }): ClusterAgentView[] {
   const { configAgents, outputs, streamAgents, stepState, stepRunning } = options;

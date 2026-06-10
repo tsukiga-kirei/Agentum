@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -19,21 +20,28 @@ import com.agentum.tenant.domain.TenantEntity;
 import com.agentum.tenant.infrastructure.TenantRepository;
 import com.agentum.workbench.interfaces.WorkbenchApi;
 import com.agentum.workflow.domain.WorkflowAccessGrantEntity;
+import com.agentum.workflow.domain.WorkflowClusterAgentRunEntity;
 import com.agentum.workflow.domain.WorkflowDefinitionEntity;
 import com.agentum.workflow.domain.WorkflowNodeRunEntity;
 import com.agentum.workflow.domain.WorkflowRunEntity;
+import com.agentum.workflow.domain.WorkflowRunExecutionJobEntity;
 import com.agentum.workflow.domain.WorkflowVersionEntity;
 import com.agentum.workflow.domain.WorkflowWaitingEventEntity;
 import com.agentum.workflow.infrastructure.WorkflowAccessGrantRepository;
+import com.agentum.workflow.infrastructure.WorkflowClusterAgentRunRepository;
 import com.agentum.workflow.infrastructure.WorkflowDefinitionRepository;
 import com.agentum.workflow.infrastructure.WorkflowNodeRunRepository;
 import com.agentum.workflow.infrastructure.WorkflowRunEventRepository;
+import com.agentum.workflow.infrastructure.WorkflowRunExecutionJobRepository;
 import com.agentum.workflow.infrastructure.WorkflowRunRepository;
 import com.agentum.workflow.infrastructure.WorkflowVersionRepository;
 import com.agentum.workflow.infrastructure.WorkflowVariableSnapshotRepository;
 import com.agentum.workflow.infrastructure.WorkflowWaitingEventRepository;
-import com.agentum.agent.application.AgentRuntimeService;
-import com.agentum.delivery.application.DeliveryRuntimeService;
+import com.agentum.runtime.cancel.RunCancellationGuard;
+import com.agentum.runtime.execution.RuntimeExecutionProperties;
+import com.agentum.runtime.messaging.NodeExecuteCommand;
+import com.agentum.runtime.messaging.NodeExecuteCommandPublisher;
+import com.agentum.runtime.stream.RunProgressStreamWriter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.time.Instant;
@@ -43,6 +51,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -66,8 +75,11 @@ class WorkbenchRuntimeServiceTest {
     private final WorkflowVariableSnapshotRepository workflowVariableSnapshotRepository = mock(WorkflowVariableSnapshotRepository.class);
     private final UserAccountRepository userAccountRepository = mock(UserAccountRepository.class);
     private final WorkflowRuntimeExecutor workflowRuntimeExecutor = mock(WorkflowRuntimeExecutor.class);
-    private final AgentRuntimeService agentRuntimeService = mock(AgentRuntimeService.class);
-    private final DeliveryRuntimeService deliveryRuntimeService = mock(DeliveryRuntimeService.class);
+    private final WorkflowRunExecutionJobRepository jobRepository = mock(WorkflowRunExecutionJobRepository.class);
+    private final WorkflowClusterAgentRunRepository clusterAgentRunRepository = mock(WorkflowClusterAgentRunRepository.class);
+    private final NodeExecuteCommandPublisher commandPublisher = mock(NodeExecuteCommandPublisher.class);
+    private final RunProgressStreamWriter streamWriter = mock(RunProgressStreamWriter.class);
+    private final RunCancellationGuard cancellationGuard = mock(RunCancellationGuard.class);
 
     @Test
     void shouldListAllPublishedWorkflowsAndMarkLockedRows() {
@@ -238,6 +250,145 @@ class WorkbenchRuntimeServiceTest {
         verify(workflowRuntimeExecutor, times(1)).execute(any());
     }
 
+    @Test
+    void shouldInterruptRunningNodeClearDataAndCancelInFlightJobs() {
+        WorkbenchRuntimeService service = newService();
+        WorkflowRunEntity run = ownedRun();
+        WorkflowNodeRunEntity node = clusterNode(run);
+        node.start(NOW);
+        WorkflowRunExecutionJobEntity job = WorkflowRunExecutionJobEntity.queued(
+            TENANT_ID, run.getId(), node.getId(), 1, OPERATOR_ID, "req-1", NOW.plusSeconds(1800), NOW
+        );
+        job.markRunning("worker-a", NOW);
+
+        stubTenant();
+        when(workflowRunRepository.findByIdAndTenantId(run.getId(), TENANT_ID)).thenReturn(Optional.of(run));
+        when(workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(run.getId())).thenReturn(List.of(node));
+        when(jobRepository.findByRunIdAndStatusIn(eq(run.getId()), any()))
+            .thenReturn(List.of(job))
+            .thenReturn(List.of());
+
+        service.interruptRun(TENANT_ID, businessPrincipal(), run.getId());
+
+        // 中断语义：作业终态化、取消信号写入、节点 canceled 且数据清空，SSE 收尾。
+        assertThat(job.getStatus()).isEqualTo(WorkflowRunExecutionJobEntity.STATUS_CANCELED);
+        assertThat(node.getState()).isEqualTo("canceled");
+        assertThat(node.getOutputSnapshot()).isEmpty();
+        assertThat(run.getState()).isEqualTo("paused");
+        verify(cancellationGuard).requestCancel(run.getId());
+        verify(workflowVariableSnapshotRepository).deleteByRunIdAndNodeRunIdIn(run.getId(), List.of(node.getId()));
+        verify(clusterAgentRunRepository).deleteByNodeRunId(node.getId());
+        verify(streamWriter).append(eq(run.getId()), eq("run_paused"), any());
+        verify(streamWriter).append(run.getId(), "message", "[DONE]");
+    }
+
+    @Test
+    void shouldRestartCanceledNodeWithFullCleanupAndEnqueueNextAttempt() {
+        WorkbenchRuntimeService service = newService();
+        WorkflowRunEntity run = ownedRun();
+        WorkflowNodeRunEntity node = clusterNode(run);
+        node.cancel(NOW);
+        WorkflowRunExecutionJobEntity previousJob = WorkflowRunExecutionJobEntity.queued(
+            TENANT_ID, run.getId(), node.getId(), 2, OPERATOR_ID, "req-1", NOW.plusSeconds(1800), NOW
+        );
+        previousJob.markCanceled(NOW);
+
+        stubTenant();
+        when(workflowRunRepository.findByIdAndTenantId(run.getId(), TENANT_ID)).thenReturn(Optional.of(run));
+        when(workflowNodeRunRepository.findByIdAndRunId(node.getId(), run.getId())).thenReturn(Optional.of(node));
+        when(workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(run.getId())).thenReturn(List.of(node));
+        when(jobRepository.findByRunIdAndStatusIn(eq(run.getId()), any())).thenReturn(List.of());
+        when(jobRepository.findFirstByNodeRunIdOrderByAttemptDesc(node.getId())).thenReturn(Optional.of(previousJob));
+
+        service.restartNode(TENANT_ID, businessPrincipal(), run.getId(), node.getId());
+
+        // 重新执行语义：清空全部子智能体结果（含已成功），重置 Stream，attempt 递增后入队。
+        assertThat(node.getState()).isEqualTo("running");
+        assertThat(run.getState()).isEqualTo("running");
+        verify(cancellationGuard).clearCancel(run.getId());
+        verify(clusterAgentRunRepository).deleteByNodeRunId(node.getId());
+        verify(streamWriter).reset(run.getId());
+        ArgumentCaptor<NodeExecuteCommand> commandCaptor = ArgumentCaptor.forClass(NodeExecuteCommand.class);
+        verify(commandPublisher).publish(commandCaptor.capture());
+        assertThat(commandCaptor.getValue().attempt()).isEqualTo(3);
+        assertThat(commandCaptor.getValue().nodeRunId()).isEqualTo(node.getId());
+    }
+
+    @Test
+    void shouldRecoverFailedNodePreservingSucceededClusterAgents() {
+        WorkbenchRuntimeService service = newService();
+        WorkflowRunEntity run = ownedRun();
+        WorkflowNodeRunEntity node = clusterNode(run);
+        node.fail(Map.of("errorCode", "CLUSTER_AGENT_FAILED"), NOW);
+
+        stubTenant();
+        when(workflowRunRepository.findByIdAndTenantId(run.getId(), TENANT_ID)).thenReturn(Optional.of(run));
+        when(workflowNodeRunRepository.findByIdAndRunId(node.getId(), run.getId())).thenReturn(Optional.of(node));
+        when(workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(run.getId())).thenReturn(List.of(node));
+        when(jobRepository.findByRunIdAndStatusIn(eq(run.getId()), any())).thenReturn(List.of());
+        when(jobRepository.findFirstByNodeRunIdOrderByAttemptDesc(node.getId())).thenReturn(Optional.empty());
+
+        service.recoverNode(TENANT_ID, businessPrincipal(), run.getId(), node.getId());
+
+        // 恢复进度语义：只删除非 succeeded 子智能体行，已成功结果保留供 Worker 复用。
+        verify(clusterAgentRunRepository)
+            .deleteByNodeRunIdAndStatusNot(node.getId(), WorkflowClusterAgentRunEntity.STATUS_SUCCEEDED);
+        verify(clusterAgentRunRepository, never()).deleteByNodeRunId(any());
+        verify(commandPublisher).publish(any(NodeExecuteCommand.class));
+        assertThat(node.getState()).isEqualTo("running");
+    }
+
+    @Test
+    void shouldRejectAdvanceWhenExecutionAlreadyInFlight() {
+        WorkbenchRuntimeService service = newService();
+        WorkflowRunEntity run = ownedRun();
+        WorkflowNodeRunEntity node = clusterNode(run);
+        WorkflowRunExecutionJobEntity inFlight = WorkflowRunExecutionJobEntity.queued(
+            TENANT_ID, run.getId(), node.getId(), 1, OPERATOR_ID, "req-1", NOW.plusSeconds(1800), NOW
+        );
+
+        stubTenant();
+        when(workflowRunRepository.findByIdAndTenantId(run.getId(), TENANT_ID)).thenReturn(Optional.of(run));
+        when(jobRepository.findByRunIdAndStatusIn(eq(run.getId()), any())).thenReturn(List.of(inFlight));
+
+        assertThatThrownBy(() -> service.advanceRun(TENANT_ID, businessPrincipal(), run.getId()))
+            .isInstanceOf(ApiException.class)
+            .hasFieldOrPropertyWithValue("code", "WORKBENCH_ADVANCE_ALREADY_IN_FLIGHT");
+        verify(commandPublisher, never()).publish(any());
+    }
+
+    private WorkflowRunEntity ownedRun() {
+        return WorkflowRunEntity.create(
+            TENANT_ID,
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            1,
+            "授信复核",
+            "授信报告流程",
+            OPERATOR_ID,
+            3,
+            "20260610-TEST",
+            NOW
+        );
+    }
+
+    private WorkflowNodeRunEntity clusterNode(WorkflowRunEntity run) {
+        return WorkflowNodeRunEntity.pending(
+            run.getId(),
+            TENANT_ID,
+            run.getWorkflowId(),
+            run.getWorkflowVersionId(),
+            "cluster_analysis",
+            "parallel_group",
+            "智能体集群分析",
+            Map.of(),
+            Map.of(),
+            Map.of("executionMode", "parallel"),
+            2,
+            NOW
+        );
+    }
+
     private WorkbenchRuntimeService newService() {
         return new WorkbenchRuntimeService(
             tenantRepository,
@@ -254,10 +405,12 @@ class WorkbenchRuntimeServiceTest {
             new ObjectMapper(),
             workflowRuntimeExecutor,
             Clock.fixed(NOW, ZoneOffset.UTC),
-            agentRuntimeService,
-            deliveryRuntimeService,
-            new RunStreamEmitterRegistry(),
-            new RunExecutionCancellationRegistry()
+            jobRepository,
+            clusterAgentRunRepository,
+            commandPublisher,
+            streamWriter,
+            cancellationGuard,
+            new RuntimeExecutionProperties()
         );
     }
 

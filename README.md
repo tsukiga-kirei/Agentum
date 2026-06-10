@@ -22,7 +22,7 @@ Agentum 是一个以智能体为执行单元的企业工作流平台。它面向
 
 与一次性对话式 AI 不同，Agentum 强调步骤化推进、责任节点和运行留痕；与面向个人的可视化编排工具不同，它从第一版内建多租户、组织权限、能力池治理和发布校验，让 AI 能力真正进入企业日常流程，而不是停留在演示级编排。
 
-当前处于**阶段一：框架与基础治理**。身份、租户、组织权限、能力资产、流程设计草稿和业务工作台运行态已打通；后端运行态采用 Agent ReAct 模式，支持模型自主调用 Skill / MCP 工具并通过 SSE 输出 Markdown `final_answer`，同时保留交付记录、变量快照和模型/MCP 调用留痕。异步 Worker、复杂文档生成、高风险审批、追问追加上下文和完整运行审计页仍在建设中。详见 [当前进度](./docs/progress/README.md)。
+当前处于**阶段一：框架与基础治理**。身份、租户、组织权限、能力资产、流程设计草稿和业务工作台运行态已打通；后端运行态采用 Agent ReAct 模式，支持模型自主调用 Skill / MCP 工具并通过 SSE 输出 Markdown `final_answer`，同时保留交付记录、变量快照和模型/MCP 调用留痕。运行态执行已重构为 **RabbitMQ 异步执行 + Redis Stream 进度回放**：刷新/重进页面无感恢复，支持主动中断后「重新执行」与失败后「恢复进度」（保留已成功子智能体结果）。复杂文档生成、高风险审批、追问追加上下文和完整运行审计页仍在建设中。详见 [当前进度](./docs/progress/README.md)。
 
 ---
 
@@ -60,7 +60,7 @@ Agentum 是一个以智能体为执行单元的企业工作流平台。它面向
 pnpm install
 ```
 
-启动本地基础设施：
+启动本地基础设施（**必须先于后端启动**：运行态强依赖 Redis 与 RabbitMQ，未启动时任务执行无法工作）：
 
 ```bash
 make dev-infra
@@ -141,7 +141,7 @@ docs/                     产品与架构文档
 | [开发规范](./docs/development-standards.md) | 命名、接口、测试与 AI 协作约定 |
 | [能力—流程—权限治理](./docs/capability-workflow-governance.md) | 版本模型、引用勾稽、收回/删除与后续选型 |
 | [AI 运行态接入说明](./docs/ai-runtime-integration.md) | 模型、MCP、Skill、提示词模板与流程运行时的当前实现 |
-| [运行态异步执行设计](./docs/runtime-async-execution-design.md) | MQ + Redis 执行解耦、SSE 回放与分阶段落地计划 |
+| [运行态异步执行设计](./docs/runtime-async-execution-design.md) | MQ + Redis 执行解耦、SSE 回放与中断/恢复语义（已落地，仅 async 模式） |
 | [企业 SSO 对接说明](./docs/sso-integration.md) | OIDC 单点登录边界、业务系统配合方式与当前实现状态 |
 | [当前进度](./docs/progress/README.md) | 阶段计划与施工状态 |
 | [AGENTS.md](./AGENTS.md) | 仓库内 AI 代理开发入口 |

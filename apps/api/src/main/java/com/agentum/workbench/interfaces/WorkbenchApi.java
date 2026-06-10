@@ -159,7 +159,22 @@ public final class WorkbenchApi {
         Instant updatedAt,
         List<NodeRunRow> nodes,
         List<RunEventRow> events,
-        PendingTodoRow openTodo
+        PendingTodoRow openTodo,
+        ActiveJobInfo activeJob
+    ) {
+    }
+
+    /**
+     * 在途执行作业摘要：前端「进入即执行 / 刷新无感恢复」的判定依据。
+     * 存在 queued/running 作业说明后端仍在执行，前端只需连 SSE 回放，绝不重复触发推进。
+     */
+    public record ActiveJobInfo(
+        UUID jobId,
+        String status,
+        UUID nodeRunId,
+        int attempt,
+        Instant enqueuedAt,
+        Instant startedAt
     ) {
     }
 
