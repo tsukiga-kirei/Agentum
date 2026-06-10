@@ -8,7 +8,6 @@ import {
   Bot,
   Boxes,
   BrainCircuit,
-  CheckCircle2,
   ChevronDown,
   ChevronLeft,
   Clock3,
@@ -56,6 +55,7 @@ type EditorNodeData = {
   runState: "未开始" | "等待输入" | "执行中" | "等待审核" | "已完成" | "待配置";
   outputMode: "一次性输出" | "追问确认";
   toolCount: number;
+  allowUserEdit: boolean;
   allowQuestion: boolean;
   rawConfig?: Record<string, unknown>;
 };
@@ -108,6 +108,8 @@ type ClusterAgentConfig = {
   userPrompt: string;
   output: string;
   maxTokens?: number;
+  allowUserEdit: boolean;
+  allowQuestion: boolean;
 };
 
 type WorkflowCapabilityOption = {
@@ -468,25 +470,13 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
     });
   }
 
-  async function handleSaveAll() {
+  async function handleSaveWorkflow() {
     if (!designerCatalog) {
       messageApi.error("流程设计模板尚未加载完成，暂时不能保存流程");
       return;
     }
-    const normalizedVisibleNodes = normalizeVisibleNodeOrder(visibleNodes);
-    const systemTrigger = nodes.find((node) => node.id === SYSTEM_TRIGGER_ID) ?? createNodeFromTemplate(designerCatalog.systemTrigger, 0, []);
-    const nextNodes = [systemTrigger, ...normalizedVisibleNodes];
-    const nextEdges = rebuildSequentialEdges(normalizedVisibleNodes);
-    await persistGraph(nextNodes, nextEdges);
-  }
-
-  async function handleSaveSelectedNode() {
-    if (!selectedNode) {
-      await handleSaveAll();
-      return;
-    }
-    const nextNodes = nodes.map((node) => {
-      if (node.id !== selectedNode.id) {
+    const normalizedVisibleNodes = normalizeVisibleNodeOrder(visibleNodes).map((node) => {
+      if (!selectedNode || node.id !== selectedNode.id) {
         return node;
       }
       return {
@@ -497,7 +487,10 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
         },
       };
     });
-    await persistGraph(nextNodes, rebuildSequentialEdges(nextNodes.filter((node) => node.id !== SYSTEM_TRIGGER_ID)));
+    const systemTrigger = nodes.find((node) => node.id === SYSTEM_TRIGGER_ID) ?? createNodeFromTemplate(designerCatalog.systemTrigger, 0, []);
+    const nextNodes = [systemTrigger, ...normalizedVisibleNodes];
+    const nextEdges = rebuildSequentialEdges(normalizedVisibleNodes);
+    await persistGraph(nextNodes, nextEdges);
   }
 
   if (loading) {
@@ -532,7 +525,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
             placeholder="搜索积木"
           />
         </label>
-        <button type="button" onClick={() => void handleSaveAll()} disabled={saving} className="agent-button agent-button-primary h-8 px-3 text-xs">
+        <button type="button" onClick={() => void handleSaveWorkflow()} disabled={saving} className="agent-button agent-button-primary h-8 px-3 text-xs">
           <Save className="h-3.5 w-3.5" aria-hidden="true" />
           {saving ? "保存中" : "保存流程"}
         </button>
@@ -562,8 +555,6 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
               capabilityError={capabilityError}
               onUpdateNode={updateSelectedNode}
               onUpdateConfig={updateSelectedConfig}
-              onSave={handleSaveSelectedNode}
-              saving={saving}
             />
           ) : (
             <WorkflowOverviewPanel
@@ -695,7 +686,10 @@ function WorkflowStepRow({
       </div>
       <div className="flex flex-wrap gap-1.5 border-t border-[var(--color-border-light)] px-2.5 py-2">
         <TinyBadge>输出 {node.data.outputVariables.length}</TinyBadge>
-        {node.data.allowQuestion ? <TinyBadge tone="info">追问</TinyBadge> : null}
+        <AgentInteractionFeatureBadges
+          allowUserEdit={node.data.allowUserEdit}
+          allowQuestion={node.data.allowQuestion}
+        />
       </div>
     </article>
   );
@@ -767,8 +761,6 @@ function NodeConfigPanel({
   capabilityError,
   onUpdateNode,
   onUpdateConfig,
-  onSave,
-  saving,
 }: {
   node: WorkflowEditorNode;
   availableVariables: WorkflowVariable[];
@@ -778,8 +770,6 @@ function NodeConfigPanel({
   capabilityError: string;
   onUpdateNode: (patch: Partial<EditorNodeData>) => void;
   onUpdateConfig: (nextConfig: Record<string, unknown>) => void;
-  onSave: () => Promise<void>;
-  saving: boolean;
 }) {
   const brickType = getBrickType(node);
   const definition = brickDefinitions[brickType];
@@ -823,18 +813,6 @@ function NodeConfigPanel({
           {brickType === "delivery" ? (
             <DeliveryBrickConfig node={node} workflowVariables={availableVariables} capabilityState={capabilityState} onUpdateConfig={onUpdateConfig} />
           ) : null}
-        </div>
-
-        <div className="mt-4 flex justify-end">
-          <button
-            type="button"
-            onClick={() => void onSave()}
-            disabled={saving}
-            className="agent-button agent-button-primary h-9 px-4 text-sm"
-          >
-            <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-            {saving ? "保存中" : "保存当前积木"}
-          </button>
         </div>
       </div>
     </aside>
@@ -1102,8 +1080,6 @@ function SingleAgentBrickConfig({
   const selectedMcps = readStringArray(config.mcpIds ?? config.mcpServices, []);
   const selectedSkills = readStringArray(config.skillIds ?? config.skills, []);
   const agentName = findCapabilityName(agentAssets, readString(config.agentAssetId, "custom"), "自定义智能体");
-  const systemPromptName = findCapabilityName(promptAssets, readString(config.systemPromptTemplateId, readString(config.promptTemplateId, "none")), "系统提示词自定义");
-  const userPromptName = findCapabilityName(promptAssets, readString(config.userPromptTemplateId, "none"), "用户提示词自定义");
 
   return (
     <PanelGroup title="智能体配置" icon={Bot} className="xl:col-span-2">
@@ -1113,37 +1089,46 @@ function SingleAgentBrickConfig({
           <span>智能体</span>
           <button type="button" className="agent-button h-8 px-2 text-xs" onClick={() => setModalOpen(true)}>编辑配置</button>
         </div>
-        <div className="workflow-agent-summary-row">
-          <button type="button" className="workflow-agent-summary-main" onClick={() => setModalOpen(true)}>
-            <span className="workflow-agent-summary-icon"><Bot className="h-4 w-4" aria-hidden="true" /></span>
-            <span className="min-w-0 text-left">
-              <span className="block truncate text-sm font-semibold text-[var(--color-text-primary)]">{agentName}</span>
-              <span className="mt-1 block truncate text-xs text-[var(--color-text-secondary)]">
-                {systemPromptName} / {userPromptName} · Skill {selectedSkills.length} · MCP {selectedMcps.length} · {node.data.outputMode}
-              </span>
-            </span>
-          </button>
-          <div className="flex shrink-0 items-center gap-1">
-            <IconButton
-              label="清空智能体配置"
-              icon={Trash2}
-              tone="danger"
-              onClick={() => {
-                onUpdateConfig({
-                  agentAssetId: "custom",
-                  agentSource: "custom",
-                  promptTemplateId: "none",
-                  systemPromptTemplateId: "none",
-                  userPromptTemplateId: "none",
-                  systemPrompt: "",
-                  userPrompt: "",
-                  mcpIds: [],
-                  skillIds: [],
-                });
-                onUpdateNode({ toolCount: 0, outputMode: "一次性输出", allowQuestion: false });
-              }}
-            />
-          </div>
+        <div className="workflow-cluster-agent-list">
+          <article className="workflow-cluster-agent-row">
+            <div className="workflow-cluster-agent-index">
+              <Bot className="h-4 w-4" aria-hidden="true" />
+            </div>
+            <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setModalOpen(true)}>
+              <p className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{agentName}</p>
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                <TinyBadge>单智能体</TinyBadge>
+                <TinyBadge tone="info">Skill {selectedSkills.length}</TinyBadge>
+                <TinyBadge tone="info">MCP {selectedMcps.length}</TinyBadge>
+                <AgentInteractionFeatureBadges
+                  allowUserEdit={node.data.allowUserEdit}
+                  allowQuestion={node.data.allowQuestion}
+                />
+              </div>
+            </button>
+            <div className="flex shrink-0 items-center gap-1">
+              <button type="button" onClick={() => setModalOpen(true)} className="agent-button h-8 px-2 text-xs">编辑</button>
+              <IconButton
+                label="清空智能体配置"
+                icon={Trash2}
+                tone="danger"
+                onClick={() => {
+                  onUpdateConfig({
+                    agentAssetId: "custom",
+                    agentSource: "custom",
+                    promptTemplateId: "none",
+                    systemPromptTemplateId: "none",
+                    userPromptTemplateId: "none",
+                    systemPrompt: "",
+                    userPrompt: "",
+                    mcpIds: [],
+                    skillIds: [],
+                  });
+                  onUpdateNode({ toolCount: 0, allowUserEdit: false, allowQuestion: false });
+                }}
+              />
+            </div>
+          </article>
         </div>
       </div>
       {modalOpen ? (
@@ -1226,6 +1211,10 @@ function AgentClusterBrickConfig({
                   <TinyBadge>{agent.output}</TinyBadge>
                   <TinyBadge tone="info">Skill {agent.skillIds.length}</TinyBadge>
                   <TinyBadge tone="info">MCP {agent.mcpIds.length}</TinyBadge>
+                  <AgentInteractionFeatureBadges
+                    allowUserEdit={agent.allowUserEdit}
+                    allowQuestion={agent.allowQuestion}
+                  />
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-1">
@@ -1281,7 +1270,7 @@ function DeliveryBrickConfig({
 
   return (
     <PanelGroup title="交付配置" icon={PackageCheck} className="xl:col-span-2">
-      {deliveryMode === "capability" ? <CapabilityStateBanner state={capabilityState} loadingOnly /> : null}
+      {deliveryMode === "capability" ? <CapabilityStateBanner state={capabilityState} /> : null}
       <div className="grid gap-4 lg:grid-cols-2">
         <SelectLikeField
           label="交付模式"
@@ -1352,7 +1341,6 @@ function CapabilitySelectField({
         ]}
         onChange={onChange}
       />
-      {options.length === 0 ? <span className="sys-field-hint">暂无可选能力资产</span> : null}
     </label>
   );
 }
@@ -1390,22 +1378,17 @@ function CapabilityMultiSelectField({
         }))}
         onChange={(values) => onChange(values)}
       />
-      {options.length === 0 ? <span className="sys-field-hint">暂无可选能力资产</span> : null}
     </label>
   );
 }
 
-function CapabilityStateBanner({ state, loadingOnly = false }: { state: WorkflowCapabilityState; loadingOnly?: boolean }) {
+function CapabilityStateBanner({ state }: { state: WorkflowCapabilityState }) {
   if (state.loading) {
     return <p className="workflow-capability-state">正在加载可引用能力...</p>;
   }
 
   if (state.error) {
     return <p className="workflow-capability-state workflow-capability-state--danger">{state.error}</p>;
-  }
-
-  if (!loadingOnly && state.capabilities.length === 0) {
-    return <p className="workflow-capability-state">当前账号暂无可引用能力。请先在系统管理把能力放入租户能力池，再由租户管理分配给当前用户、部门或角色；也可以在能力资产中创建自己的智能体或提示词模板。</p>;
   }
 
   return null;
@@ -1631,7 +1614,7 @@ function SingleAgentConfigModal({
     mcpIds: readStringArray(config.mcpIds ?? config.mcpServices, []),
     skillIds: readStringArray(config.skillIds ?? config.skills, []),
     maxTokens: readOptionalInt(config.maxTokens),
-    outputMode: node.data.outputMode,
+    allowUserEdit: node.data.allowUserEdit,
     allowQuestion: node.data.allowQuestion,
   });
 
@@ -1701,24 +1684,11 @@ function SingleAgentConfigModal({
             value={draft.maxTokens}
             onChange={(value) => setDraft({ ...draft, maxTokens: value })}
           />
-          <div className="workflow-modal-section grid gap-3 lg:grid-cols-2">
-            <label className="workflow-toggle-row">
-              <span>允许重新生成</span>
-              <input
-                type="checkbox"
-                checked={draft.outputMode === "追问确认"}
-                onChange={(event) => setDraft({ ...draft, outputMode: event.target.checked ? "追问确认" : "一次性输出" })}
-              />
-            </label>
-            <label className="workflow-toggle-row">
-              <span>允许追问修改</span>
-              <input
-                type="checkbox"
-                checked={draft.allowQuestion}
-                onChange={(event) => setDraft({ ...draft, allowQuestion: event.target.checked })}
-              />
-            </label>
-          </div>
+          <AgentInteractionOptions
+            allowUserEdit={draft.allowUserEdit}
+            allowQuestion={draft.allowQuestion}
+            onChange={(patch) => setDraft({ ...draft, ...patch })}
+          />
         </div>
         <div className="sys-modal-footer">
           <button type="button" className="sys-btn sys-btn--default" onClick={onClose}>取消</button>
@@ -1738,7 +1708,7 @@ function SingleAgentConfigModal({
               ...(draft.maxTokens ? { maxTokens: draft.maxTokens } : {}),
             }, {
               toolCount: draft.mcpIds.length + draft.skillIds.length,
-              outputMode: draft.outputMode,
+              allowUserEdit: draft.allowUserEdit,
               allowQuestion: draft.allowQuestion,
             })}
           >
@@ -1850,6 +1820,11 @@ function ClusterAgentModal({
             value={draft.maxTokens}
             onChange={(value) => setDraft({ ...draft, maxTokens: value })}
           />
+          <AgentInteractionOptions
+            allowUserEdit={draft.allowUserEdit}
+            allowQuestion={draft.allowQuestion}
+            onChange={(patch) => setDraft({ ...draft, ...patch })}
+          />
         </div>
         <div className="sys-modal-footer">
           <button type="button" className="sys-btn sys-btn--default" onClick={onClose}>取消</button>
@@ -1952,6 +1927,52 @@ function OverviewMetric({ icon: Icon, label, value }: { icon: WorkflowIcon; labe
         <p className="text-xs text-[var(--color-text-tertiary)]">{label}</p>
         <p className="mt-1 text-lg font-semibold text-[var(--color-text-primary)]">{value}</p>
       </span>
+    </div>
+  );
+}
+
+function AgentInteractionFeatureBadges({
+  allowUserEdit,
+  allowQuestion,
+}: {
+  allowUserEdit?: boolean;
+  allowQuestion?: boolean;
+}) {
+  return (
+    <>
+      {allowUserEdit ? <TinyBadge tone="info">修改</TinyBadge> : null}
+      {allowQuestion ? <TinyBadge tone="info">追问</TinyBadge> : null}
+    </>
+  );
+}
+
+function AgentInteractionOptions({
+  allowUserEdit,
+  allowQuestion,
+  onChange,
+}: {
+  allowUserEdit: boolean;
+  allowQuestion: boolean;
+  onChange: (patch: Partial<{ allowUserEdit: boolean; allowQuestion: boolean }>) => void;
+}) {
+  return (
+    <div className="workflow-modal-section grid gap-3 lg:grid-cols-2">
+      <label className="workflow-toggle-row">
+        <span>允许修改</span>
+        <input
+          type="checkbox"
+          checked={allowUserEdit}
+          onChange={(event) => onChange({ allowUserEdit: event.target.checked })}
+        />
+      </label>
+      <label className="workflow-toggle-row">
+        <span>允许追问</span>
+        <input
+          type="checkbox"
+          checked={allowQuestion}
+          onChange={(event) => onChange({ allowQuestion: event.target.checked })}
+        />
+      </label>
     </div>
   );
 }
@@ -2127,6 +2148,7 @@ function createNodeFromTemplate(template: WorkflowBrickTemplate, index: number, 
       outputMode: template.outputMode,
       toolCount: template.toolCount,
       allowQuestion: template.allowQuestion,
+      allowUserEdit: false,
       rawConfig: {
         ...rawConfig,
         brickType,
@@ -2169,6 +2191,8 @@ function createClusterAgent(index: number): ClusterAgentConfig {
     systemPrompt: "请配置这个智能体的角色、任务边界和输出要求。",
     userPrompt: "请基于已产生的可引用内容完成本智能体任务。",
     output: `agent_${index + 1}_output`,
+    allowUserEdit: false,
+    allowQuestion: false,
   };
 }
 
@@ -2201,6 +2225,10 @@ function toEditorNode(node: WorkflowNodeDraft): WorkflowEditorNode {
       outputMode: readLiteral(config.outputMode, ["一次性输出", "追问确认"], fallback.outputMode),
       toolCount: readNumber(config.toolCount, fallback.toolCount),
       allowQuestion: readBoolean(config.allowQuestion, fallback.allowQuestion),
+      allowUserEdit: readBoolean(
+        config.allowUserEdit,
+        config.outputMode === "追问确认" ? true : fallback.allowUserEdit,
+      ),
       rawConfig: { ...config, brickType },
     },
   };
@@ -2235,6 +2263,7 @@ function toWorkflowNodeDraft(node: WorkflowEditorNode): WorkflowNodeDraft {
       outputMode: node.data.outputMode,
       toolCount: node.data.toolCount,
       allowQuestion: node.data.allowQuestion,
+      allowUserEdit: node.data.allowUserEdit,
     },
   };
 }
@@ -2325,6 +2354,7 @@ function buildFallbackNodeData(nodeType: WorkflowNodeType, brickType: WorkflowBr
     runState: "待配置",
     outputMode: "一次性输出",
     toolCount: 0,
+    allowUserEdit: false,
     allowQuestion: false,
     rawConfig: { brickType },
   };
@@ -2474,6 +2504,8 @@ function readClusterAgents(value: unknown): ClusterAgentConfig[] {
         systemPrompt: readString(agent.systemPrompt, "请配置这个智能体的角色、任务边界和输出要求。"),
         userPrompt: readString(agent.userPrompt ?? (agent as unknown as { prompt?: unknown }).prompt, "请基于已产生的可引用内容完成本智能体任务。"),
         maxTokens: readOptionalInt(agent.maxTokens),
+        allowUserEdit: readBoolean(agent.allowUserEdit, false),
+        allowQuestion: readBoolean(agent.allowQuestion, false),
       }));
     }
   }
