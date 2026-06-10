@@ -53,6 +53,20 @@ export type RuntimeChatMessage = {
   timestamp?: string;
 };
 
+/** 智能体执行步骤（主界面摘要 + 抽屉详情） */
+export type AgentExecutionStep = {
+  id: string;
+  kind: "phase" | "tool" | "final_answer";
+  phaseKey?: AgentPhase;
+  title: string;
+  summary: string;
+  status: "running" | "done" | "error";
+  durationMs?: number;
+  /** 抽屉中展示的原始输出 */
+  detail?: string;
+  toolType?: "mcp" | "skill";
+};
+
 /** 能力调用项（MCP / Skill / 子智能体） */
 export type RuntimeCapabilityItem = {
   id: string;
@@ -363,6 +377,10 @@ export type RunStreamState = {
   activeNodeInfo: { nodeRunId: string; nodeName: string; nodeType: string } | null;
   /** 能力调用实时状态 */
   toolCalls: RuntimeCapabilityItem[];
+  /** 单智能体执行步骤时间线（SSE 实时累积） */
+  executionSteps: AgentExecutionStep[];
+  /** 当前节点开始执行的本地时间戳（毫秒） */
+  streamStartedAt: number | null;
   /** 子智能体实时状态（多智能体集群） */
   clusterAgents: Array<{
     index: number;

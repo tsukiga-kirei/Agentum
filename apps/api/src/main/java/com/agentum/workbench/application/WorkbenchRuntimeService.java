@@ -48,11 +48,13 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
+import org.springframework.dao.DataIntegrityViolationException;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
@@ -721,6 +723,20 @@ public class WorkbenchRuntimeService {
         int attempt = jobRepository.findFirstByNodeRunIdOrderByAttemptDesc(nodeRunId)
             .map(previous -> previous.getAttempt() + 1)
             .orElse(1);
+        String idempotencyKey = runId + ":" + nodeRunId + ":" + attempt;
+        Optional<WorkflowRunExecutionJobEntity> existingJob = jobRepository.findByIdempotencyKey(idempotencyKey);
+        if (existingJob.isPresent() && isExecutionJobInFlight(existingJob.get())) {
+            log.info(
+                "执行作业已存在，跳过重复入队 tenantId={} runId={} nodeRunId={} attempt={} jobId={} requestId={}",
+                tenantId,
+                runId,
+                nodeRunId,
+                attempt,
+                existingJob.get().getId(),
+                RequestIds.current()
+            );
+            return;
+        }
         WorkflowRunExecutionJobEntity job = WorkflowRunExecutionJobEntity.queued(
             tenantId,
             runId,
@@ -731,7 +747,25 @@ public class WorkbenchRuntimeService {
             now.plusSeconds(runtimeProperties.getExecution().getNodeTimeoutSeconds()),
             now
         );
-        jobRepository.save(job);
+        try {
+            jobRepository.save(job);
+        } catch (DataIntegrityViolationException exception) {
+            // 并发 advance（例如回退后自动启动与手动重新生成同时触发）可能撞上同一 attempt 的幂等键。
+            Optional<WorkflowRunExecutionJobEntity> racedJob = jobRepository.findByIdempotencyKey(idempotencyKey);
+            if (racedJob.isPresent() && isExecutionJobInFlight(racedJob.get())) {
+                log.info(
+                    "并发入队冲突已幂等收敛 tenantId={} runId={} nodeRunId={} attempt={} jobId={} requestId={}",
+                    tenantId,
+                    runId,
+                    nodeRunId,
+                    attempt,
+                    racedJob.get().getId(),
+                    RequestIds.current()
+                );
+                return;
+            }
+            throw exception;
+        }
         streamWriter.reset(runId);
         commandPublisher.publish(NodeExecuteCommand.of(
             job.getId(),
@@ -744,6 +778,11 @@ public class WorkbenchRuntimeService {
             attempt,
             now
         ));
+    }
+
+    private static boolean isExecutionJobInFlight(WorkflowRunExecutionJobEntity job) {
+        return WorkflowRunExecutionJobEntity.STATUS_QUEUED.equals(job.getStatus())
+            || WorkflowRunExecutionJobEntity.STATUS_RUNNING.equals(job.getStatus());
     }
 
     /** 同一任务同一时刻只允许一个在途执行作业，防止重复推进导致子智能体双开。 */

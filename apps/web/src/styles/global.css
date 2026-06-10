@@ -3928,12 +3928,46 @@ textarea:focus-visible {
   font-size: 11px;
 }
 
-.workbench-launch-drawer-footer {
+.agent-execution-answer-panel {
+  background: color-mix(in srgb, var(--color-primary) 2%, var(--color-bg-card));
+}
+
+.agent-execution-progress-track {
+  position: relative;
+  overflow: hidden;
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-border-light));
+}
+
+.agent-execution-progress-bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 42%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--color-primary), color-mix(in srgb, var(--color-primary) 55%, white));
+  animation: agent-execution-progress-slide 1.6s ease-in-out infinite;
+}
+
+@keyframes agent-execution-progress-slide {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(280%);
+  }
+}
+
+.workbench-launch-drawer-footer,
+.workbench-launch-drawer > .workflow-drawer-footer {
   display: flex;
-  justify-content: flex-end;
-  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
   border-top: 1px solid var(--color-border-light);
-  padding-top: 16px;
+  padding: 16px 24px;
+  background: var(--color-bg-page);
 }
 
 .workbench-run-detail {

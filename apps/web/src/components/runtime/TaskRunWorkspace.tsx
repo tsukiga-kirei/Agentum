@@ -14,7 +14,7 @@ import type { WorkbenchRunDetail } from "../../types/workbench";
 import { useRunStream } from "../../hooks/useRunStream";
 import { StepProgressRail } from "./StepProgressRail";
 import { StepActionBar } from "./StepActionBar";
-import { AgentChatPanel } from "./AgentChatPanel";
+import { SingleAgentPanel } from "./SingleAgentPanel";
 import { UserInputPanel } from "./UserInputPanel";
 import { MultiAgentPanel } from "./MultiAgentPanel";
 import { DeliveryPreviewPanel } from "./DeliveryPreviewPanel";
@@ -490,11 +490,15 @@ export function TaskRunWorkspace({
       setRunDetail(afterAdvance);
       onReload(afterAdvance);
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "推进步骤失败";
       console.error("推进步骤失败", error);
-      setAdvanceError(message);
-      setActiveRunTab("current");
-      await reloadRunDetail();
+      const reloaded = await reloadRunDetail();
+      if (reloaded && isActiveJobAlive(reloaded)) {
+        setAdvanceError(null);
+      } else {
+        const message = error instanceof Error ? error.message : "推进步骤失败";
+        setAdvanceError(message);
+        setActiveRunTab("current");
+      }
     } finally {
       setIsAdvancing(false);
     }
@@ -634,20 +638,38 @@ export function TaskRunWorkspace({
 
   async function handleRegenerateStep() {
     const targetStep = preview.steps[resolveActiveStepIndex(preview.steps, runDetail)];
-    if (!targetStep?.nodeRunId) {
+    if (!targetStep?.nodeRunId || isAdvancing) {
       return;
     }
+
+    setIsAdvancing(true);
+    setAdvanceError(null);
+    setWatchdogStaleMessage(null);
+    // rollback 会把智能体节点重置为 pending，需阻止「进入即执行」与本次手动 advance 并发入队。
+    initialAutoStartRef.current = true;
+    stream.disconnect();
 
     try {
       const updated = await workbenchApi.rollbackRun(tenantId, token, runDetail.id, targetStep.nodeRunId);
       setRunDetail(updated);
       onReload(updated);
+      await stream.connect({ replay: true });
       await stream.ensureConnected();
       const afterAdvance = await workbenchApi.advanceStep(tenantId, token, runDetail.id);
       setRunDetail(afterAdvance);
       onReload(afterAdvance);
-    } catch (e: unknown) {
-      console.error("重试节点失败", e);
+    } catch (error: unknown) {
+      console.error("重新生成失败", error);
+      const reloaded = await reloadRunDetail();
+      if (reloaded && isActiveJobAlive(reloaded)) {
+        setAdvanceError(null);
+        return;
+      }
+      const message = error instanceof Error ? error.message : "重新生成失败";
+      setAdvanceError(message);
+      setActiveRunTab("current");
+    } finally {
+      setIsAdvancing(false);
     }
   }
 
@@ -818,12 +840,16 @@ export function TaskRunWorkspace({
                     onSubmit={handleCompleteTodo}
                   />
                 ) : activeStep.kind === "agent" ? (
-                  <AgentChatPanel
+                  <SingleAgentPanel
                     activeStep={activeStep}
                     streamingText={stream.streamingText}
                     isStreaming={isLiveExecuting}
                     currentPhase={stream.currentPhase}
                     toolCalls={stream.toolCalls}
+                    executionSteps={stream.executionSteps}
+                    streamStartedAt={stream.streamStartedAt}
+                    readOnly={runDetail.readOnly}
+                    onRegenerate={() => void handleRegenerateStep()}
                   />
                 ) : activeStep.kind === "multiAgent" ? (
                   <MultiAgentPanel
@@ -1485,8 +1511,12 @@ function buildRuntimePreviewFromRun(run: WorkbenchRunDetail): RuntimePreview {
         chatMessages: nodeMessages(node),
         capabilities: nodeCapabilities(node),
         configSnapshot: node.config,
-        allowsFollowUp: node.nodeType === "agent" || node.nodeType === "parallel_group",
-        allowsRegenerate: node.nodeType === "agent" || node.nodeType === "parallel_group",
+        allowsFollowUp: node.nodeType === "agent" || node.nodeType === "parallel_group"
+          ? readBooleanConfig(node.config?.allowQuestion)
+          : false,
+        allowsRegenerate: node.nodeType === "agent" || node.nodeType === "parallel_group"
+          ? readBooleanConfig(node.config?.allowUserEdit) || node.config?.outputMode === "追问确认"
+          : false,
         allowsInterrupt: node.state === "running",
       };
     });
@@ -1580,6 +1610,10 @@ function resolveStepInputs(node: any): RuntimeNodeField[] {
     return objectToFields(submittedValues);
   }
   return [];
+}
+
+function readBooleanConfig(value: unknown): boolean {
+  return value === true || value === "true";
 }
 
 function readConfigString(value: unknown, fallback = ""): string {

@@ -6,7 +6,14 @@ import type {
   StreamConnectionState,
   AgentPhase,
   RuntimeCapabilityItem,
+  AgentExecutionStep,
 } from "../types/runtime-types";
+import {
+  finalizeFinalAnswerStep,
+  upsertFinalAnswerStep,
+  upsertPhaseStep,
+  upsertToolStep,
+} from "../utils/agentExecutionSteps";
 import { API_BASE_URL } from "../services/apiClient";
 import { formatRuntimeErrorMessage } from "../utils/runtimeErrors";
 import { pickBestAgentOutput } from "../utils/agentOutputText";
@@ -61,6 +68,8 @@ export function useRunStream(
     nodeType: string;
   } | null>(null);
   const [toolCalls, setToolCalls] = useState<RuntimeCapabilityItem[]>([]);
+  const [executionSteps, setExecutionSteps] = useState<AgentExecutionStep[]>([]);
+  const [streamStartedAt, setStreamStartedAt] = useState<number | null>(null);
   const [clusterAgents, setClusterAgents] = useState<
     RunStreamState["clusterAgents"]
   >([]);
@@ -104,6 +113,8 @@ export function useRunStream(
       setStreamingText("");
       setCurrentPhase(null);
       setToolCalls([]);
+      setExecutionSteps([]);
+      setStreamStartedAt(null);
       setClusterAgents([]);
     }
   }, []);
@@ -333,14 +344,19 @@ export function useRunStream(
         if (!isSameNode) {
           setStreamingText("");
           setToolCalls([]);
+          setExecutionSteps([]);
+          setStreamStartedAt(Date.now());
           setClusterAgents([]);
+        } else {
+          setStreamStartedAt((startedAt) => startedAt ?? Date.now());
         }
         break;
       }
 
       case "agent_thinking": {
-        const { phase } = event.data;
+        const { phase, message } = event.data;
         setCurrentPhase(phase);
+        setExecutionSteps((prev) => upsertPhaseStep(prev, phase, message));
         break;
       }
 
@@ -349,6 +365,7 @@ export function useRunStream(
         setStreamingText(accumulatedContent);
         setCurrentPhase("model_calling");
         setIsStreaming(true);
+        setExecutionSteps((prev) => upsertFinalAnswerStep(prev, accumulatedContent, true));
         break;
       }
 
@@ -372,10 +389,11 @@ export function useRunStream(
           if (existingIdx >= 0) {
             const copy = [...prev];
             copy[existingIdx] = updated;
+            setExecutionSteps((steps) => upsertToolStep(steps, updated));
             return copy;
-          } else {
-            return [...prev, updated];
           }
+          setExecutionSteps((steps) => upsertToolStep(steps, updated));
+          return [...prev, updated];
         });
         break;
       }
@@ -464,6 +482,7 @@ export function useRunStream(
       case "node_completed":
         setIsStreaming(false);
         setCurrentPhase("completed");
+        setExecutionSteps((prev) => finalizeFinalAnswerStep(prev));
         setActiveNodeInfo(null);
         activeNodeRunIdRef.current = null;
         break;
@@ -507,6 +526,8 @@ export function useRunStream(
     currentPhase,
     activeNodeInfo,
     toolCalls,
+    executionSteps,
+    streamStartedAt,
     clusterAgents,
     connectionState,
     error,
