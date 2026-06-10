@@ -29,9 +29,6 @@ public class WorkflowDefinitionEntity {
     @Column(name = "node_count", nullable = false)
     private int nodeCount;
 
-    @Column(name = "pause_point_count", nullable = false)
-    private int pausePointCount;
-
     @Column(name = "read_scope", nullable = false, length = 30)
     private String readScope;
 
@@ -64,7 +61,6 @@ public class WorkflowDefinitionEntity {
         entity.description = description;
         entity.status = "draft";
         entity.nodeCount = 0;
-        entity.pausePointCount = 0;
         entity.readScope = "self";
         entity.editScope = "self";
         entity.launchEnabled = true;
@@ -75,12 +71,11 @@ public class WorkflowDefinitionEntity {
         return entity;
     }
 
-    public void updateGraphSummary(int nodeCount, int pausePointCount, UUID operatorUserId, Instant now) {
+    public void updateGraphSummary(int nodeCount, UUID operatorUserId, Instant now) {
         // 已发布定义再次编辑后回到设计态草稿，用于提示“存在未发布改动”；
         // 业务入口是否仍可发起由 workflow_versions 与 launch_enabled 决定，不能只看 status。
         this.status = "draft";
         this.nodeCount = nodeCount;
-        this.pausePointCount = pausePointCount;
         this.updatedBy = operatorUserId;
         this.updatedAt = now;
     }
@@ -148,10 +143,6 @@ public class WorkflowDefinitionEntity {
 
     public int getNodeCount() {
         return nodeCount;
-    }
-
-    public int getPausePointCount() {
-        return pausePointCount;
     }
 
     public String getReadScope() {

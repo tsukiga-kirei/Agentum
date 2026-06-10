@@ -33,9 +33,6 @@ public class WorkflowVersionEntity {
     @Column(name = "node_count", nullable = false)
     private int nodeCount;
 
-    @Column(name = "pause_point_count", nullable = false)
-    private int pausePointCount;
-
     @Column(name = "published_by")
     private UUID publishedBy;
 
@@ -51,7 +48,6 @@ public class WorkflowVersionEntity {
         int versionNumber,
         String definitionSnapshot,
         int nodeCount,
-        int pausePointCount,
         UUID publishedBy,
         Instant publishedAt
     ) {
@@ -62,7 +58,6 @@ public class WorkflowVersionEntity {
         entity.versionNumber = versionNumber;
         entity.definitionSnapshot = definitionSnapshot;
         entity.nodeCount = nodeCount;
-        entity.pausePointCount = pausePointCount;
         entity.publishedBy = publishedBy;
         entity.publishedAt = publishedAt;
         return entity;

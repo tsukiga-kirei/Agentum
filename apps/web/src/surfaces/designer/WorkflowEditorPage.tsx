@@ -50,7 +50,6 @@ type EditorNodeData = {
   summary: string;
   inputVariables: string[];
   outputVariables: string[];
-  pausePoint: boolean;
   configStatus: "complete" | "incomplete";
   runState: "未开始" | "等待输入" | "执行中" | "等待审核" | "已完成" | "待配置";
   outputMode: "一次性输出" | "追问确认";
@@ -2142,7 +2141,6 @@ function createNodeFromTemplate(template: WorkflowBrickTemplate, index: number, 
       summary: template.defaultSummary,
       inputVariables: effectiveInputVariables,
       outputVariables,
-      pausePoint: false,
       configStatus: brickType === "trigger" ? "complete" : "incomplete",
       runState: template.runState,
       outputMode: template.outputMode,
@@ -2219,7 +2217,6 @@ function toEditorNode(node: WorkflowNodeDraft): WorkflowEditorNode {
       summary: readString(config.summary, fallback.summary),
       inputVariables: [...(node.inputVariables ?? [])],
       outputVariables: [...(node.outputVariables ?? [])],
-      pausePoint: false,
       configStatus: readLiteral(config.configStatus, ["complete", "incomplete"], fallback.configStatus),
       runState: readLiteral(config.runState, ["未开始", "等待输入", "执行中", "等待审核", "已完成", "待配置"], fallback.runState),
       outputMode: readLiteral(config.outputMode, ["一次性输出", "追问确认"], fallback.outputMode),
@@ -2257,7 +2254,6 @@ function toWorkflowNodeDraft(node: WorkflowEditorNode): WorkflowNodeDraft {
       ...(node.data.rawConfig ?? {}),
       typeLabel: node.data.typeLabel,
       summary: node.data.summary,
-      pausePoint: false,
       configStatus: node.data.configStatus,
       runState: node.data.runState,
       outputMode: node.data.outputMode,
@@ -2349,7 +2345,6 @@ function buildFallbackNodeData(nodeType: WorkflowNodeType, brickType: WorkflowBr
     summary: "请在右侧配置这个积木的业务目标和参数。",
     inputVariables: [],
     outputVariables: [],
-    pausePoint: false,
     configStatus: "incomplete",
     runState: "待配置",
     outputMode: "一次性输出",

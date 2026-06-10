@@ -21,7 +21,6 @@ public final class WorkflowDraftApi {
         String description,
         String status,
         int nodeCount,
-        int pausePointCount,
         UUID ownerId,
         String ownerName,
         String accessLevel,

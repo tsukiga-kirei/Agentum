@@ -123,7 +123,6 @@ pnpm build:web
 apps/web                  前端工作台
 apps/api                  后端 API
 packages/shared-contract  OpenAPI、JSON Schema 与事件契约
-packages/ui               前端通用 UI
 capabilities/             产品运行时能力源码（Skill、MCP、交付适配器）
 workers/                  文档 / AI 等 Worker
 deploy/                   部署与本地配置

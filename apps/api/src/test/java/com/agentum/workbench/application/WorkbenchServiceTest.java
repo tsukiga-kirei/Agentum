@@ -114,7 +114,7 @@ class WorkbenchServiceTest {
         );
         definition.markPublished(USER_ID, NOW);
         WorkflowVersionEntity version = WorkflowVersionEntity.create(
-            definition.getId(), TENANT_ID, 2, "{}", 5, 0, USER_ID, NOW.plusSeconds(60)
+            definition.getId(), TENANT_ID, 2, "{}", 5, USER_ID, NOW.plusSeconds(60)
         );
         // UserAccount#create 默认生成随机 id，这里用 mock 让 id 与 createdBy 对齐，便于断言 ownerName 落到“设计者”。
         UserAccount owner = mock(UserAccount.class);

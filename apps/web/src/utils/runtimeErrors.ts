@@ -68,12 +68,3 @@ export function isPersistedClusterAgentFailed(agent: Record<string, unknown>): b
     || summary.includes("未配置最大输出 Token")
   );
 }
-
-/** @deprecated 请改用 isPersistedClusterAgentFailed，避免把正文里的「失败」误判为状态。 */
-export function isClusterAgentFailureSummary(summary: unknown): boolean {
-  const text = typeof summary === "string" ? summary.trim() : "";
-  if (!text || text.length > 240) {
-    return false;
-  }
-  return isPersistedClusterAgentFailed({ summary: text });
-}

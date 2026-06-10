@@ -22,7 +22,6 @@ export type WorkflowDraftRow = {
   description: string;
   status: WorkflowStatus;
   nodeCount: number;
-  pausePointCount: number;
   ownerId: string | null;
   ownerName: string;
   accessLevel: CollaborationAccessLevel;

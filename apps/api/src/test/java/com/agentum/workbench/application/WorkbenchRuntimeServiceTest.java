@@ -525,7 +525,6 @@ class WorkbenchRuntimeServiceTest {
             versionNumber,
             snapshot,
             3,
-            0,
             DESIGNER_ID,
             NOW
         );

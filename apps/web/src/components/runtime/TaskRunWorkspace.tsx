@@ -1658,11 +1658,6 @@ function nodeCapabilities(node: any): RuntimeCapabilityItem[] {
   return list;
 }
 
-function parseClusterAgentSummaries(outputs: RuntimePreviewStep["outputs"]): Array<Record<string, unknown>> | null {
-  const parsed = parseClusterAgentSummariesFromOutputs(outputs);
-  return parsed.length > 0 ? parsed : null;
-}
-
 function resolveStepErrorMessage(step: RuntimePreviewStep): string | null {
   if (step.state !== "failed") {
     return null;

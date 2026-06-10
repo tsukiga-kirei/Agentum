@@ -2,7 +2,6 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 COPY package.json pnpm-workspace.yaml ./
 COPY apps/web/package.json apps/web/package.json
-COPY packages/ui/package.json packages/ui/package.json
 RUN corepack enable
 COPY . .
 RUN pnpm install --frozen-lockfile=false && pnpm --filter @agentum/web build

@@ -24,7 +24,7 @@
 
 ## 1. 背景与目标
 
-### 1.1 当前实现（阶段 0）
+### 1.1 历史实现（阶段 0，已删除）
 
 ```text
 POST /advance
@@ -34,7 +34,7 @@ POST /advance
   -> 完成后写 PostgreSQL（节点状态、outputs、留痕表）
 ```
 
-该模型在**单实例、用户保持页面打开、链路较短**时可工作，但存在以下结构性风险：
+该模型在**单实例、用户保持页面打开、链路较短**时可工作，但存在以下结构性风险（因此已整体替换为 async 模式，不再保留 inline 回退）：
 
 | 风险 | 表现 |
 | --- | --- |
@@ -50,7 +50,7 @@ POST /advance
 2. **可重连接入**：用户刷新或重新打开任务页，能恢复「当前步骤 + 流式累积内容 + 事件时间线」。
 3. **多实例安全**：同一 `runId` 同一时刻最多一个执行租约；SSE 可在任意 API 实例建立。
 4. **失败可感知**：超时、Worker 崩溃、模型/MCP 失败均写入 DB 与事件流，前端不再假「执行中」。
-5. **渐进迁移**：保留 `runtime.execution.mode=inline`（现有行为）与 `async`（新行为）开关，便于本地开发与回滚。
+5. **渐进迁移**：开发期曾计划 `inline` / `async` 双模式；落地后仅保留 `async`，本地也必须先启动 Redis 与 RabbitMQ。
 
 ### 1.3 非目标（本阶段不做）
 
@@ -98,15 +98,15 @@ POST /advance
 
 ---
 
-## 3. 执行模式与开关
+## 3. 执行模式与配置
 
-`application.yml`（或环境变量）：
+当前仅保留 **async** 模式：`POST /advance` 入队后立即返回；Worker 消费 RabbitMQ 执行；SSE 由 Redis Stream 中继。
+
+`application.yml`（或环境变量）示例：
 
 ```yaml
 agentum:
   runtime:
-    execution:
-      mode: inline   # inline | async
     redis:
       stream-max-len: 5000          # 每个 run 的 Stream 最大条目（近似裁剪）
       lease-ttl-seconds: 7200       # 执行租约 TTL，Worker 心跳续期
@@ -118,12 +118,7 @@ agentum:
       prefetch: 1                   # 单 Worker 同时只处理一个长任务
 ```
 
-| 模式 | 行为 |
-| --- | --- |
-| `inline` | 保持现有 `@Async` + 内存 SSE，零中间件依赖 |
-| `async` | `POST /advance` 入队后立即返回；Worker 执行；SSE 来自 Redis Stream |
-
-本地默认可继续 `inline`；`make dev-infra` 已提供 Redis / RabbitMQ，联调时切 `async`。
+本地开发必须先执行 `make dev-infra` 启动 Redis 与 RabbitMQ，否则运行态无法推进节点。
 
 ---
 

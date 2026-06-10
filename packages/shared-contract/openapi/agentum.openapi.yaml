@@ -4742,8 +4742,6 @@ components:
           enum: [draft, review, published]
         nodeCount:
           type: integer
-        pausePointCount:
-          type: integer
         ownerId:
           type: string
           format: uuid
@@ -4762,7 +4760,6 @@ components:
         - description
         - status
         - nodeCount
-        - pausePointCount
         - ownerId
         - ownerName
         - accessLevel

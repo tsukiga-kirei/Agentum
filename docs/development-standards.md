@@ -59,7 +59,6 @@ Agentum/
     api/
   packages/
     shared-contract/
-    ui/
   capabilities/
     skills/
     mcp-servers/

@@ -115,7 +115,7 @@ class WorkflowDraftServicePublishTest {
     }
 
     @Test
-    void shouldKeepPausePointCountZeroWhenSavingSequentialGraph() {
+    void shouldSaveSequentialGraphWithCorrectNodeCount() {
         WorkflowDefinitionEntity definition = draft();
         stubDefinitionLookup(definition);
         WorkflowDraftApi.SaveWorkflowDraftGraphRequest request = new WorkflowDraftApi.SaveWorkflowDraftGraphRequest(
@@ -137,8 +137,8 @@ class WorkflowDraftServicePublishTest {
 
         WorkflowDraftApi.WorkflowDraftDetail detail = service().saveGraph(TENANT_ID, USER_ID, definition.getId(), request);
 
-        assertThat(definition.getPausePointCount()).isZero();
-        assertThat(detail.draft().pausePointCount()).isZero();
+        assertThat(definition.getNodeCount()).isEqualTo(3);
+        assertThat(detail.draft().nodeCount()).isEqualTo(3);
     }
 
     @Test

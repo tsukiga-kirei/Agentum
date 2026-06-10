@@ -10,7 +10,6 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "@agentum/ui": "workspace:*",
     "antd": "^6.3.7",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",

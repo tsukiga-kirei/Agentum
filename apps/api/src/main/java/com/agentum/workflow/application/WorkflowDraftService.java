@@ -364,7 +364,6 @@ public class WorkflowDraftService {
             nextVersionNumber,
             writeVersionSnapshot(definition, detail),
             definition.getNodeCount(),
-            definition.getPausePointCount(),
             operatorUserId,
             now
         );
@@ -479,7 +478,7 @@ public class WorkflowDraftService {
 
         // 积木计数排除系统触发节点（trigger），与前端编辑器 visibleNodes 口径一致，用户只关心业务积木数量。
         int userNodeCount = (int) nodes.stream().filter(n -> !"trigger".equals(n.nodeType())).count();
-        definition.updateGraphSummary(userNodeCount, 0, operatorUserId, now);
+        definition.updateGraphSummary(userNodeCount, operatorUserId, now);
         workflowDefinitionRepository.save(definition);
         log.info(
             "工作流草稿图保存成功 tenantId={} operatorUserId={} workflowId={} nodeCount={} edgeCount={} variableCount={} requestId={}",
@@ -676,7 +675,6 @@ public class WorkflowDraftService {
             definition.getDescription() == null ? "" : definition.getDescription(),
             definition.getStatus(),
             definition.getNodeCount(),
-            definition.getPausePointCount(),
             definition.getCreatedBy(),
             owner == null ? "未知用户" : owner.getDisplayName(),
             resolveAccess(definition, operatorUserId).name().toLowerCase(),
