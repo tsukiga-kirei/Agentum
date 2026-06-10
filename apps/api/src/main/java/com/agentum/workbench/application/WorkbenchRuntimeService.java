@@ -855,7 +855,7 @@ public class WorkbenchRuntimeService {
     @Transactional(readOnly = true)
     public long countVisibleRunningRuns(UUID tenantId, CurrentUserPrincipal principal) {
         ensureAuthenticated(principal);
-        return workflowRunRepository.countVisibleByStateIn(tenantId, principal.userId(), isTenantManager(principal), List.of("running", "paused"));
+        return workflowRunRepository.countVisibleByStateIn(tenantId, principal.userId(), isTenantManager(principal), List.of("running"));
     }
 
     @Transactional(readOnly = true)

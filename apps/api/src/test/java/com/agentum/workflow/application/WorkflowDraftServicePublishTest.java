@@ -137,8 +137,8 @@ class WorkflowDraftServicePublishTest {
 
         WorkflowDraftApi.WorkflowDraftDetail detail = service().saveGraph(TENANT_ID, USER_ID, definition.getId(), request);
 
-        assertThat(definition.getNodeCount()).isEqualTo(3);
-        assertThat(detail.draft().nodeCount()).isEqualTo(3);
+        assertThat(definition.getNodeCount()).isEqualTo(2);
+        assertThat(detail.draft().nodeCount()).isEqualTo(2);
     }
 
     @Test

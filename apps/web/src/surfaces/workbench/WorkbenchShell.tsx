@@ -494,9 +494,9 @@ export function WorkbenchShell() {
         icon: UserRoundCheck,
       },
       {
-        label: "进行中任务",
+        label: "正在运行",
         value: metrics ? String(metrics.runningRunTotal) : "—",
-        hint: "运行中或已暂停的实例",
+        hint: "当前正在执行的实例",
         tone: "info",
         icon: Activity,
       },

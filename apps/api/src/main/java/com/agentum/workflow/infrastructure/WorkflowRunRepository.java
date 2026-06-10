@@ -30,6 +30,7 @@ public interface WorkflowRunRepository extends JpaRepository<WorkflowRunEntity, 
     @Query("""
         select count(run) from WorkflowRunEntity run
         where run.tenantId = :tenantId
+          and run.saved = true
           and run.state in :states
           and (:tenantManager = true or run.createdBy = :operatorUserId)
         """)
