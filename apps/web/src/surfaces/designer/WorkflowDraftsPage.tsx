@@ -880,9 +880,7 @@ export function WorkflowDraftsPage() {
                     </article>
                   ))}
                 </div>
-              ) : (
-                <div className="sys-hint">正式发布会再次执行后端校验，并冻结当前节点、连线和变量声明为不可变版本。</div>
-              )}
+              ) : null}
             </div>
             <div className="sys-modal-footer">
               <button type="button" onClick={() => setValidationModal(null)} className="sys-btn sys-btn--default">关闭</button>

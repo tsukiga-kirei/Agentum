@@ -209,16 +209,22 @@ export function WorkbenchShell() {
     setHistoryKeywordDraft(historyKeyword);
   }, [historyKeyword]);
 
-  function updateSearchParam(key: string, value: string | null) {
+  // 批量更新查询参数，避免连续两次 setSearchParams 时后一次覆盖前一次导致筛选失效。
+  function updateSearchParams(updates: Record<string, string | null>, replace?: boolean) {
+    const shouldReplace = replace ?? Object.keys(updates).every(
+      (key) => key !== "page" && key !== "activePage" && key !== "historyPage",
+    );
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
-      if (!value) {
-        next.delete(key);
-      } else {
-        next.set(key, value);
-      }
+      Object.entries(updates).forEach(([key, value]) => {
+        if (!value) {
+          next.delete(key);
+        } else {
+          next.set(key, value);
+        }
+      });
       return next;
-    }, { replace: key !== "page" && key !== "activePage" && key !== "historyPage" });
+    }, { replace: shouldReplace });
   }
 
   function navigateWorkbenchTab(tab: WorkbenchTab) {
@@ -234,7 +240,7 @@ export function WorkbenchShell() {
   }
 
   function navigateTaskCenterTab(tab: TaskCenterTab) {
-    updateSearchParam("taskTab", tab === "active" ? null : tab);
+    updateSearchParams({ taskTab: tab === "active" ? null : tab });
   }
 
   function navigateTaskCenterWithTab(tab: TaskCenterTab, activeState?: string) {
@@ -472,12 +478,10 @@ export function WorkbenchShell() {
       void loadSummary();
       if (savedDetail.readOnly) {
         void loadTaskRuns(1, historyKeyword);
-        updateSearchParam("historyPage", "1");
-        updateSearchParam("taskTab", "history");
+        updateSearchParams({ historyPage: "1", taskTab: "history" });
       } else {
         void loadActiveTasks(1, activeTasksKeyword, activeTasksStateFilter);
-        updateSearchParam("activePage", "1");
-        updateSearchParam("taskTab", null);
+        updateSearchParams({ activePage: "1", taskTab: null });
       }
     } catch (error) {
       const reason = error instanceof AgentumApiError ? error.message : "任务保存失败";
@@ -549,20 +553,17 @@ export function WorkbenchShell() {
 
   function handleSubmitKeyword() {
     const trimmed = availableKeywordDraft.trim();
-    updateSearchParam("q", trimmed || null);
-    updateSearchParam("page", "1");
+    updateSearchParams({ q: trimmed || null, page: "1" });
   }
 
   function handleSubmitTaskCenterSearch() {
     if (taskCenterTab === "active") {
       const trimmed = activeTasksKeywordDraft.trim();
-      updateSearchParam("activeQ", trimmed || null);
-      updateSearchParam("activePage", "1");
+      updateSearchParams({ activeQ: trimmed || null, activePage: "1" });
       return;
     }
     const trimmed = historyKeywordDraft.trim();
-    updateSearchParam("historyQ", trimmed || null);
-    updateSearchParam("historyPage", "1");
+    updateSearchParams({ historyQ: trimmed || null, historyPage: "1" });
   }
 
   // 概览指标卡片基于真实 summary.metrics 渲染。
@@ -847,7 +848,7 @@ export function WorkbenchShell() {
                               total={availableTotal}
                               pageSize={AVAILABLE_PAGE_SIZE}
                               showSizeChanger={false}
-                                onChange={(page) => updateSearchParam("page", String(page))}
+                                onChange={(page) => updateSearchParams({ page: String(page) })}
                             />
                           </div>
                         ) : null}
@@ -897,8 +898,10 @@ export function WorkbenchShell() {
                               value={activeTasksStateFilter}
                               options={activeTaskStateOptions.map((option) => ({ value: option.value, label: option.label }))}
                               onChange={(value) => {
-                                updateSearchParam("activeState", value === "all" ? null : value);
-                                updateSearchParam("activePage", "1");
+                                updateSearchParams({
+                                  activeState: value === "all" ? null : value,
+                                  activePage: "1",
+                                });
                               }}
                             />
                           ) : null}
@@ -974,7 +977,7 @@ export function WorkbenchShell() {
                             current={activeTasksPage}
                             total={activeTasksTotal}
                             pageSize={TASK_RUN_PAGE_SIZE}
-                            onChange={(page) => updateSearchParam("activePage", String(page))}
+                            onChange={(page) => updateSearchParams({ activePage: String(page) })}
                           />
                         ) : null}
 
@@ -983,7 +986,7 @@ export function WorkbenchShell() {
                             current={taskRunsPage}
                             total={taskRunsTotal}
                             pageSize={TASK_RUN_PAGE_SIZE}
-                            onChange={(page) => updateSearchParam("historyPage", String(page))}
+                            onChange={(page) => updateSearchParams({ historyPage: String(page) })}
                           />
                         ) : null}
                       </section>
