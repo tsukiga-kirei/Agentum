@@ -14,20 +14,7 @@ export function phaseStepTitle(phase: AgentPhase): string {
 }
 
 export function buildPersistedExecutionSteps(step: RuntimePreviewStep): AgentExecutionStep[] {
-  const outputs = step.outputs ?? [];
-  const modelField = outputs.find((field) => field.label === "modelName");
   const steps: AgentExecutionStep[] = [];
-
-  if (modelField?.value) {
-    steps.push({
-      id: "persisted-model",
-      kind: "phase",
-      phaseKey: "model_calling",
-      title: "模型推理",
-      summary: `使用模型 ${modelField.value}`,
-      status: "done",
-    });
-  }
 
   const capabilities = step.capabilities ?? [];
   capabilities
@@ -106,11 +93,18 @@ export function readAgentPermissions(config: Record<string, unknown> | undefined
   };
 }
 
+/** 运行页只展示工具调用与最终答案，隐藏准备上下文/模型推理等内部阶段。 */
+export function filterUserVisibleSteps(steps: AgentExecutionStep[]): AgentExecutionStep[] {
+  return steps.filter((step) => step.kind === "tool" || step.kind === "final_answer");
+}
+
 export function summarizeExecutionSteps(steps: AgentExecutionStep[]): string {
-  const doneCount = steps.filter((step) => step.status === "done").length;
-  const running = steps.some((step) => step.status === "running");
+  const visibleSteps = filterUserVisibleSteps(steps);
+  const doneCount = visibleSteps.filter((step) => step.status === "done").length;
+  const running = visibleSteps.some((step) => step.status === "running")
+    || steps.some((step) => step.kind === "phase" && step.status === "running");
   if (running) {
-    return `正在执行，已完成 ${doneCount} 个步骤`;
+    return doneCount > 0 ? `正在执行，已完成 ${doneCount} 个步骤` : "正在执行";
   }
   if (doneCount === 0) {
     return "等待智能体开始执行";

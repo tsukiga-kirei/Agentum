@@ -3928,6 +3928,74 @@ textarea:focus-visible {
   font-size: 11px;
 }
 
+.agent-run-panel {
+  width: 100%;
+}
+
+.agent-run-progress-card .sys-btn--sm {
+  height: 30px;
+  padding-inline: 10px;
+}
+
+.agent-run-chat-composer textarea {
+  min-height: 72px;
+}
+
+.agent-answer-edit-modal {
+  width: min(1180px, calc(100vw - 48px));
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.agent-answer-edit-modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.agent-answer-edit-modal-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 20px;
+  min-height: min(68vh, 640px);
+}
+
+.agent-answer-edit-textarea {
+  min-height: min(64vh, 600px);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.agent-answer-edit-preview-body {
+  min-height: min(64vh, 600px);
+  max-height: min(64vh, 600px);
+  overflow: auto;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-card);
+  padding: 12px;
+}
+
+@media (max-width: 900px) {
+  .agent-answer-edit-modal {
+    width: calc(100vw - 24px);
+  }
+
+  .agent-answer-edit-modal-grid {
+    grid-template-columns: 1fr;
+    min-height: auto;
+  }
+
+  .agent-answer-edit-textarea,
+  .agent-answer-edit-preview-body {
+    min-height: 240px;
+    max-height: 240px;
+  }
+}
+
 .agent-execution-answer-panel {
   background: color-mix(in srgb, var(--color-primary) 2%, var(--color-bg-card));
 }

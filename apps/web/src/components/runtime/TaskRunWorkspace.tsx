@@ -831,8 +831,6 @@ export function TaskRunWorkspace({
                     activeStep={activeStep}
                     streamingText={stream.streamingText}
                     isStreaming={isLiveExecuting}
-                    currentPhase={stream.currentPhase}
-                    toolCalls={stream.toolCalls}
                     executionSteps={stream.executionSteps}
                     streamStartedAt={stream.streamStartedAt}
                     readOnly={runDetail.readOnly}
