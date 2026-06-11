@@ -4544,19 +4544,23 @@ textarea:focus-visible {
 }
 
 .multi-agent-detail-drawer .agent-run-panel {
-  max-width: none;
-  width: 100%;
-  margin-right: 0;
-  margin-left: 0;
-  padding: 0 24px 28px;
+  max-width: 1080px;
+  width: calc(100% - 72px);
+  margin-right: auto;
+  margin-left: auto;
+  padding: 0 0 28px;
 }
 
 .multi-agent-detail-drawer .agent-turn-assistant-panel {
-  width: min(920px, calc(100% - 44px));
-  max-width: 100%;
+  width: 100%;
+  max-width: none;
   margin: 0;
   border-radius: 14px;
   box-shadow: 0 8px 22px color-mix(in srgb, var(--color-text-primary) 6%, transparent);
+}
+
+.multi-agent-detail-drawer .agent-turn-user-bubble {
+  max-width: min(640px, 68%);
 }
 
 .multi-agent-detail-drawer .agent-turn-assistant {
