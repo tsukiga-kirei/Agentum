@@ -1,18 +1,19 @@
 import React, { useMemo, useState, useEffect } from "react";
-import type { RuntimePreviewStep, RunStreamState } from "../../types/runtime-types";
-import { Users, Bot, Terminal } from "lucide-react";
-import { Drawer } from "antd";
+import type { AgentExecutionStep, RuntimeCapabilityItem, RuntimePreviewStep, RunStreamState } from "../../types/runtime-types";
+import { AlertCircle, Bot, CheckCircle2, ChevronRight, Loader2, MessageSquarePlus, PencilLine, Settings2, Sparkles, Users, Wrench } from "lucide-react";
+import { Drawer, message } from "antd";
 import { useAuthStore } from "../../stores/authStore";
-import { MarkdownRenderer } from "./MarkdownRenderer";
+import { SingleAgentPanel } from "./SingleAgentPanel";
 import { mergeClusterAgents } from "../../utils/clusterAgentsMerge";
 import { formatRuntimeErrorMessage } from "../../utils/runtimeErrors";
 import { pickBestAgentOutput } from "../../utils/agentOutputText";
-import { formatDisplayPrompt, resolveSystemDisplayPrompt, resolveUserDisplayPrompt } from "../../utils/resolveDisplayPrompts";
+import { resolveSystemDisplayPrompt, resolveUserDisplayPrompt } from "../../utils/resolveDisplayPrompts";
 
 interface MultiAgentPanelProps {
   activeStep: RuntimePreviewStep;
   clusterAgents: RunStreamState["clusterAgents"];
   isStreaming?: boolean;
+  streamStartedAt?: number | null;
 }
 
 type DrawerAgent = {
@@ -25,12 +26,18 @@ type DrawerAgent = {
   toolCalls: RunStreamState["clusterAgents"][number]["toolCalls"];
   systemPrompt: string;
   userPrompt: string;
+  modelName: string;
+  skillNames: string[];
+  mcpNames: string[];
+  allowQuestion: boolean;
+  allowUserEdit: boolean;
 };
 
 export function MultiAgentPanel({
   activeStep,
   clusterAgents,
   isStreaming = false,
+  streamStartedAt = null,
 }: MultiAgentPanelProps) {
   const [selectedAgent, setSelectedAgent] = useState<DrawerAgent | null>(null);
   const themeMode = useAuthStore((s) => s.themeMode);
@@ -56,6 +63,18 @@ export function MultiAgentPanel({
         ...agent,
         systemPrompt: config ? resolveSystemDisplayPrompt(config) : resolveSystemDisplayPrompt(undefined),
         userPrompt: config ? resolveUserDisplayPrompt(config) : resolveUserDisplayPrompt(undefined),
+        modelName: readConfigString(
+          config?.modelName
+            ?? config?.model
+            ?? readStepOutput(activeStep, ["modelName", "model_name"])
+            ?? activeStep.configSnapshot?.modelName
+            ?? activeStep.configSnapshot?.model,
+          "",
+        ),
+        skillNames: readNameList(config?.skillNames ?? config?.skillIds ?? config?.skills),
+        mcpNames: readNameList(config?.mcpNames ?? config?.mcpIds ?? config?.mcpServices),
+        allowQuestion: readBoolean(config?.allowQuestion ?? activeStep.configSnapshot?.allowQuestion),
+        allowUserEdit: readBoolean(config?.allowUserEdit ?? activeStep.configSnapshot?.allowUserEdit),
       };
     });
   }, [configAgents, clusterAgents, activeStep.outputs, activeStep.state, isStreaming]);
@@ -75,130 +94,109 @@ export function MultiAgentPanel({
   const totalCount = agents.length;
   const percent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
   const stepPending = activeStep.state === "pending";
-  const stepRunning = activeStep.state === "running" || isStreaming;
-
-  function pendingMessage(agentStatus: DrawerAgent["status"]) {
-    if (stepPending) {
-      return "等待集群节点启动...";
-    }
-    if (stepRunning && agentStatus === "pending") {
-      return "等待调度执行";
-    }
-    if (agentStatus === "running") {
-      return "正在执行...";
-    }
-    return "等待调度执行";
-  }
 
   return (
-    <div className="space-y-4">
-      <section className="bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-100 dark:border-slate-800 p-4">
-        <div className="flex justify-between items-center mb-3">
-          <div className="flex items-center gap-2">
-            <Users className="text-blue-500" size={18} />
-            <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">智能体集群进度</h3>
+    <div className="multi-agent-run">
+      <section className="multi-agent-overview">
+        <div className="multi-agent-overview-head">
+          <div className="multi-agent-overview-title">
+            <Users size={18} />
+            <h3>智能体集群进度</h3>
           </div>
-          <small className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+          <small>
             共 {totalCount} 个子智能体 · 已完成 {completedCount} · 运行中 {runningCount}
           </small>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="h-2 flex-1 bg-slate-200/60 dark:bg-slate-800 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-300"
-              style={{ width: `${percent}%` }}
-            />
+        <div className="multi-agent-progress-row">
+          <div className="multi-agent-progress-track">
+            <div className="multi-agent-progress-bar" style={{ width: `${percent}%` }} />
           </div>
-          <span className="text-xs font-bold text-slate-700 dark:text-slate-350">{percent}%</span>
+          <span>{percent}%</span>
         </div>
       </section>
 
-      <div className="grid grid-cols-1 gap-4">
+      <div className="multi-agent-grid">
         {agents.map((agent) => {
           const isRunning = agent.status === "running";
           const isCompleted = agent.status === "completed";
           const isFailed = agent.status === "failed";
-          const previewText = resolveClusterAgentPreview(agent);
+          const toolCount = agent.toolCalls?.length ?? 0;
+          const skillCount = agent.skillNames.length;
+          const mcpCount = agent.mcpNames.length;
 
           return (
-            <div
+            <button
+              type="button"
               key={agent.index}
               onClick={() => setSelectedAgent(agent)}
-              className={`rounded-xl border cursor-pointer hover:shadow-md transition-all duration-300 flex flex-col ${
+              className={`multi-agent-card ${
                 isRunning
-                  ? "bg-blue-50/10 border-blue-200 dark:bg-blue-950/10 dark:border-blue-900/50 shadow-sm ring-1 ring-blue-500/10"
+                  ? "multi-agent-card--running"
                   : isCompleted
-                  ? "bg-emerald-50/10 border-emerald-100 dark:bg-emerald-950/5 dark:border-emerald-950/20"
+                  ? "multi-agent-card--completed"
                   : isFailed
-                ? "bg-rose-50/10 border-rose-200 dark:bg-rose-950/10 dark:border-rose-900/50"
-                : "bg-white dark:bg-slate-950 border-slate-100 dark:border-slate-800"
+                  ? "multi-agent-card--failed"
+                  : "multi-agent-card--pending"
               }`}
             >
-              <header className="p-4 border-b border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-3 bg-slate-50/20 dark:bg-slate-900/10 rounded-t-xl">
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${
-                    isCompleted
-                      ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400"
-                      : isRunning
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-400"
-                      : "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-600"
-                  }`}>
-                    <Bot size={13} />
-                  </div>
-                  <strong className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{agent.name}</strong>
-                </div>
-
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                  isCompleted
-                    ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400"
-                    : isFailed
-                    ? "bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-450"
-                    : isRunning
-                    ? "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400 animate-pulse"
-                    : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
-                }`}>
-                  {isCompleted ? "已完成" : isFailed ? "执行失败" : isRunning ? "执行中" : "等待中"}
-                </span>
-              </header>
-
-              <div className="p-4 flex-1 flex flex-col justify-between space-y-3 min-h-[120px]">
-                <div className="space-y-2">
-                  {previewText ? (
-                    <div className="max-h-[280px] overflow-y-auto">
-                      <MarkdownRenderer content={previewText} />
-                      {isRunning ? (
-                        <span className="inline-block w-1.5 h-3 bg-blue-500 dark:bg-blue-400 ml-0.5 animate-pulse" />
-                      ) : null}
-                    </div>
+              {isRunning ? <span className="multi-agent-card-glow" aria-hidden="true" /> : null}
+              <div className="multi-agent-card-main">
+                <div className="multi-agent-card-icon">
+                  {isRunning ? (
+                    <Loader2 size={15} className="animate-spin" />
+                  ) : isCompleted ? (
+                    <CheckCircle2 size={15} />
+                  ) : isFailed ? (
+                    <AlertCircle size={15} />
                   ) : (
-                    <p className="text-sm text-slate-400 dark:text-slate-500 italic">
-                      {pendingMessage(agent.status)}
-                    </p>
+                    <Bot size={15} />
                   )}
                 </div>
-
-                {agent.toolCalls && agent.toolCalls.length > 0 ? (
-                  <div className="flex flex-wrap gap-1.5 pt-2 border-t border-slate-100 dark:border-slate-800/60">
-                    {agent.toolCalls.map((tool) => (
-                      <span
-                        key={tool.id}
-                        className={`inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded border ${
-                          tool.status === "done"
-                            ? "bg-emerald-50/50 border-emerald-100 text-emerald-600 dark:bg-emerald-950/20 dark:border-emerald-900 dark:text-emerald-400"
-                            : tool.status === "error"
-                            ? "bg-rose-50/50 border-rose-100 text-rose-600 dark:bg-rose-950/20 dark:border-rose-900 dark:text-rose-455"
-                            : "bg-blue-50/50 border-blue-100 text-blue-600 dark:bg-blue-950/20 dark:border-blue-900 dark:text-blue-400 animate-pulse"
-                        }`}
-                      >
-                        <Terminal size={10} />
-                        {tool.name}
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
-
+                <div className="multi-agent-card-body">
+                  <strong>{agent.name}</strong>
+                  <span>
+                    {isRunning
+                      ? "正在执行"
+                      : isCompleted
+                      ? "执行完成"
+                      : isFailed
+                      ? "执行失败"
+                      : stepPending
+                      ? "等待启动"
+                      : "等待调度"}
+                  </span>
+                </div>
+                <ChevronRight size={16} className="multi-agent-card-arrow" />
               </div>
-            </div>
+              <div className="multi-agent-card-meta">
+                {agent.modelName ? (
+                  <span title={agent.modelName}>
+                    <Settings2 size={12} />
+                    {agent.modelName}
+                  </span>
+                ) : null}
+                <span title={agent.skillNames.join("、") || "未配置 Skill"}>
+                  <Sparkles size={12} />
+                  {skillCount > 0 ? `${skillCount} 个 Skill` : "无 Skill"}
+                </span>
+                <span title={agent.mcpNames.join("、") || "未配置 MCP"}>
+                  <Wrench size={12} />
+                  {mcpCount > 0 ? `${mcpCount} 个 MCP` : "无 MCP"}
+                </span>
+                <span className={agent.allowQuestion ? "multi-agent-card-chip--on" : ""}>
+                  <MessageSquarePlus size={12} />
+                  {agent.allowQuestion ? "可追问" : "不可追问"}
+                </span>
+                <span className={agent.allowUserEdit ? "multi-agent-card-chip--on" : ""}>
+                  <PencilLine size={12} />
+                  {agent.allowUserEdit ? "可修改" : "不可修改"}
+                </span>
+              </div>
+              <div className="multi-agent-card-foot">
+                <span>{toolCount > 0 ? `${toolCount} 个工具调用` : "无工具调用"}</span>
+                <span>{isRunning ? "实时更新" : isCompleted ? "可查看结果" : isFailed ? "查看原因" : "等待中"}</span>
+              </div>
+            </button>
           );
         })}
       </div>
@@ -209,87 +207,68 @@ export function MultiAgentPanel({
           width={640}
           open
           onClose={() => setSelectedAgent(null)}
-          rootClassName={themeMode === "dark" ? "agent-admin-drawer agent-admin-drawer--dark" : "agent-admin-drawer"}
+          rootClassName={themeMode === "dark" ? "agent-admin-drawer agent-admin-drawer--dark multi-agent-detail-drawer" : "agent-admin-drawer multi-agent-detail-drawer"}
         >
-          <div className="space-y-4 sys-drawer-section">
-            <section className="bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-slate-100 dark:border-slate-800 p-4">
-              <span className="text-xs text-slate-400 font-bold block mb-1">执行状态</span>
-              <span className={`inline-block text-xs px-2.5 py-0.5 rounded-full font-semibold ${
-                selectedAgent.status === "completed"
-                  ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/45 dark:text-emerald-400"
-                  : selectedAgent.status === "failed"
-                  ? "bg-rose-50 text-rose-600 dark:bg-rose-950/45 dark:text-rose-400"
-                  : selectedAgent.status === "running"
-                  ? "bg-blue-50 text-blue-600 dark:bg-blue-950/45 dark:text-blue-400 animate-pulse"
-                  : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
-              }`}>
-                {selectedAgent.status === "completed" ? "已完成" : selectedAgent.status === "failed" ? "执行失败" : selectedAgent.status === "running" ? "执行中" : "等待中"}
-              </span>
-            </section>
-
-            <section className="bg-white dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-800 p-4">
-              <span className="text-xs text-slate-400 font-bold block mb-2">系统提示词</span>
-              <MarkdownRenderer content={formatDisplayPrompt(selectedAgent.systemPrompt)} compact />
-            </section>
-
-            <section className="bg-white dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-800 p-4">
-              <span className="text-xs text-slate-400 font-bold block mb-2">用户提示词</span>
-              <MarkdownRenderer content={formatDisplayPrompt(selectedAgent.userPrompt)} compact />
-            </section>
-
-            <section className="bg-white dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-800 p-4">
-              <span className="text-xs text-slate-400 font-bold block mb-2">
-                {selectedAgent.status === "failed" ? "失败原因" : "执行输出"}
-              </span>
-              {selectedAgent.status === "failed" ? (
-                <p className="text-sm text-rose-700 dark:text-rose-300 whitespace-pre-wrap">
-                  {formatRuntimeErrorMessage(undefined, selectedAgent.errorMessage || selectedAgent.outputSummary)}
-                </p>
-              ) : resolveClusterAgentPreview(selectedAgent) ? (
-                <div className="text-sm bg-slate-50 dark:bg-slate-900 p-3 rounded-lg border border-slate-100 dark:border-slate-800">
-                  <MarkdownRenderer content={resolveClusterAgentPreview(selectedAgent)} />
-                  {selectedAgent.status === "running" ? (
-                    <span className="inline-block w-1.5 h-3.5 bg-blue-500 dark:bg-blue-400 ml-1 animate-pulse" />
-                  ) : null}
-                </div>
-              ) : (
-                <p className="text-sm text-slate-400 italic">暂无输出结果</p>
-              )}
-            </section>
-
-            {selectedAgent.toolCalls && selectedAgent.toolCalls.length > 0 ? (
-              <section className="bg-white dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-800 p-4">
-                <span className="text-xs text-slate-400 font-bold block mb-3">工具/MCP 调用记录</span>
-                <div className="space-y-2">
-                  {selectedAgent.toolCalls.map((tool) => (
-                    <div
-                      key={tool.id}
-                      className="p-3 rounded-lg border border-slate-100 dark:border-slate-800 bg-slate-50/20 dark:bg-slate-900/20 text-xs flex justify-between items-center"
-                    >
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[10px] font-bold text-slate-450 uppercase">{tool.kind}</span>
-                          <strong className="text-xs text-slate-850 dark:text-slate-200">{tool.name}</strong>
-                        </div>
-                        {tool.resultSummary ? <p className="text-[10px] text-slate-400 mt-1 font-mono">{tool.resultSummary}</p> : null}
-                      </div>
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
-                        tool.status === "done"
-                          ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400"
-                          : "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400"
-                      }`}>
-                        {tool.statusLabel}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            ) : null}
-          </div>
+          <SingleAgentPanel
+            activeStep={buildAgentDetailStep(activeStep, selectedAgent)}
+            isStreaming={selectedAgent.status === "running"}
+            streamingText=""
+            executionSteps={buildAgentExecutionSteps(selectedAgent)}
+            streamStartedAt={selectedAgent.status === "running" ? streamStartedAt : null}
+            onFollowUp={() => {
+              message.info("子智能体详情暂不支持单独追问，请在集群步骤统一处理。");
+            }}
+            onSaveAnswer={() => {
+              message.info("子智能体详情暂不支持单独修改，请在集群步骤统一处理。");
+            }}
+          />
         </Drawer>
       ) : null}
     </div>
   );
+}
+
+function readConfigString(value: unknown, fallback: string): string {
+  if (value === null || value === undefined) {
+    return fallback;
+  }
+  const text = String(value).trim();
+  return text || fallback;
+}
+
+function readStepOutput(step: RuntimePreviewStep, labels: string[]): string {
+  return step.outputs?.find((field) => labels.includes(field.label))?.value?.trim() ?? "";
+}
+
+function readBoolean(value: unknown): boolean {
+  return value === true || value === "true" || value === "1" || value === 1;
+}
+
+function readNameList(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((item) => {
+      if (typeof item === "string") {
+        return shortenName(item);
+      }
+      if (item && typeof item === "object") {
+        const record = item as Record<string, unknown>;
+        return shortenName(String(record.name ?? record.label ?? record.id ?? ""));
+      }
+      return "";
+    })
+    .filter((item) => item.length > 0);
+}
+
+function shortenName(value: string): string {
+  const text = value.trim();
+  if (!text) {
+    return "";
+  }
+  const parts = text.split(/[/:#._-]/).filter(Boolean);
+  return parts[parts.length - 1] || text;
 }
 
 function resolveClusterAgentPreview(agent: {
@@ -305,4 +284,92 @@ function resolveClusterAgentPreview(agent: {
     return pickBestAgentOutput(agent.streamingText, agent.outputSummary);
   }
   return "";
+}
+
+function buildAgentExecutionSteps(agent: DrawerAgent): AgentExecutionStep[] {
+  const outputText = resolveClusterAgentPreview(agent);
+  const toolSteps: AgentExecutionStep[] = (agent.toolCalls ?? [])
+    .filter((tool): tool is RuntimeCapabilityItem & { kind: "mcp" | "skill" } => tool.kind === "mcp" || tool.kind === "skill")
+    .map((tool) => ({
+      id: `cluster-tool-${agent.index}-${tool.id}`,
+      kind: "tool",
+      title: tool.kind === "skill" ? `读取 Skill：${tool.name}` : `调用 MCP：${tool.name}`,
+      summary: tool.resultSummary || tool.statusLabel,
+      status: tool.status === "error" ? "error" : tool.status === "running" ? "running" : "done",
+      durationMs: tool.durationMs,
+      detail: tool.resultSummary,
+      toolType: tool.kind,
+    }));
+  if (outputText && (toolSteps.length > 0 || agent.status === "running")) {
+    toolSteps.push({
+      id: `cluster-model-output-${agent.index}`,
+      kind: "model_output",
+      title: agent.status === "failed" ? "生成失败原因" : "生成最终答案",
+      summary: agent.status === "running" ? "正在生成…" : "可展开查看",
+      status: agent.status === "running" ? "running" : agent.status === "failed" ? "error" : "done",
+      detail: agent.status === "failed" ? formatRuntimeErrorMessage(undefined, outputText) : outputText,
+      toolType: "model",
+    });
+  }
+  return toolSteps;
+}
+
+function buildAgentDetailStep(parentStep: RuntimePreviewStep, agent: DrawerAgent): RuntimePreviewStep {
+  const outputText = resolveClusterAgentPreview(agent);
+  const finalContent = agent.status === "failed" && outputText
+    ? formatRuntimeErrorMessage(undefined, outputText)
+    : outputText;
+  const prompt = agent.userPrompt || agent.systemPrompt || agent.name;
+  const state: RuntimePreviewStep["state"] =
+    agent.status === "completed" ? "done" : agent.status === "failed" ? "failed" : agent.status === "running" ? "running" : "pending";
+  const processSteps = buildAgentExecutionSteps(agent);
+  const outputs = [
+    ...(finalContent ? [{ label: "final_answer", value: finalContent }, { label: "model_content", value: finalContent }] : []),
+    { label: "final_answer_source", value: "model_content" },
+  ];
+
+  return {
+    ...parentStep,
+    nodeRunId: `${parentStep.nodeRunId}-agent-${agent.index}`,
+    title: agent.name,
+    subtitle: "子智能体处理",
+    kind: "agent",
+    state,
+    description: "子智能体运行详情",
+    outputs,
+    capabilities: agent.toolCalls,
+    allowsFollowUp: agent.allowQuestion,
+    allowsRegenerate: agent.allowUserEdit,
+    configSnapshot: {
+      ...(parentStep.configSnapshot ?? {}),
+      userPrompt: prompt,
+      prompt,
+      allowQuestion: agent.allowQuestion,
+      allowUserEdit: agent.allowUserEdit,
+    },
+    chatMessages: outputText
+      ? [
+          {
+            id: `${parentStep.nodeRunId}-agent-${agent.index}-user`,
+            role: "user",
+            author: "我",
+            content: prompt,
+          },
+          {
+            id: `${parentStep.nodeRunId}-agent-${agent.index}-assistant`,
+            role: "assistant",
+            author: agent.name,
+            content: finalContent,
+            processSteps,
+          },
+        ]
+      : [
+          {
+            id: `${parentStep.nodeRunId}-agent-${agent.index}-user`,
+            role: "user",
+            author: "我",
+            content: prompt,
+          },
+        ],
+  };
 }

@@ -899,6 +899,7 @@ export function TaskRunWorkspace({
                     activeStep={activeStep}
                     clusterAgents={clusterAgentsForPanel}
                     isStreaming={isLiveExecuting}
+                    streamStartedAt={stream.streamStartedAt}
                   />
                 ) : activeStep.kind === "approval" ? (
                   <div className="bg-white dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-850 p-5 max-w-2xl mx-auto">
