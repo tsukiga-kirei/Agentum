@@ -3952,6 +3952,49 @@ textarea:focus-visible {
   font-size: 13px;
 }
 
+.agent-run-body--interrupted {
+  flex: 1;
+  min-height: 280px;
+}
+
+.agent-run-interrupted {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: inherit;
+  padding: 48px 24px;
+  text-align: center;
+}
+
+.agent-run-interrupted-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-text-tertiary) 10%, transparent);
+  color: var(--color-text-tertiary);
+}
+
+.agent-run-interrupted-title {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.agent-run-interrupted-desc {
+  max-width: 360px;
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
 .agent-turn-list {
   display: flex;
   flex-direction: column;
@@ -4549,6 +4592,11 @@ textarea:focus-visible {
   margin-right: auto;
   margin-left: auto;
   padding: 0 0 28px;
+  min-height: min(520px, calc(100vh - 180px));
+}
+
+.multi-agent-detail-drawer .agent-run-body--interrupted {
+  min-height: min(480px, calc(100vh - 220px));
 }
 
 .multi-agent-detail-drawer .agent-turn-assistant-panel {

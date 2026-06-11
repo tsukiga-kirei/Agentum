@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { message } from "antd";
 import {
+  Ban,
   Bot,
   CheckCircle2,
   ChevronDown,
@@ -31,6 +32,8 @@ interface SingleAgentPanelProps {
   executionSteps: AgentExecutionStep[];
   streamStartedAt: number | null;
   readOnly?: boolean;
+  /** 中断空态文案场景：多智能体抽屉内子智能体详情使用 clusterDrawer */
+  interruptedScope?: "default" | "clusterDrawer";
   onSaveAnswer?: (content: string) => void | Promise<void>;
   onFollowUp?: (followUpMessage: string) => void | Promise<void>;
 }
@@ -286,6 +289,23 @@ function ToolStepsBlock({
   );
 }
 
+function AgentInterruptedState({ scope }: { scope: "default" | "clusterDrawer" }) {
+  const isClusterDrawer = scope === "clusterDrawer";
+  return (
+    <div className="agent-run-interrupted">
+      <div className="agent-run-interrupted-icon" aria-hidden="true">
+        <Ban size={32} strokeWidth={1.75} />
+      </div>
+      <h4 className="agent-run-interrupted-title">执行已中断</h4>
+      <p className="agent-run-interrupted-desc">
+        {isClusterDrawer
+          ? "多智能体步骤已被中断，子智能体运行数据已清空。请关闭此详情，并点击页面下方「重新执行」从头重新开始本步骤。"
+          : "本步骤运行数据已清空，无法继续查看或追问。请点击页面下方「重新执行」，从头完整运行本步骤。"}
+      </p>
+    </div>
+  );
+}
+
 function ConversationTurnBlock({
   turn,
   showRunningHero,
@@ -344,12 +364,14 @@ export function SingleAgentPanel({
   executionSteps,
   streamStartedAt,
   readOnly = false,
+  interruptedScope = "default",
   onSaveAnswer,
   onFollowUp,
 }: SingleAgentPanelProps) {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [followUpModalOpen, setFollowUpModalOpen] = useState(false);
   const [elapsedLabel, setElapsedLabel] = useState("");
+  const stepInterrupted = activeStep.state === "canceled";
 
   const config = (activeStep.configSnapshot ?? {}) as Record<string, unknown>;
   const permissions = readAgentPermissions(config);
@@ -361,7 +383,8 @@ export function SingleAgentPanel({
   );
   const finalAnswer = readFinalAnswer(activeStep, streamingText);
   const hasAnswerContent = !!finalAnswer.trim();
-  const showRunningHero = activeStep.state === "running" || activeStep.state === "pending" || isStreaming;
+  const showRunningHero = !stepInterrupted
+    && (activeStep.state === "running" || activeStep.state === "pending" || isStreaming);
   const finalAnswerFromTool = useMemo(() => hasFinalAnswerToolResult(activeStep), [activeStep]);
   const latestTurnRef = useRef<HTMLDivElement | null>(null);
   const latestTurnEndRef = useRef<HTMLDivElement | null>(null);
@@ -487,8 +510,10 @@ export function SingleAgentPanel({
         </div>
       ) : null}
 
-      <section className="agent-run-body">
-        {!hasContent ? (
+      <section className={`agent-run-body${stepInterrupted ? " agent-run-body--interrupted" : ""}`}>
+        {stepInterrupted ? (
+          <AgentInterruptedState scope={interruptedScope} />
+        ) : !hasContent ? (
           <div className="agent-run-empty">
             <Bot size={22} className="text-slate-300" />
             <p>暂无输出内容</p>

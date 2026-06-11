@@ -99,7 +99,8 @@ export function MultiAgentPanel({
   const runningCount = agents.filter((a) => a.status === "running").length;
   const totalCount = agents.length;
   const percent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
-  const stepPending = activeStep.state === "pending";
+  const stepCanceled = activeStep.state === "canceled";
+  const stepPending = activeStep.state === "pending" && !stepCanceled;
 
   return (
     <div className="multi-agent-run">
@@ -161,7 +162,9 @@ export function MultiAgentPanel({
                 <div className="multi-agent-card-body">
                   <strong>{agent.name}</strong>
                   <span>
-                    {isRunning
+                    {stepCanceled
+                      ? "已中断"
+                      : isRunning
                       ? "正在执行"
                       : isCompleted
                       ? "执行完成"
@@ -200,7 +203,7 @@ export function MultiAgentPanel({
               </div>
               <div className="multi-agent-card-foot">
                 <span>{toolCount > 0 ? `${toolCount} 个工具调用` : "无工具调用"}</span>
-                <span>{isRunning ? "实时更新" : isCompleted ? "可查看结果" : isFailed ? "查看原因" : "等待中"}</span>
+                <span>{stepCanceled ? "需重新执行" : isRunning ? "实时更新" : isCompleted ? "可查看结果" : isFailed ? "查看原因" : "等待中"}</span>
               </div>
             </button>
           );
@@ -217,10 +220,11 @@ export function MultiAgentPanel({
         >
           <SingleAgentPanel
             activeStep={buildAgentDetailStep(activeStep, selectedAgent)}
-            isStreaming={selectedAgent.status === "running"}
+            isStreaming={!stepCanceled && selectedAgent.status === "running"}
             streamingText=""
-            executionSteps={buildAgentExecutionSteps(selectedAgent)}
-            streamStartedAt={selectedAgent.status === "running" ? streamStartedAt : null}
+            executionSteps={stepCanceled ? [] : buildAgentExecutionSteps(selectedAgent)}
+            streamStartedAt={!stepCanceled && selectedAgent.status === "running" ? streamStartedAt : null}
+            interruptedScope="clusterDrawer"
             onFollowUp={async (followUpMessage) => {
               if (!onFollowUpAgent) {
                 message.warning("当前子智能体未开放追问");
@@ -368,6 +372,24 @@ function buildAgentExecutionSteps(agent: DrawerAgent): AgentExecutionStep[] {
 }
 
 function buildAgentDetailStep(parentStep: RuntimePreviewStep, agent: DrawerAgent): RuntimePreviewStep {
+  if (parentStep.state === "canceled") {
+    return {
+      ...parentStep,
+      nodeRunId: `${parentStep.nodeRunId}-agent-${agent.index}`,
+      title: agent.name,
+      subtitle: "子智能体处理",
+      kind: "agent",
+      state: "canceled",
+      description: "子智能体运行详情",
+      outputs: [],
+      capabilities: [],
+      allowsFollowUp: false,
+      allowsRegenerate: false,
+      configSnapshot: parentStep.configSnapshot ?? {},
+      chatMessages: [],
+    };
+  }
+
   const outputText = resolveClusterAgentPreview(agent);
   const finalContent = agent.status === "failed" && outputText
     ? formatRuntimeErrorMessage(undefined, outputText)

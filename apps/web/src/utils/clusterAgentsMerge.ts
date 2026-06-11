@@ -91,6 +91,17 @@ export function mergeClusterAgents(options: {
   }
 
   return bases.map((base) => {
+    if (stepState === "canceled") {
+      return {
+        index: base.index,
+        name: base.name,
+        status: "pending" as const,
+        streamingText: "",
+        outputSummary: "",
+        toolCalls: [],
+      };
+    }
+
     const live = streamAgents.find((agent) => agent.index === base.index || agent.name === base.name);
     const persistedAgent =
       persisted[base.index] ??
