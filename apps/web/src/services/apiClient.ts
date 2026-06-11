@@ -440,8 +440,20 @@ export const workbenchApi = {
       token,
       body: { message },
     }),
+  followUpClusterAgent: (tenantId: string, token: string, runId: string, nodeRunId: string, agentIndex: number, message: string) =>
+    apiRequest<WorkbenchRunDetail>(`/api/tenants/${tenantId}/workbench/runs/${runId}/nodes/${nodeRunId}/cluster-agents/${agentIndex}/follow-up`, {
+      method: "POST",
+      token,
+      body: { message },
+    }),
   updateFinalAnswer: (tenantId: string, token: string, runId: string, nodeRunId: string, content: string) =>
     apiRequest<WorkbenchRunDetail>(`/api/tenants/${tenantId}/workbench/runs/${runId}/nodes/${nodeRunId}/final-answer`, {
+      method: "POST",
+      token,
+      body: { content },
+    }),
+  updateClusterAgentFinalAnswer: (tenantId: string, token: string, runId: string, nodeRunId: string, agentIndex: number, content: string) =>
+    apiRequest<WorkbenchRunDetail>(`/api/tenants/${tenantId}/workbench/runs/${runId}/nodes/${nodeRunId}/cluster-agents/${agentIndex}/final-answer`, {
       method: "POST",
       token,
       body: { content },

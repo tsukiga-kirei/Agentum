@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Segmented } from "antd";
+import { message, Segmented } from "antd";
 import type { 
   RuntimePreview, 
   RuntimePreviewStep, 
@@ -651,6 +651,79 @@ export function TaskRunWorkspace({
     }
   }
 
+  async function handleSaveClusterAgentAnswer(agentIndex: number, content: string) {
+    const targetStep = preview.steps[resolveActiveStepIndex(preview.steps, runDetail)];
+    if (!targetStep?.nodeRunId || isAdvancing) {
+      return;
+    }
+
+    setIsAdvancing(true);
+    setAdvanceError(null);
+
+    try {
+      const updated = await workbenchApi.updateClusterAgentFinalAnswer(
+        tenantId,
+        token,
+        runDetail.id,
+        targetStep.nodeRunId,
+        agentIndex,
+        content,
+      );
+      setRunDetail(updated);
+      onReload(updated);
+      message.success("子智能体答案已保存");
+    } catch (error: unknown) {
+      const reason = error instanceof Error ? error.message : "保存子智能体答案失败";
+      setAdvanceError(reason);
+      message.error(reason);
+    } finally {
+      setIsAdvancing(false);
+    }
+  }
+
+  async function handleFollowUpClusterAgent(agentIndex: number, followUpMessage: string) {
+    const targetStep = preview.steps[resolveActiveStepIndex(preview.steps, runDetail)];
+    if (!targetStep?.nodeRunId || isAdvancing) {
+      return;
+    }
+
+    setIsAdvancing(true);
+    setAdvanceError(null);
+    setWatchdogStaleMessage(null);
+    initialAutoStartRef.current = true;
+    stream.clearStepStreamTerminal();
+    stream.disconnect();
+
+    try {
+      const updated = await workbenchApi.followUpClusterAgent(
+        tenantId,
+        token,
+        runDetail.id,
+        targetStep.nodeRunId,
+        agentIndex,
+        followUpMessage,
+      );
+      setRunDetail(updated);
+      onReload(updated);
+      message.success("子智能体追问已提交");
+      await stream.connect({ replay: true });
+      await stream.ensureConnected();
+    } catch (error: unknown) {
+      console.error("子智能体追问失败", error);
+      const reloaded = await reloadRunDetail();
+      if (reloaded && isActiveJobAlive(reloaded)) {
+        setAdvanceError(null);
+        return;
+      }
+      const reason = error instanceof Error ? error.message : "子智能体追问失败";
+      setAdvanceError(reason);
+      message.error(reason);
+      setActiveRunTab("current");
+    } finally {
+      setIsAdvancing(false);
+    }
+  }
+
   async function handleFollowUpStep(followUpMessage: string) {
     const targetStep = preview.steps[resolveActiveStepIndex(preview.steps, runDetail)];
     if (!targetStep?.nodeRunId || isAdvancing) {
@@ -900,6 +973,8 @@ export function TaskRunWorkspace({
                     clusterAgents={clusterAgentsForPanel}
                     isStreaming={isLiveExecuting}
                     streamStartedAt={stream.streamStartedAt}
+                    onFollowUpAgent={(agentIndex, followUpMessage) => handleFollowUpClusterAgent(agentIndex, followUpMessage)}
+                    onSaveAgentAnswer={(agentIndex, content) => handleSaveClusterAgentAnswer(agentIndex, content)}
                   />
                 ) : activeStep.kind === "approval" ? (
                   <div className="bg-white dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-850 p-5 max-w-2xl mx-auto">

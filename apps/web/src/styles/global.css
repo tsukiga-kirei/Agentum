@@ -4539,21 +4539,28 @@ textarea:focus-visible {
 
 .multi-agent-detail-drawer .ant-drawer-body {
   background: color-mix(in srgb, var(--color-primary) 2%, var(--color-bg-page));
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .multi-agent-detail-drawer .agent-run-panel {
-  max-width: 920px;
+  max-width: none;
+  width: 100%;
+  margin-right: 0;
+  margin-left: 0;
+  padding: 0 24px 28px;
+}
+
+.multi-agent-detail-drawer .agent-turn-assistant-panel {
+  width: min(920px, calc(100% - 44px));
+  max-width: 100%;
+  margin: 0;
+  border-radius: 14px;
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--color-text-primary) 6%, transparent);
 }
 
 .multi-agent-detail-drawer .agent-turn-assistant {
-  width: auto;
-  max-width: min(840px, 94%);
-  margin: 0 auto;
-  padding: 22px 26px;
-  border: 1px solid color-mix(in srgb, var(--color-border-light) 74%, transparent);
-  border-radius: 10px;
-  background: var(--color-bg-card);
-  box-shadow: 0 4px 14px color-mix(in srgb, var(--color-text-primary) 5%, transparent);
+  padding-inline: 28px;
 }
 
 .multi-agent-detail-drawer .agent-turn-waiting {

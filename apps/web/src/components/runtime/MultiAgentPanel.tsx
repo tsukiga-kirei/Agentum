@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from "react";
-import type { AgentExecutionStep, RuntimeCapabilityItem, RuntimePreviewStep, RunStreamState } from "../../types/runtime-types";
+import type { AgentExecutionStep, RuntimeCapabilityItem, RuntimeChatMessage, RuntimePreviewStep, RunStreamState } from "../../types/runtime-types";
 import { AlertCircle, Bot, CheckCircle2, ChevronRight, Loader2, MessageSquarePlus, PencilLine, Settings2, Sparkles, Users, Wrench } from "lucide-react";
 import { Drawer, message } from "antd";
 import { useAuthStore } from "../../stores/authStore";
@@ -14,6 +14,8 @@ interface MultiAgentPanelProps {
   clusterAgents: RunStreamState["clusterAgents"];
   isStreaming?: boolean;
   streamStartedAt?: number | null;
+  onFollowUpAgent?: (agentIndex: number, message: string) => void | Promise<void>;
+  onSaveAgentAnswer?: (agentIndex: number, content: string) => void | Promise<void>;
 }
 
 type DrawerAgent = {
@@ -29,6 +31,7 @@ type DrawerAgent = {
   modelName: string;
   skillNames: string[];
   mcpNames: string[];
+  conversationHistory: RuntimeChatMessage[];
   allowQuestion: boolean;
   allowUserEdit: boolean;
 };
@@ -38,6 +41,8 @@ export function MultiAgentPanel({
   clusterAgents,
   isStreaming = false,
   streamStartedAt = null,
+  onFollowUpAgent,
+  onSaveAgentAnswer,
 }: MultiAgentPanelProps) {
   const [selectedAgent, setSelectedAgent] = useState<DrawerAgent | null>(null);
   const themeMode = useAuthStore((s) => s.themeMode);
@@ -73,8 +78,9 @@ export function MultiAgentPanel({
         ),
         skillNames: readNameList(config?.skillNames ?? config?.skillIds ?? config?.skills),
         mcpNames: readNameList(config?.mcpNames ?? config?.mcpIds ?? config?.mcpServices),
-        allowQuestion: readBoolean(config?.allowQuestion ?? activeStep.configSnapshot?.allowQuestion),
-        allowUserEdit: readBoolean(config?.allowUserEdit ?? activeStep.configSnapshot?.allowUserEdit),
+        conversationHistory: readAgentConversationHistory(config, agent.name, String(activeStep.nodeRunId ?? `cluster-${agent.index}`)),
+        allowQuestion: readAgentFollowUpAllowed(config, activeStep.configSnapshot),
+        allowUserEdit: readAgentEditAllowed(config, activeStep.configSnapshot),
       };
     });
   }, [configAgents, clusterAgents, activeStep.outputs, activeStep.state, isStreaming]);
@@ -215,11 +221,19 @@ export function MultiAgentPanel({
             streamingText=""
             executionSteps={buildAgentExecutionSteps(selectedAgent)}
             streamStartedAt={selectedAgent.status === "running" ? streamStartedAt : null}
-            onFollowUp={() => {
-              message.info("子智能体详情暂不支持单独追问，请在集群步骤统一处理。");
+            onFollowUp={async (followUpMessage) => {
+              if (!onFollowUpAgent) {
+                message.warning("当前子智能体未开放追问");
+                return;
+              }
+              await onFollowUpAgent(selectedAgent.index, followUpMessage);
             }}
-            onSaveAnswer={() => {
-              message.info("子智能体详情暂不支持单独修改，请在集群步骤统一处理。");
+            onSaveAnswer={async (content) => {
+              if (!onSaveAgentAnswer) {
+                message.warning("当前子智能体未开放修改");
+                return;
+              }
+              await onSaveAgentAnswer(selectedAgent.index, content);
             }}
           />
         </Drawer>
@@ -242,6 +256,45 @@ function readStepOutput(step: RuntimePreviewStep, labels: string[]): string {
 
 function readBoolean(value: unknown): boolean {
   return value === true || value === "true" || value === "1" || value === 1;
+}
+
+function readAgentEditAllowed(agentConfig: Record<string, unknown> | undefined, parentConfig: Record<string, unknown> | undefined): boolean {
+  if (agentConfig && ("allowUserEdit" in agentConfig || "outputMode" in agentConfig)) {
+    return readBoolean(agentConfig.allowUserEdit) || agentConfig.outputMode === "追问确认";
+  }
+  return readBoolean(parentConfig?.allowUserEdit) || parentConfig?.outputMode === "追问确认";
+}
+
+function readAgentFollowUpAllowed(agentConfig: Record<string, unknown> | undefined, parentConfig: Record<string, unknown> | undefined): boolean {
+  if (agentConfig && ("allowQuestion" in agentConfig || "outputMode" in agentConfig)) {
+    return readBoolean(agentConfig.allowQuestion) || agentConfig.outputMode === "追问确认";
+  }
+  return readBoolean(parentConfig?.allowQuestion) || parentConfig?.outputMode === "追问确认";
+}
+
+function readAgentConversationHistory(
+  agentConfig: Record<string, unknown> | undefined,
+  agentName: string,
+  idPrefix: string,
+): RuntimeChatMessage[] {
+  const rawHistory = Array.isArray(agentConfig?.conversationHistory) ? agentConfig.conversationHistory : [];
+  return rawHistory.flatMap((item, index) => {
+    if (!item || typeof item !== "object") {
+      return [];
+    }
+    const record = item as Record<string, unknown>;
+    const role = record.role === "user" ? "user" : record.role === "assistant" ? "assistant" : "";
+    const content = String(record.content ?? "").trim();
+    if (!role || !content) {
+      return [];
+    }
+    return [{
+      id: `${idPrefix}-agent-history-${index}`,
+      role,
+      author: role === "user" ? "我" : agentName,
+      content,
+    }];
+  });
 }
 
 function readNameList(value: unknown): string[] {
@@ -323,6 +376,7 @@ function buildAgentDetailStep(parentStep: RuntimePreviewStep, agent: DrawerAgent
   const state: RuntimePreviewStep["state"] =
     agent.status === "completed" ? "done" : agent.status === "failed" ? "failed" : agent.status === "running" ? "running" : "pending";
   const processSteps = buildAgentExecutionSteps(agent);
+  const chatMessages = buildAgentChatMessages(parentStep, agent, prompt, finalContent, processSteps);
   const outputs = [
     ...(finalContent ? [{ label: "final_answer", value: finalContent }, { label: "model_content", value: finalContent }] : []),
     { label: "final_answer_source", value: "model_content" },
@@ -347,29 +401,45 @@ function buildAgentDetailStep(parentStep: RuntimePreviewStep, agent: DrawerAgent
       allowQuestion: agent.allowQuestion,
       allowUserEdit: agent.allowUserEdit,
     },
-    chatMessages: outputText
-      ? [
-          {
-            id: `${parentStep.nodeRunId}-agent-${agent.index}-user`,
-            role: "user",
-            author: "我",
-            content: prompt,
-          },
-          {
-            id: `${parentStep.nodeRunId}-agent-${agent.index}-assistant`,
-            role: "assistant",
-            author: agent.name,
-            content: finalContent,
-            processSteps,
-          },
-        ]
-      : [
-          {
-            id: `${parentStep.nodeRunId}-agent-${agent.index}-user`,
-            role: "user",
-            author: "我",
-            content: prompt,
-          },
-        ],
+    chatMessages,
   };
+}
+
+function buildAgentChatMessages(
+  parentStep: RuntimePreviewStep,
+  agent: DrawerAgent,
+  prompt: string,
+  finalContent: string,
+  processSteps: AgentExecutionStep[],
+): RuntimeChatMessage[] {
+  const messages = agent.conversationHistory.length > 0
+    ? agent.conversationHistory.map((message) => ({ ...message }))
+    : [{
+        id: `${parentStep.nodeRunId}-agent-${agent.index}-user`,
+        role: "user" as const,
+        author: "我",
+        content: prompt,
+      }];
+
+  if (!finalContent.trim()) {
+    return messages;
+  }
+
+  const lastMessage = messages[messages.length - 1];
+  if (lastMessage?.role === "assistant" && lastMessage.content.trim() === finalContent.trim()) {
+    messages[messages.length - 1] = {
+      ...lastMessage,
+      processSteps,
+    };
+    return messages;
+  }
+
+  messages.push({
+    id: `${parentStep.nodeRunId}-agent-${agent.index}-assistant-current`,
+    role: "assistant",
+    author: agent.name,
+    content: finalContent,
+    processSteps,
+  });
+  return messages;
 }

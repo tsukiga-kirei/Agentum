@@ -732,6 +732,90 @@ public class WorkbenchRuntimeService {
         return getRunDetail(tenantId, principal, runId);
     }
 
+    public WorkbenchApi.RunDetail followUpClusterAgent(
+        UUID tenantId,
+        CurrentUserPrincipal principal,
+        UUID runId,
+        UUID nodeRunId,
+        int agentIndex,
+        String message
+    ) {
+        ensureActiveTenant(tenantId);
+        ensureAuthenticated(principal);
+        String followUpMessage = message == null ? "" : message.trim();
+        if (followUpMessage.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_CLUSTER_AGENT_FOLLOW_UP_EMPTY", "追问内容不能为空");
+        }
+        WorkflowRunEntity run = requireOwnedRun(tenantId, principal, runId);
+        if ("completed".equals(run.getState())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_RUN_READONLY", "已完成任务只能查看，不能追问");
+        }
+        WorkflowNodeRunEntity node = workflowNodeRunRepository.findByIdAndRunId(nodeRunId, runId)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_NODE_RUN_NOT_FOUND", "节点运行不存在"));
+        if (!"parallel_group".equals(node.getNodeType())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_CLUSTER_AGENT_FOLLOW_UP_UNSUPPORTED", "当前节点不是智能体集群节点");
+        }
+        if (!"completed".equals(node.getState())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_CLUSTER_AGENT_FOLLOW_UP_INVALID", "仅已完成的子智能体结果可追问");
+        }
+        if (!isClusterAgentFollowUpAllowed(node.getConfigSnapshot(), agentIndex)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_CLUSTER_AGENT_FOLLOW_UP_FORBIDDEN", "该子智能体未开启「允许追问」");
+        }
+
+        transactionTemplate.executeWithoutResult(status -> {
+            assertNoExecutionInFlight(runId);
+            Instant now = clock.instant();
+            cancellationGuard.clearCancel(run.getId());
+            WorkflowClusterAgentRunEntity clusterAgent = clusterAgentRunRepository.findByNodeRunIdAndAgentIndex(node.getId(), agentIndex)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_CLUSTER_AGENT_RUN_NOT_FOUND", "子智能体运行记录不存在"));
+            if (!clusterAgent.isSucceeded()) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_CLUSTER_AGENT_FOLLOW_UP_INVALID", "仅已完成的子智能体结果可追问");
+            }
+
+            Map<String, Object> nextConfig = new LinkedHashMap<>(node.getConfigSnapshot());
+            Map<String, Object> nextAgentConfig = appendClusterAgentFollowUp(nextConfig, agentIndex, clusterAgent, followUpMessage);
+            nextConfig.put("clusterAgents", replaceClusterAgentConfig(nextConfig.get("clusterAgents"), agentIndex, nextAgentConfig));
+
+            String executionMode = stringValue(nextConfig.get("executionMode"));
+            for (WorkflowClusterAgentRunEntity row : clusterAgentRunRepository.findByNodeRunIdOrderByAgentIndexAsc(node.getId())) {
+                boolean shouldDelete = "sequential".equals(executionMode) ? row.getAgentIndex() >= agentIndex : row.getAgentIndex() == agentIndex;
+                if (shouldDelete) {
+                    clusterAgentRunRepository.delete(row);
+                }
+            }
+
+            node.prepareForFollowUp(nextConfig, now);
+            workflowNodeRunRepository.save(node);
+
+            List<WorkflowNodeRunEntity> nodes = workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(run.getId());
+            int completedBefore = (int) nodes.stream()
+                .filter(other -> other.getSortOrder() < node.getSortOrder() && "completed".equals(other.getState()))
+                .count();
+            run.markRunning(node.getNodeKey(), node.getName(), node.getNodeType(), completedBefore, now);
+            workflowRunRepository.save(run);
+            Map<String, Object> metadata = new LinkedHashMap<>();
+            metadata.put("nodeRunId", node.getId().toString());
+            metadata.put("agentIndex", agentIndex);
+            workflowRunEventRepository.save(WorkflowRunEventEntity.create(
+                run.getId(),
+                run.getTenantId(),
+                "run_cluster_agent_follow_up",
+                "子智能体追问",
+                "已向「" + clusterAgent.getName() + "」追加追问并继续对话。",
+                node.getNodeKey(),
+                principal.userId(),
+                metadata,
+                now
+            ));
+            enqueueExecution(tenantId, runId, node.getId(), node.getNodeType(), principal.userId());
+        });
+        log.info(
+            "用户追问子智能体 tenantId={} userId={} runId={} nodeRunId={} agentIndex={} requestId={}",
+            tenantId, principal.userId(), runId, nodeRunId, agentIndex, RequestIds.current()
+        );
+        return getRunDetail(tenantId, principal, runId);
+    }
+
     /**
      * 用户手动修改最终答案：仅更新输出快照与变量，不触发模型重新生成。
      */
@@ -772,6 +856,44 @@ public class WorkbenchRuntimeService {
         return getRunDetail(tenantId, principal, runId);
     }
 
+    public WorkbenchApi.RunDetail updateClusterAgentFinalAnswer(
+        UUID tenantId,
+        CurrentUserPrincipal principal,
+        UUID runId,
+        UUID nodeRunId,
+        int agentIndex,
+        String content
+    ) {
+        ensureActiveTenant(tenantId);
+        ensureAuthenticated(principal);
+        String answer = content == null ? "" : content.trim();
+        if (answer.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_CLUSTER_AGENT_ANSWER_EMPTY", "子智能体最终答案不能为空");
+        }
+        WorkflowRunEntity run = requireOwnedRun(tenantId, principal, runId);
+        if ("completed".equals(run.getState())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_RUN_READONLY", "已完成任务只能查看，不能修改答案");
+        }
+        WorkflowNodeRunEntity node = workflowNodeRunRepository.findByIdAndRunId(nodeRunId, runId)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_NODE_RUN_NOT_FOUND", "节点运行不存在"));
+        if (!"parallel_group".equals(node.getNodeType())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_CLUSTER_AGENT_ANSWER_UNSUPPORTED", "当前节点不是智能体集群节点");
+        }
+        if (!"completed".equals(node.getState())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_CLUSTER_AGENT_ANSWER_INVALID", "仅已完成的子智能体结果可修改");
+        }
+        if (!isClusterAgentEditAllowed(node.getConfigSnapshot(), agentIndex)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_CLUSTER_AGENT_ANSWER_FORBIDDEN", "该子智能体未开启「允许修改」");
+        }
+
+        transactionTemplate.executeWithoutResult(status -> applyClusterAgentAnswerUpdate(run, node, agentIndex, answer, principal.userId()));
+        log.info(
+            "用户修改子智能体最终答案 tenantId={} userId={} runId={} nodeRunId={} agentIndex={} requestId={}",
+            tenantId, principal.userId(), runId, nodeRunId, agentIndex, RequestIds.current()
+        );
+        return getRunDetail(tenantId, principal, runId);
+    }
+
     private void applyFinalAnswerUpdate(
         WorkflowRunEntity run,
         WorkflowNodeRunEntity node,
@@ -803,6 +925,72 @@ public class WorkbenchRuntimeService {
             node.getNodeKey(),
             operatorUserId,
             Map.of("nodeRunId", node.getId().toString()),
+            now
+        ));
+    }
+
+    private void applyClusterAgentAnswerUpdate(
+        WorkflowRunEntity run,
+        WorkflowNodeRunEntity node,
+        int agentIndex,
+        String answer,
+        UUID operatorUserId
+    ) {
+        Instant now = clock.instant();
+        WorkflowClusterAgentRunEntity clusterAgent = clusterAgentRunRepository.findByNodeRunIdAndAgentIndex(node.getId(), agentIndex)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_CLUSTER_AGENT_RUN_NOT_FOUND", "子智能体运行记录不存在"));
+        if (!clusterAgent.isSucceeded()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_CLUSTER_AGENT_ANSWER_INVALID", "仅已完成的子智能体结果可修改");
+        }
+
+        Map<String, Object> agentOutput = new LinkedHashMap<>(clusterAgent.getOutput() == null ? Map.of() : clusterAgent.getOutput());
+        agentOutput.put("final_answer", answer);
+        agentOutput.put("agent_response", answer);
+        agentOutput.put("summary", summarizeAnswer(answer));
+        clusterAgent.patchOutput(agentOutput, now);
+        clusterAgentRunRepository.save(clusterAgent);
+
+        List<WorkflowClusterAgentRunEntity> rows = clusterAgentRunRepository.findByNodeRunIdOrderByAgentIndexAsc(node.getId());
+        List<Map<String, Object>> summaries = new ArrayList<>();
+        for (WorkflowClusterAgentRunEntity row : rows) {
+            Map<String, Object> summary = new LinkedHashMap<>();
+            summary.put("agentIndex", row.getAgentIndex());
+            summary.put("name", row.getName());
+            summary.put("status", row.isSucceeded() ? "completed" : row.getStatus());
+            if (row.isSucceeded()) {
+                String body = row.getOutput() == null ? "" : stringValue(row.getOutput().get("final_answer"));
+                summary.put("final_answer", body);
+                summary.put("summary", summarizeAnswer(body));
+            } else {
+                summary.put("errorCode", row.getErrorCode() == null ? "" : row.getErrorCode());
+                summary.put("errorMessage", row.getErrorMessage() == null ? "" : row.getErrorMessage());
+                summary.put("summary", row.getErrorMessage() == null ? "" : row.getErrorMessage());
+            }
+            summaries.add(summary);
+        }
+
+        Map<String, Object> outputs = new LinkedHashMap<>(node.getOutputSnapshot() == null ? Map.of() : node.getOutputSnapshot());
+        String finalAnswer = clusterFinalAnswer(summaries);
+        outputs.put("clusterAgents", summaries);
+        outputs.put("final_answer", finalAnswer);
+        outputs.put("agent_response", finalAnswer);
+        outputs.put("summary", "智能体集群已完成 " + summaries.stream().filter(item -> "completed".equals(item.get("status"))).count() + " 个子智能体。");
+        node.patchOutputSnapshot(outputs, now);
+        workflowNodeRunRepository.save(node);
+        workflowVariableSnapshotRepository.deleteByRunIdAndNodeRunIdIn(run.getId(), List.of(node.getId()));
+        persistVariableSnapshots(run, node, outputs, now);
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("nodeRunId", node.getId().toString());
+        metadata.put("agentIndex", agentIndex);
+        workflowRunEventRepository.save(WorkflowRunEventEntity.create(
+            run.getId(),
+            run.getTenantId(),
+            "run_cluster_agent_answer_updated",
+            "修改子智能体答案",
+            "已保存「" + clusterAgent.getName() + "」的最终答案。",
+            node.getNodeKey(),
+            operatorUserId,
+            metadata,
             now
         ));
     }
@@ -1138,6 +1326,46 @@ public class WorkbenchRuntimeService {
         return "追问确认".equals(String.valueOf(config.get("outputMode")));
     }
 
+    private static boolean isClusterAgentEditAllowed(Map<String, Object> config, int agentIndex) {
+        if (config == null || config.isEmpty()) {
+            return false;
+        }
+        Object rawAgents = config.get("clusterAgents");
+        if (rawAgents instanceof List<?> agents && agentIndex >= 0 && agentIndex < agents.size()) {
+            Object rawAgent = agents.get(agentIndex);
+            if (rawAgent instanceof Map<?, ?> agentConfig) {
+                if (agentConfig.containsKey("allowUserEdit") || agentConfig.containsKey("outputMode")) {
+                    Object allowUserEdit = agentConfig.get("allowUserEdit");
+                    if (Boolean.TRUE.equals(allowUserEdit) || "true".equals(String.valueOf(allowUserEdit))) {
+                        return true;
+                    }
+                    return "追问确认".equals(String.valueOf(agentConfig.get("outputMode")));
+                }
+            }
+        }
+        return isUserEditAllowed(config);
+    }
+
+    private static boolean isClusterAgentFollowUpAllowed(Map<String, Object> config, int agentIndex) {
+        if (config == null || config.isEmpty()) {
+            return false;
+        }
+        Object rawAgents = config.get("clusterAgents");
+        if (rawAgents instanceof List<?> agents && agentIndex >= 0 && agentIndex < agents.size()) {
+            Object rawAgent = agents.get(agentIndex);
+            if (rawAgent instanceof Map<?, ?> agentConfig) {
+                if (agentConfig.containsKey("allowQuestion") || agentConfig.containsKey("outputMode")) {
+                    Object allowQuestion = agentConfig.get("allowQuestion");
+                    if (Boolean.TRUE.equals(allowQuestion) || "true".equals(String.valueOf(allowQuestion))) {
+                        return true;
+                    }
+                    return "追问确认".equals(String.valueOf(agentConfig.get("outputMode")));
+                }
+            }
+        }
+        return isFollowUpAllowed(config);
+    }
+
     private static boolean isFollowUpAllowed(Map<String, Object> config) {
         if (config == null || config.isEmpty()) {
             return false;
@@ -1147,6 +1375,78 @@ public class WorkbenchRuntimeService {
             return true;
         }
         return "追问确认".equals(String.valueOf(config.get("outputMode")));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> appendClusterAgentFollowUp(
+        Map<String, Object> config,
+        int agentIndex,
+        WorkflowClusterAgentRunEntity clusterAgent,
+        String followUpMessage
+    ) {
+        Object rawAgents = config.get("clusterAgents");
+        if (!(rawAgents instanceof List<?> agents) || agentIndex < 0 || agentIndex >= agents.size()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_CLUSTER_AGENT_NOT_FOUND", "子智能体配置不存在");
+        }
+        Object rawAgent = agents.get(agentIndex);
+        if (!(rawAgent instanceof Map<?, ?> rawAgentConfig)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_CLUSTER_AGENT_NOT_FOUND", "子智能体配置不存在");
+        }
+        Map<String, Object> agentConfig = new LinkedHashMap<>((Map<String, Object>) rawAgentConfig);
+        List<Map<String, Object>> history = readClusterAgentHistory(agentConfig, clusterAgent.getOutput());
+        history.add(Map.of("role", "user", "content", followUpMessage));
+        agentConfig.put("conversationHistory", history);
+        return agentConfig;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> readClusterAgentHistory(Map<String, Object> agentConfig, Map<String, Object> output) {
+        Object rawHistory = agentConfig.get("conversationHistory");
+        List<Map<String, Object>> history = new ArrayList<>();
+        if (rawHistory instanceof List<?> items) {
+            for (Object item : items) {
+                if (item instanceof Map<?, ?> rawMap) {
+                    String role = stringValue(rawMap.get("role"));
+                    String content = stringValue(rawMap.get("content"));
+                    if (("user".equals(role) || "assistant".equals(role)) && !content.isBlank()) {
+                        history.add(new LinkedHashMap<>((Map<String, Object>) rawMap));
+                    }
+                }
+            }
+        }
+        if (!history.isEmpty()) {
+            return history;
+        }
+        String initialPrompt = firstNonBlank(stringValue(agentConfig.get("userPrompt")), stringValue(agentConfig.get("prompt")));
+        if (!initialPrompt.isBlank()) {
+            history.add(Map.of("role", "user", "content", initialPrompt));
+        }
+        String previousAnswer = output == null ? "" : firstNonBlank(
+            stringValue(output.get("final_answer")),
+            stringValue(output.get("agent_response")),
+            stringValue(output.get("summary"))
+        );
+        if (!previousAnswer.isBlank()) {
+            history.add(Map.of("role", "assistant", "content", previousAnswer));
+        }
+        return history;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> replaceClusterAgentConfig(Object rawAgents, int agentIndex, Map<String, Object> nextAgentConfig) {
+        if (!(rawAgents instanceof List<?> agents)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_CLUSTER_AGENT_NOT_FOUND", "子智能体配置不存在");
+        }
+        List<Map<String, Object>> nextAgents = new ArrayList<>();
+        for (int index = 0; index < agents.size(); index++) {
+            Object rawAgent = agents.get(index);
+            if (index == agentIndex) {
+                nextAgents.add(nextAgentConfig);
+            } else if (rawAgent instanceof Map<?, ?> rawMap) {
+                nextAgents.add(new LinkedHashMap<>((Map<String, Object>) rawMap));
+            }
+        }
+        return nextAgents;
     }
 
     @SuppressWarnings("unchecked")
@@ -1213,6 +1513,26 @@ public class WorkbenchRuntimeService {
             return normalized;
         }
         return normalized.substring(0, 157) + "...";
+    }
+
+    private static String clusterFinalAnswer(List<Map<String, Object>> summaries) {
+        if (summaries == null || summaries.isEmpty()) {
+            return "智能体集群未生成子智能体结论。";
+        }
+        StringBuilder result = new StringBuilder("## 智能体集群结论\n");
+        for (Map<String, Object> summary : summaries) {
+            String body = firstNonBlank(
+                stringValue(summary.get("final_answer")),
+                stringValue(summary.get("summary")),
+                "已完成"
+            );
+            result.append("\n### ")
+                .append(firstNonBlank(stringValue(summary.get("name")), "子智能体"))
+                .append("\n")
+                .append(body)
+                .append("\n");
+        }
+        return result.toString().trim();
     }
 
     @SuppressWarnings("unchecked")

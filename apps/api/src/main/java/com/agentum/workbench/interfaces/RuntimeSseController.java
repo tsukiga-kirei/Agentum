@@ -160,6 +160,24 @@ public class RuntimeSseController {
         );
     }
 
+    /** 保存用户修改后的子智能体最终答案，不重新调用模型。 */
+    @PostMapping("/runs/{runId}/nodes/{nodeRunId}/cluster-agents/{agentIndex}/final-answer")
+    public ApiResponse<WorkbenchApi.RunDetail> updateClusterAgentFinalAnswer(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID runId,
+        @PathVariable UUID nodeRunId,
+        @PathVariable int agentIndex,
+        @RequestBody @jakarta.validation.Valid WorkbenchApi.UpdateFinalAnswerRequest body,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        workbenchAccess.assertCanAccessWorkbench(principal, tenantId);
+        return ApiResponse.success(
+            workbenchRuntimeService.updateClusterAgentFinalAnswer(tenantId, principal, runId, nodeRunId, agentIndex, body.content()),
+            RequestIds.current(request)
+        );
+    }
+
     /** 单智能体追问：在已完成节点上追加用户消息并续跑对话。 */
     @PostMapping("/runs/{runId}/nodes/{nodeRunId}/follow-up")
     public ApiResponse<WorkbenchApi.RunDetail> followUp(
@@ -173,6 +191,24 @@ public class RuntimeSseController {
         workbenchAccess.assertCanAccessWorkbench(principal, tenantId);
         return ApiResponse.success(
             workbenchRuntimeService.followUpNode(tenantId, principal, runId, nodeRunId, body.message()),
+            RequestIds.current(request)
+        );
+    }
+
+    /** 子智能体追问：只重跑目标子智能体；串行集群会从该子智能体开始重跑后续链路。 */
+    @PostMapping("/runs/{runId}/nodes/{nodeRunId}/cluster-agents/{agentIndex}/follow-up")
+    public ApiResponse<WorkbenchApi.RunDetail> followUpClusterAgent(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID runId,
+        @PathVariable UUID nodeRunId,
+        @PathVariable int agentIndex,
+        @RequestBody @jakarta.validation.Valid WorkbenchApi.FollowUpNodeRequest body,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        workbenchAccess.assertCanAccessWorkbench(principal, tenantId);
+        return ApiResponse.success(
+            workbenchRuntimeService.followUpClusterAgent(tenantId, principal, runId, nodeRunId, agentIndex, body.message()),
             RequestIds.current(request)
         );
     }

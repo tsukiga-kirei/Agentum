@@ -101,6 +101,12 @@ public class WorkflowClusterAgentRunEntity {
         this.updatedAt = now;
     }
 
+    /** 用户在运行详情中修改子智能体最终答案时，只更新该子智能体的输出快照，不触发重新执行。 */
+    public void patchOutput(Map<String, Object> output, Instant now) {
+        this.output = output == null ? new HashMap<>() : new HashMap<>(output);
+        this.updatedAt = now;
+    }
+
     public void fail(String errorCode, String errorMessage, Instant now) {
         this.status = STATUS_FAILED;
         this.errorCode = errorCode;
