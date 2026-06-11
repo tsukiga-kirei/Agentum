@@ -32,17 +32,45 @@ export function buildPersistedExecutionSteps(step: RuntimePreviewStep): AgentExe
       });
     });
 
-  const finalAnswer = readFinalAnswer(step);
-  if (finalAnswer) {
-    steps.push({
-      id: "persisted-final-answer",
-      kind: "final_answer",
-      title: "最终答案",
-      summary: "智能体已提交 final_answer",
-      status: "done",
-      detail: finalAnswer,
+  return steps;
+}
+
+export function buildModelOutputSteps(step: RuntimePreviewStep, finalAnswer: string): AgentExecutionStep[] {
+  const normalizedFinalAnswer = normalizeContent(finalAnswer);
+  const seen = new Set<string>();
+  const steps: AgentExecutionStep[] = [];
+
+  function appendOutput(id: string, title: string, content: string, options?: { allowSameAsFinalAnswer?: boolean }) {
+    const normalized = normalizeContent(content);
+    if (!normalized || (!options?.allowSameAsFinalAnswer && normalized === normalizedFinalAnswer) || seen.has(normalized)) {
+      return;
+    }
+    seen.add(normalized);
+      steps.push({
+        id,
+        kind: "model_output",
+        title,
+        summary: "可展开查看",
+        status: "done",
+        detail: content.trim(),
+        toolType: "model",
     });
   }
+
+  (step.chatMessages ?? [])
+    .filter((message) => message.role === "assistant")
+    .forEach((message, index) => {
+      appendOutput(`persisted-model-output-${message.id || index}`, "生成最终答案", message.content);
+    });
+
+  const outputs = step.outputs ?? [];
+  const rawOutputLabels = ["model_content", "modelContent", "raw_content", "rawContent", "response_content", "responseContent", "content", "responseBody"];
+  rawOutputLabels.forEach((label) => {
+    const value = outputs.find((field) => field.label === label)?.value;
+    if (value) {
+      appendOutput(`persisted-output-${label}`, "生成最终答案", value, { allowSameAsFinalAnswer: label === "model_content" || label === "modelContent" });
+    }
+  });
 
   return steps;
 }
@@ -59,6 +87,11 @@ export function mergeExecutionSteps(
 }
 
 export function readFinalAnswer(step: RuntimePreviewStep, streamingText = ""): string {
+  const outputs = step.outputs ?? [];
+  const finalField = outputs.find((field) => field.label === "final_answer" || field.label === "agent_response");
+  if (finalField?.value?.trim()) {
+    return finalField.value.trim();
+  }
   if (streamingText.trim()) {
     return streamingText;
   }
@@ -67,9 +100,13 @@ export function readFinalAnswer(step: RuntimePreviewStep, streamingText = ""): s
   if (latestAssistant?.trim()) {
     return latestAssistant;
   }
-  const outputs = step.outputs ?? [];
-  const finalField = outputs.find((field) => field.label === "final_answer" || field.label === "agent_response");
-  return finalField?.value?.trim() ?? "";
+  const fallbackField = outputs.find((field) =>
+    ["model_content", "modelContent", "raw_content", "rawContent", "response_content", "responseContent", "content", "responseBody"].includes(field.label)
+  );
+  if (fallbackField?.value?.trim()) {
+    return fallbackField.value.trim();
+  }
+  return "";
 }
 
 export function readConfiguredTools(config: Record<string, unknown> | undefined): Array<{ id: string; label: string; kind: "skill" | "mcp" }> {
@@ -94,23 +131,22 @@ export function readAgentPermissions(config: Record<string, unknown> | undefined
   };
 }
 
-/** 运行页只展示工具调用与最终答案，隐藏准备上下文/模型推理等内部阶段。 */
+/** 运行页前置区只展示用户关心的 AI 过程：工具调用、模型原始返回和 final_answer。 */
 export function filterUserVisibleSteps(steps: AgentExecutionStep[]): AgentExecutionStep[] {
-  return steps.filter((step) => step.kind === "tool" || step.kind === "final_answer");
+  return steps.filter((step) => step.kind === "tool" || step.kind === "model_output" || step.kind === "final_answer");
 }
 
 export function summarizeToolSteps(steps: AgentExecutionStep[], elapsedLabel = "", running = false): string {
-  const tools = steps.filter((step) => step.kind === "tool");
-  const doneCount = tools.filter((step) => step.status === "done").length;
-  const hasRunning = running || tools.some((step) => step.status === "running");
+  const doneCount = steps.filter((step) => step.status === "done").length;
+  const hasRunning = running || steps.some((step) => step.status === "running");
   if (hasRunning) {
     const base = doneCount > 0 ? `正在执行，已完成 ${doneCount} 个步骤` : "正在执行";
     return elapsedLabel ? `${base}，耗时 ${elapsedLabel}` : base;
   }
-  if (tools.length === 0) {
+  if (steps.length === 0) {
     return elapsedLabel ? `执行完成，耗时 ${elapsedLabel}` : "执行完成";
   }
-  const base = `已完成 ${tools.length} 个步骤`;
+  const base = `已完成 ${steps.length} 个步骤`;
   return elapsedLabel ? `${base}，耗时 ${elapsedLabel}` : base;
 }
 
@@ -194,10 +230,34 @@ export function upsertFinalAnswerStep(
     {
       id: "live-final-answer",
       kind: "final_answer",
-      title: "最终答案",
+      title: "生成最终答案",
       summary: streaming ? "正在生成最终答案…" : "智能体已提交 final_answer",
       status: streaming ? "running" : "done",
       detail: content.trim() ? content : existing?.detail,
+    },
+  ];
+}
+
+export function upsertModelOutputStep(
+  steps: AgentExecutionStep[],
+  content: string,
+  streaming: boolean,
+): AgentExecutionStep[] {
+  const existing = steps.find((step) => step.id === "live-model-output");
+  if (!content.trim() && !streaming && !existing) {
+    return steps;
+  }
+  const withoutDraft = steps.filter((step) => step.id !== "live-model-output");
+  return [
+    ...withoutDraft,
+    {
+      id: "live-model-output",
+      kind: "model_output",
+      title: "生成最终答案",
+      summary: streaming ? "正在生成…" : "可展开查看",
+      status: streaming ? "running" : "done",
+      detail: content.trim() ? content : existing?.detail,
+      toolType: "model",
     },
   ];
 }
@@ -221,6 +281,10 @@ function readIdList(value: unknown): string[] {
   return value
     .map((item) => (item == null ? "" : String(item).trim()))
     .filter((item) => item && item !== "none" && item !== "custom");
+}
+
+function normalizeContent(value: string | undefined): string {
+  return (value ?? "").replace(/\s+/g, " ").trim();
 }
 
 function readBoolean(value: unknown): boolean {

@@ -11,6 +11,7 @@ import type {
 import {
   finalizeFinalAnswerStep,
   upsertFinalAnswerStep,
+  upsertModelOutputStep,
   upsertPhaseStep,
   upsertToolStep,
 } from "../utils/agentExecutionSteps";
@@ -375,11 +376,15 @@ export function useRunStream(
       }
 
       case "agent_streaming": {
-        const { accumulatedContent } = event.data;
-        setStreamingText(accumulatedContent);
+        const { accumulatedContent, streamKind } = event.data;
         setCurrentPhase("model_calling");
         setIsStreaming(true);
-        setExecutionSteps((prev) => upsertFinalAnswerStep(prev, accumulatedContent, true));
+        if (streamKind === "model_content") {
+          setExecutionSteps((prev) => upsertModelOutputStep(prev, accumulatedContent, true));
+        } else {
+          setStreamingText(accumulatedContent);
+          setExecutionSteps((prev) => upsertFinalAnswerStep(prev, accumulatedContent, true));
+        }
         break;
       }
 

@@ -323,6 +323,20 @@ public class NodeExecutionService {
 
             @Override
             public void onToken(String deltaContent, String accumulatedContent) {
+                emitStreaming("final_answer", deltaContent, accumulatedContent);
+            }
+
+            @Override
+            public void onModelContent(String deltaContent, String accumulatedContent) {
+                emitStreaming("model_content", deltaContent, accumulatedContent);
+            }
+
+            @Override
+            public void onFinalAnswerContent(String deltaContent, String accumulatedContent) {
+                emitStreaming("final_answer", deltaContent, accumulatedContent);
+            }
+
+            private void emitStreaming(String streamKind, String deltaContent, String accumulatedContent) {
                 if (accumulatedContent != null && !accumulatedContent.isBlank()) {
                     accumulated.setLength(0);
                     accumulated.append(accumulatedContent);
@@ -330,6 +344,7 @@ public class NodeExecutionService {
                     accumulated.append(deltaContent);
                 }
                 emit(runId, nodeRunId, "agent_streaming", Map.of(
+                    "streamKind", streamKind,
                     "deltaContent", deltaContent == null ? "" : deltaContent,
                     "accumulatedContent", accumulated.toString()
                 ));
@@ -340,6 +355,7 @@ public class NodeExecutionService {
                 accumulated.setLength(0);
                 accumulated.append(answer == null ? "" : answer);
                 emit(runId, nodeRunId, "agent_streaming", Map.of(
+                    "streamKind", "final_answer",
                     "deltaContent", "",
                     "accumulatedContent", accumulated.toString()
                 ));
@@ -652,6 +668,20 @@ public class NodeExecutionService {
 
             @Override
             public void onToken(String deltaContent, String accumulatedContent) {
+                emitStreaming("final_answer", deltaContent, accumulatedContent);
+            }
+
+            @Override
+            public void onModelContent(String deltaContent, String accumulatedContent) {
+                emitStreaming("model_content", deltaContent, accumulatedContent);
+            }
+
+            @Override
+            public void onFinalAnswerContent(String deltaContent, String accumulatedContent) {
+                emitStreaming("final_answer", deltaContent, accumulatedContent);
+            }
+
+            private void emitStreaming(String streamKind, String deltaContent, String accumulatedContent) {
                 if (accumulatedContent != null && !accumulatedContent.isBlank()) {
                     subAccumulated.setLength(0);
                     subAccumulated.append(accumulatedContent);
@@ -662,6 +692,7 @@ public class NodeExecutionService {
                     "agentIndex", slot.index(),
                     "agentName", slot.name(),
                     "eventType", "streaming",
+                    "streamKind", streamKind,
                     "deltaContent", deltaContent == null ? "" : deltaContent,
                     "accumulatedContent", subAccumulated.toString()
                 ));
@@ -675,6 +706,7 @@ public class NodeExecutionService {
                     "agentIndex", slot.index(),
                     "agentName", slot.name(),
                     "eventType", "streaming",
+                    "streamKind", "final_answer",
                     "deltaContent", "",
                     "accumulatedContent", subAccumulated.toString()
                 ));

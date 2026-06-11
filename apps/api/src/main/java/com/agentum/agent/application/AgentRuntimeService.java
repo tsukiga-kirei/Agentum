@@ -165,6 +165,7 @@ public class AgentRuntimeService {
         List<String> modelCallLogIds = new ArrayList<>();
         List<Map<String, Object>> toolCallSummaries = new ArrayList<>();
         String finalAnswer = "";
+        String finalModelContent = "";
         eventSink.onPhase("preparing", "正在装配变量、Skill 和 MCP 工具。");
 
         try {
@@ -176,6 +177,9 @@ public class AgentRuntimeService {
                     : callModelWithLog(request, provider, modelName, messages, options, toolDefinitions);
                 modelCallLogIds.add(loggedResult.callLogId());
                 ModelChatClient.ChatResult result = loggedResult.result();
+                if (!firstNonBlank(result.content()).isBlank()) {
+                    finalModelContent = result.content();
+                }
 
                 String resolvedAnswer = resolveFinalAnswerContent(result, loggedResult.streamedDisplayText());
                 if (!resolvedAnswer.isBlank()) {
@@ -211,6 +215,9 @@ public class AgentRuntimeService {
                 assertRunNotCancelled(request.run().getId());
                 eventSink.onPhase("model_calling", "工具循环达到上限，正在汇总最终答案。");
                 finalAnswer = synthesizeFinalAnswer(request, provider, modelName, messages, options, streamFinalAnswer, eventSink, modelCallLogIds);
+                if (finalModelContent.isBlank()) {
+                    finalModelContent = finalAnswer;
+                }
             }
             eventSink.onPhase("validating", "正在校验最终输出格式。");
             Map<String, Object> outputs = buildOutputs(
@@ -219,6 +226,7 @@ public class AgentRuntimeService {
                 modelCallLogIds,
                 toolCallSummaries,
                 finalAnswer,
+                finalModelContent,
                 renderedUserPrompt
             );
             eventSink.onPhase("completed", "智能体已完成最终回答。");
@@ -390,6 +398,7 @@ public class AgentRuntimeService {
         modelCallLogRepository.save(callLog);
         java.util.concurrent.CompletableFuture<ModelChatClient.ChatResult> future = new java.util.concurrent.CompletableFuture<>();
         StringBuilder displayText = new StringBuilder();
+        StringBuilder streamedFinalAnswer = new StringBuilder();
         modelChatClient.chatStream(buildModelChatRequest(
             request,
             provider,
@@ -404,14 +413,14 @@ public class AgentRuntimeService {
                     return;
                 }
                 displayText.append(deltaContent);
-                eventSink.onToken(deltaContent, displayText.toString());
+                eventSink.onModelContent(deltaContent, displayText.toString());
             }
 
             @Override
             public void onFinalAnswerDelta(String deltaContent, String accumulatedAnswer) {
-                displayText.setLength(0);
-                displayText.append(accumulatedAnswer);
-                eventSink.onToken(deltaContent, accumulatedAnswer);
+                streamedFinalAnswer.setLength(0);
+                streamedFinalAnswer.append(accumulatedAnswer == null ? "" : accumulatedAnswer);
+                eventSink.onFinalAnswerContent(deltaContent, accumulatedAnswer);
             }
 
             @Override
@@ -430,7 +439,7 @@ public class AgentRuntimeService {
         });
         try {
             ModelChatClient.ChatResult result = future.get();
-            String streamedDisplay = displayText.toString();
+            String streamedDisplay = streamedFinalAnswer.toString();
             String resolvedAnswer = resolveFinalAnswerContent(result, streamedDisplay);
             if (streamedDisplay.isBlank() && !resolvedAnswer.isBlank()) {
                 emitFinalAnswer(eventSink, resolvedAnswer);
@@ -580,12 +589,18 @@ public class AgentRuntimeService {
         List<String> modelCallLogIds,
         List<Map<String, Object>> toolCallSummaries,
         String finalAnswer,
+        String modelContent,
         String renderedUserPrompt
     ) {
         Map<String, Object> outputs = new LinkedHashMap<>();
         String outputName = firstNonBlank(stringValue(config.get("output")), stringValue(config.get("outputVariable")), "agent_response");
         outputs.put(outputName, finalAnswer);
         outputs.put("final_answer", finalAnswer);
+        // 前端过程区需要稳定展示模型普通 content/context；即使它与 final_answer 相同，也保留该字段，
+        // 避免执行完成后只剩底部答案而没有可追溯步骤。
+        if (!firstNonBlank(modelContent).isBlank()) {
+            outputs.put("model_content", modelContent);
+        }
         outputs.put("summary", summarizeText(finalAnswer));
         outputs.put("modelName", modelName);
         outputs.put("agentMode", "react");
@@ -677,6 +692,14 @@ public class AgentRuntimeService {
         }
 
         default void onToken(String deltaContent, String accumulatedContent) {
+        }
+
+        default void onModelContent(String deltaContent, String accumulatedContent) {
+            onToken(deltaContent, accumulatedContent);
+        }
+
+        default void onFinalAnswerContent(String deltaContent, String accumulatedContent) {
+            onToken(deltaContent, accumulatedContent);
         }
 
         default void onToolCall(String toolName, String toolType, String status, String result, long durationMs) {
@@ -850,6 +873,10 @@ public class AgentRuntimeService {
 
     private static String stringValue(Object value) {
         return value == null ? "" : value.toString().trim();
+    }
+
+    private static String normalizeForCompare(String value) {
+        return value == null ? "" : value.replaceAll("\\s+", " ").trim();
     }
 
     private static String truncate(String value, int maxLength) {

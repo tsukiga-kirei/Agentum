@@ -5,15 +5,17 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  Cpu,
   Loader2,
   MessageSquarePlus,
   PencilLine,
 } from "lucide-react";
-import type { AgentExecutionStep, RuntimeChatMessage, RuntimePreviewStep } from "../../types/runtime-types";
+import type { AgentExecutionStep, RuntimePreviewStep } from "../../types/runtime-types";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { AnswerEditModal } from "./AnswerEditModal";
 import { FollowUpModal } from "./FollowUpModal";
 import {
+  buildModelOutputSteps,
   buildPersistedExecutionSteps,
   filterUserVisibleSteps,
   mergeExecutionSteps,
@@ -35,9 +37,9 @@ interface SingleAgentPanelProps {
 
 type ConversationTurn = {
   id: string;
-  userMessage: RuntimeChatMessage | null;
-  assistantMessage: RuntimeChatMessage | null;
+  userMessage: string;
   toolSteps: AgentExecutionStep[];
+  finalAnswer: string;
 };
 
 function formatElapsed(streamStartedAt: number | null): string {
@@ -53,93 +55,44 @@ function readInitialUserPrompt(config: Record<string, unknown>): string {
   return String(prompt).trim();
 }
 
-function buildConversationTurns(
-  messages: RuntimeChatMessage[],
+function readUserPrompt(
+  messages: Array<{ role: string; content: string }> | undefined,
+  config: Record<string, unknown>,
+): string {
+  const userMessages = (messages ?? []).filter((message) => message.role === "user");
+  const latestUser = userMessages[userMessages.length - 1]?.content;
+  if (latestUser?.trim()) {
+    return latestUser.trim();
+  }
+  return readInitialUserPrompt(config);
+}
+
+function buildConversationTurn(
+  userMessage: string,
   toolSteps: AgentExecutionStep[],
   options: {
-    initialUserPrompt: string;
     finalAnswer: string;
-    streamingText: string;
-    isStreaming: boolean;
-    showRunningHero: boolean;
   },
-): ConversationTurn[] {
-  const { initialUserPrompt, finalAnswer, streamingText, isStreaming, showRunningHero } = options;
+): ConversationTurn {
+  return {
+    id: "turn-current",
+    userMessage,
+    toolSteps,
+    finalAnswer: options.finalAnswer,
+  };
+}
 
-  if (messages.length === 0) {
-    const assistantContent = streamingText.trim() || finalAnswer.trim();
-    if (!initialUserPrompt && !assistantContent && toolSteps.length === 0 && !showRunningHero) {
-      return [];
+function dedupeProcessSteps(steps: AgentExecutionStep[]): AgentExecutionStep[] {
+  const seen = new Set<string>();
+  return steps.filter((step) => {
+    const contentKey = (step.detail || step.summary || step.title).replace(/\s+/g, " ").trim();
+    const key = `${step.kind}:${step.title}:${contentKey}`;
+    if (seen.has(key)) {
+      return false;
     }
-    return [
-      {
-        id: "turn-initial",
-        userMessage: initialUserPrompt
-          ? { id: "turn-initial-user", role: "user", author: "用户", content: initialUserPrompt }
-          : null,
-        assistantMessage: assistantContent
-          ? {
-              id: "turn-initial-assistant",
-              role: "assistant",
-              author: "智能体",
-              content: assistantContent,
-              streaming: isStreaming && !!streamingText.trim(),
-            }
-          : null,
-        toolSteps,
-      },
-    ];
-  }
-
-  const turns: ConversationTurn[] = [];
-  let pendingUser: RuntimeChatMessage | null = null;
-
-  for (const item of messages) {
-    if (item.role === "user") {
-      pendingUser = item;
-      continue;
-    }
-    if (item.role === "assistant") {
-      turns.push({
-        id: `turn-${item.id}`,
-        userMessage: pendingUser,
-        assistantMessage: item,
-        toolSteps: [],
-      });
-      pendingUser = null;
-    }
-  }
-
-  if (pendingUser) {
-    turns.push({
-      id: `turn-${pendingUser.id}-pending`,
-      userMessage: pendingUser,
-      assistantMessage: null,
-      toolSteps: [],
-    });
-  }
-
-  const lastTurn = turns[turns.length - 1];
-  if (lastTurn) {
-    lastTurn.toolSteps = toolSteps;
-    if (!lastTurn.assistantMessage && (streamingText.trim() || (showRunningHero && finalAnswer.trim()))) {
-      lastTurn.assistantMessage = {
-        id: "turn-streaming-assistant",
-        role: "assistant",
-        author: "智能体",
-        content: streamingText.trim() || finalAnswer,
-        streaming: isStreaming,
-      };
-    } else if (lastTurn.assistantMessage && isStreaming && streamingText.trim()) {
-      lastTurn.assistantMessage = {
-        ...lastTurn.assistantMessage,
-        content: streamingText,
-        streaming: true,
-      };
-    }
-  }
-
-  return turns;
+    seen.add(key);
+    return true;
+  });
 }
 
 function ToolStepRow({
@@ -166,6 +119,8 @@ function ToolStepRow({
             <Loader2 size={12} className="animate-spin text-blue-500" />
           ) : step.status === "error" ? (
             <span className="agent-tool-step-dot agent-tool-step-dot--error" />
+          ) : step.kind === "model_output" ? (
+            <Cpu size={12} className="text-emerald-500" />
           ) : (
             <CheckCircle2 size={12} className="text-emerald-500" />
           )}
@@ -215,6 +170,8 @@ function ToolStepsBlock({
     setExpandedStepIds((prev) => ({ ...prev, [stepId]: !prev[stepId] }));
   }
 
+  const shouldShowList = expanded && (steps.length > 0 || !running);
+
   return (
     <div className="agent-turn-tools">
       <div className="agent-turn-tools-toggle">
@@ -229,7 +186,7 @@ function ToolStepsBlock({
         </button>
         {headerActions ? <div className="agent-turn-tools-actions">{headerActions}</div> : null}
       </div>
-      {expanded ? (
+      {shouldShowList ? (
         <div className="agent-turn-tools-list">
           {steps.length === 0 ? (
             <p className="agent-turn-tools-empty">工具调用与输出将显示在这里</p>
@@ -238,7 +195,7 @@ function ToolStepsBlock({
               <ToolStepRow
                 key={step.id}
                 step={step}
-                expanded={!!expandedStepIds[step.id]}
+                expanded={step.status === "running" || !!expandedStepIds[step.id]}
                 onToggle={() => toggleStep(step.id)}
               />
             ))
@@ -251,51 +208,44 @@ function ToolStepsBlock({
 
 function ConversationTurnBlock({
   turn,
-  isLast,
   showRunningHero,
   elapsedLabel,
   headerActions,
 }: {
   turn: ConversationTurn;
-  isLast: boolean;
   showRunningHero: boolean;
   elapsedLabel: string;
   headerActions?: React.ReactNode;
 }) {
-  const running = isLast && showRunningHero;
+  const running = showRunningHero;
   const headerTitle = summarizeToolSteps(turn.toolSteps, elapsedLabel, running);
-  const waitingForAnswer = running && !turn.assistantMessage?.content?.trim();
+  const waitingForAnswer = running && !turn.finalAnswer.trim();
+  const showFinalAnswerBody = !running && !!turn.finalAnswer.trim();
 
   return (
     <section className="agent-turn">
-      {turn.userMessage?.content?.trim() ? (
+      {turn.userMessage.trim() ? (
         <div className="agent-turn-user-row">
           <div className="agent-turn-user-bubble">
-            <p>{turn.userMessage.content}</p>
+            <p>{turn.userMessage}</p>
           </div>
         </div>
       ) : null}
 
       <div className="agent-turn-assistant-panel">
-        {isLast ? (
-          <ToolStepsBlock
-            steps={turn.toolSteps}
-            headerTitle={headerTitle}
-            running={running}
-            headerActions={headerActions}
-          />
-        ) : null}
+        <ToolStepsBlock
+          steps={turn.toolSteps}
+          headerTitle={headerTitle}
+          running={running}
+          headerActions={headerActions}
+        />
 
-        {turn.assistantMessage?.content?.trim() ? (
+        {showFinalAnswerBody ? (
           <div className="agent-turn-assistant">
             <MarkdownRenderer
-              content={turn.assistantMessage.content}
+              content={turn.finalAnswer}
               compact
-              className={turn.assistantMessage.streaming ? "agent-markdown--streaming" : ""}
             />
-            {turn.assistantMessage.streaming ? (
-              <span className="agent-chat-cursor mt-1 inline-block h-4 w-0.5 animate-pulse bg-blue-500 align-middle" aria-hidden="true" />
-            ) : null}
           </div>
         ) : waitingForAnswer ? (
           <div className="agent-turn-waiting">
@@ -330,44 +280,29 @@ export function SingleAgentPanel({
     () => mergeExecutionSteps(persistedSteps, executionSteps, isLiveForStep),
     [persistedSteps, executionSteps, isLiveForStep],
   );
-  const toolSteps = useMemo(
-    () => filterUserVisibleSteps(steps).filter((step) => step.kind === "tool"),
-    [steps],
-  );
   const finalAnswer = readFinalAnswer(activeStep, streamingText);
+  const processSteps = useMemo(() => {
+    const modelOutputSteps = buildModelOutputSteps(activeStep, finalAnswer);
+    const visibleSteps = filterUserVisibleSteps(steps);
+    const idDeduped = [...visibleSteps, ...modelOutputSteps].filter((step, index, list) =>
+      list.findIndex((item) => item.id === step.id) === index
+    );
+    return dedupeProcessSteps(idDeduped);
+  }, [activeStep, finalAnswer, steps]);
   const hasAnswerContent = !!finalAnswer.trim();
   const showRunningHero = activeStep.state === "running" || activeStep.state === "pending" || isStreaming;
   const canFollowUp = permissions.allowQuestion && activeStep.allowsFollowUp !== false && activeStep.state === "done" && !readOnly && !!onFollowUp;
   const canEditAnswer = permissions.allowUserEdit && activeStep.allowsRegenerate !== false && activeStep.state === "done" && !readOnly;
-
-  const conversationMessages = useMemo(() => {
-    const baseMessages = [...(activeStep.chatMessages ?? [])];
-    if (!streamingText.trim() || activeStep.state === "done") {
-      return baseMessages;
-    }
-    const lastMessage = baseMessages[baseMessages.length - 1];
-    if (lastMessage?.role === "assistant") {
-      return [
-        ...baseMessages.slice(0, -1),
-        { ...lastMessage, content: streamingText, streaming: isStreaming },
-      ];
-    }
-    return baseMessages;
-  }, [activeStep.chatMessages, activeStep.state, isStreaming, streamingText]);
-
-  const conversationTurns = useMemo(
+  const userPrompt = useMemo(() => readUserPrompt(activeStep.chatMessages, config), [activeStep.chatMessages, config]);
+  const conversationTurn = useMemo(
     () =>
-      buildConversationTurns(conversationMessages, toolSteps, {
-        initialUserPrompt: readInitialUserPrompt(config),
+      buildConversationTurn(userPrompt, processSteps, {
         finalAnswer,
-        streamingText,
-        isStreaming,
-        showRunningHero,
       }),
-    [conversationMessages, toolSteps, config, finalAnswer, streamingText, isStreaming, showRunningHero],
+    [finalAnswer, processSteps, userPrompt],
   );
 
-  const hasContent = conversationTurns.length > 0 || showRunningHero;
+  const hasContent = !!userPrompt.trim() || processSteps.length > 0 || hasAnswerContent || showRunningHero;
 
   useEffect(() => {
     if (!showRunningHero || !streamStartedAt) {
@@ -441,16 +376,13 @@ export function SingleAgentPanel({
           </div>
         ) : (
           <div className="agent-turn-list">
-            {conversationTurns.map((turn, index) => (
-              <ConversationTurnBlock
-                key={turn.id}
-                turn={turn}
-                isLast={index === conversationTurns.length - 1}
-                showRunningHero={showRunningHero}
-                elapsedLabel={elapsedLabel}
-                headerActions={index === conversationTurns.length - 1 ? turnHeaderActions : undefined}
-              />
-            ))}
+            <ConversationTurnBlock
+              key={conversationTurn.id}
+              turn={conversationTurn}
+              showRunningHero={showRunningHero}
+              elapsedLabel={elapsedLabel}
+              headerActions={turnHeaderActions}
+            />
           </div>
         )}
       </section>
