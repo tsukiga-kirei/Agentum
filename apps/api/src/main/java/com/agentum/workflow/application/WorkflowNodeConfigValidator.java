@@ -61,7 +61,9 @@ public class WorkflowNodeConfigValidator {
             }
 
             String nodeType = node.nodeType();
-            if ("agent".equals(nodeType)) {
+            if ("user_input".equals(nodeType)) {
+                validateInputNodeConfig(config, node, issues);
+            } else if ("agent".equals(nodeType)) {
                 validateTenantAssetId(tenantId, operatorUserId, extractString(config, "agentAssetId"), "agent_template", "智能体模板", node, issues);
                 validateTenantAssetId(tenantId, operatorUserId, extractString(config, "systemPromptTemplateId"), "prompt_template", "系统提示词模板", node, issues);
                 validateTenantAssetId(tenantId, operatorUserId, extractString(config, "promptTemplateId"), "prompt_template", "系统提示词模板", node, issues);
@@ -70,6 +72,7 @@ public class WorkflowNodeConfigValidator {
                 validateIds(tenantId, operatorUserId, extractStringList(config, "mcpIds", "mcpServices"), "mcp", "MCP", node, poolCapabilities, issues);
                 validateIds(tenantId, operatorUserId, extractStringList(config, "skillIds", "skills"), "skill", "Skill", node, poolCapabilities, issues);
             } else if ("parallel_group".equals(nodeType)) {
+                validateClusterNodeConfig(config, node, issues);
                 String executionMode = extractString(config, "executionMode");
                 if (executionMode != null && !CLUSTER_EXECUTION_MODES.contains(executionMode)) {
                     issues.add(issue(
@@ -103,6 +106,62 @@ public class WorkflowNodeConfigValidator {
         }
 
         return issues;
+    }
+
+    private void validateInputNodeConfig(
+        Map<String, Object> config,
+        WorkflowDraftApi.WorkflowNodeRow node,
+        List<WorkflowDraftApi.WorkflowValidationIssue> issues
+    ) {
+        List<Map<String, Object>> fields = extractMapList(config, "inputFields");
+        if (fields.isEmpty()) {
+            issues.add(issue("WORKFLOW_VALIDATION_INPUT_FIELDS_REQUIRED", "节点[" + node.name() + "]至少需要配置一个输入字段", node));
+            return;
+        }
+        Set<String> fieldVariables = new java.util.LinkedHashSet<>();
+        for (Map<String, Object> field : fields) {
+            String variable = rawString(field.get("variable"));
+            if (!isValidVariableName(variable)) {
+                issues.add(issue("WORKFLOW_VALIDATION_INPUT_FIELD_VARIABLE_INVALID", "节点[" + node.name() + "]的输入字段变量名不合法：" + variable, node));
+                continue;
+            }
+            fieldVariables.add(variable);
+        }
+        Set<String> declaredOutputs = variableSet(node.outputVariables());
+        if (!fieldVariables.equals(declaredOutputs)) {
+            issues.add(issue("WORKFLOW_VALIDATION_INPUT_OUTPUT_MISMATCH", "节点[" + node.name() + "]的输入字段变量必须与节点输出变量保持一致", node));
+        }
+    }
+
+    private void validateClusterNodeConfig(
+        Map<String, Object> config,
+        WorkflowDraftApi.WorkflowNodeRow node,
+        List<WorkflowDraftApi.WorkflowValidationIssue> issues
+    ) {
+        List<Map<String, Object>> agents = extractMapList(config, "clusterAgents");
+        if (agents.isEmpty()) {
+            issues.add(issue("WORKFLOW_VALIDATION_CLUSTER_AGENTS_REQUIRED", "节点[" + node.name() + "]至少需要配置一个子智能体", node));
+            return;
+        }
+        Set<String> agentOutputs = new java.util.LinkedHashSet<>();
+        for (int index = 0; index < agents.size(); index++) {
+            String output = rawString(agents.get(index).get("output"));
+            if (!isValidVariableName(output)) {
+                issues.add(issue(
+                    "WORKFLOW_VALIDATION_CLUSTER_AGENT_OUTPUT_INVALID",
+                    "节点[" + node.name() + "]的第 " + (index + 1) + " 个子智能体输出变量名不合法：" + output,
+                    node
+                ));
+                continue;
+            }
+            if (!agentOutputs.add(output)) {
+                issues.add(issue("WORKFLOW_VALIDATION_CLUSTER_AGENT_OUTPUT_DUPLICATED", "节点[" + node.name() + "]存在重复的子智能体输出变量：" + output, node));
+            }
+        }
+        Set<String> declaredOutputs = variableSet(node.outputVariables());
+        if (!agentOutputs.equals(declaredOutputs)) {
+            issues.add(issue("WORKFLOW_VALIDATION_CLUSTER_OUTPUT_MISMATCH", "节点[" + node.name() + "]的子智能体输出必须与节点输出变量保持一致", node));
+        }
     }
 
     private void validateTenantAssetId(
@@ -249,6 +308,20 @@ public class WorkflowNodeConfigValidator {
 
     private static String rawString(Object value) {
         return value == null ? "" : String.valueOf(value).trim();
+    }
+
+    private static boolean isValidVariableName(String value) {
+        return value != null && value.matches("^[a-z][a-z0-9_]*$");
+    }
+
+    private static Set<String> variableSet(List<String> variables) {
+        if (variables == null || variables.isEmpty()) {
+            return Set.of();
+        }
+        return variables.stream()
+            .map(WorkflowNodeConfigValidator::rawString)
+            .filter(value -> !value.isBlank())
+            .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
     }
 
     // ---- 配置解析辅助 ----

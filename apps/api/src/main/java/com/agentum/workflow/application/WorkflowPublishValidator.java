@@ -57,6 +57,7 @@ public class WorkflowPublishValidator {
         if (topologicalOrder.size() != nodes.size()) {
             issues.add(issue("WORKFLOW_VALIDATION_GRAPH_CYCLE", "工作流不能包含循环连线", null));
         }
+        validateLinearExecutionOrder(nodes, edges, issues);
 
         if (triggers.size() == 1) {
             Set<String> reachable = collectReachableNodes(triggers.get(0).nodeId(), outgoing);
@@ -114,6 +115,47 @@ public class WorkflowPublishValidator {
                 }
             }
         }
+    }
+
+    private void validateLinearExecutionOrder(
+        List<WorkflowDraftApi.WorkflowNodeRow> nodes,
+        List<WorkflowDraftApi.WorkflowEdgeRow> edges,
+        List<WorkflowDraftApi.WorkflowValidationIssue> issues
+    ) {
+        if (nodes.size() <= 1) {
+            return;
+        }
+        Set<String> expectedPairs = new LinkedHashSet<>();
+        for (int index = 0; index < nodes.size() - 1; index++) {
+            expectedPairs.add(edgePair(nodes.get(index).nodeId(), nodes.get(index + 1).nodeId()));
+        }
+
+        Set<String> actualPairs = new LinkedHashSet<>();
+        for (WorkflowDraftApi.WorkflowEdgeRow edge : edges) {
+            String pair = edgePair(edge.sourceNodeId(), edge.targetNodeId());
+            if (!actualPairs.add(pair) || !expectedPairs.contains(pair)) {
+                issues.add(issue(
+                    "WORKFLOW_VALIDATION_LINEAR_EDGE_INVALID",
+                    "当前阶段流程必须按左侧积木顺序单线串联，不能存在额外、重复或跨序连线",
+                    null
+                ));
+                break;
+            }
+        }
+        for (String expectedPair : expectedPairs) {
+            if (!actualPairs.contains(expectedPair)) {
+                issues.add(issue(
+                    "WORKFLOW_VALIDATION_LINEAR_EDGE_REQUIRED",
+                    "当前阶段流程必须按左侧积木顺序单线串联，请补齐相邻积木之间的连线",
+                    null
+                ));
+                break;
+            }
+        }
+    }
+
+    private static String edgePair(String sourceNodeId, String targetNodeId) {
+        return sourceNodeId + "->" + targetNodeId;
     }
 
     private static Set<String> collectUpstreamVariables(

@@ -79,6 +79,31 @@ class WorkflowPublishValidatorTest {
             );
     }
 
+    @Test
+    void shouldRejectEdgesThatDoNotMatchLinearBrickOrder() {
+        WorkflowDraftApi.WorkflowPublishValidationResult result = validator.validate(
+            List.of(
+                node("trigger", "trigger", List.of(), List.of("starter")),
+                node("input", "user_input", List.of("starter"), List.of("materials")),
+                node("analysis", "agent", List.of("materials"), List.of("report")),
+                node("delivery", "delivery", List.of("report"), List.of("delivery_record"))
+            ),
+            List.of(
+                edge("e1", "trigger", "input"),
+                edge("e2", "input", "delivery"),
+                edge("e3", "analysis", "delivery")
+            )
+        );
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.issues())
+            .extracting(WorkflowDraftApi.WorkflowValidationIssue::code)
+            .contains(
+                "WORKFLOW_VALIDATION_LINEAR_EDGE_INVALID",
+                "WORKFLOW_VALIDATION_LINEAR_EDGE_REQUIRED"
+            );
+    }
+
     private static WorkflowDraftApi.WorkflowNodeRow node(
         String nodeId,
         String nodeType,

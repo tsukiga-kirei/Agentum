@@ -1267,7 +1267,7 @@ function AgentClusterBrickConfig({
       <div className="workflow-config-list-box">
         <div className="workflow-config-list-header">
           <span>集群智能体</span>
-          <button type="button" onClick={() => setEditingAgent(createClusterAgent(agents.length))} className="agent-button agent-button-primary h-8 px-3 text-xs">
+          <button type="button" onClick={() => setEditingAgent(createClusterAgent(agents.length, node.id))} className="agent-button agent-button-primary h-8 px-3 text-xs">
             <Plus className="h-3.5 w-3.5" aria-hidden="true" />
             新增智能体
           </button>
@@ -1323,7 +1323,12 @@ function AgentClusterBrickConfig({
           onClose={() => setEditingAgent(null)}
           onSave={(agent) => {
             const exists = agents.some((item) => item.id === agent.id);
-            commitAgents(exists ? agents.map((item) => item.id === agent.id ? agent : item) : [...agents, agent]);
+            const usedOutputs = new Set(agents.filter((item) => item.id !== agent.id).map((item) => item.output).filter(Boolean));
+            const normalizedAgent = {
+              ...agent,
+              output: uniqueVariableName(agent.output || createClusterAgentOutputVariable(node.id, agents.length), usedOutputs),
+            };
+            commitAgents(exists ? agents.map((item) => item.id === agent.id ? normalizedAgent : item) : [...agents, normalizedAgent]);
             setEditingAgent(null);
           }}
         />
@@ -2281,7 +2286,11 @@ function createNodeFromTemplate(template: WorkflowBrickTemplate, index: number, 
   const effectiveInputVariables = brickType === "trigger" ? template.defaultInputVariables : (inputVariables.length > 0 ? inputVariables : template.defaultInputVariables);
 
   if (brickType === "input") {
-    const inputFields = readInputFields(rawConfig.inputFields, outputVariables);
+    // 新建输入节点按节点序号同步字段变量，避免多个输入节点都沿用模板默认的 input_1。
+    const inputFields = readInputFields(rawConfig.inputFields, outputVariables).map((field, fieldIndex) => ({
+      ...field,
+      variable: outputVariables[fieldIndex] ?? field.variable,
+    }));
     rawConfig.inputFields = inputFields;
     outputVariables = inputFields.map((field) => field.variable);
   }
@@ -2296,10 +2305,11 @@ function createNodeFromTemplate(template: WorkflowBrickTemplate, index: number, 
   }
 
   if (brickType === "cluster") {
-    const clusterAgents = readClusterAgents(rawConfig.clusterAgents).map((agent) => ({
+    const clusterAgents = readClusterAgents(rawConfig.clusterAgents).map((agent, agentIndex) => ({
       ...agent,
       userPrompt: readString(agent.userPrompt, "") || DEFAULT_CLUSTER_USER_PROMPT,
       systemPrompt: readString(agent.systemPrompt, "") || DEFAULT_SYSTEM_PROMPT,
+      output: createClusterAgentOutputVariable(id, agentIndex),
     }));
     rawConfig.clusterAgents = clusterAgents;
     rawConfig.executionMode = readString(rawConfig.executionMode, "parallel");
@@ -2351,7 +2361,7 @@ function createInputField(index: number): InputFieldConfig {
   };
 }
 
-function createClusterAgent(index: number): ClusterAgentConfig {
+function createClusterAgent(index: number, nodeId = "cluster"): ClusterAgentConfig {
   return {
     id: `cluster_agent_${Date.now().toString(36)}_${index}`,
     name: `子智能体 ${index + 1}`,
@@ -2363,10 +2373,26 @@ function createClusterAgent(index: number): ClusterAgentConfig {
     mcpIds: [],
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
     userPrompt: DEFAULT_CLUSTER_USER_PROMPT,
-    output: `agent_${index + 1}_output`,
+    output: createClusterAgentOutputVariable(nodeId, index),
     allowUserEdit: false,
     allowQuestion: false,
   };
+}
+
+function createClusterAgentOutputVariable(nodeId: string, agentIndex: number) {
+  const nodePrefix = normalizeVariableName(nodeId) || "cluster";
+  return `${nodePrefix}_agent_${agentIndex + 1}_output`;
+}
+
+function uniqueVariableName(value: string, existingVariables: Set<string>) {
+  const base = normalizeVariableName(value) || "agent_output";
+  let candidate = base;
+  let suffix = 2;
+  while (existingVariables.has(candidate)) {
+    candidate = `${base}_${suffix}`;
+    suffix += 1;
+  }
+  return candidate;
 }
 
 function ensureSystemTrigger(nextNodes: WorkflowEditorNode[], catalog: WorkflowDesignerCatalog) {

@@ -143,6 +143,7 @@ docs/                     产品与架构文档
 | [运行态异步执行设计](./docs/runtime-async-execution-design.md) | MQ + Redis 执行解耦、SSE 回放与中断/恢复语义（已落地，仅 async 模式） |
 | [企业 SSO 对接说明](./docs/sso-integration.md) | OIDC 单点登录边界、业务系统配合方式与当前实现状态 |
 | [当前进度](./docs/progress/README.md) | 阶段计划与施工状态 |
+| [流程创建与运行态节点检查说明](./docs/progress/workflow-creation-runtime-node-guide-2026-06-11.md) | 创建流程节点、发布校验、中断/重新执行/恢复进度语义与本轮修复记录 |
 | [AGENTS.md](./AGENTS.md) | 仓库内 AI 代理开发入口 |
 
 ---

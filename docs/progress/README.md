@@ -1,6 +1,6 @@
 # 当前进度与后续计划
 
-更新时间：2026-06-10（冗余清理：删除 `pause_point_count`、`system_user_roles`、空 `packages/ui` 与废弃前端字段；补齐全库字段中文注释；运行态文档去除 inline 模式描述）。
+更新时间：2026-06-11（运行态节点状态矩阵修复：区分主动中断后的重新执行与被动恢复进度；补齐流程创建节点配置校验；新增流程创建与运行态节点检查说明）。
 
 本文档只记录当前施工状态、阶段计划和下一步任务。长期规范、系统说明和架构设计分别维护在：
 
@@ -9,6 +9,7 @@
 - [能力—流程—权限治理](../capability-workflow-governance.md)
 - [AI 运行态接入说明](../ai-runtime-integration.md)
 - [运行态异步执行设计（MQ + Redis）](../runtime-async-execution-design.md)
+- [流程创建与运行态节点检查说明](./workflow-creation-runtime-node-guide-2026-06-11.md)
 
 ## 1. 当前阶段
 

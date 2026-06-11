@@ -94,13 +94,132 @@ class WorkflowNodeConfigValidatorTest {
         when(assetManagementService.canUseSystemCapabilityReference(TENANT_ID, USER_ID, skill.getId(), "skill")).thenReturn(false);
 
         WorkflowDraftApi.WorkflowNodeRow node = new WorkflowDraftApi.WorkflowNodeRow(
-            "agent_1", "agent", "合同分析", 0, 0, List.of(), List.of(), Map.of("skillIds", List.of(skill.getId().toString()))
+            "agent_1",
+            "agent",
+            "合同分析",
+            0,
+            0,
+            List.of(),
+            List.of(),
+            Map.of(
+                "systemPromptTemplateId", "none",
+                "userPromptTemplateId", "none",
+                "systemPrompt", WorkflowPromptDefaults.DEFAULT_SYSTEM_PROMPT,
+                "userPrompt", WorkflowPromptDefaults.DEFAULT_USER_PROMPT,
+                "skillIds", List.of(skill.getId().toString())
+            )
         );
 
         List<WorkflowDraftApi.WorkflowValidationIssue> issues = validator().validateCapabilityReferences(TENANT_ID, USER_ID, List.of(node));
 
         assertThat(issues).extracting(WorkflowDraftApi.WorkflowValidationIssue::code)
             .containsExactly("WORKFLOW_VALIDATION_CAPABILITY_NOT_ASSIGNED");
+    }
+
+    @Test
+    void shouldRejectInputNodeWhenInputFieldsDoNotMatchOutputs() {
+        WorkflowDraftApi.WorkflowNodeRow node = new WorkflowDraftApi.WorkflowNodeRow(
+            "input_1",
+            "user_input",
+            "资料输入",
+            0,
+            0,
+            List.of("starter"),
+            List.of("company_name"),
+            Map.of(
+                "inputFields", List.of(Map.of(
+                    "id", "field_1",
+                    "label", "企业名称",
+                    "variable", "input_1",
+                    "placeholder", "请输入企业名称"
+                ))
+            )
+        );
+
+        List<WorkflowDraftApi.WorkflowValidationIssue> issues = validator().validateCapabilityReferences(TENANT_ID, USER_ID, List.of(node));
+
+        assertThat(issues).extracting(WorkflowDraftApi.WorkflowValidationIssue::code)
+            .containsExactly("WORKFLOW_VALIDATION_INPUT_OUTPUT_MISMATCH");
+    }
+
+    @Test
+    void shouldRejectClusterNodeWithoutAgents() {
+        WorkflowDraftApi.WorkflowNodeRow node = new WorkflowDraftApi.WorkflowNodeRow(
+            "cluster_1",
+            "parallel_group",
+            "智能体集群",
+            0,
+            0,
+            List.of("company_name"),
+            List.of(),
+            Map.of("clusterAgents", List.of())
+        );
+
+        List<WorkflowDraftApi.WorkflowValidationIssue> issues = validator().validateCapabilityReferences(TENANT_ID, USER_ID, List.of(node));
+
+        assertThat(issues).extracting(WorkflowDraftApi.WorkflowValidationIssue::code)
+            .containsExactly("WORKFLOW_VALIDATION_CLUSTER_AGENTS_REQUIRED");
+    }
+
+    @Test
+    void shouldRejectClusterNodeWhenAgentOutputsDoNotMatchNodeOutputs() {
+        WorkflowDraftApi.WorkflowNodeRow node = new WorkflowDraftApi.WorkflowNodeRow(
+            "cluster_1",
+            "parallel_group",
+            "智能体集群",
+            0,
+            0,
+            List.of("company_name"),
+            List.of("cluster_result"),
+            Map.of(
+                "executionMode", "parallel",
+                "clusterAgents", List.of(
+                    Map.of(
+                        "name", "资料核验",
+                        "systemPromptTemplateId", "none",
+                        "userPromptTemplateId", "none",
+                        "systemPrompt", WorkflowPromptDefaults.DEFAULT_SYSTEM_PROMPT,
+                        "userPrompt", WorkflowPromptDefaults.DEFAULT_CLUSTER_USER_PROMPT,
+                        "output", "agent_1_output"
+                    )
+                )
+            )
+        );
+
+        List<WorkflowDraftApi.WorkflowValidationIssue> issues = validator().validateCapabilityReferences(TENANT_ID, USER_ID, List.of(node));
+
+        assertThat(issues).extracting(WorkflowDraftApi.WorkflowValidationIssue::code)
+            .containsExactly("WORKFLOW_VALIDATION_CLUSTER_OUTPUT_MISMATCH");
+    }
+
+    @Test
+    void shouldAcceptClusterNodeWhenAgentOutputsMatchNodeOutputs() {
+        WorkflowDraftApi.WorkflowNodeRow node = new WorkflowDraftApi.WorkflowNodeRow(
+            "cluster_1",
+            "parallel_group",
+            "智能体集群",
+            0,
+            0,
+            List.of("company_name"),
+            List.of("cluster_1_agent_1_output"),
+            Map.of(
+                "executionMode", "parallel",
+                "clusterAgents", List.of(
+                    Map.of(
+                        "name", "资料核验",
+                        "systemPromptTemplateId", "none",
+                        "userPromptTemplateId", "none",
+                        "systemPrompt", WorkflowPromptDefaults.DEFAULT_SYSTEM_PROMPT,
+                        "userPrompt", WorkflowPromptDefaults.DEFAULT_CLUSTER_USER_PROMPT,
+                        "output", "cluster_1_agent_1_output"
+                    )
+                )
+            )
+        );
+
+        List<WorkflowDraftApi.WorkflowValidationIssue> issues = validator().validateCapabilityReferences(TENANT_ID, USER_ID, List.of(node));
+
+        assertThat(issues).isEmpty();
     }
 
     private WorkflowNodeConfigValidator validator() {

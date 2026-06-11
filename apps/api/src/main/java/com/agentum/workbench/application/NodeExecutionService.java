@@ -431,6 +431,12 @@ public class NodeExecutionService {
 
         cancellationGuard.assertExecutable(runId);
         if (!failures.isEmpty()) {
+            java.util.Optional<String> retryableCode = failures.stream()
+                .map(ClusterAgentOutcome::errorCode)
+                .filter(RETRYABLE_ERROR_CODES::contains)
+                .findFirst();
+            String errorCode = retryableCode.orElse("CLUSTER_AGENT_FAILED");
+
             String detail = failures.stream()
                 .map(failure -> failure.name() + "（" + failure.errorMessage() + "）")
                 .reduce((left, right) -> left + "；" + right)
@@ -438,7 +444,7 @@ public class NodeExecutionService {
             // 已成功子智能体结果已落库保留，恢复进度只会重跑失败部分。
             throw new ApiException(
                 HttpStatus.BAD_GATEWAY,
-                "CLUSTER_AGENT_FAILED",
+                errorCode,
                 failures.size() + " 个子智能体执行失败：" + detail
             );
         }
@@ -452,6 +458,12 @@ public class NodeExecutionService {
             }
             result.putAll(output);
             String displayText = clusterAgentDisplayText(output);
+
+            String outputVarName = stringValue(slot.config().get("output"), "");
+            if (!outputVarName.isBlank()) {
+                result.put(outputVarName, displayText);
+            }
+
             Map<String, Object> summaryEntry = new LinkedHashMap<>();
             summaryEntry.put("name", slot.name());
             summaryEntry.put("status", "completed");

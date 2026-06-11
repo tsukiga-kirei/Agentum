@@ -494,9 +494,7 @@ public class WorkbenchRuntimeService {
         List<UUID> resetNodeIds = new ArrayList<>();
         for (WorkflowNodeRunEntity node : nodes) {
             if (node.getSortOrder() >= targetIndex) {
-                if ("agent".equals(node.getNodeType())) {
-                    clearAgentConversationHistory(node, now);
-                }
+                clearNodeConversationHistory(node, now);
                 node.resetToPending(now);
                 resetNodeIds.add(node.getId());
             }
@@ -641,7 +639,7 @@ public class WorkbenchRuntimeService {
         }
         WorkflowNodeRunEntity node = workflowNodeRunRepository.findByIdAndRunId(nodeRunId, runId)
             .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_NODE_RUN_NOT_FOUND", "节点运行不存在"));
-        if (!isAgentRegenerable(node) && !isRestartableState(node.getState())) {
+        if (!isCompletedAiNodeRegenerable(node) && !isRestartableState(node.getState())) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_NODE_RESTART_INVALID", "当前步骤状态不支持重新执行");
         }
         transactionTemplate.executeWithoutResult(status -> {
@@ -661,7 +659,7 @@ public class WorkbenchRuntimeService {
 
     /**
      * 被动「恢复进度」：保留已成功子智能体的落库结果，仅重跑失败/未完成部分，损失最小。
-     * 若节点是用户主动中断（canceled），数据已被清空，自动降级为整步重新执行。
+     * 用户主动中断后的 canceled 节点已清空运行数据，必须走「重新执行」而不是恢复进度。
      */
     /**
      * 单智能体追问：节点已完成且开启「允许追问」时，追加用户消息并基于对话历史续跑。
@@ -1004,23 +1002,23 @@ public class WorkbenchRuntimeService {
         }
         WorkflowNodeRunEntity node = workflowNodeRunRepository.findByIdAndRunId(nodeRunId, runId)
             .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_NODE_RUN_NOT_FOUND", "节点运行不存在"));
+        if ("canceled".equals(node.getState())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_NODE_RECOVER_INTERRUPTED", "当前步骤已被主动中断，请使用重新执行从头重跑");
+        }
         if (!isRecoverableState(node.getState())) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_NODE_RECOVER_INVALID", "当前步骤状态不支持恢复进度");
         }
-        boolean fullRestart = "canceled".equals(node.getState());
         transactionTemplate.executeWithoutResult(status -> {
             terminateRecoverableStaleJobs(runId);
             abortLingeringExecution(runId);
             assertNoExecutionInFlight(runId);
-            prepareNodeReExecution(run, node, fullRestart, principal.userId(), "run_node_recovered", "步骤恢复执行",
-                fullRestart
-                    ? "该步骤曾被主动中断，数据已清空，已降级为从头重新执行。"
-                    : "已保留「" + node.getName() + "」已成功的子智能体结果，仅重跑失败或未完成部分。");
+            prepareNodeReExecution(run, node, false, principal.userId(), "run_node_recovered", "步骤恢复执行",
+                "已保留「" + node.getName() + "」已成功的子智能体结果，仅重跑失败或未完成部分。");
             enqueueExecution(tenantId, runId, node.getId(), node.getNodeType(), principal.userId());
         });
         log.info(
-            "用户恢复节点执行 tenantId={} userId={} runId={} nodeRunId={} fullRestart={} requestId={}",
-            tenantId, principal.userId(), runId, nodeRunId, fullRestart, RequestIds.current()
+            "用户恢复节点执行 tenantId={} userId={} runId={} nodeRunId={} requestId={}",
+            tenantId, principal.userId(), runId, nodeRunId, RequestIds.current()
         );
         return getRunDetail(tenantId, principal, runId);
     }
@@ -1041,8 +1039,8 @@ public class WorkbenchRuntimeService {
     ) {
         Instant now = clock.instant();
         cancellationGuard.clearCancel(run.getId());
-        if ("agent".equals(node.getNodeType()) && fullRestart) {
-            clearAgentConversationHistory(node, now);
+        if (fullRestart) {
+            clearNodeConversationHistory(node, now);
         }
         if (fullRestart) {
             clusterAgentRunRepository.deleteByNodeRunId(node.getId());
@@ -1179,15 +1177,44 @@ public class WorkbenchRuntimeService {
             || WorkflowRunExecutionJobEntity.STATUS_RUNNING.equals(job.getStatus());
     }
 
-    /** 整步重做时移除追问累积的 conversationHistory，避免「重新执行」仍续跑最后一轮追问。 */
-    private static void clearAgentConversationHistory(WorkflowNodeRunEntity node, Instant now) {
+    /**
+     * 整步重做时移除追问累积的 conversationHistory。
+     *
+     * <p>单智能体历史在节点顶层配置；集群子智能体历史挂在 clusterAgents[] 内。
+     * 回退、主动中断后的重新执行都表示用户要重新载入该节点，不能继续沿用旧追问上下文。</p>
+     */
+    @SuppressWarnings("unchecked")
+    private static void clearNodeConversationHistory(WorkflowNodeRunEntity node, Instant now) {
         Map<String, Object> config = node.getConfigSnapshot();
-        if (config == null || config.isEmpty() || !config.containsKey("conversationHistory")) {
+        if (config == null || config.isEmpty()) {
             return;
         }
+        boolean changed = false;
         Map<String, Object> nextConfig = new LinkedHashMap<>(config);
-        nextConfig.remove("conversationHistory");
-        node.replaceConfigSnapshot(nextConfig, now);
+        if (nextConfig.remove("conversationHistory") != null) {
+            changed = true;
+        }
+
+        Object rawAgents = nextConfig.get("clusterAgents");
+        if (rawAgents instanceof List<?> agents) {
+            List<Map<String, Object>> nextAgents = new ArrayList<>();
+            for (Object agent : agents) {
+                if (agent instanceof Map<?, ?> rawAgent) {
+                    Map<String, Object> nextAgent = new LinkedHashMap<>((Map<String, Object>) rawAgent);
+                    if (nextAgent.remove("conversationHistory") != null) {
+                        changed = true;
+                    }
+                    nextAgents.add(nextAgent);
+                }
+            }
+            if (changed) {
+                nextConfig.put("clusterAgents", nextAgents);
+            }
+        }
+
+        if (changed) {
+            node.replaceConfigSnapshot(nextConfig, now);
+        }
     }
 
     /**
@@ -1305,14 +1332,15 @@ public class WorkbenchRuntimeService {
         return "canceled".equals(state) || "failed".equals(state) || "pending".equals(state);
     }
 
-    /** 已完成单智能体步骤允许「重新执行」：清空全部对话与输出后从头重跑。 */
-    private static boolean isAgentRegenerable(WorkflowNodeRunEntity node) {
-        return "agent".equals(node.getNodeType()) && "completed".equals(node.getState());
+    /** 已完成的 AI 生成步骤允许「重新执行」：清空全部对话、输出和子智能体结果后从头重跑。 */
+    private static boolean isCompletedAiNodeRegenerable(WorkflowNodeRunEntity node) {
+        return ("agent".equals(node.getNodeType()) || "parallel_group".equals(node.getNodeType()))
+            && "completed".equals(node.getState());
     }
 
     private static boolean isRecoverableState(String state) {
         // running 允许恢复用于僵死兜底：作业已终态但节点仍停留 running 的极端情况。
-        return "failed".equals(state) || "canceled".equals(state) || "pending".equals(state) || "running".equals(state);
+        return "failed".equals(state) || "pending".equals(state) || "running".equals(state);
     }
 
     private static boolean isUserEditAllowed(Map<String, Object> config) {
@@ -2168,11 +2196,27 @@ public class WorkbenchRuntimeService {
         if (output == null || output.isEmpty()) {
             return;
         }
+
+        Set<String> customSensitiveVariables = new java.util.HashSet<>();
+        WorkflowVersionEntity version = workflowVersionRepository.findById(run.getWorkflowVersionId()).orElse(null);
+        if (version != null) {
+            VersionSnapshot snapshot = readSnapshot(version);
+            if (snapshot != null && snapshot.variables() != null) {
+                for (Map<String, Object> varMap : snapshot.variables()) {
+                    Object nameObj = varMap.get("name");
+                    Object sensitiveObj = varMap.get("sensitive");
+                    if (nameObj instanceof String varName && sensitiveObj instanceof Boolean sensitive && sensitive) {
+                        customSensitiveVariables.add(varName);
+                    }
+                }
+            }
+        }
+
         List<WorkflowVariableSnapshotEntity> snapshots = output.entrySet().stream()
             .filter(entry -> entry.getKey() != null && !entry.getKey().isBlank())
             .filter(entry -> !"errorCode".equals(entry.getKey()) && !"errorMessage".equals(entry.getKey()))
             .map(entry -> {
-                boolean sensitive = isSensitiveVariable(entry.getKey());
+                boolean sensitive = isSensitiveVariable(entry.getKey()) || customSensitiveVariables.contains(entry.getKey());
                 return WorkflowVariableSnapshotEntity.create(
                     run,
                     node,
@@ -2413,16 +2457,22 @@ public class WorkbenchRuntimeService {
             }
         }
 
-        // 中断（canceled）/失败（failed）节点重新推进，或待执行节点残留输出快照时，整步重做前必须复位：
-        // 清空输出与变量快照，并清理非成功的子智能体行（已成功结果保留供恢复进度复用）。
+        // 中断（canceled）/失败（failed）节点重新推进，或待执行节点残留输出快照时，整步重做前必须复位。
+        // canceled 是用户主动放弃当前轮次，必须清空全部子智能体；failed 才允许保留成功子智能体供恢复进度复用。
         boolean needsReset = "canceled".equals(nextNode.getState())
             || "failed".equals(nextNode.getState())
             || ("pending".equals(nextNode.getState())
                 && nextNode.getOutputSnapshot() != null
                 && !nextNode.getOutputSnapshot().isEmpty());
         if (needsReset) {
+            boolean fullRestart = "canceled".equals(nextNode.getState());
+            if (fullRestart) {
+                clearNodeConversationHistory(nextNode, now);
+                clusterAgentRunRepository.deleteByNodeRunId(nextNode.getId());
+            } else {
+                clusterAgentRunRepository.deleteByNodeRunIdAndStatusNot(nextNode.getId(), WorkflowClusterAgentRunEntity.STATUS_SUCCEEDED);
+            }
             nextNode.resetToPending(now);
-            clusterAgentRunRepository.deleteByNodeRunIdAndStatusNot(nextNode.getId(), WorkflowClusterAgentRunEntity.STATUS_SUCCEEDED);
             workflowVariableSnapshotRepository.deleteByRunIdAndNodeRunIdIn(run.getId(), List.of(nextNode.getId()));
         }
         nextNode.start(now);

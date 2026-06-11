@@ -28,6 +28,7 @@ import com.agentum.workflow.domain.WorkflowDefinitionEntity;
 import com.agentum.workflow.domain.WorkflowNodeRunEntity;
 import com.agentum.workflow.domain.WorkflowRunEntity;
 import com.agentum.workflow.domain.WorkflowRunExecutionJobEntity;
+import com.agentum.workflow.domain.WorkflowVariableSnapshotEntity;
 import com.agentum.workflow.domain.WorkflowVersionEntity;
 import com.agentum.workflow.domain.WorkflowWaitingEventEntity;
 import com.agentum.workflow.infrastructure.WorkflowAccessGrantRepository;
@@ -420,6 +421,114 @@ class WorkbenchRuntimeServiceTest {
     }
 
     @Test
+    void shouldClearClusterAgentConversationHistoryWhenRestartingCanceledClusterNode() {
+        WorkbenchRuntimeService service = newService();
+        WorkflowRunEntity run = ownedRun();
+        WorkflowNodeRunEntity node = clusterNode(run);
+        node.replaceConfigSnapshot(clusterConfigWithFollowUpHistory(), NOW);
+        node.cancel(NOW);
+
+        stubTenant();
+        when(workflowRunRepository.findByIdAndTenantId(run.getId(), TENANT_ID)).thenReturn(Optional.of(run));
+        when(workflowNodeRunRepository.findByIdAndRunId(node.getId(), run.getId())).thenReturn(Optional.of(node));
+        when(workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(run.getId())).thenReturn(List.of(node));
+        when(jobRepository.findByRunIdAndStatusIn(eq(run.getId()), any())).thenReturn(List.of());
+        when(jobRepository.findFirstByNodeRunIdOrderByAttemptDesc(node.getId())).thenReturn(Optional.empty());
+
+        service.restartNode(TENANT_ID, businessPrincipal(), run.getId(), node.getId());
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> agents = (List<Map<String, Object>>) node.getConfigSnapshot().get("clusterAgents");
+        assertThat(agents).hasSize(2);
+        assertThat(agents).allSatisfy(agent -> assertThat(agent).doesNotContainKey("conversationHistory"));
+        assertThat(node.getOutputSnapshot()).isEmpty();
+        assertThat(node.getState()).isEqualTo("running");
+        verify(clusterAgentRunRepository).deleteByNodeRunId(node.getId());
+        verify(commandPublisher).publish(any(NodeExecuteCommand.class));
+    }
+
+    @Test
+    void shouldRegenerateCompletedClusterNodeFromScratch() {
+        WorkbenchRuntimeService service = newService();
+        WorkflowRunEntity run = ownedRun();
+        WorkflowNodeRunEntity node = clusterNode(run);
+        node.replaceConfigSnapshot(clusterConfigWithFollowUpHistory(), NOW);
+        node.complete(Map.of(
+            "clusterAgents", List.of(Map.of("name", "子智能体 1", "final_answer", "旧答案")),
+            "final_answer", "旧集群答案"
+        ), NOW);
+
+        stubTenant();
+        when(workflowRunRepository.findByIdAndTenantId(run.getId(), TENANT_ID)).thenReturn(Optional.of(run));
+        when(workflowNodeRunRepository.findByIdAndRunId(node.getId(), run.getId())).thenReturn(Optional.of(node));
+        when(workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(run.getId())).thenReturn(List.of(node));
+        when(jobRepository.findByRunIdAndStatusIn(eq(run.getId()), any())).thenReturn(List.of());
+        when(jobRepository.findFirstByNodeRunIdOrderByAttemptDesc(node.getId())).thenReturn(Optional.empty());
+
+        service.restartNode(TENANT_ID, businessPrincipal(), run.getId(), node.getId());
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> agents = (List<Map<String, Object>>) node.getConfigSnapshot().get("clusterAgents");
+        assertThat(agents).allSatisfy(agent -> assertThat(agent).doesNotContainKey("conversationHistory"));
+        assertThat(node.getState()).isEqualTo("running");
+        assertThat(node.getOutputSnapshot()).isEmpty();
+        verify(clusterAgentRunRepository).deleteByNodeRunId(node.getId());
+        verify(commandPublisher).publish(any(NodeExecuteCommand.class));
+    }
+
+    @Test
+    void shouldRollbackToClusterNodeFromFreshStateWithoutFollowUpHistory() {
+        WorkbenchRuntimeService service = newService();
+        WorkflowRunEntity run = ownedRun(4);
+        run.markSaved(NOW);
+        run.pauseAt("delivery_report", "交付结果", "delivery", 3, NOW);
+
+        WorkflowNodeRunEntity triggerNode = nodeAt(run, "trigger_start", "trigger", "手动触发", 0, NOW);
+        triggerNode.complete(Map.of("summary", "已触发"), NOW);
+        WorkflowNodeRunEntity inputNode = nodeAt(run, "input_company", "user_input", "补充资料", 1, NOW);
+        inputNode.complete(Map.of("company", "云程科技"), NOW);
+        WorkflowNodeRunEntity clusterNode = clusterNode(run);
+        clusterNode.replaceConfigSnapshot(clusterConfigWithFollowUpHistory(), NOW);
+        clusterNode.complete(Map.of(
+            "clusterAgents", List.of(Map.of("name", "子智能体 1", "final_answer", "旧答案")),
+            "final_answer", "旧集群答案"
+        ), NOW);
+        WorkflowNodeRunEntity deliveryNode = nodeAt(run, "delivery_report", "delivery", "交付结果", 3, NOW);
+        deliveryNode.complete(Map.of("summary", "旧交付"), NOW);
+
+        stubTenant();
+        when(workflowRunRepository.findByIdAndTenantId(run.getId(), TENANT_ID)).thenReturn(Optional.of(run));
+        when(workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(run.getId()))
+            .thenReturn(List.of(triggerNode, inputNode, clusterNode, deliveryNode));
+        when(workflowRunEventRepository.findByRunIdOrderByEventTimeAsc(run.getId())).thenReturn(List.of());
+        when(workflowWaitingEventRepository.findByRunIdAndStatusOrderByCreatedAtDesc(run.getId(), "open"))
+            .thenReturn(List.of());
+        when(userAccountRepository.findAllById(any())).thenReturn(List.of());
+        when(jobRepository.findByRunIdAndStatusIn(eq(run.getId()), any())).thenReturn(List.of());
+
+        service.rollbackRun(
+            TENANT_ID,
+            businessPrincipal(),
+            run.getId(),
+            new WorkbenchApi.RollbackRunRequest(clusterNode.getId())
+        );
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> agents = (List<Map<String, Object>>) clusterNode.getConfigSnapshot().get("clusterAgents");
+        assertThat(agents).allSatisfy(agent -> assertThat(agent).doesNotContainKey("conversationHistory"));
+        assertThat(clusterNode.getState()).isEqualTo("pending");
+        assertThat(clusterNode.getOutputSnapshot()).isEmpty();
+        assertThat(deliveryNode.getState()).isEqualTo("pending");
+        assertThat(deliveryNode.getOutputSnapshot()).isEmpty();
+        assertThat(run.getState()).isEqualTo("paused");
+        assertThat(run.getCurrentNodeName()).isEqualTo("智能体集群分析");
+
+        ArgumentCaptor<List<UUID>> resetNodeIdsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(clusterAgentRunRepository).deleteByRunIdAndNodeRunIdIn(eq(run.getId()), resetNodeIdsCaptor.capture());
+        assertThat(resetNodeIdsCaptor.getValue()).containsExactly(clusterNode.getId(), deliveryNode.getId());
+    }
+
+    @Test
     void shouldRecoverWhenStaleQueuedJobBlocksExecution() {
         WorkbenchRuntimeService service = newService();
         WorkflowRunEntity run = ownedRun();
@@ -501,6 +610,46 @@ class WorkbenchRuntimeServiceTest {
         verify(clusterAgentRunRepository, never()).deleteByNodeRunId(any());
         verify(commandPublisher).publish(any(NodeExecuteCommand.class));
         assertThat(node.getState()).isEqualTo("running");
+    }
+
+    @Test
+    void shouldRejectRecoverForCanceledNodeBecauseItMustRestart() {
+        WorkbenchRuntimeService service = newService();
+        WorkflowRunEntity run = ownedRun();
+        WorkflowNodeRunEntity node = clusterNode(run);
+        node.cancel(NOW);
+
+        stubTenant();
+        when(workflowRunRepository.findByIdAndTenantId(run.getId(), TENANT_ID)).thenReturn(Optional.of(run));
+        when(workflowNodeRunRepository.findByIdAndRunId(node.getId(), run.getId())).thenReturn(Optional.of(node));
+
+        assertThatThrownBy(() -> service.recoverNode(TENANT_ID, businessPrincipal(), run.getId(), node.getId()))
+            .isInstanceOf(ApiException.class)
+            .extracting("code")
+            .isEqualTo("WORKBENCH_NODE_RECOVER_INTERRUPTED");
+        verify(commandPublisher, never()).publish(any());
+    }
+
+    @Test
+    void shouldTreatCanceledClusterAdvanceAsFullRestartCleanup() {
+        WorkbenchRuntimeService service = newService();
+        WorkflowRunEntity run = ownedRun();
+        WorkflowNodeRunEntity node = clusterNode(run);
+        node.replaceConfigSnapshot(clusterConfigWithFollowUpHistory(), NOW);
+        node.cancel(NOW);
+
+        when(workflowRunRepository.findByIdAndTenantId(run.getId(), TENANT_ID)).thenReturn(Optional.of(run));
+        when(workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(run.getId())).thenReturn(List.of(node));
+
+        WorkbenchRuntimeService.NextNodeResult result = service.prepareNextNode(TENANT_ID, run.getId(), OPERATOR_ID);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> agents = (List<Map<String, Object>>) node.getConfigSnapshot().get("clusterAgents");
+        assertThat(result.nodeRunId()).isEqualTo(node.getId());
+        assertThat(node.getState()).isEqualTo("running");
+        assertThat(agents).allSatisfy(agent -> assertThat(agent).doesNotContainKey("conversationHistory"));
+        verify(clusterAgentRunRepository).deleteByNodeRunId(node.getId());
+        verify(clusterAgentRunRepository, never()).deleteByNodeRunIdAndStatusNot(any(), any());
     }
 
     @Test
@@ -725,6 +874,68 @@ class WorkbenchRuntimeServiceTest {
         verify(commandPublisher, never()).publish(any());
     }
 
+    @Test
+    void shouldMaskCustomSensitiveVariablesWhenPersistingSnapshots() {
+        WorkbenchRuntimeService service = newService();
+        WorkflowRunEntity run = ownedRun(2);
+        WorkflowNodeRunEntity agentNode = nodeAt(run, "agent_review", "agent", "智能体分析", 1, NOW);
+        agentNode.start(NOW);
+
+        String customSnapshot = """
+            {
+              "name": "自定义敏感变量流程",
+              "variables": [
+                {
+                  "name": "custom_sensitive_data",
+                  "type": "string",
+                  "sensitive": true
+                },
+                {
+                  "name": "normal_data",
+                  "type": "string",
+                  "sensitive": false
+                }
+              ]
+            }
+            """;
+        WorkflowVersionEntity version = WorkflowVersionEntity.create(
+            run.getWorkflowId(),
+            TENANT_ID,
+            1,
+            customSnapshot,
+            1,
+            DESIGNER_ID,
+            NOW
+        );
+
+        when(workflowRunRepository.findById(run.getId())).thenReturn(Optional.of(run));
+        when(workflowNodeRunRepository.findById(agentNode.getId())).thenReturn(Optional.of(agentNode));
+        when(workflowVersionRepository.findById(run.getWorkflowVersionId())).thenReturn(Optional.of(version));
+        when(workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(run.getId()))
+            .thenReturn(List.of(agentNode));
+
+        Map<String, Object> outputs = Map.of(
+            "custom_sensitive_data", "secret-value",
+            "normal_data", "public-value",
+            "password_field", "plaintext-pass"
+        );
+
+        service.saveNodeSuccess(run.getId(), agentNode.getId(), outputs, OPERATOR_ID);
+
+        ArgumentCaptor<List<WorkflowVariableSnapshotEntity>> snapshotsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(workflowVariableSnapshotRepository).saveAll(snapshotsCaptor.capture());
+
+        List<WorkflowVariableSnapshotEntity> snapshots = snapshotsCaptor.getValue();
+        assertThat(snapshots).hasSize(3);
+
+        Map<String, Object> snapshotValues = new java.util.HashMap<>();
+        snapshots.forEach(s -> snapshotValues.put(s.getVariableName(), s.getValueSnapshot().get("value")));
+
+        assertThat(snapshotValues.get("custom_sensitive_data")).isEqualTo("***");
+        assertThat(snapshotValues.get("password_field")).isEqualTo("***");
+        assertThat(snapshotValues.get("normal_data")).isEqualTo("public-value");
+    }
+
     private WorkflowRunEntity ownedRun() {
         return ownedRun(3);
     }
@@ -746,6 +957,31 @@ class WorkbenchRuntimeServiceTest {
 
     private WorkflowNodeRunEntity clusterNode(WorkflowRunEntity run) {
         return nodeAt(run, "cluster_analysis", "parallel_group", "智能体集群分析", 2, NOW);
+    }
+
+    private Map<String, Object> clusterConfigWithFollowUpHistory() {
+        return new LinkedHashMap<>(Map.of(
+            "executionMode", "parallel",
+            "clusterAgents", List.of(
+                new LinkedHashMap<>(Map.of(
+                    "name", "子智能体 1",
+                    "outputMode", "追问确认",
+                    "conversationHistory", List.of(
+                        Map.of("role", "user", "content", "首轮问题"),
+                        Map.of("role", "assistant", "content", "首轮回答"),
+                        Map.of("role", "user", "content", "追问内容")
+                    )
+                )),
+                new LinkedHashMap<>(Map.of(
+                    "name", "子智能体 2",
+                    "outputMode", "追问确认",
+                    "conversationHistory", List.of(
+                        Map.of("role", "user", "content", "另一个首轮问题"),
+                        Map.of("role", "assistant", "content", "另一个回答")
+                    )
+                ))
+            )
+        ));
     }
 
     private WorkflowNodeRunEntity nodeAt(
