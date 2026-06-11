@@ -9,7 +9,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 
 class OpenAiCompatibleModelChatClientTest {
@@ -85,7 +87,7 @@ class OpenAiCompatibleModelChatClientTest {
         Method method = OpenAiCompatibleModelChatClient.class.getDeclaredMethod("buildPayload", ModelChatClient.ChatRequest.class);
         method.setAccessible(true);
         ModelChatClient.ChatRequest request = new ModelChatClient.ChatRequest(
-            java.util.UUID.randomUUID(),
+            UUID.randomUUID(),
             "openai-compatible",
             "https://example.test",
             "sk-test",
@@ -106,7 +108,7 @@ class OpenAiCompatibleModelChatClientTest {
         Method method = OpenAiCompatibleModelChatClient.class.getDeclaredMethod("buildPayload", ModelChatClient.ChatRequest.class);
         method.setAccessible(true);
         ModelChatClient.ChatRequest request = new ModelChatClient.ChatRequest(
-            java.util.UUID.randomUUID(),
+            UUID.randomUUID(),
             "openai-compatible",
             "https://example.test",
             "sk-test",
@@ -126,13 +128,13 @@ class OpenAiCompatibleModelChatClientTest {
     void shouldTreatCancelWatcherFlagAsStreamCancelled() throws Exception {
         Method method = OpenAiCompatibleModelChatClient.class.getDeclaredMethod(
             "isStreamCancelled",
-            java.util.function.BooleanSupplier.class,
+            BooleanSupplier.class,
             AtomicBoolean.class
         );
         method.setAccessible(true);
 
         AtomicBoolean aborted = new AtomicBoolean(true);
-        boolean cancelled = (boolean) method.invoke(null, (java.util.function.BooleanSupplier) () -> false, aborted);
+        boolean cancelled = (boolean) method.invoke(null, (BooleanSupplier) () -> false, aborted);
 
         assertThat(cancelled).isTrue();
     }

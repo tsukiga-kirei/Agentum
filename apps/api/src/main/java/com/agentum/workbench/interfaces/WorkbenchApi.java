@@ -2,6 +2,7 @@ package com.agentum.workbench.interfaces;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -117,7 +118,7 @@ public final class WorkbenchApi {
     public record CompleteTodoRequest(
         String action,
         String comment,
-        java.util.Map<String, Object> payload
+        Map<String, Object> payload
     ) {
     }
 
@@ -205,9 +206,9 @@ public final class WorkbenchApi {
         String name,
         String state,
         String stateLabel,
-        java.util.Map<String, Object> inputs,
-        java.util.Map<String, Object> outputs,
-        java.util.Map<String, Object> config,
+        Map<String, Object> inputs,
+        Map<String, Object> outputs,
+        Map<String, Object> config,
         int sortOrder
     ) {
     }

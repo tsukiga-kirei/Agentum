@@ -3,6 +3,7 @@ package com.agentum.asset.interfaces;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -74,8 +75,8 @@ public final class AssetManagementApi {
         String sourceType,
         UUID baseSystemCapabilityId,
         Map<String, Object> config,
-        java.util.List<UUID> readUserIds,
-        java.util.List<UUID> editUserIds,
+        List<UUID> readUserIds,
+        List<UUID> editUserIds,
         Instant createdAt,
         Instant updatedAt,
         Instant publishedAt
@@ -100,8 +101,8 @@ public final class AssetManagementApi {
         @Size(max = 30) String editScope,
         UUID baseSystemCapabilityId,
         Map<String, Object> config,
-        java.util.List<UUID> readUserIds,
-        java.util.List<UUID> editUserIds
+        List<UUID> readUserIds,
+        List<UUID> editUserIds
     ) {
     }
 
@@ -117,8 +118,8 @@ public final class AssetManagementApi {
     public record UpdateMyAssetAccessRequest(
         @NotBlank @Size(max = 30) String readScope,
         @NotBlank @Size(max = 30) String editScope,
-        java.util.List<UUID> readUserIds,
-        java.util.List<UUID> editUserIds
+        List<UUID> readUserIds,
+        List<UUID> editUserIds
     ) {
     }
 }

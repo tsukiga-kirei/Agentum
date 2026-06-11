@@ -8,6 +8,7 @@ import com.agentum.system.infrastructure.TenantCapabilityGrantRepository;
 import com.agentum.workflow.interfaces.WorkflowDraftApi;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -118,7 +119,7 @@ public class WorkflowNodeConfigValidator {
             issues.add(issue("WORKFLOW_VALIDATION_INPUT_FIELDS_REQUIRED", "节点[" + node.name() + "]至少需要配置一个输入字段", node));
             return;
         }
-        Set<String> fieldVariables = new java.util.LinkedHashSet<>();
+        Set<String> fieldVariables = new LinkedHashSet<>();
         for (Map<String, Object> field : fields) {
             String variable = rawString(field.get("variable"));
             if (!isValidVariableName(variable)) {
@@ -143,7 +144,7 @@ public class WorkflowNodeConfigValidator {
             issues.add(issue("WORKFLOW_VALIDATION_CLUSTER_AGENTS_REQUIRED", "节点[" + node.name() + "]至少需要配置一个子智能体", node));
             return;
         }
-        Set<String> agentOutputs = new java.util.LinkedHashSet<>();
+        Set<String> agentOutputs = new LinkedHashSet<>();
         for (int index = 0; index < agents.size(); index++) {
             String output = rawString(agents.get(index).get("output"));
             if (!isValidVariableName(output)) {
@@ -321,7 +322,7 @@ public class WorkflowNodeConfigValidator {
         return variables.stream()
             .map(WorkflowNodeConfigValidator::rawString)
             .filter(value -> !value.isBlank())
-            .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
+            .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
     // ---- 配置解析辅助 ----

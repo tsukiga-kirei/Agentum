@@ -8,6 +8,7 @@ import com.agentum.shared.api.RequestIds;
 import com.agentum.shared.pagination.PageResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
@@ -132,7 +133,7 @@ public class AssetManagementController {
     }
 
     @GetMapping("/shareable-members")
-    public ApiResponse<java.util.List<AssetManagementApi.ShareableMemberRow>> listShareableMembers(
+    public ApiResponse<List<AssetManagementApi.ShareableMemberRow>> listShareableMembers(
         @PathVariable UUID tenantId,
         @AuthenticationPrincipal CurrentUserPrincipal principal,
         HttpServletRequest request

@@ -51,6 +51,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -928,7 +929,7 @@ class WorkbenchRuntimeServiceTest {
         List<WorkflowVariableSnapshotEntity> snapshots = snapshotsCaptor.getValue();
         assertThat(snapshots).hasSize(3);
 
-        Map<String, Object> snapshotValues = new java.util.HashMap<>();
+        Map<String, Object> snapshotValues = new HashMap<>();
         snapshots.forEach(s -> snapshotValues.put(s.getVariableName(), s.getValueSnapshot().get("value")));
 
         assertThat(snapshotValues.get("custom_sensitive_data")).isEqualTo("***");

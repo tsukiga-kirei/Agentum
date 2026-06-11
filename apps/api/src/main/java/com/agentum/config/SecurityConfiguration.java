@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -107,7 +108,7 @@ public class SecurityConfiguration {
         HttpStatus status,
         String code,
         String message
-    ) throws java.io.IOException {
+    ) throws IOException {
         log.warn("安全访问被拒绝 path={} code={} status={} requestId={}", request.getRequestURI(), code, status.value(), RequestIds.current(request));
         response.setStatus(status.value());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);

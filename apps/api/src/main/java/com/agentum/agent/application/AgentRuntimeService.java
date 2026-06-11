@@ -26,8 +26,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -141,9 +144,9 @@ public class AgentRuntimeService {
         List<SkillRuntimeService.SkillToolBinding> skillTools = skillRuntimeService.resolveSkillTools(request.run().getTenantId(), config);
         List<ModelChatClient.ToolDefinition> toolDefinitions = buildToolDefinitions(mcpTools, skillTools);
         Map<String, McpRuntimeService.McpToolBinding> mcpToolByName = mcpTools.stream()
-            .collect(java.util.stream.Collectors.toMap(McpRuntimeService.McpToolBinding::functionName, tool -> tool, (left, right) -> left, LinkedHashMap::new));
+            .collect(Collectors.toMap(McpRuntimeService.McpToolBinding::functionName, tool -> tool, (left, right) -> left, LinkedHashMap::new));
         Map<String, SkillRuntimeService.SkillToolBinding> skillToolByName = skillTools.stream()
-            .collect(java.util.stream.Collectors.toMap(SkillRuntimeService.SkillToolBinding::functionName, tool -> tool, (left, right) -> left, LinkedHashMap::new));
+            .collect(Collectors.toMap(SkillRuntimeService.SkillToolBinding::functionName, tool -> tool, (left, right) -> left, LinkedHashMap::new));
 
         String systemPrompt = promptContentResolver.resolveSystemPrompt(request.run().getTenantId(), config);
         String userPrompt = promptContentResolver.resolveUserPrompt(request.run().getTenantId(), config);
@@ -401,7 +404,7 @@ public class AgentRuntimeService {
             clock.instant()
         );
         modelCallLogRepository.save(callLog);
-        java.util.concurrent.CompletableFuture<ModelChatClient.ChatResult> future = new java.util.concurrent.CompletableFuture<>();
+        CompletableFuture<ModelChatClient.ChatResult> future = new CompletableFuture<>();
         StringBuilder displayText = new StringBuilder();
         StringBuilder streamedFinalAnswer = new StringBuilder();
         modelChatClient.chatStream(buildModelChatRequest(
@@ -450,7 +453,7 @@ public class AgentRuntimeService {
                 emitFinalAnswer(eventSink, resolvedAnswer);
             }
             return new LoggedChatResult(result, callLogId(callLog), streamedDisplay);
-        } catch (java.util.concurrent.ExecutionException exception) {
+        } catch (ExecutionException exception) {
             if (exception.getCause() instanceof ApiException apiException) {
                 throw apiException;
             }
@@ -490,7 +493,7 @@ public class AgentRuntimeService {
             clock.instant()
         );
         modelCallLogRepository.save(callLog);
-        java.util.concurrent.CompletableFuture<ModelChatClient.ChatResult> future = new java.util.concurrent.CompletableFuture<>();
+        CompletableFuture<ModelChatClient.ChatResult> future = new CompletableFuture<>();
         StringBuilder accumulated = new StringBuilder();
         modelChatClient.chatStream(buildModelChatRequest(
             request,
@@ -524,7 +527,7 @@ public class AgentRuntimeService {
             ModelChatClient.ChatResult result = future.get();
             modelCallLogIds.add(callLogId(callLog));
             return result.content();
-        } catch (java.util.concurrent.ExecutionException exception) {
+        } catch (ExecutionException exception) {
             if (exception.getCause() instanceof ApiException apiException) {
                 throw apiException;
             }

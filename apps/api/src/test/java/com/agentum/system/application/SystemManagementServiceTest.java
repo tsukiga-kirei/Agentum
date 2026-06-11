@@ -37,6 +37,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -580,7 +581,7 @@ class SystemManagementServiceTest {
             "",
             "medium",
             "active",
-            java.util.Map.of("transport", "stdio", "command", "node server.js"),
+            Map.of("transport", "stdio", "command", "node server.js"),
             Instant.parse("2026-05-15T08:00:00Z")
         );
         UUID capabilityId = entity.getId();
@@ -603,7 +604,7 @@ class SystemManagementServiceTest {
             "",
             "medium",
             "draft",
-            java.util.Map.of("transport", "stdio", "command", "node server.js")
+            Map.of("transport", "stdio", "command", "node server.js")
         )))
             .isInstanceOf(ApiException.class)
             .hasMessageContaining("已被租户启用");
@@ -620,7 +621,7 @@ class SystemManagementServiceTest {
             "",
             "medium",
             "draft",
-            java.util.Map.of("transport", "sse", "sseUrl", "http://localhost:18080/sse"),
+            Map.of("transport", "sse", "sseUrl", "http://localhost:18080/sse"),
             Instant.parse("2026-05-15T08:00:00Z")
         );
         UUID capabilityId = entity.getId();
@@ -637,7 +638,7 @@ class SystemManagementServiceTest {
             "",
             "medium",
             "active",
-            java.util.Map.of("transport", "sse", "sseUrl", "http://localhost:18080/sse")
+            Map.of("transport", "sse", "sseUrl", "http://localhost:18080/sse")
         ));
 
         assertThat(row.connectivityStatus()).isEqualTo("online");
@@ -656,7 +657,7 @@ class SystemManagementServiceTest {
             "",
             "medium",
             "active",
-            java.util.Map.of("transport", "sse", "sseUrl", "http://localhost:18080/sse"),
+            Map.of("transport", "sse", "sseUrl", "http://localhost:18080/sse"),
             Instant.parse("2026-05-15T08:00:00Z")
         );
         UUID capabilityId = entity.getId();
@@ -673,7 +674,7 @@ class SystemManagementServiceTest {
             "",
             "medium",
             "active",
-            java.util.Map.of("transport", "sse", "sseUrl", "http://localhost:18081/sse")
+            Map.of("transport", "sse", "sseUrl", "http://localhost:18081/sse")
         ));
 
         assertThat(row.connectivityStatus()).isEqualTo("stale");
@@ -701,7 +702,7 @@ class SystemManagementServiceTest {
             "只通过 SSE 接入的测试 MCP",
             "medium",
             "active",
-            java.util.Map.of(
+            Map.of(
                 "transport", "stdio",
                 "command", "node server.js",
                 "sseUrl", "http://localhost:18080/sse"
@@ -731,7 +732,7 @@ class SystemManagementServiceTest {
             "",
             "medium",
             "active",
-            java.util.Map.of()
+            Map.of()
         )))
             .isInstanceOf(ApiException.class)
             .hasMessageContaining("SSE 地址不能为空");
@@ -757,7 +758,7 @@ class SystemManagementServiceTest {
             "通过 Mailpit 验证邮箱交付",
             "high",
             "active",
-            java.util.Map.of(
+            Map.of(
                 "deliveryChannel", "email",
                 "smtpHost", "localhost",
                 "smtpPort", "1025",
@@ -769,7 +770,7 @@ class SystemManagementServiceTest {
         ));
 
         assertThat(savedCapabilities).hasSize(1);
-        java.util.Map<String, Object> storedConfig = savedCapabilities.getFirst().getConfig();
+        Map<String, Object> storedConfig = savedCapabilities.getFirst().getConfig();
         assertThat(storedConfig)
             .containsEntry("sourceType", "builtin")
             .containsEntry("deliveryChannel", "email")
@@ -807,7 +808,7 @@ class SystemManagementServiceTest {
             "通过外部适配器创建 OA 流程",
             "high",
             "active",
-            java.util.Map.of(
+            Map.of(
                 "sourceType", "custom",
                 "implementationKey", "custom-oa-delivery",
                 "manifestPath", "capabilities/delivery/custom-oa-delivery/manifest.yaml",

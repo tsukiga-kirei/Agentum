@@ -1,6 +1,7 @@
 package com.agentum.workflow.application;
 
 import com.agentum.workflow.interfaces.WorkflowDraftApi;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.stereotype.Service;
@@ -146,7 +147,7 @@ public class WorkflowDesignerCatalogService {
     }
 
     private Map<String, Object> clusterAgent(int index) {
-        Map<String, Object> agent = new java.util.LinkedHashMap<>();
+        Map<String, Object> agent = new LinkedHashMap<>();
         agent.put("id", "cluster_agent_" + index);
         agent.put("name", "子智能体 " + index);
         agent.put("agentAssetId", "custom");

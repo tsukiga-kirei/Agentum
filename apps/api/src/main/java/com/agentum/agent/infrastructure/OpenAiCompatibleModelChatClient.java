@@ -7,9 +7,12 @@ import com.agentum.shared.api.RequestIds;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -151,8 +154,8 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
                     InputStream rawBody = response.getBody();
                     AtomicBoolean abortedByCancel = new AtomicBoolean(false);
                     Thread cancelWatcher = startStreamCancelWatcher(request.cancelProbe(), rawBody, abortedByCancel);
-                    try (java.io.BufferedReader reader = new java.io.BufferedReader(
-                            new java.io.InputStreamReader(rawBody, java.nio.charset.StandardCharsets.UTF_8))) {
+                    try (BufferedReader reader = new BufferedReader(
+                            new InputStreamReader(rawBody, StandardCharsets.UTF_8))) {
                         String line;
                         StringBuilder accumulated = new StringBuilder();
                         String responseId = "";

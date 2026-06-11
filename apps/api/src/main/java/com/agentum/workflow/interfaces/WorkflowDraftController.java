@@ -9,6 +9,7 @@ import com.agentum.workflow.application.WorkflowDesignerCatalogService;
 import com.agentum.workflow.application.WorkflowDraftService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -77,7 +78,7 @@ public class WorkflowDraftController {
     }
 
     @GetMapping("/shareable-members")
-    public ApiResponse<java.util.List<WorkflowDraftApi.ShareableMemberRow>> listShareableMembers(
+    public ApiResponse<List<WorkflowDraftApi.ShareableMemberRow>> listShareableMembers(
         @PathVariable UUID tenantId,
         @AuthenticationPrincipal CurrentUserPrincipal principal,
         HttpServletRequest request

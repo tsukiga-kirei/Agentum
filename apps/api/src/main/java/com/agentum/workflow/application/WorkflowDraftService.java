@@ -33,6 +33,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -171,7 +172,7 @@ public class WorkflowDraftService {
             .distinct()
             .map(userId -> userAccountRepository.findById(userId).orElse(null))
             .filter(user -> user != null && ACTIVE_STATUS.equals(user.getStatus()))
-            .sorted(java.util.Comparator.comparing(UserAccount::getDisplayName))
+            .sorted(Comparator.comparing(UserAccount::getDisplayName))
             .map(user -> new WorkflowDraftApi.ShareableMemberRow(user.getId(), user.getUsername(), user.getDisplayName()))
             .toList();
     }

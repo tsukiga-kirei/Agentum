@@ -40,6 +40,7 @@ import com.agentum.workflow.infrastructure.WorkflowRunRepository;
 import com.agentum.workflow.infrastructure.WorkflowVersionRepository;
 import com.agentum.workflow.infrastructure.WorkflowVariableSnapshotRepository;
 import com.agentum.workflow.infrastructure.WorkflowWaitingEventRepository;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -2197,7 +2198,7 @@ public class WorkbenchRuntimeService {
             return;
         }
 
-        Set<String> customSensitiveVariables = new java.util.HashSet<>();
+        Set<String> customSensitiveVariables = new HashSet<>();
         WorkflowVersionEntity version = workflowVersionRepository.findById(run.getWorkflowVersionId()).orElse(null);
         if (version != null) {
             VersionSnapshot snapshot = readSnapshot(version);

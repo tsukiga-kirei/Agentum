@@ -27,6 +27,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -431,7 +432,7 @@ public class NodeExecutionService {
 
         cancellationGuard.assertExecutable(runId);
         if (!failures.isEmpty()) {
-            java.util.Optional<String> retryableCode = failures.stream()
+            Optional<String> retryableCode = failures.stream()
                 .map(ClusterAgentOutcome::errorCode)
                 .filter(RETRYABLE_ERROR_CODES::contains)
                 .findFirst();

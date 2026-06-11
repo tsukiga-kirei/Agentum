@@ -22,6 +22,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -187,7 +189,7 @@ class AgentRuntimeServiceTest {
             "20260605-TEST",
             NOW
         );
-        Map<String, Object> config = new java.util.LinkedHashMap<>(Map.of(
+        Map<String, Object> config = new LinkedHashMap<>(Map.of(
             "systemPrompt", "你是授信分析智能体",
             "userPrompt", "请分析 {{company}}",
             "conversationHistory", List.of(
@@ -240,7 +242,7 @@ class AgentRuntimeServiceTest {
 
     private static final class ScriptedModelChatClient implements ModelChatClient {
 
-        private final java.util.ArrayList<ChatRequest> requests = new java.util.ArrayList<>();
+        private final ArrayList<ChatRequest> requests = new ArrayList<>();
 
         @Override
         public ChatResult chat(ChatRequest request) {
@@ -273,7 +275,7 @@ class AgentRuntimeServiceTest {
     /** 追问续聊测试专用：首轮直接提交 final_answer，避免工具循环干扰 messages 断言。 */
     private static final class FollowUpFinalAnswerChatClient implements ModelChatClient {
 
-        private final java.util.ArrayList<ChatRequest> requests = new java.util.ArrayList<>();
+        private final ArrayList<ChatRequest> requests = new ArrayList<>();
 
         @Override
         public ChatResult chat(ChatRequest request) {
