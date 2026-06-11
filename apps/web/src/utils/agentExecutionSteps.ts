@@ -57,12 +57,6 @@ export function buildModelOutputSteps(step: RuntimePreviewStep, finalAnswer: str
     });
   }
 
-  (step.chatMessages ?? [])
-    .filter((message) => message.role === "assistant")
-    .forEach((message, index) => {
-      appendOutput(`persisted-model-output-${message.id || index}`, "生成最终答案", message.content);
-    });
-
   const outputs = step.outputs ?? [];
   const rawOutputLabels = ["model_content", "modelContent", "raw_content", "rawContent", "response_content", "responseContent", "content", "responseBody"];
   rawOutputLabels.forEach((label) => {

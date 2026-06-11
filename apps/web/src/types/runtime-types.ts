@@ -47,6 +47,8 @@ export type RuntimeChatMessage = {
   role: "user" | "assistant" | "system";
   author: string;
   content: string;
+  /** 当前 assistant 回复对应的工具/生成步骤 */
+  processSteps?: AgentExecutionStep[];
   /** 是否正在流式输出中 */
   streaming?: boolean;
   /** 消息产生的时间戳 */

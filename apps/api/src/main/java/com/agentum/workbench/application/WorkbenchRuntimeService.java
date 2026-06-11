@@ -1162,7 +1162,13 @@ public class WorkbenchRuntimeService {
                     String role = String.valueOf(rawMap.get("role")).trim();
                     String content = String.valueOf(rawMap.get("content")).trim();
                     if (("user".equals(role) || "assistant".equals(role)) && !content.isBlank()) {
-                        history.add(Map.of("role", role, "content", content));
+                        Map<String, Object> message = new LinkedHashMap<>();
+                        message.put("role", role);
+                        message.put("content", content);
+                        if (rawMap.get("processSteps") instanceof List<?> processSteps) {
+                            message.put("processSteps", processSteps);
+                        }
+                        history.add(message);
                     }
                 }
             }

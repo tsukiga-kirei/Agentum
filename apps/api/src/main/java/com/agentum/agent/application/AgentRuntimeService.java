@@ -166,6 +166,7 @@ public class AgentRuntimeService {
         List<Map<String, Object>> toolCallSummaries = new ArrayList<>();
         String finalAnswer = "";
         String finalModelContent = "";
+        String finalAnswerSource = "";
         eventSink.onPhase("preparing", "正在装配变量、Skill 和 MCP 工具。");
 
         try {
@@ -184,6 +185,7 @@ public class AgentRuntimeService {
                 String resolvedAnswer = resolveFinalAnswerContent(result, loggedResult.streamedDisplayText());
                 if (!resolvedAnswer.isBlank()) {
                     finalAnswer = resolvedAnswer;
+                    finalAnswerSource = isFinalAnswerToolResult(result, loggedResult.streamedDisplayText()) ? "final_answer_tool" : "model_content";
                     if (!streamFinalAnswer) {
                         emitFinalAnswer(eventSink, finalAnswer);
                     }
@@ -195,6 +197,7 @@ public class AgentRuntimeService {
                     .toList();
                 if (executableToolCalls.isEmpty()) {
                     finalAnswer = result.content();
+                    finalAnswerSource = "model_content";
                     if (!streamFinalAnswer) {
                         emitFinalAnswer(eventSink, finalAnswer);
                     }
@@ -215,6 +218,7 @@ public class AgentRuntimeService {
                 assertRunNotCancelled(request.run().getId());
                 eventSink.onPhase("model_calling", "工具循环达到上限，正在汇总最终答案。");
                 finalAnswer = synthesizeFinalAnswer(request, provider, modelName, messages, options, streamFinalAnswer, eventSink, modelCallLogIds);
+                finalAnswerSource = "synthesized";
                 if (finalModelContent.isBlank()) {
                     finalModelContent = finalAnswer;
                 }
@@ -226,6 +230,7 @@ public class AgentRuntimeService {
                 modelCallLogIds,
                 toolCallSummaries,
                 finalAnswer,
+                finalAnswerSource,
                 finalModelContent,
                 renderedUserPrompt
             );
@@ -570,7 +575,10 @@ public class AgentRuntimeService {
     private List<Map<String, Object>> buildChatMessages(
         Map<String, Object> config,
         String renderedUserPrompt,
-        String finalAnswer
+        String finalAnswer,
+        String finalAnswerSource,
+        String modelContent,
+        List<Map<String, Object>> toolCallSummaries
     ) {
         List<Map<String, Object>> messages = new ArrayList<>();
         List<Map<String, Object>> history = readConversationHistory(config);
@@ -579,8 +587,51 @@ public class AgentRuntimeService {
         } else {
             messages.addAll(history);
         }
-        messages.add(Map.of("role", "assistant", "content", finalAnswer));
+        Map<String, Object> assistantMessage = new LinkedHashMap<>();
+        assistantMessage.put("role", "assistant");
+        assistantMessage.put("content", finalAnswer);
+        List<Map<String, Object>> processSteps = buildChatMessageProcessSteps(modelContent, finalAnswerSource, toolCallSummaries);
+        if (!processSteps.isEmpty()) {
+            assistantMessage.put("processSteps", processSteps);
+        }
+        messages.add(assistantMessage);
         return messages;
+    }
+
+    private List<Map<String, Object>> buildChatMessageProcessSteps(
+        String modelContent,
+        String finalAnswerSource,
+        List<Map<String, Object>> toolCallSummaries
+    ) {
+        List<Map<String, Object>> steps = new ArrayList<>();
+        for (Map<String, Object> tool : toolCallSummaries == null ? List.<Map<String, Object>>of() : toolCallSummaries) {
+            String toolType = stringValue(tool.get("toolType"));
+            if (!"mcp".equals(toolType) && !"skill".equals(toolType)) {
+                continue;
+            }
+            Map<String, Object> step = new LinkedHashMap<>();
+            step.put("kind", "tool");
+            step.put("title", "skill".equals(toolType)
+                ? "读取 Skill：" + stringValue(tool.get("toolName"))
+                : "调用 MCP：" + stringValue(tool.get("toolName")));
+            step.put("summary", stringValue(tool.get("summary")));
+            step.put("status", "failed".equals(stringValue(tool.get("status"))) ? "error" : "done");
+            step.put("detail", stringValue(tool.get("summary")));
+            step.put("toolType", toolType);
+            steps.add(step);
+        }
+        boolean shouldKeepModelContentStep = !steps.isEmpty() || "final_answer_tool".equals(finalAnswerSource);
+        if (shouldKeepModelContentStep && !firstNonBlank(modelContent).isBlank()) {
+            Map<String, Object> step = new LinkedHashMap<>();
+            step.put("kind", "model_output");
+            step.put("title", "生成最终答案");
+            step.put("summary", "可展开查看");
+            step.put("status", "done");
+            step.put("detail", modelContent);
+            step.put("toolType", "model");
+            steps.add(step);
+        }
+        return steps;
     }
 
     private Map<String, Object> buildOutputs(
@@ -589,6 +640,7 @@ public class AgentRuntimeService {
         List<String> modelCallLogIds,
         List<Map<String, Object>> toolCallSummaries,
         String finalAnswer,
+        String finalAnswerSource,
         String modelContent,
         String renderedUserPrompt
     ) {
@@ -596,8 +648,9 @@ public class AgentRuntimeService {
         String outputName = firstNonBlank(stringValue(config.get("output")), stringValue(config.get("outputVariable")), "agent_response");
         outputs.put(outputName, finalAnswer);
         outputs.put("final_answer", finalAnswer);
-        // 前端过程区需要稳定展示模型普通 content/context；即使它与 final_answer 相同，也保留该字段，
-        // 避免执行完成后只剩底部答案而没有可追溯步骤。
+        outputs.put("final_answer_source", firstNonBlank(finalAnswerSource, "model_content"));
+        // 前端按 final_answer_source 判断 content/context 是过程步骤还是最终正文回退；
+        // 字段本身需要稳定保留，避免刷新后丢失来源判断依据。
         if (!firstNonBlank(modelContent).isBlank()) {
             outputs.put("model_content", modelContent);
         }
@@ -606,7 +659,7 @@ public class AgentRuntimeService {
         outputs.put("agentMode", "react");
         outputs.put("toolCalls", toolCallSummaries);
         outputs.put("modelCallLogIds", modelCallLogIds);
-        outputs.put("chatMessages", buildChatMessages(config, renderedUserPrompt, finalAnswer));
+        outputs.put("chatMessages", buildChatMessages(config, renderedUserPrompt, finalAnswer, finalAnswerSource, modelContent, toolCallSummaries));
         if (!modelCallLogIds.isEmpty()) {
             outputs.put("modelCallLogId", modelCallLogIds.get(modelCallLogIds.size() - 1));
         }
@@ -636,6 +689,28 @@ public class AgentRuntimeService {
      */
     String resolveFinalAnswerContent(ModelChatClient.ChatResult result, String streamedDisplayText) {
         return FinalAnswerContentResolver.resolve(result, streamedDisplayText, objectMapper);
+    }
+
+    private boolean isFinalAnswerToolResult(ModelChatClient.ChatResult result, String streamedDisplayText) {
+        if (!firstNonBlank(streamedDisplayText).isBlank()) {
+            return true;
+        }
+        if (result == null) {
+            return false;
+        }
+        for (ModelChatClient.ToolCall toolCall : result.toolCalls()) {
+            if (!"final_answer".equals(toolCall.name())) {
+                continue;
+            }
+            Map<String, Object> arguments = parseJsonObject(toolCall.argumentsJson());
+            if (!stringValue(arguments.get("answer")).isBlank()) {
+                return true;
+            }
+            if (!FinalAnswerContentResolver.extractPartialAnswerFromTruncatedJson(toolCall.argumentsJson()).isBlank()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     static String extractPartialAnswerFromTruncatedJson(String rawJson) {

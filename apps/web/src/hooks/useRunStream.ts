@@ -10,7 +10,6 @@ import type {
 } from "../types/runtime-types";
 import {
   finalizeFinalAnswerStep,
-  upsertFinalAnswerStep,
   upsertModelOutputStep,
   upsertPhaseStep,
   upsertToolStep,
@@ -383,7 +382,6 @@ export function useRunStream(
           setExecutionSteps((prev) => upsertModelOutputStep(prev, accumulatedContent, true));
         } else {
           setStreamingText(accumulatedContent);
-          setExecutionSteps((prev) => upsertFinalAnswerStep(prev, accumulatedContent, true));
         }
         break;
       }

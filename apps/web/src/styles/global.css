@@ -3999,6 +3999,11 @@ textarea:focus-visible {
 
 .agent-turn-tools--status-only .agent-turn-tools-toggle--static {
   cursor: default;
+  justify-content: flex-start;
+}
+
+.agent-turn-tools-toggle--static .agent-turn-tools-actions {
+  margin-left: auto;
 }
 
 .agent-turn-tools-toggle {

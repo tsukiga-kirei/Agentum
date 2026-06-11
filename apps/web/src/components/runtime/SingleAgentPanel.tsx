@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { message } from "antd";
 import {
   Bot,
@@ -10,7 +10,7 @@ import {
   MessageSquarePlus,
   PencilLine,
 } from "lucide-react";
-import type { AgentExecutionStep, RuntimePreviewStep } from "../../types/runtime-types";
+import type { AgentExecutionStep, RuntimeChatMessage, RuntimePreviewStep } from "../../types/runtime-types";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { AnswerEditModal } from "./AnswerEditModal";
 import { FollowUpModal } from "./FollowUpModal";
@@ -40,6 +40,7 @@ type ConversationTurn = {
   userMessage: string;
   toolSteps: AgentExecutionStep[];
   finalAnswer: string;
+  current: boolean;
 };
 
 function formatElapsed(streamStartedAt: number | null): string {
@@ -55,31 +56,112 @@ function readInitialUserPrompt(config: Record<string, unknown>): string {
   return String(prompt).trim();
 }
 
-function readUserPrompt(
-  messages: Array<{ role: string; content: string }> | undefined,
-  config: Record<string, unknown>,
-): string {
-  const userMessages = (messages ?? []).filter((message) => message.role === "user");
-  const latestUser = userMessages[userMessages.length - 1]?.content;
-  if (latestUser?.trim()) {
-    return latestUser.trim();
-  }
-  return readInitialUserPrompt(config);
+function firstNonBlank(...values: Array<string | undefined>): string {
+  return values.find((value) => value?.trim())?.trim() ?? "";
 }
 
-function buildConversationTurn(
-  userMessage: string,
+function normalizeForCompare(value: string | undefined): string {
+  return (value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function hasToolResultStep(steps: AgentExecutionStep[]): boolean {
+  return steps.some((step) => step.kind === "tool" && !!firstNonBlank(step.detail, step.summary, step.title));
+}
+
+function readStepOutput(step: RuntimePreviewStep, labels: string[]): string {
+  const field = (step.outputs ?? []).find((item) => labels.includes(item.label));
+  return field?.value?.trim() ?? "";
+}
+
+function hasFinalAnswerToolResult(step: RuntimePreviewStep): boolean {
+  const source = readStepOutput(step, ["final_answer_source", "finalAnswerSource"]);
+  if (source) {
+    return source === "final_answer_tool";
+  }
+  const finalAnswer = readStepOutput(step, ["final_answer", "agent_response"]);
+  const modelContent = readStepOutput(step, ["model_content", "modelContent"]);
+  return !!finalAnswer && !!modelContent && normalizeForCompare(finalAnswer) !== normalizeForCompare(modelContent);
+}
+
+function buildConversationTurns(
+  messages: RuntimeChatMessage[] | undefined,
+  config: Record<string, unknown>,
   toolSteps: AgentExecutionStep[],
   options: {
     finalAnswer: string;
+    running: boolean;
+    hasFinalAnswerToolResult: boolean;
   },
-): ConversationTurn {
-  return {
-    id: "turn-current",
-    userMessage,
-    toolSteps,
-    finalAnswer: options.finalAnswer,
-  };
+): ConversationTurn[] {
+  const turns: ConversationTurn[] = [];
+  let pendingUser = "";
+
+  (messages ?? []).forEach((message) => {
+    const content = message.content?.trim() ?? "";
+    if (!content) {
+      return;
+    }
+    if (message.role === "user") {
+      pendingUser = content;
+      return;
+    }
+    if (message.role === "assistant") {
+      turns.push({
+        id: `turn-${message.id}`,
+        userMessage: pendingUser,
+        toolSteps: normalizeTurnSteps(message.processSteps ?? [], { running: false }),
+        finalAnswer: content,
+        current: false,
+      });
+      pendingUser = "";
+    }
+  });
+
+  if (pendingUser) {
+    turns.push({
+      id: `turn-pending-${turns.length}`,
+      userMessage: pendingUser,
+      toolSteps: [],
+      finalAnswer: "",
+      current: false,
+    });
+  }
+
+  if (turns.length === 0) {
+    const initialPrompt = readInitialUserPrompt(config);
+    turns.push({
+      id: "turn-current",
+      userMessage: initialPrompt,
+      toolSteps: [],
+      finalAnswer: "",
+      current: false,
+    });
+  }
+
+  const currentTurnIndex = turns.length - 1;
+  return turns.map((turn, index) => {
+    if (index !== currentTurnIndex) {
+      return turn;
+    }
+    return {
+      ...turn,
+      toolSteps: normalizeTurnSteps(dedupeProcessSteps([...(turn.toolSteps ?? []), ...toolSteps]), {
+        running: options.running,
+        hasFinalAnswerToolResult: options.hasFinalAnswerToolResult,
+      }),
+      finalAnswer: options.finalAnswer.trim() ? options.finalAnswer : options.running ? "" : turn.finalAnswer,
+      current: true,
+    };
+  });
+}
+
+function normalizeTurnSteps(steps: AgentExecutionStep[], options?: { running?: boolean; hasFinalAnswerToolResult?: boolean }): AgentExecutionStep[] {
+  const withoutFinalToolSteps = steps.filter((step) => step.kind !== "final_answer");
+  const hasToolResult = hasToolResultStep(withoutFinalToolSteps);
+  if (!options?.running && !hasToolResult && !options?.hasFinalAnswerToolResult) {
+    return withoutFinalToolSteps.filter((step) => step.kind !== "model_output");
+  }
+  return withoutFinalToolSteps;
 }
 
 function dedupeProcessSteps(steps: AgentExecutionStep[]): AgentExecutionStep[] {
@@ -115,9 +197,7 @@ function ToolStepRow({
         disabled={!hasDetail}
       >
         <span className="agent-tool-step-icon">
-          {step.status === "running" ? (
-            <Loader2 size={12} className="animate-spin text-blue-500" />
-          ) : step.status === "error" ? (
+          {step.status === "error" ? (
             <span className="agent-tool-step-dot agent-tool-step-dot--error" />
           ) : step.kind === "model_output" ? (
             <Cpu size={12} className="text-emerald-500" />
@@ -217,10 +297,10 @@ function ConversationTurnBlock({
   elapsedLabel: string;
   headerActions?: React.ReactNode;
 }) {
-  const running = showRunningHero;
+  const running = turn.current && showRunningHero;
   const headerTitle = summarizeToolSteps(turn.toolSteps, elapsedLabel, running);
   const waitingForAnswer = running && !turn.finalAnswer.trim();
-  const showFinalAnswerBody = !running && !!turn.finalAnswer.trim();
+  const showFinalAnswerBody = !!turn.finalAnswer.trim();
 
   return (
     <section className="agent-turn">
@@ -233,12 +313,14 @@ function ConversationTurnBlock({
       ) : null}
 
       <div className="agent-turn-assistant-panel">
-        <ToolStepsBlock
-          steps={turn.toolSteps}
-          headerTitle={headerTitle}
-          running={running}
-          headerActions={headerActions}
-        />
+        {turn.current || turn.toolSteps.length > 0 ? (
+          <ToolStepsBlock
+            steps={turn.toolSteps}
+            headerTitle={headerTitle}
+            running={running}
+            headerActions={headerActions}
+          />
+        ) : null}
 
         {showFinalAnswerBody ? (
           <div className="agent-turn-assistant">
@@ -247,11 +329,8 @@ function ConversationTurnBlock({
               compact
             />
           </div>
-        ) : waitingForAnswer ? (
-          <div className="agent-turn-waiting">
-            <Loader2 size={16} className="animate-spin text-blue-500" />
-            <span>智能体正在生成回复…</span>
-          </div>
+        ) : waitingForAnswer && turn.toolSteps.length === 0 ? (
+          <div className="agent-turn-waiting">智能体正在生成回复…</div>
         ) : null}
       </div>
     </section>
@@ -281,28 +360,51 @@ export function SingleAgentPanel({
     [persistedSteps, executionSteps, isLiveForStep],
   );
   const finalAnswer = readFinalAnswer(activeStep, streamingText);
-  const processSteps = useMemo(() => {
-    const modelOutputSteps = buildModelOutputSteps(activeStep, finalAnswer);
-    const visibleSteps = filterUserVisibleSteps(steps);
-    const idDeduped = [...visibleSteps, ...modelOutputSteps].filter((step, index, list) =>
-      list.findIndex((item) => item.id === step.id) === index
-    );
-    return dedupeProcessSteps(idDeduped);
-  }, [activeStep, finalAnswer, steps]);
   const hasAnswerContent = !!finalAnswer.trim();
   const showRunningHero = activeStep.state === "running" || activeStep.state === "pending" || isStreaming;
+  const finalAnswerFromTool = useMemo(() => hasFinalAnswerToolResult(activeStep), [activeStep]);
+  const latestTurnRef = useRef<HTMLDivElement | null>(null);
+  const latestTurnEndRef = useRef<HTMLDivElement | null>(null);
+  const rawProcessSteps = useMemo(() => {
+    const modelOutputSteps = buildModelOutputSteps(activeStep, finalAnswer);
+    const visibleSteps = filterUserVisibleSteps(steps)
+      .filter((step) => step.kind !== "final_answer" || showRunningHero);
+    return [...visibleSteps, ...modelOutputSteps].filter((step, index, list) =>
+      list.findIndex((item) => item.id === step.id) === index
+    );
+  }, [activeStep, finalAnswer, showRunningHero, steps]);
+  const pureContextAnswer = useMemo(() => {
+    if (showRunningHero || hasToolResultStep(rawProcessSteps) || finalAnswerFromTool) {
+      return "";
+    }
+    return rawProcessSteps.find((step) => step.kind === "model_output" && step.detail?.trim())?.detail?.trim() ?? "";
+  }, [finalAnswerFromTool, rawProcessSteps, showRunningHero]);
+  const processSteps = useMemo(() => {
+    return normalizeTurnSteps(dedupeProcessSteps(rawProcessSteps), {
+      running: showRunningHero,
+      hasFinalAnswerToolResult: finalAnswerFromTool,
+    });
+  }, [finalAnswerFromTool, rawProcessSteps, showRunningHero]);
+  const processStepsScrollKey = useMemo(
+    () => processSteps.map((step) => `${step.id}:${step.status}:${step.summary}:${step.detail?.length ?? 0}`).join("|"),
+    [processSteps],
+  );
   const canFollowUp = permissions.allowQuestion && activeStep.allowsFollowUp !== false && activeStep.state === "done" && !readOnly && !!onFollowUp;
   const canEditAnswer = permissions.allowUserEdit && activeStep.allowsRegenerate !== false && activeStep.state === "done" && !readOnly;
-  const userPrompt = useMemo(() => readUserPrompt(activeStep.chatMessages, config), [activeStep.chatMessages, config]);
-  const conversationTurn = useMemo(
+  const displayFinalAnswer = showRunningHero
+    ? firstNonBlank(streamingText, pureContextAnswer)
+    : finalAnswer;
+  const conversationTurns = useMemo(
     () =>
-      buildConversationTurn(userPrompt, processSteps, {
-        finalAnswer,
+      buildConversationTurns(activeStep.chatMessages, config, processSteps, {
+        finalAnswer: displayFinalAnswer,
+        running: showRunningHero,
+        hasFinalAnswerToolResult: finalAnswerFromTool,
       }),
-    [finalAnswer, processSteps, userPrompt],
+    [activeStep.chatMessages, config, displayFinalAnswer, finalAnswerFromTool, processSteps, showRunningHero],
   );
 
-  const hasContent = !!userPrompt.trim() || processSteps.length > 0 || hasAnswerContent || showRunningHero;
+  const hasContent = conversationTurns.length > 0 || processSteps.length > 0 || !!displayFinalAnswer.trim() || hasAnswerContent || showRunningHero;
 
   useEffect(() => {
     if (!showRunningHero || !streamStartedAt) {
@@ -315,6 +417,23 @@ export function SingleAgentPanel({
     setElapsedLabel(formatElapsed(streamStartedAt));
     return () => window.clearInterval(timer);
   }, [showRunningHero, streamStartedAt]);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      if (showRunningHero) {
+        latestTurnEndRef.current?.scrollIntoView({
+          block: "end",
+          behavior: "smooth",
+        });
+        return;
+      }
+      latestTurnRef.current?.scrollIntoView({
+        block: "start",
+        behavior: "auto",
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [conversationTurns.length, displayFinalAnswer.length, processStepsScrollKey, showRunningHero]);
 
   async function handleFollowUpSubmit(followUpMessage: string) {
     if (!followUpMessage.trim()) {
@@ -376,13 +495,17 @@ export function SingleAgentPanel({
           </div>
         ) : (
           <div className="agent-turn-list">
-            <ConversationTurnBlock
-              key={conversationTurn.id}
-              turn={conversationTurn}
-              showRunningHero={showRunningHero}
-              elapsedLabel={elapsedLabel}
-              headerActions={turnHeaderActions}
-            />
+            {conversationTurns.map((turn, index) => (
+              <div key={turn.id} ref={index === conversationTurns.length - 1 ? latestTurnRef : undefined}>
+                <ConversationTurnBlock
+                  turn={turn}
+                  showRunningHero={showRunningHero}
+                  elapsedLabel={elapsedLabel}
+                  headerActions={turn.current ? turnHeaderActions : undefined}
+                />
+                {index === conversationTurns.length - 1 ? <div ref={latestTurnEndRef} /> : null}
+              </div>
+            ))}
           </div>
         )}
       </section>

@@ -8,6 +8,7 @@ import type {
   RuntimeNodeField,
   RuntimeChatMessage,
   RuntimeCapabilityItem,
+  AgentExecutionStep,
   StreamEvent,
 } from "../../types/runtime-types";
 import type { WorkbenchRunDetail } from "../../types/workbench";
@@ -1696,6 +1697,7 @@ function buildLiveChatMessages(step: RuntimePreviewStep, streamingText: string):
       role,
       author: role === "user" ? "我" : step.title,
       content,
+      processSteps: role === "assistant" ? readMessageProcessSteps((item as { processSteps?: unknown }).processSteps, `${step.nodeRunId}-history-${index}`) : undefined,
     });
   });
 
@@ -1713,7 +1715,7 @@ function buildLiveChatMessages(step: RuntimePreviewStep, streamingText: string):
 
   if (streamingText.trim()) {
     const lastMessage = messages[messages.length - 1];
-    if (lastMessage?.role === "assistant") {
+    if (lastMessage?.role === "assistant" && lastMessage.streaming) {
       messages[messages.length - 1] = {
         ...lastMessage,
         content: streamingText,
@@ -1750,6 +1752,7 @@ function nodeMessages(node: any): RuntimeChatMessage[] {
           role,
           author: role === "user" ? "我" : node.name,
           content,
+          processSteps: role === "assistant" ? readMessageProcessSteps(item?.processSteps, `${node.id}-chat-${index}`) : undefined,
         });
       });
     }
@@ -1775,6 +1778,29 @@ function nodeMessages(node: any): RuntimeChatMessage[] {
     }
   }
   return messages;
+}
+
+function readMessageProcessSteps(value: unknown, prefix: string): AgentExecutionStep[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((item: any, index: number): AgentExecutionStep | null => {
+      const kind = item?.kind === "tool" || item?.kind === "model_output" || item?.kind === "final_answer"
+        ? item.kind
+        : "model_output";
+      const status = item?.status === "running" || item?.status === "error" ? item.status : "done";
+      return {
+        id: `${prefix}-step-${index}`,
+        kind,
+        title: stringifyValue(item?.title || (kind === "tool" ? "工具调用" : "生成最终答案")),
+        summary: stringifyValue(item?.summary || ""),
+        status,
+        detail: stringifyValue(item?.detail || ""),
+        toolType: item?.toolType === "mcp" || item?.toolType === "skill" || item?.toolType === "model" ? item.toolType : undefined,
+      };
+    })
+    .filter((item): item is AgentExecutionStep => item !== null);
 }
 
 function nodeCapabilities(node: any): RuntimeCapabilityItem[] {
