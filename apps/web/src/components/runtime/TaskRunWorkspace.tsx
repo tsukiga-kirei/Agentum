@@ -186,24 +186,7 @@ export function TaskRunWorkspace({
         return step;
       }
       if (mergingLiveStep && step.nodeRunId === streamActiveNodeId) {
-        const chatMessages = [...(step.chatMessages || [])];
-        if (stream.streamingText) {
-          const lastMsg = chatMessages[chatMessages.length - 1];
-          if (lastMsg && lastMsg.role === "assistant" && lastMsg.streaming) {
-            chatMessages[chatMessages.length - 1] = {
-              ...lastMsg,
-              content: stream.streamingText,
-            };
-          } else {
-            chatMessages.push({
-              id: "streaming-message",
-              role: "assistant",
-              author: step.title,
-              content: stream.streamingText,
-              streaming: true,
-            });
-          }
-        }
+        const chatMessages = buildLiveChatMessages(step, stream.streamingText);
 
         return {
           ...step,
@@ -263,8 +246,12 @@ export function TaskRunWorkspace({
 
   // 刷新/重进时：后端作业仍在执行（activeJob queued/running 或节点 running）→ 自动重连 SSE
   // 并整步回放进度，做到无感恢复；绝不重复触发 advance。
+  // 步骤已 node_completed / [DONE] 但 runDetail 尚未刷新时，跳过误重连。
   useEffect(() => {
     if (runDetail.readOnly) {
+      return;
+    }
+    if (stream.isStepStreamTerminal()) {
       return;
     }
     const backendStillExecuting = activeJobAlive || activeStep.state === "running";
@@ -283,6 +270,7 @@ export function TaskRunWorkspace({
     activeStep.nodeRunId,
     stream.connectionState,
     stream.connect,
+    stream.isStepStreamTerminal,
   ]);
 
   // 节点到达终态后清除看门狗异常标记（恢复进度/重新执行成功后不再残留提示）。
@@ -479,6 +467,7 @@ export function TaskRunWorkspace({
     setIsAdvancing(true);
     setAdvanceError(null);
     setWatchdogStaleMessage(null);
+    stream.clearStepStreamTerminal();
     try {
       // 先建 SSE 连接再入队，确保 node_started 起的所有事件都能实时收到。
       await stream.ensureConnected();
@@ -591,6 +580,7 @@ export function TaskRunWorkspace({
     setIsAdvancing(true);
     setAdvanceError(null);
     setWatchdogStaleMessage(null);
+    stream.clearStepStreamTerminal();
     stream.disconnect();
     try {
       const updated = await workbenchApi.restartNode(tenantId, token, runDetail.id, activeStep.nodeRunId);
@@ -616,6 +606,7 @@ export function TaskRunWorkspace({
     setIsAdvancing(true);
     setAdvanceError(null);
     setWatchdogStaleMessage(null);
+    stream.clearStepStreamTerminal();
     stream.disconnect();
     try {
       const updated = await workbenchApi.recoverNode(tenantId, token, runDetail.id, activeStep.nodeRunId);
@@ -669,6 +660,7 @@ export function TaskRunWorkspace({
     setAdvanceError(null);
     setWatchdogStaleMessage(null);
     initialAutoStartRef.current = true;
+    stream.clearStepStreamTerminal();
     stream.disconnect();
 
     try {
@@ -707,19 +699,17 @@ export function TaskRunWorkspace({
     setIsAdvancing(true);
     setAdvanceError(null);
     setWatchdogStaleMessage(null);
-    // rollback 会把智能体节点重置为 pending，需阻止「进入即执行」与本次手动 advance 并发入队。
     initialAutoStartRef.current = true;
+    stream.clearStepStreamTerminal();
     stream.disconnect();
 
     try {
-      const updated = await workbenchApi.rollbackRun(tenantId, token, runDetail.id, targetStep.nodeRunId);
+      // 重新执行：清空对话历史与输出后整步重跑，不再走 rollback+advance（会残留追问上下文）。
+      const updated = await workbenchApi.restartNode(tenantId, token, runDetail.id, targetStep.nodeRunId);
       setRunDetail(updated);
       onReload(updated);
       await stream.connect({ replay: true });
       await stream.ensureConnected();
-      const afterAdvance = await workbenchApi.advanceStep(tenantId, token, runDetail.id);
-      setRunDetail(afterAdvance);
-      onReload(afterAdvance);
     } catch (error: unknown) {
       console.error("重新执行失败", error);
       const reloaded = await reloadRunDetail();
@@ -1684,6 +1674,63 @@ function nodeDescription(nodeType: string, config: any): string {
   if (nodeType === "human_review") return "当前步骤需要人工审核通过后继续。";
   if (nodeType === "delivery") return "生成归档成果文件并进行分发。";
   return "工作流内部自动节点。";
+}
+
+/** 运行中合并 SSE：追问保留 config 对话历史；重新执行后仅展示首轮用户提示 + 流式回复。 */
+function buildLiveChatMessages(step: RuntimePreviewStep, streamingText: string): RuntimeChatMessage[] {
+  const config = (step.configSnapshot ?? {}) as Record<string, unknown>;
+  const history = Array.isArray(config.conversationHistory) ? config.conversationHistory : [];
+  const messages: RuntimeChatMessage[] = [];
+
+  history.forEach((item: unknown, index: number) => {
+    if (!item || typeof item !== "object") {
+      return;
+    }
+    const role = (item as { role?: string }).role === "user" ? "user" : "assistant";
+    const content = stringifyValue((item as { content?: unknown }).content ?? "");
+    if (!content) {
+      return;
+    }
+    messages.push({
+      id: `${step.nodeRunId}-history-${index}`,
+      role,
+      author: role === "user" ? "我" : step.title,
+      content,
+    });
+  });
+
+  if (messages.length === 0) {
+    const userPrompt = stringifyValue(config.userPrompt ?? config.prompt ?? "");
+    if (userPrompt) {
+      messages.push({
+        id: `${step.nodeRunId}-live-user`,
+        role: "user",
+        author: "我",
+        content: userPrompt,
+      });
+    }
+  }
+
+  if (streamingText.trim()) {
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage?.role === "assistant") {
+      messages[messages.length - 1] = {
+        ...lastMessage,
+        content: streamingText,
+        streaming: true,
+      };
+    } else {
+      messages.push({
+        id: "streaming-message",
+        role: "assistant",
+        author: step.title,
+        content: streamingText,
+        streaming: true,
+      });
+    }
+  }
+
+  return messages;
 }
 
 function nodeMessages(node: any): RuntimeChatMessage[] {

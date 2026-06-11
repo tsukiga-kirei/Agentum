@@ -60,6 +60,9 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 
 class WorkbenchRuntimeServiceTest {
 
@@ -86,6 +89,7 @@ class WorkbenchRuntimeServiceTest {
     private final RunProgressStreamWriter streamWriter = mock(RunProgressStreamWriter.class);
     private final RunCancellationGuard cancellationGuard = mock(RunCancellationGuard.class);
     private final RunExecutionLeaseService leaseService = mock(RunExecutionLeaseService.class);
+    private final PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
 
     @Test
     void shouldListAllPublishedWorkflowsAndMarkLockedRows() {
@@ -273,6 +277,7 @@ class WorkbenchRuntimeServiceTest {
         when(jobRepository.findByRunIdAndStatusIn(eq(run.getId()), any()))
             .thenReturn(List.of(job))
             .thenReturn(List.of());
+        when(leaseService.hasActiveLease(run.getId())).thenReturn(true);
 
         service.interruptRun(TENANT_ID, businessPrincipal(), run.getId());
 
@@ -282,10 +287,63 @@ class WorkbenchRuntimeServiceTest {
         assertThat(node.getOutputSnapshot()).isEmpty();
         assertThat(run.getState()).isEqualTo("paused");
         verify(cancellationGuard).requestCancel(run.getId());
+        verify(leaseService).forceRelease(run.getId());
         verify(workflowVariableSnapshotRepository).deleteByRunIdAndNodeRunIdIn(run.getId(), List.of(node.getId()));
         verify(clusterAgentRunRepository).deleteByNodeRunId(node.getId());
         verify(streamWriter).append(eq(run.getId()), eq("run_paused"), any());
         verify(streamWriter).append(run.getId(), "message", "[DONE]");
+    }
+
+    @Test
+    void shouldRegenerateCompletedAgentNodeFromScratch() {
+        WorkbenchRuntimeService service = newService();
+        WorkflowRunEntity run = ownedRun(2);
+        run.markRunning("agent_review", "智能体分析", "agent", 0, NOW);
+        Map<String, Object> agentConfig = new LinkedHashMap<>(Map.of(
+            "userPrompt", "首轮问题",
+            "conversationHistory", List.of(
+                Map.of("role", "user", "content", "首轮问题"),
+                Map.of("role", "assistant", "content", "首轮回答"),
+                Map.of("role", "user", "content", "追问")
+            )
+        ));
+        WorkflowNodeRunEntity agentNode = WorkflowNodeRunEntity.pending(
+            run.getId(),
+            TENANT_ID,
+            run.getWorkflowId(),
+            run.getWorkflowVersionId(),
+            "agent_review",
+            "agent",
+            "智能体分析",
+            Map.of(),
+            Map.of(
+                "final_answer", "追问后的答案",
+                "chatMessages", List.of(
+                    Map.of("role", "user", "content", "首轮问题"),
+                    Map.of("role", "assistant", "content", "首轮回答"),
+                    Map.of("role", "user", "content", "追问"),
+                    Map.of("role", "assistant", "content", "追问后的答案")
+                )
+            ),
+            agentConfig,
+            1,
+            NOW
+        );
+        agentNode.complete(agentNode.getOutputSnapshot(), NOW);
+
+        stubTenant();
+        when(workflowRunRepository.findByIdAndTenantId(run.getId(), TENANT_ID)).thenReturn(Optional.of(run));
+        when(workflowNodeRunRepository.findByIdAndRunId(agentNode.getId(), run.getId())).thenReturn(Optional.of(agentNode));
+        when(workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(run.getId())).thenReturn(List.of(agentNode));
+        when(jobRepository.findByRunIdAndStatusIn(eq(run.getId()), any())).thenReturn(List.of());
+        when(jobRepository.findFirstByNodeRunIdOrderByAttemptDesc(agentNode.getId())).thenReturn(Optional.empty());
+
+        service.restartNode(TENANT_ID, businessPrincipal(), run.getId(), agentNode.getId());
+
+        assertThat(agentNode.getConfigSnapshot()).doesNotContainKey("conversationHistory");
+        assertThat(agentNode.getOutputSnapshot()).isEmpty();
+        assertThat(agentNode.getState()).isEqualTo("running");
+        verify(commandPublisher).publish(any(NodeExecuteCommand.class));
     }
 
     @Test
@@ -392,10 +450,33 @@ class WorkbenchRuntimeServiceTest {
         service.recoverNode(TENANT_ID, businessPrincipal(), run.getId(), node.getId());
 
         assertThat(staleJob.getStatus()).isEqualTo(WorkflowRunExecutionJobEntity.STATUS_FAILED);
-        verify(leaseService).forceRelease(run.getId());
-        verify(cancellationGuard).requestCancel(run.getId());
+        // 僵死作业终止、abort 遗留租约与入队前孤儿租约清理均可能释放租约。
+        verify(leaseService, org.mockito.Mockito.atLeast(2)).forceRelease(run.getId());
+        verify(cancellationGuard, org.mockito.Mockito.atLeastOnce()).requestCancel(run.getId());
         verify(commandPublisher).publish(any(NodeExecuteCommand.class));
         assertThat(node.getState()).isEqualTo("running");
+    }
+
+    @Test
+    void shouldReleaseOrphanLeaseBeforeEnqueueOnRestart() {
+        WorkbenchRuntimeService service = newService();
+        WorkflowRunEntity run = ownedRun();
+        WorkflowNodeRunEntity node = clusterNode(run);
+        node.fail(Map.of("errorCode", "WORKBENCH_NODE_EXECUTION_STALE"), NOW);
+
+        stubTenant();
+        when(workflowRunRepository.findByIdAndTenantId(run.getId(), TENANT_ID)).thenReturn(Optional.of(run));
+        when(workflowNodeRunRepository.findByIdAndRunId(node.getId(), run.getId())).thenReturn(Optional.of(node));
+        when(workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(run.getId())).thenReturn(List.of(node));
+        when(jobRepository.findByRunIdAndStatusIn(eq(run.getId()), any())).thenReturn(List.of());
+        when(jobRepository.findFirstByNodeRunIdOrderByAttemptDesc(node.getId())).thenReturn(Optional.empty());
+        when(leaseService.hasActiveLease(run.getId())).thenReturn(true);
+
+        service.restartNode(TENANT_ID, businessPrincipal(), run.getId(), node.getId());
+
+        verify(leaseService, org.mockito.Mockito.atLeastOnce()).forceRelease(run.getId());
+        verify(cancellationGuard).requestCancel(run.getId());
+        verify(commandPublisher).publish(any(NodeExecuteCommand.class));
     }
 
     @Test
@@ -577,6 +658,29 @@ class WorkbenchRuntimeServiceTest {
     }
 
     @Test
+    void shouldSkipSaveNodeSuccessWhenNodeNotActive() {
+        WorkbenchRuntimeService service = newService();
+        WorkflowRunEntity run = ownedRun(2);
+        WorkflowNodeRunEntity agentNode = nodeAt(run, "agent_review", "agent", "智能体分析", 1, NOW);
+        agentNode.cancel(NOW);
+
+        when(workflowRunRepository.findById(run.getId())).thenReturn(Optional.of(run));
+        when(workflowNodeRunRepository.findById(agentNode.getId())).thenReturn(Optional.of(agentNode));
+
+        boolean completed = service.saveNodeSuccess(
+            run.getId(),
+            agentNode.getId(),
+            Map.of("summary", "不应落库"),
+            OPERATOR_ID
+        );
+
+        assertThat(completed).isFalse();
+        assertThat(agentNode.getState()).isEqualTo("canceled");
+        assertThat(agentNode.getOutputSnapshot()).isEmpty();
+        verify(workflowNodeRunRepository, never()).save(agentNode);
+    }
+
+    @Test
     void shouldPauseAtAgentNodeWhenMoreStepsRemain() {
         WorkbenchRuntimeService service = newService();
         WorkflowRunEntity run = ownedRun(2);
@@ -669,6 +773,8 @@ class WorkbenchRuntimeServiceTest {
     }
 
     private WorkbenchRuntimeService newService() {
+        when(transactionManager.getTransaction(org.mockito.ArgumentMatchers.any(TransactionDefinition.class)))
+            .thenReturn(new SimpleTransactionStatus());
         return new WorkbenchRuntimeService(
             tenantRepository,
             workflowDefinitionRepository,
@@ -691,7 +797,8 @@ class WorkbenchRuntimeServiceTest {
             cancellationGuard,
             new RuntimeExecutionProperties(),
             new PromptContentResolver(mock(SystemCapabilityRepository.class), mock(TenantAssetCapabilityRepository.class)),
-            leaseService
+            leaseService,
+            transactionManager
         );
     }
 

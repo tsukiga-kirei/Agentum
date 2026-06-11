@@ -69,7 +69,11 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 public class WorkbenchRuntimeService {
@@ -113,6 +117,7 @@ public class WorkbenchRuntimeService {
     private final RuntimeExecutionProperties runtimeProperties;
     private final PromptContentResolver promptContentResolver;
     private final RunExecutionLeaseService leaseService;
+    private final TransactionTemplate transactionTemplate;
 
     public WorkbenchRuntimeService(
         TenantRepository tenantRepository,
@@ -136,7 +141,8 @@ public class WorkbenchRuntimeService {
         RunCancellationGuard cancellationGuard,
         RuntimeExecutionProperties runtimeProperties,
         PromptContentResolver promptContentResolver,
-        RunExecutionLeaseService leaseService
+        RunExecutionLeaseService leaseService,
+        PlatformTransactionManager transactionManager
     ) {
         this.tenantRepository = tenantRepository;
         this.workflowDefinitionRepository = workflowDefinitionRepository;
@@ -160,6 +166,7 @@ public class WorkbenchRuntimeService {
         this.runtimeProperties = runtimeProperties;
         this.promptContentResolver = promptContentResolver;
         this.leaseService = leaseService;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
     @Transactional(readOnly = true)
@@ -546,17 +553,9 @@ public class WorkbenchRuntimeService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_RUN_INTERRUPT_FORBIDDEN", "已完成任务无需中断");
         }
 
-        cancellationGuard.requestCancel(runId);
-        Instant now = clock.instant();
-
         // 终态化在途作业：Worker 退出时据此识别「已被中断」，不再覆盖节点状态。
-        for (WorkflowRunExecutionJobEntity job : jobRepository.findByRunIdAndStatusIn(
-            runId,
-            List.of(WorkflowRunExecutionJobEntity.STATUS_QUEUED, WorkflowRunExecutionJobEntity.STATUS_RUNNING)
-        )) {
-            job.markCanceled(now);
-            jobRepository.save(job);
-        }
+        abortLingeringExecution(runId);
+        Instant now = clock.instant();
 
         List<WorkflowNodeRunEntity> nodes = workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(runId);
         WorkflowNodeRunEntity runningNode = nodes.stream()
@@ -640,16 +639,19 @@ public class WorkbenchRuntimeService {
         if ("completed".equals(run.getState())) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_RUN_READONLY", "已完成任务只能查看，不能重新执行");
         }
-        terminateRecoverableStaleJobs(runId);
-        assertNoExecutionInFlight(runId);
         WorkflowNodeRunEntity node = workflowNodeRunRepository.findByIdAndRunId(nodeRunId, runId)
             .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_NODE_RUN_NOT_FOUND", "节点运行不存在"));
-        if (!isRestartableState(node.getState())) {
+        if (!isAgentRegenerable(node) && !isRestartableState(node.getState())) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_NODE_RESTART_INVALID", "当前步骤状态不支持重新执行");
         }
-        prepareNodeReExecution(run, node, true, principal.userId(), "run_node_restarted", "步骤重新执行",
-            "已清空「" + node.getName() + "」全部执行数据，开始从头重新执行。");
-        enqueueExecution(tenantId, runId, node.getId(), node.getNodeType(), principal.userId());
+        transactionTemplate.executeWithoutResult(status -> {
+            terminateRecoverableStaleJobs(runId);
+            abortLingeringExecution(runId);
+            assertNoExecutionInFlight(runId);
+            prepareNodeReExecution(run, node, true, principal.userId(), "run_node_restarted", "步骤重新执行",
+                "已清空「" + node.getName() + "」全部执行数据，开始从头重新执行。");
+            enqueueExecution(tenantId, runId, node.getId(), node.getNodeType(), principal.userId());
+        });
         log.info(
             "用户重新执行节点 tenantId={} userId={} runId={} nodeRunId={} requestId={}",
             tenantId, principal.userId(), runId, nodeRunId, RequestIds.current()
@@ -681,7 +683,6 @@ public class WorkbenchRuntimeService {
         if ("completed".equals(run.getState())) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_RUN_READONLY", "已完成任务只能查看，不能追问");
         }
-        assertNoExecutionInFlight(runId);
         WorkflowNodeRunEntity node = workflowNodeRunRepository.findByIdAndRunId(nodeRunId, runId)
             .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_NODE_RUN_NOT_FOUND", "节点运行不存在"));
         if (!"agent".equals(node.getNodeType())) {
@@ -694,33 +695,36 @@ public class WorkbenchRuntimeService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_FOLLOW_UP_FORBIDDEN", "流程未开启「允许追问」，无法继续对话");
         }
 
-        Instant now = clock.instant();
-        cancellationGuard.clearCancel(run.getId());
-        Map<String, Object> nextConfig = new LinkedHashMap<>(node.getConfigSnapshot());
-        List<Map<String, Object>> conversationHistory = readChatMessagesForFollowUp(node.getOutputSnapshot(), nextConfig);
-        conversationHistory.add(Map.of("role", "user", "content", followUpMessage));
-        nextConfig.put("conversationHistory", conversationHistory);
-        node.prepareForFollowUp(nextConfig, now);
-        workflowNodeRunRepository.save(node);
+        transactionTemplate.executeWithoutResult(status -> {
+            assertNoExecutionInFlight(runId);
+            Instant now = clock.instant();
+            cancellationGuard.clearCancel(run.getId());
+            Map<String, Object> nextConfig = new LinkedHashMap<>(node.getConfigSnapshot());
+            List<Map<String, Object>> conversationHistory = readChatMessagesForFollowUp(node.getOutputSnapshot(), nextConfig);
+            conversationHistory.add(Map.of("role", "user", "content", followUpMessage));
+            nextConfig.put("conversationHistory", conversationHistory);
+            node.prepareForFollowUp(nextConfig, now);
+            workflowNodeRunRepository.save(node);
 
-        List<WorkflowNodeRunEntity> nodes = workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(run.getId());
-        int completedBefore = (int) nodes.stream()
-            .filter(other -> other.getSortOrder() < node.getSortOrder() && "completed".equals(other.getState()))
-            .count();
-        run.markRunning(node.getNodeKey(), node.getName(), node.getNodeType(), completedBefore, now);
-        workflowRunRepository.save(run);
-        workflowRunEventRepository.save(WorkflowRunEventEntity.create(
-            run.getId(),
-            run.getTenantId(),
-            "run_node_follow_up",
-            "智能体追问",
-            "已向「" + node.getName() + "」追加追问并继续对话。",
-            node.getNodeKey(),
-            principal.userId(),
-            Map.of("nodeRunId", node.getId().toString()),
-            now
-        ));
-        enqueueExecution(tenantId, runId, node.getId(), node.getNodeType(), principal.userId());
+            List<WorkflowNodeRunEntity> nodes = workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(run.getId());
+            int completedBefore = (int) nodes.stream()
+                .filter(other -> other.getSortOrder() < node.getSortOrder() && "completed".equals(other.getState()))
+                .count();
+            run.markRunning(node.getNodeKey(), node.getName(), node.getNodeType(), completedBefore, now);
+            workflowRunRepository.save(run);
+            workflowRunEventRepository.save(WorkflowRunEventEntity.create(
+                run.getId(),
+                run.getTenantId(),
+                "run_node_follow_up",
+                "智能体追问",
+                "已向「" + node.getName() + "」追加追问并继续对话。",
+                node.getNodeKey(),
+                principal.userId(),
+                Map.of("nodeRunId", node.getId().toString()),
+                now
+            ));
+            enqueueExecution(tenantId, runId, node.getId(), node.getNodeType(), principal.userId());
+        });
         log.info(
             "用户追问智能体 tenantId={} userId={} runId={} nodeRunId={} requestId={}",
             tenantId, principal.userId(), runId, nodeRunId, RequestIds.current()
@@ -731,7 +735,6 @@ public class WorkbenchRuntimeService {
     /**
      * 用户手动修改最终答案：仅更新输出快照与变量，不触发模型重新生成。
      */
-    @Transactional
     public WorkbenchApi.RunDetail updateFinalAnswer(
         UUID tenantId,
         CurrentUserPrincipal principal,
@@ -761,6 +764,20 @@ public class WorkbenchRuntimeService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_FINAL_ANSWER_FORBIDDEN", "流程未开启「允许修改」，无法保存最终答案");
         }
 
+        transactionTemplate.executeWithoutResult(status -> applyFinalAnswerUpdate(run, node, answer, principal.userId()));
+        log.info(
+            "用户修改最终答案 tenantId={} userId={} runId={} nodeRunId={} requestId={}",
+            tenantId, principal.userId(), runId, nodeRunId, RequestIds.current()
+        );
+        return getRunDetail(tenantId, principal, runId);
+    }
+
+    private void applyFinalAnswerUpdate(
+        WorkflowRunEntity run,
+        WorkflowNodeRunEntity node,
+        String answer,
+        UUID operatorUserId
+    ) {
         Instant now = clock.instant();
         Map<String, Object> config = node.getConfigSnapshot() == null ? Map.of() : node.getConfigSnapshot();
         Map<String, Object> outputs = new LinkedHashMap<>(node.getOutputSnapshot() == null ? Map.of() : node.getOutputSnapshot());
@@ -784,15 +801,10 @@ public class WorkbenchRuntimeService {
             "修改最终答案",
             "已保存「" + node.getName() + "」的最终答案。",
             node.getNodeKey(),
-            principal.userId(),
+            operatorUserId,
             Map.of("nodeRunId", node.getId().toString()),
             now
         ));
-        log.info(
-            "用户修改最终答案 tenantId={} userId={} runId={} nodeRunId={} requestId={}",
-            tenantId, principal.userId(), runId, nodeRunId, RequestIds.current()
-        );
-        return getRunDetail(tenantId, principal, runId);
     }
 
     public WorkbenchApi.RunDetail recoverNode(UUID tenantId, CurrentUserPrincipal principal, UUID runId, UUID nodeRunId) {
@@ -802,19 +814,22 @@ public class WorkbenchRuntimeService {
         if ("completed".equals(run.getState())) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_RUN_READONLY", "已完成任务只能查看，不能恢复执行");
         }
-        terminateRecoverableStaleJobs(runId);
-        assertNoExecutionInFlight(runId);
         WorkflowNodeRunEntity node = workflowNodeRunRepository.findByIdAndRunId(nodeRunId, runId)
             .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_NODE_RUN_NOT_FOUND", "节点运行不存在"));
         if (!isRecoverableState(node.getState())) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_NODE_RECOVER_INVALID", "当前步骤状态不支持恢复进度");
         }
         boolean fullRestart = "canceled".equals(node.getState());
-        prepareNodeReExecution(run, node, fullRestart, principal.userId(), "run_node_recovered", "步骤恢复执行",
-            fullRestart
-                ? "该步骤曾被主动中断，数据已清空，已降级为从头重新执行。"
-                : "已保留「" + node.getName() + "」已成功的子智能体结果，仅重跑失败或未完成部分。");
-        enqueueExecution(tenantId, runId, node.getId(), node.getNodeType(), principal.userId());
+        transactionTemplate.executeWithoutResult(status -> {
+            terminateRecoverableStaleJobs(runId);
+            abortLingeringExecution(runId);
+            assertNoExecutionInFlight(runId);
+            prepareNodeReExecution(run, node, fullRestart, principal.userId(), "run_node_recovered", "步骤恢复执行",
+                fullRestart
+                    ? "该步骤曾被主动中断，数据已清空，已降级为从头重新执行。"
+                    : "已保留「" + node.getName() + "」已成功的子智能体结果，仅重跑失败或未完成部分。");
+            enqueueExecution(tenantId, runId, node.getId(), node.getNodeType(), principal.userId());
+        });
         log.info(
             "用户恢复节点执行 tenantId={} userId={} runId={} nodeRunId={} fullRestart={} requestId={}",
             tenantId, principal.userId(), runId, nodeRunId, fullRestart, RequestIds.current()
@@ -871,8 +886,12 @@ public class WorkbenchRuntimeService {
 
     /**
      * 创建执行作业并投递 MQ。先清空进度 Stream 保证回放内容只属于本次尝试，再发布命令。
+     *
+     * <p>MQ 必须在事务提交后再发布，否则 Worker 可能先于作业落库消费，出现「命令已失效」；
+     * 入队前清理孤儿租约，避免 DB 无在途作业时 Redis 仍占锁导致「租约被占用」循环。</p>
      */
     private void enqueueExecution(UUID tenantId, UUID runId, UUID nodeRunId, String nodeType, UUID operatorUserId) {
+        releaseOrphanedExecutionLeaseIfIdle(runId);
         Instant now = clock.instant();
         int attempt = jobRepository.findFirstByNodeRunIdOrderByAttemptDesc(nodeRunId)
             .map(previous -> previous.getAttempt() + 1)
@@ -921,7 +940,7 @@ public class WorkbenchRuntimeService {
             throw exception;
         }
         streamWriter.reset(runId);
-        commandPublisher.publish(NodeExecuteCommand.of(
+        publishNodeExecuteCommandAfterCommit(NodeExecuteCommand.of(
             job.getId(),
             tenantId,
             runId,
@@ -932,6 +951,39 @@ public class WorkbenchRuntimeService {
             attempt,
             now
         ));
+    }
+
+    /**
+     * DB 已无 queued/running 作业却仍占 Redis 租约时，说明上次 Worker 未正常 release。
+     * 重新执行/恢复进度入队前必须清理，否则新命令会被 Worker 以「租约被占用」永久跳过。
+     */
+    private void releaseOrphanedExecutionLeaseIfIdle(UUID runId) {
+        boolean inFlight = !jobRepository.findByRunIdAndStatusIn(
+            runId,
+            List.of(WorkflowRunExecutionJobEntity.STATUS_QUEUED, WorkflowRunExecutionJobEntity.STATUS_RUNNING)
+        ).isEmpty();
+        if (!inFlight && leaseService.hasActiveLease(runId)) {
+            log.warn(
+                "检测到孤儿执行租约，入队前强制释放 runId={} requestId={}",
+                runId,
+                RequestIds.current()
+            );
+            leaseService.forceRelease(runId);
+        }
+    }
+
+    /** 事务提交后再投递 MQ，避免 Worker 读取尚未落库的作业。 */
+    private void publishNodeExecuteCommandAfterCommit(NodeExecuteCommand command) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    commandPublisher.publish(command);
+                }
+            });
+            return;
+        }
+        commandPublisher.publish(command);
     }
 
     private static boolean isExecutionJobInFlight(WorkflowRunExecutionJobEntity job) {
@@ -1017,6 +1069,30 @@ public class WorkbenchRuntimeService {
     }
 
     /**
+     * 中断/重新执行/恢复进度前：写入取消信号、释放 Redis 租约、终态化 queued/running 作业。
+     * 旧 Worker 即使模型调用尚未返回，也会在落库前因 job 非 running 而丢弃结果。
+     */
+    private void abortLingeringExecution(UUID runId) {
+        cancellationGuard.requestCancel(runId);
+        if (leaseService.hasActiveLease(runId)) {
+            leaseService.forceRelease(runId);
+            log.warn(
+                "已释放遗留执行租约 runId={} requestId={}",
+                runId,
+                RequestIds.current()
+            );
+        }
+        Instant now = clock.instant();
+        for (WorkflowRunExecutionJobEntity job : jobRepository.findByRunIdAndStatusIn(
+            runId,
+            List.of(WorkflowRunExecutionJobEntity.STATUS_QUEUED, WorkflowRunExecutionJobEntity.STATUS_RUNNING)
+        )) {
+            job.markCanceled(now);
+            jobRepository.save(job);
+        }
+    }
+
+    /**
      * 仅当节点仍处于活跃状态时标记失败（Worker 失败路径与回收器共用），
      * 避免与中断清理、并发终态写入互相覆盖。
      */
@@ -1039,6 +1115,11 @@ public class WorkbenchRuntimeService {
 
     private static boolean isRestartableState(String state) {
         return "canceled".equals(state) || "failed".equals(state) || "pending".equals(state);
+    }
+
+    /** 已完成单智能体步骤允许「重新执行」：清空全部对话与输出后从头重跑。 */
+    private static boolean isAgentRegenerable(WorkflowNodeRunEntity node) {
+        return "agent".equals(node.getNodeType()) && "completed".equals(node.getState());
     }
 
     private static boolean isRecoverableState(String state) {
@@ -2037,6 +2118,17 @@ public class WorkbenchRuntimeService {
             .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_RUN_NOT_FOUND", "任务运行不存在"));
         WorkflowNodeRunEntity node = workflowNodeRunRepository.findById(nodeRunId)
             .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_NODE_RUN_NOT_FOUND", "节点运行不存在"));
+
+        if (!"running".equals(node.getState()) && !"pending".equals(node.getState())) {
+            log.info(
+                "节点已非活跃，跳过成功落库 runId={} nodeRunId={} state={} requestId={}",
+                runId,
+                nodeRunId,
+                node.getState(),
+                RequestIds.current()
+            );
+            return false;
+        }
 
         node.complete(outputs, now);
         workflowNodeRunRepository.save(node);

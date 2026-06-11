@@ -4,6 +4,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.BooleanSupplier;
 
 public interface ModelChatClient {
 
@@ -40,7 +41,9 @@ public interface ModelChatClient {
         String modelName,
         List<ChatMessage> messages,
         Map<String, Object> options,
-        List<ToolDefinition> tools
+        List<ToolDefinition> tools,
+        /** 运行态中断探测：返回 true 时流式客户端应主动断开 HTTP 连接 */
+        BooleanSupplier cancelProbe
     ) {
         public ChatRequest(
             UUID providerId,
@@ -52,6 +55,19 @@ public interface ModelChatClient {
             Map<String, Object> options
         ) {
             this(providerId, providerType, baseUrl, apiKey, modelName, messages, options, List.of());
+        }
+
+        public ChatRequest(
+            UUID providerId,
+            String providerType,
+            String baseUrl,
+            String apiKey,
+            String modelName,
+            List<ChatMessage> messages,
+            Map<String, Object> options,
+            List<ToolDefinition> tools
+        ) {
+            this(providerId, providerType, baseUrl, apiKey, modelName, messages, options, tools, null);
         }
 
         public ChatRequest {

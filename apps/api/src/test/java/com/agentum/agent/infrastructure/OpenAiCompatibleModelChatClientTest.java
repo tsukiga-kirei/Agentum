@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
 
 class OpenAiCompatibleModelChatClientTest {
@@ -119,6 +120,21 @@ class OpenAiCompatibleModelChatClientTest {
         Map<String, Object> payload = (Map<String, Object>) method.invoke(client, request);
 
         assertThat(payload).containsEntry("max_tokens", 8192);
+    }
+
+    @Test
+    void shouldTreatCancelWatcherFlagAsStreamCancelled() throws Exception {
+        Method method = OpenAiCompatibleModelChatClient.class.getDeclaredMethod(
+            "isStreamCancelled",
+            java.util.function.BooleanSupplier.class,
+            AtomicBoolean.class
+        );
+        method.setAccessible(true);
+
+        AtomicBoolean aborted = new AtomicBoolean(true);
+        boolean cancelled = (boolean) method.invoke(null, (java.util.function.BooleanSupplier) () -> false, aborted);
+
+        assertThat(cancelled).isTrue();
     }
 
     private ModelChatClient.ChatResult invokeParseResult(String body) throws Exception {

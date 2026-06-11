@@ -132,9 +132,9 @@ public class NodeExecutionService {
         }
 
         String workerId = "worker-" + UUID.randomUUID();
-        if (!leaseService.tryAcquire(runId, workerId)) {
+        if (!tryAcquireExecutionLease(runId, workerId, command)) {
             // 同一 run 已有 Worker 持有 Redis 租约并在执行（含模型长耗时）。丢弃本条重复消息即可，
-            // 切勿再次入队——否则多消费者会每 2 秒复制一条命令，形成日志风暴且无法推进。
+            // 切勿再次入队——否则多 consumers 会复制命令，形成日志风暴且无法推进。
             WorkflowRunExecutionJobEntity latest = jobRepository.findById(command.jobId()).orElse(null);
             String jobStatus = latest == null ? "missing" : latest.getStatus();
             log.info("执行租约被占用，跳过重复消费 runId={} jobId={} jobStatus={}", runId, command.jobId(), jobStatus);
@@ -182,8 +182,24 @@ public class NodeExecutionService {
             Map<String, Object> variables = variablesBeforeNode(runId, node.getSortOrder());
             Map<String, Object> outputs = dispatch(run, node, variables, command.operatorUserId());
 
+            // 中断/restart 后旧 Worker 可能仍持有内存上下文；落库前必须确认本 job 仍为 DB 中的有效 running 作业。
+            if (!isJobStillActive(command.jobId())) {
+                log.info(
+                    "作业已失效，跳过成功落库 tenantId={} runId={} nodeRunId={} jobId={} requestId={}",
+                    command.tenantId(), runId, nodeRunId, command.jobId(), command.requestId()
+                );
+                return;
+            }
             cancellationGuard.assertExecutable(runId);
             workbenchRuntimeService.saveNodeSuccess(runId, nodeRunId, outputs, command.operatorUserId());
+            WorkflowNodeRunEntity nodeAfterSave = workflowNodeRunRepository.findById(nodeRunId).orElse(null);
+            if (nodeAfterSave == null || !"completed".equals(nodeAfterSave.getState())) {
+                log.info(
+                    "节点成功落库未生效，跳过成功收尾 tenantId={} runId={} nodeRunId={} jobId={} requestId={}",
+                    command.tenantId(), runId, nodeRunId, command.jobId(), command.requestId()
+                );
+                return;
+            }
             finalizeJobSucceeded(command.jobId());
 
             emit(runId, nodeRunId, "node_completed", Map.of("outputs", outputs));
@@ -208,6 +224,31 @@ public class NodeExecutionService {
             }
             leaseService.release(runId, workerId);
         }
+    }
+
+    /**
+     * 获取执行租约。若 Redis 有锁但 DB 无 running 作业，视为孤儿锁清理后重试一次，
+     * 与 WorkbenchRuntimeService 入队前清理互为兜底（MQ 重复投递或 API/Worker 竞态）。
+     */
+    private boolean tryAcquireExecutionLease(UUID runId, String workerId, NodeExecuteCommand command) {
+        if (leaseService.tryAcquire(runId, workerId)) {
+            return true;
+        }
+        boolean hasRunningJob = !jobRepository.findByRunIdAndStatusIn(
+            runId,
+            List.of(WorkflowRunExecutionJobEntity.STATUS_RUNNING)
+        ).isEmpty();
+        if (hasRunningJob) {
+            return false;
+        }
+        log.warn(
+            "执行租约被占且无 running 作业，按孤儿锁清理后重试 runId={} jobId={} requestId={}",
+            runId,
+            command.jobId(),
+            command.requestId()
+        );
+        leaseService.forceRelease(runId);
+        return leaseService.tryAcquire(runId, workerId);
     }
 
     private Map<String, Object> dispatch(
@@ -684,6 +725,13 @@ public class NodeExecutionService {
             return;
         }
 
+        if (!isJobStillActive(command.jobId())) {
+            log.info(
+                "作业已失效，跳过失败落库 tenantId={} runId={} nodeRunId={} jobId={} errorCode={} requestId={}",
+                command.tenantId(), runId, command.nodeRunId(), command.jobId(), errorCode, command.requestId()
+            );
+            return;
+        }
         log.warn(
             "节点执行失败 tenantId={} runId={} nodeRunId={} jobId={} errorCode={} attempt={} requestId={}",
             command.tenantId(), runId, command.nodeRunId(), command.jobId(), errorCode, command.attempt(), command.requestId()
@@ -781,6 +829,16 @@ public class NodeExecutionService {
                 jobRepository.save(job);
             }
         });
+    }
+
+    /**
+     * 作业是否仍为当前 Worker 可写入的有效 running 作业。
+     * 中断/restart 会把旧 job 标为 canceled，迟到的 Worker 不得据此覆盖新执行结果。
+     */
+    private boolean isJobStillActive(UUID jobId) {
+        return jobRepository.findById(jobId)
+            .map(job -> WorkflowRunExecutionJobEntity.STATUS_RUNNING.equals(job.getStatus()))
+            .orElse(false);
     }
 
     private void emitHeartbeat(UUID runId, UUID nodeRunId, String workerId) {

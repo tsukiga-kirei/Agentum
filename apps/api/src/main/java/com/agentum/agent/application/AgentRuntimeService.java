@@ -38,7 +38,6 @@ public class AgentRuntimeService {
 
     private static final Logger log = LoggerFactory.getLogger(AgentRuntimeService.class);
     private static final Pattern VARIABLE_PATTERN = Pattern.compile("\\{\\{\\s*([\\w.\\-\\u4e00-\\u9fa5]+)\\s*}}");
-    private static final Pattern FINAL_ANSWER_FALLBACK_PATTERN = Pattern.compile("\"answer\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"");
     private static final int DEFAULT_MAX_AGENT_ITERATIONS = 4;
 
     private final TenantModelAssignmentRepository tenantModelAssignmentRepository;
@@ -348,11 +347,9 @@ public class AgentRuntimeService {
         );
         modelCallLogRepository.save(callLog);
         try {
-            ModelChatClient.ChatResult result = modelChatClient.chat(new ModelChatClient.ChatRequest(
-                provider.getId(),
-                provider.getProviderType(),
-                provider.getBaseUrl(),
-                decryptApiKey(provider),
+            ModelChatClient.ChatResult result = modelChatClient.chat(buildModelChatRequest(
+                request,
+                provider,
                 modelName,
                 messages,
                 options,
@@ -393,11 +390,9 @@ public class AgentRuntimeService {
         modelCallLogRepository.save(callLog);
         java.util.concurrent.CompletableFuture<ModelChatClient.ChatResult> future = new java.util.concurrent.CompletableFuture<>();
         StringBuilder displayText = new StringBuilder();
-        modelChatClient.chatStream(new ModelChatClient.ChatRequest(
-            provider.getId(),
-            provider.getProviderType(),
-            provider.getBaseUrl(),
-            decryptApiKey(provider),
+        modelChatClient.chatStream(buildModelChatRequest(
+            request,
+            provider,
             modelName,
             messages,
             options,
@@ -430,7 +425,7 @@ public class AgentRuntimeService {
             public void onError(String code, String message) {
                 callLog.fail(code, message, 0L, clock.instant());
                 modelCallLogRepository.save(callLog);
-                future.completeExceptionally(new ApiException(HttpStatus.BAD_GATEWAY, code, message));
+                future.completeExceptionally(modelStreamException(code, message));
             }
         });
         try {
@@ -483,11 +478,9 @@ public class AgentRuntimeService {
         modelCallLogRepository.save(callLog);
         java.util.concurrent.CompletableFuture<ModelChatClient.ChatResult> future = new java.util.concurrent.CompletableFuture<>();
         StringBuilder accumulated = new StringBuilder();
-        modelChatClient.chatStream(new ModelChatClient.ChatRequest(
-            provider.getId(),
-            provider.getProviderType(),
-            provider.getBaseUrl(),
-            decryptApiKey(provider),
+        modelChatClient.chatStream(buildModelChatRequest(
+            request,
+            provider,
             modelName,
             finalMessages,
             options,
@@ -510,7 +503,7 @@ public class AgentRuntimeService {
             public void onError(String code, String message) {
                 callLog.fail(code, message, 0L, clock.instant());
                 modelCallLogRepository.save(callLog);
-                future.completeExceptionally(new ApiException(HttpStatus.BAD_GATEWAY, code, message));
+                future.completeExceptionally(modelStreamException(code, message));
             }
         });
         try {
@@ -627,153 +620,15 @@ public class AgentRuntimeService {
      * 流式场景下 answer 可能已在 SSE 推送中展示，但 ChatResult.content 为空且 tool 参数 JSON 被截断时须回读 streamedDisplayText。
      */
     String resolveFinalAnswerContent(ModelChatClient.ChatResult result, String streamedDisplayText) {
-        if (result == null) {
-            return "";
-        }
-        Optional<String> parsedFromTool = extractCompleteFinalAnswer(result.toolCalls());
-        if (parsedFromTool.isPresent() && !parsedFromTool.get().isBlank()) {
-            return parsedFromTool.get();
-        }
-        String streamed = firstNonBlank(streamedDisplayText);
-        if (!streamed.isBlank()) {
-            return streamed;
-        }
-        String content = firstNonBlank(result.content());
-        if (!content.isBlank()) {
-            return content;
-        }
-        for (ModelChatClient.ToolCall toolCall : result.toolCalls()) {
-            if (!"final_answer".equals(toolCall.name())) {
-                continue;
-            }
-            String partial = extractPartialAnswerFromTruncatedJson(toolCall.argumentsJson());
-            if (!partial.isBlank()) {
-                return partial;
-            }
-        }
-        return "";
+        return FinalAnswerContentResolver.resolve(result, streamedDisplayText, objectMapper);
     }
 
-    private Optional<String> extractFinalAnswer(List<ModelChatClient.ToolCall> toolCalls) {
-        for (ModelChatClient.ToolCall toolCall : toolCalls) {
-            if (!"final_answer".equals(toolCall.name())) {
-                continue;
-            }
-            Optional<String> complete = extractCompleteFinalAnswer(List.of(toolCall));
-            if (complete.isPresent()) {
-                return complete;
-            }
-            String partial = extractPartialAnswerFromTruncatedJson(toolCall.argumentsJson());
-            if (!partial.isBlank()) {
-                log.info(
-                    "final_answer 参数 JSON 不完整，已从截断内容中提取 answer requestId={}",
-                    RequestIds.current()
-                );
-                return Optional.of(partial);
-            }
-            partial = extractPartialAnswerFromTruncatedJson(stringValue(parseFinalAnswerArguments(toolCall.argumentsJson()).get("raw")));
-            if (!partial.isBlank()) {
-                return Optional.of(partial);
-            }
-            return Optional.empty();
-        }
-        return Optional.empty();
-    }
-
-    /** 仅当 JSON 可完整解析或正则匹配到闭合字符串时返回 answer，避免截断 JSON 的短片段覆盖流式正文。 */
-    private Optional<String> extractCompleteFinalAnswer(List<ModelChatClient.ToolCall> toolCalls) {
-        for (ModelChatClient.ToolCall toolCall : toolCalls) {
-            if (!"final_answer".equals(toolCall.name())) {
-                continue;
-            }
-            String rawJson = toolCall.argumentsJson();
-            Map<String, Object> args = looksLikeTruncatedFinalAnswerJson(rawJson)
-                ? Map.of("raw", rawJson)
-                : parseJsonObject(rawJson);
-            String answer = stringValue(args.get("answer"));
-            if (!answer.isBlank()) {
-                return Optional.of(answer);
-            }
-            Matcher matcher = FINAL_ANSWER_FALLBACK_PATTERN.matcher(rawJson == null ? "" : rawJson);
-            if (matcher.find()) {
-                return Optional.of(unescapeJsonString(matcher.group(1)));
-            }
-            return Optional.empty();
-        }
-        return Optional.empty();
-    }
-
-    /**
-     * 从被截断的 final_answer JSON 中提取 answer 字符串值（即使没有闭合引号）。
-     * 部分模型在超长输出时会在 tool_calls.arguments 处截断，导致 Jackson 解析 EOF。
-     */
     static String extractPartialAnswerFromTruncatedJson(String rawJson) {
-        if (rawJson == null || rawJson.isBlank()) {
-            return "";
-        }
-        int answerKey = indexOfAnswerKey(rawJson);
-        if (answerKey < 0) {
-            return "";
-        }
-        int colon = rawJson.indexOf(':', answerKey);
-        if (colon < 0) {
-            return "";
-        }
-        int start = colon + 1;
-        while (start < rawJson.length() && Character.isWhitespace(rawJson.charAt(start))) {
-            start++;
-        }
-        if (start >= rawJson.length()) {
-            return "";
-        }
-        char quote = rawJson.charAt(start);
-        if (quote != '"' && quote != '\'') {
-            return "";
-        }
-        start++;
-        StringBuilder builder = new StringBuilder();
-        boolean escaped = false;
-        for (int index = start; index < rawJson.length(); index++) {
-            char current = rawJson.charAt(index);
-            if (escaped) {
-                appendEscapedChar(builder, current);
-                escaped = false;
-                continue;
-            }
-            if (current == '\\') {
-                escaped = true;
-                continue;
-            }
-            if (current == quote) {
-                break;
-            }
-            builder.append(current);
-        }
-        return builder.toString().trim();
+        return FinalAnswerContentResolver.extractPartialAnswerFromTruncatedJson(rawJson);
     }
 
-    private static int indexOfAnswerKey(String rawJson) {
-        int answerKey = rawJson.indexOf("\"answer\"");
-        if (answerKey >= 0) {
-            return answerKey;
-        }
-        return rawJson.indexOf("'answer'");
-    }
-
-    private static void appendEscapedChar(StringBuilder builder, char current) {
-        switch (current) {
-            case 'n' -> builder.append('\n');
-            case 't' -> builder.append('\t');
-            case 'r' -> builder.append('\r');
-            default -> builder.append(current);
-        }
-    }
-
-    private static String unescapeJsonString(String value) {
-        if (value == null || value.isBlank()) {
-            return "";
-        }
-        return value.replace("\\n", "\n").replace("\\t", "\t").replace("\\r", "\r").replace("\\\"", "\"").replace("\\\\", "\\");
+    static boolean looksLikeTruncatedFinalAnswerJson(String rawJson) {
+        return FinalAnswerContentResolver.looksLikeTruncatedFinalAnswerJson(rawJson);
     }
 
     private void emitFinalAnswer(AgentRuntimeEventSink eventSink, String finalAnswer) {
@@ -800,30 +655,6 @@ public class AgentRuntimeService {
     }
 
     /** final_answer 专用：已知截断时不走 Jackson，避免无意义的 EOF 堆栈。 */
-    private Map<String, Object> parseFinalAnswerArguments(String rawJson) {
-        if (rawJson == null || rawJson.isBlank()) {
-            return Map.of();
-        }
-        if (looksLikeTruncatedFinalAnswerJson(rawJson)) {
-            return Map.of("raw", rawJson);
-        }
-        return parseJsonObject(rawJson);
-    }
-
-    /**
-     * GLM 等模型在 tool_calls.arguments 上存在约 3.4KB 硬上限，超长 answer 会在字符串中间被截断。
-     */
-    static boolean looksLikeTruncatedFinalAnswerJson(String rawJson) {
-        if (rawJson == null || rawJson.isBlank()) {
-            return false;
-        }
-        String trimmed = rawJson.trim();
-        if (!trimmed.startsWith("{") || indexOfAnswerKey(trimmed) < 0) {
-            return false;
-        }
-        return !trimmed.endsWith("}") && !trimmed.endsWith("\"}");
-    }
-
     private static int intValue(Object value, int fallback) {
         if (value instanceof Number number) {
             return number.intValue();
@@ -985,6 +816,36 @@ public class AgentRuntimeService {
     private void assertRunNotCancelled(UUID runId) {
         // 取消信号与执行截止时间均存放在 Redis：用户中断抛 RUN_CANCELLED，超时抛 WORKBENCH_NODE_EXECUTION_TIMEOUT。
         cancellationGuard.assertExecutable(runId);
+    }
+
+    /**
+     * 为运行态模型调用注入中断探测，供流式客户端在 readLine 阻塞期间主动断开 HTTP 连接。
+     */
+    private ModelChatClient.ChatRequest buildModelChatRequest(
+        AgentRuntimeRequest request,
+        ModelProviderEntity provider,
+        String modelName,
+        List<ModelChatClient.ChatMessage> messages,
+        Map<String, Object> options,
+        List<ModelChatClient.ToolDefinition> tools
+    ) {
+        UUID runId = request.run().getId();
+        return new ModelChatClient.ChatRequest(
+            provider.getId(),
+            provider.getProviderType(),
+            provider.getBaseUrl(),
+            decryptApiKey(provider),
+            modelName,
+            messages,
+            options,
+            tools,
+            () -> cancellationGuard.isCancelled(runId)
+        );
+    }
+
+    private static ApiException modelStreamException(String code, String message) {
+        HttpStatus status = "RUN_CANCELLED".equals(code) ? HttpStatus.CONFLICT : HttpStatus.BAD_GATEWAY;
+        return new ApiException(status, code, message);
     }
 
     private static String stringValue(Object value) {

@@ -405,4 +405,8 @@ export type RunStreamState = {
   ensureConnected: (timeoutMs?: number) => Promise<void>;
   /** 断开连接 */
   disconnect: (options?: { preserveProgress?: boolean }) => void;
+  /** 当前步骤 SSE 流是否已到达终态（node_completed / [DONE]），用于抑制结束后的误重连 */
+  isStepStreamTerminal: () => boolean;
+  /** 新一轮执行开始前清除终态标记（重新执行 / 恢复 / 推进等） */
+  clearStepStreamTerminal: () => void;
 };

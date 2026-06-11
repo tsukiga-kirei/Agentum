@@ -1,11 +1,14 @@
 package com.agentum.agent.infrastructure;
 
+import com.agentum.agent.application.FinalAnswerContentResolver;
 import com.agentum.agent.application.ModelChatClient;
 import com.agentum.shared.api.ApiException;
 import com.agentum.shared.api.RequestIds;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
@@ -13,6 +16,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BooleanSupplier;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,6 +36,7 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
     private static final Logger log = LoggerFactory.getLogger(OpenAiCompatibleModelChatClient.class);
     private static final int LOG_TEXT_MAX_LENGTH = 400;
     private static final int LOG_RESPONSE_BODY_MAX_LENGTH = 4000;
+    private static final long STREAM_CANCEL_POLL_INTERVAL_MS = 300L;
 
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
@@ -65,7 +71,8 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
                 .body(String.class);
             long latency = Duration.between(startedAt, Instant.now()).toMillis();
             ChatResult result = parseResult(body, latency);
-            logChatResponse(request, result, body, latency, false);
+            String resolvedAnswer = FinalAnswerContentResolver.resolve(result, "", objectMapper);
+            logChatResponse(request, result, resolvedAnswer, latency, false);
             return result;
         } catch (ApiException exception) {
             throw exception;
@@ -141,8 +148,11 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
                         callback.onError("MODEL_HTTP_ERROR", "HTTP " + response.getStatusCode() + ": " + errorBody);
                         return null;
                     }
+                    InputStream rawBody = response.getBody();
+                    AtomicBoolean abortedByCancel = new AtomicBoolean(false);
+                    Thread cancelWatcher = startStreamCancelWatcher(request.cancelProbe(), rawBody, abortedByCancel);
                     try (java.io.BufferedReader reader = new java.io.BufferedReader(
-                            new java.io.InputStreamReader(response.getBody(), java.nio.charset.StandardCharsets.UTF_8))) {
+                            new java.io.InputStreamReader(rawBody, java.nio.charset.StandardCharsets.UTF_8))) {
                         String line;
                         StringBuilder accumulated = new StringBuilder();
                         String responseId = "";
@@ -155,6 +165,10 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
                         int previousFinalAnswerArgumentsLength = 0;
 
                         while ((line = reader.readLine()) != null) {
+                            if (isStreamCancelled(request.cancelProbe(), abortedByCancel)) {
+                                closeQuietly(rawBody);
+                                break;
+                            }
                             String trimmed = line.trim();
                             if (trimmed.isEmpty()) {
                                 continue;
@@ -204,6 +218,11 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
                                 }
                             }
                         }
+                        if (isStreamCancelled(request.cancelProbe(), abortedByCancel)) {
+                            logStreamAbortedByCancel(request, startedAt);
+                            callback.onError("RUN_CANCELLED", "任务已中断");
+                            return null;
+                        }
                         // 部分供应商在最后一个 chunk 才下发完整 tool_calls，此处补推一次累积 answer，避免运行态丢失流式正文。
                         String flushedFinalAnswer = finalAnswerStreamer.accumulatedAnswer();
                         if (!flushedFinalAnswer.isEmpty()) {
@@ -226,11 +245,32 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
                             toolCalls,
                             finishReason
                         );
-                        logChatResponse(request, result, accumulated.toString(), latency, true);
+                        String resolvedAnswer = FinalAnswerContentResolver.resolve(
+                            result,
+                            finalAnswerStreamer.accumulatedAnswer(),
+                            objectMapper
+                        );
+                        logChatResponse(request, result, resolvedAnswer, latency, true);
                         callback.onComplete(result);
+                    } catch (IOException exception) {
+                        if (isStreamCancelled(request.cancelProbe(), abortedByCancel)) {
+                            logStreamAbortedByCancel(request, startedAt);
+                            callback.onError("RUN_CANCELLED", "任务已中断");
+                            return null;
+                        }
+                        log.warn("处理模型聊天流 IO 异常 providerId={} model={} requestId={}",
+                            request.providerId(), request.modelName(), RequestIds.current(), exception);
+                        callback.onError("MODEL_STREAM_PROCESSING_ERROR", exception.getMessage());
                     } catch (Exception e) {
+                        if (isStreamCancelled(request.cancelProbe(), abortedByCancel)) {
+                            logStreamAbortedByCancel(request, startedAt);
+                            callback.onError("RUN_CANCELLED", "任务已中断");
+                            return null;
+                        }
                         log.warn("处理模型聊天流异常", e);
                         callback.onError("MODEL_STREAM_PROCESSING_ERROR", e.getMessage());
+                    } finally {
+                        stopStreamCancelWatcher(cancelWatcher);
                     }
                     return null;
                 });
@@ -552,12 +592,14 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
     }
 
     /**
-     * 记录模型对接响应摘要，包含耗时、finish_reason、工具调用与脱敏后的响应体片段。
+     * 记录模型对接响应摘要。contentPreview/responseBody 使用与落库、前端一致的 resolvedFinalAnswer，
+     * 避免 content 与 final_answer 工具参数不一致时日志误导排查。
      */
-    private void logChatResponse(ChatRequest request, ChatResult result, String rawBody, long latencyMs, boolean streaming) {
+    private void logChatResponse(ChatRequest request, ChatResult result, String resolvedFinalAnswer, long latencyMs, boolean streaming) {
         List<String> toolCallNames = result.toolCalls().stream()
             .map(ModelChatClient.ToolCall::name)
             .collect(Collectors.toList());
+        String loggedAnswer = resolvedFinalAnswer == null ? "" : resolvedFinalAnswer;
         log.debug(
             "模型聊天响应 providerId={} providerType={} model={} streaming={} latencyMs={} finishReason={} contentLength={} toolCallCount={} toolCallNames={} tokenUsage={} contentPreview={} responseBody={} requestId={}",
             request.providerId(),
@@ -566,12 +608,12 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
             streaming,
             latencyMs,
             result.finishReason(),
-            result.content() == null ? 0 : result.content().length(),
+            loggedAnswer.length(),
             result.toolCalls().size(),
             toolCallNames,
             result.tokenUsage(),
-            truncateForLog(result.content(), LOG_TEXT_MAX_LENGTH),
-            truncateForLog(rawBody, LOG_RESPONSE_BODY_MAX_LENGTH),
+            truncateForLog(loggedAnswer, LOG_TEXT_MAX_LENGTH),
+            truncateForLog(loggedAnswer, LOG_RESPONSE_BODY_MAX_LENGTH),
             RequestIds.current()
         );
     }
@@ -674,5 +716,69 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
             return value;
         }
         return value.substring(0, maxLength) + "...(truncated," + value.length() + " chars)";
+    }
+
+    /**
+     * 后台轮询中断信号：readLine 阻塞期间无法检查 cancel，需主动关闭响应体打断 HTTP 流。
+     */
+    private static Thread startStreamCancelWatcher(
+        BooleanSupplier cancelProbe,
+        InputStream rawBody,
+        AtomicBoolean abortedByCancel
+    ) {
+        if (cancelProbe == null) {
+            return null;
+        }
+        Thread watcher = new Thread(() -> {
+            while (!Thread.currentThread().isInterrupted()) {
+                try {
+                    Thread.sleep(STREAM_CANCEL_POLL_INTERVAL_MS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+                if (cancelProbe.getAsBoolean()) {
+                    abortedByCancel.set(true);
+                    closeQuietly(rawBody);
+                    return;
+                }
+            }
+        }, "model-stream-cancel-watch");
+        watcher.setDaemon(true);
+        watcher.start();
+        return watcher;
+    }
+
+    private static void stopStreamCancelWatcher(Thread cancelWatcher) {
+        if (cancelWatcher == null) {
+            return;
+        }
+        cancelWatcher.interrupt();
+    }
+
+    private static boolean isStreamCancelled(BooleanSupplier cancelProbe, AtomicBoolean abortedByCancel) {
+        return abortedByCancel.get() || (cancelProbe != null && cancelProbe.getAsBoolean());
+    }
+
+    private static void closeQuietly(InputStream rawBody) {
+        if (rawBody == null) {
+            return;
+        }
+        try {
+            rawBody.close();
+        } catch (IOException ignored) {
+            // 关闭流以打断阻塞读即可，无需向上抛出。
+        }
+    }
+
+    private void logStreamAbortedByCancel(ChatRequest request, Instant startedAt) {
+        long latencyMs = Duration.between(startedAt, Instant.now()).toMillis();
+        log.info(
+            "模型流式调用因任务中断而终止 providerId={} model={} latencyMs={} requestId={}",
+            request.providerId(),
+            request.modelName(),
+            latencyMs,
+            RequestIds.current()
+        );
     }
 }

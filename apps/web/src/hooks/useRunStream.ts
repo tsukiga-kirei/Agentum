@@ -88,6 +88,18 @@ export function useRunStream(
   const pendingConnectResolversRef = useRef<Array<() => void>>([]);
   const activeNodeRunIdRef = useRef<string | null>(null);
   const reconnectFailuresRef = useRef(0);
+  /** 本步骤 SSE 已收到终态事件；在 reloadRunDetail 完成前阻止自动重连 */
+  const stepStreamTerminalRef = useRef(false);
+
+  const markStepStreamTerminal = useCallback(() => {
+    stepStreamTerminalRef.current = true;
+  }, []);
+
+  const clearStepStreamTerminal = useCallback(() => {
+    stepStreamTerminalRef.current = false;
+  }, []);
+
+  const isStepStreamTerminal = useCallback(() => stepStreamTerminalRef.current, []);
 
   const disconnect = useCallback((options?: { preserveProgress?: boolean }) => {
     const preserveProgress = options?.preserveProgress === true;
@@ -240,6 +252,7 @@ export function useRunStream(
                 if (dataStr === "[DONE]") {
                   // 步骤终态：清除断点记录，下次进入重新整步回放。
                   clearStoredLastEventId(runId);
+                  markStepStreamTerminal();
                   if (session === connectSessionRef.current) {
                     disconnect();
                   }
@@ -335,6 +348,7 @@ export function useRunStream(
 
       case "node_started": {
         const { nodeRunId, nodeName, nodeType } = event.data;
+        stepStreamTerminalRef.current = false;
         const isSameNode = activeNodeRunIdRef.current === nodeRunId;
         activeNodeRunIdRef.current = nodeRunId;
         setActiveNodeInfo({ nodeRunId, nodeName, nodeType });
@@ -480,6 +494,7 @@ export function useRunStream(
       }
 
       case "node_completed":
+        markStepStreamTerminal();
         setIsStreaming(false);
         setCurrentPhase("completed");
         setExecutionSteps((prev) => finalizeFinalAnswerStep(prev));
@@ -489,6 +504,7 @@ export function useRunStream(
 
       case "node_failed": {
         const { errorCode, errorMessage } = event.data;
+        markStepStreamTerminal();
         setIsStreaming(false);
         setCurrentPhase("failed");
         setActiveNodeInfo(null);
@@ -502,6 +518,7 @@ export function useRunStream(
         break;
 
       case "run_completed":
+        markStepStreamTerminal();
         setIsStreaming(false);
         setActiveNodeInfo(null);
         setConnectionState("disconnected");
@@ -514,10 +531,11 @@ export function useRunStream(
   };
 
   useEffect(() => {
+    stepStreamTerminalRef.current = false;
     return () => {
       disconnect();
     };
-  }, [disconnect]);
+  }, [runId, disconnect]);
 
   return {
     events,
@@ -536,5 +554,7 @@ export function useRunStream(
     connect,
     ensureConnected,
     disconnect,
+    isStepStreamTerminal,
+    clearStepStreamTerminal,
   };
 }
