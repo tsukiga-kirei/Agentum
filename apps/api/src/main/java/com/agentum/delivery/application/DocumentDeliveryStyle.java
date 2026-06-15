@@ -17,6 +17,7 @@ public record DocumentDeliveryStyle(
     int heading3FontSize,
     double lineSpacing,
     double firstLineIndentChars,
+    int paragraphSpacingBefore,
     int paragraphSpacingAfter,
     double marginTopCm,
     double marginBottomCm,
@@ -36,6 +37,7 @@ public record DocumentDeliveryStyle(
             13,
             1.5,
             2,
+            0,
             6,
             2.54,
             2.54,
@@ -58,6 +60,7 @@ public record DocumentDeliveryStyle(
             readInt(source, "heading3FontSize", defaults.heading3FontSize(), 8, 72),
             readDouble(source, "lineSpacing", defaults.lineSpacing(), 1.0, 3.0),
             readDouble(source, "firstLineIndentChars", defaults.firstLineIndentChars(), 0.0, 6.0),
+            readInt(source, "paragraphSpacingBefore", defaults.paragraphSpacingBefore(), 0, 72),
             readInt(source, "paragraphSpacingAfter", defaults.paragraphSpacingAfter(), 0, 72),
             readDouble(source, "marginTopCm", defaults.marginTopCm(), 0.5, 6.0),
             readDouble(source, "marginBottomCm", defaults.marginBottomCm(), 0.5, 6.0),
@@ -78,6 +81,7 @@ public record DocumentDeliveryStyle(
         result.put("heading3FontSize", heading3FontSize);
         result.put("lineSpacing", lineSpacing);
         result.put("firstLineIndentChars", firstLineIndentChars);
+        result.put("paragraphSpacingBefore", paragraphSpacingBefore);
         result.put("paragraphSpacingAfter", paragraphSpacingAfter);
         result.put("marginTopCm", marginTopCm);
         result.put("marginBottomCm", marginBottomCm);

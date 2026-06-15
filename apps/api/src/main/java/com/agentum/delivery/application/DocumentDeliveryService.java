@@ -186,6 +186,7 @@ public class DocumentDeliveryService {
             "heading3FontSize",
             "lineSpacing",
             "firstLineIndentChars",
+            "paragraphSpacingBefore",
             "paragraphSpacingAfter",
             "marginTopCm",
             "marginBottomCm",

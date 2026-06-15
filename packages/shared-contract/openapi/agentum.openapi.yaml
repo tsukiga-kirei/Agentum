@@ -4311,6 +4311,10 @@ components:
         firstLineIndentChars:
           type: number
           default: 2
+        paragraphSpacingBefore:
+          type: integer
+          default: 0
+          description: 正文段前间距，单位为 pt。
         paragraphSpacingAfter:
           type: integer
           default: 6

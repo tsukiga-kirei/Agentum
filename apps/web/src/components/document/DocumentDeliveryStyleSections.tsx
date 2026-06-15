@@ -15,7 +15,8 @@ import {
   MARGIN_PRESET_OPTIONS,
   type DocumentDeliveryStyleValues,
   type MarginPresetKey,
-  PARAGRAPH_SPACING_OPTIONS,
+  PARAGRAPH_SPACING_AFTER_OPTIONS,
+  PARAGRAPH_SPACING_BEFORE_OPTIONS,
   stringifyFontSizeValue,
   stringifySelectValue,
   TITLE_ALIGNMENT_OPTIONS,
@@ -187,10 +188,17 @@ export function DocumentDeliveryStyleSections({ style, onFieldChange, onFieldsCh
           onChange={(value) => onFieldChange("firstLineIndentChars", Number(value))}
         />
         <StyleSelectField
+          label="段前间距"
+          icon={FileText}
+          value={stringifySelectValue(style.paragraphSpacingBefore)}
+          options={PARAGRAPH_SPACING_BEFORE_OPTIONS}
+          onChange={(value) => onFieldChange("paragraphSpacingBefore", Number(value))}
+        />
+        <StyleSelectField
           label="段后间距"
           icon={FileText}
           value={stringifySelectValue(style.paragraphSpacingAfter)}
-          options={PARAGRAPH_SPACING_OPTIONS}
+          options={PARAGRAPH_SPACING_AFTER_OPTIONS}
           onChange={(value) => onFieldChange("paragraphSpacingAfter", Number(value))}
         />
         <StyleSelectField

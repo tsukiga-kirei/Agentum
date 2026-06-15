@@ -13,7 +13,8 @@ import {
   MARGIN_PRESETS,
   MARGIN_PRESET_OPTIONS,
   type MarginPresetKey,
-  PARAGRAPH_SPACING_OPTIONS,
+  PARAGRAPH_SPACING_AFTER_OPTIONS,
+  PARAGRAPH_SPACING_BEFORE_OPTIONS,
   stringifyFontSizeValue,
   TITLE_ALIGNMENT_OPTIONS,
 } from "../../constants/documentDeliveryStyleOptions";
@@ -178,13 +179,23 @@ export function DocumentDeliveryStyleAdminSections({
         </AdminStyleRow>
         <AdminStyleRow>
           <SelectField
+            label="段前间距"
+            icon={FileText}
+            defaultValue={values.documentParagraphSpacingBefore || "0"}
+            placeholder="请选择段前间距"
+            options={PARAGRAPH_SPACING_BEFORE_OPTIONS}
+            onChange={(value) => onChange("documentParagraphSpacingBefore", value)}
+          />
+          <SelectField
             label="段后间距"
             icon={FileText}
             defaultValue={values.documentParagraphSpacingAfter || "6"}
             placeholder="请选择段后间距"
-            options={PARAGRAPH_SPACING_OPTIONS}
+            options={PARAGRAPH_SPACING_AFTER_OPTIONS}
             onChange={(value) => onChange("documentParagraphSpacingAfter", value)}
           />
+        </AdminStyleRow>
+        <AdminStyleRow>
           <SelectField
             label="首行标题对齐"
             icon={AlignCenter}
@@ -193,8 +204,6 @@ export function DocumentDeliveryStyleAdminSections({
             options={TITLE_ALIGNMENT_OPTIONS}
             onChange={(value) => onChange("documentTitleCentered", value)}
           />
-        </AdminStyleRow>
-        <AdminStyleRow>
           <SelectField
             label="标题首行缩进"
             icon={FileText}

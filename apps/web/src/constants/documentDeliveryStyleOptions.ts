@@ -7,6 +7,7 @@ export type DocumentDeliveryStyleValues = {
   heading3FontSize: string | number;
   lineSpacing: number;
   firstLineIndentChars: number;
+  paragraphSpacingBefore: number;
   paragraphSpacingAfter: number;
   marginTopCm: number;
   marginBottomCm: number;
@@ -71,7 +72,17 @@ export const FIRST_LINE_INDENT_OPTIONS: SelectOption[] = [
   { value: "6", label: "6 字符" },
 ];
 
-export const PARAGRAPH_SPACING_OPTIONS: SelectOption[] = [
+export const PARAGRAPH_SPACING_BEFORE_OPTIONS: SelectOption[] = [
+  { value: "0", label: "0 pt（默认）" },
+  { value: "3", label: "3 pt" },
+  { value: "6", label: "6 pt" },
+  { value: "9", label: "9 pt" },
+  { value: "12", label: "12 pt" },
+  { value: "18", label: "18 pt" },
+  { value: "24", label: "24 pt" },
+];
+
+export const PARAGRAPH_SPACING_AFTER_OPTIONS: SelectOption[] = [
   { value: "0", label: "0 pt" },
   { value: "3", label: "3 pt" },
   { value: "6", label: "6 pt（默认）" },
@@ -80,6 +91,9 @@ export const PARAGRAPH_SPACING_OPTIONS: SelectOption[] = [
   { value: "18", label: "18 pt" },
   { value: "24", label: "24 pt" },
 ];
+
+/** @deprecated 使用 PARAGRAPH_SPACING_AFTER_OPTIONS */
+export const PARAGRAPH_SPACING_OPTIONS = PARAGRAPH_SPACING_AFTER_OPTIONS;
 
 export const TITLE_ALIGNMENT_OPTIONS: SelectOption[] = [
   { value: "false", label: "默认左对齐" },

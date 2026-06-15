@@ -173,7 +173,8 @@ public class MarkdownDocxRenderer {
         String pPr = switch (kind) {
             case BODY -> {
                 StringBuilder builder = new StringBuilder();
-                builder.append("<w:pPr><w:spacing w:after=\"").append(twips(style.paragraphSpacingAfter()))
+                builder.append("<w:pPr><w:spacing w:before=\"").append(twips(style.paragraphSpacingBefore()))
+                    .append("\" w:after=\"").append(twips(style.paragraphSpacingAfter()))
                     .append("\" w:line=\"").append(lineTwips(style.lineSpacing())).append("\" w:lineRule=\"auto\"/>");
                 if (!centered) {
                     builder.append("<w:ind w:firstLine=\"").append(firstLineTwips(style)).append("\"/>");
@@ -184,8 +185,8 @@ public class MarkdownDocxRenderer {
                 builder.append("</w:pPr>");
                 yield builder.toString();
             }
-            case LIST -> "<w:pPr><w:spacing w:after=\"" + twips(style.paragraphSpacingAfter()) + "\" w:line=\"" + lineTwips(style.lineSpacing()) + "\" w:lineRule=\"auto\"/><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr>";
-            case QUOTE -> "<w:pPr><w:spacing w:after=\"" + twips(style.paragraphSpacingAfter()) + "\" w:line=\"" + lineTwips(style.lineSpacing()) + "\" w:lineRule=\"auto\"/><w:ind w:left=\"480\"/></w:pPr>";
+            case LIST -> "<w:pPr><w:spacing w:before=\"" + twips(style.paragraphSpacingBefore()) + "\" w:after=\"" + twips(style.paragraphSpacingAfter()) + "\" w:line=\"" + lineTwips(style.lineSpacing()) + "\" w:lineRule=\"auto\"/><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr>";
+            case QUOTE -> "<w:pPr><w:spacing w:before=\"" + twips(style.paragraphSpacingBefore()) + "\" w:after=\"" + twips(style.paragraphSpacingAfter()) + "\" w:line=\"" + lineTwips(style.lineSpacing()) + "\" w:lineRule=\"auto\"/><w:ind w:left=\"480\"/></w:pPr>";
             case TABLE_CELL -> "<w:pPr><w:spacing w:after=\"0\" w:line=\"" + lineTwips(style.lineSpacing()) + "\" w:lineRule=\"auto\"/></w:pPr>";
             case CODE -> "<w:pPr><w:spacing w:after=\"60\"/><w:shd w:fill=\"F6F8FA\"/></w:pPr>";
         };
