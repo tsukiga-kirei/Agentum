@@ -137,7 +137,7 @@ public class WorkflowDesignerCatalogService {
                 "brickType", "delivery",
                 "deliveryMode", "direct",
                 "deliveryType", "direct",
-                "deliveryContent", "# 交付结果\n\n{{cluster_result}}"
+                "deliveryContent", "# 交付结果\n\n请在这里编写最终交付内容。"
             ),
             "待配置",
             "一次性输出",

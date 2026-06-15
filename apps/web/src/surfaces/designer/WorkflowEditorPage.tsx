@@ -2920,6 +2920,14 @@ function createNodeFromTemplate(template: WorkflowBrickTemplate, index: number, 
     outputVariables = clusterAgents.map((agent) => agent.output);
   }
 
+  if (brickType === "delivery") {
+    // 新建交付节点按紧邻上游输出变量生成默认模板，避免沿用 catalog 中不存在的占位变量。
+    const upstreamVariable = inputVariables[inputVariables.length - 1];
+    rawConfig.deliveryContent = upstreamVariable
+      ? `# 交付结果\n\n{{${upstreamVariable}}}`
+      : "# 交付结果\n\n请在这里编写最终交付内容。";
+  }
+
   return {
     id,
     position: { x: index * 260, y: 0 },
