@@ -15,6 +15,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -306,7 +308,9 @@ public class DocumentDeliveryService {
     private String renderTextTemplate(String template, Map<String, Object> variables) {
         String result = template == null ? "" : template;
         for (Map.Entry<String, Object> entry : variables.entrySet()) {
-            result = result.replace("{{" + entry.getKey() + "}}", entry.getValue() == null ? "" : entry.getValue().toString());
+            String pattern = "\\{\\{\\s*" + Pattern.quote(entry.getKey()) + "\\s*\\}\\}";
+            String replacement = entry.getValue() == null ? "" : entry.getValue().toString();
+            result = result.replaceAll(pattern, Matcher.quoteReplacement(replacement));
         }
         return result;
     }
@@ -314,7 +318,8 @@ public class DocumentDeliveryService {
     private String renderMarkdownTemplate(String template, Map<String, Object> variables) {
         String result = template == null ? "" : template;
         for (Map.Entry<String, Object> entry : variables.entrySet()) {
-            result = result.replace("{{" + entry.getKey() + "}}", objectToMarkdown(entry.getValue()));
+            String pattern = "\\{\\{\\s*" + Pattern.quote(entry.getKey()) + "\\s*\\}\\}";
+            result = result.replaceAll(pattern, Matcher.quoteReplacement(objectToMarkdown(entry.getValue())));
         }
         return result;
     }

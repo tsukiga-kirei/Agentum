@@ -290,6 +290,11 @@ public class WorkbenchRuntimeService {
         List<WorkflowNodeRunEntity> nodeRuns = new ArrayList<>();
         for (int index = 0; index < snapshotNodes.size(); index++) {
             SnapshotNode node = snapshotNodes.get(index);
+            Map<String, Object> configSnapshot = promptContentResolver.enrichConfigSnapshot(
+                tenantId,
+                node.nodeType(),
+                enrichRuntimeNodeConfig(node)
+            );
             nodeRuns.add(WorkflowNodeRunEntity.pending(
                 run.getId(),
                 tenantId,
@@ -300,7 +305,7 @@ public class WorkbenchRuntimeService {
                 node.name(),
                 snapshotVariables(node.inputVariables(), "等待上游输入"),
                 Map.of(),
-                promptContentResolver.enrichConfigSnapshot(tenantId, node.nodeType(), node.config()),
+                configSnapshot,
                 index,
                 now
             ));
@@ -2324,6 +2329,18 @@ public class WorkbenchRuntimeService {
 
     private boolean isTenantManager(CurrentUserPrincipal principal) {
         return principal != null && ("tenant_admin".equals(principal.role()) || "system_admin".equals(principal.role()));
+    }
+
+    private Map<String, Object> enrichRuntimeNodeConfig(SnapshotNode node) {
+        Map<String, Object> config = new LinkedHashMap<>(node.config());
+        if ("agent".equals(node.nodeType()) && !node.outputVariables().isEmpty()) {
+            String outputName = node.outputVariables().get(0);
+            if (outputName != null && !outputName.isBlank()) {
+                config.putIfAbsent("output", outputName.trim());
+                config.putIfAbsent("outputVariable", outputName.trim());
+            }
+        }
+        return config;
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

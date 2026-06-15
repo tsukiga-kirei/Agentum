@@ -87,6 +87,33 @@ class DocumentDeliveryServiceTest {
     }
 
     @Test
+    void shouldRenderMarkdownTemplateWithOptionalWhitespaceAroundVariableName() {
+        SystemCapabilityEntity capability = wordCapability(Map.of("retentionDays", 7));
+        when(renderer.render(any(), any())).thenReturn(new byte[] {1, 2, 3});
+        when(storage.store(eq(TENANT_ID), eq(RECORD_ID), any(), any()))
+            .thenReturn(new DocumentDeliveryArtifact(
+                "交付文档.docx",
+                "deliveries/documents/key.docx",
+                MarkdownDocxRenderer.DOCX_CONTENT_TYPE,
+                3
+            ));
+
+        Map<String, Object> result = service.generateRuntimeDocument(
+            TENANT_ID,
+            OPERATOR_ID,
+            RECORD_ID,
+            capability,
+            Map.of("markdownContent", "# 月报\n\n{{ agent }}"),
+            Map.of("agent", "授信通过")
+        );
+
+        ArgumentCaptor<String> markdownCaptor = ArgumentCaptor.forClass(String.class);
+        verify(renderer).render(markdownCaptor.capture(), any(DocumentDeliveryStyle.class));
+        assertThat(markdownCaptor.getValue()).isEqualTo("# 月报\n\n授信通过");
+        assertThat(result).containsEntry("retentionDays", 7);
+    }
+
+    @Test
     void shouldRejectWordDeliveryWithoutMarkdownTemplate() {
         SystemCapabilityEntity capability = wordCapability(Map.of());
 

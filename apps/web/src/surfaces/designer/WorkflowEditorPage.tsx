@@ -1687,7 +1687,8 @@ function DeliveryBrickConfig({
     setExporting(true);
     try {
       const fileName = ensureDocxFileName(renderDesignTemplate(fileNameTemplate, workflowVariables));
-      const markdown = readString(config.previewMarkdown, DEFAULT_WORD_PREVIEW_MARKDOWN);
+      const markdownTemplate = readString(config.markdownContent, defaultMarkdownTemplate);
+      const markdown = renderDesignTemplate(markdownTemplate, workflowVariables);
       const request: WordDocumentPreviewRequest = {
         capabilityId: effectiveSelectedCapabilityId,
         markdown,
@@ -2998,10 +2999,34 @@ function toEditorEdge(edge: WorkflowEdgeDraft): WorkflowEditorEdge {
   };
 }
 
+function syncAgentOutputConfig(
+  nodeType: string,
+  outputVariables: string[],
+  config: Record<string, unknown>,
+): Record<string, unknown> {
+  if (nodeType !== "agent" || outputVariables.length === 0) {
+    return config;
+  }
+  const outputName = outputVariables[0]?.trim();
+  if (!outputName) {
+    return config;
+  }
+  return {
+    ...config,
+    output: outputName,
+    outputVariable: outputName,
+  };
+}
+
 function toWorkflowNodeDraft(node: WorkflowEditorNode): WorkflowNodeDraft {
   const normalizedConfig = normalizeWorkflowNodeConfig(
     node.data.nodeType,
     (node.data.rawConfig ?? {}) as Record<string, unknown>,
+  );
+  const configWithOutput = syncAgentOutputConfig(
+    node.data.nodeType,
+    node.data.outputVariables,
+    normalizedConfig,
   );
   return {
     nodeId: node.id,
@@ -3012,7 +3037,7 @@ function toWorkflowNodeDraft(node: WorkflowEditorNode): WorkflowNodeDraft {
     inputVariables: node.data.inputVariables,
     outputVariables: node.data.outputVariables,
     config: {
-      ...normalizedConfig,
+      ...configWithOutput,
       typeLabel: node.data.typeLabel,
       summary: node.data.summary,
       configStatus: node.data.configStatus,

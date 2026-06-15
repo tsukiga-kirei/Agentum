@@ -22,6 +22,10 @@ public final class WorkflowNodeConfigNormalizer {
     }
 
     public static WorkflowDraftApi.WorkflowNodeDraft normalizeNode(WorkflowDraftApi.WorkflowNodeDraft node) {
+        Map<String, Object> normalizedConfig = normalizeNodeConfig(node.nodeType(), node.config());
+        if ("agent".equals(node.nodeType())) {
+            normalizedConfig = syncAgentOutputVariable(normalizedConfig, node.outputVariables());
+        }
         return new WorkflowDraftApi.WorkflowNodeDraft(
             node.nodeId(),
             node.nodeType(),
@@ -30,8 +34,26 @@ public final class WorkflowNodeConfigNormalizer {
             node.positionY(),
             node.inputVariables(),
             node.outputVariables(),
-            normalizeNodeConfig(node.nodeType(), node.config())
+            normalizedConfig
         );
+    }
+
+    /**
+     * 单智能体节点的输出标识保存在 outputVariables 中，运行态 Agent 却从 config.output 读取；
+     * 保存时同步一份，避免模板 {{agent}} 与运行时 agent_response 对不上。
+     */
+    private static Map<String, Object> syncAgentOutputVariable(Map<String, Object> config, List<String> outputVariables) {
+        if (outputVariables == null || outputVariables.isEmpty()) {
+            return config;
+        }
+        String outputName = rawString(outputVariables.get(0));
+        if (outputName.isBlank()) {
+            return config;
+        }
+        Map<String, Object> synced = new LinkedHashMap<>(config == null ? Map.of() : config);
+        synced.put("output", outputName);
+        synced.put("outputVariable", outputName);
+        return synced;
     }
 
     @SuppressWarnings("unchecked")
