@@ -168,8 +168,8 @@ public class MarkdownDocxRenderer {
         if (centered) {
             pPr.append("<w:jc w:val=\"center\"/>");
         }
-        pPr.append("<w:spacing w:before=\"").append(safeLevel == 1 ? 240 : 180)
-            .append("\" w:after=\"").append(safeLevel == 1 ? 160 : 120).append("\"/>");
+        pPr.append("<w:spacing w:before=\"").append(twips(style.paragraphSpacingBefore()))
+            .append("\" w:after=\"").append(twips(style.paragraphSpacingAfter())).append("\"/>");
         pPr.append("</w:pPr>");
         return "<w:p>" + pPr + runs(
             text,

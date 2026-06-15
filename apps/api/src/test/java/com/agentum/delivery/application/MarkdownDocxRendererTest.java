@@ -205,6 +205,22 @@ class MarkdownDocxRendererTest {
         assertThat(firstIndex).isEqualTo(lastIndex).isNotEqualTo(-1);
     }
 
+    @Test
+    void shouldApplyConfiguredSpacingToHeadings() throws IOException {
+        DocumentDeliveryStyle style = DocumentDeliveryStyle.from(Map.of(
+            "paragraphSpacingBefore", 10,
+            "paragraphSpacingAfter", 15
+        ));
+
+        byte[] bytes = renderer.render("# 一级标题\n\n## 二级标题", style);
+
+        Map<String, String> entries = unzip(bytes);
+        String docXml = entries.get("word/document.xml");
+
+        assertThat(docXml)
+            .contains("<w:spacing w:before=\"200\" w:after=\"300\"/>");
+    }
+
     private static Map<String, String> unzip(byte[] bytes) throws IOException {
         Map<String, String> entries = new HashMap<>();
         try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(bytes), StandardCharsets.UTF_8)) {
