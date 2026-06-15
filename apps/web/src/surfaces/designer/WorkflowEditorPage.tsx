@@ -31,6 +31,7 @@ import {
   Zap,
 } from "lucide-react";
 import { WorkbenchGlobalActions } from "../../components/workbench/SurfacePageLayout";
+import { SysImpactConfirmModal } from "../../components/common/SysImpactConfirmModal";
 import { DocumentDeliveryStyleSections } from "../../components/document/DocumentDeliveryStyleSections";
 import type { DocumentDeliveryStyleValues } from "../../constants/documentDeliveryStyleOptions";
 import { AgentumApiError, assetApi, workflowApi } from "../../services/apiClient";
@@ -58,6 +59,17 @@ import {
   normalizeWorkflowNodeConfig,
   validateCustomPromptConfiguration,
 } from "./workflowPromptDefaults";
+import {
+  applyValidatedConfigStatus,
+  buildWorkflowNodeValidationMap,
+  collectRuntimeTemplateTextFields,
+  collectRuntimeTemplateVariableNames,
+  describeDeleteNodeVariableImpact,
+  describeMoveNodeVariableImpact,
+  extractTemplateVariableNames,
+  summarizeValidationIssues,
+  type WorkflowNodeValidationIssue,
+} from "./workflowNodeValidation";
 
 type EditorNodeData = {
   label: string;
@@ -161,6 +173,14 @@ type WorkflowEditorPageProps = {
   workflow: WorkflowDraft;
   onBack: () => void;
   onDraftSaved: (draft: WorkflowDraft) => void;
+};
+
+type WorkflowImpactConfirmState = {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  confirmDanger?: boolean;
+  onConfirm: () => void;
 };
 
 const SYSTEM_TRIGGER_ID = "trigger_manual";
@@ -297,6 +317,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
   const [capabilityError, setCapabilityError] = useState("");
   const [declaredVariables, setDeclaredVariables] = useState<WorkflowVariable[]>([]);
   const [isAddBrickModalOpen, setIsAddBrickModalOpen] = useState(false);
+  const [impactConfirm, setImpactConfirm] = useState<WorkflowImpactConfirmState | null>(null);
   // 防止双击保存按钮导致并发 API 调用；useState 在同一渲染帧内可能未及时更新，需要额外的 ref 锁。
   const saveLockRef = useRef(false);
   const nodesRef = useRef(nodes);
@@ -419,7 +440,14 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
 
     return sourceIndex >= 0 && sourceIndex < selectedNodeIndex;
   });
-  const incompleteNodes = visibleNodes.filter((node) => node.data.configStatus === "incomplete");
+  const nodeValidationMap = useMemo(
+    () => buildWorkflowNodeValidationMap(visibleNodes),
+    [visibleNodes],
+  );
+  const incompleteNodes = useMemo(
+    () => visibleNodes.filter((node) => (nodeValidationMap.get(node.id)?.length ?? 0) > 0),
+    [visibleNodes, nodeValidationMap],
+  );
   const matchedNodes = visibleNodes.filter((node) => node.data.label.includes(nodeSearchValue.trim()));
 
   useEffect(() => {
@@ -528,18 +556,55 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
     if (currentIndex < 0 || nextIndex < 0 || nextIndex >= visibleNodes.length) {
       return;
     }
+
+    const impactMessage = describeMoveNodeVariableImpact(visibleNodes, nodeId, direction);
     const nextVisibleNodes = [...visibleNodes];
     const [movingNode] = nextVisibleNodes.splice(currentIndex, 1);
     nextVisibleNodes.splice(nextIndex, 0, movingNode);
-    commitVisibleNodes(nextVisibleNodes, nodeId);
+
+    function applyMove() {
+      commitVisibleNodes(nextVisibleNodes, nodeId);
+    }
+
+    if (!impactMessage) {
+      applyMove();
+      return;
+    }
+
+    modalApi.confirm({
+      title: "确认移动积木？",
+      content: (
+        <p className="whitespace-pre-wrap text-sm leading-6 text-[var(--color-text-secondary)]">
+          {impactMessage}
+        </p>
+      ),
+      okText: "仍要移动",
+      cancelText: "取消",
+      onOk: applyMove,
+    });
   }
 
   function handleDeleteNode(nodeId: string) {
-    if (!window.confirm("确认删除这个积木？删除后需要手动保存才会生效。")) {
-      return;
-    }
+    const impactMessage = describeDeleteNodeVariableImpact(visibleNodes, nodeId);
     const nextVisibleNodes = visibleNodes.filter((node) => node.id !== nodeId);
-    commitVisibleNodes(nextVisibleNodes, nextVisibleNodes[0]?.id ?? "");
+    const footer = "删除后需要点击顶部「保存流程」才会写入草稿。";
+
+    function applyDelete() {
+      commitVisibleNodes(nextVisibleNodes, nextVisibleNodes[0]?.id ?? "");
+    }
+
+    modalApi.confirm({
+      title: "确认删除积木？",
+      content: (
+        <p className="whitespace-pre-wrap text-sm leading-6 text-[var(--color-text-secondary)]">
+          {impactMessage ? `${impactMessage}\n\n${footer}` : `确认删除这个积木？\n\n${footer}`}
+        </p>
+      ),
+      okText: impactMessage ? "仍要删除" : "确认删除",
+      cancelText: "取消",
+      okButtonProps: impactMessage ? { danger: true } : undefined,
+      onOk: applyDelete,
+    });
   }
 
   function handleSearchLocate() {
@@ -564,7 +629,6 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
           data: {
             ...node.data,
             ...patch,
-            configStatus: "incomplete" as const,
           },
         };
       });
@@ -591,7 +655,6 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
               ...(node.data.rawConfig ?? {}),
               ...nextConfig,
             },
-            configStatus: "incomplete" as const,
           },
         };
       });
@@ -620,7 +683,6 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
               ...(node.data.rawConfig ?? {}),
               ...nextConfig,
             },
-            configStatus: "incomplete" as const,
           },
         };
       });
@@ -637,13 +699,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
     }
     const currentNodes = nodesRef.current;
     const currentVisibleNodes = orderNodesByEdges(currentNodes, edges).filter((node) => node.id !== SYSTEM_TRIGGER_ID);
-    const normalizedVisibleNodes = normalizeVisibleNodeOrder(currentVisibleNodes).map((node) => ({
-      ...node,
-      data: {
-        ...node.data,
-        configStatus: selectedNodeId === node.id ? "complete" as const : node.data.configStatus,
-      },
-    }));
+    const normalizedVisibleNodes = applyValidatedConfigStatus(normalizeVisibleNodeOrder(currentVisibleNodes));
     const systemTrigger = currentNodes.find((node) => node.id === SYSTEM_TRIGGER_ID)
       ?? createNodeFromTemplate(designerCatalog.systemTrigger, 0, []);
     const nextNodes = [systemTrigger, ...normalizedVisibleNodes];
@@ -702,6 +758,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
         <main className="workflow-step-sidebar min-h-0 overflow-y-auto border-r border-[var(--color-border-light)] p-3">
           <WorkflowStepBuilder
             nodes={visibleNodes}
+            nodeValidationMap={nodeValidationMap}
             selectedNodeId={selectedNodeId}
             onSelectNode={setSelectedNodeId}
             onOpenAddBrick={() => setIsAddBrickModalOpen(true)}
@@ -728,6 +785,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
               nodes={visibleNodes}
               variables={businessVariables}
               incompleteNodes={incompleteNodes}
+              nodeValidationMap={nodeValidationMap}
               onSelectNode={setSelectedNodeId}
               onOpenAddBrick={() => setIsAddBrickModalOpen(true)}
             />
@@ -748,6 +806,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
 
 function WorkflowStepBuilder({
   nodes,
+  nodeValidationMap,
   selectedNodeId,
   onSelectNode,
   onOpenAddBrick,
@@ -755,6 +814,7 @@ function WorkflowStepBuilder({
   onDeleteNode,
 }: {
   nodes: WorkflowEditorNode[];
+  nodeValidationMap: Map<string, WorkflowNodeValidationIssue[]>;
   selectedNodeId: string;
   onSelectNode: (nodeId: string) => void;
   onOpenAddBrick: () => void;
@@ -787,6 +847,7 @@ function WorkflowStepBuilder({
             key={node.id}
             node={node}
             index={index}
+            validationIssues={nodeValidationMap.get(node.id) ?? []}
             selected={selectedNodeId === node.id}
             canMoveUp={index > 0}
             canMoveDown={index < nodes.length - 1}
@@ -804,6 +865,7 @@ function WorkflowStepBuilder({
 function WorkflowStepRow({
   node,
   index,
+  validationIssues,
   selected,
   canMoveUp,
   canMoveDown,
@@ -814,6 +876,7 @@ function WorkflowStepRow({
 }: {
   node: WorkflowEditorNode;
   index: number;
+  validationIssues: WorkflowNodeValidationIssue[];
   selected: boolean;
   canMoveUp: boolean;
   canMoveDown: boolean;
@@ -842,13 +905,18 @@ function WorkflowStepRow({
             <span className="mt-1 line-clamp-2 text-xs leading-5 text-[var(--color-text-secondary)]">{node.data.summary}</span>
           </span>
         </button>
-        <div className="mt-2 flex items-center justify-between gap-2">
-          {node.data.configStatus === "incomplete" ? <TinyBadge tone="warning">待配置</TinyBadge> : <TinyBadge tone="success">已配置</TinyBadge>}
-          <div className="flex items-center gap-0.5">
-            <IconButton label="上移" icon={ArrowUp} disabled={!canMoveUp} onClick={onMoveUp} />
-            <IconButton label="下移" icon={ArrowDown} disabled={!canMoveDown} onClick={onMoveDown} />
-            <IconButton label="删除" icon={Trash2} onClick={onDelete} tone="danger" />
+        <div className="mt-2 space-y-1">
+          <div className="flex items-center justify-between gap-2">
+            {validationIssues.length > 0 ? <TinyBadge tone="warning">待配置</TinyBadge> : <TinyBadge tone="success">已配置</TinyBadge>}
+            <div className="flex items-center gap-0.5">
+              <IconButton label="上移" icon={ArrowUp} disabled={!canMoveUp} onClick={onMoveUp} />
+              <IconButton label="下移" icon={ArrowDown} disabled={!canMoveDown} onClick={onMoveDown} />
+              <IconButton label="删除" icon={Trash2} onClick={onDelete} tone="danger" />
+            </div>
           </div>
+          {validationIssues.length > 0 ? (
+            <p className="text-[11px] leading-4 text-amber-700">{summarizeValidationIssues(validationIssues)}</p>
+          ) : null}
         </div>
       </div>
       <div className="flex flex-wrap gap-1.5 border-t border-[var(--color-border-light)] px-2.5 py-2">
@@ -992,12 +1060,14 @@ function WorkflowOverviewPanel({
   nodes,
   variables,
   incompleteNodes,
+  nodeValidationMap,
   onSelectNode,
   onOpenAddBrick,
 }: {
   nodes: WorkflowEditorNode[];
   variables: WorkflowVariable[];
   incompleteNodes: WorkflowEditorNode[];
+  nodeValidationMap: Map<string, WorkflowNodeValidationIssue[]>;
   onSelectNode: (nodeId: string) => void;
   onOpenAddBrick: () => void;
 }) {
@@ -1022,9 +1092,19 @@ function WorkflowOverviewPanel({
         ) : (
           <div className="space-y-2">
             {incompleteNodes.map((node) => (
-              <button key={node.id} type="button" onClick={() => onSelectNode(node.id)} className="flex w-full items-center justify-between rounded bg-[var(--color-bg-card)] px-2 py-2 text-left text-sm ring-1 ring-[var(--color-border-light)]">
-                <span className="truncate text-[var(--color-text-primary)]">{node.data.label}</span>
-                <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" aria-hidden="true" />
+              <button
+                key={node.id}
+                type="button"
+                onClick={() => onSelectNode(node.id)}
+                className="flex w-full items-start justify-between gap-3 rounded bg-[var(--color-bg-card)] px-2 py-2 text-left text-sm ring-1 ring-[var(--color-border-light)]"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate font-medium text-[var(--color-text-primary)]">{node.data.label}</span>
+                  <span className="mt-1 block text-xs leading-5 text-[var(--color-text-secondary)]">
+                    {summarizeValidationIssues(nodeValidationMap.get(node.id) ?? [])}
+                  </span>
+                </span>
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" aria-hidden="true" />
               </button>
             ))}
           </div>
@@ -1418,6 +1498,18 @@ function AgentClusterBrickConfig({
   );
 }
 
+const STALE_DIRECT_DELIVERY_FIELDS = {
+  deliveryContent: "",
+  deliveryTarget: "",
+  body: "",
+} as const;
+
+const STALE_WORD_DELIVERY_FIELDS = {
+  markdownContent: "",
+  fileNameTemplate: "",
+  previewMarkdown: "",
+} as const;
+
 function DeliveryBrickConfig({
   node,
   workflowVariables,
@@ -1468,6 +1560,19 @@ function DeliveryBrickConfig({
   }, [rawFileNameTemplate, fileNameTemplate]);
 
   useEffect(() => {
+    if (!isWordDelivery) {
+      return;
+    }
+    const hasStaleDirectFields = readString(config.deliveryContent, "")
+      || readString(config.deliveryTarget, "")
+      || readString(config.body, "");
+    if (!hasStaleDirectFields) {
+      return;
+    }
+    onUpdateConfig(STALE_DIRECT_DELIVERY_FIELDS);
+  }, [isWordDelivery, config.deliveryContent, config.deliveryTarget, config.body]);
+
+  useEffect(() => {
     if (isDirectDelivery) {
       return;
     }
@@ -1477,6 +1582,7 @@ function DeliveryBrickConfig({
         deliveryCapabilityId: defaultWordDeliveryCapability.id,
         deliveryType: "word_document",
         documentKind: "word",
+        ...STALE_DIRECT_DELIVERY_FIELDS,
         fileNameTemplate: readString(config.fileNameTemplate, "交付文档-{{runNumber}}.docx"),
         markdownContent: readString(config.markdownContent, defaultMarkdownTemplate),
         documentStyle: readDocumentDeliveryStyle(config.documentStyle, defaultWordDeliveryCapability.config),
@@ -1492,6 +1598,7 @@ function DeliveryBrickConfig({
         deliveryType: "direct",
         deliveryCapabilityId: "none",
         documentKind: "",
+        ...STALE_WORD_DELIVERY_FIELDS,
         deliveryContent: readString(config.deliveryContent, defaultDirectTemplate),
       });
       return;
@@ -1503,6 +1610,7 @@ function DeliveryBrickConfig({
         deliveryCapabilityId: capability.id,
         deliveryType: "word_document",
         documentKind: "word",
+        ...STALE_DIRECT_DELIVERY_FIELDS,
         fileNameTemplate: readString(config.fileNameTemplate, "交付文档-{{runNumber}}.docx"),
         markdownContent: readString(config.markdownContent, defaultMarkdownTemplate),
         documentStyle: readDocumentDeliveryStyle(config.documentStyle, capability.config),
@@ -1526,6 +1634,7 @@ function DeliveryBrickConfig({
         deliveryCapabilityId: value,
         deliveryType: "word_document",
         documentKind: "word",
+        ...STALE_DIRECT_DELIVERY_FIELDS,
         fileNameTemplate: readString(config.fileNameTemplate, "交付文档-{{runNumber}}.docx"),
         markdownContent: readString(config.markdownContent, defaultMarkdownTemplate),
         documentStyle: readDocumentDeliveryStyle(config.documentStyle, capability?.config),
@@ -3053,16 +3162,15 @@ function normalizeVisibleNodeOrder(visibleNodes: WorkflowEditorNode[]) {
 }
 
 function collectReferencedVariables(node: WorkflowEditorNode, previousVariables: Set<string>) {
+  const brickType = getBrickType(node);
   const references = new Set<string>();
-  const allowed = previousVariables;
-  const serializedConfig = JSON.stringify(node.data.rawConfig ?? {});
-  for (const match of serializedConfig.matchAll(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g)) {
-    const variable = match[1];
-    if (allowed.has(variable)) {
-      references.add(variable);
-    }
-  }
-
+  collectRuntimeTemplateTextFields(node.data.rawConfig, brickType).forEach((field) => {
+    extractTemplateVariableNames(field.text).forEach((variable) => {
+      if (previousVariables.has(variable)) {
+        references.add(variable);
+      }
+    });
+  });
   return [...references];
 }
 
