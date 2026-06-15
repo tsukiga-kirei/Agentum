@@ -1,6 +1,6 @@
 # 当前进度与后续计划
 
-更新时间：2026-06-15（新增系统内置 Word 文档交付初版：流程设计态支持字体、字号、缩进、行距配置和 docx 预览 / 导出；运行态支持生成与下载交付文档）。
+更新时间：2026-06-15（Word 文档交付接入 MinIO：流程设计态支持字体、字号、缩进、行距配置和 docx 预览 / 导出；运行态生成的 docx 持久化到对象存储并支持下载）。
 
 本文档只记录当前施工状态、阶段计划和下一步任务。长期规范、系统说明和架构设计分别维护在：
 
@@ -168,7 +168,7 @@
 - 业务工作台运行详情收敛为真实可操作项：待办节点只显示提交动作，AI / MCP / Skill / 交付节点展示后端输出、调用状态和交付摘要；执行历史去掉与左侧流程轨重复的节点列表，改为选中步骤快照 + 事件时间线；已保存任务可对智能体节点释放重新生成入口，追问追加上下文和后端取消补偿继续建设。
 - 流程设计落地版本治理方案 C：`workflow_definitions.launch_enabled` 控制业务入口收回/恢复；列表与详情展示 `latestVersionNumber`、`hasUnpublishedChanges`；创建者可删除流程或收回业务入口；业务工作台可发起列表改为「有冻结版本且入口未收回」，与设计态 `status` 解耦；新增 [能力—流程—权限治理](../capability-workflow-governance.md) 文档。
 - 企业 SSO 完成 OIDC 第一版骨架：新增租户 SSO Provider 与外部身份绑定表，登录页按租户发现 SSO 身份源，后端生成签名 `state` 与 `nonce` 并完成 OIDC 回调后的本地 token 签发；新增 [企业 SSO 对接说明](../sso-integration.md)，明确业务系统只需按标准 OIDC 提供身份，不承载 Agentum 权限判断。
-- 系统内置 Word 文档交付初版已接入流程设计和运行态：系统管理可区分邮件交付与文档交付并配置默认字体、字号、行距、缩进和页边距；流程交付节点选择 Word 能力后可配置正文来源变量、文件名模板、节点级样式和预览 Markdown，并支持设计态预览 / 导出 docx；运行态生成 `delivery_records` 文件结果，业务工作台交付页可按记录下载文档。新增 [Word 文档交付说明](../word-document-delivery.md)。
+- 系统内置 Word 文档交付初版已接入流程设计和运行态：系统管理可区分邮件交付与文档交付并配置默认字体、字号、行距、缩进和页边距；流程交付节点选择 Word 能力后可配置正文来源变量、文件名模板、节点级样式和预览 Markdown，并支持设计态预览 / 导出 docx；运行态将文件写入 MinIO/S3 兼容对象存储并生成 `delivery_records` 文件结果，业务工作台交付页可按记录下载文档。新增 [Word 文档交付说明](../word-document-delivery.md)。
 
 ### 2.3 后端
 
@@ -209,7 +209,7 @@
 - 系统管理 API 新增 `POST /api/system/model-providers/{providerId}/test`，模型密钥通过通用字段加密服务保存为密文，测试接口只返回连接状态、脱敏摘要、模型 ID 预览和耗时。
 - 新增业务工作台 package（`workbench.application` / `workbench.interfaces`）：聚合租户内已发布工作流计数、对当前用户开放的能力资产计数、我的能力草稿计数，以及可发起的已发布工作流分页（含最新版本号、节点数、所有者）；运行态相关字段以空列表 + `runtimeAvailable=false` 返回，并补 `WorkbenchAccess` / `WorkbenchService` 单元测试覆盖访问校验、跨租户拒绝与最新版本号回填路径。
 - 运行态异步执行落地（2026-06-10）：新增 `com.agentum.runtime` 包（RabbitMQ 拓扑与命令发布/消费、Redis 执行租约、`RunProgressStreamWriter` / `RunStreamRelayService` Redis Stream 进度写入与 SSE 中继、`StaleExecutionReaper` 超时/失联回收、`RedisRunCancellationGuard` 取消与截止信号）与 Worker 侧 `NodeExecutionService`；新增迁移 `V202606100001`（`workflow_run_execution_jobs`、`workflow_cluster_agent_runs`）；`WorkbenchRuntimeService` 重构为 advance 入队化，删除 `@Async`、内存 `RunStreamEmitterRegistry` 与 `RunExecutionCancellationRegistry`；新增 `interrupt`（节点 `canceled` + 数据清空）、`restart`（整步重跑）、`recover`（保留已成功子智能体只重跑失败部分）端点；智能体集群支持 `parallel` 真并发与 `sequential` 顺序执行；模型瞬时错误自动重试（attempt ≤ 3）；节点执行超时由 `AGENTUM_RUNTIME_NODE_TIMEOUT_SECONDS` 控制。前端 `useRunStream` 支持 `replay` 整步回放、`lastEventId` 断线续传与 heartbeat 活性；`TaskRunWorkspace` 进入即执行、刷新无感恢复（activeJob 驱动）、看门狗异常判定；`StepActionBar` 重做「中断执行 / 重新执行 / 恢复进度」互斥按钮矩阵。本地开发必须先 `make dev-infra`。
-- Word 文档交付落地（2026-06-15）：新增文档样式快照、轻量 Markdown -> DOCX 渲染器、本地文件存储、设计态预览接口 `/api/tenants/{tenantId}/document-deliveries/preview`、运行态下载接口 `/api/tenants/{tenantId}/delivery-records/{recordId}/download`，并新增演示数据种子 `word_document_delivery`。
+- Word 文档交付落地（2026-06-15）：新增文档样式快照、轻量 Markdown -> DOCX 渲染器、MinIO/S3 对象存储、设计态预览接口 `/api/tenants/{tenantId}/document-deliveries/preview`、运行态下载接口 `/api/tenants/{tenantId}/delivery-records/{recordId}/download`，并新增演示数据种子 `word_document_delivery`。
 
 需要继续推进：
 

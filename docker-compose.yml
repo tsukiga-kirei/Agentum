@@ -16,6 +16,8 @@ services:
       dockerfile: deploy/docker/api.Dockerfile
     env_file:
       - .env
+    environment:
+      MINIO_ENDPOINT: http://minio:9000
     ports:
       - "8080:8080"
     depends_on:
@@ -30,6 +32,8 @@ services:
       dockerfile: deploy/docker/document-worker.Dockerfile
     env_file:
       - .env
+    environment:
+      MINIO_ENDPOINT: http://minio:9000
     depends_on:
       - rabbitmq
       - minio
@@ -79,4 +83,3 @@ volumes:
   agentum_redis_data:
   agentum_rabbitmq_data:
   agentum_minio_data:
-

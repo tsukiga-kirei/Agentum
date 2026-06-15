@@ -13,6 +13,14 @@ server:
 # 运行态异步执行（RabbitMQ 执行 + Redis Stream 进度回放）配置。
 # 节点执行超时通过环境变量 AGENTUM_RUNTIME_NODE_TIMEOUT_SECONDS 控制，防止单节点无限占用 Worker。
 agentum:
+  storage:
+    minio:
+      endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+      access-key: ${MINIO_ACCESS_KEY:agentum}
+      secret-key: ${MINIO_SECRET_KEY:agentum_dev_password}
+      bucket: ${MINIO_BUCKET:agentum}
+      object-prefix: ${MINIO_OBJECT_PREFIX:deliveries/documents}
+      auto-create-bucket: ${MINIO_AUTO_CREATE_BUCKET:true}
   runtime:
     execution:
       node-timeout-seconds: ${AGENTUM_RUNTIME_NODE_TIMEOUT_SECONDS:1800}

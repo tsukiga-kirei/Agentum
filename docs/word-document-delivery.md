@@ -8,7 +8,7 @@
 - 输入内容：优先使用交付节点配置的 `contentVariable`，也可使用 `markdownContent` 作为兜底 Markdown 模板。
 - 输出结果：`.docx` 文件、`delivery_records` 成功记录、运行节点输出中的 `deliveryRecordId` 和 `deliveryResult.downloadUrl`。
 - 当前渲染范围：标题、正文、加粗、斜体、行内代码、代码块、引用、无序列表、有序列表和 Markdown 表格。
-- 当前存储：本地 `.agentum/deliveries`，可通过 `agentum.delivery.document.storage-root` 覆盖。后续可替换为 MinIO/S3 对象存储。
+- 当前存储：MinIO/S3 兼容对象存储。默认 bucket 为 `agentum`，对象前缀为 `deliveries/documents`，可通过 `MINIO_BUCKET` 和 `MINIO_OBJECT_PREFIX` 覆盖。
 
 ## 配置分层
 
@@ -85,6 +85,8 @@ Content-Type: application/json
 
 响应为 `application/vnd.openxmlformats-officedocument.wordprocessingml.document` 二进制文件，`Content-Disposition` 中包含文件名。
 
+设计态预览接口只返回即时生成的二进制文件，不写入 MinIO，也不会生成正式交付记录。正式运行交付节点时才会把 docx 持久化到 MinIO。
+
 ## 运行态下载接口
 
 交付节点运行成功后，节点输出会包含：
@@ -96,6 +98,8 @@ Content-Type: application/json
   "deliveryResult": {
     "adapter": "word_document",
     "fileName": "交付文档.docx",
+    "storageProvider": "minio",
+    "storageKey": "deliveries/documents/{tenantId}/{recordId}/交付文档.docx",
     "downloadUrl": "/api/tenants/{tenantId}/delivery-records/{recordId}/download"
   }
 }
@@ -110,9 +114,20 @@ Authorization: Bearer <token>
 
 下载时后端会重新校验工作台访问权限和租户边界，并只读取当前租户下对应交付记录的文件。
 
+MinIO 默认配置：
+
+| 环境变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `MINIO_ENDPOINT` | `http://localhost:9000` | 后端直连 MinIO 的 endpoint；Docker Compose API 容器中覆盖为 `http://minio:9000` |
+| `MINIO_ACCESS_KEY` | `agentum` | MinIO 访问账号 |
+| `MINIO_SECRET_KEY` | `agentum_dev_password` | MinIO 访问密钥 |
+| `MINIO_BUCKET` | `agentum` | 交付文档所在 bucket |
+| `MINIO_OBJECT_PREFIX` | `deliveries/documents` | Word 文档对象前缀 |
+| `MINIO_AUTO_CREATE_BUCKET` | `true` | bucket 不存在时是否由后端自动创建 |
+
 ## 后续演进
 
-- 使用 MinIO/S3 替换本地文件存储，并补保留期清理任务。
+- 补保留期清理任务和对象生命周期策略。
 - 接入 reference.docx 模板、页眉页脚、目录、图片和附件。
 - 将复杂文档生成迁移到 Worker，避免大文档阻塞 API 线程。
 - 与高风险交付审批、运行审计页和交付物资源范围进一步勾稽。

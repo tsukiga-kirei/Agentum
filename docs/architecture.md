@@ -404,7 +404,7 @@ pending -> running -> paused -> resumed -> running -> completed
 
 交付能力分为系统内置和自定义适配器。系统内置交付能力由 API / Worker 原生实现，例如邮箱发送和 Word 文档生成；自定义交付适配器放在 `capabilities/delivery/<delivery-key>/`，通过 Manifest 声明 `runtime`、`entry`、`configSchema`、`inputSchema`、`outputSchema` 和风险等级。高风险交付能力必须走权限校验、审批或二次确认。
 
-当前运行态已支持四类基础交付：站内直接交付记录、系统内置邮箱发送、Webhook 调用和 Word 文档生成。Word 初版由 API 内轻量渲染器把 AI Markdown 转为 `.docx`，并通过 `delivery_records` 下载；复杂模板、图片、目录、页眉页脚和大文档后续应迁移到 Worker。所有交付动作都会写入 `delivery_records`，并关联租户、运行、节点、流程定义和发布版本；失败时节点和运行进入失败状态。
+当前运行态已支持四类基础交付：站内直接交付记录、系统内置邮箱发送、Webhook 调用和 Word 文档生成。Word 初版由 API 内轻量渲染器把 AI Markdown 转为 `.docx`，文件写入 MinIO/S3 兼容对象存储，并通过 `delivery_records` 记录下载入口；复杂模板、图片、目录、页眉页脚和大文档后续应迁移到 Worker。所有交付动作都会写入 `delivery_records`，并关联租户、运行、节点、流程定义和发布版本；失败时节点和运行进入失败状态。
 
 ### 5.11 系统管理模块
 

@@ -26,14 +26,14 @@ public class DocumentDeliveryService {
     private static final Set<String> CAPABILITY_SENTINEL_VALUES = Set.of("", "none", "custom");
 
     private final MarkdownDocxRenderer renderer;
-    private final LocalDocumentDeliveryStorage storage;
+    private final DocumentDeliveryStorage storage;
     private final SystemCapabilityRepository systemCapabilityRepository;
     private final TenantCapabilityGrantRepository tenantCapabilityGrantRepository;
     private final AssetManagementService assetManagementService;
 
     public DocumentDeliveryService(
         MarkdownDocxRenderer renderer,
-        LocalDocumentDeliveryStorage storage,
+        DocumentDeliveryStorage storage,
         SystemCapabilityRepository systemCapabilityRepository,
         TenantCapabilityGrantRepository tenantCapabilityGrantRepository,
         AssetManagementService assetManagementService
@@ -49,7 +49,7 @@ public class DocumentDeliveryService {
     public DocumentDeliveryFile preview(UUID tenantId, UUID operatorUserId, DocumentDeliveryPreviewCommand command) {
         validateDocumentCapabilityForDesigner(tenantId, operatorUserId, command.capabilityId());
         DocumentDeliveryStyle style = DocumentDeliveryStyle.from(command.style());
-        String fileName = LocalDocumentDeliveryStorage.sanitizeFileName(firstNonBlank(command.fileName(), "Word文档交付预览.docx"));
+        String fileName = DocumentDeliveryStorage.sanitizeFileName(firstNonBlank(command.fileName(), "Word文档交付预览.docx"));
         String title = firstNonBlank(command.title(), removeDocxSuffix(fileName));
         byte[] bytes = renderer.render(command.markdown(), title, style);
         log.info(
@@ -99,6 +99,7 @@ public class DocumentDeliveryService {
         result.put("fileName", artifact.fileName());
         result.put("contentType", artifact.contentType());
         result.put("sizeBytes", artifact.sizeBytes());
+        result.put("storageProvider", "minio");
         result.put("storageKey", artifact.storageKey());
         result.put("downloadUrl", "/api/tenants/" + tenantId + "/delivery-records/" + recordId + "/download");
         result.put("style", style.toMap());
