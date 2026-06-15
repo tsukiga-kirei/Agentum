@@ -29,7 +29,9 @@ public record DocumentDeliveryStyle(
     String lineSpacingMode,
     double lineSpacing,
     int lineSpacingPt,
+    String firstLineIndentMode,
     double firstLineIndentChars,
+    double firstLineIndentCm,
     int paragraphSpacingBefore,
     int paragraphSpacingAfter,
     double marginTopCm,
@@ -63,7 +65,9 @@ public record DocumentDeliveryStyle(
             "multiple",
             1.5,
             18,
+            "chars",
             2,
+            0.75,
             0,
             6,
             2.54,
@@ -98,7 +102,9 @@ public record DocumentDeliveryStyle(
             readLineSpacingMode(source, defaults.lineSpacingMode()),
             readDouble(source, "lineSpacing", defaults.lineSpacing(), 1.0, 3.0),
             readInt(source, "lineSpacingPt", defaults.lineSpacingPt(), 6, 72),
+            readFirstLineIndentMode(source, defaults.firstLineIndentMode()),
             readDouble(source, "firstLineIndentChars", defaults.firstLineIndentChars(), 0.0, 6.0),
+            readDouble(source, "firstLineIndentCm", defaults.firstLineIndentCm(), 0.0, 10.0),
             readInt(source, "paragraphSpacingBefore", defaults.paragraphSpacingBefore(), 0, 72),
             readInt(source, "paragraphSpacingAfter", defaults.paragraphSpacingAfter(), 0, 72),
             readDouble(source, "marginTopCm", defaults.marginTopCm(), 0.5, 6.0),
@@ -176,7 +182,9 @@ public record DocumentDeliveryStyle(
         if ("exact".equalsIgnoreCase(lineSpacingMode)) {
             result.put("lineSpacingPt", lineSpacingPt);
         }
+        result.put("firstLineIndentMode", firstLineIndentMode);
         result.put("firstLineIndentChars", firstLineIndentChars);
+        result.put("firstLineIndentCm", firstLineIndentCm);
         result.put("paragraphSpacingBefore", paragraphSpacingBefore);
         result.put("paragraphSpacingAfter", paragraphSpacingAfter);
         result.put("marginTopCm", marginTopCm);
@@ -194,6 +202,14 @@ public record DocumentDeliveryStyle(
             return fallback;
         }
         return "exact".equalsIgnoreCase(text) ? "exact" : "multiple";
+    }
+
+    private static String readFirstLineIndentMode(Map<String, Object> source, String fallback) {
+        String text = readOptionalString(source, "firstLineIndentMode");
+        if (text.isBlank()) {
+            return fallback;
+        }
+        return "cm".equalsIgnoreCase(text) ? "cm" : "chars";
     }
 
     private static void putOptional(Map<String, Object> target, String key, String value) {

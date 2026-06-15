@@ -158,7 +158,7 @@ public class MarkdownDocxRenderer {
         StringBuilder pPr = new StringBuilder();
         pPr.append("<w:pPr><w:pStyle w:val=\"Heading").append(safeLevel).append("\"/>");
         if (style.headingFirstLineIndent() && !centered) {
-            pPr.append("<w:ind w:firstLine=\"").append(firstLineTwips(style)).append("\"/>");
+            pPr.append(buildIndTag(style));
         }
         if (centered) {
             pPr.append("<w:jc w:val=\"center\"/>");
@@ -184,7 +184,7 @@ public class MarkdownDocxRenderer {
                     .append("\" w:after=\"").append(twips(style.paragraphSpacingAfter()))
                     .append("\" w:line=\"").append(style.resolvedLineTwips()).append("\" w:lineRule=\"").append(style.resolvedLineSpacingRule()).append("\"/>");
                 if (!centered) {
-                    builder.append("<w:ind w:firstLine=\"").append(firstLineTwips(style)).append("\"/>");
+                    builder.append(buildIndTag(style));
                 }
                 if (centered) {
                     builder.append("<w:jc w:val=\"center\"/>");
@@ -450,8 +450,14 @@ public class MarkdownDocxRenderer {
         return points * 20;
     }
 
-    private int firstLineTwips(DocumentDeliveryStyle style) {
-        return (int) Math.round(style.bodyFontSize() * 20 * style.firstLineIndentChars());
+    private String buildIndTag(DocumentDeliveryStyle style) {
+        if ("cm".equalsIgnoreCase(style.firstLineIndentMode())) {
+            return "<w:ind w:firstLine=\"" + cmToTwips(style.firstLineIndentCm()) + "\"/>";
+        } else {
+            int twips = (int) Math.round(style.bodyFontSize() * 20 * style.firstLineIndentChars());
+            int chars = (int) Math.round(style.firstLineIndentChars() * 100);
+            return "<w:ind w:firstLine=\"" + twips + "\" w:firstLineChars=\"" + chars + "\"/>";
+        }
     }
 
     private int cmToTwips(double cm) {

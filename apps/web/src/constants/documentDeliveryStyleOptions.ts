@@ -18,7 +18,9 @@ export type DocumentDeliveryStyleValues = {
   lineSpacingMode: LineSpacingMode;
   lineSpacing: number;
   lineSpacingPt: number;
+  firstLineIndentMode: FirstLineIndentMode;
   firstLineIndentChars: number;
+  firstLineIndentCm: number;
   paragraphSpacingBefore: number;
   paragraphSpacingAfter: number;
   marginTopCm: number;
@@ -32,6 +34,8 @@ export type DocumentDeliveryStyleValues = {
 export type SelectOption = { value: string; label: string };
 
 export type LineSpacingMode = "multiple" | "exact";
+export type FirstLineIndentMode = "chars" | "cm";
+
 
 export const LINE_SPACING_MODE_OPTIONS: SelectOption[] = [
   { value: "multiple", label: "倍数" },
@@ -134,6 +138,42 @@ export function stringifyLineSpacingPtValue(value: string | number): string {
   }
   const clamped = Math.min(72, Math.max(6, Math.round(parsed)));
   return String(clamped);
+}
+
+export const FIRST_LINE_INDENT_MODE_OPTIONS: SelectOption[] = [
+  { value: "chars", label: "字符" },
+  { value: "cm", label: "厘米" },
+];
+
+export const FIRST_LINE_INDENT_CM_OPTIONS: SelectOption[] = [
+  { value: "0", label: "无缩进" },
+  { value: "0.25", label: "0.25 cm" },
+  { value: "0.5", label: "0.5 cm" },
+  { value: "0.75", label: "0.75 cm（默认）" },
+  { value: "0.8", label: "0.8 cm" },
+  { value: "1", label: "1 cm" },
+  { value: "1.25", label: "1.25 cm" },
+  { value: "1.5", label: "1.5 cm" },
+  { value: "1.75", label: "1.75 cm" },
+  { value: "2", label: "2 cm" },
+  { value: "2.5", label: "2.5 cm" },
+  { value: "3", label: "3 cm" },
+];
+
+export function isCmFirstLineIndentMode(mode: string | undefined): mode is "cm" {
+  return mode === "cm";
+}
+
+export function readFirstLineIndentMode(value: unknown): FirstLineIndentMode {
+  return isCmFirstLineIndentMode(typeof value === "string" ? value : String(value ?? "")) ? "cm" : "chars";
+}
+
+export function stringifyFirstLineIndentCmValue(value: string | number): string {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return "0.75";
+  }
+  return String(parsed);
 }
 
 export const FIRST_LINE_INDENT_OPTIONS: SelectOption[] = [

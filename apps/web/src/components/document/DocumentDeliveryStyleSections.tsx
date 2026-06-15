@@ -26,6 +26,7 @@ import {
   TITLE_ALIGNMENT_OPTIONS,
 } from "../../constants/documentDeliveryStyleOptions";
 import { LineSpacingStyleFields } from "./LineSpacingStyleFields";
+import { FirstLineIndentStyleFields } from "./FirstLineIndentStyleFields";
 
 const workflowSelectClassNames = { popup: { root: "agent-select-dropdown agent-admin-select-dropdown" } };
 const workflowSelectSuffixIcon = <ChevronDown className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />;
@@ -271,12 +272,22 @@ export function DocumentDeliveryStyleSections({ style, onFieldChange, onFieldsCh
             />
           )}
         />
-        <StyleSelectField
-          label="首行缩进"
-          icon={FileText}
-          value={stringifySelectValue(style.firstLineIndentChars)}
-          options={FIRST_LINE_INDENT_OPTIONS}
-          onChange={(value) => onFieldChange("firstLineIndentChars", Number(value))}
+        <FirstLineIndentStyleFields
+          mode={style.firstLineIndentMode}
+          chars={style.firstLineIndentChars}
+          cm={style.firstLineIndentCm}
+          onModeChange={(value) => onFieldChange("firstLineIndentMode", value)}
+          onCharsChange={(value) => onFieldChange("firstLineIndentChars", value)}
+          onCmChange={(value) => onFieldChange("firstLineIndentCm", value)}
+          SelectField={(props) => (
+            <StyleSelectField
+              label={props.label}
+              icon={props.icon}
+              value={props.value ?? props.defaultValue ?? ""}
+              options={props.options}
+              onChange={props.onChange}
+            />
+          )}
         />
         <StyleSelectField
           label="段前间距"

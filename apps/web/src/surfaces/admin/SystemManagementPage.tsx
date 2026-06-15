@@ -274,7 +274,9 @@ function buildCapabilityFormValues(capability: SystemCapabilityRow): Record<stri
     documentLineSpacingMode: readNestedStyleString(capability.config, "lineSpacingMode") || "multiple",
     documentLineSpacing: readNestedStyleString(capability.config, "lineSpacing") || "1.5",
     documentLineSpacingPt: readNestedStyleString(capability.config, "lineSpacingPt") || "18",
+    documentFirstLineIndentMode: readNestedStyleString(capability.config, "firstLineIndentMode") || "chars",
     documentFirstLineIndentChars: readNestedStyleString(capability.config, "firstLineIndentChars") || "2",
+    documentFirstLineIndentCm: readNestedStyleString(capability.config, "firstLineIndentCm") || "0.75",
     documentParagraphSpacingBefore: readNestedStyleString(capability.config, "paragraphSpacingBefore") || "0",
     documentParagraphSpacingAfter: readNestedStyleString(capability.config, "paragraphSpacingAfter") || "6",
     documentMarginTopCm: readNestedStyleString(capability.config, "marginTopCm") || "2.54",
@@ -841,7 +843,9 @@ export function SystemManagementPage() {
             ...(d.documentLineSpacingMode === "exact"
               ? { lineSpacingPt: d.documentLineSpacingPt?.trim() || "18" }
               : {}),
+            firstLineIndentMode: d.documentFirstLineIndentMode?.trim() || "chars",
             firstLineIndentChars: d.documentFirstLineIndentChars?.trim() || "2",
+            firstLineIndentCm: d.documentFirstLineIndentCm?.trim() || "0.75",
             paragraphSpacingBefore: d.documentParagraphSpacingBefore?.trim() || "0",
             paragraphSpacingAfter: d.documentParagraphSpacingAfter?.trim() || "6",
             marginTopCm: d.documentMarginTopCm?.trim() || "2.54",

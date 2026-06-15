@@ -85,7 +85,23 @@ class MarkdownDocxRendererTest {
         Map<String, String> entries = unzip(bytes);
         assertThat(entries.get("word/document.xml"))
             .contains("一级标题")
-            .contains("<w:ind w:firstLine=\"480\"/>");
+            .contains("<w:ind w:firstLine=\"480\" w:firstLineChars=\"200\"/>");
+    }
+
+    @Test
+    void shouldApplyFirstLineIndentInCentimeters() throws IOException {
+        DocumentDeliveryStyle style = DocumentDeliveryStyle.from(Map.of(
+            "firstLineIndentMode", "cm",
+            "firstLineIndentCm", 0.75,
+            "headingFirstLineIndent", true
+        ));
+
+        byte[] bytes = renderer.render("# 一级标题\n\n正文", style);
+
+        Map<String, String> entries = unzip(bytes);
+        assertThat(entries.get("word/document.xml"))
+            .contains("一级标题")
+            .contains("<w:ind w:firstLine=\"425\"/>");
     }
 
     @Test

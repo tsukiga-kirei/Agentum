@@ -24,6 +24,7 @@ import {
   TITLE_ALIGNMENT_OPTIONS,
 } from "../../constants/documentDeliveryStyleOptions";
 import { LineSpacingStyleFields } from "./LineSpacingStyleFields";
+import { FirstLineIndentStyleFields } from "./FirstLineIndentStyleFields";
 
 type AdminSelectFieldProps = {
   label: string;
@@ -272,13 +273,14 @@ export function DocumentDeliveryStyleAdminSections({
             onPtChange={(value) => onChange("documentLineSpacingPt", String(value))}
             SelectField={SelectField}
           />
-          <SelectField
-            label="首行缩进"
-            icon={FileText}
-            defaultValue={values.documentFirstLineIndentChars || "2"}
-            placeholder="请选择首行缩进"
-            options={FIRST_LINE_INDENT_OPTIONS}
-            onChange={(value) => onChange("documentFirstLineIndentChars", value)}
+          <FirstLineIndentStyleFields
+            mode={(values.documentFirstLineIndentMode as "chars" | "cm") || "chars"}
+            chars={Number(values.documentFirstLineIndentChars || "2")}
+            cm={Number(values.documentFirstLineIndentCm || "0.75")}
+            onModeChange={(value) => onChange("documentFirstLineIndentMode", value)}
+            onCharsChange={(value) => onChange("documentFirstLineIndentChars", String(value))}
+            onCmChange={(value) => onChange("documentFirstLineIndentCm", String(value))}
+            SelectField={SelectField}
           />
         </AdminStyleRow>
         <AdminStyleRow>
