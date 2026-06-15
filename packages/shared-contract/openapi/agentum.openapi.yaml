@@ -4340,9 +4340,21 @@ components:
           enum: [left, center, right, both]
           default: left
           description: 表格单元格文字对齐方式。
+        lineSpacingMode:
+          type: string
+          enum: [multiple, exact]
+          default: multiple
+          description: 行距类型；multiple 为倍数，exact 为固定磅值。
         lineSpacing:
           type: number
           default: 1.5
+          description: 倍数行距，lineSpacingMode=multiple 时生效。
+        lineSpacingPt:
+          type: integer
+          default: 18
+          minimum: 6
+          maximum: 72
+          description: 固定磅值行距，lineSpacingMode=exact 时生效。
         firstLineIndentChars:
           type: number
           default: 2

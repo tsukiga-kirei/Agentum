@@ -15,7 +15,9 @@ export type DocumentDeliveryStyleValues = {
   tableLatinFont: string;
   tableFontSize: string | number;
   tableCellAlignment: string;
+  lineSpacingMode: LineSpacingMode;
   lineSpacing: number;
+  lineSpacingPt: number;
   firstLineIndentChars: number;
   paragraphSpacingBefore: number;
   paragraphSpacingAfter: number;
@@ -28,6 +30,13 @@ export type DocumentDeliveryStyleValues = {
 };
 
 export type SelectOption = { value: string; label: string };
+
+export type LineSpacingMode = "multiple" | "exact";
+
+export const LINE_SPACING_MODE_OPTIONS: SelectOption[] = [
+  { value: "multiple", label: "倍数" },
+  { value: "exact", label: "固定磅值" },
+];
 
 export const INHERIT_FONT_OPTION: SelectOption = { value: "", label: "继承正文" };
 
@@ -104,6 +113,28 @@ export const LINE_SPACING_OPTIONS: SelectOption[] = [
   { value: "2.5", label: "2.5 倍" },
   { value: "3", label: "3 倍" },
 ];
+
+export const LINE_SPACING_PT_OPTIONS: SelectOption[] = Array.from({ length: 67 }, (_, index) => {
+  const pt = index + 6;
+  return { value: String(pt), label: `${pt} pt` };
+});
+
+export function isExactLineSpacingMode(mode: string | undefined): mode is "exact" {
+  return mode === "exact";
+}
+
+export function readLineSpacingMode(value: unknown): LineSpacingMode {
+  return isExactLineSpacingMode(typeof value === "string" ? value : String(value ?? "")) ? "exact" : "multiple";
+}
+
+export function stringifyLineSpacingPtValue(value: string | number): string {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return "18";
+  }
+  const clamped = Math.min(72, Math.max(6, Math.round(parsed)));
+  return String(clamped);
+}
 
 export const FIRST_LINE_INDENT_OPTIONS: SelectOption[] = [
   { value: "0", label: "无缩进" },

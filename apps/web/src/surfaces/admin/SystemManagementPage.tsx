@@ -271,7 +271,9 @@ function buildCapabilityFormValues(capability: SystemCapabilityRow): Record<stri
     documentTableLatinFont: readNestedStyleString(capability.config, "tableLatinFont"),
     documentTableFontSize: readNestedStyleString(capability.config, "tableFontSize") || "0",
     documentTableCellAlignment: readNestedStyleString(capability.config, "tableCellAlignment") || "left",
+    documentLineSpacingMode: readNestedStyleString(capability.config, "lineSpacingMode") || "multiple",
     documentLineSpacing: readNestedStyleString(capability.config, "lineSpacing") || "1.5",
+    documentLineSpacingPt: readNestedStyleString(capability.config, "lineSpacingPt") || "18",
     documentFirstLineIndentChars: readNestedStyleString(capability.config, "firstLineIndentChars") || "2",
     documentParagraphSpacingBefore: readNestedStyleString(capability.config, "paragraphSpacingBefore") || "0",
     documentParagraphSpacingAfter: readNestedStyleString(capability.config, "paragraphSpacingAfter") || "6",
@@ -834,7 +836,11 @@ export function SystemManagementPage() {
               ? { tableFontSize: d.documentTableFontSize.trim() }
               : {}),
             tableCellAlignment: d.documentTableCellAlignment?.trim() || "left",
+            lineSpacingMode: d.documentLineSpacingMode?.trim() || "multiple",
             lineSpacing: d.documentLineSpacing?.trim() || "1.5",
+            ...(d.documentLineSpacingMode === "exact"
+              ? { lineSpacingPt: d.documentLineSpacingPt?.trim() || "18" }
+              : {}),
             firstLineIndentChars: d.documentFirstLineIndentChars?.trim() || "2",
             paragraphSpacingBefore: d.documentParagraphSpacingBefore?.trim() || "0",
             paragraphSpacingAfter: d.documentParagraphSpacingAfter?.trim() || "6",
@@ -1760,13 +1766,13 @@ export function SystemManagementPage() {
                         onChange={(key, value) => {
                           capRef.current[key] = value;
                         }}
-                        SelectField={({ label, icon, defaultValue, placeholder, options, onChange }) => (
+                        SelectField={({ label, icon, defaultValue, value, placeholder, options, onChange }) => (
                           <div className="sys-field">
                             <label className="sys-field-label">{label}</label>
                             <SysSelect
                               icon={icon}
                               placeholder={placeholder}
-                              defaultValue={defaultValue}
+                              defaultValue={value ?? defaultValue}
                               options={options}
                               onChange={onChange}
                             />

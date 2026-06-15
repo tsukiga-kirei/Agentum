@@ -182,7 +182,7 @@ public class MarkdownDocxRenderer {
                 StringBuilder builder = new StringBuilder();
                 builder.append("<w:pPr><w:spacing w:before=\"").append(twips(style.paragraphSpacingBefore()))
                     .append("\" w:after=\"").append(twips(style.paragraphSpacingAfter()))
-                    .append("\" w:line=\"").append(lineTwips(style.lineSpacing())).append("\" w:lineRule=\"auto\"/>");
+                    .append("\" w:line=\"").append(style.resolvedLineTwips()).append("\" w:lineRule=\"").append(style.resolvedLineSpacingRule()).append("\"/>");
                 if (!centered) {
                     builder.append("<w:ind w:firstLine=\"").append(firstLineTwips(style)).append("\"/>");
                 }
@@ -192,13 +192,13 @@ public class MarkdownDocxRenderer {
                 builder.append("</w:pPr>");
                 yield builder.toString();
             }
-            case LIST -> "<w:pPr><w:spacing w:before=\"" + twips(style.paragraphSpacingBefore()) + "\" w:after=\"" + twips(style.paragraphSpacingAfter()) + "\" w:line=\"" + lineTwips(style.lineSpacing()) + "\" w:lineRule=\"auto\"/><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr>";
-            case QUOTE -> "<w:pPr><w:spacing w:before=\"" + twips(style.paragraphSpacingBefore()) + "\" w:after=\"" + twips(style.paragraphSpacingAfter()) + "\" w:line=\"" + lineTwips(style.lineSpacing()) + "\" w:lineRule=\"auto\"/><w:ind w:left=\"480\"/></w:pPr>";
+            case LIST -> "<w:pPr><w:spacing w:before=\"" + twips(style.paragraphSpacingBefore()) + "\" w:after=\"" + twips(style.paragraphSpacingAfter()) + "\" w:line=\"" + style.resolvedLineTwips() + "\" w:lineRule=\"" + style.resolvedLineSpacingRule() + "\"/><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr>";
+            case QUOTE -> "<w:pPr><w:spacing w:before=\"" + twips(style.paragraphSpacingBefore()) + "\" w:after=\"" + twips(style.paragraphSpacingAfter()) + "\" w:line=\"" + style.resolvedLineTwips() + "\" w:lineRule=\"" + style.resolvedLineSpacingRule() + "\"/><w:ind w:left=\"480\"/></w:pPr>";
             case TABLE_CELL -> {
                 StringBuilder builder = new StringBuilder();
                 builder.append("<w:pPr><w:spacing w:after=\"0\" w:line=\"")
-                    .append(lineTwips(style.lineSpacing()))
-                    .append("\" w:lineRule=\"auto\"/>");
+                    .append(style.resolvedLineTwips())
+                    .append("\" w:lineRule=\"").append(style.resolvedLineSpacingRule()).append("\"/>");
                 builder.append("<w:jc w:val=\"").append(xml(style.tableCellAlignment())).append("\"/>");
                 builder.append("</w:pPr>");
                 yield builder.toString();
@@ -436,10 +436,6 @@ public class MarkdownDocxRenderer {
 
     private int firstLineTwips(DocumentDeliveryStyle style) {
         return (int) Math.round(style.bodyFontSize() * 20 * style.firstLineIndentChars());
-    }
-
-    private int lineTwips(double lineSpacing) {
-        return (int) Math.round(240 * lineSpacing);
     }
 
     private int cmToTwips(double cm) {

@@ -11,7 +11,6 @@ import {
   INHERITABLE_CHINESE_FONT_OPTIONS,
   INHERITABLE_LATIN_FONT_OPTIONS,
   LATIN_FONT_OPTIONS,
-  LINE_SPACING_OPTIONS,
   MARGIN_CM_OPTIONS,
   MARGIN_PRESETS,
   MARGIN_PRESET_OPTIONS,
@@ -26,6 +25,7 @@ import {
   TABLE_FONT_SIZE_OPTIONS,
   TITLE_ALIGNMENT_OPTIONS,
 } from "../../constants/documentDeliveryStyleOptions";
+import { LineSpacingStyleFields } from "./LineSpacingStyleFields";
 
 const workflowSelectClassNames = { popup: { root: "agent-select-dropdown agent-admin-select-dropdown" } };
 const workflowSelectSuffixIcon = <ChevronDown className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />;
@@ -254,12 +254,22 @@ export function DocumentDeliveryStyleSections({ style, onFieldChange, onFieldsCh
       </StyleSection>
 
       <StyleSection title="段落" description="行距、缩进与首行标题排版规则。">
-        <StyleSelectField
-          label="行距"
-          icon={AlignCenter}
-          value={stringifySelectValue(style.lineSpacing)}
-          options={LINE_SPACING_OPTIONS}
-          onChange={(value) => onFieldChange("lineSpacing", Number(value))}
+        <LineSpacingStyleFields
+          mode={style.lineSpacingMode}
+          multiple={style.lineSpacing}
+          pt={style.lineSpacingPt}
+          onModeChange={(value) => onFieldChange("lineSpacingMode", value)}
+          onMultipleChange={(value) => onFieldChange("lineSpacing", value)}
+          onPtChange={(value) => onFieldChange("lineSpacingPt", value)}
+          SelectField={(props) => (
+            <StyleSelectField
+              label={props.label}
+              icon={props.icon}
+              value={props.value ?? props.defaultValue ?? ""}
+              options={props.options}
+              onChange={props.onChange}
+            />
+          )}
         />
         <StyleSelectField
           label="首行缩进"

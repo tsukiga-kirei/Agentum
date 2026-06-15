@@ -128,6 +128,23 @@ class MarkdownDocxRendererTest {
             .contains("仿宋_GB2312");
     }
 
+    @Test
+    void shouldApplyExactLineSpacingInPoints() throws IOException {
+        DocumentDeliveryStyle style = DocumentDeliveryStyle.from(Map.of(
+            "lineSpacingMode", "exact",
+            "lineSpacingPt", 22
+        ));
+
+        byte[] bytes = renderer.render("固定行距正文", style);
+
+        Map<String, String> entries = unzip(bytes);
+        assertThat(style.resolvedLineSpacingRule()).isEqualTo("exact");
+        assertThat(style.resolvedLineTwips()).isEqualTo(440);
+        assertThat(entries.get("word/document.xml"))
+            .contains("w:lineRule=\"exact\"")
+            .contains("w:line=\"440\"");
+    }
+
     private static Map<String, String> unzip(byte[] bytes) throws IOException {
         Map<String, String> entries = new HashMap<>();
         try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(bytes), StandardCharsets.UTF_8)) {

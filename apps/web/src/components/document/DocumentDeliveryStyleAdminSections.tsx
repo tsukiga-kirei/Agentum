@@ -10,24 +10,26 @@ import {
   INHERITABLE_CHINESE_FONT_OPTIONS,
   INHERITABLE_LATIN_FONT_OPTIONS,
   LATIN_FONT_OPTIONS,
-  LINE_SPACING_OPTIONS,
   MARGIN_CM_OPTIONS,
   MARGIN_PRESETS,
   MARGIN_PRESET_OPTIONS,
   type MarginPresetKey,
   PARAGRAPH_SPACING_AFTER_OPTIONS,
   PARAGRAPH_SPACING_BEFORE_OPTIONS,
+  readLineSpacingMode,
   stringifyFontSizeValue,
   stringifyTableFontSizeValue,
   TABLE_CELL_ALIGNMENT_OPTIONS,
   TABLE_FONT_SIZE_OPTIONS,
   TITLE_ALIGNMENT_OPTIONS,
 } from "../../constants/documentDeliveryStyleOptions";
+import { LineSpacingStyleFields } from "./LineSpacingStyleFields";
 
 type AdminSelectFieldProps = {
   label: string;
   icon?: LucideIcon;
   defaultValue?: string;
+  value?: string;
   placeholder?: string;
   options: Array<{ value: string; label: string }>;
   onChange: (value: string) => void;
@@ -261,13 +263,14 @@ export function DocumentDeliveryStyleAdminSections({
 
       <AdminStyleSection title="段落" description="行距、缩进与首行标题排版规则。">
         <AdminStyleRow>
-          <SelectField
-            label="行距"
-            icon={AlignCenter}
-            defaultValue={values.documentLineSpacing || "1.5"}
-            placeholder="请选择行距"
-            options={LINE_SPACING_OPTIONS}
-            onChange={(value) => onChange("documentLineSpacing", value)}
+          <LineSpacingStyleFields
+            mode={readLineSpacingMode(values.documentLineSpacingMode)}
+            multiple={Number(values.documentLineSpacing || "1.5")}
+            pt={Number(values.documentLineSpacingPt || "18")}
+            onModeChange={(value) => onChange("documentLineSpacingMode", value)}
+            onMultipleChange={(value) => onChange("documentLineSpacing", String(value))}
+            onPtChange={(value) => onChange("documentLineSpacingPt", String(value))}
+            SelectField={SelectField}
           />
           <SelectField
             label="首行缩进"

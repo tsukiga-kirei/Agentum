@@ -33,7 +33,7 @@ import {
 import { WorkbenchGlobalActions } from "../../components/workbench/SurfacePageLayout";
 import { SysImpactConfirmModal } from "../../components/common/SysImpactConfirmModal";
 import { DocumentDeliveryStyleSections } from "../../components/document/DocumentDeliveryStyleSections";
-import type { DocumentDeliveryStyleValues } from "../../constants/documentDeliveryStyleOptions";
+import { readLineSpacingMode, type DocumentDeliveryStyleValues } from "../../constants/documentDeliveryStyleOptions";
 import { AgentumApiError, assetApi, workflowApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import type { AssetType, MyAssetRow, SystemCapabilityAssetRow } from "../../types/asset";
@@ -203,7 +203,9 @@ const DEFAULT_WORD_DOCUMENT_STYLE: DocumentDeliveryStyleDraft = {
   tableLatinFont: "",
   tableFontSize: 0,
   tableCellAlignment: "left",
+  lineSpacingMode: "multiple",
   lineSpacing: 1.5,
+  lineSpacingPt: 18,
   firstLineIndentChars: 2,
   paragraphSpacingBefore: 0,
   paragraphSpacingAfter: 6,
@@ -3369,7 +3371,9 @@ function readDocumentDeliveryStyle(rawStyle: unknown, capabilityConfig?: Record<
     tableLatinFont: readOptionalString(merged.tableLatinFont, DEFAULT_WORD_DOCUMENT_STYLE.tableLatinFont),
     tableFontSize: readTableFontSizeLike(merged.tableFontSize, DEFAULT_WORD_DOCUMENT_STYLE.tableFontSize),
     tableCellAlignment: readString(merged.tableCellAlignment, DEFAULT_WORD_DOCUMENT_STYLE.tableCellAlignment),
+    lineSpacingMode: readLineSpacingMode(merged.lineSpacingMode ?? DEFAULT_WORD_DOCUMENT_STYLE.lineSpacingMode),
     lineSpacing: readNumberLike(merged.lineSpacing, Number(DEFAULT_WORD_DOCUMENT_STYLE.lineSpacing)),
+    lineSpacingPt: readNumberLike(merged.lineSpacingPt, Number(DEFAULT_WORD_DOCUMENT_STYLE.lineSpacingPt)),
     firstLineIndentChars: readNumberLike(merged.firstLineIndentChars, Number(DEFAULT_WORD_DOCUMENT_STYLE.firstLineIndentChars)),
     paragraphSpacingBefore: readNumberLike(merged.paragraphSpacingBefore, Number(DEFAULT_WORD_DOCUMENT_STYLE.paragraphSpacingBefore)),
     paragraphSpacingAfter: readNumberLike(merged.paragraphSpacingAfter, Number(DEFAULT_WORD_DOCUMENT_STYLE.paragraphSpacingAfter)),

@@ -26,7 +26,9 @@ public record DocumentDeliveryStyle(
     String tableLatinFont,
     int tableFontSize,
     String tableCellAlignment,
+    String lineSpacingMode,
     double lineSpacing,
+    int lineSpacingPt,
     double firstLineIndentChars,
     int paragraphSpacingBefore,
     int paragraphSpacingAfter,
@@ -58,7 +60,9 @@ public record DocumentDeliveryStyle(
             "",
             0,
             "left",
+            "multiple",
             1.5,
+            18,
             2,
             0,
             6,
@@ -91,7 +95,9 @@ public record DocumentDeliveryStyle(
             readOptionalString(source, "tableLatinFont"),
             readInt(source, "tableFontSize", defaults.tableFontSize(), 0, 72),
             readAlignment(source, "tableCellAlignment", defaults.tableCellAlignment()),
+            readLineSpacingMode(source, defaults.lineSpacingMode()),
             readDouble(source, "lineSpacing", defaults.lineSpacing(), 1.0, 3.0),
+            readInt(source, "lineSpacingPt", defaults.lineSpacingPt(), 6, 72),
             readDouble(source, "firstLineIndentChars", defaults.firstLineIndentChars(), 0.0, 6.0),
             readInt(source, "paragraphSpacingBefore", defaults.paragraphSpacingBefore(), 0, 72),
             readInt(source, "paragraphSpacingAfter", defaults.paragraphSpacingAfter(), 0, 72),
@@ -134,6 +140,17 @@ public record DocumentDeliveryStyle(
         return tableFontSize <= 0 ? bodyFontSize : tableFontSize;
     }
 
+    public String resolvedLineSpacingRule() {
+        return "exact".equalsIgnoreCase(lineSpacingMode) ? "exact" : "auto";
+    }
+
+    public int resolvedLineTwips() {
+        if ("exact".equalsIgnoreCase(lineSpacingMode)) {
+            return lineSpacingPt * 20;
+        }
+        return (int) Math.round(240 * lineSpacing);
+    }
+
     public Map<String, Object> toMap() {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("chineseFont", chineseFont);
@@ -154,7 +171,11 @@ public record DocumentDeliveryStyle(
             result.put("tableFontSize", tableFontSize);
         }
         result.put("tableCellAlignment", tableCellAlignment);
+        result.put("lineSpacingMode", lineSpacingMode);
         result.put("lineSpacing", lineSpacing);
+        if ("exact".equalsIgnoreCase(lineSpacingMode)) {
+            result.put("lineSpacingPt", lineSpacingPt);
+        }
         result.put("firstLineIndentChars", firstLineIndentChars);
         result.put("paragraphSpacingBefore", paragraphSpacingBefore);
         result.put("paragraphSpacingAfter", paragraphSpacingAfter);
@@ -165,6 +186,14 @@ public record DocumentDeliveryStyle(
         result.put("titleCentered", titleCentered);
         result.put("headingFirstLineIndent", headingFirstLineIndent);
         return result;
+    }
+
+    private static String readLineSpacingMode(Map<String, Object> source, String fallback) {
+        String text = readOptionalString(source, "lineSpacingMode");
+        if (text.isBlank()) {
+            return fallback;
+        }
+        return "exact".equalsIgnoreCase(text) ? "exact" : "multiple";
     }
 
     private static void putOptional(Map<String, Object> target, String key, String value) {
