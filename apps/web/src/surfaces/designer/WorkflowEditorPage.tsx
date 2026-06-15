@@ -3447,7 +3447,7 @@ function variableToReferenceItem(variable: WorkflowVariable): VariableReferenceI
   ].filter(Boolean).join("，");
   return {
     name: variable.name,
-    sourceLabel: `节点「${variable.sourceNodeName}」输出变量（${variable.sourceNodeId}）`,
+    sourceLabel: `节点「${variable.sourceNodeName}」输出变量`,
     typeLabel: workflowVariableTypeLabel(variable.type),
     description: [variable.description || "可引用该节点输出内容。", flags].filter(Boolean).join("；"),
   };
