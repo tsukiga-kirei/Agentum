@@ -4277,7 +4277,7 @@ components:
         - totalPages
     DocumentDeliveryStyle:
       type: object
-      description: Word 文档交付样式。单位：字号为 pt，段后间距为 pt，页边距为 cm，首行缩进为字符数。
+      description: Word 文档交付样式。字号可填 pt 数字或中文字号名（如四号、小四），段后间距为 pt，页边距为 cm，首行缩进为字符数。
       properties:
         chineseFont:
           type: string
@@ -4286,16 +4286,24 @@ components:
           type: string
           default: Times New Roman
         bodyFontSize:
-          type: integer
+          oneOf:
+            - type: integer
+            - type: string
           default: 12
         heading1FontSize:
-          type: integer
+          oneOf:
+            - type: integer
+            - type: string
           default: 16
         heading2FontSize:
-          type: integer
+          oneOf:
+            - type: integer
+            - type: string
           default: 14
         heading3FontSize:
-          type: integer
+          oneOf:
+            - type: integer
+            - type: string
           default: 13
         lineSpacing:
           type: number
@@ -4318,13 +4326,17 @@ components:
         marginRightCm:
           type: number
           default: 3.18
+        titleCentered:
+          type: boolean
+          default: false
+          description: 是否将文档首行标题居中。
     WordDocumentPreviewRequest:
       type: object
       properties:
         capabilityId:
           type: string
           format: uuid
-          description: 可选；为空或 none 时只生成样式预览，不校验具体能力。
+          description: 当前主体可用的 Word 文档交付能力 ID；设计态预览也必须校验能力分配。
         markdown:
           type: string
           description: 设计态预览使用的 Markdown 样例。
@@ -4337,6 +4349,7 @@ components:
         style:
           $ref: "#/components/schemas/DocumentDeliveryStyle"
       required:
+        - capabilityId
         - markdown
         - fileName
         - style

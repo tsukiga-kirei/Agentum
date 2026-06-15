@@ -11,6 +11,7 @@ import io.minio.GetObjectArgs;
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
+import io.minio.RemoveObjectArgs;
 import io.minio.StatObjectArgs;
 import io.minio.errors.ErrorResponseException;
 import java.io.ByteArrayInputStream;
@@ -95,6 +96,33 @@ public class MinioDocumentDeliveryStorage implements DocumentDeliveryStorage {
                 exception
             );
             throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "DELIVERY_DOCUMENT_READ_FAILED", "Word 文档读取失败，请稍后重试");
+        }
+    }
+
+    @Override
+    public void delete(String storageKey) {
+        String objectKey = sanitizeObjectKey(storageKey);
+        try {
+            minioClient.removeObject(RemoveObjectArgs.builder()
+                .bucket(properties.bucket())
+                .object(objectKey)
+                .build());
+            log.info("Word 文档交付文件已从 MinIO 清理 bucket={} objectKey={} requestId={}", properties.bucket(), objectKey, RequestIds.current());
+        } catch (ErrorResponseException exception) {
+            if ("NoSuchKey".equals(exception.errorResponse().code()) || "NoSuchObject".equals(exception.errorResponse().code())) {
+                log.info("Word 文档交付文件清理时对象已不存在 bucket={} objectKey={} requestId={}", properties.bucket(), objectKey, RequestIds.current());
+                return;
+            }
+            throw new ApiException(HttpStatus.BAD_GATEWAY, "DELIVERY_DOCUMENT_OBJECT_DELETE_FAILED", "交付文档对象删除失败，请稍后重试");
+        } catch (Exception exception) {
+            log.warn(
+                "Word 文档交付文件删除 MinIO 失败 bucket={} objectKey={} requestId={}",
+                properties.bucket(),
+                objectKey,
+                RequestIds.current(),
+                exception
+            );
+            throw new ApiException(HttpStatus.BAD_GATEWAY, "DELIVERY_DOCUMENT_OBJECT_DELETE_FAILED", "交付文档对象删除失败，请稍后重试");
         }
     }
 

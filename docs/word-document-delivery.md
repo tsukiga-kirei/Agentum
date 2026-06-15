@@ -5,19 +5,19 @@
 ## 能力边界
 
 - 交付类型：系统内置交付能力，`deliveryChannel=document`，`documentKind=word`。
-- 输入内容：优先使用交付节点配置的 `contentVariable`，也可使用 `markdownContent` 作为兜底 Markdown 模板。
+- 输入内容：交付节点的 `markdownContent` 就是最终 Markdown 模板，运行时将模板变量替换后转换为 Word。
 - 输出结果：`.docx` 文件、`delivery_records` 成功记录、运行节点输出中的 `deliveryRecordId` 和 `deliveryResult.downloadUrl`。
 - 当前渲染范围：标题、正文、加粗、斜体、行内代码、代码块、引用、无序列表、有序列表和 Markdown 表格。
-- 当前存储：MinIO/S3 兼容对象存储。默认 bucket 为 `agentum`，对象前缀为 `deliveries/documents`，可通过 `MINIO_BUCKET` 和 `MINIO_OBJECT_PREFIX` 覆盖。
+- 当前存储：MinIO/S3 兼容对象存储。默认 bucket 为 `agentum`，对象前缀为 `deliveries/documents`，可通过 `MINIO_BUCKET` 和 `MINIO_OBJECT_PREFIX` 覆盖。设计态预览只即时下载，不写入 MinIO。
 
 ## 配置分层
 
 Word 文档交付沿用系统能力池模型：
 
-- 系统管理员在系统管理中创建或启用 `Word 文档交付`，配置默认字体、字号、行距、首行缩进、段后间距、页边距、文件大小和保留天数策略。
+- 系统管理员在系统管理中创建或启用 `Word 文档交付`，配置默认字体、字号、行距、首行缩进、段后间距、页边距、首行标题对齐、文件大小和保留天数策略。
 - 系统管理员把该能力加入租户可用能力池。
 - 租户管理员在租户管理中把能力分配给用户、部门或角色。
-- 流程设计者在交付节点选择该能力后，配置正文来源变量、文件名模板和节点级样式。节点级样式会随流程草稿和发布版本保存，运行时按快照生成文件。
+- 流程设计者在交付节点选择该能力后，配置交付正文模板、文件名模板和节点级样式。节点级样式会随流程草稿和发布版本保存，运行时按快照生成文件。
 
 系统级默认值用于治理和兜底，节点级配置用于具体业务模板。这样可以避免系统管理员替每个流程维护字号和缩进，也避免流程设计者绕过租户未开放的交付能力。
 
@@ -31,11 +31,10 @@ Word 文档交付沿用系统能力池模型：
 | `deliveryCapabilityId` | 系统内置 Word 文档交付能力 ID |
 | `deliveryType` | `word_document` |
 | `documentKind` | `word` |
-| `contentVariable` | 正文来源变量名，优先从上游 AI / 集群节点输出读取 |
-| `markdownContent` | 未选择正文变量时的 Markdown 兜底模板 |
-| `fileNameTemplate` | 文件名模板，可使用 `{{runId}}` 等变量 |
+| `markdownContent` | 最终交付正文模板，可使用 `{{变量名}}` 引用上游输出 |
+| `fileNameTemplate` | 文件名模板，默认 `交付文档-{{runNumber}}.docx`，可使用 `{{runNumber}}`、`{{date}}`、`{{dateCompact}}` 和上游变量 |
 | `documentStyle` | 节点级样式快照 |
-| `previewMarkdown` | 设计态预览样例，不影响正式运行 |
+| `previewMarkdown` | 设计态导出样例，不替换变量，不影响正式运行 |
 
 `documentStyle` 支持：
 
@@ -43,9 +42,9 @@ Word 文档交付沿用系统能力池模型：
 {
   "chineseFont": "宋体",
   "latinFont": "Times New Roman",
-  "bodyFontSize": 12,
-  "heading1FontSize": 16,
-  "heading2FontSize": 14,
+  "bodyFontSize": "小四",
+  "heading1FontSize": "三号",
+  "heading2FontSize": "四号",
   "heading3FontSize": 13,
   "lineSpacing": 1.5,
   "firstLineIndentChars": 2,
@@ -53,9 +52,14 @@ Word 文档交付沿用系统能力池模型：
   "marginTopCm": 2.54,
   "marginBottomCm": 2.54,
   "marginLeftCm": 3.18,
-  "marginRightCm": 3.18
+  "marginRightCm": 3.18,
+  "titleCentered": true
 }
 ```
+
+字号字段支持 pt 数字，也支持中文字号名：`初号`、`小初`、`一号`、`小一`、`二号`、`小二`、`三号`、`小三`、`四号`、`小四`、`五号`、`小五`、`六号`。
+
+系统级 `maxFileSizeMb` 会在运行态 docx 生成后校验文件大小，超过限制时交付失败并记录错误；`retentionDays` 会写入交付结果的 `expiresAt`，后台清理任务按该时间删除 MinIO 对象并把交付记录标记为 `expired`。
 
 ## 设计态预览接口
 
@@ -76,9 +80,10 @@ Content-Type: application/json
   "style": {
     "chineseFont": "宋体",
     "latinFont": "Times New Roman",
-    "bodyFontSize": 12,
+    "bodyFontSize": "小四",
     "lineSpacing": 1.5,
-    "firstLineIndentChars": 2
+    "firstLineIndentChars": 2,
+    "titleCentered": true
   }
 }
 ```
@@ -100,6 +105,8 @@ Content-Type: application/json
     "fileName": "交付文档.docx",
     "storageProvider": "minio",
     "storageKey": "deliveries/documents/{tenantId}/{recordId}/交付文档.docx",
+    "retentionDays": 180,
+    "expiresAt": "2026-12-12T02:00:00Z",
     "downloadUrl": "/api/tenants/{tenantId}/delivery-records/{recordId}/download"
   }
 }
@@ -127,7 +134,7 @@ MinIO 默认配置：
 
 ## 后续演进
 
-- 补保留期清理任务和对象生命周期策略。
+- 补对象存储生命周期策略，与应用侧保留期清理互为兜底。
 - 接入 reference.docx 模板、页眉页脚、目录、图片和附件。
 - 将复杂文档生成迁移到 Worker，避免大文档阻塞 API 线程。
 - 与高风险交付审批、运行审计页和交付物资源范围进一步勾稽。

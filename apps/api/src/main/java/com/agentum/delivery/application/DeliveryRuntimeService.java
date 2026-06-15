@@ -31,7 +31,7 @@ import org.springframework.web.client.RestClientException;
 public class DeliveryRuntimeService {
 
     private static final Logger log = LoggerFactory.getLogger(DeliveryRuntimeService.class);
-    /** 设计器占位值：表示未绑定具体交付能力，运行时应降级为站内直接交付。 */
+    /** 设计器历史占位值：未上线阶段不保留兜底直出，运行时统一要求绑定具体交付能力。 */
     private static final Set<String> CAPABILITY_SENTINEL_VALUES = Set.of("none", "custom");
 
     private final SystemCapabilityRepository systemCapabilityRepository;
@@ -66,18 +66,6 @@ public class DeliveryRuntimeService {
     }
 
     public DeliveryRuntimeResult execute(DeliveryRuntimeRequest request) {
-        if (shouldUseDirectDelivery(request.nodeConfig())) {
-            if ("capability".equals(stringValue(request.nodeConfig().get("deliveryMode")))) {
-                log.info(
-                    "交付节点未绑定有效交付能力，降级为站内直接交付 tenantId={} runId={} nodeRunId={} requestId={}",
-                    request.run().getTenantId(),
-                    request.run().getId(),
-                    request.nodeRun().getId(),
-                    RequestIds.current()
-                );
-            }
-            return completeDirectDelivery(request);
-        }
         SystemCapabilityEntity capability = resolveDeliveryCapability(request);
         String deliveryType = firstNonBlank(
             stringValue(request.nodeConfig().get("deliveryType")),
@@ -129,30 +117,6 @@ public class DeliveryRuntimeService {
             );
             throw new ApiException(HttpStatus.BAD_GATEWAY, "DELIVERY_RUNTIME_FAILED", "交付执行失败，请检查能力配置");
         }
-    }
-
-    private DeliveryRuntimeResult completeDirectDelivery(DeliveryRuntimeRequest request) {
-        Map<String, Object> payload = buildPayload(request);
-        String title = firstNonBlank(stringValue(request.nodeConfig().get("title")), request.run().getTitle());
-        DeliveryRecordEntity record = DeliveryRecordEntity.started(
-            request.run(),
-            request.nodeRun(),
-            null,
-            "direct",
-            "站内交付",
-            truncate(title, 200),
-            sanitizeMap(payload),
-            request.operatorUserId(),
-            clock.instant()
-        );
-        record.succeed(Map.of("mode", "direct", "target", "站内交付"), clock.instant());
-        deliveryRecordRepository.save(record);
-        return new DeliveryRuntimeResult(Map.of(
-            "deliveryRecordId", record.getId().toString(),
-            "deliveryStatus", "success",
-            "deliveryPayload", payload,
-            "summary", "已生成站内交付记录：" + title
-        ));
     }
 
     private Map<String, Object> dispatchCapability(
@@ -255,28 +219,13 @@ public class DeliveryRuntimeService {
         return capability;
     }
 
-    /**
-     * 判断是否走站内直接交付：显式 direct 模式，或未配置/占位交付能力 ID。
-     * 设计器默认「使用交付能力 + none」属于后者，避免演示流程在交付节点必然失败。
-     */
-    private static boolean shouldUseDirectDelivery(Map<String, Object> nodeConfig) {
-        String mode = firstNonBlank(stringValue(nodeConfig.get("deliveryMode")), "direct");
-        if ("direct".equals(mode)) {
-            return true;
-        }
-        String capabilityId = firstNonBlank(
-            stringValue(nodeConfig.get("deliveryCapabilityId")),
-            stringValue(nodeConfig.get("capabilityId"))
-        );
-        return capabilityId.isBlank() || CAPABILITY_SENTINEL_VALUES.contains(capabilityId.toLowerCase());
-    }
-
     private Map<String, Object> buildPayload(DeliveryRuntimeRequest request) {
         Map<String, Object> payload = new LinkedHashMap<>(request.variables());
         String deliveryTarget = renderString(firstNonBlank(stringValue(request.nodeConfig().get("deliveryTarget")), "请查看上游节点输出。"), request.variables());
         payload.put("deliveryTarget", deliveryTarget);
         payload.put("body", firstNonBlank(stringValue(request.nodeConfig().get("body")), deliveryTarget));
         payload.put("runId", request.run().getId().toString());
+        payload.put("runNumber", request.run().getRunNumber());
         payload.put("nodeRunId", request.nodeRun().getId().toString());
         return payload;
     }

@@ -815,10 +815,11 @@ class SystemManagementServiceTest {
                 "defaultStyle", Map.of(
                     "chineseFont", "黑体",
                     "latinFont", "Arial",
-                    "bodyFontSize", "11",
-                    "heading1FontSize", "18",
+                    "bodyFontSize", "四号",
+                    "heading1FontSize", "三号",
                     "lineSpacing", "1.25",
-                    "firstLineIndentChars", "2"
+                    "firstLineIndentChars", "2",
+                    "titleCentered", "true"
                 ),
                 "allowNodeStyleOverride", true,
                 "maxFileSizeMb", "30",
@@ -841,9 +842,10 @@ class SystemManagementServiceTest {
             .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.MAP)
             .containsEntry("chineseFont", "黑体")
             .containsEntry("latinFont", "Arial")
-            .containsEntry("bodyFontSize", 11)
-            .containsEntry("heading1FontSize", 18)
-            .containsEntry("lineSpacing", 1.25);
+            .containsEntry("bodyFontSize", 14)
+            .containsEntry("heading1FontSize", 16)
+            .containsEntry("lineSpacing", 1.25)
+            .containsEntry("titleCentered", true);
         assertThat(row.config()).containsEntry("deliveryChannel", "document");
     }
 

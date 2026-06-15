@@ -21,7 +21,7 @@ import { UserInputPanel } from "./UserInputPanel";
 import { MultiAgentPanel } from "./MultiAgentPanel";
 import { DeliveryPreviewPanel } from "./DeliveryPreviewPanel";
 import { DeliveryResultPanel } from "./DeliveryResultPanel";
-import { resolveDirectDeliveryContent } from "../../utils/deliveryContent";
+import { resolveDeliveryDisplayContent } from "../../utils/deliveryContent";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { workbenchApi } from "../../services/apiClient";
 import { formatRuntimeErrorMessage } from "../../utils/runtimeErrors";
@@ -997,7 +997,7 @@ export function TaskRunWorkspace({
                         ? (
                           <>
                             <p className="text-rose-600 dark:text-rose-400 font-medium mb-2">交付执行失败</p>
-                            <p>{resolveStepErrorMessage(activeStep) ?? "请检查交付能力配置，或改用「直接输出交付」模式。"}</p>
+                            <p>{resolveStepErrorMessage(activeStep) ?? "请检查交付能力配置和正文模板。"}</p>
                           </>
                         )
                         : isAdvancing
@@ -1314,10 +1314,10 @@ function RunTracePanel({
                   <strong className="text-sm text-slate-800 dark:text-slate-200 block font-mono">
                     {step.outputs?.find((f) => f.label === "summary")?.value || "交付文件已生成并归档。"}
                   </strong>
-                  {resolveDirectDeliveryContent(step) ? (
+                  {resolveDeliveryDisplayContent(step) ? (
                     <div className="pt-2 border-t border-slate-100 dark:border-slate-850">
-                      <span className="text-xs text-slate-400 font-semibold block mb-2">交付配置输出</span>
-                      <MarkdownRenderer content={resolveDirectDeliveryContent(step)} />
+                      <span className="text-xs text-slate-400 font-semibold block mb-2">交付执行摘要</span>
+                      <MarkdownRenderer content={resolveDeliveryDisplayContent(step)} />
                     </div>
                   ) : null}
                 </div>
@@ -1482,23 +1482,14 @@ function RunDeliveriesPanel({
 }) {
   const list = preview.deliveries || [];
   const deliveryStep = preview.steps.find((step) => step.kind === "delivery");
-  const deliveryConfig = deliveryStep?.configSnapshot ?? {};
-  const deliveryMode = readConfigString(deliveryConfig.deliveryMode, "direct");
-  const capabilityId = readConfigString(deliveryConfig.deliveryCapabilityId, "none").toLowerCase();
-  const isDirectDelivery =
-    deliveryMode === "direct"
-    || capabilityId === "none"
-    || capabilityId === "custom"
-    || capabilityId === "";
-
-  const directDeliveryContent = resolveDirectDeliveryContent(deliveryStep);
+  const deliveryDisplayContent = resolveDeliveryDisplayContent(deliveryStep);
 
   const [copied, setCopied] = useState(false);
   const [downloadingRecordId, setDownloadingRecordId] = useState("");
 
   const handleCopy = () => {
-    if (directDeliveryContent) {
-      navigator.clipboard.writeText(directDeliveryContent);
+    if (deliveryDisplayContent) {
+      navigator.clipboard.writeText(deliveryDisplayContent);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
@@ -1560,10 +1551,10 @@ function RunDeliveriesPanel({
         {list.length === 0 ? (
           <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 flex justify-between items-center text-sm">
             <div>
-              <strong className="text-slate-800 dark:text-slate-200 font-medium block">直接输出交付</strong>
+              <strong className="text-slate-800 dark:text-slate-200 font-medium block">Word 文档交付</strong>
               <span className="text-slate-400 block mt-0.5 whitespace-pre-wrap">
                 {isFlowCompleted
-                  ? "按流程「交付配置」渲染并输出正文。"
+                  ? "暂无可下载的交付文件，请检查交付能力执行结果。"
                   : "交付步骤执行后需先在「当前处理」确认完成，归档结果才会在此展示。"}
               </span>
             </div>
@@ -1616,22 +1607,22 @@ function RunDeliveriesPanel({
         )}
       </div>
 
-      {isDirectDelivery && isFlowCompleted && directDeliveryContent ? (
+      {isFlowCompleted && deliveryDisplayContent ? (
         <div className="bg-white dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
           <header className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/10">
             <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-              <FileText size={16} className="text-blue-500" /> 直接输出交付（交付配置）
+              <FileText size={16} className="text-blue-500" /> 交付执行摘要
             </h4>
             <button
               type="button"
               onClick={handleCopy}
               className="text-sm font-semibold text-blue-500 hover:text-blue-650 dark:text-blue-400 flex items-center gap-1"
             >
-              {copied ? "已复制" : "复制交付内容"}
+              {copied ? "已复制" : "复制摘要"}
             </button>
           </header>
           <div className="p-6 overflow-y-auto max-h-[500px] prose dark:prose-invert max-w-none bg-white dark:bg-slate-950">
-            <MarkdownRenderer content={directDeliveryContent} />
+            <MarkdownRenderer content={deliveryDisplayContent} />
           </div>
         </div>
       ) : null}

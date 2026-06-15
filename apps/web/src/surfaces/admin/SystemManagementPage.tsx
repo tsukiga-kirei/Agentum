@@ -259,6 +259,7 @@ function buildCapabilityFormValues(capability: SystemCapabilityRow): Record<stri
     documentBodyFontSize: readNestedStyleString(capability.config, "bodyFontSize") || "12",
     documentHeading1FontSize: readNestedStyleString(capability.config, "heading1FontSize") || "16",
     documentHeading2FontSize: readNestedStyleString(capability.config, "heading2FontSize") || "14",
+    documentHeading3FontSize: readNestedStyleString(capability.config, "heading3FontSize") || "13",
     documentLineSpacing: readNestedStyleString(capability.config, "lineSpacing") || "1.5",
     documentFirstLineIndentChars: readNestedStyleString(capability.config, "firstLineIndentChars") || "2",
     documentParagraphSpacingAfter: readNestedStyleString(capability.config, "paragraphSpacingAfter") || "6",
@@ -266,6 +267,7 @@ function buildCapabilityFormValues(capability: SystemCapabilityRow): Record<stri
     documentMarginBottomCm: readNestedStyleString(capability.config, "marginBottomCm") || "2.54",
     documentMarginLeftCm: readNestedStyleString(capability.config, "marginLeftCm") || "3.18",
     documentMarginRightCm: readNestedStyleString(capability.config, "marginRightCm") || "3.18",
+    documentTitleCentered: readNestedStyleString(capability.config, "titleCentered") || "false",
     documentMaxFileSizeMb: readConfigString(capability.config, "maxFileSizeMb") || "20",
     documentRetentionDays: readConfigString(capability.config, "retentionDays") || "180",
     implementationKey: readConfigString(capability.config, "implementationKey"),
@@ -806,6 +808,7 @@ export function SystemManagementPage() {
             bodyFontSize: d.documentBodyFontSize?.trim() || "12",
             heading1FontSize: d.documentHeading1FontSize?.trim() || "16",
             heading2FontSize: d.documentHeading2FontSize?.trim() || "14",
+            heading3FontSize: d.documentHeading3FontSize?.trim() || "13",
             lineSpacing: d.documentLineSpacing?.trim() || "1.5",
             firstLineIndentChars: d.documentFirstLineIndentChars?.trim() || "2",
             paragraphSpacingAfter: d.documentParagraphSpacingAfter?.trim() || "6",
@@ -813,6 +816,7 @@ export function SystemManagementPage() {
             marginBottomCm: d.documentMarginBottomCm?.trim() || "2.54",
             marginLeftCm: d.documentMarginLeftCm?.trim() || "3.18",
             marginRightCm: d.documentMarginRightCm?.trim() || "3.18",
+            titleCentered: d.documentTitleCentered === "true",
           };
         } else {
           config.smtpHost = d.smtpHost?.trim() || "";
@@ -1729,24 +1733,31 @@ export function SystemManagementPage() {
                         <div className="sys-field"><label className="sys-field-label">西文字体</label><div className="sys-field-input-wrap"><Type size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="Times New Roman" maxLength={80} defaultValue={capRef.current.documentLatinFont || "Times New Roman"} onChange={e=>{capRef.current.documentLatinFont=e.target.value;}}/></div></div>
                       </div>
                       <div className="sys-field-row">
-                        <div className="sys-field"><label className="sys-field-label">正文字号</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={8} max={48} placeholder="12" defaultValue={capRef.current.documentBodyFontSize || "12"} onChange={e=>{capRef.current.documentBodyFontSize=e.target.value;}}/></div></div>
-                        <div className="sys-field"><label className="sys-field-label">一级标题字号</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={8} max={72} placeholder="16" defaultValue={capRef.current.documentHeading1FontSize || "16"} onChange={e=>{capRef.current.documentHeading1FontSize=e.target.value;}}/></div></div>
+                        <div className="sys-field"><label className="sys-field-label">正文字号</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="小四 / 12" defaultValue={capRef.current.documentBodyFontSize || "12"} onChange={e=>{capRef.current.documentBodyFontSize=e.target.value;}}/></div></div>
+                        <div className="sys-field"><label className="sys-field-label">一级标题字号</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="三号 / 16" defaultValue={capRef.current.documentHeading1FontSize || "16"} onChange={e=>{capRef.current.documentHeading1FontSize=e.target.value;}}/></div></div>
                       </div>
                       <div className="sys-field-row">
-                        <div className="sys-field"><label className="sys-field-label">二级标题字号</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={8} max={72} placeholder="14" defaultValue={capRef.current.documentHeading2FontSize || "14"} onChange={e=>{capRef.current.documentHeading2FontSize=e.target.value;}}/></div></div>
+                        <div className="sys-field"><label className="sys-field-label">二级标题字号</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="四号 / 14" defaultValue={capRef.current.documentHeading2FontSize || "14"} onChange={e=>{capRef.current.documentHeading2FontSize=e.target.value;}}/></div></div>
+                        <div className="sys-field"><label className="sys-field-label">三级标题字号</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="小四 / 13" defaultValue={capRef.current.documentHeading3FontSize || "13"} onChange={e=>{capRef.current.documentHeading3FontSize=e.target.value;}}/></div></div>
+                      </div>
+                      <div className="sys-field-row">
                         <div className="sys-field"><label className="sys-field-label">行距</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={1} max={3} step={0.1} placeholder="1.5" defaultValue={capRef.current.documentLineSpacing || "1.5"} onChange={e=>{capRef.current.documentLineSpacing=e.target.value;}}/></div></div>
+                        <div className="sys-field"><label className="sys-field-label">首行缩进字符</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={0} max={6} step={0.5} placeholder="2" defaultValue={capRef.current.documentFirstLineIndentChars || "2"} onChange={e=>{capRef.current.documentFirstLineIndentChars=e.target.value;}}/></div></div>
                       </div>
                       <div className="sys-field-row">
-                        <div className="sys-field"><label className="sys-field-label">首行缩进字符</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={0} max={6} step={0.5} placeholder="2" defaultValue={capRef.current.documentFirstLineIndentChars || "2"} onChange={e=>{capRef.current.documentFirstLineIndentChars=e.target.value;}}/></div></div>
                         <div className="sys-field"><label className="sys-field-label">段后间距 pt</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={0} max={72} placeholder="6" defaultValue={capRef.current.documentParagraphSpacingAfter || "6"} onChange={e=>{capRef.current.documentParagraphSpacingAfter=e.target.value;}}/></div></div>
+                        <div className="sys-field">
+                          <label className="sys-field-label">首行标题对齐</label>
+                          <SysSelect icon={FileText} placeholder="请选择首行标题对齐方式" defaultValue={capRef.current.documentTitleCentered || "false"} options={[{value:"false",label:"默认左对齐"},{value:"true",label:"居中"}]} onChange={v=>{capRef.current.documentTitleCentered=v;}}/>
+                        </div>
                       </div>
                       <div className="sys-field-row">
                         <div className="sys-field"><label className="sys-field-label">页边距 上/下 cm</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="2.54 / 2.54" defaultValue={`${capRef.current.documentMarginTopCm || "2.54"} / ${capRef.current.documentMarginBottomCm || "2.54"}`} onChange={e=>{const [top,bottom]=e.target.value.split("/").map(v=>v.trim());capRef.current.documentMarginTopCm=top||"2.54";capRef.current.documentMarginBottomCm=bottom||top||"2.54";}}/></div></div>
                         <div className="sys-field"><label className="sys-field-label">页边距 左/右 cm</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="3.18 / 3.18" defaultValue={`${capRef.current.documentMarginLeftCm || "3.18"} / ${capRef.current.documentMarginRightCm || "3.18"}`} onChange={e=>{const [left,right]=e.target.value.split("/").map(v=>v.trim());capRef.current.documentMarginLeftCm=left||"3.18";capRef.current.documentMarginRightCm=right||left||"3.18";}}/></div></div>
                       </div>
                       <div className="sys-field-row">
-                        <div className="sys-field"><label className="sys-field-label">最大文件 MB</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={1} max={200} placeholder="20" defaultValue={capRef.current.documentMaxFileSizeMb || "20"} onChange={e=>{capRef.current.documentMaxFileSizeMb=e.target.value;}}/></div></div>
-                        <div className="sys-field"><label className="sys-field-label">保留天数</label><div className="sys-field-input-wrap"><Clock size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={1} max={3650} placeholder="180" defaultValue={capRef.current.documentRetentionDays || "180"} onChange={e=>{capRef.current.documentRetentionDays=e.target.value;}}/></div></div>
+                        <div className="sys-field"><label className="sys-field-label">最大文件 MB</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={1} max={200} placeholder="20" defaultValue={capRef.current.documentMaxFileSizeMb || "20"} onChange={e=>{capRef.current.documentMaxFileSizeMb=e.target.value;}}/></div><div className="sys-field-hint">运行时生成 docx 后会按此大小拦截，超过限制则交付失败。</div></div>
+                        <div className="sys-field"><label className="sys-field-label">保留天数</label><div className="sys-field-input-wrap"><Clock size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={1} max={3650} placeholder="180" defaultValue={capRef.current.documentRetentionDays || "180"} onChange={e=>{capRef.current.documentRetentionDays=e.target.value;}}/></div><div className="sys-field-hint">运行结果会写入过期时间，后续对象清理任务按该值删除文档。</div></div>
                       </div>
                     </>
                   ) : (

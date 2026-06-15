@@ -47,17 +47,16 @@ function renderTemplate(template: string, variables: Record<string, string>): st
 
 export function DeliveryPreviewPanel({ activeStep, runDetail }: DeliveryPreviewPanelProps) {
   const config = activeStep.configSnapshot ?? {};
-  const deliveryMode = stringifyValue(config.deliveryMode) || "direct";
-  const capabilityId = stringifyValue(config.deliveryCapabilityId) || "none";
-  const isDirectDelivery =
-    deliveryMode === "direct"
-    || capabilityId === "none"
-    || capabilityId === "custom";
+  const isWordDelivery =
+    stringifyValue(config.deliveryType) === "word_document"
+    || stringifyValue(config.documentKind) === "word";
 
   const previewContent = useMemo(() => {
-    const template = stringifyValue(config.deliveryTarget) || "请配置交付正文。";
+    const template = stringifyValue(config.markdownContent)
+      || stringifyValue(config.deliveryTarget)
+      || "请配置交付正文模板。";
     return renderTemplate(template, collectRunVariables(runDetail));
-  }, [config.deliveryTarget, runDetail]);
+  }, [config.deliveryTarget, config.markdownContent, runDetail]);
 
   return (
     <div className="space-y-4 max-w-3xl mx-auto">
@@ -67,8 +66,8 @@ export function DeliveryPreviewPanel({ activeStep, runDetail }: DeliveryPreviewP
           <div className="min-w-0">
             <h3 className="text-base font-semibold text-slate-800 dark:text-slate-200">交付预览</h3>
             <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-              {isDirectDelivery
-                ? "以下为按流程「交付配置」渲染后的预计输出，确认无误后再点击底部「执行此步骤」。"
+              {isWordDelivery
+                ? "以下为按 Word 交付正文模板和当前变量渲染后的 Markdown 预览，确认无误后再执行生成 docx。"
                 : "以下为交付能力通道的配置摘要，确认后再执行归档。"}
             </p>
           </div>
@@ -79,7 +78,7 @@ export function DeliveryPreviewPanel({ activeStep, runDetail }: DeliveryPreviewP
         <header className="px-5 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center gap-2 bg-slate-50/50 dark:bg-slate-900/20">
           <FileText size={16} className="text-blue-500" />
           <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-            {isDirectDelivery ? "直接输出交付（交付配置）" : "交付能力输出预览"}
+            {isWordDelivery ? "Word 文档交付（正文模板）" : "交付能力输出预览"}
           </span>
         </header>
         <div className="p-5 max-h-[420px] overflow-y-auto">

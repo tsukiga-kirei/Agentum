@@ -100,8 +100,18 @@ public class WorkflowNodeConfigValidator {
                 }
             } else if ("delivery".equals(nodeType)) {
                 String deliveryId = extractString(config, "deliveryCapabilityId");
-                if (deliveryId != null) {
+                if (deliveryId == null) {
+                    issues.add(issue("WORKFLOW_VALIDATION_DELIVERY_CAPABILITY_REQUIRED", "节点[" + node.name() + "]必须选择交付能力", node));
+                } else {
                     validateIds(tenantId, operatorUserId, List.of(deliveryId), "delivery", "交付能力", node, poolCapabilities, issues);
+                }
+                String deliveryType = rawString(config.get("deliveryType"));
+                String documentKind = rawString(config.get("documentKind"));
+                if ("word_document".equals(deliveryType) || "word".equals(documentKind)) {
+                    String markdownContent = rawString(config.get("markdownContent"));
+                    if (markdownContent.isBlank()) {
+                        issues.add(issue("WORKFLOW_VALIDATION_DELIVERY_MARKDOWN_TEMPLATE_REQUIRED", "节点[" + node.name() + "]必须配置 Word 交付正文模板", node));
+                    }
                 }
             }
         }

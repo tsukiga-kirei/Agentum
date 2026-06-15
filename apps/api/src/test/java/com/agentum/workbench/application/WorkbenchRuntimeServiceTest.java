@@ -1111,7 +1111,13 @@ class WorkbenchRuntimeServiceTest {
                   "positionY": 360,
                   "inputVariables": ["risk_summary"],
                   "outputVariables": ["report_file"],
-                  "config": {"deliveryMode": "docx"}
+                  "config": {
+                    "deliveryMode": "capability",
+                    "deliveryCapabilityId": "00000000-0000-0000-0000-00000000d001",
+                    "deliveryType": "word_document",
+                    "documentKind": "word",
+                    "markdownContent": "# 交付报告\\n\\n{{risk_summary}}"
+                  }
                 }
               ],
               "edges": [],
@@ -1148,7 +1154,13 @@ class WorkbenchRuntimeServiceTest {
                   "name": "交付报告",
                   "inputVariables": ["risk_summary"],
                   "outputVariables": ["delivery_record"],
-                  "config": {"deliveryMode": "direct"}
+                  "config": {
+                    "deliveryMode": "capability",
+                    "deliveryCapabilityId": "00000000-0000-0000-0000-00000000d001",
+                    "deliveryType": "word_document",
+                    "documentKind": "word",
+                    "markdownContent": "# 交付报告\\n\\n{{risk_summary}}"
+                  }
                 }
               ],
               "edges": [],

@@ -113,7 +113,7 @@ export type WorkflowPublishResult = {
 };
 
 export type WordDocumentPreviewRequest = {
-  capabilityId?: string;
+  capabilityId: string;
   markdown: string;
   fileName: string;
   title?: string;

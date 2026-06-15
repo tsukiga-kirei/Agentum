@@ -2,14 +2,14 @@ import React, { useMemo } from "react";
 import type { RuntimePreviewStep } from "../../types/runtime-types";
 import { CheckCircle2, Copy, FileText, Package } from "lucide-react";
 import { MarkdownRenderer } from "./MarkdownRenderer";
-import { resolveDirectDeliveryContent } from "../../utils/deliveryContent";
+import { resolveDeliveryDisplayContent } from "../../utils/deliveryContent";
 
 interface DeliveryResultPanelProps {
   activeStep: RuntimePreviewStep;
 }
 
 export function DeliveryResultPanel({ activeStep }: DeliveryResultPanelProps) {
-  const deliveryContent = useMemo(() => resolveDirectDeliveryContent(activeStep), [activeStep]);
+  const deliveryContent = useMemo(() => resolveDeliveryDisplayContent(activeStep), [activeStep]);
   const summary = activeStep.outputs?.find((field) => field.label === "summary")?.value;
   const [copied, setCopied] = React.useState(false);
 
@@ -44,7 +44,7 @@ export function DeliveryResultPanel({ activeStep }: DeliveryResultPanelProps) {
           <div className="flex items-center gap-2 min-w-0">
             <FileText size={16} className="text-blue-500 shrink-0" />
             <span className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">
-              直接输出交付（执行结果）
+              交付执行结果
             </span>
           </div>
           {deliveryContent ? (
@@ -64,7 +64,7 @@ export function DeliveryResultPanel({ activeStep }: DeliveryResultPanelProps) {
           ) : (
             <div className="text-center py-10 text-slate-400 text-sm">
               <Package size={24} className="mx-auto mb-2 opacity-60" />
-              暂无交付正文，请检查交付节点输出。
+              暂无可展示的交付摘要，请检查交付节点输出。
             </div>
           )}
         </div>

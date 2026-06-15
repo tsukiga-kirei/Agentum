@@ -5,8 +5,8 @@ function readConfigString(value: unknown, fallback = ""): string {
   return text || fallback;
 }
 
-/** 从交付节点输出快照解析可直接展示的交付正文。 */
-export function resolveDirectDeliveryContent(deliveryStep?: RuntimePreviewStep): string {
+/** 从交付节点输出快照解析可展示的交付执行摘要。 */
+export function resolveDeliveryDisplayContent(deliveryStep?: RuntimePreviewStep): string {
   if (!deliveryStep) {
     return "";
   }
@@ -25,5 +25,5 @@ export function resolveDirectDeliveryContent(deliveryStep?: RuntimePreviewStep):
   if (summary) {
     return summary;
   }
-  return readConfigString(deliveryStep.configSnapshot?.deliveryTarget);
+  return readConfigString(deliveryStep.configSnapshot?.markdownContent) || readConfigString(deliveryStep.configSnapshot?.deliveryTarget);
 }

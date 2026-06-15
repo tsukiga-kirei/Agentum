@@ -21,7 +21,8 @@ public record DocumentDeliveryStyle(
     double marginTopCm,
     double marginBottomCm,
     double marginLeftCm,
-    double marginRightCm
+    double marginRightCm,
+    boolean titleCentered
 ) {
 
     public static DocumentDeliveryStyle defaults() {
@@ -38,7 +39,8 @@ public record DocumentDeliveryStyle(
             2.54,
             2.54,
             3.18,
-            3.18
+            3.18,
+            false
         );
     }
 
@@ -58,7 +60,8 @@ public record DocumentDeliveryStyle(
             readDouble(source, "marginTopCm", defaults.marginTopCm(), 0.5, 6.0),
             readDouble(source, "marginBottomCm", defaults.marginBottomCm(), 0.5, 6.0),
             readDouble(source, "marginLeftCm", defaults.marginLeftCm(), 0.5, 6.0),
-            readDouble(source, "marginRightCm", defaults.marginRightCm(), 0.5, 6.0)
+            readDouble(source, "marginRightCm", defaults.marginRightCm(), 0.5, 6.0),
+            readBoolean(source, "titleCentered", defaults.titleCentered())
         );
     }
 
@@ -77,6 +80,7 @@ public record DocumentDeliveryStyle(
         result.put("marginBottomCm", marginBottomCm);
         result.put("marginLeftCm", marginLeftCm);
         result.put("marginRightCm", marginRightCm);
+        result.put("titleCentered", titleCentered);
         return result;
     }
 
@@ -95,11 +99,30 @@ public record DocumentDeliveryStyle(
             return fallback;
         }
         try {
-            int parsed = value instanceof Number number ? number.intValue() : Integer.parseInt(value.toString().trim());
+            int parsed = value instanceof Number number ? number.intValue() : parseFontSize(value.toString().trim());
             return Math.min(max, Math.max(min, parsed));
         } catch (NumberFormatException exception) {
             return fallback;
         }
+    }
+
+    private static int parseFontSize(String value) {
+        return switch (value) {
+            case "初号" -> 42;
+            case "小初" -> 36;
+            case "一号" -> 26;
+            case "小一" -> 24;
+            case "二号" -> 22;
+            case "小二" -> 18;
+            case "三号" -> 16;
+            case "小三" -> 15;
+            case "四号" -> 14;
+            case "小四" -> 12;
+            case "五号" -> 11;
+            case "小五" -> 9;
+            case "六号" -> 8;
+            default -> Integer.parseInt(value);
+        };
     }
 
     private static double readDouble(Map<String, Object> source, String key, double fallback, double min, double max) {
@@ -113,5 +136,20 @@ public record DocumentDeliveryStyle(
         } catch (NumberFormatException exception) {
             return fallback;
         }
+    }
+
+    private static boolean readBoolean(Map<String, Object> source, String key, boolean fallback) {
+        Object value = source.get(key);
+        if (value instanceof Boolean bool) {
+            return bool;
+        }
+        if (value == null) {
+            return fallback;
+        }
+        String text = value.toString().trim();
+        if (text.isBlank()) {
+            return fallback;
+        }
+        return "true".equalsIgnoreCase(text) || "是".equals(text) || "开启".equals(text) || "1".equals(text);
     }
 }

@@ -14,7 +14,7 @@ import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
-// 交付记录是业务闭环的落点，外部发送、站内交付和失败重试都从这里追溯。
+// 交付记录是业务闭环的落点，文件、邮件、Webhook 和失败重试都从这里追溯。
 @Entity
 @Table(name = "delivery_records")
 public class DeliveryRecordEntity {
@@ -118,6 +118,13 @@ public class DeliveryRecordEntity {
         this.status = "failed";
         this.errorCode = errorCode;
         this.errorMessage = truncate(errorMessage);
+        this.completedAt = now;
+    }
+
+    public void expire(Instant now) {
+        this.status = "expired";
+        this.errorCode = "DELIVERY_DOCUMENT_EXPIRED";
+        this.errorMessage = "交付文档已超过保留期限并清理";
         this.completedAt = now;
     }
 

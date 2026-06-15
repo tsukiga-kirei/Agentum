@@ -239,7 +239,7 @@
 
 节点类型：`delivery`
 
-用途：生成站内交付记录、邮件、Webhook 或其他交付结果。
+用途：生成 Word 文档、发送邮件、调用 Webhook 或其他交付结果。
 
 核心配置：
 
@@ -247,8 +247,11 @@
 {
   "brickType": "delivery",
   "deliveryMode": "capability",
-  "deliveryCapabilityId": "none",
-  "deliveryTarget": "说明交付目标、模板和确认方式。"
+  "deliveryCapabilityId": "00000000-0000-0000-0000-000000000613",
+  "deliveryType": "word_document",
+  "documentKind": "word",
+  "markdownContent": "# 交付报告\n\n{{risk_summary}}",
+  "fileNameTemplate": "交付文档-{{runNumber}}.docx"
 }
 ```
 

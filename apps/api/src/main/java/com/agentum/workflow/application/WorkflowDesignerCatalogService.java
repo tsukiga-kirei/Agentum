@@ -136,8 +136,11 @@ public class WorkflowDesignerCatalogService {
             Map.of(
                 "brickType", "delivery",
                 "deliveryMode", "capability",
-                "deliveryCapabilityId", "none",
-                "deliveryTarget", "说明交付目标、模板和确认方式。"
+                "deliveryType", "word_document",
+                "documentKind", "word",
+                "fileNameTemplate", "交付文档-{{runNumber}}.docx",
+                "markdownContent", "# 交付文档\n\n{{cluster_result}}",
+                "previewMarkdown", "# 交付文档预览\n\n这是一段用于检查样式的 Markdown 样例。"
             ),
             "待配置",
             "一次性输出",

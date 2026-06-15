@@ -43,7 +43,7 @@ public class MarkdownDocxRenderer {
 
     private String buildDocumentXml(String markdown, String title, DocumentDeliveryStyle style) {
         StringBuilder body = new StringBuilder();
-        body.append(title == null || title.isBlank() ? "" : headingParagraph(title, 1, style));
+        body.append(title == null || title.isBlank() ? "" : titleParagraph(title, style));
         List<String> lines = List.of(markdown.replace("\r\n", "\n").replace('\r', '\n').split("\n", -1));
         for (int index = 0; index < lines.size();) {
             String line = lines.get(index);
@@ -143,6 +143,17 @@ public class MarkdownDocxRenderer {
             .append("\" w:after=\"").append(safeLevel == 1 ? 160 : 120).append("\"/>");
         pPr.append("</w:pPr>");
         return "<w:p>" + pPr + runs(text, style, size, true, false) + "</w:p>";
+    }
+
+    private String titleParagraph(String text, DocumentDeliveryStyle style) {
+        StringBuilder pPr = new StringBuilder();
+        pPr.append("<w:pPr><w:pStyle w:val=\"Heading1\"/>");
+        if (style.titleCentered()) {
+            pPr.append("<w:jc w:val=\"center\"/>");
+        }
+        pPr.append("<w:spacing w:before=\"240\" w:after=\"160\"/>");
+        pPr.append("</w:pPr>");
+        return "<w:p>" + pPr + runs(text, style, style.heading1FontSize(), true, false) + "</w:p>";
     }
 
     private String paragraph(String text, DocumentDeliveryStyle style, ParagraphKind kind) {

@@ -7357,6 +7357,17 @@ textarea:focus-visible {
   margin-top: 8px;
 }
 
+.workflow-file-template-variable-section {
+  margin: 8px 0 12px;
+}
+
+.workflow-variable-reference-title {
+  display: block;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .workflow-variable-reference-bar button {
   border: 1px solid color-mix(in srgb, var(--color-border-light) 78%, var(--color-primary) 22%);
   border-radius: var(--radius-md);
@@ -7375,6 +7386,23 @@ textarea:focus-visible {
   border-color: var(--color-primary);
   background: var(--color-primary-bg);
   transform: translateY(-1px);
+}
+
+.workflow-variable-tooltip {
+  display: grid;
+  gap: 4px;
+  max-width: 280px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.workflow-variable-tooltip strong {
+  color: #fff;
+  font-size: 13px;
+}
+
+.workflow-variable-tooltip span {
+  color: rgb(226 232 240);
 }
 
 .workflow-prompt-textarea {

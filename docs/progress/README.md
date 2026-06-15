@@ -163,12 +163,12 @@
 - 协作编辑流程保存与发布时按当前操作者重新校验所有引用能力：系统能力必须已分配给操作者，用户自建能力必须已发布且操作者拥有读取权限，流程编辑权限不会向下传递能力权限。
 - 业务工作台运行态已接入第一版：新增 `workflow_runs`、`workflow_node_runs`、`workflow_waiting_events`、`workflow_run_events` 表，`/api/tenants/{tenantId}/workbench/summary` 返回真实待办和最近运行；创建任务列表改为展示全部未收回且已发布流程，并通过 `visibility`、`canLaunch`、`launchBlockedReason` 标记当前账号是否有发起权限。
 - 业务工作台任务处理页已从本地 `buildRuntimePreview` mock 切换到后端 `WorkflowRun` API：新增创建运行、任务中心分页、运行详情和待办完成接口；发起任务后按发布版本快照生成节点链路，用户输入 / 人工审核节点形成真实待办，任务记录会排除仍有打开待办的运行实例，避免待办与记录重复展示。
-- 后端运行态已从占位输出升级为 `WorkflowRuntimeExecutor` + `AgentRuntimeService` 分发：触发、条件、汇聚节点本地完成；单智能体和智能体集群调用租户已启用模型分配，支持 OpenAI / 通义兼容与 Azure OpenAI Chat Completions；智能体节点已改为 ReAct/Function Calling 模式，模型可自主调用当前节点可用的 Skill 读取工具和 MCP SSE `tools/call`，最后通过 `final_answer` 提交 Markdown 结论；交付节点支持站内直接交付记录、系统内置邮箱和 Webhook。
+- 后端运行态已从占位输出升级为 `WorkflowRuntimeExecutor` + `AgentRuntimeService` 分发：触发、条件、汇聚节点本地完成；单智能体和智能体集群调用租户已启用模型分配，支持 OpenAI / 通义兼容与 Azure OpenAI Chat Completions；智能体节点已改为 ReAct/Function Calling 模式，模型可自主调用当前节点可用的 Skill 读取工具和 MCP SSE `tools/call`，最后通过 `final_answer` 提交 Markdown 结论；交付节点支持系统内置邮箱、Webhook 和 Word 文档交付能力。
 - 新增运行态勾稽表 `variable_snapshots`、`model_call_logs`、`mcp_call_logs`、`delivery_records`，节点完成后写入变量快照，模型 / MCP / 交付调用均关联租户、运行、节点、流程定义和发布版本；执行失败会把运行与当前节点标记为失败并写入 `node_failed` 事件，不再返回“尚未接入”的占位输出。
 - 业务工作台运行详情收敛为真实可操作项：待办节点只显示提交动作，AI / MCP / Skill / 交付节点展示后端输出、调用状态和交付摘要；执行历史去掉与左侧流程轨重复的节点列表，改为选中步骤快照 + 事件时间线；已保存任务可对智能体节点释放重新生成入口，追问追加上下文和后端取消补偿继续建设。
 - 流程设计落地版本治理方案 C：`workflow_definitions.launch_enabled` 控制业务入口收回/恢复；列表与详情展示 `latestVersionNumber`、`hasUnpublishedChanges`；创建者可删除流程或收回业务入口；业务工作台可发起列表改为「有冻结版本且入口未收回」，与设计态 `status` 解耦；新增 [能力—流程—权限治理](../capability-workflow-governance.md) 文档。
 - 企业 SSO 完成 OIDC 第一版骨架：新增租户 SSO Provider 与外部身份绑定表，登录页按租户发现 SSO 身份源，后端生成签名 `state` 与 `nonce` 并完成 OIDC 回调后的本地 token 签发；新增 [企业 SSO 对接说明](../sso-integration.md)，明确业务系统只需按标准 OIDC 提供身份，不承载 Agentum 权限判断。
-- 系统内置 Word 文档交付初版已接入流程设计和运行态：系统管理可区分邮件交付与文档交付并配置默认字体、字号、行距、缩进和页边距；流程交付节点选择 Word 能力后可配置正文来源变量、文件名模板、节点级样式和预览 Markdown，并支持设计态预览 / 导出 docx；运行态将文件写入 MinIO/S3 兼容对象存储并生成 `delivery_records` 文件结果，业务工作台交付页可按记录下载文档。新增 [Word 文档交付说明](../word-document-delivery.md)。
+- 系统内置 Word 文档交付初版已接入流程设计和运行态：系统管理可区分邮件交付与文档交付并配置默认字体、中文字号、行距、缩进、页边距、首行标题对齐、最大文件和保留天数；流程交付节点选择 Word 能力后用交付正文模板生成最终 Markdown，可配置文件名模板、节点级样式和不替换变量的预览 Markdown，并支持设计态导出 docx 样例；运行态将文件写入 MinIO/S3 兼容对象存储并生成 `delivery_records` 文件结果，后台按 `expiresAt` 清理过期对象，业务工作台交付页可按记录下载文档。新增 [Word 文档交付说明](../word-document-delivery.md)。
 
 ### 2.3 后端
 
@@ -270,7 +270,7 @@
 | 7 | 运行状态机 | 已完成启动、待办暂停、恢复、完成和失败留痕；**运行态异步执行已落地**（MQ + Redis Stream + 租约 + jobs 表 + 超时回收 + 中断/恢复语义，见 [runtime-async-execution-design.md](../runtime-async-execution-design.md)），仅保留 async 模式 |
 | 8 | 并行与合并 | 已完成智能体集群 `parallel` 真并发（子智能体结果逐个落库、部分恢复）与 `sequential` 顺序执行；后续补分支路由 |
 | 9 | 审计日志 | 已完成运行事件、变量快照、模型 / MCP / 交付日志表；后续补独立运行审计页、权限操作审计和失败重试证据链 |
-| 10 | 基础交付 | 已完成站内交付记录、邮箱发送、Webhook 和 Word 文档交付初版；后续补 PDF、OA、IM 与失败重试 |
+| 10 | 基础交付 | 已完成邮箱发送、Webhook 和 Word 文档交付初版；后续补 PDF、OA、IM 与失败重试 |
 | 11 | 自研能力示例 | 至少补一个示例 Skill 和一个示例 MCP Server，跑通登记、授权、调用和审计链路 |
 | 12 | 注释与日志治理 | 每轮开发同步补业务注释、结构化日志、脱敏前端诊断和验证记录 |
 

@@ -1,11 +1,13 @@
 package com.agentum.delivery.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.agentum.delivery.infrastructure.DeliveryRecordRepository;
+import com.agentum.shared.api.ApiException;
 import com.agentum.system.domain.SystemCapabilityEntity;
 import com.agentum.system.domain.TenantCapabilityGrantEntity;
 import com.agentum.system.infrastructure.SystemCapabilityRepository;
@@ -51,27 +53,15 @@ class DeliveryRuntimeServiceTest {
     }
 
     @Test
-    void shouldFallbackToDirectDeliveryWhenCapabilityModeUsesNonePlaceholder() {
+    void shouldRejectCapabilityDeliveryWithoutConcreteCapability() {
         DeliveryRuntimeRequest request = buildRequest(Map.of(
             "deliveryMode", "capability",
-            "deliveryCapabilityId", "none",
             "deliveryTarget", "归档 {{risk_summary}}"
         ), Map.of("risk_summary", "授信结论摘要"));
 
-        DeliveryRuntimeResult result = service.execute(request);
-
-        assertThat(result.outputs())
-            .containsEntry("deliveryStatus", "success")
-            .containsEntry("summary", "已生成站内交付记录：演示任务");
-    }
-
-    @Test
-    void shouldUseDirectDeliveryWhenModeIsDirect() {
-        DeliveryRuntimeRequest request = buildRequest(Map.of("deliveryMode", "direct"), Map.of());
-
-        DeliveryRuntimeResult result = service.execute(request);
-
-        assertThat(result.outputs()).containsEntry("deliveryStatus", "success");
+        assertThatThrownBy(() -> service.execute(request))
+            .isInstanceOf(ApiException.class)
+            .hasMessageContaining("请为交付节点配置交付能力");
     }
 
     @Test
@@ -97,7 +87,7 @@ class DeliveryRuntimeServiceTest {
             "deliveryMode", "capability",
             "deliveryCapabilityId", capability.getId().toString(),
             "deliveryType", "word_document",
-            "contentVariable", "risk_summary",
+            "markdownContent", "# {{risk_summary}}",
             "fileNameTemplate", "演示任务.docx"
         ), Map.of("risk_summary", "# 授信结论"));
 

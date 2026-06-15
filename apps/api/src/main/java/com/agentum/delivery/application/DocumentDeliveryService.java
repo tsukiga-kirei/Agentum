@@ -7,11 +7,13 @@ import com.agentum.shared.api.RequestIds;
 import com.agentum.system.domain.SystemCapabilityEntity;
 import com.agentum.system.infrastructure.SystemCapabilityRepository;
 import com.agentum.system.infrastructure.TenantCapabilityGrantRepository;
+import java.time.Clock;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,26 +25,29 @@ import org.springframework.transaction.annotation.Transactional;
 public class DocumentDeliveryService {
 
     private static final Logger log = LoggerFactory.getLogger(DocumentDeliveryService.class);
-    private static final Set<String> CAPABILITY_SENTINEL_VALUES = Set.of("", "none", "custom");
+    private static final long BYTES_PER_MB = 1024L * 1024L;
 
     private final MarkdownDocxRenderer renderer;
     private final DocumentDeliveryStorage storage;
     private final SystemCapabilityRepository systemCapabilityRepository;
     private final TenantCapabilityGrantRepository tenantCapabilityGrantRepository;
     private final AssetManagementService assetManagementService;
+    private final Clock clock;
 
     public DocumentDeliveryService(
         MarkdownDocxRenderer renderer,
         DocumentDeliveryStorage storage,
         SystemCapabilityRepository systemCapabilityRepository,
         TenantCapabilityGrantRepository tenantCapabilityGrantRepository,
-        AssetManagementService assetManagementService
+        AssetManagementService assetManagementService,
+        Clock clock
     ) {
         this.renderer = renderer;
         this.storage = storage;
         this.systemCapabilityRepository = systemCapabilityRepository;
         this.tenantCapabilityGrantRepository = tenantCapabilityGrantRepository;
         this.assetManagementService = assetManagementService;
+        this.clock = clock;
     }
 
     @Transactional(readOnly = true)
@@ -78,11 +83,14 @@ public class DocumentDeliveryService {
         Map<String, Object> config = nodeConfig == null ? Map.of() : nodeConfig;
         Map<String, Object> styleConfig = mergedStyleConfig(capability.getConfig(), config);
         DocumentDeliveryStyle style = DocumentDeliveryStyle.from(styleConfig);
-        String markdown = resolveMarkdown(config, variables);
-        String fileName = renderTemplate(firstNonBlank(stringValue(config.get("fileNameTemplate")), "交付文档-{{runId}}.docx"), variables);
+        Map<String, Object> templateVariables = enrichTemplateVariables(variables);
+        String markdown = resolveMarkdown(config, templateVariables);
+        String fileName = renderTextTemplate(firstNonBlank(stringValue(config.get("fileNameTemplate")), "交付文档-{{runNumber}}.docx"), templateVariables);
         String title = firstNonBlank(stringValue(config.get("title")), stringValue(config.get("subject")), removeDocxSuffix(fileName));
         byte[] bytes = renderer.render(markdown, title, style);
+        enforceMaxFileSize(capability, bytes.length, tenantId, operatorUserId, recordId);
         DocumentDeliveryArtifact artifact = storage.store(tenantId, recordId, fileName, bytes);
+        int retentionDays = retentionDays(capability.getConfig());
         log.info(
             "Word 文档交付已生成 tenantId={} userId={} recordId={} fileName={} sizeBytes={} requestId={}",
             tenantId,
@@ -101,12 +109,17 @@ public class DocumentDeliveryService {
         result.put("sizeBytes", artifact.sizeBytes());
         result.put("storageProvider", "minio");
         result.put("storageKey", artifact.storageKey());
+        result.put("retentionDays", retentionDays);
+        result.put("expiresAt", clock.instant().plusSeconds(retentionDays * 86_400L).toString());
         result.put("downloadUrl", "/api/tenants/" + tenantId + "/delivery-records/" + recordId + "/download");
         result.put("style", style.toMap());
         return result;
     }
 
     public DocumentDeliveryFile readRecordFile(DeliveryRecordEntity record) {
+        if ("expired".equals(record.getStatus())) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "DELIVERY_DOCUMENT_EXPIRED", "交付文档已超过保留期限并清理");
+        }
         if (!"success".equals(record.getStatus())) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "DELIVERY_DOCUMENT_NOT_READY", "交付文档尚未生成成功");
         }
@@ -121,8 +134,8 @@ public class DocumentDeliveryService {
 
     private void validateDocumentCapabilityForDesigner(UUID tenantId, UUID operatorUserId, String rawCapabilityId) {
         String capabilityIdText = rawCapabilityId == null ? "" : rawCapabilityId.trim();
-        if (CAPABILITY_SENTINEL_VALUES.contains(capabilityIdText.toLowerCase())) {
-            return;
+        if (capabilityIdText.isBlank() || "none".equalsIgnoreCase(capabilityIdText) || "custom".equalsIgnoreCase(capabilityIdText)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "DELIVERY_DOCUMENT_CAPABILITY_REQUIRED", "请选择 Word 文档交付能力");
         }
         UUID capabilityId = parseUuid(capabilityIdText)
             .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "DELIVERY_DOCUMENT_CAPABILITY_INVALID", "Word 文档交付能力标识不合法"));
@@ -179,7 +192,8 @@ public class DocumentDeliveryService {
             "marginTopCm",
             "marginBottomCm",
             "marginLeftCm",
-            "marginRightCm"
+            "marginRightCm",
+            "titleCentered"
         )) {
             if (nodeConfig != null && nodeConfig.containsKey(key)) {
                 result.put(key, nodeConfig.get(key));
@@ -197,19 +211,11 @@ public class DocumentDeliveryService {
     }
 
     private String resolveMarkdown(Map<String, Object> config, Map<String, Object> variables) {
-        String contentVariable = stringValue(config.get("contentVariable"));
-        if (contentVariable != null && variables.containsKey(contentVariable)) {
-            return objectToMarkdown(variables.get(contentVariable));
-        }
         String markdownContent = stringValue(config.get("markdownContent"));
-        if (markdownContent != null) {
-            return renderTemplate(markdownContent, variables);
+        if (markdownContent == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "DELIVERY_DOCUMENT_TEMPLATE_REQUIRED", "Word 文档交付必须配置交付正文模板");
         }
-        return firstNonBlank(
-            objectToMarkdown(variables.get("body")),
-            objectToMarkdown(variables.get("deliveryTarget")),
-            "暂无文档内容。"
-        );
+        return renderMarkdownTemplate(markdownContent, variables);
     }
 
     private String objectToMarkdown(Object value) {
@@ -237,10 +243,68 @@ public class DocumentDeliveryService {
         return value.toString();
     }
 
-    private String renderTemplate(String template, Map<String, Object> variables) {
+    private void enforceMaxFileSize(SystemCapabilityEntity capability, long sizeBytes, UUID tenantId, UUID operatorUserId, UUID recordId) {
+        int maxFileSizeMb = maxFileSizeMb(capability.getConfig());
+        long maxBytes = maxFileSizeMb * BYTES_PER_MB;
+        if (sizeBytes <= maxBytes) {
+            return;
+        }
+        log.warn(
+            "Word 文档交付文件超过系统能力限制 tenantId={} userId={} recordId={} capabilityId={} sizeBytes={} maxFileSizeMb={} requestId={}",
+            tenantId,
+            operatorUserId,
+            recordId,
+            capability.getId(),
+            sizeBytes,
+            maxFileSizeMb,
+            RequestIds.current()
+        );
+        throw new ApiException(HttpStatus.BAD_REQUEST, "DELIVERY_DOCUMENT_FILE_TOO_LARGE", "Word 文档超过系统管理员配置的最大文件大小");
+    }
+
+    private int maxFileSizeMb(Map<String, Object> config) {
+        return readInt(config == null ? null : config.get("maxFileSizeMb"), 20, 1, 200);
+    }
+
+    private int retentionDays(Map<String, Object> config) {
+        return readInt(config == null ? null : config.get("retentionDays"), 180, 1, 3650);
+    }
+
+    private int readInt(Object value, int fallback, int min, int max) {
+        if (value == null) {
+            return fallback;
+        }
+        try {
+            int parsed = value instanceof Number number ? number.intValue() : Integer.parseInt(value.toString().trim());
+            return Math.min(max, Math.max(min, parsed));
+        } catch (NumberFormatException exception) {
+            return fallback;
+        }
+    }
+
+    private Map<String, Object> enrichTemplateVariables(Map<String, Object> variables) {
+        Map<String, Object> result = new LinkedHashMap<>(variables);
+        LocalDate today = LocalDate.now(clock);
+        result.putIfAbsent("date", today.format(DateTimeFormatter.ISO_LOCAL_DATE));
+        result.putIfAbsent("dateCompact", today.format(DateTimeFormatter.BASIC_ISO_DATE));
+        result.putIfAbsent("year", String.valueOf(today.getYear()));
+        result.putIfAbsent("month", "%02d".formatted(today.getMonthValue()));
+        result.putIfAbsent("day", "%02d".formatted(today.getDayOfMonth()));
+        return result;
+    }
+
+    private String renderTextTemplate(String template, Map<String, Object> variables) {
         String result = template == null ? "" : template;
         for (Map.Entry<String, Object> entry : variables.entrySet()) {
             result = result.replace("{{" + entry.getKey() + "}}", entry.getValue() == null ? "" : entry.getValue().toString());
+        }
+        return result;
+    }
+
+    private String renderMarkdownTemplate(String template, Map<String, Object> variables) {
+        String result = template == null ? "" : template;
+        for (Map.Entry<String, Object> entry : variables.entrySet()) {
+            result = result.replace("{{" + entry.getKey() + "}}", objectToMarkdown(entry.getValue()));
         }
         return result;
     }

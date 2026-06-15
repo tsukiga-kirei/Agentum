@@ -51,6 +51,28 @@ class MarkdownDocxRendererTest {
             .contains("Times New Roman");
     }
 
+    @Test
+    void shouldRenderCenteredTitleAndChineseFontSizeNames() throws IOException {
+        DocumentDeliveryStyle style = DocumentDeliveryStyle.from(Map.of(
+            "bodyFontSize", "小四",
+            "heading1FontSize", "四号",
+            "titleCentered", true
+        ));
+
+        byte[] bytes = renderer.render("正文", "居中标题", style);
+
+        Map<String, String> entries = unzip(bytes);
+        assertThat(style.bodyFontSize()).isEqualTo(12);
+        assertThat(style.heading1FontSize()).isEqualTo(14);
+        assertThat(style.titleCentered()).isTrue();
+        assertThat(entries.get("word/document.xml"))
+            .contains("居中标题")
+            .contains("<w:jc w:val=\"center\"/>");
+        assertThat(entries.get("word/styles.xml"))
+            .contains("<w:sz w:val=\"24\"/>")
+            .contains("<w:sz w:val=\"28\"/>");
+    }
+
     private static Map<String, String> unzip(byte[] bytes) throws IOException {
         Map<String, String> entries = new HashMap<>();
         try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(bytes), StandardCharsets.UTF_8)) {

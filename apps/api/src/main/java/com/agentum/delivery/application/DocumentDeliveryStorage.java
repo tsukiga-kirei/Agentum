@@ -8,6 +8,8 @@ public interface DocumentDeliveryStorage {
 
     DocumentDeliveryFile read(String storageKey, String fileName);
 
+    void delete(String storageKey);
+
     static String sanitizeFileName(String fileName) {
         String value = fileName == null || fileName.isBlank() ? "交付文档.docx" : fileName.trim();
         value = value.replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]+", "-");
