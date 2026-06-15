@@ -32,16 +32,19 @@ type FieldChangeHandler = <K extends keyof DocumentDeliveryStyleValues>(
 type DocumentDeliveryStyleSectionsProps = {
   style: DocumentDeliveryStyleValues;
   onFieldChange: FieldChangeHandler;
+  onFieldsChange: (updates: Partial<DocumentDeliveryStyleValues>) => void;
 };
 
 function StyleSection({
   title,
   description,
   children,
+  layout = "grid",
 }: {
   title: string;
   description?: string;
   children: React.ReactNode;
+  layout?: "grid" | "stack";
 }) {
   return (
     <section className="rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-4">
@@ -49,7 +52,7 @@ function StyleSection({
         <h5 className="text-sm font-semibold text-[var(--color-text-primary)]">{title}</h5>
         {description ? <p className="mt-1 text-xs text-[var(--color-text-secondary)]">{description}</p> : null}
       </div>
-      <div className="grid gap-4 lg:grid-cols-2">{children}</div>
+      <div className={layout === "stack" ? "space-y-4" : "grid gap-4 lg:grid-cols-2"}>{children}</div>
     </section>
   );
 }
@@ -91,7 +94,7 @@ function StyleSelectField({
   );
 }
 
-export function DocumentDeliveryStyleSections({ style, onFieldChange }: DocumentDeliveryStyleSectionsProps) {
+export function DocumentDeliveryStyleSections({ style, onFieldChange, onFieldsChange }: DocumentDeliveryStyleSectionsProps) {
   const [marginPreset, setMarginPreset] = useState<MarginPresetKey>(() => detectMarginPreset(style));
 
   useEffect(() => {
@@ -107,10 +110,7 @@ export function DocumentDeliveryStyleSections({ style, onFieldChange }: Document
       return;
     }
     const margins = MARGIN_PRESETS[preset];
-    onFieldChange("marginTopCm", margins.marginTopCm);
-    onFieldChange("marginBottomCm", margins.marginBottomCm);
-    onFieldChange("marginLeftCm", margins.marginLeftCm);
-    onFieldChange("marginRightCm", margins.marginRightCm);
+    onFieldsChange(margins);
   }
 
   function handleCustomMarginChange(
@@ -209,7 +209,7 @@ export function DocumentDeliveryStyleSections({ style, onFieldChange }: Document
         />
       </StyleSection>
 
-      <StyleSection title="页边距" description="可先选常用预设，再按需微调四边边距。">
+      <StyleSection title="页边距" description="可先选常用预设，再按需微调四边边距。" layout="stack">
         <StyleSelectField
           label="页边距预设"
           icon={LayoutTemplate}
@@ -217,34 +217,36 @@ export function DocumentDeliveryStyleSections({ style, onFieldChange }: Document
           options={MARGIN_PRESET_OPTIONS}
           onChange={handleMarginPresetChange}
         />
-        <StyleSelectField
-          label="上边距"
-          icon={LayoutTemplate}
-          value={stringifySelectValue(style.marginTopCm)}
-          options={MARGIN_CM_OPTIONS}
-          onChange={(value) => handleCustomMarginChange("marginTopCm", value)}
-        />
-        <StyleSelectField
-          label="下边距"
-          icon={LayoutTemplate}
-          value={stringifySelectValue(style.marginBottomCm)}
-          options={MARGIN_CM_OPTIONS}
-          onChange={(value) => handleCustomMarginChange("marginBottomCm", value)}
-        />
-        <StyleSelectField
-          label="左边距"
-          icon={LayoutTemplate}
-          value={stringifySelectValue(style.marginLeftCm)}
-          options={MARGIN_CM_OPTIONS}
-          onChange={(value) => handleCustomMarginChange("marginLeftCm", value)}
-        />
-        <StyleSelectField
-          label="右边距"
-          icon={LayoutTemplate}
-          value={stringifySelectValue(style.marginRightCm)}
-          options={MARGIN_CM_OPTIONS}
-          onChange={(value) => handleCustomMarginChange("marginRightCm", value)}
-        />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <StyleSelectField
+            label="上边距"
+            icon={LayoutTemplate}
+            value={stringifySelectValue(style.marginTopCm)}
+            options={MARGIN_CM_OPTIONS}
+            onChange={(value) => handleCustomMarginChange("marginTopCm", value)}
+          />
+          <StyleSelectField
+            label="下边距"
+            icon={LayoutTemplate}
+            value={stringifySelectValue(style.marginBottomCm)}
+            options={MARGIN_CM_OPTIONS}
+            onChange={(value) => handleCustomMarginChange("marginBottomCm", value)}
+          />
+          <StyleSelectField
+            label="左边距"
+            icon={LayoutTemplate}
+            value={stringifySelectValue(style.marginLeftCm)}
+            options={MARGIN_CM_OPTIONS}
+            onChange={(value) => handleCustomMarginChange("marginLeftCm", value)}
+          />
+          <StyleSelectField
+            label="右边距"
+            icon={LayoutTemplate}
+            value={stringifySelectValue(style.marginRightCm)}
+            options={MARGIN_CM_OPTIONS}
+            onChange={(value) => handleCustomMarginChange("marginRightCm", value)}
+          />
+        </div>
       </StyleSection>
     </div>
   );

@@ -207,16 +207,14 @@ export function DocumentDeliveryStyleAdminSections({
       </AdminStyleSection>
 
       <AdminStyleSection title="页边距" description="可先选常用预设，再按需微调四边边距。">
-        <AdminStyleRow>
-          <SelectField
-            label="页边距预设"
-            icon={LayoutTemplate}
-            defaultValue={marginPreset}
-            placeholder="请选择页边距预设"
-            options={MARGIN_PRESET_OPTIONS}
-            onChange={handleMarginPresetChange}
-          />
-        </AdminStyleRow>
+        <SelectField
+          label="页边距预设"
+          icon={LayoutTemplate}
+          defaultValue={marginPreset}
+          placeholder="请选择页边距预设"
+          options={MARGIN_PRESET_OPTIONS}
+          onChange={handleMarginPresetChange}
+        />
         <AdminStyleRow>
           <SelectField
             label="上边距"

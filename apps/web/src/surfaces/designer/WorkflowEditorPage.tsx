@@ -1497,6 +1497,15 @@ function DeliveryBrickConfig({
     });
   }
 
+  function updateDocumentStyles(updates: Partial<DocumentDeliveryStyleDraft>) {
+    onUpdateConfig({
+      documentStyle: {
+        ...documentStyle,
+        ...updates,
+      },
+    });
+  }
+
   async function handleWordDocumentFile() {
     if (!token || !user?.tenantId) {
       messageApi.error("当前账号缺少租户上下文，无法生成 Word 文档");
@@ -1545,7 +1554,7 @@ function DeliveryBrickConfig({
       ) : null}
 
       {isWordDelivery ? (
-        <div className="space-y-4">
+        <div className="mt-4 space-y-4">
           <div className="rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-4">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -1578,6 +1587,7 @@ function DeliveryBrickConfig({
           <DocumentDeliveryStyleSections
             style={documentStyle}
             onFieldChange={(key, value) => updateDocumentStyle(key, value)}
+            onFieldsChange={updateDocumentStyles}
           />
 
           <PromptEditor
