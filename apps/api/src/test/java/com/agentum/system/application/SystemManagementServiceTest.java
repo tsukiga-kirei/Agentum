@@ -789,6 +789,65 @@ class SystemManagementServiceTest {
     }
 
     @Test
+    void shouldPersistBuiltinWordDocumentDeliveryConfig() {
+        SystemCapabilityRepository systemCapabilityRepository = mock(SystemCapabilityRepository.class);
+        List<SystemCapabilityEntity> savedCapabilities = new ArrayList<>();
+        when(systemCapabilityRepository.findByCodeAndVersion(any(), any())).thenReturn(Optional.empty());
+        when(systemCapabilityRepository.save(any(SystemCapabilityEntity.class))).thenAnswer(invocation -> {
+            SystemCapabilityEntity entity = invocation.getArgument(0);
+            savedCapabilities.add(entity);
+            return entity;
+        });
+        SystemManagementService service = buildService(mock(ModelProviderRepository.class), systemCapabilityRepository);
+
+        SystemManagementApi.CapabilityRow row = service.createCapability(new SystemManagementApi.CreateCapabilityRequest(
+            "delivery",
+            "Word 文档交付",
+            null,
+            "v1",
+            "将 AI Markdown 输出转换为 docx 文件",
+            "medium",
+            "active",
+            Map.of(
+                "sourceType", "builtin",
+                "deliveryChannel", "document",
+                "documentKind", "word",
+                "defaultStyle", Map.of(
+                    "chineseFont", "黑体",
+                    "latinFont", "Arial",
+                    "bodyFontSize", "11",
+                    "heading1FontSize", "18",
+                    "lineSpacing", "1.25",
+                    "firstLineIndentChars", "2"
+                ),
+                "allowNodeStyleOverride", true,
+                "maxFileSizeMb", "30",
+                "retentionDays", "365"
+            )
+        ));
+
+        assertThat(savedCapabilities).hasSize(1);
+        Map<String, Object> storedConfig = savedCapabilities.getFirst().getConfig();
+        assertThat(storedConfig)
+            .containsEntry("sourceType", "builtin")
+            .containsEntry("deliveryChannel", "document")
+            .containsEntry("documentKind", "word")
+            .containsEntry("allowNodeStyleOverride", true)
+            .containsEntry("maxFileSizeMb", 30)
+            .containsEntry("retentionDays", 365)
+            .doesNotContainKeys("smtpHost", "smtpPort", "encryptedSmtpPassword");
+        assertThat(storedConfig.get("defaultStyle"))
+            .isInstanceOf(Map.class)
+            .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.MAP)
+            .containsEntry("chineseFont", "黑体")
+            .containsEntry("latinFont", "Arial")
+            .containsEntry("bodyFontSize", 11)
+            .containsEntry("heading1FontSize", 18)
+            .containsEntry("lineSpacing", 1.25);
+        assertThat(row.config()).containsEntry("deliveryChannel", "document");
+    }
+
+    @Test
     void shouldPersistCustomDeliveryAdapterProtocolConfig() {
         SystemCapabilityRepository systemCapabilityRepository = mock(SystemCapabilityRepository.class);
         List<SystemCapabilityEntity> savedCapabilities = new ArrayList<>();

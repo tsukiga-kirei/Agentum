@@ -27,6 +27,7 @@ public final class AssetManagementApi {
         String version,
         String description,
         String promptContent,
+        Map<String, Object> config,
         String riskLevel,
         String status,
         boolean assignedToMe,

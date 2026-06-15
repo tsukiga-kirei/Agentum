@@ -19,6 +19,7 @@ export type SystemCapabilityAssetRow = {
   version: string;
   description: string;
   promptContent: string;
+  config: Record<string, unknown>;
   riskLevel: string;
   status: string;
   assignedToMe: boolean;

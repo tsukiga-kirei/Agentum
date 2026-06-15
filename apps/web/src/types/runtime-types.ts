@@ -142,6 +142,10 @@ export type RuntimeDeliveryItem = {
   name: string;
   status: string;
   meta: string;
+  recordId?: string;
+  fileName?: string;
+  downloadUrl?: string;
+  deliveryType?: string;
 };
 
 /** 整体运行预览 */

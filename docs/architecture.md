@@ -101,7 +101,7 @@ capabilities/
 - `apps/api` 是控制面和治理面，负责能力登记、租户可用能力池、租户内能力分配、凭证注入、调用审计和版本发布。
 - `capabilities/skills/` 保存产品运行时 Skill 源文件，发布后在数据库 `skills` 或资产表里形成版本记录。
 - `capabilities/mcp-servers/` 保存自研 MCP Server 源码。每个 Server 应能独立启动、测试和部署，API 的 MCP 网关只通过注册信息调用它，不把具体业务连接逻辑写进网关。
-- `capabilities/delivery/` 只保存自定义交付适配器的 Manifest、源码和本地验证材料，发布后再登记为交付能力资产；系统内置交付能力（如邮箱）由 API / Worker 原生实现，不放入该目录。
+- `capabilities/delivery/` 只保存自定义交付适配器的 Manifest、源码和本地验证材料，发布后再登记为交付能力资产；系统内置交付能力（如邮箱、Word 文档生成）由 API / Worker 原生实现，不放入该目录。
 - 提示词模板功能保留在能力资产、系统管理登记和前端配置链路中；当前不再维护独立的提示词模板源码目录。
 - `packages/shared-contract` 保存 MCP、Skill、智能体、工作流和事件的共享 Schema，不保存具体能力实现。
 - 数据库中的 `skills`、`mcp_services`、`prompt_templates`、`delivery_capabilities` 更像资产注册表，不应直接承担源码仓库职责。
@@ -402,9 +402,9 @@ pending -> running -> paused -> resumed -> running -> completed
 - 写入数据库。
 - 记录交付结果和失败重试。
 
-交付能力分为系统内置和自定义适配器。系统内置交付能力由 API / Worker 原生实现，例如邮箱发送；自定义交付适配器放在 `capabilities/delivery/<delivery-key>/`，通过 Manifest 声明 `runtime`、`entry`、`configSchema`、`inputSchema`、`outputSchema` 和风险等级。高风险交付能力必须走权限校验、审批或二次确认。
+交付能力分为系统内置和自定义适配器。系统内置交付能力由 API / Worker 原生实现，例如邮箱发送和 Word 文档生成；自定义交付适配器放在 `capabilities/delivery/<delivery-key>/`，通过 Manifest 声明 `runtime`、`entry`、`configSchema`、`inputSchema`、`outputSchema` 和风险等级。高风险交付能力必须走权限校验、审批或二次确认。
 
-当前运行态已支持三类基础交付：站内直接交付记录、系统内置邮箱发送和 Webhook 调用。所有交付动作都会写入 `delivery_records`，并关联租户、运行、节点、流程定义和发布版本；失败时节点和运行进入失败状态。
+当前运行态已支持四类基础交付：站内直接交付记录、系统内置邮箱发送、Webhook 调用和 Word 文档生成。Word 初版由 API 内轻量渲染器把 AI Markdown 转为 `.docx`，并通过 `delivery_records` 下载；复杂模板、图片、目录、页眉页脚和大文档后续应迁移到 Worker。所有交付动作都会写入 `delivery_records`，并关联租户、运行、节点、流程定义和发布版本；失败时节点和运行进入失败状态。
 
 ### 5.11 系统管理模块
 

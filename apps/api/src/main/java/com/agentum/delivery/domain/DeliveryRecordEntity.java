@@ -132,7 +132,23 @@ public class DeliveryRecordEntity {
         return id;
     }
 
+    public UUID getTenantId() {
+        return tenantId;
+    }
+
+    public String getDeliveryType() {
+        return deliveryType;
+    }
+
+    public String getTitle() {
+        return title;
+    }
+
     public String getStatus() {
         return status;
+    }
+
+    public Map<String, Object> getResultSnapshot() {
+        return resultSnapshot;
     }
 }

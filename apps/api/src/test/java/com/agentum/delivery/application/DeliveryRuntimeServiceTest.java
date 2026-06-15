@@ -6,6 +6,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.agentum.delivery.infrastructure.DeliveryRecordRepository;
+import com.agentum.system.domain.SystemCapabilityEntity;
+import com.agentum.system.domain.TenantCapabilityGrantEntity;
 import com.agentum.system.infrastructure.SystemCapabilityRepository;
 import com.agentum.system.infrastructure.TenantCapabilityGrantRepository;
 import com.agentum.workflow.domain.WorkflowNodeRunEntity;
@@ -14,6 +16,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,17 +28,24 @@ class DeliveryRuntimeServiceTest {
     private static final UUID OPERATOR_ID = UUID.fromString("00000000-0000-0000-0000-000000000004");
 
     private DeliveryRecordRepository deliveryRecordRepository;
+    private SystemCapabilityRepository systemCapabilityRepository;
+    private TenantCapabilityGrantRepository tenantCapabilityGrantRepository;
+    private DocumentDeliveryService documentDeliveryService;
     private DeliveryRuntimeService service;
 
     @BeforeEach
     void setUp() {
         deliveryRecordRepository = mock(DeliveryRecordRepository.class);
+        systemCapabilityRepository = mock(SystemCapabilityRepository.class);
+        tenantCapabilityGrantRepository = mock(TenantCapabilityGrantRepository.class);
+        documentDeliveryService = mock(DocumentDeliveryService.class);
         when(deliveryRecordRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         service = new DeliveryRuntimeService(
-            mock(SystemCapabilityRepository.class),
-            mock(TenantCapabilityGrantRepository.class),
+            systemCapabilityRepository,
+            tenantCapabilityGrantRepository,
             deliveryRecordRepository,
             mock(EmailDeliveryService.class),
+            documentDeliveryService,
             Clock.fixed(NOW, ZoneOffset.UTC)
         );
     }
@@ -62,6 +72,44 @@ class DeliveryRuntimeServiceTest {
         DeliveryRuntimeResult result = service.execute(request);
 
         assertThat(result.outputs()).containsEntry("deliveryStatus", "success");
+    }
+
+    @Test
+    void shouldDispatchWordDocumentDeliveryCapability() {
+        SystemCapabilityEntity capability = SystemCapabilityEntity.create(
+            "delivery",
+            "Word 文档交付",
+            "word_document_delivery",
+            "v1",
+            "",
+            "medium",
+            "active",
+            Map.of("sourceType", "builtin", "deliveryChannel", "document", "documentKind", "word"),
+            NOW
+        );
+        when(systemCapabilityRepository.findById(capability.getId())).thenReturn(Optional.of(capability));
+        when(tenantCapabilityGrantRepository.findByTenantIdAndCapabilityId(TENANT_ID, capability.getId()))
+            .thenReturn(Optional.of(TenantCapabilityGrantEntity.create(TENANT_ID, capability.getId(), "enabled", NOW)));
+        when(documentDeliveryService.generateRuntimeDocument(any(), any(), any(), any(), any(), any()))
+            .thenReturn(Map.of("adapter", "word_document", "fileName", "演示任务.docx"));
+
+        DeliveryRuntimeRequest request = buildRequest(Map.of(
+            "deliveryMode", "capability",
+            "deliveryCapabilityId", capability.getId().toString(),
+            "deliveryType", "word_document",
+            "contentVariable", "risk_summary",
+            "fileNameTemplate", "演示任务.docx"
+        ), Map.of("risk_summary", "# 授信结论"));
+
+        DeliveryRuntimeResult result = service.execute(request);
+
+        assertThat(result.outputs())
+            .containsEntry("deliveryStatus", "success")
+            .containsEntry("summary", "Word 文档已生成：演示任务.docx");
+        assertThat(result.outputs().get("deliveryResult"))
+            .isInstanceOf(Map.class)
+            .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.MAP)
+            .containsEntry("adapter", "word_document");
     }
 
     private static DeliveryRuntimeRequest buildRequest(Map<String, Object> config, Map<String, Object> variables) {

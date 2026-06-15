@@ -12,6 +12,7 @@ import type {
   StreamEvent,
 } from "../../types/runtime-types";
 import type { WorkbenchRunDetail } from "../../types/workbench";
+import type { FileDownloadResponse } from "../../types/workflow-contract";
 import { useRunStream } from "../../hooks/useRunStream";
 import { StepProgressRail } from "./StepProgressRail";
 import { StepActionBar } from "./StepActionBar";
@@ -37,7 +38,8 @@ import {
   FileCheck,
   RotateCcw,
   CheckCircle2,
-  Send
+  Send,
+  Download
 } from "lucide-react";
 
 interface TaskRunWorkspaceProps {
@@ -1029,7 +1031,7 @@ export function TaskRunWorkspace({
             )}
 
             {activeRunTab === "deliveries" && (
-              <RunDeliveriesPanel preview={preview} isFlowCompleted={isFlowCompleted} />
+              <RunDeliveriesPanel preview={preview} isFlowCompleted={isFlowCompleted} tenantId={tenantId} token={token} />
             )}
           </div>
 
@@ -1470,9 +1472,13 @@ function SnapshotFieldList({
 function RunDeliveriesPanel({
   preview,
   isFlowCompleted,
+  tenantId,
+  token,
 }: {
   preview: RuntimePreview;
   isFlowCompleted: boolean;
+  tenantId: string;
+  token: string;
 }) {
   const list = preview.deliveries || [];
   const deliveryStep = preview.steps.find((step) => step.kind === "delivery");
@@ -1488,6 +1494,7 @@ function RunDeliveriesPanel({
   const directDeliveryContent = resolveDirectDeliveryContent(deliveryStep);
 
   const [copied, setCopied] = useState(false);
+  const [downloadingRecordId, setDownloadingRecordId] = useState("");
 
   const handleCopy = () => {
     if (directDeliveryContent) {
@@ -1496,6 +1503,20 @@ function RunDeliveriesPanel({
       setTimeout(() => setCopied(false), 2000);
     }
   };
+
+  async function handleDownloadDelivery(recordId: string) {
+    setDownloadingRecordId(recordId);
+    try {
+      const file = await workbenchApi.downloadDeliveryRecord(tenantId, token, recordId);
+      downloadFileResponse(file);
+      message.success("交付文档已开始下载");
+    } catch (error) {
+      console.warn("[runtime] 交付文档下载失败", { recordId, message: error instanceof Error ? error.message : "unknown" });
+      message.error(error instanceof Error ? error.message : "交付文档下载失败");
+    } finally {
+      setDownloadingRecordId("");
+    }
+  }
 
   return (
     <div className="max-w-3xl mx-auto space-y-5">
@@ -1558,10 +1579,10 @@ function RunDeliveriesPanel({
           <div className="space-y-2">
             {list.map((item, index) => (
               <div 
-                key={index} 
-                className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 flex justify-between items-center text-sm"
+                key={item.recordId ?? `${item.name}-${index}`}
+                className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 flex flex-wrap justify-between items-center gap-3 text-sm"
               >
-                <div>
+                <div className="min-w-0">
                   <strong className="text-slate-800 dark:text-slate-200 font-medium block">{item.name}</strong>
                   <span className="text-slate-400 block mt-0.5">
                     {isFlowCompleted
@@ -1569,13 +1590,26 @@ function RunDeliveriesPanel({
                       : "交付已生成，待您在「当前处理」点击「确认完成」后归档展示。"}
                   </span>
                 </div>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                  isFlowCompleted
-                    ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400"
-                    : "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400"
-                }`}>
-                  {isFlowCompleted ? item.status : "待确认"}
-                </span>
+                <div className="flex shrink-0 items-center gap-2">
+                  {item.recordId && item.fileName ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleDownloadDelivery(item.recordId!)}
+                      disabled={downloadingRecordId === item.recordId}
+                      className="agent-button h-8 px-3 text-xs"
+                    >
+                      <Download size={14} />
+                      {downloadingRecordId === item.recordId ? "下载中" : "下载文档"}
+                    </button>
+                  ) : null}
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                    isFlowCompleted
+                      ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400"
+                      : "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400"
+                  }`}>
+                    {isFlowCompleted ? item.status : "待确认"}
+                  </span>
+                </div>
               </div>
             ))}
           </div>
@@ -1608,6 +1642,17 @@ function RunDeliveriesPanel({
 // ============================================================================
 // Runtime Preview mapping helpers
 // ============================================================================
+
+function downloadFileResponse(file: FileDownloadResponse) {
+  const url = window.URL.createObjectURL(file.blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = file.fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => window.URL.revokeObjectURL(url), 30_000);
+}
 
 function buildRuntimePreviewFromRun(run: WorkbenchRunDetail): RuntimePreview {
   const activeNode = run.currentNodeName ?? run.nodes.find((node: any) => node.state === "waiting" || node.state === "running")?.name ?? "已结束";
@@ -1670,11 +1715,24 @@ function buildRuntimePreviewFromRun(run: WorkbenchRunDetail): RuntimePreview {
     })),
     deliveries: run.nodes
       .filter((node: any) => node.nodeType === "delivery")
-      .map((node: any) => ({
-        name: node.name,
-        status: node.stateLabel,
-        meta: stringifyValue(node.outputs.summary ?? "交付确认后生成"),
-      })),
+      .map((node: any) => {
+        const outputs = isRuntimeRecord(node.outputs) ? node.outputs : {};
+        const deliveryResult = isRuntimeRecord(outputs.deliveryResult) ? outputs.deliveryResult : {};
+        const fileName = readConfigString(deliveryResult.fileName, "");
+        const sizeBytes = readConfigString(deliveryResult.sizeBytes, "");
+        const recordId = readConfigString(outputs.deliveryRecordId, "");
+        return {
+          name: fileName || node.name,
+          status: node.stateLabel,
+          meta: fileName && sizeBytes
+            ? `${fileName} · ${sizeBytes} bytes`
+            : stringifyValue(outputs.summary ?? "交付确认后生成"),
+          recordId: recordId || undefined,
+          fileName: fileName || undefined,
+          downloadUrl: readConfigString(deliveryResult.downloadUrl, "") || undefined,
+          deliveryType: readConfigString(deliveryResult.adapter, readConfigString(outputs.deliveryType, "")) || undefined,
+        };
+      }),
   };
 }
 
@@ -1741,6 +1799,10 @@ function readConfigString(value: unknown, fallback = ""): string {
   }
   const text = String(value).trim();
   return text || fallback;
+}
+
+function isRuntimeRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function nodeDescription(nodeType: string, config: any): string {

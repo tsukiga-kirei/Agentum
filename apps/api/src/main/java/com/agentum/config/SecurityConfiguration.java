@@ -96,7 +96,7 @@ public class SecurityConfiguration {
         configuration.setAllowedOriginPatterns(List.of("http://localhost:*", "http://127.0.0.1:*"));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Request-Id"));
-        configuration.setExposedHeaders(List.of("X-Request-Id"));
+        configuration.setExposedHeaders(List.of("X-Request-Id", "Content-Disposition"));
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/api/**", configuration);
         return source;

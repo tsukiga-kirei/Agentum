@@ -38,6 +38,7 @@ public class DeliveryRuntimeService {
     private final TenantCapabilityGrantRepository tenantCapabilityGrantRepository;
     private final DeliveryRecordRepository deliveryRecordRepository;
     private final EmailDeliveryService emailDeliveryService;
+    private final DocumentDeliveryService documentDeliveryService;
     private final RestClient restClient;
     private final Clock clock;
 
@@ -46,12 +47,14 @@ public class DeliveryRuntimeService {
         TenantCapabilityGrantRepository tenantCapabilityGrantRepository,
         DeliveryRecordRepository deliveryRecordRepository,
         EmailDeliveryService emailDeliveryService,
+        DocumentDeliveryService documentDeliveryService,
         Clock clock
     ) {
         this.systemCapabilityRepository = systemCapabilityRepository;
         this.tenantCapabilityGrantRepository = tenantCapabilityGrantRepository;
         this.deliveryRecordRepository = deliveryRecordRepository;
         this.emailDeliveryService = emailDeliveryService;
+        this.documentDeliveryService = documentDeliveryService;
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(8000);
         requestFactory.setReadTimeout(30000);
@@ -99,14 +102,14 @@ public class DeliveryRuntimeService {
         deliveryRecordRepository.save(record);
 
         try {
-            Map<String, Object> result = dispatchCapability(capability, deliveryType, title, payload, request);
+            Map<String, Object> result = dispatchCapability(capability, deliveryType, title, payload, request, record.getId());
             record.succeed(result, clock.instant());
             deliveryRecordRepository.save(record);
             return new DeliveryRuntimeResult(Map.of(
                 "deliveryRecordId", record.getId().toString(),
                 "deliveryStatus", "success",
                 "deliveryResult", result,
-                "summary", "交付已完成：" + title
+                "summary", deliverySummary(deliveryType, result, title)
             ));
         } catch (ApiException exception) {
             record.fail(exception.getCode(), exception.getMessage(), clock.instant());
@@ -157,9 +160,20 @@ public class DeliveryRuntimeService {
         String deliveryType,
         String title,
         Map<String, Object> payload,
-        DeliveryRuntimeRequest request
+        DeliveryRuntimeRequest request,
+        UUID recordId
     ) {
         String endpointUrl = stringValue(capability.getConfig().get("endpointUrl"));
+        if (isDocumentDelivery(deliveryType, capability, request.nodeConfig())) {
+            return documentDeliveryService.generateRuntimeDocument(
+                request.run().getTenantId(),
+                request.operatorUserId(),
+                recordId,
+                capability,
+                request.nodeConfig(),
+                payload
+            );
+        }
         if ("email".equals(deliveryType) || "smtp".equals(deliveryType)) {
             EmailDeliveryMessage message = new EmailDeliveryMessage(
                 readRecipients(request.nodeConfig(), "to", "recipients", "emailRecipients"),
@@ -186,6 +200,35 @@ public class DeliveryRuntimeService {
             }
         }
         throw new ApiException(HttpStatus.BAD_REQUEST, "DELIVERY_ADAPTER_NOT_CONFIGURED", "交付能力未配置邮箱或 Webhook 适配器");
+    }
+
+    private String deliverySummary(String deliveryType, Map<String, Object> result, String title) {
+        if (isDocumentResult(deliveryType, result)) {
+            return "Word 文档已生成：" + firstNonBlank(stringValue(result.get("fileName")), title);
+        }
+        return "交付已完成：" + title;
+    }
+
+    private boolean isDocumentResult(String deliveryType, Map<String, Object> result) {
+        return "document".equals(deliveryType)
+            || "word_document".equals(deliveryType)
+            || "docx".equals(deliveryType)
+            || (result != null && "word_document".equals(stringValue(result.get("adapter"))));
+    }
+
+    private boolean isDocumentDelivery(String deliveryType, SystemCapabilityEntity capability, Map<String, Object> nodeConfig) {
+        String nodeType = firstNonBlank(
+            stringValue(nodeConfig.get("deliveryType")),
+            stringValue(nodeConfig.get("documentKind"))
+        );
+        String channel = stringValue(capability.getConfig().get("deliveryChannel"));
+        String kind = stringValue(capability.getConfig().get("documentKind"));
+        return "document".equals(deliveryType)
+            || "word_document".equals(deliveryType)
+            || "docx".equals(deliveryType)
+            || "document".equals(channel)
+            || "word".equals(kind)
+            || "word_document".equals(nodeType);
     }
 
     private SystemCapabilityEntity resolveDeliveryCapability(DeliveryRuntimeRequest request) {

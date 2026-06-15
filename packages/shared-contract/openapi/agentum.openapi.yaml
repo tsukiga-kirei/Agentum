@@ -720,6 +720,74 @@ paths:
                     properties:
                       data:
                         $ref: "#/components/schemas/WorkbenchRunDetail"
+  /api/tenants/{tenantId}/document-deliveries/preview:
+    post:
+      summary: 生成 Word 文档交付预览
+      description: 流程设计态使用，按当前 Markdown 样例和文档样式生成 docx 文件；需要当前用户具备流程设计权限，且所选 Word 文档交付能力已向当前主体开放。
+      tags:
+        - Delivery
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WordDocumentPreviewRequest"
+      responses:
+        "200":
+          description: docx 预览文件
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              description: 包含 UTF-8 文件名。
+          content:
+            application/vnd.openxmlformats-officedocument.wordprocessingml.document:
+              schema:
+                type: string
+                format: binary
+  /api/tenants/{tenantId}/delivery-records/{recordId}/download:
+    get:
+      summary: 下载交付记录文件
+      description: 运行态交付结果下载入口。当前仅返回系统内置 Word 文档交付生成的 docx 文件。
+      tags:
+        - Delivery
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: recordId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: docx 交付文件
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              description: 包含 UTF-8 文件名。
+          content:
+            application/vnd.openxmlformats-officedocument.wordprocessingml.document:
+              schema:
+                type: string
+                format: binary
   /api/tenants/{tenantId}/workflows/drafts:
     get:
       summary: 查询工作流草稿列表
@@ -4207,6 +4275,71 @@ components:
         - size
         - total
         - totalPages
+    DocumentDeliveryStyle:
+      type: object
+      description: Word 文档交付样式。单位：字号为 pt，段后间距为 pt，页边距为 cm，首行缩进为字符数。
+      properties:
+        chineseFont:
+          type: string
+          default: 宋体
+        latinFont:
+          type: string
+          default: Times New Roman
+        bodyFontSize:
+          type: integer
+          default: 12
+        heading1FontSize:
+          type: integer
+          default: 16
+        heading2FontSize:
+          type: integer
+          default: 14
+        heading3FontSize:
+          type: integer
+          default: 13
+        lineSpacing:
+          type: number
+          default: 1.5
+        firstLineIndentChars:
+          type: number
+          default: 2
+        paragraphSpacingAfter:
+          type: integer
+          default: 6
+        marginTopCm:
+          type: number
+          default: 2.54
+        marginBottomCm:
+          type: number
+          default: 2.54
+        marginLeftCm:
+          type: number
+          default: 3.18
+        marginRightCm:
+          type: number
+          default: 3.18
+    WordDocumentPreviewRequest:
+      type: object
+      properties:
+        capabilityId:
+          type: string
+          format: uuid
+          description: 可选；为空或 none 时只生成样式预览，不校验具体能力。
+        markdown:
+          type: string
+          description: 设计态预览使用的 Markdown 样例。
+        fileName:
+          type: string
+          description: 生成文件名，后端会兜底补齐 docx 后缀。
+        title:
+          type: string
+          description: 文档标题；为空时使用文件名。
+        style:
+          $ref: "#/components/schemas/DocumentDeliveryStyle"
+      required:
+        - markdown
+        - fileName
+        - style
     SystemCapabilityAssetRow:
       type: object
       properties:
@@ -4240,6 +4373,9 @@ components:
         openedAt:
           type: string
           format: date-time
+        config:
+          type: object
+          description: 脱敏后的能力配置。交付能力会包含 deliveryChannel、documentKind、defaultStyle 等识别和默认配置字段。
       required:
         - id
         - assetType
@@ -4254,6 +4390,7 @@ components:
         - accessLevel
         - ownerDisplayName
         - openedAt
+        - config
     SystemCapabilityAssetPageResponse:
       type: object
       properties:

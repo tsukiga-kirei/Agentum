@@ -112,6 +112,19 @@ export type WorkflowPublishResult = {
   publishedAt: string;
 };
 
+export type WordDocumentPreviewRequest = {
+  capabilityId?: string;
+  markdown: string;
+  fileName: string;
+  title?: string;
+  style: Record<string, unknown>;
+};
+
+export type FileDownloadResponse = {
+  blob: Blob;
+  fileName: string;
+};
+
 export type WorkflowDesignerCatalog = {
   systemTrigger: WorkflowBrickTemplate;
   brickTemplates: WorkflowBrickTemplate[];

@@ -61,8 +61,10 @@ import type {
   WorkflowPublishResult,
   WorkflowPublishValidationResult,
   WorkflowShareableMemberRow,
+  FileDownloadResponse,
   UpdateWorkflowAccessRequest,
   UpdateWorkflowDraftRequest,
+  WordDocumentPreviewRequest,
   WorkflowVariableDraft,
 } from "../types/workflow-contract";
 import type {
@@ -154,6 +156,72 @@ async function apiRequest<T>(path: string, options: RequestOptions = {}): Promis
   }
 
   return envelope.data;
+}
+
+async function apiFileRequest(path: string, options: RequestOptions = {}): Promise<FileDownloadResponse> {
+  const headers = new Headers(options.headers);
+
+  if (options.token) {
+    headers.set("Authorization", `Bearer ${options.token}`);
+  }
+
+  if (options.body !== undefined) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
+      headers,
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    });
+  } catch (error) {
+    console.error("[api] 文件请求异常", { path, message: error instanceof Error ? error.message : "unknown" });
+    throw error;
+  }
+
+  if (!response.ok) {
+    let message = "文件下载失败，请稍后重试";
+    let code = "SYSTEM_FILE_REQUEST_FAILED";
+    let requestId = response.headers.get("X-Request-Id") ?? "req_unknown";
+    try {
+      const envelope = (await response.json()) as ApiEnvelope<unknown>;
+      message = envelope.error?.message ?? message;
+      code = envelope.error?.code ?? code;
+      requestId = envelope.requestId ?? requestId;
+    } catch (error) {
+      console.warn("[api] 文件错误响应解析失败", { path, status: response.status, message: error instanceof Error ? error.message : "unknown" });
+    }
+    console.warn("[api] 文件请求失败", { path, status: response.status, code, requestId });
+    throw new AgentumApiError(message, code, requestId);
+  }
+
+  const blob = await response.blob();
+  return {
+    blob,
+    fileName: resolveFileName(response.headers.get("Content-Disposition")) || "交付文档.docx",
+  };
+}
+
+function resolveFileName(contentDisposition: string | null): string {
+  if (!contentDisposition) {
+    return "";
+  }
+  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      return utf8Match[1];
+    }
+  }
+  const quotedMatch = contentDisposition.match(/filename="([^"]+)"/i);
+  if (quotedMatch?.[1]) {
+    return quotedMatch[1];
+  }
+  const plainMatch = contentDisposition.match(/filename=([^;]+)/i);
+  return plainMatch?.[1]?.trim() ?? "";
 }
 
 export const authApi = {
@@ -434,6 +502,8 @@ export const workbenchApi = {
       method: "POST",
       token,
     }),
+  downloadDeliveryRecord: (tenantId: string, token: string, recordId: string) =>
+    apiFileRequest(`/api/tenants/${tenantId}/delivery-records/${recordId}/download`, { token }),
   followUpNode: (tenantId: string, token: string, runId: string, nodeRunId: string, message: string) =>
     apiRequest<WorkbenchRunDetail>(`/api/tenants/${tenantId}/workbench/runs/${runId}/nodes/${nodeRunId}/follow-up`, {
       method: "POST",
@@ -469,6 +539,12 @@ export const workbenchApi = {
 export const workflowApi = {
   getDesignerCatalog: (tenantId: string, token: string) =>
     apiRequest<WorkflowDesignerCatalog>(`/api/tenants/${tenantId}/workflows/drafts/designer-catalog`, { token }),
+  previewWordDocument: (tenantId: string, token: string, request: WordDocumentPreviewRequest) =>
+    apiFileRequest(`/api/tenants/${tenantId}/document-deliveries/preview`, {
+      method: "POST",
+      token,
+      body: request,
+    }),
   listShareableMembers: (tenantId: string, token: string) =>
     apiRequest<WorkflowShareableMemberRow[]>(`/api/tenants/${tenantId}/workflows/drafts/shareable-members`, { token }),
   listDrafts: (tenantId: string, token: string, page = 1, size = 10, keyword = "", scope: "all" | "mine" | "shared" = "all", status: "all" | "draft" | "published" | "review" = "all", sort = "updatedAt,desc") => {

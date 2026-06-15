@@ -12,6 +12,8 @@ import {
   ChevronLeft,
   CheckCircle2,
   Clock3,
+  Download,
+  Eye,
   FileText,
   Hash,
   Layers3,
@@ -24,6 +26,7 @@ import {
   Settings2,
   Tag,
   TextCursorInput,
+  Type,
   Trash2,
   X,
   Zap,
@@ -33,6 +36,8 @@ import { AgentumApiError, assetApi, workflowApi } from "../../services/apiClient
 import { useAuthStore } from "../../stores/authStore";
 import type { AssetType, MyAssetRow, SystemCapabilityAssetRow } from "../../types/asset";
 import type {
+  FileDownloadResponse,
+  WordDocumentPreviewRequest,
   WorkflowBrickTemplate,
   WorkflowDesignerCatalog,
   WorkflowDraftDetail,
@@ -128,6 +133,7 @@ type WorkflowCapabilityOption = {
   code: string;
   version: string;
   status: string;
+  config: Record<string, unknown>;
   source: "system" | "mine" | "shared";
   scope: string;
 };
@@ -137,6 +143,8 @@ type WorkflowCapabilityState = {
   loading: boolean;
   error: string;
 };
+
+type DocumentDeliveryStyleDraft = Record<string, string | number>;
 
 type WorkflowIcon = typeof Zap;
 
@@ -149,6 +157,36 @@ type WorkflowEditorPageProps = {
 const SYSTEM_TRIGGER_ID = "trigger_manual";
 const workflowSelectClassNames = { popup: { root: "agent-select-dropdown agent-admin-select-dropdown" } };
 const workflowSelectSuffixIcon = <ChevronDown className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />;
+const DEFAULT_WORD_DOCUMENT_STYLE: DocumentDeliveryStyleDraft = {
+  chineseFont: "宋体",
+  latinFont: "Times New Roman",
+  bodyFontSize: 12,
+  heading1FontSize: 16,
+  heading2FontSize: 14,
+  heading3FontSize: 13,
+  lineSpacing: 1.5,
+  firstLineIndentChars: 2,
+  paragraphSpacingAfter: 6,
+  marginTopCm: 2.54,
+  marginBottomCm: 2.54,
+  marginLeftCm: 3.18,
+  marginRightCm: 3.18,
+};
+const DEFAULT_WORD_PREVIEW_MARKDOWN = `# 交付文档预览
+
+这是一段正文预览，用来检查字体、字号、首行缩进和行距。
+
+## 结论摘要
+
+- 支持将 AI Markdown 转换为 Word 文档。
+- 支持标题、正文、列表、表格、引用和代码块。
+
+| 字段 | 示例 |
+| --- | --- |
+| 交付类型 | Word 文档 |
+| 文件格式 | docx |
+
+> 预览内容只用于设计阶段校验样式，实际运行会使用所选变量的输出。`;
 
 const nodeTypeLabels: Record<WorkflowNodeType, string> = {
   trigger: "系统触发",
@@ -1348,14 +1386,102 @@ function DeliveryBrickConfig({
   capabilityState: WorkflowCapabilityState;
   onUpdateConfig: (nextConfig: Record<string, unknown>) => void;
 }) {
+  const token = useAuthStore((s) => s.token);
+  const user = useAuthStore((s) => s.user);
+  const { message: messageApi } = App.useApp();
   const config = node.data.rawConfig ?? {};
   const deliveryAssets = filterCapabilities(capabilityState.capabilities, "delivery");
   const deliveryMode = readString(config.deliveryMode, "capability");
+  const selectedCapabilityId = readString(config.deliveryCapabilityId, "none");
+  const selectedDeliveryCapability = deliveryAssets.find((option) => option.id === selectedCapabilityId);
+  const isWordDelivery = deliveryMode === "capability" && (
+    isWordDocumentDeliveryCapability(selectedDeliveryCapability)
+    || readString(config.deliveryType, "") === "word_document"
+    || readString(config.documentKind, "") === "word"
+  );
+  const documentStyle = readDocumentDeliveryStyle(config.documentStyle, selectedDeliveryCapability?.config);
+  const selectedContentVariable = readString(config.contentVariable, workflowVariables.find((variable) => variable.deliverable)?.name ?? workflowVariables[workflowVariables.length - 1]?.name ?? "");
+  const [previewing, setPreviewing] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const isDirectDelivery = deliveryMode === "direct";
   const deliveryTargetDefault = "说明交付目标、模板和确认方式。";
   const deliveryTargetPlaceholder = isDirectDelivery
     ? "配置交付正文，运行时将作为文本直接返回。"
     : "配置交付目标、模板和确认方式，运行时将作为交付输出。";
+
+  function handleDeliveryCapabilityChange(value: string) {
+    const capability = deliveryAssets.find((option) => option.id === value);
+    if (isWordDocumentDeliveryCapability(capability)) {
+      onUpdateConfig({
+        deliveryCapabilityId: value,
+        deliveryType: "word_document",
+        documentKind: "word",
+        contentVariable: selectedContentVariable,
+        fileNameTemplate: readString(config.fileNameTemplate, "交付文档-{{runId}}.docx"),
+        documentStyle: readDocumentDeliveryStyle(config.documentStyle, capability?.config),
+        previewMarkdown: readString(config.previewMarkdown, DEFAULT_WORD_PREVIEW_MARKDOWN),
+      });
+      return;
+    }
+
+    const nextDeliveryType = value === "none"
+      ? "direct"
+      : readString(capability?.config?.deliveryChannel, readString(capability?.config?.sourceType, ""));
+    onUpdateConfig({
+      deliveryCapabilityId: value,
+      deliveryType: nextDeliveryType,
+      documentKind: "",
+    });
+  }
+
+  function updateDocumentStyle(key: string, value: string | number) {
+    onUpdateConfig({
+      documentStyle: {
+        ...documentStyle,
+        [key]: value,
+      },
+    });
+  }
+
+  async function handleWordDocumentFile(action: "preview" | "download") {
+    if (!token || !user?.tenantId) {
+      messageApi.error("当前账号缺少租户上下文，无法生成 Word 文档");
+      return;
+    }
+    const previewWindow = action === "preview" ? window.open("", "_blank", "noopener,noreferrer") : null;
+    if (action === "preview") {
+      setPreviewing(true);
+    } else {
+      setExporting(true);
+    }
+    try {
+      const fileNameTemplate = readString(config.fileNameTemplate, "交付文档-{{runId}}.docx");
+      const fileName = ensureDocxFileName(renderDesignTemplate(fileNameTemplate, workflowVariables));
+      const markdown = renderDesignTemplate(readString(config.previewMarkdown, DEFAULT_WORD_PREVIEW_MARKDOWN), workflowVariables);
+      const request: WordDocumentPreviewRequest = {
+        capabilityId: selectedCapabilityId,
+        markdown,
+        fileName,
+        title: removeDocxSuffix(fileName),
+        style: documentStyle,
+      };
+      const file = await workflowApi.previewWordDocument(user.tenantId, token, request);
+      if (action === "preview") {
+        openFilePreview(file, previewWindow);
+        messageApi.success("Word 预览文件已生成");
+      } else {
+        downloadFile(file);
+        messageApi.success("Word 样例已导出");
+      }
+    } catch (error) {
+      previewWindow?.close();
+      console.warn("[workflow] Word 文档预览生成失败", getWorkflowEditorErrorContext(error, user.tenantId, node.id));
+      messageApi.error(error instanceof AgentumApiError ? error.message : "Word 文档生成失败");
+    } finally {
+      setPreviewing(false);
+      setExporting(false);
+    }
+  }
 
   return (
     <PanelGroup title="交付配置" icon={PackageCheck} className="xl:col-span-2">
@@ -1372,24 +1498,111 @@ function DeliveryBrickConfig({
           onChange={(value) => onUpdateConfig({ deliveryMode: value })}
         />
         {deliveryMode === "capability" ? (
-        <CapabilitySelectField
-          label="交付能力"
-          icon={PackageCheck}
-          value={readString(config.deliveryCapabilityId, "none")}
-          emptyValue="none"
-          emptyLabel="暂不绑定交付能力"
+          <CapabilitySelectField
+            label="交付能力"
+            icon={PackageCheck}
+            value={selectedCapabilityId}
+            emptyValue="none"
+            emptyLabel="暂不绑定交付能力"
             options={deliveryAssets}
-            onChange={(value) => onUpdateConfig({ deliveryCapabilityId: value })}
+            onChange={handleDeliveryCapabilityChange}
           />
         ) : null}
       </div>
-      <PromptEditor
-        label="交付配置"
-        value={readString(config.deliveryTarget, deliveryTargetDefault)}
-        availableVariables={workflowVariables}
-        onChange={(value) => onUpdateConfig({ deliveryTarget: value })}
-        placeholder={deliveryTargetPlaceholder}
-      />
+
+      {isWordDelivery ? (
+        <div className="space-y-4">
+          <div className="rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-4">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-semibold text-[var(--color-text-primary)]">Word 文档交付</h4>
+                <p className="mt-1 text-xs text-[var(--color-text-secondary)]">样式会随流程配置保存，运行时按所选变量生成 docx 文件。</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleWordDocumentFile("preview")}
+                  disabled={previewing || exporting}
+                  className="agent-button h-8 px-3 text-xs"
+                >
+                  <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+                  {previewing ? "生成中" : "预览 Word"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleWordDocumentFile("download")}
+                  disabled={previewing || exporting}
+                  className="agent-button agent-button-primary h-8 px-3 text-xs"
+                >
+                  <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                  {exporting ? "导出中" : "导出样例"}
+                </button>
+              </div>
+            </div>
+            <div className="grid gap-4 lg:grid-cols-2">
+              <SelectLikeField
+                label="正文来源变量"
+                icon={TextCursorInput}
+                value={selectedContentVariable}
+                options={[
+                  { value: "", label: "不指定，使用交付正文模板" },
+                  ...workflowVariables.map((variable) => ({
+                    value: variable.name,
+                    label: `${variable.name} · ${variable.sourceNodeName}`,
+                  })),
+                ]}
+                onChange={(value) => onUpdateConfig({ contentVariable: value })}
+              />
+              <TextInputField
+                label="文件名模板"
+                icon={FileText}
+                value={readString(config.fileNameTemplate, "交付文档-{{runId}}.docx")}
+                placeholder="交付文档-{{runId}}.docx"
+                onChange={(value) => onUpdateConfig({ fileNameTemplate: value })}
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <TextInputField label="中文字体" icon={Type} value={String(documentStyle.chineseFont)} placeholder="宋体" onChange={(value) => updateDocumentStyle("chineseFont", value)} />
+            <TextInputField label="西文字体" icon={Type} value={String(documentStyle.latinFont)} placeholder="Times New Roman" onChange={(value) => updateDocumentStyle("latinFont", value)} />
+            <NumberInputField label="正文字号" value={documentStyle.bodyFontSize} min={8} max={48} step={1} onChange={(value) => updateDocumentStyle("bodyFontSize", value)} />
+            <NumberInputField label="一级标题字号" value={documentStyle.heading1FontSize} min={8} max={72} step={1} onChange={(value) => updateDocumentStyle("heading1FontSize", value)} />
+            <NumberInputField label="二级标题字号" value={documentStyle.heading2FontSize} min={8} max={72} step={1} onChange={(value) => updateDocumentStyle("heading2FontSize", value)} />
+            <NumberInputField label="三级标题字号" value={documentStyle.heading3FontSize} min={8} max={72} step={1} onChange={(value) => updateDocumentStyle("heading3FontSize", value)} />
+            <NumberInputField label="行距" value={documentStyle.lineSpacing} min={1} max={3} step={0.1} onChange={(value) => updateDocumentStyle("lineSpacing", value)} />
+            <NumberInputField label="首行缩进字符" value={documentStyle.firstLineIndentChars} min={0} max={6} step={0.5} onChange={(value) => updateDocumentStyle("firstLineIndentChars", value)} />
+            <NumberInputField label="段后间距 pt" value={documentStyle.paragraphSpacingAfter} min={0} max={72} step={1} onChange={(value) => updateDocumentStyle("paragraphSpacingAfter", value)} />
+            <NumberInputField label="上边距 cm" value={documentStyle.marginTopCm} min={0.5} max={6} step={0.1} onChange={(value) => updateDocumentStyle("marginTopCm", value)} />
+            <NumberInputField label="下边距 cm" value={documentStyle.marginBottomCm} min={0.5} max={6} step={0.1} onChange={(value) => updateDocumentStyle("marginBottomCm", value)} />
+            <NumberInputField label="左边距 cm" value={documentStyle.marginLeftCm} min={0.5} max={6} step={0.1} onChange={(value) => updateDocumentStyle("marginLeftCm", value)} />
+            <NumberInputField label="右边距 cm" value={documentStyle.marginRightCm} min={0.5} max={6} step={0.1} onChange={(value) => updateDocumentStyle("marginRightCm", value)} />
+          </div>
+
+          <PromptEditor
+            label="交付正文模板"
+            value={readString(config.markdownContent, selectedContentVariable ? `{{${selectedContentVariable}}}` : "请在这里编写 Markdown 交付正文，或选择上游变量作为正文来源。")}
+            availableVariables={workflowVariables}
+            onChange={(value) => onUpdateConfig({ markdownContent: value })}
+            placeholder="可用 {{输出内容标识}} 引用之前步骤内容"
+          />
+          <PromptEditor
+            label="预览 Markdown"
+            value={readString(config.previewMarkdown, DEFAULT_WORD_PREVIEW_MARKDOWN)}
+            availableVariables={workflowVariables}
+            onChange={(value) => onUpdateConfig({ previewMarkdown: value })}
+            placeholder="用于设计阶段生成预览和导出样例，不影响正式运行内容"
+          />
+        </div>
+      ) : (
+        <PromptEditor
+          label="交付配置"
+          value={readString(config.deliveryTarget, deliveryTargetDefault)}
+          availableVariables={workflowVariables}
+          onChange={(value) => onUpdateConfig({ deliveryTarget: value })}
+          placeholder={deliveryTargetPlaceholder}
+        />
+      )}
     </PanelGroup>
   );
 }
@@ -1514,6 +1727,72 @@ function SelectLikeField({
         options={effectiveOptions}
         onChange={onChange}
       />
+    </label>
+  );
+}
+
+function TextInputField({
+  label,
+  icon: Icon,
+  value,
+  placeholder,
+  maxLength = 160,
+  onChange,
+}: {
+  label: string;
+  icon?: WorkflowIcon;
+  value: string;
+  placeholder?: string;
+  maxLength?: number;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="sys-field">
+      <span className="sys-field-label">{label}</span>
+      <div className="sys-field-input-wrap">
+        {Icon ? <Icon size={16} className="sys-field-prefix" aria-hidden="true" /> : null}
+        <input
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className="sys-field-input"
+          placeholder={placeholder}
+          maxLength={maxLength}
+        />
+      </div>
+    </label>
+  );
+}
+
+function NumberInputField({
+  label,
+  value,
+  min,
+  max,
+  step,
+  onChange,
+}: {
+  label: string;
+  value: string | number;
+  min: number;
+  max: number;
+  step: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <label className="sys-field">
+      <span className="sys-field-label">{label}</span>
+      <div className="sys-field-input-wrap">
+        <Hash size={16} className="sys-field-prefix" aria-hidden="true" />
+        <input
+          value={String(value)}
+          onChange={(event) => onChange(parseNumberInput(event.target.value, Number(value)))}
+          className="sys-field-input"
+          type="number"
+          min={min}
+          max={max}
+          step={step}
+        />
+      </div>
     </label>
   );
 }
@@ -2238,6 +2517,7 @@ function buildCapabilityOptions(systemAssets: SystemCapabilityAssetRow[], myAsse
     code: asset.code,
     version: asset.version,
     status: asset.status,
+    config: asset.config ?? {},
     source: asset.openSource === "user_shared" ? ("shared" as const) : ("system" as const),
     scope: asset.assignmentScope,
   }));
@@ -2250,6 +2530,7 @@ function buildCapabilityOptions(systemAssets: SystemCapabilityAssetRow[], myAsse
       code: asset.code,
       version: asset.version,
       status: asset.status,
+      config: {},
       source: "mine" as const,
       scope: asset.accessLevel === "owner" ? "本人维护" : asset.accessLevel === "edit" ? "可编辑" : "可读取",
     }));
@@ -2269,6 +2550,21 @@ function filterCapabilities(capabilities: WorkflowCapabilityOption[], assetType:
 function formatAssetSource(option: WorkflowCapabilityOption) {
   if (option.source === "shared") return "同事共享";
   return option.source === "system" ? "租户管理分配" : "我的能力";
+}
+
+function isWordDocumentDeliveryCapability(option?: WorkflowCapabilityOption | null) {
+  if (!option || option.assetType !== "delivery") {
+    return false;
+  }
+  const channel = readString(option.config?.deliveryChannel, "").toLowerCase();
+  const kind = readString(option.config?.documentKind, "").toLowerCase();
+  const code = option.code.toLowerCase();
+  const name = option.name.toLowerCase();
+  return channel === "document"
+    || channel === "word_document"
+    || kind === "word"
+    || code.includes("word")
+    || name.includes("word");
 }
 
 function findCapabilityName(options: WorkflowCapabilityOption[], id: string, fallback: string) {
@@ -2746,6 +3042,11 @@ function readNumber(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
+function parseNumberInput(value: string, fallback: number): number {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 function readLiteral<T extends string>(value: unknown, values: readonly T[], fallback: T): T {
   return typeof value === "string" && values.includes(value as T) ? value as T : fallback;
 }
@@ -2756,6 +3057,92 @@ function readStringArray(value: unknown, fallback: string[]): string[] {
 
 function readBrickType(value: unknown, fallback: WorkflowBrickType): WorkflowBrickType {
   return value === "trigger" || value === "input" || value === "agent" || value === "cluster" || value === "delivery" ? value : fallback;
+}
+
+function readDocumentDeliveryStyle(rawStyle: unknown, capabilityConfig?: Record<string, unknown>): DocumentDeliveryStyleDraft {
+  const configDefaultStyle = capabilityConfig?.defaultStyle;
+  const defaultStyle = isRecord(configDefaultStyle) ? configDefaultStyle : {};
+  const nodeStyle = isRecord(rawStyle) ? rawStyle : {};
+  const merged = {
+    ...DEFAULT_WORD_DOCUMENT_STYLE,
+    ...defaultStyle,
+    ...nodeStyle,
+  };
+  return {
+    chineseFont: readString(merged.chineseFont, String(DEFAULT_WORD_DOCUMENT_STYLE.chineseFont)),
+    latinFont: readString(merged.latinFont, String(DEFAULT_WORD_DOCUMENT_STYLE.latinFont)),
+    bodyFontSize: readNumberLike(merged.bodyFontSize, Number(DEFAULT_WORD_DOCUMENT_STYLE.bodyFontSize)),
+    heading1FontSize: readNumberLike(merged.heading1FontSize, Number(DEFAULT_WORD_DOCUMENT_STYLE.heading1FontSize)),
+    heading2FontSize: readNumberLike(merged.heading2FontSize, Number(DEFAULT_WORD_DOCUMENT_STYLE.heading2FontSize)),
+    heading3FontSize: readNumberLike(merged.heading3FontSize, Number(DEFAULT_WORD_DOCUMENT_STYLE.heading3FontSize)),
+    lineSpacing: readNumberLike(merged.lineSpacing, Number(DEFAULT_WORD_DOCUMENT_STYLE.lineSpacing)),
+    firstLineIndentChars: readNumberLike(merged.firstLineIndentChars, Number(DEFAULT_WORD_DOCUMENT_STYLE.firstLineIndentChars)),
+    paragraphSpacingAfter: readNumberLike(merged.paragraphSpacingAfter, Number(DEFAULT_WORD_DOCUMENT_STYLE.paragraphSpacingAfter)),
+    marginTopCm: readNumberLike(merged.marginTopCm, Number(DEFAULT_WORD_DOCUMENT_STYLE.marginTopCm)),
+    marginBottomCm: readNumberLike(merged.marginBottomCm, Number(DEFAULT_WORD_DOCUMENT_STYLE.marginBottomCm)),
+    marginLeftCm: readNumberLike(merged.marginLeftCm, Number(DEFAULT_WORD_DOCUMENT_STYLE.marginLeftCm)),
+    marginRightCm: readNumberLike(merged.marginRightCm, Number(DEFAULT_WORD_DOCUMENT_STYLE.marginRightCm)),
+  };
+}
+
+function readNumberLike(value: unknown, fallback: number): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number.parseFloat(value.trim());
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+  return fallback;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function renderDesignTemplate(template: string, variables: WorkflowVariable[]) {
+  const sampleValues = new Map<string, string>([
+    ["runId", "preview_run"],
+    ["nodeRunId", "preview_node"],
+    ["started_at", "2026-06-15"],
+  ]);
+  variables.forEach((variable) => {
+    sampleValues.set(variable.name, `${variable.sourceNodeName}-${variable.name}`);
+  });
+  return template.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_match, variable: string) => sampleValues.get(variable) ?? variable);
+}
+
+function ensureDocxFileName(value: string) {
+  const sanitized = value.trim().replace(/[\\/:*?"<>|]/g, "_") || "交付文档";
+  return sanitized.toLowerCase().endsWith(".docx") ? sanitized : `${sanitized}.docx`;
+}
+
+function removeDocxSuffix(value: string) {
+  return value.toLowerCase().endsWith(".docx") ? value.slice(0, -5) : value;
+}
+
+function downloadFile(file: FileDownloadResponse) {
+  const url = window.URL.createObjectURL(file.blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = file.fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => window.URL.revokeObjectURL(url), 30_000);
+}
+
+function openFilePreview(file: FileDownloadResponse, previewWindow: Window | null) {
+  const url = window.URL.createObjectURL(file.blob);
+  if (previewWindow) {
+    previewWindow.location.href = url;
+  } else {
+    const opened = window.open(url, "_blank", "noopener,noreferrer");
+    if (!opened) {
+      downloadFile(file);
+    }
+  }
+  window.setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
 }
 
 function isInputFieldConfig(value: unknown): value is InputFieldConfig {

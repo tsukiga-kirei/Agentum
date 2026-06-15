@@ -426,6 +426,7 @@ public class AssetManagementService {
             capability.getVersion(),
             capability.getDescription() == null ? "" : capability.getDescription(),
             promptContent,
+            publicSystemCapabilityConfig(capability),
             capability.getRiskLevel(),
             capability.getStatus(),
             assignedToMe,
@@ -453,6 +454,7 @@ public class AssetManagementService {
             asset.getVersion(),
             asset.getDescription() == null ? "" : asset.getDescription(),
             promptContent,
+            asset.getConfig() == null ? Map.of() : asset.getConfig(),
             asset.getRiskLevel(),
             asset.getStatus(),
             "published".equals(asset.getStatus()),
@@ -462,6 +464,18 @@ public class AssetManagementService {
             ownerDisplayName,
             accessibleAsset.openedAt()
         );
+    }
+
+    private Map<String, Object> publicSystemCapabilityConfig(SystemCapabilityEntity capability) {
+        Map<String, Object> config = capability.getConfig() == null ? Map.of() : capability.getConfig();
+        if (!"delivery".equals(capability.getCapabilityType())) {
+            return config;
+        }
+        Map<String, Object> publicConfig = new HashMap<>(config);
+        boolean passwordConfigured = publicConfig.remove("encryptedSmtpPassword") != null;
+        publicConfig.remove("smtpPassword");
+        publicConfig.put("smtpPasswordConfigured", passwordConfigured);
+        return publicConfig;
     }
 
     private AssetManagementApi.MyAssetRow toMyAssetRow(TenantAssetCapabilityEntity asset) {

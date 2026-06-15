@@ -950,8 +950,25 @@ public class SystemManagementService {
             ));
             return capabilityProbeResult(capability.getId(), "success", "自定义交付适配器配置检查通过，后续按统一协议调用并写入审计", tools, clock.instant());
         }
-        if (!"email".equals(stringValue(config.get("deliveryChannel")))) {
-            return capabilityProbeResult(capability.getId(), "failed", "系统内置交付当前只支持邮箱通道", List.of(), clock.instant());
+        String deliveryChannel = stringValue(config.get("deliveryChannel"));
+        if ("document".equals(deliveryChannel)) {
+            List<SystemManagementApi.CapabilityToolRow> tools = List.of(new SystemManagementApi.CapabilityToolRow(
+                capability.getCode() + ".generate_docx",
+                "根据 AI Markdown 与流程节点样式配置生成 Word .docx 文档，并写入交付记录",
+                Map.of(
+                    "type", "object",
+                    "required", List.of("markdown", "fileName"),
+                    "properties", Map.of(
+                        "markdown", Map.of("type", "string"),
+                        "fileName", Map.of("type", "string"),
+                        "style", Map.of("type", "object")
+                    )
+                )
+            ));
+            return capabilityProbeResult(capability.getId(), "success", "系统内置 Word 文档交付渲染器可用", tools, clock.instant());
+        }
+        if (!"email".equals(deliveryChannel)) {
+            return capabilityProbeResult(capability.getId(), "failed", "系统内置交付当前支持邮箱通道和 Word 文档通道", List.of(), clock.instant());
         }
         EmailDeliveryTestOutcome outcome = emailDeliveryConnectionTester.test(
             new EmailDeliveryTestRequest(capability.getId(), capability.getConfig())
@@ -1026,8 +1043,20 @@ public class SystemManagementService {
                 result.put("endpointUrl", endpointUrl);
                 return result;
             }
-            if (!"email".equals(stringValue(config.get("deliveryChannel")))) {
-                throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_DELIVERY_CHANNEL_INVALID", "系统内置交付当前只支持邮箱通道");
+            String deliveryChannel = firstNonBlank(stringValue(config.get("deliveryChannel")), "email");
+            if ("document".equals(deliveryChannel)) {
+                Map<String, Object> result = new HashMap<>();
+                result.put("sourceType", "builtin");
+                result.put("deliveryChannel", "document");
+                result.put("documentKind", "word");
+                result.put("defaultStyle", sanitizeDocumentStyleConfig(config.get("defaultStyle")));
+                result.put("allowNodeStyleOverride", booleanValue(config.get("allowNodeStyleOverride")));
+                result.put("maxFileSizeMb", parsePositiveInt(config.get("maxFileSizeMb"), 20, 1, 200, "SYSTEM_DELIVERY_DOCUMENT_SIZE_INVALID", "Word 文档最大文件大小需在 1 到 200 MB 之间"));
+                result.put("retentionDays", parsePositiveInt(config.get("retentionDays"), 180, 1, 3650, "SYSTEM_DELIVERY_DOCUMENT_RETENTION_INVALID", "Word 文档保留天数需在 1 到 3650 之间"));
+                return result;
+            }
+            if (!"email".equals(deliveryChannel)) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_DELIVERY_CHANNEL_INVALID", "系统内置交付当前支持邮箱通道和 Word 文档通道");
             }
             String smtpHost = requireConfig(config, "smtpHost", "SMTP 主机不能为空");
             int smtpPort = parsePort(config.get("smtpPort"));
@@ -1120,6 +1149,27 @@ public class SystemManagementService {
             return port;
         } catch (NumberFormatException ex) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_DELIVERY_SMTP_PORT_INVALID", "SMTP 端口必须是 1 到 65535 之间的数字");
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> sanitizeDocumentStyleConfig(Object rawStyle) {
+        Map<String, Object> source = rawStyle instanceof Map<?, ?> map ? (Map<String, Object>) map : Map.of();
+        return com.agentum.delivery.application.DocumentDeliveryStyle.from(source).toMap();
+    }
+
+    private static int parsePositiveInt(Object value, int fallback, int min, int max, String code, String message) {
+        if (value == null || value.toString().trim().isBlank()) {
+            return fallback;
+        }
+        try {
+            int parsed = value instanceof Number number ? number.intValue() : Integer.parseInt(value.toString().trim());
+            if (parsed < min || parsed > max) {
+                throw new NumberFormatException("out of range");
+            }
+            return parsed;
+        } catch (NumberFormatException exception) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, code, message);
         }
     }
 

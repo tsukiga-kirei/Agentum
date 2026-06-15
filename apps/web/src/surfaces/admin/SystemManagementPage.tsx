@@ -10,6 +10,7 @@ import {
   Code2,
   DatabaseZap,
   Edit,
+  FileText,
   Globe,
   Hash,
   Info,
@@ -253,6 +254,20 @@ function buildCapabilityFormValues(capability: SystemCapabilityRow): Record<stri
     sseUrl: readConfigString(capability.config, "sseUrl"),
     sourceType: readConfigString(capability.config, "sourceType") || "builtin",
     deliveryChannel: readConfigString(capability.config, "deliveryChannel") || "email",
+    documentChineseFont: readNestedStyleString(capability.config, "chineseFont") || "宋体",
+    documentLatinFont: readNestedStyleString(capability.config, "latinFont") || "Times New Roman",
+    documentBodyFontSize: readNestedStyleString(capability.config, "bodyFontSize") || "12",
+    documentHeading1FontSize: readNestedStyleString(capability.config, "heading1FontSize") || "16",
+    documentHeading2FontSize: readNestedStyleString(capability.config, "heading2FontSize") || "14",
+    documentLineSpacing: readNestedStyleString(capability.config, "lineSpacing") || "1.5",
+    documentFirstLineIndentChars: readNestedStyleString(capability.config, "firstLineIndentChars") || "2",
+    documentParagraphSpacingAfter: readNestedStyleString(capability.config, "paragraphSpacingAfter") || "6",
+    documentMarginTopCm: readNestedStyleString(capability.config, "marginTopCm") || "2.54",
+    documentMarginBottomCm: readNestedStyleString(capability.config, "marginBottomCm") || "2.54",
+    documentMarginLeftCm: readNestedStyleString(capability.config, "marginLeftCm") || "3.18",
+    documentMarginRightCm: readNestedStyleString(capability.config, "marginRightCm") || "3.18",
+    documentMaxFileSizeMb: readConfigString(capability.config, "maxFileSizeMb") || "20",
+    documentRetentionDays: readConfigString(capability.config, "retentionDays") || "180",
     implementationKey: readConfigString(capability.config, "implementationKey"),
     protocol: readConfigString(capability.config, "protocol") || "http",
     endpointUrl: readConfigString(capability.config, "endpointUrl"),
@@ -266,6 +281,14 @@ function buildCapabilityFormValues(capability: SystemCapabilityRow): Record<stri
     manifestPath: readConfigString(capability.config, "manifestPath"),
     promptContent: readConfigString(capability.config, "promptContent"),
   };
+}
+
+function readNestedStyleString(config: Record<string, unknown>, key: string): string {
+  const style = config.defaultStyle;
+  if (style && typeof style === "object" && !Array.isArray(style)) {
+    return readConfigString(style as Record<string, unknown>, key);
+  }
+  return readConfigString(config, key);
 }
 
 function AdminPagination({
@@ -370,6 +393,7 @@ export function SystemManagementPage() {
   const [selectedModelProviderType, setSelectedModelProviderType] = useState("");
   const [selectedCapabilityType, setSelectedCapabilityType] = useState("mcp");
   const [selectedDeliverySourceType, setSelectedDeliverySourceType] = useState("builtin");
+  const [selectedDeliveryChannel, setSelectedDeliveryChannel] = useState("email");
   const modelRef = useRef<Record<string,string>>({});
   const capRef = useRef<Record<string,string>>({});
   const [modelFormKey, setModelFormKey] = useState(0);
@@ -650,6 +674,7 @@ export function SystemManagementPage() {
     capRef.current = capability ? buildCapabilityFormValues(capability) : { capabilityType: "mcp", transport: "sse" };
     setSelectedCapabilityType(capability?.capabilityType ?? "mcp");
     setSelectedDeliverySourceType(capability ? (readConfigString(capability.config, "sourceType") || "builtin") : "builtin");
+    setSelectedDeliveryChannel(capability ? (readConfigString(capability.config, "deliveryChannel") || "email") : "email");
     setCapFormKey((key) => key + 1);
     setCapModalOpen(true);
   };
@@ -768,24 +793,46 @@ export function SystemManagementPage() {
           return;
         }
       } else {
-        config.deliveryChannel = "email";
-        config.smtpHost = d.smtpHost?.trim() || "";
-        config.smtpPort = d.smtpPort?.trim() || "";
-        config.smtpUsername = d.smtpUsername?.trim() || "";
-        config.smtpPassword = d.smtpPassword?.trim() || "";
-        config.fromAddress = d.fromAddress?.trim() || "";
-        config.useTls = d.useTls === "true";
-        if (!config.smtpHost) {
-          messageApi.warning("请输入 SMTP 主机");
-          return;
-        }
-        if (!config.smtpPort) {
-          messageApi.warning("请输入 SMTP 端口");
-          return;
-        }
-        if (!config.fromAddress) {
-          messageApi.warning("请输入发件邮箱");
-          return;
+        const deliveryChannel = d.deliveryChannel?.trim() || selectedDeliveryChannel || "email";
+        config.deliveryChannel = deliveryChannel;
+        if (deliveryChannel === "document") {
+          config.documentKind = "word";
+          config.allowNodeStyleOverride = true;
+          config.maxFileSizeMb = d.documentMaxFileSizeMb?.trim() || "20";
+          config.retentionDays = d.documentRetentionDays?.trim() || "180";
+          config.defaultStyle = {
+            chineseFont: d.documentChineseFont?.trim() || "宋体",
+            latinFont: d.documentLatinFont?.trim() || "Times New Roman",
+            bodyFontSize: d.documentBodyFontSize?.trim() || "12",
+            heading1FontSize: d.documentHeading1FontSize?.trim() || "16",
+            heading2FontSize: d.documentHeading2FontSize?.trim() || "14",
+            lineSpacing: d.documentLineSpacing?.trim() || "1.5",
+            firstLineIndentChars: d.documentFirstLineIndentChars?.trim() || "2",
+            paragraphSpacingAfter: d.documentParagraphSpacingAfter?.trim() || "6",
+            marginTopCm: d.documentMarginTopCm?.trim() || "2.54",
+            marginBottomCm: d.documentMarginBottomCm?.trim() || "2.54",
+            marginLeftCm: d.documentMarginLeftCm?.trim() || "3.18",
+            marginRightCm: d.documentMarginRightCm?.trim() || "3.18",
+          };
+        } else {
+          config.smtpHost = d.smtpHost?.trim() || "";
+          config.smtpPort = d.smtpPort?.trim() || "";
+          config.smtpUsername = d.smtpUsername?.trim() || "";
+          config.smtpPassword = d.smtpPassword?.trim() || "";
+          config.fromAddress = d.fromAddress?.trim() || "";
+          config.useTls = d.useTls === "true";
+          if (!config.smtpHost) {
+            messageApi.warning("请输入 SMTP 主机");
+            return;
+          }
+          if (!config.smtpPort) {
+            messageApi.warning("请输入 SMTP 端口");
+            return;
+          }
+          if (!config.fromAddress) {
+            messageApi.warning("请输入发件邮箱");
+            return;
+          }
         }
       }
     } else if (capabilityType === "skill") {
@@ -1610,7 +1657,7 @@ export function SystemManagementPage() {
         rootClassName={drawerRootClassName}
       >
         <div className="sys-drawer-section sys-drawer-section-enter" key={capFormKey}>
-          <div className="sys-field"><label className="sys-field-label sys-field-label--required">能力类型</label><SysSelect icon={Boxes} placeholder="请选择能力类型" defaultValue={capRef.current.capabilityType || ""} options={capabilityTypeOptions} onChange={v=>{capRef.current.capabilityType=v;setSelectedCapabilityType(v);if(v==="delivery"&&!capRef.current.sourceType){capRef.current.sourceType="builtin";setSelectedDeliverySourceType("builtin");}}}/></div>
+          <div className="sys-field"><label className="sys-field-label sys-field-label--required">能力类型</label><SysSelect icon={Boxes} placeholder="请选择能力类型" defaultValue={capRef.current.capabilityType || ""} options={capabilityTypeOptions} onChange={v=>{capRef.current.capabilityType=v;setSelectedCapabilityType(v);if(v==="delivery"&&!capRef.current.sourceType){capRef.current.sourceType="builtin";capRef.current.deliveryChannel=capRef.current.deliveryChannel||"email";setSelectedDeliverySourceType("builtin");setSelectedDeliveryChannel(capRef.current.deliveryChannel);}}}/></div>
           <div className="sys-field-row">
             <div className="sys-field"><label className="sys-field-label sys-field-label--required">名称</label><div className="sys-field-input-wrap"><Tag size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如：文档解析器" maxLength={160} defaultValue={capRef.current.name || ""} onChange={e=>{capRef.current.name=e.target.value;}}/></div></div>
             <div className="sys-field">
@@ -1670,18 +1717,54 @@ export function SystemManagementPage() {
                 </>
               ) : (
                 <>
-                  <div className="sys-field-row">
-                    <div className="sys-field"><label className="sys-field-label sys-field-label--required">SMTP 主机</label><div className="sys-field-input-wrap"><ServerCog size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="localhost" maxLength={200} defaultValue={capRef.current.smtpHost || ""} onChange={e=>{capRef.current.smtpHost=e.target.value;}}/></div></div>
-                    <div className="sys-field"><label className="sys-field-label sys-field-label--required">SMTP 端口</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="1025" maxLength={10} defaultValue={capRef.current.smtpPort || ""} onChange={e=>{capRef.current.smtpPort=e.target.value;}}/></div></div>
+                  <div className="sys-field">
+                    <label className="sys-field-label">系统内置类型</label>
+                    <SysSelect icon={FileText} placeholder="请选择系统内置交付类型" defaultValue={capRef.current.deliveryChannel || "email"} options={[{value:"email",label:"邮件交付"},{value:"document",label:"Word 文档交付"}]} onChange={v=>{capRef.current.deliveryChannel=v;setSelectedDeliveryChannel(v);}}/>
                   </div>
-                  <div className="sys-field-row">
-                    <div className="sys-field"><label className="sys-field-label">SMTP 账号</label><div className="sys-field-input-wrap"><User size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="可选" maxLength={200} defaultValue={capRef.current.smtpUsername || ""} onChange={e=>{capRef.current.smtpUsername=e.target.value;}}/></div></div>
-                    <div className="sys-field"><label className="sys-field-label">SMTP 密码</label><div className="sys-field-input-wrap"><KeyRound size={16} className="sys-field-prefix"/><input className="sys-field-input" type="password" placeholder={capRef.current.smtpPasswordConfigured === "true" ? "已配置，留空则保持不变" : "可选"} maxLength={1000} onChange={e=>{capRef.current.smtpPassword=e.target.value;}}/></div></div>
-                  </div>
-                  <div className="sys-field-row">
-                    <div className="sys-field"><label className="sys-field-label sys-field-label--required">发件邮箱</label><div className="sys-field-input-wrap"><Mail size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="agentum@example.test" maxLength={320} defaultValue={capRef.current.fromAddress || ""} onChange={e=>{capRef.current.fromAddress=e.target.value;}}/></div></div>
-                    <div className="sys-field"><label className="sys-field-label">TLS</label><SysSelect icon={ShieldCheck} placeholder="请选择 TLS 设置" defaultValue={capRef.current.useTls || "false"} options={[{value:"false",label:"关闭"},{value:"true",label:"启用"}]} onChange={v=>{capRef.current.useTls=v;}}/></div>
-                  </div>
+                  {selectedDeliveryChannel === "document" ? (
+                    <>
+                      <div className="sys-hint"><FileText size={14}/> 默认样式用于新流程起步；具体流程仍可在交付节点里按业务模板覆盖字体、字号、缩进和行距。</div>
+                      <div className="sys-field-row">
+                        <div className="sys-field"><label className="sys-field-label">中文字体</label><div className="sys-field-input-wrap"><Type size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="宋体" maxLength={80} defaultValue={capRef.current.documentChineseFont || "宋体"} onChange={e=>{capRef.current.documentChineseFont=e.target.value;}}/></div></div>
+                        <div className="sys-field"><label className="sys-field-label">西文字体</label><div className="sys-field-input-wrap"><Type size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="Times New Roman" maxLength={80} defaultValue={capRef.current.documentLatinFont || "Times New Roman"} onChange={e=>{capRef.current.documentLatinFont=e.target.value;}}/></div></div>
+                      </div>
+                      <div className="sys-field-row">
+                        <div className="sys-field"><label className="sys-field-label">正文字号</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={8} max={48} placeholder="12" defaultValue={capRef.current.documentBodyFontSize || "12"} onChange={e=>{capRef.current.documentBodyFontSize=e.target.value;}}/></div></div>
+                        <div className="sys-field"><label className="sys-field-label">一级标题字号</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={8} max={72} placeholder="16" defaultValue={capRef.current.documentHeading1FontSize || "16"} onChange={e=>{capRef.current.documentHeading1FontSize=e.target.value;}}/></div></div>
+                      </div>
+                      <div className="sys-field-row">
+                        <div className="sys-field"><label className="sys-field-label">二级标题字号</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={8} max={72} placeholder="14" defaultValue={capRef.current.documentHeading2FontSize || "14"} onChange={e=>{capRef.current.documentHeading2FontSize=e.target.value;}}/></div></div>
+                        <div className="sys-field"><label className="sys-field-label">行距</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={1} max={3} step={0.1} placeholder="1.5" defaultValue={capRef.current.documentLineSpacing || "1.5"} onChange={e=>{capRef.current.documentLineSpacing=e.target.value;}}/></div></div>
+                      </div>
+                      <div className="sys-field-row">
+                        <div className="sys-field"><label className="sys-field-label">首行缩进字符</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={0} max={6} step={0.5} placeholder="2" defaultValue={capRef.current.documentFirstLineIndentChars || "2"} onChange={e=>{capRef.current.documentFirstLineIndentChars=e.target.value;}}/></div></div>
+                        <div className="sys-field"><label className="sys-field-label">段后间距 pt</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={0} max={72} placeholder="6" defaultValue={capRef.current.documentParagraphSpacingAfter || "6"} onChange={e=>{capRef.current.documentParagraphSpacingAfter=e.target.value;}}/></div></div>
+                      </div>
+                      <div className="sys-field-row">
+                        <div className="sys-field"><label className="sys-field-label">页边距 上/下 cm</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="2.54 / 2.54" defaultValue={`${capRef.current.documentMarginTopCm || "2.54"} / ${capRef.current.documentMarginBottomCm || "2.54"}`} onChange={e=>{const [top,bottom]=e.target.value.split("/").map(v=>v.trim());capRef.current.documentMarginTopCm=top||"2.54";capRef.current.documentMarginBottomCm=bottom||top||"2.54";}}/></div></div>
+                        <div className="sys-field"><label className="sys-field-label">页边距 左/右 cm</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="3.18 / 3.18" defaultValue={`${capRef.current.documentMarginLeftCm || "3.18"} / ${capRef.current.documentMarginRightCm || "3.18"}`} onChange={e=>{const [left,right]=e.target.value.split("/").map(v=>v.trim());capRef.current.documentMarginLeftCm=left||"3.18";capRef.current.documentMarginRightCm=right||left||"3.18";}}/></div></div>
+                      </div>
+                      <div className="sys-field-row">
+                        <div className="sys-field"><label className="sys-field-label">最大文件 MB</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={1} max={200} placeholder="20" defaultValue={capRef.current.documentMaxFileSizeMb || "20"} onChange={e=>{capRef.current.documentMaxFileSizeMb=e.target.value;}}/></div></div>
+                        <div className="sys-field"><label className="sys-field-label">保留天数</label><div className="sys-field-input-wrap"><Clock size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={1} max={3650} placeholder="180" defaultValue={capRef.current.documentRetentionDays || "180"} onChange={e=>{capRef.current.documentRetentionDays=e.target.value;}}/></div></div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="sys-field-row">
+                        <div className="sys-field"><label className="sys-field-label sys-field-label--required">SMTP 主机</label><div className="sys-field-input-wrap"><ServerCog size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="localhost" maxLength={200} defaultValue={capRef.current.smtpHost || ""} onChange={e=>{capRef.current.smtpHost=e.target.value;}}/></div></div>
+                        <div className="sys-field"><label className="sys-field-label sys-field-label--required">SMTP 端口</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="1025" maxLength={10} defaultValue={capRef.current.smtpPort || ""} onChange={e=>{capRef.current.smtpPort=e.target.value;}}/></div></div>
+                      </div>
+                      <div className="sys-field-row">
+                        <div className="sys-field"><label className="sys-field-label">SMTP 账号</label><div className="sys-field-input-wrap"><User size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="可选" maxLength={200} defaultValue={capRef.current.smtpUsername || ""} onChange={e=>{capRef.current.smtpUsername=e.target.value;}}/></div></div>
+                        <div className="sys-field"><label className="sys-field-label">SMTP 密码</label><div className="sys-field-input-wrap"><KeyRound size={16} className="sys-field-prefix"/><input className="sys-field-input" type="password" placeholder={capRef.current.smtpPasswordConfigured === "true" ? "已配置，留空则保持不变" : "可选"} maxLength={1000} onChange={e=>{capRef.current.smtpPassword=e.target.value;}}/></div></div>
+                      </div>
+                      <div className="sys-field-row">
+                        <div className="sys-field"><label className="sys-field-label sys-field-label--required">发件邮箱</label><div className="sys-field-input-wrap"><Mail size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="agentum@example.test" maxLength={320} defaultValue={capRef.current.fromAddress || ""} onChange={e=>{capRef.current.fromAddress=e.target.value;}}/></div></div>
+                        <div className="sys-field"><label className="sys-field-label">TLS</label><SysSelect icon={ShieldCheck} placeholder="请选择 TLS 设置" defaultValue={capRef.current.useTls || "false"} options={[{value:"false",label:"关闭"},{value:"true",label:"启用"}]} onChange={v=>{capRef.current.useTls=v;}}/></div>
+                      </div>
+                    </>
+                  )}
                 </>
               )}
             </>
