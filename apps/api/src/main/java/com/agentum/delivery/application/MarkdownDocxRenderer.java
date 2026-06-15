@@ -23,10 +23,10 @@ public class MarkdownDocxRenderer {
     public static final String DOCX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
     private static final Pattern TABLE_SEPARATOR_CELL = Pattern.compile(":?-{3,}:?");
 
-    public byte[] render(String markdown, String title, DocumentDeliveryStyle style) {
+    public byte[] render(String markdown, DocumentDeliveryStyle style) {
         String normalizedMarkdown = markdown == null || markdown.isBlank() ? "暂无文档内容。" : markdown;
         DocumentDeliveryStyle effectiveStyle = style == null ? DocumentDeliveryStyle.defaults() : style;
-        String documentXml = buildDocumentXml(normalizedMarkdown, title, effectiveStyle);
+        String documentXml = buildDocumentXml(normalizedMarkdown, effectiveStyle);
         try (ByteArrayOutputStream out = new ByteArrayOutputStream(); ZipOutputStream zip = new ZipOutputStream(out, StandardCharsets.UTF_8)) {
             writeEntry(zip, "[Content_Types].xml", contentTypesXml());
             writeEntry(zip, "_rels/.rels", rootRelationshipsXml());
@@ -41,10 +41,10 @@ public class MarkdownDocxRenderer {
         }
     }
 
-    private String buildDocumentXml(String markdown, String title, DocumentDeliveryStyle style) {
+    private String buildDocumentXml(String markdown, DocumentDeliveryStyle style) {
         StringBuilder body = new StringBuilder();
-        body.append(title == null || title.isBlank() ? "" : titleParagraph(title, style));
         List<String> lines = List.of(markdown.replace("\r\n", "\n").replace('\r', '\n').split("\n", -1));
+        boolean firstContentBlock = true;
         for (int index = 0; index < lines.size();) {
             String line = lines.get(index);
             String trimmed = line.trim();
@@ -64,6 +64,7 @@ public class MarkdownDocxRenderer {
                     index++;
                 }
                 body.append(codeBlock(codeLines, style));
+                firstContentBlock = false;
                 continue;
             }
             if (isTableStart(lines, index)) {
@@ -75,27 +76,42 @@ public class MarkdownDocxRenderer {
                     index++;
                 }
                 body.append(table(rows, style));
+                firstContentBlock = false;
                 continue;
             }
             int headingLevel = headingLevel(trimmed);
             if (headingLevel > 0) {
-                body.append(headingParagraph(trimmed.substring(headingLevel).trim(), headingLevel, style));
+                body.append(headingParagraph(
+                    trimmed.substring(headingLevel).trim(),
+                    headingLevel,
+                    style,
+                    firstContentBlock && style.titleCentered()
+                ));
+                firstContentBlock = false;
                 index++;
                 continue;
             }
             if (trimmed.startsWith(">")) {
-                body.append(paragraph(stripPrefix(trimmed, ">").trim(), style, ParagraphKind.QUOTE));
+                body.append(paragraph(stripPrefix(trimmed, ">").trim(), style, ParagraphKind.QUOTE, false));
+                firstContentBlock = false;
                 index++;
                 continue;
             }
             if (isBullet(trimmed)) {
-                body.append(paragraph("• " + trimmed.substring(2).trim(), style, ParagraphKind.LIST));
+                body.append(paragraph("• " + trimmed.substring(2).trim(), style, ParagraphKind.LIST, false));
+                firstContentBlock = false;
                 index++;
                 continue;
             }
             int orderedPrefixLength = orderedPrefixLength(trimmed);
             if (orderedPrefixLength > 0) {
-                body.append(paragraph(trimmed.substring(0, orderedPrefixLength).trim() + " " + trimmed.substring(orderedPrefixLength).trim(), style, ParagraphKind.LIST));
+                body.append(paragraph(
+                    trimmed.substring(0, orderedPrefixLength).trim() + " " + trimmed.substring(orderedPrefixLength).trim(),
+                    style,
+                    ParagraphKind.LIST,
+                    false
+                ));
+                firstContentBlock = false;
                 index++;
                 continue;
             }
@@ -104,7 +120,9 @@ public class MarkdownDocxRenderer {
                 paragraphLines.add(lines.get(index).trim());
                 index++;
             }
-            body.append(paragraph(String.join(" ", paragraphLines), style, ParagraphKind.BODY));
+            boolean centerFirstLine = firstContentBlock && style.titleCentered();
+            body.append(paragraph(String.join(" ", paragraphLines), style, ParagraphKind.BODY, centerFirstLine));
+            firstContentBlock = false;
         }
         body.append(sectionProperties(style));
         return """
@@ -130,7 +148,7 @@ public class MarkdownDocxRenderer {
             && !isTableStart(lines, index);
     }
 
-    private String headingParagraph(String text, int level, DocumentDeliveryStyle style) {
+    private String headingParagraph(String text, int level, DocumentDeliveryStyle style, boolean centered) {
         int safeLevel = Math.max(1, Math.min(3, level));
         int size = switch (safeLevel) {
             case 1 -> style.heading1FontSize();
@@ -139,26 +157,33 @@ public class MarkdownDocxRenderer {
         };
         StringBuilder pPr = new StringBuilder();
         pPr.append("<w:pPr><w:pStyle w:val=\"Heading").append(safeLevel).append("\"/>");
+        if (style.headingFirstLineIndent() && !centered) {
+            pPr.append("<w:ind w:firstLine=\"").append(firstLineTwips(style)).append("\"/>");
+        }
+        if (centered) {
+            pPr.append("<w:jc w:val=\"center\"/>");
+        }
         pPr.append("<w:spacing w:before=\"").append(safeLevel == 1 ? 240 : 180)
             .append("\" w:after=\"").append(safeLevel == 1 ? 160 : 120).append("\"/>");
         pPr.append("</w:pPr>");
         return "<w:p>" + pPr + runs(text, style, size, true, false) + "</w:p>";
     }
 
-    private String titleParagraph(String text, DocumentDeliveryStyle style) {
-        StringBuilder pPr = new StringBuilder();
-        pPr.append("<w:pPr><w:pStyle w:val=\"Heading1\"/>");
-        if (style.titleCentered()) {
-            pPr.append("<w:jc w:val=\"center\"/>");
-        }
-        pPr.append("<w:spacing w:before=\"240\" w:after=\"160\"/>");
-        pPr.append("</w:pPr>");
-        return "<w:p>" + pPr + runs(text, style, style.heading1FontSize(), true, false) + "</w:p>";
-    }
-
-    private String paragraph(String text, DocumentDeliveryStyle style, ParagraphKind kind) {
+    private String paragraph(String text, DocumentDeliveryStyle style, ParagraphKind kind, boolean centered) {
         String pPr = switch (kind) {
-            case BODY -> "<w:pPr><w:spacing w:after=\"" + twips(style.paragraphSpacingAfter()) + "\" w:line=\"" + lineTwips(style.lineSpacing()) + "\" w:lineRule=\"auto\"/><w:ind w:firstLine=\"" + firstLineTwips(style) + "\"/></w:pPr>";
+            case BODY -> {
+                StringBuilder builder = new StringBuilder();
+                builder.append("<w:pPr><w:spacing w:after=\"").append(twips(style.paragraphSpacingAfter()))
+                    .append("\" w:line=\"").append(lineTwips(style.lineSpacing())).append("\" w:lineRule=\"auto\"/>");
+                if (!centered) {
+                    builder.append("<w:ind w:firstLine=\"").append(firstLineTwips(style)).append("\"/>");
+                }
+                if (centered) {
+                    builder.append("<w:jc w:val=\"center\"/>");
+                }
+                builder.append("</w:pPr>");
+                yield builder.toString();
+            }
             case LIST -> "<w:pPr><w:spacing w:after=\"" + twips(style.paragraphSpacingAfter()) + "\" w:line=\"" + lineTwips(style.lineSpacing()) + "\" w:lineRule=\"auto\"/><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr>";
             case QUOTE -> "<w:pPr><w:spacing w:after=\"" + twips(style.paragraphSpacingAfter()) + "\" w:line=\"" + lineTwips(style.lineSpacing()) + "\" w:lineRule=\"auto\"/><w:ind w:left=\"480\"/></w:pPr>";
             case TABLE_CELL -> "<w:pPr><w:spacing w:after=\"0\" w:line=\"" + lineTwips(style.lineSpacing()) + "\" w:lineRule=\"auto\"/></w:pPr>";
@@ -168,7 +193,7 @@ public class MarkdownDocxRenderer {
     }
 
     private String emptyParagraph(DocumentDeliveryStyle style) {
-        return paragraph("", style, ParagraphKind.BODY);
+        return paragraph("", style, ParagraphKind.BODY, false);
     }
 
     private String codeBlock(List<String> codeLines, DocumentDeliveryStyle style) {
@@ -208,7 +233,7 @@ public class MarkdownDocxRenderer {
                     result.append("<w:shd w:fill=\"F6F8FA\"/>");
                 }
                 result.append("</w:tcPr>")
-                    .append(paragraph(cell, style, ParagraphKind.TABLE_CELL))
+                    .append(paragraph(cell, style, ParagraphKind.TABLE_CELL, false))
                     .append("</w:tc>");
             }
             result.append("</w:tr>");

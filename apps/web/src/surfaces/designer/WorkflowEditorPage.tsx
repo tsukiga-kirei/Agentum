@@ -31,6 +31,8 @@ import {
   Zap,
 } from "lucide-react";
 import { WorkbenchGlobalActions } from "../../components/workbench/SurfacePageLayout";
+import { DocumentDeliveryStyleSections } from "../../components/document/DocumentDeliveryStyleSections";
+import type { DocumentDeliveryStyleValues } from "../../constants/documentDeliveryStyleOptions";
 import { AgentumApiError, assetApi, workflowApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import type { AssetType, MyAssetRow, SystemCapabilityAssetRow } from "../../types/asset";
@@ -151,22 +153,7 @@ type WorkflowCapabilityState = {
   error: string;
 };
 
-type DocumentDeliveryStyleDraft = {
-  chineseFont: string;
-  latinFont: string;
-  bodyFontSize: string | number;
-  heading1FontSize: string | number;
-  heading2FontSize: string | number;
-  heading3FontSize: string | number;
-  lineSpacing: number;
-  firstLineIndentChars: number;
-  paragraphSpacingAfter: number;
-  marginTopCm: number;
-  marginBottomCm: number;
-  marginLeftCm: number;
-  marginRightCm: number;
-  titleCentered: boolean;
-};
+type DocumentDeliveryStyleDraft = DocumentDeliveryStyleValues;
 
 type WorkflowIcon = typeof Zap;
 
@@ -194,6 +181,7 @@ const DEFAULT_WORD_DOCUMENT_STYLE: DocumentDeliveryStyleDraft = {
   marginLeftCm: 3.18,
   marginRightCm: 3.18,
   titleCentered: false,
+  headingFirstLineIndent: false,
 };
 const DEFAULT_WORD_PREVIEW_MARKDOWN = `# 交付文档预览
 
@@ -1453,10 +1441,7 @@ function DeliveryBrickConfig({
     : "# 交付文档\n\n请在这里编写最终 Markdown 交付正文。";
   const rawFileNameTemplate = readString(config.fileNameTemplate, "交付文档-{{runNumber}}.docx");
   const fileNameTemplate = normalizeWordFileNameTemplate(rawFileNameTemplate);
-  const fileNameVariableItems = [
-    ...WORD_FILE_NAME_VARIABLES,
-    ...workflowVariables.map(variableToReferenceItem),
-  ];
+  const fileNameVariableItems = WORD_FILE_NAME_VARIABLES;
 
   useEffect(() => {
     if (rawFileNameTemplate !== fileNameTemplate) {
@@ -1529,7 +1514,6 @@ function DeliveryBrickConfig({
         capabilityId: effectiveSelectedCapabilityId,
         markdown,
         fileName,
-        title: removeDocxSuffix(fileName),
         style: documentStyle,
       };
       const file = await workflowApi.previewWordDocument(user.tenantId, token, request);
@@ -1591,31 +1575,10 @@ function DeliveryBrickConfig({
             />
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-2">
-            <TextInputField label="中文字体" icon={Type} value={String(documentStyle.chineseFont)} placeholder="宋体" onChange={(value) => updateDocumentStyle("chineseFont", value)} />
-            <TextInputField label="西文字体" icon={Type} value={String(documentStyle.latinFont)} placeholder="Times New Roman" onChange={(value) => updateDocumentStyle("latinFont", value)} />
-            <TextInputField label="正文字号" icon={Hash} value={String(documentStyle.bodyFontSize)} placeholder="小四 / 12" onChange={(value) => updateDocumentStyle("bodyFontSize", value)} />
-            <TextInputField label="一级标题字号" icon={Hash} value={String(documentStyle.heading1FontSize)} placeholder="三号 / 16" onChange={(value) => updateDocumentStyle("heading1FontSize", value)} />
-            <TextInputField label="二级标题字号" icon={Hash} value={String(documentStyle.heading2FontSize)} placeholder="四号 / 14" onChange={(value) => updateDocumentStyle("heading2FontSize", value)} />
-            <TextInputField label="三级标题字号" icon={Hash} value={String(documentStyle.heading3FontSize)} placeholder="小四 / 12" onChange={(value) => updateDocumentStyle("heading3FontSize", value)} />
-            <NumberInputField label="行距" value={documentStyle.lineSpacing} min={1} max={3} step={0.1} onChange={(value) => updateDocumentStyle("lineSpacing", value)} />
-            <NumberInputField label="首行缩进字符" value={documentStyle.firstLineIndentChars} min={0} max={6} step={0.5} onChange={(value) => updateDocumentStyle("firstLineIndentChars", value)} />
-            <NumberInputField label="段后间距 pt" value={documentStyle.paragraphSpacingAfter} min={0} max={72} step={1} onChange={(value) => updateDocumentStyle("paragraphSpacingAfter", value)} />
-            <SelectLikeField
-              label="首行标题对齐"
-              icon={FileText}
-              value={String(Boolean(documentStyle.titleCentered))}
-              options={[
-                { value: "false", label: "默认左对齐" },
-                { value: "true", label: "居中" },
-              ]}
-              onChange={(value) => updateDocumentStyle("titleCentered", value === "true")}
-            />
-            <NumberInputField label="上边距 cm" value={documentStyle.marginTopCm} min={0.5} max={6} step={0.1} onChange={(value) => updateDocumentStyle("marginTopCm", value)} />
-            <NumberInputField label="下边距 cm" value={documentStyle.marginBottomCm} min={0.5} max={6} step={0.1} onChange={(value) => updateDocumentStyle("marginBottomCm", value)} />
-            <NumberInputField label="左边距 cm" value={documentStyle.marginLeftCm} min={0.5} max={6} step={0.1} onChange={(value) => updateDocumentStyle("marginLeftCm", value)} />
-            <NumberInputField label="右边距 cm" value={documentStyle.marginRightCm} min={0.5} max={6} step={0.1} onChange={(value) => updateDocumentStyle("marginRightCm", value)} />
-          </div>
+          <DocumentDeliveryStyleSections
+            style={documentStyle}
+            onFieldChange={(key, value) => updateDocumentStyle(key, value)}
+          />
 
           <PromptEditor
             label="交付正文模板"
@@ -3170,6 +3133,7 @@ function readDocumentDeliveryStyle(rawStyle: unknown, capabilityConfig?: Record<
     marginLeftCm: readNumberLike(merged.marginLeftCm, Number(DEFAULT_WORD_DOCUMENT_STYLE.marginLeftCm)),
     marginRightCm: readNumberLike(merged.marginRightCm, Number(DEFAULT_WORD_DOCUMENT_STYLE.marginRightCm)),
     titleCentered: readBooleanLike(merged.titleCentered, Boolean(DEFAULT_WORD_DOCUMENT_STYLE.titleCentered)),
+    headingFirstLineIndent: readBooleanLike(merged.headingFirstLineIndent, Boolean(DEFAULT_WORD_DOCUMENT_STYLE.headingFirstLineIndent)),
   };
 }
 
@@ -3267,10 +3231,6 @@ function renderDesignTemplate(template: string, variables: WorkflowVariable[]) {
 function ensureDocxFileName(value: string) {
   const sanitized = value.trim().replace(/[\\/:*?"<>|]/g, "_") || "交付文档";
   return sanitized.toLowerCase().endsWith(".docx") ? sanitized : `${sanitized}.docx`;
-}
-
-function removeDocxSuffix(value: string) {
-  return value.toLowerCase().endsWith(".docx") ? value.slice(0, -5) : value;
 }
 
 function downloadFile(file: FileDownloadResponse) {

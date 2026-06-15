@@ -55,8 +55,7 @@ public class DocumentDeliveryService {
         validateDocumentCapabilityForDesigner(tenantId, operatorUserId, command.capabilityId());
         DocumentDeliveryStyle style = DocumentDeliveryStyle.from(command.style());
         String fileName = DocumentDeliveryStorage.sanitizeFileName(firstNonBlank(command.fileName(), "Word文档交付预览.docx"));
-        String title = firstNonBlank(command.title(), removeDocxSuffix(fileName));
-        byte[] bytes = renderer.render(command.markdown(), title, style);
+        byte[] bytes = renderer.render(command.markdown(), style);
         log.info(
             "Word 文档交付预览已生成 tenantId={} userId={} fileName={} sizeBytes={} requestId={}",
             tenantId,
@@ -86,8 +85,7 @@ public class DocumentDeliveryService {
         Map<String, Object> templateVariables = enrichTemplateVariables(variables);
         String markdown = resolveMarkdown(config, templateVariables);
         String fileName = renderTextTemplate(firstNonBlank(stringValue(config.get("fileNameTemplate")), "交付文档-{{runNumber}}.docx"), templateVariables);
-        String title = firstNonBlank(stringValue(config.get("title")), stringValue(config.get("subject")), removeDocxSuffix(fileName));
-        byte[] bytes = renderer.render(markdown, title, style);
+        byte[] bytes = renderer.render(markdown, style);
         enforceMaxFileSize(capability, bytes.length, tenantId, operatorUserId, recordId);
         DocumentDeliveryArtifact artifact = storage.store(tenantId, recordId, fileName, bytes);
         int retentionDays = retentionDays(capability.getConfig());
@@ -193,7 +191,8 @@ public class DocumentDeliveryService {
             "marginBottomCm",
             "marginLeftCm",
             "marginRightCm",
-            "titleCentered"
+            "titleCentered",
+            "headingFirstLineIndent"
         )) {
             if (nodeConfig != null && nodeConfig.containsKey(key)) {
                 result.put(key, nodeConfig.get(key));
@@ -315,11 +314,6 @@ public class DocumentDeliveryService {
         } catch (IllegalArgumentException exception) {
             return Optional.empty();
         }
-    }
-
-    private String removeDocxSuffix(String value) {
-        String text = firstNonBlank(value, "交付文档");
-        return text.toLowerCase().endsWith(".docx") ? text.substring(0, text.length() - 5) : text;
     }
 
     private static String firstNonBlank(String... values) {

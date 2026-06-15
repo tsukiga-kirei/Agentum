@@ -22,7 +22,8 @@ public record DocumentDeliveryStyle(
     double marginBottomCm,
     double marginLeftCm,
     double marginRightCm,
-    boolean titleCentered
+    boolean titleCentered,
+    boolean headingFirstLineIndent
 ) {
 
     public static DocumentDeliveryStyle defaults() {
@@ -40,6 +41,7 @@ public record DocumentDeliveryStyle(
             2.54,
             3.18,
             3.18,
+            false,
             false
         );
     }
@@ -61,7 +63,8 @@ public record DocumentDeliveryStyle(
             readDouble(source, "marginBottomCm", defaults.marginBottomCm(), 0.5, 6.0),
             readDouble(source, "marginLeftCm", defaults.marginLeftCm(), 0.5, 6.0),
             readDouble(source, "marginRightCm", defaults.marginRightCm(), 0.5, 6.0),
-            readBoolean(source, "titleCentered", defaults.titleCentered())
+            readBoolean(source, "titleCentered", defaults.titleCentered()),
+            readBoolean(source, "headingFirstLineIndent", defaults.headingFirstLineIndent())
         );
     }
 
@@ -81,6 +84,7 @@ public record DocumentDeliveryStyle(
         result.put("marginLeftCm", marginLeftCm);
         result.put("marginRightCm", marginRightCm);
         result.put("titleCentered", titleCentered);
+        result.put("headingFirstLineIndent", headingFirstLineIndent);
         return result;
     }
 

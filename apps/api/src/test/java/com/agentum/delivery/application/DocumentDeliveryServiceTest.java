@@ -51,7 +51,7 @@ class DocumentDeliveryServiceTest {
     @Test
     void shouldRenderMarkdownTemplateAsFinalDocumentBody() {
         SystemCapabilityEntity capability = wordCapability(Map.of("retentionDays", 7));
-        when(renderer.render(any(), any(), any())).thenReturn(new byte[] {1, 2, 3});
+        when(renderer.render(any(), any())).thenReturn(new byte[] {1, 2, 3});
         when(storage.store(eq(TENANT_ID), eq(RECORD_ID), any(), any()))
             .thenReturn(new DocumentDeliveryArtifact(
                 "交付文档-RUN-001-20260615.docx",
@@ -77,7 +77,7 @@ class DocumentDeliveryServiceTest {
 
         ArgumentCaptor<String> markdownCaptor = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<String> fileNameCaptor = ArgumentCaptor.forClass(String.class);
-        verify(renderer).render(markdownCaptor.capture(), eq("交付文档-RUN-001-20260615"), any(DocumentDeliveryStyle.class));
+        verify(renderer).render(markdownCaptor.capture(), any(DocumentDeliveryStyle.class));
         verify(storage).store(eq(TENANT_ID), eq(RECORD_ID), fileNameCaptor.capture(), any());
         assertThat(markdownCaptor.getValue()).isEqualTo("# 月报\n\n授信通过");
         assertThat(fileNameCaptor.getValue()).isEqualTo("交付文档-RUN-001-20260615.docx");
@@ -101,7 +101,7 @@ class DocumentDeliveryServiceTest {
             .isInstanceOf(ApiException.class)
             .hasMessageContaining("Word 文档交付必须配置交付正文模板");
 
-        verify(renderer, never()).render(any(), any(), any());
+        verify(renderer, never()).render(any(), any());
         verify(storage, never()).store(any(), any(), any(), any());
     }
 

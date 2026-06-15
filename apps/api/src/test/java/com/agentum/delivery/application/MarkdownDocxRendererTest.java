@@ -28,7 +28,7 @@ class MarkdownDocxRendererTest {
             | 字段 | 内容 |
             | --- | --- |
             | 结论 | 通过 |
-            """, "交付文档", DocumentDeliveryStyle.defaults());
+            """, DocumentDeliveryStyle.defaults());
 
         Map<String, String> entries = unzip(bytes);
 
@@ -40,7 +40,6 @@ class MarkdownDocxRendererTest {
             "word/settings.xml"
         );
         assertThat(entries.get("word/document.xml"))
-            .contains("交付文档")
             .contains("风险摘要")
             .contains("正文内容包含")
             .contains("第一项")
@@ -59,7 +58,7 @@ class MarkdownDocxRendererTest {
             "titleCentered", true
         ));
 
-        byte[] bytes = renderer.render("正文", "居中标题", style);
+        byte[] bytes = renderer.render("居中标题\n\n正文", style);
 
         Map<String, String> entries = unzip(bytes);
         assertThat(style.bodyFontSize()).isEqualTo(12);
@@ -71,6 +70,22 @@ class MarkdownDocxRendererTest {
         assertThat(entries.get("word/styles.xml"))
             .contains("<w:sz w:val=\"24\"/>")
             .contains("<w:sz w:val=\"28\"/>");
+    }
+
+    @Test
+    void shouldApplyFirstLineIndentToHeadingsWhenEnabled() throws IOException {
+        DocumentDeliveryStyle style = DocumentDeliveryStyle.from(Map.of(
+            "bodyFontSize", 12,
+            "firstLineIndentChars", 2,
+            "headingFirstLineIndent", true
+        ));
+
+        byte[] bytes = renderer.render("# 一级标题\n\n正文", style);
+
+        Map<String, String> entries = unzip(bytes);
+        assertThat(entries.get("word/document.xml"))
+            .contains("一级标题")
+            .contains("<w:ind w:firstLine=\"480\"/>");
     }
 
     private static Map<String, String> unzip(byte[] bytes) throws IOException {

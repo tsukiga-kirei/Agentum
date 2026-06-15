@@ -32,6 +32,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { Empty, Segmented, Spin, message, Drawer, Pagination } from "antd";
 import { SurfacePageLayout } from "../../components/workbench/SurfacePageLayout";
+import { DocumentDeliveryStyleAdminSections } from "../../components/document/DocumentDeliveryStyleAdminSections";
 import { paths } from "../../routes/paths";
 import { AgentumApiError, organizationApi, systemApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
@@ -268,6 +269,7 @@ function buildCapabilityFormValues(capability: SystemCapabilityRow): Record<stri
     documentMarginLeftCm: readNestedStyleString(capability.config, "marginLeftCm") || "3.18",
     documentMarginRightCm: readNestedStyleString(capability.config, "marginRightCm") || "3.18",
     documentTitleCentered: readNestedStyleString(capability.config, "titleCentered") || "false",
+    documentHeadingFirstLineIndent: readNestedStyleString(capability.config, "headingFirstLineIndent") || "false",
     documentMaxFileSizeMb: readConfigString(capability.config, "maxFileSizeMb") || "20",
     documentRetentionDays: readConfigString(capability.config, "retentionDays") || "180",
     implementationKey: readConfigString(capability.config, "implementationKey"),
@@ -817,6 +819,7 @@ export function SystemManagementPage() {
             marginLeftCm: d.documentMarginLeftCm?.trim() || "3.18",
             marginRightCm: d.documentMarginRightCm?.trim() || "3.18",
             titleCentered: d.documentTitleCentered === "true",
+            headingFirstLineIndent: d.documentHeadingFirstLineIndent === "true",
           };
         } else {
           config.smtpHost = d.smtpHost?.trim() || "";
@@ -1728,33 +1731,24 @@ export function SystemManagementPage() {
                   {selectedDeliveryChannel === "document" ? (
                     <>
                       <div className="sys-hint"><FileText size={14}/> 默认样式用于新流程起步；具体流程仍可在交付节点里按业务模板覆盖字体、字号、缩进和行距。</div>
-                      <div className="sys-field-row">
-                        <div className="sys-field"><label className="sys-field-label">中文字体</label><div className="sys-field-input-wrap"><Type size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="宋体" maxLength={80} defaultValue={capRef.current.documentChineseFont || "宋体"} onChange={e=>{capRef.current.documentChineseFont=e.target.value;}}/></div></div>
-                        <div className="sys-field"><label className="sys-field-label">西文字体</label><div className="sys-field-input-wrap"><Type size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="Times New Roman" maxLength={80} defaultValue={capRef.current.documentLatinFont || "Times New Roman"} onChange={e=>{capRef.current.documentLatinFont=e.target.value;}}/></div></div>
-                      </div>
-                      <div className="sys-field-row">
-                        <div className="sys-field"><label className="sys-field-label">正文字号</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="小四 / 12" defaultValue={capRef.current.documentBodyFontSize || "12"} onChange={e=>{capRef.current.documentBodyFontSize=e.target.value;}}/></div></div>
-                        <div className="sys-field"><label className="sys-field-label">一级标题字号</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="三号 / 16" defaultValue={capRef.current.documentHeading1FontSize || "16"} onChange={e=>{capRef.current.documentHeading1FontSize=e.target.value;}}/></div></div>
-                      </div>
-                      <div className="sys-field-row">
-                        <div className="sys-field"><label className="sys-field-label">二级标题字号</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="四号 / 14" defaultValue={capRef.current.documentHeading2FontSize || "14"} onChange={e=>{capRef.current.documentHeading2FontSize=e.target.value;}}/></div></div>
-                        <div className="sys-field"><label className="sys-field-label">三级标题字号</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="小四 / 13" defaultValue={capRef.current.documentHeading3FontSize || "13"} onChange={e=>{capRef.current.documentHeading3FontSize=e.target.value;}}/></div></div>
-                      </div>
-                      <div className="sys-field-row">
-                        <div className="sys-field"><label className="sys-field-label">行距</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={1} max={3} step={0.1} placeholder="1.5" defaultValue={capRef.current.documentLineSpacing || "1.5"} onChange={e=>{capRef.current.documentLineSpacing=e.target.value;}}/></div></div>
-                        <div className="sys-field"><label className="sys-field-label">首行缩进字符</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={0} max={6} step={0.5} placeholder="2" defaultValue={capRef.current.documentFirstLineIndentChars || "2"} onChange={e=>{capRef.current.documentFirstLineIndentChars=e.target.value;}}/></div></div>
-                      </div>
-                      <div className="sys-field-row">
-                        <div className="sys-field"><label className="sys-field-label">段后间距 pt</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={0} max={72} placeholder="6" defaultValue={capRef.current.documentParagraphSpacingAfter || "6"} onChange={e=>{capRef.current.documentParagraphSpacingAfter=e.target.value;}}/></div></div>
-                        <div className="sys-field">
-                          <label className="sys-field-label">首行标题对齐</label>
-                          <SysSelect icon={FileText} placeholder="请选择首行标题对齐方式" defaultValue={capRef.current.documentTitleCentered || "false"} options={[{value:"false",label:"默认左对齐"},{value:"true",label:"居中"}]} onChange={v=>{capRef.current.documentTitleCentered=v;}}/>
-                        </div>
-                      </div>
-                      <div className="sys-field-row">
-                        <div className="sys-field"><label className="sys-field-label">页边距 上/下 cm</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="2.54 / 2.54" defaultValue={`${capRef.current.documentMarginTopCm || "2.54"} / ${capRef.current.documentMarginBottomCm || "2.54"}`} onChange={e=>{const [top,bottom]=e.target.value.split("/").map(v=>v.trim());capRef.current.documentMarginTopCm=top||"2.54";capRef.current.documentMarginBottomCm=bottom||top||"2.54";}}/></div></div>
-                        <div className="sys-field"><label className="sys-field-label">页边距 左/右 cm</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="3.18 / 3.18" defaultValue={`${capRef.current.documentMarginLeftCm || "3.18"} / ${capRef.current.documentMarginRightCm || "3.18"}`} onChange={e=>{const [left,right]=e.target.value.split("/").map(v=>v.trim());capRef.current.documentMarginLeftCm=left||"3.18";capRef.current.documentMarginRightCm=right||left||"3.18";}}/></div></div>
-                      </div>
+                      <DocumentDeliveryStyleAdminSections
+                        values={capRef.current}
+                        onChange={(key, value) => {
+                          capRef.current[key] = value;
+                        }}
+                        SelectField={({ label, icon, defaultValue, placeholder, options, onChange }) => (
+                          <div className="sys-field">
+                            <label className="sys-field-label">{label}</label>
+                            <SysSelect
+                              icon={icon}
+                              placeholder={placeholder}
+                              defaultValue={defaultValue}
+                              options={options}
+                              onChange={onChange}
+                            />
+                          </div>
+                        )}
+                      />
                       <div className="sys-field-row">
                         <div className="sys-field"><label className="sys-field-label">最大文件 MB</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={1} max={200} placeholder="20" defaultValue={capRef.current.documentMaxFileSizeMb || "20"} onChange={e=>{capRef.current.documentMaxFileSizeMb=e.target.value;}}/></div><div className="sys-field-hint">运行时生成 docx 后会按此大小拦截，超过限制则交付失败。</div></div>
                         <div className="sys-field"><label className="sys-field-label">保留天数</label><div className="sys-field-input-wrap"><Clock size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={1} max={3650} placeholder="180" defaultValue={capRef.current.documentRetentionDays || "180"} onChange={e=>{capRef.current.documentRetentionDays=e.target.value;}}/></div><div className="sys-field-hint">运行结果会写入过期时间，后续对象清理任务按该值删除文档。</div></div>
