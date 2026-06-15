@@ -1423,6 +1423,8 @@ function DeliveryBrickConfig({
   const user = useAuthStore((s) => s.user);
   const { message: messageApi } = App.useApp();
   const config = node.data.rawConfig ?? {};
+  const deliveryMode = readString(config.deliveryMode, "direct");
+  const isDirectDelivery = deliveryMode === "direct";
   const deliveryAssets = filterCapabilities(capabilityState.capabilities, "delivery");
   const wordDeliveryAssets = deliveryAssets.filter((option) => isWordDocumentDeliveryCapability(option));
   const defaultWordDeliveryCapability = wordDeliveryAssets[0];
@@ -1431,12 +1433,17 @@ function DeliveryBrickConfig({
   const effectiveSelectedCapabilityId = selectedCapabilityId || defaultWordDeliveryCapability?.id || "";
   const selectedDeliveryCapability = deliveryAssets.find((option) => option.id === selectedCapabilityId)
     ?? deliveryAssets.find((option) => option.id === effectiveSelectedCapabilityId);
-  const isWordDelivery = isWordDocumentDeliveryCapability(selectedDeliveryCapability)
+  const isWordDelivery = !isDirectDelivery && (
+    isWordDocumentDeliveryCapability(selectedDeliveryCapability)
     || readString(config.deliveryType, "") === "word_document"
-    || readString(config.documentKind, "") === "word";
+    || readString(config.documentKind, "") === "word"
+  );
   const documentStyle = readDocumentDeliveryStyle(config.documentStyle, selectedDeliveryCapability?.config);
   const [exporting, setExporting] = useState(false);
   const defaultMarkdownVariable = workflowVariables.find((variable) => variable.deliverable)?.name ?? workflowVariables[workflowVariables.length - 1]?.name ?? "";
+  const defaultDirectTemplate = defaultMarkdownVariable
+    ? `# 交付结果\n\n{{${defaultMarkdownVariable}}}`
+    : "# 交付结果\n\n请在这里编写最终交付内容。";
   const defaultMarkdownTemplate = defaultMarkdownVariable
     ? `# 交付文档\n\n{{${defaultMarkdownVariable}}}`
     : "# 交付文档\n\n请在这里编写最终 Markdown 交付正文。";
@@ -1451,6 +1458,9 @@ function DeliveryBrickConfig({
   }, [rawFileNameTemplate, fileNameTemplate]);
 
   useEffect(() => {
+    if (isDirectDelivery) {
+      return;
+    }
     if (!rawSelectedCapabilityId && defaultWordDeliveryCapability) {
       onUpdateConfig({
         deliveryMode: "capability",
@@ -1463,7 +1473,40 @@ function DeliveryBrickConfig({
         previewMarkdown: readString(config.previewMarkdown, DEFAULT_WORD_PREVIEW_MARKDOWN),
       });
     }
-  }, [rawSelectedCapabilityId, defaultWordDeliveryCapability?.id]);
+  }, [isDirectDelivery, rawSelectedCapabilityId, defaultWordDeliveryCapability?.id]);
+
+  function handleDeliveryModeChange(value: string) {
+    if (value === "direct") {
+      onUpdateConfig({
+        deliveryMode: "direct",
+        deliveryType: "direct",
+        deliveryCapabilityId: "none",
+        documentKind: "",
+        deliveryContent: readString(config.deliveryContent, defaultDirectTemplate),
+      });
+      return;
+    }
+    const capability = defaultWordDeliveryCapability ?? deliveryAssets[0];
+    if (capability && isWordDocumentDeliveryCapability(capability)) {
+      onUpdateConfig({
+        deliveryMode: "capability",
+        deliveryCapabilityId: capability.id,
+        deliveryType: "word_document",
+        documentKind: "word",
+        fileNameTemplate: readString(config.fileNameTemplate, "交付文档-{{runNumber}}.docx"),
+        markdownContent: readString(config.markdownContent, defaultMarkdownTemplate),
+        documentStyle: readDocumentDeliveryStyle(config.documentStyle, capability.config),
+        previewMarkdown: readString(config.previewMarkdown, DEFAULT_WORD_PREVIEW_MARKDOWN),
+      });
+      return;
+    }
+    onUpdateConfig({
+      deliveryMode: "capability",
+      deliveryCapabilityId: capability?.id ?? "",
+      deliveryType: capability ? readString(capability.config?.deliveryChannel, readString(capability.config?.sourceType, "")) : "",
+      documentKind: "",
+    });
+  }
 
   function handleDeliveryCapabilityChange(value: string) {
     const capability = deliveryAssets.find((option) => option.id === value);
@@ -1540,21 +1583,50 @@ function DeliveryBrickConfig({
   return (
     <PanelGroup title="交付配置" icon={PackageCheck} className="xl:col-span-2">
       <CapabilityStateBanner state={capabilityState} />
-      <CapabilitySelectField
-        label="交付能力"
+      <SelectLikeField
+        label="交付方式"
         icon={PackageCheck}
-        value={effectiveSelectedCapabilityId}
-        options={deliveryAssets}
-        placeholder="请选择 Word 文档交付能力"
-        onChange={handleDeliveryCapabilityChange}
+        value={deliveryMode}
+        options={[
+          { value: "direct", label: "直接交付（节点内配置，无需分配能力）" },
+          { value: "capability", label: "能力交付（Word / 邮件等系统能力）" },
+        ]}
+        onChange={handleDeliveryModeChange}
       />
-      {!effectiveSelectedCapabilityId ? (
-        <p className="workflow-capability-state workflow-capability-state--warning">
-          当前主体还没有可用的交付能力。请先由系统管理员开放 Word 文档交付，再由租户管理员分配给当前用户、部门或角色。
-        </p>
-      ) : null}
 
-      {isWordDelivery ? (
+      {isDirectDelivery ? (
+        <div className="mt-4 space-y-4">
+          <div className="rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-4">
+            <h4 className="text-sm font-semibold text-[var(--color-text-primary)]">直接交付</h4>
+            <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
+              运行时将模板与上游变量拼接为最终交付内容，用户在交付节点核对后可复制，无需系统管理员分配交付能力。
+            </p>
+          </div>
+          <PromptEditor
+            label="交付内容模板"
+            value={readString(config.deliveryContent, defaultDirectTemplate)}
+            availableVariables={workflowVariables}
+            onChange={(value) => onUpdateConfig({ deliveryContent: value })}
+            placeholder="支持 Markdown，可用 {{输出内容标识}} 引用之前步骤内容"
+          />
+        </div>
+      ) : (
+        <>
+          <CapabilitySelectField
+            label="交付能力"
+            icon={PackageCheck}
+            value={effectiveSelectedCapabilityId}
+            options={deliveryAssets}
+            placeholder="请选择交付能力"
+            onChange={handleDeliveryCapabilityChange}
+          />
+          {!effectiveSelectedCapabilityId ? (
+            <p className="workflow-capability-state workflow-capability-state--warning">
+              当前主体还没有可用的交付能力。请先由系统管理员开放对应能力，再由租户管理员分配给当前用户、部门或角色。
+            </p>
+          ) : null}
+
+          {isWordDelivery ? (
         <div className="mt-4 space-y-4">
           <div className="rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-4">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
@@ -1611,6 +1683,8 @@ function DeliveryBrickConfig({
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
           当前交付节点按 Word 文档交付设计，请选择系统内置 Word 文档交付能力。
         </div>
+      )}
+        </>
       )}
     </PanelGroup>
   );

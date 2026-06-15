@@ -33,6 +33,7 @@ class DeliveryRuntimeServiceTest {
     private SystemCapabilityRepository systemCapabilityRepository;
     private TenantCapabilityGrantRepository tenantCapabilityGrantRepository;
     private DocumentDeliveryService documentDeliveryService;
+    private DeliveryContentTemplateRenderer contentTemplateRenderer;
     private DeliveryRuntimeService service;
 
     @BeforeEach
@@ -41,6 +42,7 @@ class DeliveryRuntimeServiceTest {
         systemCapabilityRepository = mock(SystemCapabilityRepository.class);
         tenantCapabilityGrantRepository = mock(TenantCapabilityGrantRepository.class);
         documentDeliveryService = mock(DocumentDeliveryService.class);
+        contentTemplateRenderer = new DeliveryContentTemplateRenderer();
         when(deliveryRecordRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         service = new DeliveryRuntimeService(
             systemCapabilityRepository,
@@ -48,8 +50,32 @@ class DeliveryRuntimeServiceTest {
             deliveryRecordRepository,
             mock(EmailDeliveryService.class),
             documentDeliveryService,
+            contentTemplateRenderer,
             Clock.fixed(NOW, ZoneOffset.UTC)
         );
+    }
+
+    @Test
+    void shouldRenderDirectDeliveryWithoutCapabilityAssignment() {
+        DeliveryRuntimeRequest request = buildRequest(Map.of(
+            "deliveryMode", "direct",
+            "deliveryType", "direct",
+            "deliveryContent", "# 月报\n\n{{risk_summary}}"
+        ), Map.of("risk_summary", "授信通过，建议继续观察。"));
+
+        DeliveryRuntimeResult result = service.execute(request);
+
+        assertThat(result.outputs())
+            .containsEntry("deliveryStatus", "success")
+            .containsEntry("summary", "# 月报  授信通过，建议继续观察。");
+        assertThat(result.outputs().get("deliveryPayload"))
+            .isInstanceOf(Map.class)
+            .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.MAP)
+            .containsEntry("body", "# 月报\n\n授信通过，建议继续观察。");
+        assertThat(result.outputs().get("deliveryResult"))
+            .isInstanceOf(Map.class)
+            .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.MAP)
+            .containsEntry("adapter", "direct");
     }
 
     @Test

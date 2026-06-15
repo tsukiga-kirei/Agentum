@@ -21,9 +21,23 @@ export function resolveDeliveryDisplayContent(deliveryStep?: RuntimePreviewStep)
       return payloadField;
     }
   }
+  const deliveryResultField = deliveryStep.outputs?.find((field) => field.label === "deliveryResult")?.value;
+  if (deliveryResultField) {
+    try {
+      const parsed = JSON.parse(deliveryResultField) as Record<string, unknown>;
+      const content = readConfigString(parsed.content);
+      if (content) {
+        return content;
+      }
+    } catch {
+      // 忽略非 JSON 输出
+    }
+  }
   const summary = deliveryStep.outputs?.find((field) => field.label === "summary")?.value;
-  if (summary) {
+  if (summary && readConfigString(deliveryStep.configSnapshot?.deliveryMode) !== "direct") {
     return summary;
   }
-  return readConfigString(deliveryStep.configSnapshot?.markdownContent) || readConfigString(deliveryStep.configSnapshot?.deliveryTarget);
+  return readConfigString(deliveryStep.configSnapshot?.deliveryContent)
+    || readConfigString(deliveryStep.configSnapshot?.markdownContent)
+    || readConfigString(deliveryStep.configSnapshot?.deliveryTarget);
 }

@@ -99,18 +99,36 @@ public class WorkflowNodeConfigValidator {
                     validateIds(tenantId, operatorUserId, extractStringList(agent, "skillIds", "skills"), "skill", "Skill", node, poolCapabilities, issues);
                 }
             } else if ("delivery".equals(nodeType)) {
-                String deliveryId = extractString(config, "deliveryCapabilityId");
-                if (deliveryId == null) {
-                    issues.add(issue("WORKFLOW_VALIDATION_DELIVERY_CAPABILITY_REQUIRED", "节点[" + node.name() + "]必须选择交付能力", node));
+                String deliveryMode = rawString(config.get("deliveryMode"));
+                if ("direct".equalsIgnoreCase(deliveryMode) || "direct".equalsIgnoreCase(rawString(config.get("deliveryType")))) {
+                    String deliveryContent = rawString(config.get("deliveryContent"));
+                    if (deliveryContent.isBlank()) {
+                        deliveryContent = rawString(config.get("deliveryTarget"));
+                    }
+                    if (deliveryContent.isBlank()) {
+                        deliveryContent = rawString(config.get("body"));
+                    }
+                    if (deliveryContent.isBlank()) {
+                        issues.add(issue(
+                            "WORKFLOW_VALIDATION_DELIVERY_DIRECT_CONTENT_REQUIRED",
+                            "节点[" + node.name() + "]必须配置直接交付内容模板",
+                            node
+                        ));
+                    }
                 } else {
-                    validateIds(tenantId, operatorUserId, List.of(deliveryId), "delivery", "交付能力", node, poolCapabilities, issues);
-                }
-                String deliveryType = rawString(config.get("deliveryType"));
-                String documentKind = rawString(config.get("documentKind"));
-                if ("word_document".equals(deliveryType) || "word".equals(documentKind)) {
-                    String markdownContent = rawString(config.get("markdownContent"));
-                    if (markdownContent.isBlank()) {
-                        issues.add(issue("WORKFLOW_VALIDATION_DELIVERY_MARKDOWN_TEMPLATE_REQUIRED", "节点[" + node.name() + "]必须配置 Word 交付正文模板", node));
+                    String deliveryId = extractString(config, "deliveryCapabilityId");
+                    if (deliveryId == null) {
+                        issues.add(issue("WORKFLOW_VALIDATION_DELIVERY_CAPABILITY_REQUIRED", "节点[" + node.name() + "]必须选择交付能力", node));
+                    } else {
+                        validateIds(tenantId, operatorUserId, List.of(deliveryId), "delivery", "交付能力", node, poolCapabilities, issues);
+                    }
+                    String deliveryType = rawString(config.get("deliveryType"));
+                    String documentKind = rawString(config.get("documentKind"));
+                    if ("word_document".equals(deliveryType) || "word".equals(documentKind)) {
+                        String markdownContent = rawString(config.get("markdownContent"));
+                        if (markdownContent.isBlank()) {
+                            issues.add(issue("WORKFLOW_VALIDATION_DELIVERY_MARKDOWN_TEMPLATE_REQUIRED", "节点[" + node.name() + "]必须配置 Word 交付正文模板", node));
+                        }
                     }
                 }
             }

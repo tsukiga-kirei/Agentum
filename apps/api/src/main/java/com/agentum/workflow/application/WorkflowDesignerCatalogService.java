@@ -135,12 +135,9 @@ public class WorkflowDesignerCatalogService {
             List.of("delivery_record"),
             Map.of(
                 "brickType", "delivery",
-                "deliveryMode", "capability",
-                "deliveryType", "word_document",
-                "documentKind", "word",
-                "fileNameTemplate", "交付文档-{{runNumber}}.docx",
-                "markdownContent", "# 交付文档\n\n{{cluster_result}}",
-                "previewMarkdown", "# 交付文档预览\n\n这是一段用于检查样式的 Markdown 样例。"
+                "deliveryMode", "direct",
+                "deliveryType", "direct",
+                "deliveryContent", "# 交付结果\n\n{{cluster_result}}"
             ),
             "待配置",
             "一次性输出",

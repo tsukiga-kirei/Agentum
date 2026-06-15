@@ -9,6 +9,8 @@ import com.agentum.system.infrastructure.SystemCapabilityRepository;
 import com.agentum.system.infrastructure.TenantCapabilityGrantRepository;
 import java.net.URI;
 import java.time.Clock;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -39,6 +41,7 @@ public class DeliveryRuntimeService {
     private final DeliveryRecordRepository deliveryRecordRepository;
     private final EmailDeliveryService emailDeliveryService;
     private final DocumentDeliveryService documentDeliveryService;
+    private final DeliveryContentTemplateRenderer contentTemplateRenderer;
     private final RestClient restClient;
     private final Clock clock;
 
@@ -48,6 +51,7 @@ public class DeliveryRuntimeService {
         DeliveryRecordRepository deliveryRecordRepository,
         EmailDeliveryService emailDeliveryService,
         DocumentDeliveryService documentDeliveryService,
+        DeliveryContentTemplateRenderer contentTemplateRenderer,
         Clock clock
     ) {
         this.systemCapabilityRepository = systemCapabilityRepository;
@@ -55,6 +59,7 @@ public class DeliveryRuntimeService {
         this.deliveryRecordRepository = deliveryRecordRepository;
         this.emailDeliveryService = emailDeliveryService;
         this.documentDeliveryService = documentDeliveryService;
+        this.contentTemplateRenderer = contentTemplateRenderer;
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(8000);
         requestFactory.setReadTimeout(30000);
@@ -66,6 +71,9 @@ public class DeliveryRuntimeService {
     }
 
     public DeliveryRuntimeResult execute(DeliveryRuntimeRequest request) {
+        if (isDirectDelivery(request.nodeConfig())) {
+            return executeDirectDelivery(request);
+        }
         SystemCapabilityEntity capability = resolveDeliveryCapability(request);
         String deliveryType = firstNonBlank(
             stringValue(request.nodeConfig().get("deliveryType")),
@@ -73,7 +81,7 @@ public class DeliveryRuntimeService {
             stringValue(capability.getConfig().get("sourceType")),
             "delivery"
         );
-        Map<String, Object> payload = buildPayload(request);
+        Map<String, Object> payload = buildPayload(request, enrichRuntimeVariables(request), null);
         String title = firstNonBlank(stringValue(request.nodeConfig().get("subject")), stringValue(request.nodeConfig().get("title")), request.run().getTitle());
         String target = firstNonBlank(stringValue(request.nodeConfig().get("deliveryTarget")), stringValue(capability.getConfig().get("endpointUrl")), "业务交付目标");
         DeliveryRecordEntity record = DeliveryRecordEntity.started(
@@ -117,6 +125,100 @@ public class DeliveryRuntimeService {
             );
             throw new ApiException(HttpStatus.BAD_GATEWAY, "DELIVERY_RUNTIME_FAILED", "交付执行失败，请检查能力配置");
         }
+    }
+
+    private DeliveryRuntimeResult executeDirectDelivery(DeliveryRuntimeRequest request) {
+        String template = resolveDirectDeliveryTemplate(request.nodeConfig());
+        if (template.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "DELIVERY_DIRECT_TEMPLATE_REQUIRED", "请配置直接交付内容模板");
+        }
+        Map<String, Object> variables = enrichRuntimeVariables(request);
+        String content = contentTemplateRenderer.render(template, variables);
+        if (content.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "DELIVERY_DIRECT_CONTENT_EMPTY", "直接交付内容渲染结果为空，请检查模板与上游变量");
+        }
+        String title = firstNonBlank(
+            stringValue(request.nodeConfig().get("subject")),
+            stringValue(request.nodeConfig().get("title")),
+            request.run().getTitle()
+        );
+        Map<String, Object> payload = buildPayload(request, variables, content);
+        DeliveryRecordEntity record = DeliveryRecordEntity.started(
+            request.run(),
+            request.nodeRun(),
+            null,
+            "direct",
+            truncate(content, 300),
+            truncate(title, 200),
+            sanitizeMap(payload),
+            request.operatorUserId(),
+            clock.instant()
+        );
+        deliveryRecordRepository.save(record);
+
+        Map<String, Object> deliveryPayload = Map.of(
+            "body", content,
+            "deliveryTarget", content
+        );
+        Map<String, Object> result = Map.of(
+            "adapter", "direct",
+            "content", content
+        );
+        record.succeed(result, clock.instant());
+        deliveryRecordRepository.save(record);
+        log.info(
+            "直接交付已生成 tenantId={} runId={} nodeRunId={} recordId={} contentLength={} requestId={}",
+            request.run().getTenantId(),
+            request.run().getId(),
+            request.nodeRun().getId(),
+            record.getId(),
+            content.length(),
+            RequestIds.current()
+        );
+        return new DeliveryRuntimeResult(Map.of(
+            "deliveryRecordId", record.getId().toString(),
+            "deliveryStatus", "success",
+            "deliveryResult", result,
+            "deliveryPayload", deliveryPayload,
+            "summary", directDeliverySummary(content)
+        ));
+    }
+
+    private boolean isDirectDelivery(Map<String, Object> nodeConfig) {
+        Map<String, Object> config = nodeConfig == null ? Map.of() : nodeConfig;
+        return "direct".equalsIgnoreCase(stringValue(config.get("deliveryMode")))
+            || "direct".equalsIgnoreCase(stringValue(config.get("deliveryType")));
+    }
+
+    private String resolveDirectDeliveryTemplate(Map<String, Object> nodeConfig) {
+        Map<String, Object> config = nodeConfig == null ? Map.of() : nodeConfig;
+        return firstNonBlank(
+            stringValue(config.get("deliveryContent")),
+            stringValue(config.get("deliveryTarget")),
+            stringValue(config.get("body")),
+            stringValue(config.get("markdownContent"))
+        );
+    }
+
+    private String directDeliverySummary(String content) {
+        String normalized = content == null ? "" : content.replace('\r', ' ').replace('\n', ' ').trim();
+        if (normalized.isBlank()) {
+            return "直接交付内容已生成";
+        }
+        return normalized.length() > 120 ? normalized.substring(0, 120) + "…" : normalized;
+    }
+
+    private Map<String, Object> enrichRuntimeVariables(DeliveryRuntimeRequest request) {
+        Map<String, Object> result = new LinkedHashMap<>(request.variables() == null ? Map.of() : request.variables());
+        LocalDate today = LocalDate.now(clock);
+        result.putIfAbsent("date", today.format(DateTimeFormatter.ISO_LOCAL_DATE));
+        result.putIfAbsent("dateCompact", today.format(DateTimeFormatter.BASIC_ISO_DATE));
+        result.putIfAbsent("year", String.valueOf(today.getYear()));
+        result.putIfAbsent("month", "%02d".formatted(today.getMonthValue()));
+        result.putIfAbsent("day", "%02d".formatted(today.getDayOfMonth()));
+        result.putIfAbsent("runNumber", request.run().getRunNumber());
+        result.putIfAbsent("runId", request.run().getId().toString());
+        return result;
     }
 
     private Map<String, Object> dispatchCapability(
@@ -219,23 +321,18 @@ public class DeliveryRuntimeService {
         return capability;
     }
 
-    private Map<String, Object> buildPayload(DeliveryRuntimeRequest request) {
-        Map<String, Object> payload = new LinkedHashMap<>(request.variables());
-        String deliveryTarget = renderString(firstNonBlank(stringValue(request.nodeConfig().get("deliveryTarget")), "请查看上游节点输出。"), request.variables());
+    private Map<String, Object> buildPayload(DeliveryRuntimeRequest request, Map<String, Object> variables, String renderedContent) {
+        Map<String, Object> payload = new LinkedHashMap<>(variables);
+        String template = resolveDirectDeliveryTemplate(request.nodeConfig());
+        String deliveryTarget = renderedContent == null
+            ? contentTemplateRenderer.render(firstNonBlank(template, "请查看上游节点输出。"), variables)
+            : renderedContent;
         payload.put("deliveryTarget", deliveryTarget);
         payload.put("body", firstNonBlank(stringValue(request.nodeConfig().get("body")), deliveryTarget));
         payload.put("runId", request.run().getId().toString());
         payload.put("runNumber", request.run().getRunNumber());
         payload.put("nodeRunId", request.nodeRun().getId().toString());
         return payload;
-    }
-
-    private String renderString(String value, Map<String, Object> variables) {
-        String result = value == null ? "" : value;
-        for (Map.Entry<String, Object> entry : variables.entrySet()) {
-            result = result.replace("{{" + entry.getKey() + "}}", entry.getValue() == null ? "" : entry.getValue().toString());
-        }
-        return result;
     }
 
     private List<String> readRecipients(Map<String, Object> config, String... keys) {
