@@ -467,6 +467,19 @@ export function describeDeleteNodeVariableImpact(
   );
 }
 
+function collectUnresolvedTemplateVariableNames(
+  node: ValidatableWorkflowNode,
+  orderedNodes: ValidatableWorkflowNode[],
+): Set<string> {
+  const nodeIndex = orderedNodes.findIndex((item) => item.id === node.id);
+  if (nodeIndex < 0) {
+    return new Set();
+  }
+  const upstream = collectUpstreamOutputVariables(orderedNodes, nodeIndex);
+  const brickType = inferBrickType(node);
+  return new Set(findUnresolvedTemplateVariables(node.data.rawConfig, brickType, upstream));
+}
+
 export function describeMoveNodeVariableImpact(
   visibleNodes: ValidatableWorkflowNode[],
   nodeId: string,
@@ -482,20 +495,11 @@ export function describeMoveNodeVariableImpact(
   const [movingNode] = reordered.splice(currentIndex, 1);
   reordered.splice(nextIndex, 0, movingNode);
 
-  const beforeMap = buildWorkflowNodeValidationMap(visibleNodes);
-  const afterMap = buildWorkflowNodeValidationMap(reordered);
-
   const impacts: VariableImpact[] = [];
   reordered.forEach((node) => {
-    const beforeIssues = beforeMap.get(node.id) ?? [];
-    const afterIssues = afterMap.get(node.id) ?? [];
-    const beforeUnresolved = beforeIssues
-      .filter((item) => item.code === "WORKFLOW_NODE_TEMPLATE_VARIABLE_UNRESOLVED")
-      .flatMap((item) => item.message.match(/：(.+)$/)?.[1]?.split("、") ?? []);
-    const afterUnresolved = afterIssues
-      .filter((item) => item.code === "WORKFLOW_NODE_TEMPLATE_VARIABLE_UNRESOLVED")
-      .flatMap((item) => item.message.match(/：(.+)$/)?.[1]?.split("、") ?? []);
-    const newlyBroken = afterUnresolved.filter((name) => !beforeUnresolved.includes(name));
+    const beforeUnresolved = collectUnresolvedTemplateVariableNames(node, visibleNodes);
+    const afterUnresolved = collectUnresolvedTemplateVariableNames(node, reordered);
+    const newlyBroken = [...afterUnresolved].filter((name) => !beforeUnresolved.has(name));
     if (newlyBroken.length > 0) {
       impacts.push({
         nodeId: node.id,

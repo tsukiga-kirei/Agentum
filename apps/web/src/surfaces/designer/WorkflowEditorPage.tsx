@@ -571,16 +571,14 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
       return;
     }
 
-    modalApi.confirm({
+    setImpactConfirm({
       title: "确认移动积木？",
-      content: (
-        <p className="whitespace-pre-wrap text-sm leading-6 text-[var(--color-text-secondary)]">
-          {impactMessage}
-        </p>
-      ),
-      okText: "仍要移动",
-      cancelText: "取消",
-      onOk: applyMove,
+      message: impactMessage,
+      confirmLabel: "仍要移动",
+      onConfirm: () => {
+        applyMove();
+        setImpactConfirm(null);
+      },
     });
   }
 
@@ -593,17 +591,15 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
       commitVisibleNodes(nextVisibleNodes, nextVisibleNodes[0]?.id ?? "");
     }
 
-    modalApi.confirm({
+    setImpactConfirm({
       title: "确认删除积木？",
-      content: (
-        <p className="whitespace-pre-wrap text-sm leading-6 text-[var(--color-text-secondary)]">
-          {impactMessage ? `${impactMessage}\n\n${footer}` : `确认删除这个积木？\n\n${footer}`}
-        </p>
-      ),
-      okText: impactMessage ? "仍要删除" : "确认删除",
-      cancelText: "取消",
-      okButtonProps: impactMessage ? { danger: true } : undefined,
-      onOk: applyDelete,
+      message: impactMessage ? `${impactMessage}\n\n${footer}` : `确认删除这个积木？\n\n${footer}`,
+      confirmLabel: impactMessage ? "仍要删除" : "确认删除",
+      confirmDanger: Boolean(impactMessage),
+      onConfirm: () => {
+        applyDelete();
+        setImpactConfirm(null);
+      },
     });
   }
 
@@ -800,6 +796,16 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
           onSelect={handleAddBrick}
         />
       ) : null}
+
+      <SysImpactConfirmModal
+        open={impactConfirm !== null}
+        title={impactConfirm?.title ?? ""}
+        message={impactConfirm?.message ?? ""}
+        confirmLabel={impactConfirm?.confirmLabel ?? "确认"}
+        confirmDanger={impactConfirm?.confirmDanger}
+        onCancel={() => setImpactConfirm(null)}
+        onConfirm={() => impactConfirm?.onConfirm()}
+      />
     </div>
   );
 }
