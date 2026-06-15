@@ -104,6 +104,49 @@ class WorkflowPublishValidatorTest {
             );
     }
 
+    @Test
+    void shouldRejectMultipleDeliveryNodesAndDeliveryNotAtLastStep() {
+        WorkflowDraftApi.WorkflowPublishValidationResult duplicated = validator.validate(
+            List.of(
+                node("trigger", "trigger", List.of(), List.of("starter")),
+                node("delivery_a", "delivery", List.of("starter"), List.of("delivery_a")),
+                node("delivery_b", "delivery", List.of("starter"), List.of("delivery_b"))
+            ),
+            List.of(
+                edge("e1", "trigger", "delivery_a"),
+                edge("e2", "delivery_a", "delivery_b")
+            )
+        );
+
+        assertThat(duplicated.valid()).isFalse();
+        assertThat(duplicated.issues())
+            .extracting(WorkflowDraftApi.WorkflowValidationIssue::code)
+            .contains(
+                "WORKFLOW_VALIDATION_DELIVERY_DUPLICATED",
+                "WORKFLOW_VALIDATION_DELIVERY_MUST_BE_TERMINAL"
+            );
+
+        WorkflowDraftApi.WorkflowPublishValidationResult notLast = validator.validate(
+            List.of(
+                node("trigger", "trigger", List.of(), List.of("starter")),
+                node("delivery", "delivery", List.of("starter"), List.of("delivery_record")),
+                node("analysis", "agent", List.of("delivery_record"), List.of("report"))
+            ),
+            List.of(
+                edge("e1", "trigger", "delivery"),
+                edge("e2", "delivery", "analysis")
+            )
+        );
+
+        assertThat(notLast.valid()).isFalse();
+        assertThat(notLast.issues())
+            .extracting(WorkflowDraftApi.WorkflowValidationIssue::code)
+            .contains(
+                "WORKFLOW_VALIDATION_DELIVERY_MUST_BE_LAST",
+                "WORKFLOW_VALIDATION_DELIVERY_MUST_BE_TERMINAL"
+            );
+    }
+
     private static WorkflowDraftApi.WorkflowNodeRow node(
         String nodeId,
         String nodeType,

@@ -379,6 +379,59 @@ export function validateWorkflowNode(
   return validateDeliveryNode(node, upstreamVariables);
 }
 
+export function validateWorkflowDeliveryPlacement(
+  visibleNodes: ValidatableWorkflowNode[],
+): WorkflowNodeValidationIssue[] {
+  const deliveryNodes = visibleNodes.filter((node) => inferBrickType(node) === "delivery");
+  const issues: WorkflowNodeValidationIssue[] = [];
+  if (deliveryNodes.length === 0) {
+    issues.push(issue("WORKFLOW_VALIDATION_DELIVERY_REQUIRED", "流程必须包含一个交付节点"));
+  }
+  if (deliveryNodes.length > 1) {
+    issues.push(issue("WORKFLOW_VALIDATION_DELIVERY_DUPLICATED", "流程只能包含一个交付节点"));
+  }
+  const lastNode = visibleNodes[visibleNodes.length - 1];
+  if (deliveryNodes.length > 0 && lastNode && inferBrickType(lastNode) !== "delivery") {
+    issues.push(issue("WORKFLOW_VALIDATION_DELIVERY_MUST_BE_LAST", "交付节点必须放在流程最后一步"));
+  }
+  return issues;
+}
+
+export function canAppendWorkflowBrick(
+  visibleNodes: ValidatableWorkflowNode[],
+  brickType: VisibleBrickType,
+): string | null {
+  const hasDelivery = visibleNodes.some((node) => inferBrickType(node) === "delivery");
+  if (brickType === "delivery" && hasDelivery) {
+    return "流程只能有一个交付节点";
+  }
+  if (hasDelivery) {
+    return "已存在交付节点，不能再在其后添加积木";
+  }
+  return null;
+}
+
+export function canMoveWorkflowNode(
+  visibleNodes: ValidatableWorkflowNode[],
+  nodeId: string,
+  direction: -1 | 1,
+): string | null {
+  const currentIndex = visibleNodes.findIndex((node) => node.id === nodeId);
+  const nextIndex = currentIndex + direction;
+  if (currentIndex < 0 || nextIndex < 0 || nextIndex >= visibleNodes.length) {
+    return null;
+  }
+  const movingNode = visibleNodes[currentIndex];
+  const targetNode = visibleNodes[nextIndex];
+  if (inferBrickType(movingNode) === "delivery") {
+    return "交付节点必须保持在最后一步";
+  }
+  if (direction === 1 && inferBrickType(targetNode) === "delivery") {
+    return "不能把其他积木移动到交付节点之后";
+  }
+  return null;
+}
+
 export function buildWorkflowNodeValidationMap(
   visibleNodes: ValidatableWorkflowNode[],
 ): Map<string, WorkflowNodeValidationIssue[]> {

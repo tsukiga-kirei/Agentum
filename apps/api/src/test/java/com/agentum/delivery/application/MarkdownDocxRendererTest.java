@@ -145,6 +145,29 @@ class MarkdownDocxRendererTest {
             .contains("w:line=\"440\"");
     }
 
+    @Test
+    void shouldRenderTableAcrossPageContentWidth() throws IOException {
+        DocumentDeliveryStyle style = DocumentDeliveryStyle.from(Map.of(
+            "marginLeftCm", 3.18,
+            "marginRightCm", 3.18
+        ));
+
+        byte[] bytes = renderer.render("""
+            | 资产类别 | 本月涨跌幅 | 年初至今涨跌幅 |
+            | --- | --- | --- |
+            | 沪深300 | +2.1% | +8.5% |
+            """, style);
+
+        int contentWidthTwips = 11906 - (int) Math.round(3.18 / 2.54 * 1440) * 2;
+        int columnWidthTwips = Math.max(360, contentWidthTwips / 3);
+        Map<String, String> entries = unzip(bytes);
+        assertThat(entries.get("word/document.xml"))
+            .contains("<w:tblW w:w=\"5000\" w:type=\"pct\"/>")
+            .contains("<w:tblLayout w:type=\"fixed\"/>")
+            .contains("<w:gridCol w:w=\"" + columnWidthTwips + "\"/>")
+            .contains("<w:tcW w:w=\"" + columnWidthTwips + "\" w:type=\"dxa\"/>");
+    }
+
     private static Map<String, String> unzip(byte[] bytes) throws IOException {
         Map<String, String> entries = new HashMap<>();
         try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(bytes), StandardCharsets.UTF_8)) {

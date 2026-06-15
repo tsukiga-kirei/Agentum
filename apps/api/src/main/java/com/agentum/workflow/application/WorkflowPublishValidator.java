@@ -44,6 +44,36 @@ public class WorkflowPublishValidator {
             issues.add(issue("WORKFLOW_VALIDATION_DELIVERY_REQUIRED", "工作流至少需要一个交付节点", null));
         }
 
+        List<WorkflowDraftApi.WorkflowNodeRow> deliveryNodes = nodes.stream()
+            .filter(node -> "delivery".equals(node.nodeType()))
+            .toList();
+        if (deliveryNodes.size() > 1) {
+            issues.add(issue(
+                "WORKFLOW_VALIDATION_DELIVERY_DUPLICATED",
+                "工作流只能包含一个交付节点",
+                deliveryNodes.get(1)
+            ));
+        }
+        if (!deliveryNodes.isEmpty()) {
+            WorkflowDraftApi.WorkflowNodeRow lastNode = nodes.get(nodes.size() - 1);
+            if (!"delivery".equals(lastNode.nodeType())) {
+                issues.add(issue(
+                    "WORKFLOW_VALIDATION_DELIVERY_MUST_BE_LAST",
+                    "交付节点必须放在流程最后一步",
+                    deliveryNodes.get(0)
+                ));
+            }
+            for (WorkflowDraftApi.WorkflowNodeRow deliveryNode : deliveryNodes) {
+                if (!outgoing.getOrDefault(deliveryNode.nodeId(), List.of()).isEmpty()) {
+                    issues.add(issue(
+                        "WORKFLOW_VALIDATION_DELIVERY_MUST_BE_TERMINAL",
+                        "交付节点后不能再连接其他节点",
+                        deliveryNode
+                    ));
+                }
+            }
+        }
+
         for (WorkflowDraftApi.WorkflowNodeRow node : nodes) {
             if (!"trigger".equals(node.nodeType()) && incoming.getOrDefault(node.nodeId(), List.of()).isEmpty()) {
                 issues.add(issue("WORKFLOW_VALIDATION_NODE_INCOMING_REQUIRED", "除触发节点外，每个节点都必须有上游连线", node));

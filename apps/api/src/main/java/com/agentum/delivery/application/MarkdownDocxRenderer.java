@@ -236,11 +236,18 @@ public class MarkdownDocxRenderer {
         if (rows.isEmpty()) {
             return "";
         }
+        int columnCount = rows.stream().mapToInt(List::size).max().orElse(0);
+        if (columnCount <= 0) {
+            return "";
+        }
+        int contentWidthTwips = pageContentWidthTwips(style);
+        int columnWidthTwips = Math.max(360, contentWidthTwips / columnCount);
         StringBuilder result = new StringBuilder();
         result.append("""
             <w:tbl>
               <w:tblPr>
-                <w:tblW w:w="0" w:type="auto"/>
+                <w:tblW w:w="5000" w:type="pct"/>
+                <w:tblLayout w:type="fixed"/>
                 <w:tblBorders>
                   <w:top w:val="single" w:sz="4" w:space="0" w:color="D0D7DE"/>
                   <w:left w:val="single" w:sz="4" w:space="0" w:color="D0D7DE"/>
@@ -250,11 +257,20 @@ public class MarkdownDocxRenderer {
                   <w:insideV w:val="single" w:sz="4" w:space="0" w:color="D0D7DE"/>
                 </w:tblBorders>
               </w:tblPr>
+              <w:tblGrid>
             """.stripIndent());
+        for (int columnIndex = 0; columnIndex < columnCount; columnIndex++) {
+            result.append("<w:gridCol w:w=\"").append(columnWidthTwips).append("\"/>");
+        }
+        result.append("</w:tblGrid>");
         for (int rowIndex = 0; rowIndex < rows.size(); rowIndex++) {
             result.append("<w:tr>");
-            for (String cell : rows.get(rowIndex)) {
-                result.append("<w:tc><w:tcPr><w:tcW w:w=\"0\" w:type=\"auto\"/>");
+            List<String> row = rows.get(rowIndex);
+            for (int columnIndex = 0; columnIndex < columnCount; columnIndex++) {
+                String cell = columnIndex < row.size() ? row.get(columnIndex) : "";
+                result.append("<w:tc><w:tcPr><w:tcW w:w=\"")
+                    .append(columnWidthTwips)
+                    .append("\" w:type=\"dxa\"/>");
                 if (rowIndex == 0) {
                     result.append("<w:shd w:fill=\"F6F8FA\"/>");
                 }
@@ -440,6 +456,11 @@ public class MarkdownDocxRenderer {
 
     private int cmToTwips(double cm) {
         return (int) Math.round(cm / 2.54 * 1440);
+    }
+
+    private int pageContentWidthTwips(DocumentDeliveryStyle style) {
+        int pageWidthTwips = 11906;
+        return Math.max(1440, pageWidthTwips - cmToTwips(style.marginLeftCm()) - cmToTwips(style.marginRightCm()));
     }
 
     private String xml(String text) {

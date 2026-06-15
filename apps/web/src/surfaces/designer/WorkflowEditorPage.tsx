@@ -62,12 +62,15 @@ import {
 import {
   applyValidatedConfigStatus,
   buildWorkflowNodeValidationMap,
+  canAppendWorkflowBrick,
+  canMoveWorkflowNode,
   collectRuntimeTemplateTextFields,
   collectRuntimeTemplateVariableNames,
   describeDeleteNodeVariableImpact,
   describeMoveNodeVariableImpact,
   extractTemplateVariableNames,
   summarizeValidationIssues,
+  validateWorkflowDeliveryPlacement,
   type WorkflowNodeValidationIssue,
 } from "./workflowNodeValidation";
 
@@ -450,6 +453,10 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
     () => visibleNodes.filter((node) => (nodeValidationMap.get(node.id)?.length ?? 0) > 0),
     [visibleNodes, nodeValidationMap],
   );
+  const deliveryPlacementIssues = useMemo(
+    () => validateWorkflowDeliveryPlacement(visibleNodes),
+    [visibleNodes],
+  );
   const matchedNodes = visibleNodes.filter((node) => node.data.label.includes(nodeSearchValue.trim()));
 
   useEffect(() => {
@@ -541,6 +548,11 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
       messageApi.error("流程设计模板尚未加载完成，暂时不能添加积木");
       return;
     }
+    const appendError = canAppendWorkflowBrick(visibleNodes, brickType);
+    if (appendError) {
+      messageApi.warning(appendError);
+      return;
+    }
     const template = designerCatalog.brickTemplates.find((item) => item.brickType === brickType);
     if (!template) {
       messageApi.error("当前积木模板不存在，请刷新后重试");
@@ -553,6 +565,11 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
   }
 
   function handleMoveNode(nodeId: string, direction: -1 | 1) {
+    const moveError = canMoveWorkflowNode(visibleNodes, nodeId, direction);
+    if (moveError) {
+      messageApi.warning(moveError);
+      return;
+    }
     const currentIndex = visibleNodes.findIndex((node) => node.id === nodeId);
     const nextIndex = currentIndex + direction;
     if (currentIndex < 0 || nextIndex < 0 || nextIndex >= visibleNodes.length) {
@@ -784,6 +801,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
               variables={businessVariables}
               incompleteNodes={incompleteNodes}
               nodeValidationMap={nodeValidationMap}
+              deliveryPlacementIssues={deliveryPlacementIssues}
               onSelectNode={setSelectedNodeId}
               onOpenAddBrick={() => setIsAddBrickModalOpen(true)}
             />
@@ -794,6 +812,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
       {isAddBrickModalOpen ? (
         <AddBrickModal
           templates={designerCatalog?.brickTemplates ?? []}
+          visibleNodes={visibleNodes}
           onClose={() => setIsAddBrickModalOpen(false)}
           onSelect={handleAddBrick}
         />
@@ -857,8 +876,8 @@ function WorkflowStepBuilder({
             index={index}
             validationIssues={nodeValidationMap.get(node.id) ?? []}
             selected={selectedNodeId === node.id}
-            canMoveUp={index > 0}
-            canMoveDown={index < nodes.length - 1}
+            canMoveUp={index > 0 && canMoveWorkflowNode(nodes, node.id, -1) === null}
+            canMoveDown={index < nodes.length - 1 && canMoveWorkflowNode(nodes, node.id, 1) === null}
             onSelect={() => onSelectNode(node.id)}
             onMoveUp={() => onMoveNode(node.id, -1)}
             onMoveDown={() => onMoveNode(node.id, 1)}
@@ -940,13 +959,17 @@ function WorkflowStepRow({
 
 function AddBrickModal({
   templates,
+  visibleNodes,
   onClose,
   onSelect,
 }: {
   templates: WorkflowBrickTemplate[];
+  visibleNodes: WorkflowEditorNode[];
   onClose: () => void;
   onSelect: (brickType: VisibleWorkflowBrickType) => void;
 }) {
+  const hasDelivery = visibleNodes.some((node) => getBrickType(node) === "delivery");
+
   return (
     <div className="sys-modal-mask" onClick={onClose}>
       <section className="sys-modal" style={{ maxWidth: 720 }} aria-labelledby="add-brick-title" onClick={(event) => event.stopPropagation()}>
@@ -965,26 +988,39 @@ function AddBrickModal({
               if (!definition) {
                 return null;
               }
+              const disabledReason = canAppendWorkflowBrick(visibleNodes, brickType);
               const Icon = definition.icon;
 
               return (
                 <button
                   key={brickType}
                   type="button"
+                  disabled={Boolean(disabledReason)}
                   onClick={() => onSelect(brickType)}
-                  className="flex min-h-[116px] items-start gap-3 rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-4 text-left transition hover:border-[var(--color-primary)]"
+                  className={`flex min-h-[116px] items-start gap-3 rounded-[var(--radius-lg)] border p-4 text-left transition ${
+                    disabledReason
+                      ? "cursor-not-allowed border-[var(--color-border-light)] bg-[var(--color-bg-hover)] opacity-60"
+                      : "border-[var(--color-border-light)] bg-[var(--color-bg-hover)] hover:border-[var(--color-primary)]"
+                  }`}
                 >
                   <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-md ${definition.accentClass}`}>
                     <Icon className="h-5 w-5" aria-hidden="true" />
                   </span>
                   <span className="min-w-0">
                     <span className="block text-sm font-semibold text-[var(--color-text-primary)]">{template.label}</span>
-                    <span className="mt-2 block text-sm leading-6 text-[var(--color-text-secondary)]">{template.description}</span>
+                    <span className="mt-2 block text-sm leading-6 text-[var(--color-text-secondary)]">
+                      {disabledReason ?? template.description}
+                    </span>
                   </span>
                 </button>
               );
             })}
           </div>
+          {hasDelivery ? (
+            <p className="mt-3 text-xs text-[var(--color-text-tertiary)]">
+              交付节点必须位于流程最后一步；已有交付节点时不能再追加其他积木。
+            </p>
+          ) : null}
           {templates.length === 0 ? (
             <p className="rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-light)] bg-[var(--color-bg-hover)] px-3 py-4 text-center text-sm text-[var(--color-text-tertiary)]">
               暂未加载到可添加积木模板，请稍后刷新。
@@ -1069,6 +1105,7 @@ function WorkflowOverviewPanel({
   variables,
   incompleteNodes,
   nodeValidationMap,
+  deliveryPlacementIssues,
   onSelectNode,
   onOpenAddBrick,
 }: {
@@ -1076,6 +1113,7 @@ function WorkflowOverviewPanel({
   variables: WorkflowVariable[];
   incompleteNodes: WorkflowEditorNode[];
   nodeValidationMap: Map<string, WorkflowNodeValidationIssue[]>;
+  deliveryPlacementIssues: WorkflowNodeValidationIssue[];
   onSelectNode: (nodeId: string) => void;
   onOpenAddBrick: () => void;
 }) {
@@ -1095,6 +1133,11 @@ function WorkflowOverviewPanel({
         <OverviewMetric icon={Settings2} label="待配" value={String(incompleteNodes.length)} />
       </div>
       <PanelGroup title="待配置积木" icon={AlertTriangle}>
+        {deliveryPlacementIssues.length > 0 ? (
+          <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
+            {summarizeValidationIssues(deliveryPlacementIssues)}
+          </div>
+        ) : null}
         {incompleteNodes.length === 0 ? (
           <p className="text-sm text-[var(--color-text-tertiary)]">当前没有待配置积木。</p>
         ) : (
