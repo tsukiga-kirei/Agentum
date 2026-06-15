@@ -184,6 +184,27 @@ class MarkdownDocxRendererTest {
             .contains("<w:tcW w:w=\"" + columnWidthTwips + "\" w:type=\"dxa\"/>");
     }
 
+    @Test
+    void shouldNotRenderEmptyParagraphsForSingleBlankLinesButRenderForConsecutiveBlankLines() throws IOException {
+        byte[] bytesSingle = renderer.render("第一段\n\n第二段", DocumentDeliveryStyle.defaults());
+        Map<String, String> entriesSingle = unzip(bytesSingle);
+        String docXmlSingle = entriesSingle.get("word/document.xml");
+
+        assertThat(docXmlSingle).contains("第一段").contains("第二段");
+        assertThat(docXmlSingle).doesNotContain("<w:t xml:space=\"preserve\"></w:t>");
+
+        byte[] bytesDouble = renderer.render("第一段\n\n\n第二段", DocumentDeliveryStyle.defaults());
+        Map<String, String> entriesDouble = unzip(bytesDouble);
+        String docXmlDouble = entriesDouble.get("word/document.xml");
+
+        assertThat(docXmlDouble).contains("第一段").contains("第二段");
+        assertThat(docXmlDouble).contains("<w:t xml:space=\"preserve\"></w:t>");
+
+        int firstIndex = docXmlDouble.indexOf("<w:t xml:space=\"preserve\"></w:t>");
+        int lastIndex = docXmlDouble.lastIndexOf("<w:t xml:space=\"preserve\"></w:t>");
+        assertThat(firstIndex).isEqualTo(lastIndex).isNotEqualTo(-1);
+    }
+
     private static Map<String, String> unzip(byte[] bytes) throws IOException {
         Map<String, String> entries = new HashMap<>();
         try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(bytes), StandardCharsets.UTF_8)) {

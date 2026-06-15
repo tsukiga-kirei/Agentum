@@ -45,14 +45,19 @@ public class MarkdownDocxRenderer {
         StringBuilder body = new StringBuilder();
         List<String> lines = List.of(markdown.replace("\r\n", "\n").replace('\r', '\n').split("\n", -1));
         boolean firstContentBlock = true;
+        int consecutiveBlankLines = 0;
         for (int index = 0; index < lines.size();) {
             String line = lines.get(index);
             String trimmed = line.trim();
             if (trimmed.isBlank()) {
-                body.append(emptyParagraph(style));
+                consecutiveBlankLines++;
+                if (consecutiveBlankLines > 1) {
+                    body.append(emptyParagraph(style));
+                }
                 index++;
                 continue;
             }
+            consecutiveBlankLines = 0;
             if (trimmed.startsWith("```")) {
                 List<String> codeLines = new ArrayList<>();
                 index++;
