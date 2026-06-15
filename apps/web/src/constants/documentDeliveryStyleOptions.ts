@@ -5,6 +5,16 @@ export type DocumentDeliveryStyleValues = {
   heading1FontSize: string | number;
   heading2FontSize: string | number;
   heading3FontSize: string | number;
+  heading1ChineseFont: string;
+  heading1LatinFont: string;
+  heading2ChineseFont: string;
+  heading2LatinFont: string;
+  heading3ChineseFont: string;
+  heading3LatinFont: string;
+  tableChineseFont: string;
+  tableLatinFont: string;
+  tableFontSize: string | number;
+  tableCellAlignment: string;
   lineSpacing: number;
   firstLineIndentChars: number;
   paragraphSpacingBefore: number;
@@ -19,12 +29,20 @@ export type DocumentDeliveryStyleValues = {
 
 export type SelectOption = { value: string; label: string };
 
+export const INHERIT_FONT_OPTION: SelectOption = { value: "", label: "继承正文" };
+
 export const CHINESE_FONT_OPTIONS: SelectOption[] = [
   { value: "宋体", label: "宋体" },
   { value: "黑体", label: "黑体" },
   { value: "仿宋", label: "仿宋" },
+  { value: "仿宋_GB2312", label: "仿宋_GB2312" },
   { value: "楷体", label: "楷体" },
   { value: "微软雅黑", label: "微软雅黑" },
+];
+
+export const INHERITABLE_CHINESE_FONT_OPTIONS: SelectOption[] = [
+  INHERIT_FONT_OPTION,
+  ...CHINESE_FONT_OPTIONS,
 ];
 
 export const LATIN_FONT_OPTIONS: SelectOption[] = [
@@ -34,7 +52,12 @@ export const LATIN_FONT_OPTIONS: SelectOption[] = [
   { value: "Georgia", label: "Georgia" },
 ];
 
-export const FONT_SIZE_OPTIONS: SelectOption[] = [
+export const INHERITABLE_LATIN_FONT_OPTIONS: SelectOption[] = [
+  INHERIT_FONT_OPTION,
+  ...LATIN_FONT_OPTIONS,
+];
+
+const CHINESE_FONT_SIZE_OPTIONS: SelectOption[] = [
   { value: "初号", label: "初号（42pt）" },
   { value: "小初", label: "小初（36pt）" },
   { value: "一号", label: "一号（26pt）" },
@@ -48,6 +71,28 @@ export const FONT_SIZE_OPTIONS: SelectOption[] = [
   { value: "五号", label: "五号（11pt）" },
   { value: "小五", label: "小五（9pt）" },
   { value: "六号", label: "六号（8pt）" },
+];
+
+const NUMERIC_FONT_SIZE_OPTIONS: SelectOption[] = Array.from({ length: 41 }, (_, index) => {
+  const pt = index + 8;
+  return { value: String(pt), label: `${pt} pt` };
+});
+
+export const FONT_SIZE_OPTIONS: SelectOption[] = [
+  ...CHINESE_FONT_SIZE_OPTIONS,
+  ...NUMERIC_FONT_SIZE_OPTIONS,
+];
+
+export const TABLE_FONT_SIZE_OPTIONS: SelectOption[] = [
+  { value: "0", label: "继承正文" },
+  ...FONT_SIZE_OPTIONS,
+];
+
+export const TABLE_CELL_ALIGNMENT_OPTIONS: SelectOption[] = [
+  { value: "left", label: "左对齐" },
+  { value: "center", label: "居中" },
+  { value: "right", label: "右对齐" },
+  { value: "both", label: "两端对齐" },
 ];
 
 export const LINE_SPACING_OPTIONS: SelectOption[] = [
@@ -138,27 +183,23 @@ export function stringifySelectValue(value: string | number | boolean): string {
 export function stringifyFontSizeValue(value: string | number): string {
   const text = String(value).trim();
   if (!text) {
-    return "小四";
+    return "12";
   }
   if (FONT_SIZE_OPTIONS.some((option) => option.value === text)) {
     return text;
   }
-  const ptToName: Record<string, string> = {
-    "42": "初号",
-    "36": "小初",
-    "26": "一号",
-    "24": "小一",
-    "22": "二号",
-    "18": "小二",
-    "16": "三号",
-    "15": "小三",
-    "14": "四号",
-    "12": "小四",
-    "11": "五号",
-    "9": "小五",
-    "8": "六号",
-  };
-  return ptToName[text] ?? text;
+  if (/^\d+$/.test(text)) {
+    return text;
+  }
+  return text;
+}
+
+export function stringifyTableFontSizeValue(value: string | number): string {
+  const text = String(value).trim();
+  if (!text || text === "0") {
+    return "0";
+  }
+  return stringifyFontSizeValue(value);
 }
 
 export function detectMarginPreset(style: Pick<DocumentDeliveryStyleValues, "marginTopCm" | "marginBottomCm" | "marginLeftCm" | "marginRightCm">): MarginPresetKey {

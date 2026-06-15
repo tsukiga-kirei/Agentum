@@ -88,6 +88,46 @@ class MarkdownDocxRendererTest {
             .contains("<w:ind w:firstLine=\"480\"/>");
     }
 
+    @Test
+    void shouldApplyHeadingFontsAndTableStyles() throws IOException {
+        DocumentDeliveryStyle style = DocumentDeliveryStyle.from(Map.of(
+            "heading1ChineseFont", "黑体",
+            "heading1LatinFont", "Arial",
+            "heading2ChineseFont", "仿宋_GB2312",
+            "tableChineseFont", "楷体",
+            "tableLatinFont", "Georgia",
+            "tableFontSize", 10,
+            "tableCellAlignment", "center"
+        ));
+
+        byte[] bytes = renderer.render("""
+            # 一级标题
+
+            ## 二级标题
+
+            | 字段 | 内容 |
+            | --- | --- |
+            | 结论 | 通过 |
+            """, style);
+
+        Map<String, String> entries = unzip(bytes);
+        assertThat(style.headingChineseFont(1)).isEqualTo("黑体");
+        assertThat(style.headingLatinFont(1)).isEqualTo("Arial");
+        assertThat(style.headingChineseFont(2)).isEqualTo("仿宋_GB2312");
+        assertThat(style.tableResolvedFontSize()).isEqualTo(10);
+        assertThat(entries.get("word/document.xml"))
+            .contains("黑体")
+            .contains("Arial")
+            .contains("仿宋_GB2312")
+            .contains("楷体")
+            .contains("Georgia")
+            .contains("<w:jc w:val=\"center\"/>")
+            .contains("<w:sz w:val=\"20\"/>");
+        assertThat(entries.get("word/styles.xml"))
+            .contains("黑体")
+            .contains("仿宋_GB2312");
+    }
+
     private static Map<String, String> unzip(byte[] bytes) throws IOException {
         Map<String, String> entries = new HashMap<>();
         try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(bytes), StandardCharsets.UTF_8)) {

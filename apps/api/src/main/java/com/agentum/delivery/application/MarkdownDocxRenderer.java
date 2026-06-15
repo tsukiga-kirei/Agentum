@@ -166,7 +166,14 @@ public class MarkdownDocxRenderer {
         pPr.append("<w:spacing w:before=\"").append(safeLevel == 1 ? 240 : 180)
             .append("\" w:after=\"").append(safeLevel == 1 ? 160 : 120).append("\"/>");
         pPr.append("</w:pPr>");
-        return "<w:p>" + pPr + runs(text, style, size, true, false) + "</w:p>";
+        return "<w:p>" + pPr + runs(
+            text,
+            style.headingLatinFont(safeLevel),
+            style.headingChineseFont(safeLevel),
+            size,
+            true,
+            false
+        ) + "</w:p>";
     }
 
     private String paragraph(String text, DocumentDeliveryStyle style, ParagraphKind kind, boolean centered) {
@@ -187,9 +194,27 @@ public class MarkdownDocxRenderer {
             }
             case LIST -> "<w:pPr><w:spacing w:before=\"" + twips(style.paragraphSpacingBefore()) + "\" w:after=\"" + twips(style.paragraphSpacingAfter()) + "\" w:line=\"" + lineTwips(style.lineSpacing()) + "\" w:lineRule=\"auto\"/><w:ind w:left=\"720\" w:hanging=\"360\"/></w:pPr>";
             case QUOTE -> "<w:pPr><w:spacing w:before=\"" + twips(style.paragraphSpacingBefore()) + "\" w:after=\"" + twips(style.paragraphSpacingAfter()) + "\" w:line=\"" + lineTwips(style.lineSpacing()) + "\" w:lineRule=\"auto\"/><w:ind w:left=\"480\"/></w:pPr>";
-            case TABLE_CELL -> "<w:pPr><w:spacing w:after=\"0\" w:line=\"" + lineTwips(style.lineSpacing()) + "\" w:lineRule=\"auto\"/></w:pPr>";
+            case TABLE_CELL -> {
+                StringBuilder builder = new StringBuilder();
+                builder.append("<w:pPr><w:spacing w:after=\"0\" w:line=\"")
+                    .append(lineTwips(style.lineSpacing()))
+                    .append("\" w:lineRule=\"auto\"/>");
+                builder.append("<w:jc w:val=\"").append(xml(style.tableCellAlignment())).append("\"/>");
+                builder.append("</w:pPr>");
+                yield builder.toString();
+            }
             case CODE -> "<w:pPr><w:spacing w:after=\"60\"/><w:shd w:fill=\"F6F8FA\"/></w:pPr>";
         };
+        if (kind == ParagraphKind.TABLE_CELL) {
+            return "<w:p>" + pPr + runs(
+                text,
+                style.tableResolvedLatinFont(),
+                style.tableResolvedChineseFont(),
+                style.tableResolvedFontSize(),
+                false,
+                false
+            ) + "</w:p>";
+        }
         return "<w:p>" + pPr + runs(text, style, style.bodyFontSize(), false, kind == ParagraphKind.QUOTE) + "</w:p>";
     }
 
@@ -244,17 +269,32 @@ public class MarkdownDocxRenderer {
     }
 
     private String runs(String text, DocumentDeliveryStyle style, int sizePt, boolean defaultBold, boolean defaultItalic) {
+        return runs(text, style.latinFont(), style.chineseFont(), sizePt, defaultBold, defaultItalic);
+    }
+
+    private String runs(
+        String text,
+        String latinFont,
+        String chineseFont,
+        int sizePt,
+        boolean defaultBold,
+        boolean defaultItalic
+    ) {
         List<InlineRun> runs = parseInline(text, defaultBold, defaultItalic);
         StringBuilder result = new StringBuilder();
         for (InlineRun inlineRun : runs) {
-            result.append(run(inlineRun.text(), style, sizePt, inlineRun.bold(), inlineRun.italic(), inlineRun.code()));
+            result.append(run(inlineRun.text(), latinFont, chineseFont, sizePt, inlineRun.bold(), inlineRun.italic(), inlineRun.code()));
         }
         return result.toString();
     }
 
     private String run(String text, DocumentDeliveryStyle style, int sizePt, boolean bold, boolean italic, boolean code) {
-        String font = code ? "Consolas" : style.latinFont();
-        String eastAsiaFont = code ? "Consolas" : style.chineseFont();
+        return run(text, style.latinFont(), style.chineseFont(), sizePt, bold, italic, code);
+    }
+
+    private String run(String text, String latinFont, String chineseFont, int sizePt, boolean bold, boolean italic, boolean code) {
+        String font = code ? "Consolas" : latinFont;
+        String eastAsiaFont = code ? "Consolas" : chineseFont;
         int halfPoint = Math.max(1, sizePt * 2);
         StringBuilder rPr = new StringBuilder();
         rPr.append("<w:rPr><w:rFonts w:ascii=\"").append(xml(font)).append("\" w:hAnsi=\"").append(xml(font)).append("\" w:eastAsia=\"").append(xml(eastAsiaFont)).append("\"/>")
@@ -465,9 +505,10 @@ public class MarkdownDocxRenderer {
     }
 
     private String stylesXml(DocumentDeliveryStyle style) {
-        String baseFonts = """
-            <w:rFonts w:ascii="%s" w:hAnsi="%s" w:eastAsia="%s"/>
-            """.formatted(xml(style.latinFont()), xml(style.latinFont()), xml(style.chineseFont())).stripIndent();
+        String baseFonts = fontRunXml(style.latinFont(), style.chineseFont());
+        String heading1Fonts = fontRunXml(style.headingLatinFont(1), style.headingChineseFont(1));
+        String heading2Fonts = fontRunXml(style.headingLatinFont(2), style.headingChineseFont(2));
+        String heading3Fonts = fontRunXml(style.headingLatinFont(3), style.headingChineseFont(3));
         return """
             <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
             <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
@@ -499,16 +540,22 @@ public class MarkdownDocxRenderer {
             baseFonts,
             style.bodyFontSize() * 2,
             style.bodyFontSize() * 2,
-            baseFonts,
+            heading1Fonts,
             style.heading1FontSize() * 2,
             style.heading1FontSize() * 2,
-            baseFonts,
+            heading2Fonts,
             style.heading2FontSize() * 2,
             style.heading2FontSize() * 2,
-            baseFonts,
+            heading3Fonts,
             style.heading3FontSize() * 2,
             style.heading3FontSize() * 2
         ).stripIndent();
+    }
+
+    private String fontRunXml(String latinFont, String chineseFont) {
+        return """
+            <w:rFonts w:ascii="%s" w:hAnsi="%s" w:eastAsia="%s"/>
+            """.formatted(xml(latinFont), xml(latinFont), xml(chineseFont)).stripIndent();
     }
 
     private enum ParagraphKind {

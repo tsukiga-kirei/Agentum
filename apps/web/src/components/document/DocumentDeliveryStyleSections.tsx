@@ -1,13 +1,15 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Select } from "antd";
 import type { LucideIcon } from "lucide-react";
-import { AlignCenter, ChevronDown, FileText, Hash, LayoutTemplate, Type } from "lucide-react";
+import { AlignCenter, ChevronDown, FileText, Hash, LayoutTemplate, Table2, Type } from "lucide-react";
 import {
   CHINESE_FONT_OPTIONS,
   detectMarginPreset,
   FIRST_LINE_INDENT_OPTIONS,
   FONT_SIZE_OPTIONS,
   HEADING_INDENT_OPTIONS,
+  INHERITABLE_CHINESE_FONT_OPTIONS,
+  INHERITABLE_LATIN_FONT_OPTIONS,
   LATIN_FONT_OPTIONS,
   LINE_SPACING_OPTIONS,
   MARGIN_CM_OPTIONS,
@@ -19,6 +21,9 @@ import {
   PARAGRAPH_SPACING_BEFORE_OPTIONS,
   stringifyFontSizeValue,
   stringifySelectValue,
+  stringifyTableFontSizeValue,
+  TABLE_CELL_ALIGNMENT_OPTIONS,
+  TABLE_FONT_SIZE_OPTIONS,
   TITLE_ALIGNMENT_OPTIONS,
 } from "../../constants/documentDeliveryStyleOptions";
 
@@ -141,7 +146,7 @@ export function DocumentDeliveryStyleSections({ style, onFieldChange, onFieldsCh
         />
       </StyleSection>
 
-      <StyleSection title="字号" description="正文与各级标题字号，支持中文字号名。">
+      <StyleSection title="字号" description="正文与各级标题字号，支持中文字号名与 pt 数字。">
         <StyleSelectField
           label="正文字号"
           icon={Hash}
@@ -169,6 +174,82 @@ export function DocumentDeliveryStyleSections({ style, onFieldChange, onFieldsCh
           value={stringifyFontSizeValue(style.heading3FontSize)}
           options={FONT_SIZE_OPTIONS}
           onChange={(value) => onFieldChange("heading3FontSize", value)}
+        />
+      </StyleSection>
+
+      <StyleSection title="标题字体" description="可为各级标题单独设置中西文字体，留空则继承正文。">
+        <StyleSelectField
+          label="一级标题中文字体"
+          icon={Type}
+          value={style.heading1ChineseFont}
+          options={INHERITABLE_CHINESE_FONT_OPTIONS}
+          onChange={(value) => onFieldChange("heading1ChineseFont", value)}
+        />
+        <StyleSelectField
+          label="一级标题西文字体"
+          icon={Type}
+          value={style.heading1LatinFont}
+          options={INHERITABLE_LATIN_FONT_OPTIONS}
+          onChange={(value) => onFieldChange("heading1LatinFont", value)}
+        />
+        <StyleSelectField
+          label="二级标题中文字体"
+          icon={Type}
+          value={style.heading2ChineseFont}
+          options={INHERITABLE_CHINESE_FONT_OPTIONS}
+          onChange={(value) => onFieldChange("heading2ChineseFont", value)}
+        />
+        <StyleSelectField
+          label="二级标题西文字体"
+          icon={Type}
+          value={style.heading2LatinFont}
+          options={INHERITABLE_LATIN_FONT_OPTIONS}
+          onChange={(value) => onFieldChange("heading2LatinFont", value)}
+        />
+        <StyleSelectField
+          label="三级标题中文字体"
+          icon={Type}
+          value={style.heading3ChineseFont}
+          options={INHERITABLE_CHINESE_FONT_OPTIONS}
+          onChange={(value) => onFieldChange("heading3ChineseFont", value)}
+        />
+        <StyleSelectField
+          label="三级标题西文字体"
+          icon={Type}
+          value={style.heading3LatinFont}
+          options={INHERITABLE_LATIN_FONT_OPTIONS}
+          onChange={(value) => onFieldChange("heading3LatinFont", value)}
+        />
+      </StyleSection>
+
+      <StyleSection title="表格" description="设置表格内文字字体、字号与对齐方式。">
+        <StyleSelectField
+          label="表格中文字体"
+          icon={Table2}
+          value={style.tableChineseFont}
+          options={INHERITABLE_CHINESE_FONT_OPTIONS}
+          onChange={(value) => onFieldChange("tableChineseFont", value)}
+        />
+        <StyleSelectField
+          label="表格西文字体"
+          icon={Table2}
+          value={style.tableLatinFont}
+          options={INHERITABLE_LATIN_FONT_OPTIONS}
+          onChange={(value) => onFieldChange("tableLatinFont", value)}
+        />
+        <StyleSelectField
+          label="表格字号"
+          icon={Hash}
+          value={stringifyTableFontSizeValue(style.tableFontSize)}
+          options={TABLE_FONT_SIZE_OPTIONS}
+          onChange={(value) => onFieldChange("tableFontSize", value === "0" ? 0 : value)}
+        />
+        <StyleSelectField
+          label="单元格对齐"
+          icon={AlignCenter}
+          value={style.tableCellAlignment}
+          options={TABLE_CELL_ALIGNMENT_OPTIONS}
+          onChange={(value) => onFieldChange("tableCellAlignment", value)}
         />
       </StyleSection>
 

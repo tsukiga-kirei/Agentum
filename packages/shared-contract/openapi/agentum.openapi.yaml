@@ -4305,6 +4305,41 @@ components:
             - type: integer
             - type: string
           default: 13
+        heading1ChineseFont:
+          type: string
+          description: 一级标题中文字体，留空继承正文。
+        heading1LatinFont:
+          type: string
+          description: 一级标题西文字体，留空继承正文。
+        heading2ChineseFont:
+          type: string
+          description: 二级标题中文字体，留空继承正文。
+        heading2LatinFont:
+          type: string
+          description: 二级标题西文字体，留空继承正文。
+        heading3ChineseFont:
+          type: string
+          description: 三级标题中文字体，留空继承正文。
+        heading3LatinFont:
+          type: string
+          description: 三级标题西文字体，留空继承正文。
+        tableChineseFont:
+          type: string
+          description: 表格中文字体，留空继承正文。
+        tableLatinFont:
+          type: string
+          description: 表格西文字体，留空继承正文。
+        tableFontSize:
+          oneOf:
+            - type: integer
+            - type: string
+          default: 0
+          description: 表格字号，0 表示继承正文。
+        tableCellAlignment:
+          type: string
+          enum: [left, center, right, both]
+          default: left
+          description: 表格单元格文字对齐方式。
         lineSpacing:
           type: number
           default: 1.5

@@ -173,6 +173,16 @@ const DEFAULT_WORD_DOCUMENT_STYLE: DocumentDeliveryStyleDraft = {
   heading1FontSize: 16,
   heading2FontSize: 14,
   heading3FontSize: 13,
+  heading1ChineseFont: "",
+  heading1LatinFont: "",
+  heading2ChineseFont: "",
+  heading2LatinFont: "",
+  heading3ChineseFont: "",
+  heading3LatinFont: "",
+  tableChineseFont: "",
+  tableLatinFont: "",
+  tableFontSize: 0,
+  tableCellAlignment: "left",
   lineSpacing: 1.5,
   firstLineIndentChars: 2,
   paragraphSpacingBefore: 0,
@@ -3210,6 +3220,16 @@ function readDocumentDeliveryStyle(rawStyle: unknown, capabilityConfig?: Record<
     heading1FontSize: readFontSizeLike(merged.heading1FontSize, DEFAULT_WORD_DOCUMENT_STYLE.heading1FontSize),
     heading2FontSize: readFontSizeLike(merged.heading2FontSize, DEFAULT_WORD_DOCUMENT_STYLE.heading2FontSize),
     heading3FontSize: readFontSizeLike(merged.heading3FontSize, DEFAULT_WORD_DOCUMENT_STYLE.heading3FontSize),
+    heading1ChineseFont: readOptionalString(merged.heading1ChineseFont, DEFAULT_WORD_DOCUMENT_STYLE.heading1ChineseFont),
+    heading1LatinFont: readOptionalString(merged.heading1LatinFont, DEFAULT_WORD_DOCUMENT_STYLE.heading1LatinFont),
+    heading2ChineseFont: readOptionalString(merged.heading2ChineseFont, DEFAULT_WORD_DOCUMENT_STYLE.heading2ChineseFont),
+    heading2LatinFont: readOptionalString(merged.heading2LatinFont, DEFAULT_WORD_DOCUMENT_STYLE.heading2LatinFont),
+    heading3ChineseFont: readOptionalString(merged.heading3ChineseFont, DEFAULT_WORD_DOCUMENT_STYLE.heading3ChineseFont),
+    heading3LatinFont: readOptionalString(merged.heading3LatinFont, DEFAULT_WORD_DOCUMENT_STYLE.heading3LatinFont),
+    tableChineseFont: readOptionalString(merged.tableChineseFont, DEFAULT_WORD_DOCUMENT_STYLE.tableChineseFont),
+    tableLatinFont: readOptionalString(merged.tableLatinFont, DEFAULT_WORD_DOCUMENT_STYLE.tableLatinFont),
+    tableFontSize: readTableFontSizeLike(merged.tableFontSize, DEFAULT_WORD_DOCUMENT_STYLE.tableFontSize),
+    tableCellAlignment: readString(merged.tableCellAlignment, DEFAULT_WORD_DOCUMENT_STYLE.tableCellAlignment),
     lineSpacing: readNumberLike(merged.lineSpacing, Number(DEFAULT_WORD_DOCUMENT_STYLE.lineSpacing)),
     firstLineIndentChars: readNumberLike(merged.firstLineIndentChars, Number(DEFAULT_WORD_DOCUMENT_STYLE.firstLineIndentChars)),
     paragraphSpacingBefore: readNumberLike(merged.paragraphSpacingBefore, Number(DEFAULT_WORD_DOCUMENT_STYLE.paragraphSpacingBefore)),
@@ -3231,6 +3251,27 @@ function readFontSizeLike(value: unknown, fallback: string | number | boolean): 
     return value.trim();
   }
   return typeof fallback === "boolean" ? 12 : fallback;
+}
+
+function readTableFontSizeLike(value: unknown, fallback: string | number): string | number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value <= 0 ? 0 : value;
+  }
+  if (typeof value === "string") {
+    const text = value.trim();
+    if (!text || text === "0") {
+      return 0;
+    }
+    return text;
+  }
+  return fallback;
+}
+
+function readOptionalString(value: unknown, fallback: string): string {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+  return value.trim();
 }
 
 function readNumberLike(value: unknown, fallback: number): number {

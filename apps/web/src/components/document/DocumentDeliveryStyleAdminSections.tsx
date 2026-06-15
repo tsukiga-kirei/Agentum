@@ -1,12 +1,14 @@
 import React, { useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { AlignCenter, FileText, Hash, LayoutTemplate, Type } from "lucide-react";
+import { AlignCenter, FileText, Hash, LayoutTemplate, Table2, Type } from "lucide-react";
 import {
   CHINESE_FONT_OPTIONS,
   detectMarginPreset,
   FIRST_LINE_INDENT_OPTIONS,
   FONT_SIZE_OPTIONS,
   HEADING_INDENT_OPTIONS,
+  INHERITABLE_CHINESE_FONT_OPTIONS,
+  INHERITABLE_LATIN_FONT_OPTIONS,
   LATIN_FONT_OPTIONS,
   LINE_SPACING_OPTIONS,
   MARGIN_CM_OPTIONS,
@@ -16,6 +18,9 @@ import {
   PARAGRAPH_SPACING_AFTER_OPTIONS,
   PARAGRAPH_SPACING_BEFORE_OPTIONS,
   stringifyFontSizeValue,
+  stringifyTableFontSizeValue,
+  TABLE_CELL_ALIGNMENT_OPTIONS,
+  TABLE_FONT_SIZE_OPTIONS,
   TITLE_ALIGNMENT_OPTIONS,
 } from "../../constants/documentDeliveryStyleOptions";
 
@@ -119,7 +124,7 @@ export function DocumentDeliveryStyleAdminSections({
         </AdminStyleRow>
       </AdminStyleSection>
 
-      <AdminStyleSection title="字号" description="正文与各级标题字号，支持中文字号名。">
+      <AdminStyleSection title="字号" description="正文与各级标题字号，支持中文字号名与 pt 数字。">
         <AdminStyleRow>
           <SelectField
             label="正文字号"
@@ -154,6 +159,102 @@ export function DocumentDeliveryStyleAdminSections({
             placeholder="请选择三级标题字号"
             options={FONT_SIZE_OPTIONS}
             onChange={(value) => onChange("documentHeading3FontSize", value)}
+          />
+        </AdminStyleRow>
+      </AdminStyleSection>
+
+      <AdminStyleSection title="标题字体" description="可为各级标题单独设置中西文字体，留空则继承正文。">
+        <AdminStyleRow>
+          <SelectField
+            label="一级标题中文字体"
+            icon={Type}
+            defaultValue={values.documentHeading1ChineseFont || ""}
+            placeholder="继承正文"
+            options={INHERITABLE_CHINESE_FONT_OPTIONS}
+            onChange={(value) => onChange("documentHeading1ChineseFont", value)}
+          />
+          <SelectField
+            label="一级标题西文字体"
+            icon={Type}
+            defaultValue={values.documentHeading1LatinFont || ""}
+            placeholder="继承正文"
+            options={INHERITABLE_LATIN_FONT_OPTIONS}
+            onChange={(value) => onChange("documentHeading1LatinFont", value)}
+          />
+        </AdminStyleRow>
+        <AdminStyleRow>
+          <SelectField
+            label="二级标题中文字体"
+            icon={Type}
+            defaultValue={values.documentHeading2ChineseFont || ""}
+            placeholder="继承正文"
+            options={INHERITABLE_CHINESE_FONT_OPTIONS}
+            onChange={(value) => onChange("documentHeading2ChineseFont", value)}
+          />
+          <SelectField
+            label="二级标题西文字体"
+            icon={Type}
+            defaultValue={values.documentHeading2LatinFont || ""}
+            placeholder="继承正文"
+            options={INHERITABLE_LATIN_FONT_OPTIONS}
+            onChange={(value) => onChange("documentHeading2LatinFont", value)}
+          />
+        </AdminStyleRow>
+        <AdminStyleRow>
+          <SelectField
+            label="三级标题中文字体"
+            icon={Type}
+            defaultValue={values.documentHeading3ChineseFont || ""}
+            placeholder="继承正文"
+            options={INHERITABLE_CHINESE_FONT_OPTIONS}
+            onChange={(value) => onChange("documentHeading3ChineseFont", value)}
+          />
+          <SelectField
+            label="三级标题西文字体"
+            icon={Type}
+            defaultValue={values.documentHeading3LatinFont || ""}
+            placeholder="继承正文"
+            options={INHERITABLE_LATIN_FONT_OPTIONS}
+            onChange={(value) => onChange("documentHeading3LatinFont", value)}
+          />
+        </AdminStyleRow>
+      </AdminStyleSection>
+
+      <AdminStyleSection title="表格" description="设置表格内文字字体、字号与对齐方式。">
+        <AdminStyleRow>
+          <SelectField
+            label="表格中文字体"
+            icon={Table2}
+            defaultValue={values.documentTableChineseFont || ""}
+            placeholder="继承正文"
+            options={INHERITABLE_CHINESE_FONT_OPTIONS}
+            onChange={(value) => onChange("documentTableChineseFont", value)}
+          />
+          <SelectField
+            label="表格西文字体"
+            icon={Table2}
+            defaultValue={values.documentTableLatinFont || ""}
+            placeholder="继承正文"
+            options={INHERITABLE_LATIN_FONT_OPTIONS}
+            onChange={(value) => onChange("documentTableLatinFont", value)}
+          />
+        </AdminStyleRow>
+        <AdminStyleRow>
+          <SelectField
+            label="表格字号"
+            icon={Hash}
+            defaultValue={stringifyTableFontSizeValue(values.documentTableFontSize || "0")}
+            placeholder="继承正文"
+            options={TABLE_FONT_SIZE_OPTIONS}
+            onChange={(value) => onChange("documentTableFontSize", value)}
+          />
+          <SelectField
+            label="单元格对齐"
+            icon={AlignCenter}
+            defaultValue={values.documentTableCellAlignment || "left"}
+            placeholder="请选择对齐方式"
+            options={TABLE_CELL_ALIGNMENT_OPTIONS}
+            onChange={(value) => onChange("documentTableCellAlignment", value)}
           />
         </AdminStyleRow>
       </AdminStyleSection>

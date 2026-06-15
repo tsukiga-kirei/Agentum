@@ -2,6 +2,7 @@ package com.agentum.delivery.application;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Word 文档交付的样式快照。
@@ -15,6 +16,16 @@ public record DocumentDeliveryStyle(
     int heading1FontSize,
     int heading2FontSize,
     int heading3FontSize,
+    String heading1ChineseFont,
+    String heading1LatinFont,
+    String heading2ChineseFont,
+    String heading2LatinFont,
+    String heading3ChineseFont,
+    String heading3LatinFont,
+    String tableChineseFont,
+    String tableLatinFont,
+    int tableFontSize,
+    String tableCellAlignment,
     double lineSpacing,
     double firstLineIndentChars,
     int paragraphSpacingBefore,
@@ -27,6 +38,8 @@ public record DocumentDeliveryStyle(
     boolean headingFirstLineIndent
 ) {
 
+    private static final Set<String> TABLE_ALIGNMENTS = Set.of("left", "center", "right", "both");
+
     public static DocumentDeliveryStyle defaults() {
         return new DocumentDeliveryStyle(
             "宋体",
@@ -35,6 +48,16 @@ public record DocumentDeliveryStyle(
             16,
             14,
             13,
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            0,
+            "left",
             1.5,
             2,
             0,
@@ -58,6 +81,16 @@ public record DocumentDeliveryStyle(
             readInt(source, "heading1FontSize", defaults.heading1FontSize(), 8, 72),
             readInt(source, "heading2FontSize", defaults.heading2FontSize(), 8, 72),
             readInt(source, "heading3FontSize", defaults.heading3FontSize(), 8, 72),
+            readOptionalString(source, "heading1ChineseFont"),
+            readOptionalString(source, "heading1LatinFont"),
+            readOptionalString(source, "heading2ChineseFont"),
+            readOptionalString(source, "heading2LatinFont"),
+            readOptionalString(source, "heading3ChineseFont"),
+            readOptionalString(source, "heading3LatinFont"),
+            readOptionalString(source, "tableChineseFont"),
+            readOptionalString(source, "tableLatinFont"),
+            readInt(source, "tableFontSize", defaults.tableFontSize(), 0, 72),
+            readAlignment(source, "tableCellAlignment", defaults.tableCellAlignment()),
             readDouble(source, "lineSpacing", defaults.lineSpacing(), 1.0, 3.0),
             readDouble(source, "firstLineIndentChars", defaults.firstLineIndentChars(), 0.0, 6.0),
             readInt(source, "paragraphSpacingBefore", defaults.paragraphSpacingBefore(), 0, 72),
@@ -71,6 +104,36 @@ public record DocumentDeliveryStyle(
         );
     }
 
+    public String headingChineseFont(int level) {
+        String configured = switch (Math.max(1, Math.min(3, level))) {
+            case 1 -> heading1ChineseFont;
+            case 2 -> heading2ChineseFont;
+            default -> heading3ChineseFont;
+        };
+        return configured == null || configured.isBlank() ? chineseFont : configured;
+    }
+
+    public String headingLatinFont(int level) {
+        String configured = switch (Math.max(1, Math.min(3, level))) {
+            case 1 -> heading1LatinFont;
+            case 2 -> heading2LatinFont;
+            default -> heading3LatinFont;
+        };
+        return configured == null || configured.isBlank() ? latinFont : configured;
+    }
+
+    public String tableResolvedChineseFont() {
+        return tableChineseFont == null || tableChineseFont.isBlank() ? chineseFont : tableChineseFont;
+    }
+
+    public String tableResolvedLatinFont() {
+        return tableLatinFont == null || tableLatinFont.isBlank() ? latinFont : tableLatinFont;
+    }
+
+    public int tableResolvedFontSize() {
+        return tableFontSize <= 0 ? bodyFontSize : tableFontSize;
+    }
+
     public Map<String, Object> toMap() {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("chineseFont", chineseFont);
@@ -79,6 +142,18 @@ public record DocumentDeliveryStyle(
         result.put("heading1FontSize", heading1FontSize);
         result.put("heading2FontSize", heading2FontSize);
         result.put("heading3FontSize", heading3FontSize);
+        putOptional(result, "heading1ChineseFont", heading1ChineseFont);
+        putOptional(result, "heading1LatinFont", heading1LatinFont);
+        putOptional(result, "heading2ChineseFont", heading2ChineseFont);
+        putOptional(result, "heading2LatinFont", heading2LatinFont);
+        putOptional(result, "heading3ChineseFont", heading3ChineseFont);
+        putOptional(result, "heading3LatinFont", heading3LatinFont);
+        putOptional(result, "tableChineseFont", tableChineseFont);
+        putOptional(result, "tableLatinFont", tableLatinFont);
+        if (tableFontSize > 0) {
+            result.put("tableFontSize", tableFontSize);
+        }
+        result.put("tableCellAlignment", tableCellAlignment);
         result.put("lineSpacing", lineSpacing);
         result.put("firstLineIndentChars", firstLineIndentChars);
         result.put("paragraphSpacingBefore", paragraphSpacingBefore);
@@ -90,6 +165,29 @@ public record DocumentDeliveryStyle(
         result.put("titleCentered", titleCentered);
         result.put("headingFirstLineIndent", headingFirstLineIndent);
         return result;
+    }
+
+    private static void putOptional(Map<String, Object> target, String key, String value) {
+        if (value != null && !value.isBlank()) {
+            target.put(key, value);
+        }
+    }
+
+    private static String readOptionalString(Map<String, Object> source, String key) {
+        Object value = source.get(key);
+        if (value == null) {
+            return "";
+        }
+        return value.toString().trim();
+    }
+
+    private static String readAlignment(Map<String, Object> source, String key, String fallback) {
+        String text = readOptionalString(source, key);
+        if (text.isBlank()) {
+            return fallback;
+        }
+        String normalized = text.toLowerCase();
+        return TABLE_ALIGNMENTS.contains(normalized) ? normalized : fallback;
     }
 
     private static String readString(Map<String, Object> source, String key, String fallback) {
