@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
-import { Drawer, Spin, Tabs, Tag, Empty, Button } from "antd";
-import { 
-  X, Clock, User, ClipboardList, Activity, Sparkles, Cpu, 
-  Send, AlertCircle, FileText, Code2, Lock, EyeOff, CheckCircle2 
+import { Drawer, Spin, Tabs, Tag, Empty } from "antd";
+import type { TabsProps } from "antd";
+import {
+  Clock, User, ClipboardList, Activity, Sparkles, Cpu,
+  Send, AlertCircle, Code2, Lock, EyeOff, CheckCircle2,
+  Timer, FileText
 } from "lucide-react";
 import { auditApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
@@ -13,6 +15,14 @@ interface RunEvidenceDrawerProps {
   onClose: () => void;
 }
 
+/**
+ * 运行全链路审计证据链抽屉
+ *
+ * 布局：采用 sys-drawer-section 统一滚动模型，所有内容在一个可滚动区域内自然排列。
+ * - 顶部 hero 概要卡片（参考 workflow-detail-drawer-hero 风格）
+ * - 中间左右分栏：左侧节点步骤轨道 + 右侧节点详情面板
+ * - 底部全景辅助：时间线 + 全局变量快照
+ */
 export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
   const token = useAuthStore((s) => s.token) || "";
   const activeRole = useAuthStore((s) => s.activeRole);
@@ -126,13 +136,249 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
   // 渲染左侧步骤轨的图标
   const getNodeIcon = (type: string) => {
     switch (type) {
-      case "trigger": return <Activity size={14} />;
-      case "input": return <ClipboardList size={14} />;
-      case "agent": return <Sparkles size={14} />;
-      case "cluster": return <Sparkles size={14} />;
-      case "delivery": return <Send size={14} />;
-      default: return <Code2 size={14} />;
+      case "trigger": return <Activity size={13} />;
+      case "input": return <ClipboardList size={13} />;
+      case "agent": return <Sparkles size={13} />;
+      case "cluster": return <Sparkles size={13} />;
+      case "delivery": return <Send size={13} />;
+      default: return <Code2 size={13} />;
     }
+  };
+
+  // 计算节点耗时的辅助函数
+  const computeDuration = (startedAt: string | null, completedAt: string | null) => {
+    if (!startedAt || !completedAt) return "—";
+    const ms = new Date(completedAt).getTime() - new Date(startedAt).getTime();
+    return `${ms} ms`;
+  };
+
+  // 构建右侧节点详情的 Tab items（替代废弃的 Tabs.TabPane）
+  const buildNodeTabItems = (): TabsProps["items"] => {
+    return [
+      {
+        key: "variables",
+        label: "数据变量快照",
+        children: (
+          <div className="run-evidence-tab-content">
+            {activeNodeVariables.length === 0 ? (
+              <Empty description="该节点无变量输出" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+            ) : (
+              activeNodeVariables.map((v) => (
+                <div key={v.id} className="run-evidence-var-card">
+                  <div className="run-evidence-var-header">
+                    <span className="run-evidence-var-name">
+                      {v.variableName}
+                      {v.sensitive && (
+                        <Tag color="red" icon={<Lock size={10} />} className="flex items-center gap-1 px-1.5 py-0">敏感</Tag>
+                      )}
+                    </span>
+                    <span className="run-evidence-var-type">类型: {v.valueType}</span>
+                  </div>
+                  <pre className="run-evidence-code">
+                    {v.sensitive ? (
+                      <span className="run-evidence-sensitive">
+                        <EyeOff size={12} /> ****** (敏感信息，审计日志已自动遮蔽)
+                      </span>
+                    ) : (
+                      formatJson(v.value)
+                    )}
+                  </pre>
+                </div>
+              ))
+            )}
+          </div>
+        ),
+      },
+      {
+        key: "models",
+        label: `模型调用 (${activeNodeModelCalls.length})`,
+        children: (
+          <div className="run-evidence-tab-content">
+            {activeNodeModelCalls.length === 0 ? (
+              <Empty description="该节点无大模型调用记录" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+            ) : (
+              activeNodeModelCalls.map((m) => (
+                <div key={m.id} className="run-evidence-call-card">
+                  <div className="run-evidence-call-header">
+                    <span className="run-evidence-call-title">
+                      <Sparkles size={13} className="text-yellow-500" />
+                      使用模型: {m.modelName}
+                    </span>
+                    <span className="run-evidence-call-meta">
+                      <Timer size={11} className="inline mr-1 opacity-50" />
+                      {m.latencyMs ? `${m.latencyMs} ms` : "—"}
+                    </span>
+                  </div>
+                  <div>
+                    <p className="run-evidence-section-label">提示词快照 (Prompt Snapshot)</p>
+                    <pre className="run-evidence-code">{formatJson(m.promptSnapshot)}</pre>
+                  </div>
+                  <div style={{ marginTop: 12 }}>
+                    <p className="run-evidence-section-label">模型输出结果 (Response Snapshot)</p>
+                    <pre className="run-evidence-code">{formatJson(m.responseSnapshot)}</pre>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        ),
+      },
+      {
+        key: "mcp",
+        label: `MCP工具/Skill (${activeNodeMcpCalls.length})`,
+        children: (
+          <div className="run-evidence-tab-content">
+            {activeNodeMcpCalls.length === 0 ? (
+              <Empty description="该节点无外部工具 (MCP) 调用记录" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+            ) : (
+              activeNodeMcpCalls.map((m) => (
+                <div key={m.id} className="run-evidence-call-card">
+                  <div className="run-evidence-call-header">
+                    <span className="run-evidence-call-title">
+                      <Cpu size={13} className="text-blue-500" />
+                      调用能力: {m.capabilityCode} · 工具: {m.toolName}
+                    </span>
+                    <span className="run-evidence-call-meta">
+                      {m.status === "success" ? <span className="text-green-500 font-semibold">成功</span> : <span className="text-red-500 font-semibold">失败</span>}
+                      {m.latencyMs ? ` · ${m.latencyMs} ms` : ""}
+                    </span>
+                  </div>
+                  <div>
+                    <p className="run-evidence-section-label">入参载荷 (Request Arguments)</p>
+                    <pre className="run-evidence-code">{formatJson(m.requestPayload)}</pre>
+                  </div>
+                  <div style={{ marginTop: 12 }}>
+                    <p className="run-evidence-section-label">观察结果 (Response Outcome)</p>
+                    <pre className="run-evidence-code">{formatJson(m.responsePayload)}</pre>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        ),
+      },
+      {
+        key: "deliveries",
+        label: `交付推送 (${activeNodeDeliveries.length})`,
+        children: (
+          <div className="run-evidence-tab-content">
+            {activeNodeDeliveries.length === 0 ? (
+              <Empty description="该节点无推送交付记录" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+            ) : (
+              activeNodeDeliveries.map((d) => (
+                <div key={d.id} className="run-evidence-call-card">
+                  <div className="run-evidence-call-header">
+                    <span className="run-evidence-call-title">
+                      <Send size={13} className="text-primary-500" />
+                      方式: {d.deliveryType} · 标题: {d.title}
+                    </span>
+                    <span>
+                      {d.status === "success" ? <Tag color="success">交付成功</Tag> : <Tag color="error">交付失败</Tag>}
+                    </span>
+                  </div>
+                  <div className="run-evidence-delivery-meta">
+                    <div>目标地址/Key: <span>{d.target || "—"}</span></div>
+                    <div>交付时间: <span>{formatDate(d.createdAt)}</span></div>
+                  </div>
+                  <div>
+                    <p className="run-evidence-section-label">交付载荷</p>
+                    <pre className="run-evidence-code">{formatJson(d.payload)}</pre>
+                  </div>
+                  <div style={{ marginTop: 12 }}>
+                    <p className="run-evidence-section-label">交付结果快照</p>
+                    <pre className="run-evidence-code">{formatJson(d.resultSnapshot)}</pre>
+                  </div>
+                  {d.errorMessage && (
+                    <div className="run-evidence-error">
+                      <AlertCircle size={14} className="mt-0.5 shrink-0" />
+                      <div>
+                        <div className="run-evidence-error-title">失败原因</div>
+                        <div>{d.errorMessage}</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        ),
+      },
+    ];
+  };
+
+  // 构建底部全景辅助的 Tab items
+  const buildFooterTabItems = (): TabsProps["items"] => {
+    if (!evidence) return [];
+    return [
+      {
+        key: "timeline",
+        label: (
+          <span className="flex items-center gap-1.5">
+            <Activity size={13} />
+            工作流轨迹事件时间线
+          </span>
+        ),
+        children: (
+          <div className="run-evidence-tab-content">
+            {evidence.runEvents.length === 0 ? (
+              <Empty description="无事件记录" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+            ) : (
+              <div className="run-evidence-timeline">
+                {evidence.runEvents.map((evt) => (
+                  <div key={evt.id} className="run-evidence-timeline-event">
+                    <span className="run-evidence-timeline-dot" />
+                    <div className="run-evidence-timeline-event-header">
+                      <span className="run-evidence-timeline-event-title">{evt.title}</span>
+                      <span className="run-evidence-timeline-event-time">{formatDate(evt.eventTime)}</span>
+                    </div>
+                    <div className="run-evidence-timeline-event-desc">
+                      {evt.description} {evt.operatorName ? `(操作人: ${evt.operatorName})` : ""}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ),
+      },
+      {
+        key: "all_vars",
+        label: (
+          <span className="flex items-center gap-1.5">
+            <FileText size={13} />
+            流程全局变量最终快照
+          </span>
+        ),
+        children: (
+          <div className="run-evidence-tab-content">
+            {evidence.variableSnapshots.length === 0 ? (
+              <Empty description="无变量快照" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+            ) : (
+              evidence.variableSnapshots.map((v) => (
+                <div key={v.id} className="run-evidence-var-card">
+                  <div className="run-evidence-var-header">
+                    <span className="run-evidence-var-name">
+                      {v.variableName}
+                      {v.sensitive && <Lock size={10} className="text-red-400" />}
+                    </span>
+                    <span className="run-evidence-var-type">类型: {v.valueType}</span>
+                  </div>
+                  <pre className="run-evidence-code">
+                    {v.sensitive ? (
+                      <span className="run-evidence-sensitive">
+                        <EyeOff size={12} /> ****** (敏感信息，审计日志已自动遮蔽)
+                      </span>
+                    ) : (
+                      formatJson(v.value)
+                    )}
+                  </pre>
+                </div>
+              ))
+            )}
+          </div>
+        ),
+      },
+    ];
   };
 
   return (
@@ -149,248 +395,105 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
       closable={true}
       rootClassName={themeMode === "dark" ? "agent-admin-drawer agent-admin-drawer--dark" : "agent-admin-drawer"}
     >
-      <Spin spinning={loading} wrapperClassName="h-full flex flex-col">
-        {evidence ? (
-          <div className="flex flex-col h-full p-6 space-y-6 overflow-hidden">
-            {/* 顶层实例概要 */}
-            <div className="p-4 bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-100 dark:border-zinc-800 rounded-xl space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h3 className="font-bold text-zinc-800 dark:text-zinc-100 text-base">
-                  {evidence.runInfo.title}
-                </h3>
-                {formatState(evidence.runInfo.state)}
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs text-zinc-500">
-                <div className="flex items-center gap-1.5">
-                  <Code2 size={14} className="text-zinc-400" />
-                  <span>流程: {evidence.runInfo.workflowName} (v{evidence.runInfo.versionNumber})</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <User size={14} className="text-zinc-400" />
-                  <span>发起人: {evidence.runInfo.operatorName}</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <Clock size={14} className="text-zinc-400" />
-                  <span>启动于: {formatDate(evidence.runInfo.startedAt)}</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <CheckCircle2 size={14} className="text-zinc-400" />
-                  <span>结束于: {formatDate(evidence.runInfo.completedAt)}</span>
+      {/* sys-drawer-section 直接作为 drawer body 的子级，确保 flex: 1 + overflow-y: auto 正常工作 */}
+      <div className="sys-drawer-section sys-drawer-section-enter">
+        {loading ? (
+          <div className="flex items-center justify-center" style={{ minHeight: 320 }}>
+            <Spin size="large" />
+          </div>
+        ) : evidence ? (
+          <>
+            {/* 顶部 hero 概要卡片：参考 workflow-detail-drawer-hero 品牌色渐变风格 */}
+            <div className="run-evidence-hero">
+              <div className="run-evidence-hero-main">
+                <span className="run-evidence-hero-icon" aria-hidden="true">
+                  <ClipboardList size={20} />
+                </span>
+                <div className="run-evidence-hero-body">
+                  <div className="run-evidence-hero-title">
+                    <h3>{evidence.runInfo.title}</h3>
+                    {formatState(evidence.runInfo.state)}
+                  </div>
+                  <div className="run-evidence-hero-meta">
+                    <span className="run-evidence-hero-meta-item">
+                      <Code2 size={13} />
+                      流程: {evidence.runInfo.workflowName} (v{evidence.runInfo.versionNumber})
+                    </span>
+                    <span className="run-evidence-hero-meta-item">
+                      <User size={13} />
+                      发起人: {evidence.runInfo.operatorName}
+                    </span>
+                    <span className="run-evidence-hero-meta-item">
+                      <Clock size={13} />
+                      启动于: {formatDate(evidence.runInfo.startedAt)}
+                    </span>
+                    <span className="run-evidence-hero-meta-item">
+                      <CheckCircle2 size={13} />
+                      结束于: {formatDate(evidence.runInfo.completedAt)}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* 证据链详情主面板：左侧节点选择，右侧日志展示 */}
-            <div className="flex flex-1 gap-6 min-h-0 overflow-hidden">
+            {/* 证据链详情主面板：左侧节点步骤轨道 + 右侧节点日志详情 */}
+            <div className="run-evidence-body">
               {/* 左侧流程节点步骤轨道 */}
-              <div className="w-1/4 border-r border-zinc-100 dark:border-zinc-800 pr-4 space-y-2 overflow-y-auto h-full">
-                <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">流程步骤轨道</div>
-                {evidence.nodeRuns.map((node) => {
-                  const isActive = node.nodeKey === activeNodeKey;
-                  const isNodeFailed = node.state === "failed";
-                  return (
-                    <div
-                      key={node.id}
-                      onClick={() => setActiveNodeKey(node.nodeKey)}
-                      className={`flex items-center gap-2.5 p-2.5 rounded-lg cursor-pointer text-sm transition-all border ${
-                        isActive
-                          ? "bg-[var(--color-primary-bg)] border-[var(--color-primary-lighter)] text-[var(--color-primary)] font-medium shadow-sm"
-                          : isNodeFailed
-                          ? "bg-red-50/40 dark:bg-red-950/10 border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400"
-                          : "bg-[var(--color-bg-card)] border-[var(--color-border-light)] text-zinc-600 dark:text-zinc-400 hover:bg-[var(--color-bg-hover)]"
-                      }`}
-                    >
-                      <div className={`p-1.5 rounded-md transition-colors ${
-                        isActive 
-                          ? "bg-[var(--color-bg-card)] text-[var(--color-primary)] shadow-sm" 
-                          : isNodeFailed
-                          ? "bg-red-100/50 dark:bg-red-950/50 text-red-600"
-                          : "bg-[var(--color-bg-hover)] text-zinc-400"
-                      }`}>
-                        {getNodeIcon(node.nodeType)}
-                      </div>
-                      <span className="truncate flex-1">{node.name}</span>
-                    </div>
-                  );
-                })}
+              <div className="run-evidence-sidebar">
+                <div className="run-evidence-sidebar-title">流程步骤轨道</div>
+                <div className="run-evidence-node-list">
+                  {evidence.nodeRuns.map((node) => {
+                    const isActive = node.nodeKey === activeNodeKey;
+                    const isNodeFailed = node.state === "failed";
+                    const nodeClasses = [
+                      "run-evidence-node",
+                      isActive && "run-evidence-node--active",
+                      isNodeFailed && "run-evidence-node--failed",
+                    ].filter(Boolean).join(" ");
+
+                    return (
+                      <button
+                        key={node.id}
+                        type="button"
+                        onClick={() => setActiveNodeKey(node.nodeKey)}
+                        className={nodeClasses}
+                      >
+                        <span className="run-evidence-node-icon">
+                          {getNodeIcon(node.nodeType)}
+                        </span>
+                        <span className="run-evidence-node-name">{node.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               {/* 右侧选定节点之下的日志和环境细节 */}
-              <div className="flex-1 space-y-4 overflow-y-auto h-full pr-1">
+              <div className="run-evidence-content">
                 {activeNode ? (
-                  <div className="space-y-5">
+                  <>
                     {/* 节点标题及基本元数据 */}
-                    <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-3">
+                    <div className="run-evidence-node-header">
                       <div>
-                        <h4 className="font-bold text-zinc-800 dark:text-zinc-100">{activeNode.name}</h4>
-                        <div className="text-xs text-zinc-400 mt-0.5">
+                        <h4>{activeNode.name}</h4>
+                        <div className="run-evidence-node-header-sub">
                           标识: {activeNode.nodeKey} · 类型: {activeNode.nodeType}
                         </div>
                       </div>
-                      <div className="text-xs text-zinc-500">
-                        耗时: {activeNode.startedAt && activeNode.completedAt 
-                          ? `${new Date(activeNode.completedAt).getTime() - new Date(activeNode.startedAt).getTime()} ms`
-                          : "—"}
+                      <div className="run-evidence-node-header-duration">
+                        <Timer size={12} className="inline mr-1 opacity-50" />
+                        耗时: {computeDuration(activeNode.startedAt, activeNode.completedAt)}
                       </div>
                     </div>
 
-                    <Tabs defaultActiveKey="variables" className="agent-admin-tabs">
-                      {/* 页签 1: 变量与数据快照 */}
-                      <Tabs.TabPane tab="数据变量快照" key="variables">
-                        <div className="space-y-3">
-                          {activeNodeVariables.length === 0 ? (
-                            <Empty description="该节点无变量输出" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-                          ) : (
-                            <div className="space-y-3">
-                              {activeNodeVariables.map((v) => (
-                                <div key={v.id} className="p-4 bg-[var(--color-bg-card)] border border-[var(--color-border-light)] rounded-xl space-y-3 shadow-sm">
-                                  <div className="flex items-center justify-between">
-                                    <span className="font-mono text-sm text-zinc-700 dark:text-zinc-300 font-semibold flex items-center gap-1.5">
-                                      {v.variableName}
-                                      {v.sensitive && (
-                                        <Tag color="red" icon={<Lock size={10} />} className="flex items-center gap-1 px-1.5 py-0">敏感</Tag>
-                                      )}
-                                    </span>
-                                    <span className="text-xs text-zinc-400">类型: {v.valueType}</span>
-                                  </div>
-                                  <div className="relative">
-                                    <pre className="p-4 bg-[var(--color-bg-hover)] border border-[var(--color-border-light)] rounded-lg text-xs font-mono overflow-auto text-zinc-800 dark:text-zinc-200 max-h-80 shadow-inner leading-relaxed">
-                                      {v.sensitive ? (
-                                        <span className="text-red-400 italic flex items-center gap-1">
-                                          <EyeOff size={12} /> ****** (敏感信息，审计日志已自动遮蔽)
-                                        </span>
-                                      ) : (
-                                        formatJson(v.value)
-                                      )}
-                                    </pre>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </Tabs.TabPane>
-
-                      {/* 页签 2: 模型推理审查 */}
-                      <Tabs.TabPane tab={`模型调用 (${activeNodeModelCalls.length})`} key="models">
-                        <div className="space-y-4">
-                          {activeNodeModelCalls.length === 0 ? (
-                            <Empty description="该节点无大模型调用记录" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-                          ) : (
-                            activeNodeModelCalls.map((m) => (
-                              <div key={m.id} className="border border-[var(--color-border-light)] rounded-xl p-4 space-y-3 bg-[var(--color-bg-card)] shadow-sm">
-                                <div className="flex justify-between items-center text-xs">
-                                  <span className="font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1">
-                                    <Sparkles size={12} className="text-yellow-500" />
-                                    使用模型: {m.modelName}
-                                  </span>
-                                  <span className="text-zinc-400">耗时: {m.latencyMs ? `${m.latencyMs} ms` : "—"}</span>
-                                </div>
-                                <div className="space-y-2">
-                                  <div className="text-xs text-zinc-400 uppercase tracking-wider font-semibold">提示词快照 (Prompt Snapshot)</div>
-                                  <pre className="p-4 bg-[var(--color-bg-hover)] border border-[var(--color-border-light)] rounded-lg text-xs font-mono overflow-auto text-zinc-700 dark:text-zinc-300 max-h-80 shadow-inner leading-relaxed">
-                                    {formatJson(m.promptSnapshot)}
-                                  </pre>
-                                </div>
-                                <div className="space-y-2">
-                                  <div className="text-xs text-zinc-400 uppercase tracking-wider font-semibold">模型输出结果 (Response Snapshot)</div>
-                                  <pre className="p-4 bg-[var(--color-bg-hover)] border border-[var(--color-border-light)] rounded-lg text-xs font-mono overflow-auto text-zinc-700 dark:text-zinc-300 max-h-80 shadow-inner leading-relaxed">
-                                    {formatJson(m.responseSnapshot)}
-                                  </pre>
-                                </div>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      </Tabs.TabPane>
-
-                      {/* 页签 3: MCP网关工具审查 */}
-                      <Tabs.TabPane tab={`MCP工具/Skill (${activeNodeMcpCalls.length})`} key="mcp">
-                        <div className="space-y-4">
-                          {activeNodeMcpCalls.length === 0 ? (
-                            <Empty description="该节点无外部工具 (MCP) 调用记录" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-                          ) : (
-                            activeNodeMcpCalls.map((m) => (
-                              <div key={m.id} className="border border-[var(--color-border-light)] rounded-xl p-4 space-y-3 bg-[var(--color-bg-card)] shadow-sm">
-                                <div className="flex justify-between items-center text-xs">
-                                  <span className="font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1">
-                                    <Cpu size={12} className="text-blue-500" />
-                                    调用能力: {m.capabilityCode} · 工具: {m.toolName}
-                                  </span>
-                                  <span className="text-zinc-400">
-                                    状态: {m.status === "success" ? <span className="text-green-500 font-semibold">成功</span> : <span className="text-red-500 font-semibold">失败</span>}
-                                    {m.latencyMs ? ` · 耗时 ${m.latencyMs} ms` : ""}
-                                  </span>
-                                </div>
-                                <div className="space-y-2">
-                                  <div className="text-xs text-zinc-400 uppercase tracking-wider font-semibold">入参载荷 (Request Arguments)</div>
-                                  <pre className="p-4 bg-[var(--color-bg-hover)] border border-[var(--color-border-light)] rounded-lg text-xs font-mono overflow-auto text-zinc-700 dark:text-zinc-300 max-h-80 shadow-inner leading-relaxed">
-                                    {formatJson(m.requestPayload)}
-                                  </pre>
-                                </div>
-                                <div className="space-y-2">
-                                  <div className="text-xs text-zinc-400 uppercase tracking-wider font-semibold">观察结果 (Response Outcome)</div>
-                                  <pre className="p-4 bg-[var(--color-bg-hover)] border border-[var(--color-border-light)] rounded-lg text-xs font-mono overflow-auto text-zinc-700 dark:text-zinc-300 max-h-80 shadow-inner leading-relaxed">
-                                    {formatJson(m.responsePayload)}
-                                  </pre>
-                                </div>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      </Tabs.TabPane>
-
-                      {/* 页签 4: 交付物推送审计 */}
-                      <Tabs.TabPane tab={`交付推送 (${activeNodeDeliveries.length})`} key="deliveries">
-                        <div className="space-y-4">
-                          {activeNodeDeliveries.length === 0 ? (
-                            <Empty description="该节点无推送交付记录" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-                          ) : (
-                            activeNodeDeliveries.map((d) => (
-                              <div key={d.id} className="border border-[var(--color-border-light)] rounded-xl p-4 space-y-3 bg-[var(--color-bg-card)] shadow-sm">
-                                <div className="flex justify-between items-center text-xs">
-                                  <span className="font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
-                                    <Send size={12} className="text-primary-500" />
-                                    方式: {d.deliveryType} · 标题: {d.title}
-                                  </span>
-                                  <span>
-                                    {d.status === "success" ? <Tag color="success">交付成功</Tag> : <Tag color="error">交付失败</Tag>}
-                                  </span>
-                                </div>
-                                <div className="grid grid-cols-2 gap-4 text-xs text-zinc-500">
-                                  <div>目标地址/Key: <span className="font-mono text-zinc-700 dark:text-zinc-300">{d.target || "—"}</span></div>
-                                  <div>交付时间: <span className="text-zinc-700 dark:text-zinc-300">{formatDate(d.createdAt)}</span></div>
-                                </div>
-                                <div className="space-y-2">
-                                  <div className="text-xs text-zinc-400 uppercase tracking-wider font-semibold">交付载荷</div>
-                                  <pre className="p-4 bg-[var(--color-bg-hover)] border border-[var(--color-border-light)] rounded-lg text-xs font-mono overflow-auto text-zinc-700 dark:text-zinc-300 max-h-80 shadow-inner leading-relaxed">
-                                    {formatJson(d.payload)}
-                                  </pre>
-                                </div>
-                                <div className="space-y-2">
-                                  <div className="text-xs text-zinc-400 uppercase tracking-wider font-semibold">交付结果快照</div>
-                                  <pre className="p-4 bg-[var(--color-bg-hover)] border border-[var(--color-border-light)] rounded-lg text-xs font-mono overflow-auto text-zinc-700 dark:text-zinc-300 max-h-80 shadow-inner leading-relaxed">
-                                    {formatJson(d.resultSnapshot)}
-                                  </pre>
-                                </div>
-                                {d.errorMessage && (
-                                  <div className="p-3 bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-950/60 rounded-lg flex items-start gap-2 text-xs text-red-600">
-                                    <AlertCircle size={14} className="mt-0.5 shrink-0" />
-                                    <div>
-                                      <div className="font-semibold">失败原因</div>
-                                      <div>{d.errorMessage}</div>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      </Tabs.TabPane>
-                    </Tabs>
-                  </div>
+                    <Tabs
+                      defaultActiveKey="variables"
+                      className="agent-admin-tabs"
+                      items={buildNodeTabItems()}
+                    />
+                  </>
                 ) : (
-                  <div className="h-full flex items-center justify-center">
+                  <div className="flex items-center justify-center" style={{ minHeight: 200 }}>
                     <Empty description="请在左侧选择具体节点以查看审计细节" image={Empty.PRESENTED_IMAGE_SIMPLE} />
                   </div>
                 )}
@@ -398,55 +501,21 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
             </div>
 
             {/* 底部全景辅助信息：轨迹时间线与全局变量池 */}
-            <div className="border-t border-zinc-100 dark:border-zinc-800 pt-4 shrink-0">
-              <Tabs defaultActiveKey="timeline" className="agent-admin-tabs">
-                <Tabs.TabPane tab="工作流轨迹事件时间线" key="timeline">
-                  <div className="space-y-4 max-h-40 overflow-y-auto pr-1">
-                    {evidence.runEvents.length === 0 ? (
-                      <Empty description="无事件记录" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-                    ) : (
-                      <div className="relative border-l border-zinc-100 dark:border-zinc-800 pl-4 ml-2 space-y-4 text-xs">
-                        {evidence.runEvents.map((evt) => (
-                          <div key={evt.id} className="relative">
-                            <span className="absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full border bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700" />
-                            <div className="flex items-center justify-between text-zinc-400">
-                              <span className="font-semibold text-zinc-600 dark:text-zinc-300">{evt.title}</span>
-                              <span>{formatDate(evt.eventTime)}</span>
-                            </div>
-                            <div className="text-zinc-500 mt-1">
-                              {evt.description} {evt.operatorName ? `(操作人: ${evt.operatorName})` : ""}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </Tabs.TabPane>
-
-                <Tabs.TabPane tab="流程全局变量最终快照" key="all_vars">
-                  <div className="grid grid-cols-2 gap-3 max-h-40 overflow-y-auto pr-1">
-                    {evidence.variableSnapshots.map((v) => (
-                      <div key={v.id} className="p-2 border border-zinc-100 dark:border-zinc-800 rounded-lg flex items-center justify-between text-xs bg-zinc-50/40 dark:bg-zinc-950/20">
-                        <span className="font-mono text-zinc-600 dark:text-zinc-300 flex items-center gap-1">
-                          {v.variableName}
-                          {v.sensitive && <Lock size={10} className="text-red-400" />}
-                        </span>
-                        <span className="text-zinc-400">
-                          {v.sensitive ? <span className="italic text-red-400">******</span> : String(v.value)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </Tabs.TabPane>
-              </Tabs>
+            <div className="run-evidence-footer">
+              <Tabs
+                defaultActiveKey="timeline"
+                className="agent-admin-tabs"
+                items={buildFooterTabItems()}
+              />
             </div>
-          </div>
+          </>
         ) : (
-          <div className="h-full flex items-center justify-center p-6">
+          <div className="flex items-center justify-center" style={{ minHeight: 320 }}>
             <Empty description="无法加载证据链数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
           </div>
         )}
-      </Spin>
+      </div>
     </Drawer>
   );
 }
+

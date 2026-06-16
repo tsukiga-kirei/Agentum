@@ -7851,3 +7851,524 @@ textarea:focus-visible {
     box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
   }
 }
+
+/* ===== 运行审计证据链抽屉 ===== */
+
+/* 顶部概要卡片：参考 workflow-detail-drawer-hero 的品牌色渐变风格 */
+.run-evidence-hero {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 24px;
+  padding: 18px 20px;
+  border: 1px solid color-mix(in srgb, #4f46e5 18%, var(--color-border-light));
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, #4f46e5 4%, var(--color-bg-card));
+}
+
+.run-evidence-hero-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  min-width: 0;
+}
+
+.run-evidence-hero-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-card);
+  border: 1px solid color-mix(in srgb, #4f46e5 18%, var(--color-border-light));
+  color: #4f46e5;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 0.05);
+}
+
+.run-evidence-hero-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.run-evidence-hero-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.run-evidence-hero-title h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  line-height: 1.4;
+}
+
+.run-evidence-hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  line-height: 1.6;
+}
+
+.run-evidence-hero-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.run-evidence-hero-meta-item svg {
+  flex-shrink: 0;
+  opacity: 0.55;
+}
+
+/* 主面板区域：左右分栏 */
+.run-evidence-body {
+  display: flex;
+  gap: 0;
+}
+
+/* 左侧节点步骤轨道 */
+.run-evidence-sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  padding-right: 20px;
+  border-right: 1px solid var(--color-border-light);
+}
+
+.run-evidence-sidebar-title {
+  margin: 0 0 12px 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+/* 节点轨道容器：垂直时间线 */
+.run-evidence-node-list {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* 垂直连接线 */
+.run-evidence-node-list::before {
+  content: "";
+  position: absolute;
+  left: 18px;
+  top: 8px;
+  bottom: 8px;
+  width: 1.5px;
+  background: var(--color-border-light);
+  border-radius: 1px;
+  z-index: 0;
+}
+
+/* 单个节点按钮 */
+.run-evidence-node {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  transition: all 0.15s ease;
+  text-align: left;
+  width: 100%;
+}
+
+.run-evidence-node:hover {
+  background: var(--color-bg-hover);
+}
+
+.run-evidence-node--active {
+  background: color-mix(in srgb, var(--color-primary) 6%, var(--color-bg-card));
+  border-color: color-mix(in srgb, var(--color-primary) 22%, var(--color-border-light));
+  color: var(--color-primary);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 0.04);
+}
+
+.run-evidence-node--failed {
+  color: #ef4444;
+}
+
+.run-evidence-node--failed:not(.run-evidence-node--active) {
+  background: color-mix(in srgb, #ef4444 4%, transparent);
+}
+
+/* 节点图标容器 */
+.run-evidence-node-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border-light);
+  transition: all 0.15s ease;
+}
+
+.run-evidence-node--active .run-evidence-node-icon {
+  background: var(--color-bg-card);
+  border-color: color-mix(in srgb, var(--color-primary) 30%, var(--color-border-light));
+  color: var(--color-primary);
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+}
+
+.run-evidence-node--failed .run-evidence-node-icon {
+  border-color: color-mix(in srgb, #ef4444 25%, var(--color-border-light));
+  color: #ef4444;
+}
+
+.run-evidence-node-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+/* 右侧详情面板 */
+.run-evidence-content {
+  flex: 1;
+  min-width: 0;
+  padding-left: 24px;
+}
+
+/* 节点标题区域 */
+.run-evidence-node-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--color-border-light);
+  margin-bottom: 4px;
+}
+
+.run-evidence-node-header h4 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.run-evidence-node-header-sub {
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+.run-evidence-node-header-duration {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  padding-top: 2px;
+}
+
+/* 代码/JSON 块统一样式 */
+.run-evidence-code {
+  margin: 0;
+  padding: 14px 16px;
+  background: var(--color-bg-hover);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", "JetBrains Mono", "Menlo", monospace;
+  line-height: 1.65;
+  color: var(--color-text-primary);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* 变量卡片 */
+.run-evidence-var-card {
+  padding: 14px 16px;
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.03);
+}
+
+.run-evidence-var-card + .run-evidence-var-card {
+  margin-top: 10px;
+}
+
+.run-evidence-var-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.run-evidence-var-name {
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", "JetBrains Mono", "Menlo", monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.run-evidence-var-type {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+/* 模型/MCP/交付 调用卡片 */
+.run-evidence-call-card {
+  padding: 16px;
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.03);
+}
+
+.run-evidence-call-card + .run-evidence-call-card {
+  margin-top: 10px;
+}
+
+.run-evidence-call-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  font-size: 12px;
+}
+
+.run-evidence-call-title {
+  font-weight: 700;
+  color: var(--color-text-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.run-evidence-call-meta {
+  color: var(--color-text-tertiary);
+}
+
+.run-evidence-section-label {
+  margin: 0 0 6px 0;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.run-evidence-section-label + .run-evidence-code {
+  margin-bottom: 12px;
+}
+
+/* 底部全景辅助面板分隔线 */
+.run-evidence-footer {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--color-border-light);
+}
+
+/* 时间线 */
+.run-evidence-timeline {
+  position: relative;
+  padding-left: 20px;
+  margin-left: 6px;
+  border-left: 1.5px solid var(--color-border-light);
+}
+
+.run-evidence-timeline-event {
+  position: relative;
+  padding-bottom: 16px;
+}
+
+.run-evidence-timeline-event:last-child {
+  padding-bottom: 0;
+}
+
+.run-evidence-timeline-dot {
+  position: absolute;
+  left: -26.5px;
+  top: 3px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--color-bg-card);
+  border: 2px solid var(--color-border);
+  box-shadow: 0 0 0 3px var(--color-bg-page);
+}
+
+.run-evidence-timeline-event-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.run-evidence-timeline-event-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.run-evidence-timeline-event-time {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+.run-evidence-timeline-event-desc {
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+
+/* 全局变量快照网格 */
+.run-evidence-global-vars {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.run-evidence-global-var-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--color-bg-hover) 60%, transparent);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+}
+
+.run-evidence-global-var-name {
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", "JetBrains Mono", "Menlo", monospace;
+  color: var(--color-text-secondary);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-evidence-global-var-value {
+  color: var(--color-text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 50%;
+  text-align: right;
+}
+
+/* 错误信息块 */
+.run-evidence-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  background: color-mix(in srgb, #ef4444 5%, var(--color-bg-card));
+  border: 1px solid color-mix(in srgb, #ef4444 15%, var(--color-border-light));
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  color: #ef4444;
+  margin-top: 12px;
+}
+
+.run-evidence-error-title {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+/* 交付信息网格 */
+.run-evidence-delivery-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  margin-bottom: 12px;
+}
+
+.run-evidence-delivery-meta span {
+  color: var(--color-text-primary);
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", "JetBrains Mono", "Menlo", monospace;
+}
+
+/* 敏感信息遮蔽 */
+.run-evidence-sensitive {
+  color: #ef4444;
+  font-style: italic;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* 暗色模式适配 */
+.agent-admin-drawer--dark .run-evidence-hero {
+  border-color: color-mix(in srgb, #6366f1 22%, var(--color-border));
+  background: color-mix(in srgb, #6366f1 6%, var(--color-bg-card));
+}
+
+.agent-admin-drawer--dark .run-evidence-hero-icon {
+  background: var(--color-bg-card);
+  border-color: color-mix(in srgb, #6366f1 30%, var(--color-border));
+  color: #818cf8;
+}
+
+.agent-admin-drawer--dark .run-evidence-node--active {
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-bg-card));
+  border-color: color-mix(in srgb, var(--color-primary) 28%, var(--color-border));
+}
+
+.agent-admin-drawer--dark .run-evidence-code {
+  background: color-mix(in srgb, var(--color-bg-hover) 80%, #0f172a);
+  border-color: var(--color-border);
+}
+
+.agent-admin-drawer--dark .run-evidence-var-card,
+.agent-admin-drawer--dark .run-evidence-call-card {
+  background: color-mix(in srgb, var(--color-bg-card) 80%, #0f172a);
+  border-color: var(--color-border);
+}
+
+.agent-admin-drawer--dark .run-evidence-global-var-item {
+  background: color-mix(in srgb, var(--color-bg-hover) 50%, transparent);
+  border-color: var(--color-border);
+}
+
+.agent-admin-drawer--dark .run-evidence-error {
+  background: color-mix(in srgb, #ef4444 8%, var(--color-bg-card));
+  border-color: color-mix(in srgb, #ef4444 20%, var(--color-border));
+}
+
+.agent-admin-drawer--dark .run-evidence-timeline-dot {
+  background: var(--color-bg-card);
+  border-color: var(--color-border);
+  box-shadow: 0 0 0 3px var(--color-bg-page);
+}
+
+/* Tab 内容面板自定义间距 */
+.run-evidence-tab-content {
+  padding-top: 12px;
+}
