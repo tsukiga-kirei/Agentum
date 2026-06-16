@@ -92,6 +92,7 @@ class SystemManagementServiceTest {
             FIELD_ENCRYPTION,
             mock(ModelProviderConnectionTester.class),
             mock(McpSseConnectionTester.class),
+            mock(McpConnectionTester.class),
             mock(SkillManifestProbe.class),
             mock(EmailDeliveryConnectionTester.class),
             Clock.fixed(Instant.parse("2026-05-15T08:00:00Z"), ZoneOffset.UTC)
@@ -739,6 +740,61 @@ class SystemManagementServiceTest {
     }
 
     @Test
+    void shouldPersistMcpCapabilityWithStreamableHttp() {
+        SystemCapabilityRepository systemCapabilityRepository = mock(SystemCapabilityRepository.class);
+        List<SystemCapabilityEntity> savedCapabilities = new ArrayList<>();
+        when(systemCapabilityRepository.findByCodeAndVersion(any(), any())).thenReturn(Optional.empty());
+        when(systemCapabilityRepository.save(any(SystemCapabilityEntity.class))).thenAnswer(invocation -> {
+            SystemCapabilityEntity entity = invocation.getArgument(0);
+            savedCapabilities.add(entity);
+            return entity;
+        });
+        SystemManagementService service = buildService(mock(ModelProviderRepository.class), systemCapabilityRepository);
+
+        SystemManagementApi.CapabilityRow row = service.createCapability(new SystemManagementApi.CreateCapabilityRequest(
+            "mcp",
+            "端点 MCP",
+            null,
+            "v1",
+            "Streamable HTTP 接入的测试 MCP",
+            "medium",
+            "active",
+            Map.of(
+                "transport", "streamable_http",
+                "endpointUrl", "http://localhost:18080/mcp"
+            )
+        ));
+
+        assertThat(savedCapabilities).hasSize(1);
+        assertThat(savedCapabilities.getFirst().getConfig())
+            .containsEntry("transport", "streamable_http")
+            .containsEntry("endpointUrl", "http://localhost:18080/mcp");
+        assertThat(row.config())
+            .containsEntry("transport", "streamable_http")
+            .containsEntry("endpointUrl", "http://localhost:18080/mcp");
+    }
+
+    @Test
+    void shouldRejectMcpCapabilityWithoutEndpointUrl() {
+        SystemManagementService service = buildService(mock(ModelProviderRepository.class), mock(SystemCapabilityRepository.class));
+
+        assertThatThrownBy(() -> service.createCapability(new SystemManagementApi.CreateCapabilityRequest(
+            "mcp",
+            "缺少端点地址的 MCP",
+            null,
+            "v1",
+            "",
+            "medium",
+            "active",
+            Map.of(
+                "transport", "streamable_http"
+            )
+        )))
+            .isInstanceOf(ApiException.class)
+            .hasMessageContaining("MCP HTTP 端点地址不能为空");
+    }
+
+    @Test
     void shouldEncryptEmailDeliveryPasswordAndHideSecretFromResponse() {
         SystemCapabilityRepository systemCapabilityRepository = mock(SystemCapabilityRepository.class);
         List<SystemCapabilityEntity> savedCapabilities = new ArrayList<>();
@@ -1033,6 +1089,7 @@ class SystemManagementServiceTest {
             FIELD_ENCRYPTION,
             mock(ModelProviderConnectionTester.class),
             mock(McpSseConnectionTester.class),
+            mock(McpConnectionTester.class),
             mock(SkillManifestProbe.class),
             mock(EmailDeliveryConnectionTester.class),
             Clock.fixed(Instant.parse("2026-05-15T08:00:00Z"), ZoneOffset.UTC)
@@ -1068,6 +1125,7 @@ class SystemManagementServiceTest {
             FIELD_ENCRYPTION,
             modelProviderConnectionTester,
             mcpSseConnectionTester,
+            mock(McpConnectionTester.class),
             skillManifestProbe,
             emailDeliveryConnectionTester,
             Clock.fixed(Instant.parse("2026-05-15T08:00:00Z"), ZoneOffset.UTC)

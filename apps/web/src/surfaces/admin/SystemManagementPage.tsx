@@ -251,7 +251,7 @@ function buildCapabilityFormValues(capability: SystemCapabilityRow): Record<stri
     description: capability.description ?? "",
     riskLevel: capability.riskLevel,
     status: capability.status,
-    transport: "sse",
+    transport: readConfigString(capability.config, "transport") || "sse",
     sseUrl: readConfigString(capability.config, "sseUrl"),
     sourceType: readConfigString(capability.config, "sourceType") || "builtin",
     deliveryChannel: readConfigString(capability.config, "deliveryChannel") || "email",
@@ -411,6 +411,7 @@ export function SystemManagementPage() {
   const [editingCapability, setEditingCapability] = useState<SystemCapabilityRow | null>(null);
   const [selectedModelProviderType, setSelectedModelProviderType] = useState("");
   const [selectedCapabilityType, setSelectedCapabilityType] = useState("mcp");
+  const [selectedMcpTransport, setSelectedMcpTransport] = useState("sse");
   const [selectedDeliverySourceType, setSelectedDeliverySourceType] = useState("builtin");
   const [selectedDeliveryChannel, setSelectedDeliveryChannel] = useState("email");
   const modelRef = useRef<Record<string,string>>({});
@@ -692,6 +693,7 @@ export function SystemManagementPage() {
     setEditingCapability(capability);
     capRef.current = capability ? buildCapabilityFormValues(capability) : { capabilityType: "mcp", transport: "sse" };
     setSelectedCapabilityType(capability?.capabilityType ?? "mcp");
+    setSelectedMcpTransport(capability ? (readConfigString(capability.config, "transport") || "sse") : "sse");
     setSelectedDeliverySourceType(capability ? (readConfigString(capability.config, "sourceType") || "builtin") : "builtin");
     setSelectedDeliveryChannel(capability ? (readConfigString(capability.config, "deliveryChannel") || "email") : "email");
     setCapFormKey((key) => key + 1);
@@ -790,11 +792,20 @@ export function SystemManagementPage() {
     const capabilityType = d.capabilityType.trim();
     const config: Record<string, unknown> = {};
     if (capabilityType === "mcp") {
-      config.transport = "sse";
-      config.sseUrl = d.sseUrl?.trim() || "";
-      if (!d.sseUrl?.trim()) {
-        messageApi.warning("请输入 SSE 地址");
-        return;
+      const transport = selectedMcpTransport || "sse";
+      config.transport = transport;
+      if (transport === "streamable_http") {
+        config.endpointUrl = d.endpointUrl?.trim() || "";
+        if (!config.endpointUrl) {
+          messageApi.warning("请输入 HTTP 端点地址");
+          return;
+        }
+      } else {
+        config.sseUrl = d.sseUrl?.trim() || "";
+        if (!config.sseUrl) {
+          messageApi.warning("请输入 SSE 地址");
+          return;
+        }
       }
     } else if (capabilityType === "delivery") {
       config.sourceType = d.sourceType?.trim() || "builtin";
@@ -1729,7 +1740,57 @@ export function SystemManagementPage() {
             </div>
           ) : null}
           {selectedCapabilityType === "mcp" && (
-            <div className="sys-field"><label className="sys-field-label sys-field-label--required">SSE 地址</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="http://localhost:18080/sse" maxLength={500} defaultValue={capRef.current.sseUrl || ""} onChange={e=>{capRef.current.sseUrl=e.target.value;}}/></div></div>
+            <>
+              <div className="sys-field">
+                <label className="sys-field-label">传输类型</label>
+                <SysSelect
+                  icon={ServerCog}
+                  placeholder="请选择传输类型"
+                  value={selectedMcpTransport}
+                  defaultValue={selectedMcpTransport}
+                  options={[
+                    { value: "sse", label: "SSE" },
+                    { value: "streamable_http", label: "Streamable HTTP" },
+                  ]}
+                  onChange={(v) => {
+                    setSelectedMcpTransport(v);
+                  }}
+                />
+              </div>
+              {selectedMcpTransport === "streamable_http" ? (
+                <div className="sys-field" key="streamable_http">
+                  <label className="sys-field-label sys-field-label--required">HTTP 端点</label>
+                  <div className="sys-field-input-wrap">
+                    <Globe size={16} className="sys-field-prefix" />
+                    <input
+                      className="sys-field-input"
+                      placeholder="http://localhost:18080/mcp"
+                      maxLength={500}
+                      defaultValue={capRef.current.endpointUrl || ""}
+                      onChange={(e) => {
+                        capRef.current.endpointUrl = e.target.value;
+                      }}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="sys-field" key="sse">
+                  <label className="sys-field-label sys-field-label--required">SSE 地址</label>
+                  <div className="sys-field-input-wrap">
+                    <Globe size={16} className="sys-field-prefix" />
+                    <input
+                      className="sys-field-input"
+                      placeholder="http://localhost:18080/sse"
+                      maxLength={500}
+                      defaultValue={capRef.current.sseUrl || ""}
+                      onChange={(e) => {
+                        capRef.current.sseUrl = e.target.value;
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+            </>
           )}
           {selectedCapabilityType === "skill" && (
             <div className="sys-field">

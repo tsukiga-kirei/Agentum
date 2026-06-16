@@ -89,6 +89,7 @@ public class SystemManagementService {
     private final FieldEncryptionService fieldEncryptionService;
     private final ModelProviderConnectionTester modelProviderConnectionTester;
     private final McpSseConnectionTester mcpSseConnectionTester;
+    private final McpConnectionTester mcpConnectionTester;
     private final SkillManifestProbe skillManifestProbe;
     private final EmailDeliveryConnectionTester emailDeliveryConnectionTester;
     private final Clock clock;
@@ -110,6 +111,7 @@ public class SystemManagementService {
         FieldEncryptionService fieldEncryptionService,
         ModelProviderConnectionTester modelProviderConnectionTester,
         McpSseConnectionTester mcpSseConnectionTester,
+        McpConnectionTester mcpConnectionTester,
         SkillManifestProbe skillManifestProbe,
         EmailDeliveryConnectionTester emailDeliveryConnectionTester,
         Clock clock
@@ -130,6 +132,7 @@ public class SystemManagementService {
         this.fieldEncryptionService = fieldEncryptionService;
         this.modelProviderConnectionTester = modelProviderConnectionTester;
         this.mcpSseConnectionTester = mcpSseConnectionTester;
+        this.mcpConnectionTester = mcpConnectionTester;
         this.skillManifestProbe = skillManifestProbe;
         this.emailDeliveryConnectionTester = emailDeliveryConnectionTester;
         this.clock = clock;
@@ -902,15 +905,16 @@ public class SystemManagementService {
 
     private SystemManagementApi.CapabilityTestResult testMcpConfig(SystemCapabilityEntity capability) {
         Map<String, Object> config = capability.getConfig();
-        String sseUrl = stringValue(config.get("sseUrl"));
-        if (sseUrl == null) {
-            return capabilityProbeResult(capability.getId(), "failed", "SSE 类型 MCP 必须配置 sseUrl", List.of(), clock.instant());
+        String transport = firstNonBlank(stringValue(config.get("transport")), "sse");
+        String endpointUrl = firstNonBlank(stringValue(config.get("endpointUrl")), stringValue(config.get("sseUrl")));
+        if (endpointUrl == null || endpointUrl.isBlank()) {
+            String errorMsg = "streamable_http".equalsIgnoreCase(transport) ? "MCP 必须配置端点地址" : "SSE 类型 MCP 必须配置 sseUrl";
+            return capabilityProbeResult(capability.getId(), "failed", errorMsg, List.of(), clock.instant());
         }
 
-        // 系统管理阶段按 MCP 标准协议探测：SSE 建连后执行 initialize 与 tools/list，避免依赖各服务自定义 REST 预览接口。
-        McpSseTestOutcome outcome = mcpSseConnectionTester.test(new McpSseTestRequest(capability.getId(), sseUrl));
+        McpConnectionTestOutcome outcome = mcpConnectionTester.test(new McpConnectionTestRequest(capability.getId(), transport, endpointUrl));
         List<SystemManagementApi.CapabilityToolRow> tools = outcome.tools().stream()
-            .map(this::toCapabilityToolRow)
+            .map(t -> new SystemManagementApi.CapabilityToolRow(t.name(), t.description(), t.inputSchema()))
             .toList();
         return capabilityProbeResult(capability.getId(), outcome.status(), outcome.summary(), tools, clock.instant());
     }
@@ -1012,13 +1016,26 @@ public class SystemManagementService {
     private Map<String, Object> sanitizeCapabilityConfig(String capabilityType, Map<String, Object> rawConfig, Map<String, Object> existingConfig) {
         Map<String, Object> config = rawConfig == null ? Map.of() : rawConfig;
         if ("mcp".equals(capabilityType)) {
-            String sseUrl = stringValue(config.get("sseUrl"));
-            if (sseUrl == null) {
-                throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_MCP_SSE_URL_REQUIRED", "MCP SSE 地址不能为空");
-            }
+            String transportInput = stringValue(config.get("transport"));
+            String transport = "streamable_http".equalsIgnoreCase(transportInput) ? "streamable_http" : "sse";
             Map<String, Object> result = new HashMap<>();
-            result.put("transport", "sse");
-            result.put("sseUrl", sseUrl);
+            result.put("transport", transport);
+            if ("streamable_http".equalsIgnoreCase(transport)) {
+                String endpointUrl = stringValue(config.get("endpointUrl"));
+                if (endpointUrl == null || endpointUrl.isBlank()) {
+                    throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_MCP_ENDPOINT_URL_REQUIRED", "MCP HTTP 端点地址不能为空");
+                }
+                result.put("endpointUrl", endpointUrl);
+            } else {
+                String sseUrl = stringValue(config.get("sseUrl"));
+                if (sseUrl == null || sseUrl.isBlank()) {
+                    throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_MCP_SSE_URL_REQUIRED", "MCP SSE 地址不能为空");
+                }
+                result.put("sseUrl", sseUrl);
+                if (config.containsKey("endpointUrl") || (existingConfig != null && existingConfig.containsKey("endpointUrl"))) {
+                    result.put("endpointUrl", sseUrl);
+                }
+            }
             Object tools = config.get("tools");
             if (tools instanceof List<?>) {
                 result.put("tools", tools);

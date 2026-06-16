@@ -31,7 +31,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
-@Component
+@Component("mcpSseRuntimeClient")
 public class HttpMcpSseRuntimeClient implements McpRuntimeClient {
 
     private static final Logger log = LoggerFactory.getLogger(HttpMcpSseRuntimeClient.class);
@@ -52,7 +52,7 @@ public class HttpMcpSseRuntimeClient implements McpRuntimeClient {
 
     @Override
     public ToolResult callTool(ToolCall call) {
-        String sseUrl = call.sseUrl() == null ? "" : call.sseUrl().trim();
+        String sseUrl = call.endpointUrl() == null ? "" : call.endpointUrl().trim();
         if (sseUrl.isBlank()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "MCP_SSE_URL_REQUIRED", "MCP 能力未配置 SSE 地址");
         }

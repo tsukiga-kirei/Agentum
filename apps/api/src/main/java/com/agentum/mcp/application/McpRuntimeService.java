@@ -62,6 +62,8 @@ public class McpRuntimeService {
                 stringValue(capability.getConfig().get("toolName"))
             );
             String suffix = remoteToolName.isBlank() ? "call" : remoteToolName;
+            String transportType = firstNonBlank(stringValue(capability.getConfig().get("transport")), "sse");
+            String endpointUrl = firstNonBlank(stringValue(capability.getConfig().get("endpointUrl")), stringValue(capability.getConfig().get("sseUrl")));
             bindings.add(new McpToolBinding(
                 sanitizeToolName("mcp_" + capability.getCode() + "_" + suffix + "_" + index),
                 capability.getId(),
@@ -69,7 +71,9 @@ public class McpRuntimeService {
                 capability.getName(),
                 firstNonBlank(capability.getDescription(), "调用租户已授权 MCP 能力"),
                 remoteToolName,
-                stringValue(capability.getConfig().get("sseUrl")),
+                transportType,
+                endpointUrl,
+                endpointUrl,
                 mcpToolParameters(capability)
             ));
             index++;
@@ -88,9 +92,12 @@ public class McpRuntimeService {
         McpCallLogEntity callLog = McpCallLogEntity.started(request.run(), request.nodeRun(), capability, toolName, requestPayload(toolName, arguments), now);
         mcpCallLogRepository.save(callLog);
         try {
+            String transportType = firstNonBlank(binding.transportType(), stringValue(capability.getConfig().get("transport")), "sse");
+            String endpointUrl = firstNonBlank(binding.endpointUrl(), stringValue(capability.getConfig().get("endpointUrl")), stringValue(capability.getConfig().get("sseUrl")));
             McpRuntimeClient.ToolResult result = mcpRuntimeClient.callTool(new McpRuntimeClient.ToolCall(
                 capability.getId(),
-                firstNonBlank(binding.sseUrl(), stringValue(capability.getConfig().get("sseUrl"))),
+                transportType,
+                endpointUrl,
                 toolName,
                 arguments
             ));
@@ -222,6 +229,9 @@ public class McpRuntimeService {
         String displayName,
         String description,
         String remoteToolName,
+        String transportType,
+        String endpointUrl,
+        @Deprecated
         String sseUrl,
         Map<String, Object> parameters
     ) {
