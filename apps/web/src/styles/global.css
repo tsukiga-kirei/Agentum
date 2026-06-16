@@ -2014,6 +2014,21 @@ textarea:focus-visible {
   color: color-mix(in srgb, var(--color-primary-light) 88%, #ffffff);
 }
 
+.audit-page-mark {
+  border: 1px solid color-mix(in srgb, #4f46e5 24%, var(--color-border));
+  background: color-mix(in srgb, #4f46e5 10%, var(--color-bg-card));
+  color: #4f46e5;
+  box-shadow: var(--shadow-xs);
+}
+
+.dark .audit-page-mark {
+  border-color: color-mix(in srgb, #6366f1 38%, var(--color-border));
+  background: color-mix(in srgb, #6366f1 16%, var(--color-bg-card));
+  color: color-mix(in srgb, #a5b4fc 88%, #ffffff);
+}
+
+
+
 .asset-feature-card {
   display: block;
   width: 100%;

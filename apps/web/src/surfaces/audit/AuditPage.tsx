@@ -46,10 +46,10 @@ export function AuditPage() {
       return {
         value: t.key,
         label: (
-          <div className="sys-segmented-item">
-            <Icon size={14} className="sys-segmented-icon" />
+          <span className="login-portal-option">
+            <Icon className="login-portal-option-icon" aria-hidden="true" />
             <span>{t.label}</span>
-          </div>
+          </span>
         ),
       };
     });

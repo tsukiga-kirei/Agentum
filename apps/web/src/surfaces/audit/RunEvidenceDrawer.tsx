@@ -61,12 +61,48 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
 
   const formatState = (s: string) => {
     switch (s) {
-      case "running": return <Tag color="processing">执行中</Tag>;
-      case "paused": return <Tag color="warning">已暂停</Tag>;
-      case "completed": return <Tag color="success">已完成</Tag>;
-      case "failed": return <Tag color="error">已失败</Tag>;
-      case "canceled": return <Tag color="default">已取消</Tag>;
-      default: return <Tag color="default">{s}</Tag>;
+      case "running":
+        return (
+          <span className="sys-status sys-status--active">
+            <span className="sys-status-dot" />
+            执行中
+          </span>
+        );
+      case "paused":
+        return (
+          <span className="sys-status sys-status--paused">
+            <span className="sys-status-dot" />
+            已暂停
+          </span>
+        );
+      case "completed":
+        return (
+          <span className="sys-status sys-status--success">
+            <span className="sys-status-dot" />
+            已完成
+          </span>
+        );
+      case "failed":
+        return (
+          <span className="sys-status sys-status--inactive">
+            <span className="sys-status-dot" />
+            已失败
+          </span>
+        );
+      case "canceled":
+        return (
+          <span className="sys-status sys-status--inactive">
+            <span className="sys-status-dot" />
+            已取消
+          </span>
+        );
+      default:
+        return (
+          <span className="sys-status sys-status--inactive">
+            <span className="sys-status-dot" />
+            {s}
+          </span>
+        );
     }
   };
 
@@ -103,28 +139,19 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
     <Drawer
       open={!!runId}
       onClose={onClose}
-      width={900}
+      width={1000}
       title={
-        <div className="flex items-center justify-between pr-4">
-          <div className="flex items-center gap-2">
-            <ClipboardList className="text-primary-500" size={18} />
-            <span className="font-semibold text-zinc-800 dark:text-zinc-100">运行全链路审计证据链</span>
-          </div>
+        <div className="flex items-center gap-2">
+          <ClipboardList className="text-primary-500" size={18} />
+          <span className="font-semibold text-zinc-800 dark:text-zinc-100">运行全链路审计证据链</span>
         </div>
       }
-      closable={false}
-      extra={
-        <Button 
-          type="text" 
-          icon={<X size={18} className="text-zinc-400 hover:text-zinc-600" />} 
-          onClick={onClose} 
-        />
-      }
+      closable={true}
       rootClassName={themeMode === "dark" ? "agent-admin-drawer agent-admin-drawer--dark" : "agent-admin-drawer"}
     >
-      <Spin spinning={loading}>
+      <Spin spinning={loading} wrapperClassName="h-full flex flex-col">
         {evidence ? (
-          <div className="flex flex-col h-full space-y-6">
+          <div className="flex flex-col h-full p-6 space-y-6 overflow-hidden">
             {/* 顶层实例概要 */}
             <div className="p-4 bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-100 dark:border-zinc-800 rounded-xl space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -154,9 +181,9 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
             </div>
 
             {/* 证据链详情主面板：左侧节点选择，右侧日志展示 */}
-            <div className="flex flex-1 gap-6 min-h-[480px]">
+            <div className="flex flex-1 gap-6 min-h-0 overflow-hidden">
               {/* 左侧流程节点步骤轨道 */}
-              <div className="w-1/4 border-r border-zinc-100 dark:border-zinc-800 pr-4 space-y-2 max-h-[550px] overflow-y-auto">
+              <div className="w-1/4 border-r border-zinc-100 dark:border-zinc-800 pr-4 space-y-2 overflow-y-auto h-full">
                 <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">流程步骤轨道</div>
                 {evidence.nodeRuns.map((node) => {
                   const isActive = node.nodeKey === activeNodeKey;
@@ -165,20 +192,20 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
                     <div
                       key={node.id}
                       onClick={() => setActiveNodeKey(node.nodeKey)}
-                      className={`flex items-center gap-2 p-2.5 rounded-lg cursor-pointer text-sm transition-all border ${
+                      className={`flex items-center gap-2.5 p-2.5 rounded-lg cursor-pointer text-sm transition-all border ${
                         isActive
-                          ? "bg-primary-50 dark:bg-primary-950/20 border-primary-200 dark:border-primary-900 text-primary-700 dark:text-primary-400 font-medium"
+                          ? "bg-[var(--color-primary-bg)] border-[var(--color-primary-lighter)] text-[var(--color-primary)] font-medium shadow-sm"
                           : isNodeFailed
-                          ? "bg-red-50/40 dark:bg-red-950/10 border-red-100 dark:border-red-950 text-red-600 dark:text-red-400"
-                          : "bg-white dark:bg-zinc-900 border-zinc-100 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/60"
+                          ? "bg-red-50/40 dark:bg-red-950/10 border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400"
+                          : "bg-[var(--color-bg-card)] border-[var(--color-border-light)] text-zinc-600 dark:text-zinc-400 hover:bg-[var(--color-bg-hover)]"
                       }`}
                     >
-                      <div className={`p-1.5 rounded-md ${
+                      <div className={`p-1.5 rounded-md transition-colors ${
                         isActive 
-                          ? "bg-primary-100 dark:bg-primary-900/60 text-primary-600 dark:text-primary-400" 
+                          ? "bg-[var(--color-bg-card)] text-[var(--color-primary)] shadow-sm" 
                           : isNodeFailed
-                          ? "bg-red-100 dark:bg-red-900/30 text-red-600"
-                          : "bg-zinc-100 dark:bg-zinc-800 text-zinc-400"
+                          ? "bg-red-100/50 dark:bg-red-950/50 text-red-600"
+                          : "bg-[var(--color-bg-hover)] text-zinc-400"
                       }`}>
                         {getNodeIcon(node.nodeType)}
                       </div>
@@ -189,7 +216,7 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
               </div>
 
               {/* 右侧选定节点之下的日志和环境细节 */}
-              <div className="flex-1 space-y-4 max-h-[550px] overflow-y-auto pr-1">
+              <div className="flex-1 space-y-4 overflow-y-auto h-full pr-1">
                 {activeNode ? (
                   <div className="space-y-5">
                     {/* 节点标题及基本元数据 */}
@@ -207,7 +234,7 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
                       </div>
                     </div>
 
-                    <Tabs defaultActiveKey="variables" className="audit-drawer-tabs">
+                    <Tabs defaultActiveKey="variables" className="agent-admin-tabs">
                       {/* 页签 1: 变量与数据快照 */}
                       <Tabs.TabPane tab="数据变量快照" key="variables">
                         <div className="space-y-3">
@@ -216,7 +243,7 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
                           ) : (
                             <div className="space-y-3">
                               {activeNodeVariables.map((v) => (
-                                <div key={v.id} className="p-3 bg-zinc-50 dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800/80 rounded-xl space-y-2">
+                                <div key={v.id} className="p-4 bg-[var(--color-bg-card)] border border-[var(--color-border-light)] rounded-xl space-y-3 shadow-sm">
                                   <div className="flex items-center justify-between">
                                     <span className="font-mono text-sm text-zinc-700 dark:text-zinc-300 font-semibold flex items-center gap-1.5">
                                       {v.variableName}
@@ -227,7 +254,7 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
                                     <span className="text-xs text-zinc-400">类型: {v.valueType}</span>
                                   </div>
                                   <div className="relative">
-                                    <pre className="p-3 bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-lg text-xs font-mono overflow-auto text-zinc-800 dark:text-zinc-200">
+                                    <pre className="p-4 bg-[var(--color-bg-hover)] border border-[var(--color-border-light)] rounded-lg text-xs font-mono overflow-auto text-zinc-800 dark:text-zinc-200 max-h-80 shadow-inner leading-relaxed">
                                       {v.sensitive ? (
                                         <span className="text-red-400 italic flex items-center gap-1">
                                           <EyeOff size={12} /> ****** (敏感信息，审计日志已自动遮蔽)
@@ -251,7 +278,7 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
                             <Empty description="该节点无大模型调用记录" image={Empty.PRESENTED_IMAGE_SIMPLE} />
                           ) : (
                             activeNodeModelCalls.map((m) => (
-                              <div key={m.id} className="border border-zinc-100 dark:border-zinc-800 rounded-xl p-4 space-y-3 bg-zinc-50/40 dark:bg-zinc-950/20">
+                              <div key={m.id} className="border border-[var(--color-border-light)] rounded-xl p-4 space-y-3 bg-[var(--color-bg-card)] shadow-sm">
                                 <div className="flex justify-between items-center text-xs">
                                   <span className="font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1">
                                     <Sparkles size={12} className="text-yellow-500" />
@@ -261,13 +288,13 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
                                 </div>
                                 <div className="space-y-2">
                                   <div className="text-xs text-zinc-400 uppercase tracking-wider font-semibold">提示词快照 (Prompt Snapshot)</div>
-                                  <pre className="p-3 bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-lg text-xs font-mono overflow-auto text-zinc-700 dark:text-zinc-300">
+                                  <pre className="p-4 bg-[var(--color-bg-hover)] border border-[var(--color-border-light)] rounded-lg text-xs font-mono overflow-auto text-zinc-700 dark:text-zinc-300 max-h-80 shadow-inner leading-relaxed">
                                     {formatJson(m.promptSnapshot)}
                                   </pre>
                                 </div>
                                 <div className="space-y-2">
                                   <div className="text-xs text-zinc-400 uppercase tracking-wider font-semibold">模型输出结果 (Response Snapshot)</div>
-                                  <pre className="p-3 bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-lg text-xs font-mono overflow-auto text-zinc-700 dark:text-zinc-300">
+                                  <pre className="p-4 bg-[var(--color-bg-hover)] border border-[var(--color-border-light)] rounded-lg text-xs font-mono overflow-auto text-zinc-700 dark:text-zinc-300 max-h-80 shadow-inner leading-relaxed">
                                     {formatJson(m.responseSnapshot)}
                                   </pre>
                                 </div>
@@ -284,7 +311,7 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
                             <Empty description="该节点无外部工具 (MCP) 调用记录" image={Empty.PRESENTED_IMAGE_SIMPLE} />
                           ) : (
                             activeNodeMcpCalls.map((m) => (
-                              <div key={m.id} className="border border-zinc-100 dark:border-zinc-800 rounded-xl p-4 space-y-3 bg-zinc-50/40 dark:bg-zinc-950/20">
+                              <div key={m.id} className="border border-[var(--color-border-light)] rounded-xl p-4 space-y-3 bg-[var(--color-bg-card)] shadow-sm">
                                 <div className="flex justify-between items-center text-xs">
                                   <span className="font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1">
                                     <Cpu size={12} className="text-blue-500" />
@@ -297,13 +324,13 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
                                 </div>
                                 <div className="space-y-2">
                                   <div className="text-xs text-zinc-400 uppercase tracking-wider font-semibold">入参载荷 (Request Arguments)</div>
-                                  <pre className="p-3 bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-lg text-xs font-mono overflow-auto text-zinc-700 dark:text-zinc-300">
+                                  <pre className="p-4 bg-[var(--color-bg-hover)] border border-[var(--color-border-light)] rounded-lg text-xs font-mono overflow-auto text-zinc-700 dark:text-zinc-300 max-h-80 shadow-inner leading-relaxed">
                                     {formatJson(m.requestPayload)}
                                   </pre>
                                 </div>
                                 <div className="space-y-2">
                                   <div className="text-xs text-zinc-400 uppercase tracking-wider font-semibold">观察结果 (Response Outcome)</div>
-                                  <pre className="p-3 bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-lg text-xs font-mono overflow-auto text-zinc-700 dark:text-zinc-300">
+                                  <pre className="p-4 bg-[var(--color-bg-hover)] border border-[var(--color-border-light)] rounded-lg text-xs font-mono overflow-auto text-zinc-700 dark:text-zinc-300 max-h-80 shadow-inner leading-relaxed">
                                     {formatJson(m.responsePayload)}
                                   </pre>
                                 </div>
@@ -320,7 +347,7 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
                             <Empty description="该节点无推送交付记录" image={Empty.PRESENTED_IMAGE_SIMPLE} />
                           ) : (
                             activeNodeDeliveries.map((d) => (
-                              <div key={d.id} className="border border-zinc-100 dark:border-zinc-800 rounded-xl p-4 space-y-3 bg-zinc-50/40 dark:bg-zinc-950/20">
+                              <div key={d.id} className="border border-[var(--color-border-light)] rounded-xl p-4 space-y-3 bg-[var(--color-bg-card)] shadow-sm">
                                 <div className="flex justify-between items-center text-xs">
                                   <span className="font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
                                     <Send size={12} className="text-primary-500" />
@@ -336,13 +363,13 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
                                 </div>
                                 <div className="space-y-2">
                                   <div className="text-xs text-zinc-400 uppercase tracking-wider font-semibold">交付载荷</div>
-                                  <pre className="p-3 bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-lg text-xs font-mono overflow-auto text-zinc-700 dark:text-zinc-300">
+                                  <pre className="p-4 bg-[var(--color-bg-hover)] border border-[var(--color-border-light)] rounded-lg text-xs font-mono overflow-auto text-zinc-700 dark:text-zinc-300 max-h-80 shadow-inner leading-relaxed">
                                     {formatJson(d.payload)}
                                   </pre>
                                 </div>
                                 <div className="space-y-2">
                                   <div className="text-xs text-zinc-400 uppercase tracking-wider font-semibold">交付结果快照</div>
-                                  <pre className="p-3 bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-lg text-xs font-mono overflow-auto text-zinc-700 dark:text-zinc-300">
+                                  <pre className="p-4 bg-[var(--color-bg-hover)] border border-[var(--color-border-light)] rounded-lg text-xs font-mono overflow-auto text-zinc-700 dark:text-zinc-300 max-h-80 shadow-inner leading-relaxed">
                                     {formatJson(d.resultSnapshot)}
                                   </pre>
                                 </div>
@@ -371,8 +398,8 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
             </div>
 
             {/* 底部全景辅助信息：轨迹时间线与全局变量池 */}
-            <div className="border-t border-zinc-100 dark:border-zinc-800 pt-4">
-              <Tabs defaultActiveKey="timeline" className="audit-drawer-tabs">
+            <div className="border-t border-zinc-100 dark:border-zinc-800 pt-4 shrink-0">
+              <Tabs defaultActiveKey="timeline" className="agent-admin-tabs">
                 <Tabs.TabPane tab="工作流轨迹事件时间线" key="timeline">
                   <div className="space-y-4 max-h-40 overflow-y-auto pr-1">
                     {evidence.runEvents.length === 0 ? (
@@ -415,7 +442,9 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
             </div>
           </div>
         ) : (
-          <Empty description="无法加载证据链数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          <div className="h-full flex items-center justify-center p-6">
+            <Empty description="无法加载证据链数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          </div>
         )}
       </Spin>
     </Drawer>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Empty, Pagination, message, Tag } from "antd";
-import { Search, Info, Cpu, Sparkles, ChevronDown, ChevronUp, AlertCircle, Clock } from "lucide-react";
+import { Empty, Pagination, message, Tag, Select, Segmented } from "antd";
+import { Search, Info, Cpu, Sparkles, ChevronDown, ChevronUp, AlertCircle, Clock, Activity } from "lucide-react";
 import { auditApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import type { AuditToolCall } from "../../types/audit";
@@ -25,6 +25,30 @@ export function ToolAuditTab({ setLoading }: ToolAuditTabProps) {
   const [keyword, setKeyword] = useState("");
 
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
+
+  const selectClassNames = { popup: { root: "agent-select-dropdown agent-admin-select-dropdown" } };
+  const selectSuffixIcon = <ChevronDown className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />;
+
+  const toolTypeOptions: { value: "mcp" | "model"; label: React.ReactNode }[] = [
+    {
+      value: "mcp",
+      label: (
+        <span className="login-portal-option">
+          <Cpu className="login-portal-option-icon" aria-hidden="true" />
+          <span>MCP 工具调用</span>
+        </span>
+      )
+    },
+    {
+      value: "model",
+      label: (
+        <span className="login-portal-option">
+          <Sparkles className="login-portal-option-icon" aria-hidden="true" />
+          <span>模型推理调用</span>
+        </span>
+      )
+    }
+  ];
 
   const fetchLogs = async (pageVal = page, sizeVal = size) => {
     if (!tenantId) return;
@@ -83,80 +107,72 @@ export function ToolAuditTab({ setLoading }: ToolAuditTabProps) {
       {/* 简洁平级工具栏，无灰色背景与边框 */}
       <div className="flex flex-col md:flex-row gap-3 items-center justify-between py-2 border-b border-zinc-100 dark:border-zinc-800">
         {/* 类型切换：模型调用或工具调用 */}
-        <div className="flex bg-zinc-100 dark:bg-zinc-800 p-0.5 rounded-lg text-xs font-semibold">
-          <button
-            onClick={() => setToolType("mcp")}
-            className={`px-3 py-1.5 rounded-md transition-colors ${
-              toolType === "mcp"
-                ? "bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-100 shadow-sm"
-                : "text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
-            }`}
-          >
-            MCP 工具调用
-          </button>
-          <button
-            onClick={() => setToolType("model")}
-            className={`px-3 py-1.5 rounded-md transition-colors ${
-              toolType === "model"
-                ? "bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-100 shadow-sm"
-                : "text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
-            }`}
-          >
-            模型推理调用
-          </button>
+        <div className="system-mgmt-segmented-scroll">
+          <Segmented<"mcp" | "model">
+            value={toolType}
+            onChange={(value) => setToolType(value)}
+            options={toolTypeOptions}
+            className="login-portal-segmented login-portal-segmented--business system-mgmt-segmented"
+          />
         </div>
 
-        <div className="flex items-center gap-3 w-full md:w-auto justify-end">
+        <div className="workflow-library-toolbar-actions w-full md:w-auto">
           {/* 关键字搜索 */}
-          <div className="relative w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
+          <label className="workflow-definition-search w-80 shrink-0">
+            <Search className="h-[18px] w-[18px]" aria-hidden="true" />
             <input
               type="text"
               placeholder={toolType === "mcp" ? "搜索工具名称/能力编码..." : "搜索模型名称..."}
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
-              className="sys-input pl-9 w-full"
             />
-          </div>
+          </label>
           {/* 状态筛选 */}
-          <select
+          <Select
             value={status}
-            onChange={(e) => setStatus(e.target.value)}
-            className="sys-input w-32"
-          >
-            <option value="">全部状态</option>
-            <option value={toolType === "model" ? "completed" : "success"}>成功</option>
-            <option value="failed">失败</option>
-          </select>
+            onChange={(value) => setStatus(value)}
+            className="agent-admin-select w-36"
+            classNames={selectClassNames}
+            suffixIcon={selectSuffixIcon}
+            prefix={<Activity className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+            options={[
+              { value: "", label: "全部状态" },
+              { value: toolType === "model" ? "completed" : "success", label: "成功" },
+              { value: "failed", label: "失败" }
+            ]}
+          />
         </div>
       </div>
 
-      {/* 列表渲染 */}
       {logs.length === 0 ? (
-        <div className="py-12 bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-xl flex items-center justify-center">
+        <div className="py-16 flex items-center justify-center">
           <Empty description={`暂无${toolType === "mcp" ? "MCP" : "模型"}审计记录`} image={Empty.PRESENTED_IMAGE_SIMPLE} />
         </div>
       ) : (
         <div className="space-y-3">
-          <div className="overflow-hidden bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-xl divide-y divide-zinc-100 dark:divide-zinc-800">
-            {logs.map((log) => {
+          <div className="workbench-task-center-list">
+            {logs.map((log, index) => {
               const isExpanded = expandedLogId === log.id;
               const isSuccess = log.status === "success" || log.status === "completed";
               return (
-                <div key={log.id} className="transition-colors hover:bg-zinc-50/20 dark:hover:bg-zinc-800/10">
+                <div
+                  key={log.id}
+                  className="sys-preview-item sys-card-enter !flex !flex-col !items-stretch !p-0 overflow-hidden w-full"
+                  style={{ animationDelay: `${index * 40}ms` }}
+                >
                   <div
                     onClick={() => toggleExpand(log.id)}
-                    className="flex items-center justify-between p-4 cursor-pointer"
+                    className="w-full flex items-center justify-between p-4 cursor-pointer hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors"
                   >
-                    <div className="flex items-center gap-3">
-                      <div className={`p-2 rounded-lg ${
+                    <div className="sys-preview-item-left">
+                      <span className={`sys-preview-item-icon ${
                         toolType === "mcp" 
                           ? "bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400" 
                           : "bg-yellow-50 dark:bg-yellow-950/30 text-yellow-600 dark:text-yellow-400"
                       }`}>
                         {toolType === "mcp" ? <Cpu size={16} /> : <Sparkles size={16} />}
-                      </div>
-                      <div>
+                      </span>
+                      <div className="min-w-0">
                         <div className="font-semibold text-zinc-800 dark:text-zinc-100 text-sm flex items-center gap-2">
                           {log.toolName}
                           {isSuccess ? (
@@ -165,8 +181,9 @@ export function ToolAuditTab({ setLoading }: ToolAuditTabProps) {
                             <Tag color="error" className="text-2xs font-normal">失败</Tag>
                           )}
                         </div>
-                        <div className="text-xs text-zinc-400 mt-1">
-                          所属运行: {log.callerName} · 时间: {formatDate(log.createdAt)}
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-400 mt-1">
+                          <span>所属运行: {log.callerName}</span>
+                          <span>触发时间: {formatDate(log.createdAt)}</span>
                         </div>
                       </div>
                     </div>
@@ -185,7 +202,7 @@ export function ToolAuditTab({ setLoading }: ToolAuditTabProps) {
 
                   {/* 展开的详情日志 */}
                   {isExpanded && (
-                    <div className="px-4 pb-4 border-t border-dashed border-zinc-100 dark:border-zinc-800 pt-3 bg-zinc-50/30 dark:bg-zinc-950/10 space-y-4">
+                    <div className="w-full px-4 pb-4 border-t border-dashed border-zinc-100 dark:border-zinc-800 pt-3 bg-zinc-50/30 dark:bg-zinc-950/10 space-y-4">
                       {/* 参数与返回值 */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-1.5">
