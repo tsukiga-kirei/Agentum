@@ -25,7 +25,7 @@ public class MenuService {
     private static final String ACTIVE_STATUS = "active";
 
     // 阶段一已下线页签；过滤旧 page_grants 或未重启实例，避免侧栏继续展示运行审计入口。
-    private static final Set<String> DEPRECATED_MENU_KEYS = Set.of("audit");
+    private static final Set<String> DEPRECATED_MENU_KEYS = Set.of();
 
     // 系统角色 → 默认菜单映射。
     private static final Map<String, List<MenuItemResponse>> SYSTEM_ROLE_MENUS = Map.of(
@@ -38,7 +38,8 @@ public class MenuService {
         "business", List.of(
             new MenuItemResponse("workbench", "业务工作台", "LayoutDashboard", "待办、发起和结果"),
             new MenuItemResponse("designer", "流程设计", "GitBranch", "画布与节点配置"),
-            new MenuItemResponse("assets", "能力资产", "Library", "智能体、Skills、MCP")
+            new MenuItemResponse("assets", "能力资产", "Library", "智能体、Skills、MCP"),
+            new MenuItemResponse("audit", "运行审计", "Eye", "查看链路、快照、工具和日志")
         )
     );
 

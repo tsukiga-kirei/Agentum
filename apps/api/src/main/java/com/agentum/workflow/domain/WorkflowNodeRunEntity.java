@@ -251,4 +251,12 @@ public class WorkflowNodeRunEntity {
     public Instant getUpdatedAt() {
         return updatedAt;
     }
+
+    public Instant getStartedAt() {
+        return startedAt;
+    }
+
+    public Instant getCompletedAt() {
+        return completedAt;
+    }
 }

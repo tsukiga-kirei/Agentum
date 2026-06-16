@@ -132,4 +132,68 @@ public class McpCallLogEntity {
     public UUID getId() {
         return id;
     }
+
+    public UUID getTenantId() {
+        return tenantId;
+    }
+
+    public UUID getRunId() {
+        return runId;
+    }
+
+    public UUID getNodeRunId() {
+        return nodeRunId;
+    }
+
+    public UUID getWorkflowId() {
+        return workflowId;
+    }
+
+    public UUID getWorkflowVersionId() {
+        return workflowVersionId;
+    }
+
+    public UUID getCapabilityId() {
+        return capabilityId;
+    }
+
+    public String getCapabilityCode() {
+        return capabilityCode;
+    }
+
+    public String getToolName() {
+        return toolName;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public Map<String, Object> getRequestPayload() {
+        return requestPayload;
+    }
+
+    public Map<String, Object> getResponsePayload() {
+        return responsePayload;
+    }
+
+    public String getErrorCode() {
+        return errorCode;
+    }
+
+    public String getErrorMessage() {
+        return errorMessage;
+    }
+
+    public Long getLatencyMs() {
+        return latencyMs;
+    }
+
+    public Instant getCreatedAt() {
+        return createdAt;
+    }
+
+    public Instant getCompletedAt() {
+        return completedAt;
+    }
 }

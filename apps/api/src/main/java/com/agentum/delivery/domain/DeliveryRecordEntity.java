@@ -158,4 +158,52 @@ public class DeliveryRecordEntity {
     public Map<String, Object> getResultSnapshot() {
         return resultSnapshot;
     }
+
+    public UUID getRunId() {
+        return runId;
+    }
+
+    public UUID getNodeRunId() {
+        return nodeRunId;
+    }
+
+    public UUID getWorkflowId() {
+        return workflowId;
+    }
+
+    public UUID getWorkflowVersionId() {
+        return workflowVersionId;
+    }
+
+    public UUID getCapabilityId() {
+        return capabilityId;
+    }
+
+    public String getTarget() {
+        return target;
+    }
+
+    public Map<String, Object> getPayload() {
+        return payload;
+    }
+
+    public String getErrorCode() {
+        return errorCode;
+    }
+
+    public String getErrorMessage() {
+        return errorMessage;
+    }
+
+    public UUID getCreatedBy() {
+        return createdBy;
+    }
+
+    public Instant getCreatedAt() {
+        return createdAt;
+    }
+
+    public Instant getCompletedAt() {
+        return completedAt;
+    }
 }

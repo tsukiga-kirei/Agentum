@@ -6,6 +6,7 @@ import { WorkflowDraftsPage } from "../surfaces/designer/WorkflowDraftsPage";
 import { TenantManagementPage } from "../surfaces/admin/TenantManagementPage";
 import { SystemManagementPage } from "../surfaces/admin/SystemManagementPage";
 import { WorkbenchShell } from "../surfaces/workbench/WorkbenchShell";
+import { AuditPage } from "../surfaces/audit/AuditPage";
 import { DefaultRedirect } from "./DefaultRedirect";
 import { MenuGuard } from "./MenuGuard";
 import { NotFoundPage } from "./NotFoundPage";
@@ -81,6 +82,16 @@ export const appRouter = createBrowserRouter([
                   { path: "tenants", element: <SystemManagementPage /> },
                   { path: "models", element: <SystemManagementPage /> },
                   { path: "capabilities", element: <SystemManagementPage /> },
+                ],
+              },
+
+              {
+                path: "audit",
+                children: [
+                  { index: true, element: <Navigate to={paths.audit.runs} replace /> },
+                  { path: "runs", element: <AuditPage /> },
+                  { path: "tools", element: <AuditPage /> },
+                  { path: "operations", element: <AuditPage /> },
                 ],
               },
 

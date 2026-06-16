@@ -98,4 +98,20 @@ public class WorkflowRunEventEntity {
     public Instant getEventTime() {
         return eventTime;
     }
+
+    public UUID getOperatorId() {
+        return operatorId;
+    }
+
+    public Map<String, Object> getPayload() {
+        return payload;
+    }
+
+    public UUID getTenantId() {
+        return tenantId;
+    }
+
+    public UUID getRunId() {
+        return runId;
+    }
 }

@@ -47,6 +47,7 @@ import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Pageable;
+import com.agentum.audit.application.AuditService;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -83,6 +84,7 @@ public class WorkflowDraftService {
     private final CollaborationAccessPolicy collaborationAccessPolicy;
     private final ObjectMapper objectMapper;
     private final Clock clock;
+    private final AuditService auditService;
 
     public WorkflowDraftService(
         TenantRepository tenantRepository,
@@ -99,7 +101,8 @@ public class WorkflowDraftService {
         UserMembershipRepository userMembershipRepository,
         CollaborationAccessPolicy collaborationAccessPolicy,
         ObjectMapper objectMapper,
-        Clock clock
+        Clock clock,
+        AuditService auditService
     ) {
         this.tenantRepository = tenantRepository;
         this.userAccountRepository = userAccountRepository;
@@ -116,6 +119,7 @@ public class WorkflowDraftService {
         this.collaborationAccessPolicy = collaborationAccessPolicy;
         this.objectMapper = objectMapper;
         this.clock = clock;
+        this.auditService = auditService;
     }
 
     @Transactional(readOnly = true)
@@ -159,6 +163,18 @@ public class WorkflowDraftService {
             definition.getId(),
             name,
             RequestIds.current()
+        );
+        auditService.recordOperationLog(
+            tenantId,
+            operatorUserId,
+            getOperatorName(operatorUserId),
+            "CREATE_WORKFLOW",
+            "WORKFLOW_DEFINITION",
+            definition.getId().toString(),
+            definition.getName(),
+            "创建了工作流草稿: " + definition.getName(),
+            Map.of("id", definition.getId().toString(), "name", definition.getName()),
+            null
         );
         return toDraftRow(definition, loadUsersById(Set.of(operatorUserId)), operatorUserId, null);
     }
@@ -227,13 +243,25 @@ public class WorkflowDraftService {
             latestVersion.getVersionNumber(),
             RequestIds.current()
         );
+        auditService.recordOperationLog(
+            tenantId,
+            operatorUserId,
+            getOperatorName(operatorUserId),
+            "RECALL_LAUNCH",
+            "WORKFLOW_DEFINITION",
+            definition.getId().toString(),
+            definition.getName(),
+            "收回工作流业务入口（下线流程）",
+            Map.of("versionNumber", latestVersion.getVersionNumber()),
+            null
+        );
         return toDetail(definition, operatorUserId);
     }
 
     @Transactional
     public WorkflowDraftApi.WorkflowDraftDetail restoreLaunch(UUID tenantId, UUID operatorUserId, UUID workflowId) {
         WorkflowDefinitionEntity definition = findDefinitionForOwner(tenantId, workflowId, operatorUserId);
-        requireLatestVersion(workflowId);
+        WorkflowVersionEntity latestVersion = requireLatestVersion(workflowId);
         if (definition.isLaunchEnabled()) {
             return toDetail(definition, operatorUserId);
         }
@@ -245,6 +273,18 @@ public class WorkflowDraftService {
             operatorUserId,
             workflowId,
             RequestIds.current()
+        );
+        auditService.recordOperationLog(
+            tenantId,
+            operatorUserId,
+            getOperatorName(operatorUserId),
+            "RESTORE_LAUNCH",
+            "WORKFLOW_DEFINITION",
+            definition.getId().toString(),
+            definition.getName(),
+            "恢复工作流业务入口（上线流程）",
+            Map.of("versionNumber", latestVersion.getVersionNumber()),
+            null
         );
         return toDetail(definition, operatorUserId);
     }
@@ -381,6 +421,18 @@ public class WorkflowDraftService {
             nextVersionNumber,
             RequestIds.current()
         );
+        auditService.recordOperationLog(
+            tenantId,
+            operatorUserId,
+            getOperatorName(operatorUserId),
+            "PUBLISH_VERSION",
+            "WORKFLOW_DEFINITION",
+            definition.getId().toString(),
+            definition.getName(),
+            "发布工作流正式版本 v" + nextVersionNumber,
+            Map.of("versionNumber", nextVersionNumber),
+            null
+        );
         return new WorkflowDraftApi.WorkflowPublishResult(
             toDraftRow(definition, loadUsersById(definition.getCreatedBy() == null ? Set.of() : Set.of(definition.getCreatedBy())), operatorUserId, version),
             nextVersionNumber,
@@ -488,6 +540,18 @@ public class WorkflowDraftService {
             edges.size(),
             variables.size(),
             RequestIds.current()
+        );
+        auditService.recordOperationLog(
+            tenantId,
+            operatorUserId,
+            getOperatorName(operatorUserId),
+            "SAVE_WORKFLOW",
+            "WORKFLOW_DEFINITION",
+            definition.getId().toString(),
+            definition.getName(),
+            "修改了工作流图配置: " + definition.getName(),
+            Map.of("nodeCount", nodes.size(), "edgeCount", edges.size(), "variableCount", variables.size()),
+            null
         );
         return toDetail(definition, operatorUserId);
     }
@@ -891,6 +955,13 @@ public class WorkflowDraftService {
             return "WORKFLOW_VALIDATION_CONFIG_INVALID";
         }
         return "WORKFLOW_CAPABILITY_REFERENCE_NOT_AVAILABLE";
+    }
+
+    private String getOperatorName(UUID userId) {
+        if (userId == null) return "System";
+        return userAccountRepository.findById(userId)
+            .map(u -> u.getDisplayName() != null ? u.getDisplayName() : u.getUsername())
+            .orElse("System");
     }
 
     private record WorkflowVersionSnapshot(

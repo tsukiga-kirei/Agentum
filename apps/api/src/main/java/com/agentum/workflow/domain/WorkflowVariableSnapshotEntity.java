@@ -116,4 +116,44 @@ public class WorkflowVariableSnapshotEntity {
     public Instant getCreatedAt() {
         return createdAt;
     }
+
+    public UUID getId() {
+        return id;
+    }
+
+    public UUID getTenantId() {
+        return tenantId;
+    }
+
+    public UUID getRunId() {
+        return runId;
+    }
+
+    public UUID getNodeRunId() {
+        return nodeRunId;
+    }
+
+    public UUID getWorkflowId() {
+        return workflowId;
+    }
+
+    public UUID getWorkflowVersionId() {
+        return workflowVersionId;
+    }
+
+    public String getValueType() {
+        return valueType;
+    }
+
+    public String getSourceNodeKey() {
+        return sourceNodeKey;
+    }
+
+    public boolean isSensitive() {
+        return sensitive;
+    }
+
+    public boolean isDeliveryVisible() {
+        return deliveryVisible;
+    }
 }

@@ -66,20 +66,20 @@ class MenuServiceTest {
     }
 
     @Test
-    void shouldNotExposeDeprecatedAuditMenuEvenWhenPageGrantExists() {
+    void shouldExposeAuditMenuWhenPageGrantExists() {
         MenuService menuService = newService();
         UserMembershipEntity membership = UserMembershipEntity.create(TENANT_ID, USER_ID, null);
 
         when(userMembershipRepository.findByUserIdAndTenantIdAndStatus(USER_ID, TENANT_ID, "active")).thenReturn(List.of(membership));
         when(userMembershipRoleRepository.findByMembershipIdInAndStatus(any(), eq("active"))).thenReturn(List.of());
         when(pageGrantRepository.findByTenantIdOrderByCreatedAtDesc(TENANT_ID)).thenReturn(List.of(
-            PageGrantEntity.create(TENANT_ID, UUID.randomUUID(), "历史审计入口", "audit", "user", USER_ID),
+            PageGrantEntity.create(TENANT_ID, UUID.randomUUID(), "运行审计页签", "audit", "user", USER_ID),
             PageGrantEntity.create(TENANT_ID, UUID.randomUUID(), "人员工作台", "workbench", "user", USER_ID)
         ));
 
         assertThat(menuService.resolveMenus("business", TENANT_ID, USER_ID))
             .extracting("key")
-            .containsExactly("workbench");
+            .containsExactly("workbench", "audit");
     }
 
     @Test

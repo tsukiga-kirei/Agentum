@@ -131,4 +131,72 @@ public class ModelCallLogEntity {
     public UUID getId() {
         return id;
     }
+
+    public UUID getTenantId() {
+        return tenantId;
+    }
+
+    public UUID getRunId() {
+        return runId;
+    }
+
+    public UUID getNodeRunId() {
+        return nodeRunId;
+    }
+
+    public UUID getWorkflowId() {
+        return workflowId;
+    }
+
+    public UUID getWorkflowVersionId() {
+        return workflowVersionId;
+    }
+
+    public UUID getProviderId() {
+        return providerId;
+    }
+
+    public String getProviderType() {
+        return providerType;
+    }
+
+    public String getModelName() {
+        return modelName;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public Map<String, Object> getPromptSnapshot() {
+        return promptSnapshot;
+    }
+
+    public Map<String, Object> getResponseSnapshot() {
+        return responseSnapshot;
+    }
+
+    public Map<String, Object> getTokenUsage() {
+        return tokenUsage;
+    }
+
+    public String getErrorCode() {
+        return errorCode;
+    }
+
+    public String getErrorMessage() {
+        return errorMessage;
+    }
+
+    public Long getLatencyMs() {
+        return latencyMs;
+    }
+
+    public Instant getCreatedAt() {
+        return createdAt;
+    }
+
+    public Instant getCompletedAt() {
+        return completedAt;
+    }
 }

@@ -7,6 +7,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.agentum.audit.application.AuditService;
 import com.agentum.auth.infrastructure.UserAccountRepository;
 import com.agentum.organization.domain.UserMembershipEntity;
 import com.agentum.organization.infrastructure.UserMembershipRepository;
@@ -72,6 +73,8 @@ class WorkflowDraftServicePublishTest {
     private WorkflowNodeConfigValidator workflowNodeConfigValidator;
     @Mock
     private UserMembershipRepository userMembershipRepository;
+    @Mock
+    private AuditService auditService;
 
     @Test
     void shouldCreateImmutableVersionAndMarkDraftPublished() {
@@ -271,7 +274,8 @@ class WorkflowDraftServicePublishTest {
             userMembershipRepository,
             new CollaborationAccessPolicy(),
             new ObjectMapper(),
-            Clock.fixed(NOW, ZoneOffset.UTC)
+            Clock.fixed(NOW, ZoneOffset.UTC),
+            auditService
         );
     }
 

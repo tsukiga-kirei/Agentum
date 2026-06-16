@@ -26,10 +26,10 @@ logging:
   level:
     root: INFO
     # 本地排查模型连通性、流式调用和运行态 SSE 时打开 DEBUG；生产 profile 勿沿用
-    com.agentum.agent.infrastructure: DEBUG
-    com.agentum.agent.application.AgentRuntimeService: DEBUG
-    com.agentum.system.infrastructure.HttpModelProviderConnectionTester: DEBUG
-    com.agentum.workbench.application.WorkbenchRuntimeService: DEBUG
+#    com.agentum.agent.infrastructure: DEBUG
+#    com.agentum.agent.application.AgentRuntimeService: DEBUG
+#    com.agentum.system.infrastructure.HttpModelProviderConnectionTester: DEBUG
+#    com.agentum.workbench.application.WorkbenchRuntimeService: DEBUG
 
 agentum:
   auth:

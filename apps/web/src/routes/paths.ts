@@ -1,4 +1,4 @@
-export type SurfaceKey = "workbench" | "designer" | "assets" | "tenant" | "system";
+export type SurfaceKey = "workbench" | "designer" | "assets" | "tenant" | "system" | "audit";
 
 export const paths = {
   login: "/login",
@@ -33,6 +33,12 @@ export const paths = {
     models: "/app/system/models",
     capabilities: "/app/system/capabilities",
   },
+  audit: {
+    root: "/app/audit",
+    runs: "/app/audit/runs",
+    tools: "/app/audit/tools",
+    operations: "/app/audit/operations",
+  },
 } as const;
 
 export function surfaceFromPath(pathname: string): SurfaceKey | null {
@@ -43,6 +49,7 @@ export function surfaceFromPath(pathname: string): SurfaceKey | null {
     || segment === "assets"
     || segment === "tenant"
     || segment === "system"
+    || segment === "audit"
   ) {
     return segment;
   }
@@ -61,6 +68,8 @@ export function defaultPathForSurface(surface: SurfaceKey): string {
       return paths.tenant.organization;
     case "system":
       return paths.system.overview;
+    case "audit":
+      return paths.audit.runs;
   }
 }
 

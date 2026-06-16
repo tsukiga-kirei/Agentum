@@ -1,5 +1,6 @@
 import type { LoginRequest, LoginResponse, MeResponse, PortalType, SsoProviderOption, SwitchRoleRequest, SwitchRoleResponse, TenantOption } from "../types/auth";
 import type { AssetSummary, CreateMyAssetRequest, MyAssetDetail, MyAssetPage, MyAssetRow, ShareableMemberRow, SystemCapabilityAssetPage, UpdateMyAssetAccessRequest, UpdateMyAssetRequest } from "../types/asset";
+import type { AuditEvidence, AuditOperationLog, AuditRunSummary, AuditToolCall } from "../types/audit";
 import type {
   CreateDepartmentRequest,
   CreateMemberRequest,
@@ -601,4 +602,43 @@ export const workflowApi = {
       token,
       body: { nodes, edges, variables },
     }),
+};
+
+export const auditApi = {
+  listRuns: (tenantId: string, token: string, page: number, size: number, sort: string, keyword: string, state: string) => {
+    const params = new URLSearchParams({
+      page: String(page),
+      size: String(size),
+      sort,
+      keyword,
+      state,
+    });
+    return apiRequest<PageResponse<AuditRunSummary>>(`/api/tenants/${tenantId}/audit/runs?${params.toString()}`, { token });
+  },
+  getEvidence: (tenantId: string, runId: string, token: string) =>
+    apiRequest<AuditEvidence>(`/api/tenants/${tenantId}/audit/runs/${runId}/evidence`, { token }),
+  listToolCalls: (tenantId: string, token: string, page: number, size: number, sort: string, toolType: string, status: string, keyword: string) => {
+    const params = new URLSearchParams({
+      page: String(page),
+      size: String(size),
+      sort,
+      toolType,
+      status,
+      keyword,
+    });
+    return apiRequest<PageResponse<AuditToolCall>>(`/api/tenants/${tenantId}/audit/tools?${params.toString()}`, { token });
+  },
+  listOperations: (tenantId: string, token: string, page: number, size: number, sort: string, actionType: string, operatorId?: string) => {
+    const filterParams: Record<string, string> = {
+      page: String(page),
+      size: String(size),
+      sort,
+      actionType,
+    };
+    if (operatorId) {
+      filterParams.operatorId = operatorId;
+    }
+    const params = new URLSearchParams(filterParams);
+    return apiRequest<PageResponse<AuditOperationLog>>(`/api/tenants/${tenantId}/audit/operations?${params.toString()}`, { token });
+  }
 };

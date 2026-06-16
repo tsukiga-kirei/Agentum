@@ -84,4 +84,23 @@ public interface WorkflowRunRepository extends JpaRepository<WorkflowRunEntity, 
         @Param("keyword") String keyword,
         Pageable pageable
     );
+
+    @Query("""
+        select run from WorkflowRunEntity run
+        where run.tenantId = :tenantId
+          and run.saved = true
+          and (
+            :keyword = ''
+            or lower(run.title) like lower(concat('%', :keyword, '%'))
+            or lower(run.workflowName) like lower(concat('%', :keyword, '%'))
+          )
+          and (:state = '' or run.state = :state)
+        """)
+    Page<WorkflowRunEntity> searchAllRunsForAudit(
+        @Param("tenantId") UUID tenantId,
+        @Param("keyword") String keyword,
+        @Param("state") String state,
+        Pageable pageable
+    );
 }
+

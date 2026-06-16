@@ -229,6 +229,10 @@ public class WorkflowRunEntity {
         return updatedAt;
     }
 
+    public Instant getCompletedAt() {
+        return completedAt;
+    }
+
     public boolean isSaved() {
         return saved;
     }
