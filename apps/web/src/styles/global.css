@@ -7855,35 +7855,58 @@ textarea:focus-visible {
 /* ===== 运行审计证据链抽屉 ===== */
 
 /* 顶部概要卡片：参考 workflow-detail-drawer-hero 的品牌色渐变风格 */
+/* 统一弹性伸缩全屏容器，替代单一滚动条 */
+.sys-drawer-section-flex {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 100px); /* 减去 Header & Padding */
+  gap: 20px;
+  overflow: hidden;
+  padding: 8px 4px;
+}
+
+/* 顶部概要卡片：扁平高级紫、无过度渐变，简约精致的卡片 */
 .run-evidence-hero {
-  display: grid;
-  gap: 12px;
-  margin-bottom: 24px;
-  padding: 18px 20px;
-  border: 1px solid color-mix(in srgb, #4f46e5 18%, var(--color-border-light));
-  border-radius: var(--radius-lg);
-  background: color-mix(in srgb, #4f46e5 4%, var(--color-bg-card));
+  position: relative;
+  padding: 20px 24px;
+  border-radius: var(--radius-xl);
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border-light);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.01), 0 10px 20px -12px rgb(0 0 0 / 0.03);
+  overflow: hidden;
+  margin-bottom: 28px; /* 增加与下方步骤的间隙 */
+}
+
+.run-evidence-hero::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: #8b5cf6; /* 紫色主题指示条 */
+  opacity: 0.95;
 }
 
 .run-evidence-hero-main {
   display: flex;
-  align-items: flex-start;
-  gap: 14px;
+  align-items: center;
+  gap: 20px;
   min-width: 0;
 }
 
 .run-evidence-hero-icon {
   display: inline-flex;
   flex-shrink: 0;
-  width: 42px;
-  height: 42px;
+  width: 52px;
+  height: 52px;
   align-items: center;
   justify-content: center;
-  border-radius: var(--radius-md);
-  background: var(--color-bg-card);
-  border: 1px solid color-mix(in srgb, #4f46e5 18%, var(--color-border-light));
-  color: #4f46e5;
-  box-shadow: 0 1px 3px rgb(15 23 42 / 0.05);
+  border-radius: var(--radius-xl);
+  background: color-mix(in srgb, #8b5cf6 6%, var(--color-bg-card));
+  border: 1px solid color-mix(in srgb, #8b5cf6 15%, var(--color-border-light));
+  color: #8b5cf6; /* 紫色图标色 */
+  box-shadow: 0 2px 8px -2px rgb(139 92 246 / 0.05);
 }
 
 .run-evidence-hero-body {
@@ -7894,58 +7917,88 @@ textarea:focus-visible {
 .run-evidence-hero-title {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: space-between;
+  gap: 12px;
   flex-wrap: wrap;
+  margin-bottom: 6px;
 }
 
 .run-evidence-hero-title h3 {
   margin: 0;
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 700;
   color: var(--color-text-primary);
-  line-height: 1.4;
+  letter-spacing: -0.02em;
 }
 
 .run-evidence-hero-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 16px;
-  margin-top: 8px;
-  font-size: 12px;
-  color: var(--color-text-tertiary);
+  gap: 8px 28px;
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
   line-height: 1.6;
 }
 
 .run-evidence-hero-meta-item {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
 }
 
 .run-evidence-hero-meta-item svg {
   flex-shrink: 0;
-  opacity: 0.55;
+  opacity: 0.8;
+  color: #8b5cf6; /* 紫色元数据图标 */
+}
+
+/* 第二部分和第三部分的统一包裹大容器：融合为一个连续的卡片 */
+.run-evidence-panel-group {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.01), 0 12px 24px -10px rgb(15 23 42 / 0.02);
+  margin-bottom: 24px;
+}
+
+/* 流程步骤与日志明细包装器 */
+.run-evidence-body-wrapper {
+  display: flex;
+  flex-direction: column;
+}
+
+.run-evidence-body-title {
+  padding: 14px 20px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  border-bottom: 1px solid var(--color-border-light);
+  background: var(--color-bg-card);
+  letter-spacing: 0.02em;
 }
 
 /* 主面板区域：左右分栏 */
 .run-evidence-body {
   display: flex;
-  gap: 0;
 }
 
 /* 左侧节点步骤轨道 */
 .run-evidence-sidebar {
-  width: 220px;
+  width: 260px;
   flex-shrink: 0;
-  padding-right: 20px;
+  padding: 20px;
   border-right: 1px solid var(--color-border-light);
+  background: color-mix(in srgb, var(--color-bg-hover) 20%, var(--color-bg-card));
 }
 
 .run-evidence-sidebar-title {
   margin: 0 0 12px 0;
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--color-text-tertiary);
 }
@@ -7955,16 +8008,16 @@ textarea:focus-visible {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
 }
 
-/* 垂直连接线 */
+/* 垂直连接线 - 与 30px node-icon 完全对齐 (left: 25px) */
 .run-evidence-node-list::before {
   content: "";
   position: absolute;
-  left: 18px;
-  top: 8px;
-  bottom: 8px;
+  left: 25px;
+  top: 15px;
+  bottom: 15px;
   width: 1.5px;
   background: var(--color-border-light);
   border-radius: 1px;
@@ -7977,29 +8030,31 @@ textarea:focus-visible {
   z-index: 1;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: var(--radius-md);
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-lg);
   border: 1px solid transparent;
   background: transparent;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 13.5px;
   color: var(--color-text-secondary);
-  transition: all 0.15s ease;
+  transition: all 0.2s ease;
   text-align: left;
   width: 100%;
 }
 
 .run-evidence-node:hover {
   background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+  transform: translateX(2px);
 }
 
 .run-evidence-node--active {
-  background: color-mix(in srgb, var(--color-primary) 6%, var(--color-bg-card));
-  border-color: color-mix(in srgb, var(--color-primary) 22%, var(--color-border-light));
-  color: var(--color-primary);
+  background: color-mix(in srgb, #8b5cf6 8%, var(--color-bg-card));
+  border-color: color-mix(in srgb, #8b5cf6 30%, var(--color-border-light));
+  color: #8b5cf6;
   font-weight: 600;
-  box-shadow: 0 1px 3px rgb(15 23 42 / 0.04);
+  box-shadow: 0 2px 8px rgb(139 92 246 / 0.04);
 }
 
 .run-evidence-node--failed {
@@ -8015,25 +8070,27 @@ textarea:focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: var(--radius-sm);
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-md);
   flex-shrink: 0;
   background: var(--color-bg-card);
   border: 1px solid var(--color-border-light);
-  transition: all 0.15s ease;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.02);
 }
 
 .run-evidence-node--active .run-evidence-node-icon {
   background: var(--color-bg-card);
-  border-color: color-mix(in srgb, var(--color-primary) 30%, var(--color-border-light));
-  color: var(--color-primary);
-  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+  border-color: color-mix(in srgb, #8b5cf6 40%, var(--color-border-light));
+  color: #8b5cf6;
+  box-shadow: 0 2px 6px rgb(139 92 246 / 0.06);
 }
 
 .run-evidence-node--failed .run-evidence-node-icon {
-  border-color: color-mix(in srgb, #ef4444 25%, var(--color-border-light));
+  border-color: color-mix(in srgb, #ef4444 30%, var(--color-border-light));
   color: #ef4444;
+  background: color-mix(in srgb, #ef4444 3%, var(--color-bg-card));
 }
 
 .run-evidence-node-name {
@@ -8048,7 +8105,7 @@ textarea:focus-visible {
 .run-evidence-content {
   flex: 1;
   min-width: 0;
-  padding-left: 24px;
+  padding: 20px;
 }
 
 /* 节点标题区域 */
@@ -8057,20 +8114,20 @@ textarea:focus-visible {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  padding-bottom: 14px;
+  padding-bottom: 16px;
   border-bottom: 1px solid var(--color-border-light);
-  margin-bottom: 4px;
+  margin-bottom: 8px;
 }
 
 .run-evidence-node-header h4 {
   margin: 0;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--color-text-primary);
 }
 
 .run-evidence-node-header-sub {
-  margin-top: 3px;
+  margin-top: 4px;
   font-size: 12px;
   color: var(--color-text-tertiary);
 }
@@ -8078,44 +8135,59 @@ textarea:focus-visible {
 .run-evidence-node-header-duration {
   flex-shrink: 0;
   font-size: 12px;
-  color: var(--color-text-tertiary);
-  padding-top: 2px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-hover);
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--color-border-light);
 }
 
 /* 代码/JSON 块统一样式 */
 .run-evidence-code {
   margin: 0;
-  padding: 14px 16px;
-  background: var(--color-bg-hover);
+  padding: 16px;
+  background: color-mix(in srgb, var(--color-bg-hover) 70%, transparent);
   border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-md);
-  font-size: 12px;
+  border-radius: var(--radius-lg);
+  font-size: 12.5px;
   font-family: "SF Mono", "Fira Code", "Cascadia Code", "JetBrains Mono", "Menlo", monospace;
-  line-height: 1.65;
+  line-height: 1.7;
   color: var(--color-text-primary);
   overflow-x: auto;
   white-space: pre-wrap;
   word-break: break-all;
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.02);
 }
 
 /* 变量卡片 */
 .run-evidence-var-card {
-  padding: 14px 16px;
+  padding: 16px;
   background: var(--color-bg-card);
   border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 1px 2px rgb(15 23 42 / 0.03);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 2px 8px -2px rgb(15 23 42 / 0.03);
+  transition: all 0.2s ease;
+}
+
+.run-evidence-var-card:hover {
+  border-color: var(--color-border);
+  box-shadow: 0 4px 16px -4px rgb(15 23 42 / 0.06);
 }
 
 .run-evidence-var-card + .run-evidence-var-card {
-  margin-top: 10px;
+  margin-top: 12px;
 }
 
 .run-evidence-var-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed var(--color-border-light);
 }
 
 .run-evidence-var-name {
@@ -8130,73 +8202,87 @@ textarea:focus-visible {
 
 .run-evidence-var-type {
   font-size: 11px;
+  font-weight: 500;
   color: var(--color-text-tertiary);
+  background: var(--color-bg-hover);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
 }
 
 /* 模型/MCP/交付 调用卡片 */
 .run-evidence-call-card {
-  padding: 16px;
+  padding: 18px;
   background: var(--color-bg-card);
   border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 1px 2px rgb(15 23 42 / 0.03);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 2px 8px -2px rgb(15 23 42 / 0.03);
+  transition: all 0.2s ease;
+}
+
+.run-evidence-call-card:hover {
+  border-color: var(--color-border);
+  box-shadow: 0 4px 16px -4px rgb(15 23 42 / 0.06);
 }
 
 .run-evidence-call-card + .run-evidence-call-card {
-  margin-top: 10px;
+  margin-top: 14px;
 }
 
 .run-evidence-call-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
   font-size: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed var(--color-border-light);
 }
 
 .run-evidence-call-title {
+  font-size: 13.5px;
   font-weight: 700;
   color: var(--color-text-primary);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .run-evidence-call-meta {
-  color: var(--color-text-tertiary);
+  color: var(--color-text-secondary);
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .run-evidence-section-label {
-  margin: 0 0 6px 0;
+  margin: 0 0 8px 0;
   font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--color-text-tertiary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .run-evidence-section-label + .run-evidence-code {
-  margin-bottom: 12px;
-}
-
-/* 底部全景辅助面板分隔线 */
-.run-evidence-footer {
-  margin-top: 28px;
-  padding-top: 20px;
-  border-top: 1px solid var(--color-border-light);
+  margin-bottom: 16px;
 }
 
 /* 时间线 */
 .run-evidence-timeline {
   position: relative;
-  padding-left: 20px;
-  margin-left: 6px;
-  border-left: 1.5px solid var(--color-border-light);
+  padding-left: 24px;
+  margin-left: 8px;
+  border-left: 2px solid var(--color-border-light);
 }
 
 .run-evidence-timeline-event {
   position: relative;
-  padding-bottom: 16px;
+  padding-bottom: 20px;
+  transition: all 0.2s ease;
 }
 
 .run-evidence-timeline-event:last-child {
@@ -8205,14 +8291,20 @@ textarea:focus-visible {
 
 .run-evidence-timeline-dot {
   position: absolute;
-  left: -26.5px;
-  top: 3px;
-  width: 10px;
-  height: 10px;
+  left: -31px;
+  top: 4px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
   background: var(--color-bg-card);
-  border: 2px solid var(--color-border);
-  box-shadow: 0 0 0 3px var(--color-bg-page);
+  border: 2.5px solid var(--color-border);
+  box-shadow: 0 0 0 4px var(--color-bg-page);
+  transition: all 0.2s ease;
+}
+
+.run-evidence-timeline-event:hover .run-evidence-timeline-dot {
+  border-color: #8b5cf6; /* 紫色主题高亮 */
+  transform: scale(1.15);
 }
 
 .run-evidence-timeline-event-header {
@@ -8223,7 +8315,7 @@ textarea:focus-visible {
 }
 
 .run-evidence-timeline-event-title {
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--color-text-primary);
 }
@@ -8235,8 +8327,8 @@ textarea:focus-visible {
 }
 
 .run-evidence-timeline-event-desc {
-  margin-top: 3px;
-  font-size: 12px;
+  margin-top: 4px;
+  font-size: 12.5px;
   color: var(--color-text-secondary);
   line-height: 1.6;
 }
@@ -8285,34 +8377,40 @@ textarea:focus-visible {
 .run-evidence-error {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  padding: 10px 14px;
-  background: color-mix(in srgb, #ef4444 5%, var(--color-bg-card));
-  border: 1px solid color-mix(in srgb, #ef4444 15%, var(--color-border-light));
-  border-radius: var(--radius-md);
-  font-size: 12px;
+  gap: 10px;
+  padding: 12px 16px;
+  background: color-mix(in srgb, #ef4444 6%, var(--color-bg-card));
+  border: 1px solid color-mix(in srgb, #ef4444 18%, var(--color-border-light));
+  border-radius: var(--radius-lg);
+  font-size: 12.5px;
   color: #ef4444;
-  margin-top: 12px;
+  margin-top: 14px;
+  box-shadow: 0 2px 8px rgb(239 68 68 / 0.04);
 }
 
 .run-evidence-error-title {
-  font-weight: 600;
-  margin-bottom: 2px;
+  font-weight: 700;
+  margin-bottom: 4px;
 }
 
 /* 交付信息网格 */
 .run-evidence-delivery-meta {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px 16px;
+  gap: 10px 20px;
   font-size: 12px;
-  color: var(--color-text-tertiary);
-  margin-bottom: 12px;
+  color: var(--color-text-secondary);
+  margin-bottom: 14px;
+  background: var(--color-bg-hover);
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-light);
 }
 
 .run-evidence-delivery-meta span {
   color: var(--color-text-primary);
   font-family: "SF Mono", "Fira Code", "Cascadia Code", "JetBrains Mono", "Menlo", monospace;
+  font-weight: 500;
 }
 
 /* 敏感信息遮蔽 */
@@ -8321,7 +8419,58 @@ textarea:focus-visible {
   font-style: italic;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
+  font-weight: 500;
+}
+
+/* 折叠面板定制样式 - 紫色主题 */
+.run-evidence-collapse {
+  background: transparent !important;
+  border: none !important;
+}
+
+.run-evidence-collapse > .ant-collapse-item {
+  border: 1px solid var(--color-border-light) !important;
+  border-radius: var(--radius-xl) !important;
+  background: var(--color-bg-card);
+  margin-bottom: 14px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.01);
+  transition: all 0.2s ease;
+}
+
+.run-evidence-collapse > .ant-collapse-item:hover {
+  border-color: color-mix(in srgb, #8b5cf6 30%, var(--color-border-light)) !important;
+}
+
+.run-evidence-collapse > .ant-collapse-item > .ant-collapse-header {
+  padding: 14.5px 20px !important;
+  background: color-mix(in srgb, #8b5cf6 2%, var(--color-bg-hover));
+}
+
+.run-evidence-collapse > .ant-collapse-item > .ant-collapse-content > .ant-collapse-content-box {
+  padding: 20px 24px !important;
+  background: var(--color-bg-card);
+}
+
+.run-evidence-collapse .ant-collapse-arrow {
+  color: #8b5cf6 !important; /* 紫色展开剪头 */
+}
+
+/* 步骤看板折叠内容去内边距 */
+.run-evidence-steps-collapse.ant-collapse > .ant-collapse-item > .ant-collapse-content > .ant-collapse-content-box {
+  padding: 0 !important;
+}
+
+/* 审计证据链抽屉专属页签紫色主题 */
+.run-evidence-tabs.ant-tabs .ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: #8b5cf6 !important;
+}
+.run-evidence-tabs.ant-tabs .ant-tabs-ink-bar {
+  background: #8b5cf6 !important;
+}
+.run-evidence-tabs.ant-tabs .ant-tabs-tab:hover .ant-tabs-tab-btn {
+  color: #a78bfa !important;
 }
 
 /* 暗色模式适配 */
