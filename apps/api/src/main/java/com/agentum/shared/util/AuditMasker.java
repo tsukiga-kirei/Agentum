@@ -21,7 +21,10 @@ public class AuditMasker {
 
     // 匹配大模型 API Key 和 HTTP 认证 Header 凭证的正则，防止在 Prompt 快照或日志中记录明文凭证
     private static final Pattern CREDENTIAL_PATTERN = Pattern.compile(
-        "(sk-[a-zA-Z0-9]{48})|((Bearer|Basic)\\s+[a-zA-Z0-9-_=\\.]+)",
+        "(sk-[a-zA-Z0-9_-]{8,})"
+            + "|((Bearer|Basic)\\s+[a-zA-Z0-9-_=\\.]+)"
+            + "|((password|api[_-]?key|token|secret|authorization|cookie|credential)"
+            + "\\s*[:=]\\s*(?:(Bearer|Basic)\\s+[a-zA-Z0-9-_=\\.]+|[\\\"']?[^\\s,;\\\"'}]+[\\\"']?))",
         Pattern.CASE_INSENSITIVE
     );
 

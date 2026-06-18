@@ -4,6 +4,7 @@ import com.agentum.agent.application.FinalAnswerContentResolver;
 import com.agentum.agent.application.ModelChatClient;
 import com.agentum.shared.api.ApiException;
 import com.agentum.shared.api.RequestIds;
+import com.agentum.shared.util.AuditMasker;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -37,8 +38,9 @@ import org.springframework.web.client.RestClientResponseException;
 public class OpenAiCompatibleModelChatClient implements ModelChatClient {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAiCompatibleModelChatClient.class);
-    private static final int LOG_TEXT_MAX_LENGTH = 400;
-    private static final int LOG_RESPONSE_BODY_MAX_LENGTH = 4000;
+    private static final int LOG_TEXT_MAX_LENGTH = 12000;
+    private static final int LOG_PAYLOAD_MAX_LENGTH = 50000;
+    private static final int LOG_RESPONSE_BODY_MAX_LENGTH = 12000;
     private static final long STREAM_CANCEL_POLL_INTERVAL_MS = 300L;
 
     private final RestClient restClient;
@@ -86,7 +88,7 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
                 request.providerType(),
                 request.modelName(),
                 exception.getStatusCode().value(),
-                truncateForLog(exception.getResponseBodyAsString(), LOG_RESPONSE_BODY_MAX_LENGTH),
+                sanitizeTextForLog(exception.getResponseBodyAsString(), LOG_RESPONSE_BODY_MAX_LENGTH),
                 RequestIds.current()
             );
             throw new ApiException(HttpStatus.BAD_GATEWAY, "MODEL_CALL_FAILED", "模型调用失败，请检查供应商连通性、模型名称或额度");
@@ -145,7 +147,7 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
                             request.providerId(),
                             request.modelName(),
                             response.getStatusCode().value(),
-                            truncateForLog(errorBody, LOG_RESPONSE_BODY_MAX_LENGTH),
+                            sanitizeTextForLog(errorBody, LOG_RESPONSE_BODY_MAX_LENGTH),
                             RequestIds.current()
                         );
                         callback.onError("MODEL_HTTP_ERROR", "HTTP " + response.getStatusCode() + ": " + errorBody);
@@ -217,7 +219,8 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
                                         usage = objectMapper.convertValue(node.get("usage"), new TypeReference<Map<String, Object>>() {});
                                     }
                                 } catch (Exception e) {
-                                    log.debug("解析流式 chunk 失败: {}", trimmed, e);
+                                    log.debug("解析模型流式 chunk 失败 chunk={} requestId={}",
+                                        sanitizeTextForLog(trimmed, LOG_RESPONSE_BODY_MAX_LENGTH), RequestIds.current(), e);
                                 }
                             }
                         }
@@ -569,7 +572,7 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
     }
 
     /**
-     * 记录模型对接请求摘要，便于排查网关地址、模型名、工具与消息结构；不输出 API Key。
+     * 记录实际发送给模型网关的请求体。仅在 DEBUG 开启时输出，凭证字段和常见认证文本会先脱敏。
      */
     private void logChatRequest(ChatRequest request, URI uri, Map<String, Object> payload, boolean streaming) {
         List<String> toolNames = request.tools().stream()
@@ -579,7 +582,10 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
             .map(ModelChatClient.ChatMessage::role)
             .toList();
         log.debug(
-            "模型聊天请求 providerId={} providerType={} model={} uri={} streaming={} messageCount={} messageRoles={} toolCount={} toolNames={} requestPayload={} requestId={}",
+            "AI调用链路-请求 runId={} nodeRunId={} modelCallLogId={} providerId={} providerType={} model={} uri={} streaming={} messageCount={} messageRoles={} toolCount={} toolNames={} requestPayload={} requestId={}",
+            request.runId(),
+            request.nodeRunId(),
+            request.modelCallLogId(),
             request.providerId(),
             request.providerType(),
             request.modelName(),
@@ -595,16 +601,28 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
     }
 
     /**
-     * 记录模型对接响应摘要。contentPreview/responseBody 使用与落库、前端一致的 resolvedFinalAnswer，
-     * 避免 content 与 final_answer 工具参数不一致时日志误导排查。
+     * 记录模型返回的正文、工具调用参数、用量和结束原因，与请求日志通过 modelCallLogId 串联。
      */
     private void logChatResponse(ChatRequest request, ChatResult result, String resolvedFinalAnswer, long latencyMs, boolean streaming) {
         List<String> toolCallNames = result.toolCalls().stream()
             .map(ModelChatClient.ToolCall::name)
             .collect(Collectors.toList());
         String loggedAnswer = resolvedFinalAnswer == null ? "" : resolvedFinalAnswer;
+        Map<String, Object> responsePayload = new LinkedHashMap<>();
+        responsePayload.put("content", result.content());
+        responsePayload.put("resolvedFinalAnswer", loggedAnswer);
+        responsePayload.put("finishReason", result.finishReason());
+        responsePayload.put("tokenUsage", result.tokenUsage());
+        responsePayload.put("toolCalls", result.toolCalls().stream().map(toolCall -> Map.of(
+            "id", toolCall.id(),
+            "name", toolCall.name(),
+            "arguments", toolCall.argumentsJson()
+        )).toList());
         log.debug(
-            "模型聊天响应 providerId={} providerType={} model={} streaming={} latencyMs={} finishReason={} contentLength={} toolCallCount={} toolCallNames={} tokenUsage={} contentPreview={} responseBody={} requestId={}",
+            "AI调用链路-响应 runId={} nodeRunId={} modelCallLogId={} providerId={} providerType={} model={} streaming={} latencyMs={} finishReason={} contentLength={} toolCallCount={} toolCallNames={} tokenUsage={} responsePayload={} requestId={}",
+            request.runId(),
+            request.nodeRunId(),
+            request.modelCallLogId(),
             request.providerId(),
             request.providerType(),
             request.modelName(),
@@ -615,15 +633,14 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
             result.toolCalls().size(),
             toolCallNames,
             result.tokenUsage(),
-            truncateForLog(loggedAnswer, LOG_TEXT_MAX_LENGTH),
-            truncateForLog(loggedAnswer, LOG_RESPONSE_BODY_MAX_LENGTH),
+            jsonForLog(responsePayload),
             RequestIds.current()
         );
     }
 
     private String payloadSummaryForLog(Map<String, Object> payload) {
         try {
-            return objectMapper.writeValueAsString(sanitizePayloadForLog(payload));
+            return truncateForLog(objectMapper.writeValueAsString(sanitizePayloadForLog(payload)), LOG_PAYLOAD_MAX_LENGTH);
         } catch (Exception exception) {
             return "[请求体序列化失败]";
         }
@@ -645,7 +662,7 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
                     .toList());
                 return;
             }
-            sanitized.put(key, value);
+            sanitized.put(key, sanitizeValueForLog(key, value));
         });
         return sanitized;
     }
@@ -659,7 +676,7 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
         raw.forEach((key, value) -> {
             String field = key == null ? "" : key.toString();
             if ("content".equals(field) && value != null) {
-                sanitized.put(field, truncateForLog(String.valueOf(value), LOG_TEXT_MAX_LENGTH));
+                sanitized.put(field, sanitizeTextForLog(String.valueOf(value), LOG_TEXT_MAX_LENGTH));
                 return;
             }
             if ("tool_calls".equals(field) && value instanceof List<?> toolCalls) {
@@ -668,7 +685,7 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
                     .toList());
                 return;
             }
-            sanitized.put(field, value);
+            sanitized.put(field, sanitizeValueForLog(field, value));
         });
         return sanitized;
     }
@@ -682,10 +699,10 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
             functionMap.forEach((key, value) -> {
                 String field = key == null ? "" : key.toString();
                 if ("parameters".equals(field) && value != null) {
-                    sanitizedFunction.put(field, truncateForLog(String.valueOf(value), LOG_TEXT_MAX_LENGTH));
+                    sanitizedFunction.put(field, sanitizeValueForLog(field, value));
                     return;
                 }
-                sanitizedFunction.put(field, value);
+                sanitizedFunction.put(field, sanitizeValueForLog(field, value));
             });
             sanitized.put("function", sanitizedFunction);
         }
@@ -701,14 +718,58 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
             functionMap.forEach((key, value) -> {
                 String field = key == null ? "" : key.toString();
                 if ("arguments".equals(field) && value != null) {
-                    sanitizedFunction.put(field, truncateForLog(String.valueOf(value), LOG_TEXT_MAX_LENGTH));
+                    sanitizedFunction.put(field, sanitizeTextForLog(String.valueOf(value), LOG_TEXT_MAX_LENGTH));
                     return;
                 }
-                sanitizedFunction.put(field, value);
+                sanitizedFunction.put(field, sanitizeValueForLog(field, value));
             });
             sanitized.put("function", sanitizedFunction);
         }
         return sanitized;
+    }
+
+    private String jsonForLog(Map<String, Object> value) {
+        try {
+            return truncateForLog(objectMapper.writeValueAsString(sanitizeValueForLog("response", value)), LOG_PAYLOAD_MAX_LENGTH);
+        } catch (Exception exception) {
+            return "[响应体序列化失败]";
+        }
+    }
+
+    private Object sanitizeValueForLog(String key, Object value) {
+        if (isSensitiveLogKey(key)) {
+            return "******";
+        }
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> sanitized = new LinkedHashMap<>();
+            map.forEach((nestedKey, nestedValue) -> {
+                String field = nestedKey == null ? "" : nestedKey.toString();
+                sanitized.put(field, sanitizeValueForLog(field, nestedValue));
+            });
+            return sanitized;
+        }
+        if (value instanceof List<?> list) {
+            return list.stream().map(item -> sanitizeValueForLog("", item)).toList();
+        }
+        if (value instanceof String text) {
+            return sanitizeTextForLog(text, LOG_TEXT_MAX_LENGTH);
+        }
+        return value;
+    }
+
+    private static boolean isSensitiveLogKey(String key) {
+        String normalized = key == null ? "" : key.toLowerCase().replace("_", "").replace("-", "");
+        return normalized.contains("password")
+            || normalized.contains("apikey")
+            || normalized.contains("token")
+            || normalized.contains("secret")
+            || normalized.contains("credential")
+            || normalized.contains("authorization")
+            || normalized.contains("cookie");
+    }
+
+    private static String sanitizeTextForLog(String value, int maxLength) {
+        return truncateForLog(AuditMasker.maskText(value, java.util.Set.of()), maxLength);
     }
 
     private static String truncateForLog(String value, int maxLength) {

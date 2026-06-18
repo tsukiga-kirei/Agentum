@@ -317,7 +317,8 @@ public class NodeExecutionService {
                     "toolName", toolName,
                     "toolType", toolType,
                     "status", status,
-                    "result", summarizeText(result),
+                    // 工具详情会在运行页展开显示；保留换行和正文，仅限制事件体长度，避免 Redis Stream 被超大响应撑满。
+                    "result", toolResultForEvent(result),
                     "durationMs", durationMs
                 ));
             }
@@ -674,7 +675,7 @@ public class NodeExecutionService {
                     "toolName", toolName,
                     "toolType", toolType,
                     "toolStatus", status,
-                    "result", summarizeText(result),
+                    "result", toolResultForEvent(result),
                     "durationMs", durationMs
                 ));
             }
@@ -971,6 +972,14 @@ public class NodeExecutionService {
             return "智能体已完成模型调用。";
         }
         return normalized.length() > 120 ? normalized.substring(0, 120) + "..." : normalized;
+    }
+
+    private static String toolResultForEvent(String content) {
+        String normalized = content == null ? "" : content.trim();
+        if (normalized.isBlank()) {
+            return "";
+        }
+        return normalized.length() > 4000 ? normalized.substring(0, 4000) + "\n\n[工具结果已截断]" : normalized;
     }
 
     private record ClusterAgentSlot(int index, String name, Map<String, Object> config) {

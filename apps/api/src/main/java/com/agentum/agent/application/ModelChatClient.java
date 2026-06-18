@@ -43,7 +43,11 @@ public interface ModelChatClient {
         Map<String, Object> options,
         List<ToolDefinition> tools,
         /** 运行态中断探测：返回 true 时流式客户端应主动断开 HTTP 连接 */
-        BooleanSupplier cancelProbe
+        BooleanSupplier cancelProbe,
+        /** 以下三个 ID 只用于串联运行态 DEBUG 日志，不进入供应商请求体。 */
+        UUID runId,
+        UUID nodeRunId,
+        UUID modelCallLogId
     ) {
         public ChatRequest(
             UUID providerId,
@@ -67,7 +71,21 @@ public interface ModelChatClient {
             Map<String, Object> options,
             List<ToolDefinition> tools
         ) {
-            this(providerId, providerType, baseUrl, apiKey, modelName, messages, options, tools, null);
+            this(providerId, providerType, baseUrl, apiKey, modelName, messages, options, tools, null, null, null, null);
+        }
+
+        public ChatRequest(
+            UUID providerId,
+            String providerType,
+            String baseUrl,
+            String apiKey,
+            String modelName,
+            List<ChatMessage> messages,
+            Map<String, Object> options,
+            List<ToolDefinition> tools,
+            BooleanSupplier cancelProbe
+        ) {
+            this(providerId, providerType, baseUrl, apiKey, modelName, messages, options, tools, cancelProbe, null, null, null);
         }
 
         public ChatRequest {

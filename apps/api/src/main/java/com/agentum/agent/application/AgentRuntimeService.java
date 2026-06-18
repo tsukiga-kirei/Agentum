@@ -43,6 +43,7 @@ public class AgentRuntimeService {
     private static final Logger log = LoggerFactory.getLogger(AgentRuntimeService.class);
     private static final Pattern VARIABLE_PATTERN = Pattern.compile("\\{\\{\\s*([\\w.\\-\\u4e00-\\u9fa5]+)\\s*}}");
     private static final int DEFAULT_MAX_AGENT_ITERATIONS = 4;
+    private static final int TOOL_EVENT_DETAIL_MAX_LENGTH = 4000;
 
     private final TenantModelAssignmentRepository tenantModelAssignmentRepository;
     private final ModelProviderRepository modelProviderRepository;
@@ -348,12 +349,14 @@ public class AgentRuntimeService {
             eventSink.onToolCall(binding.displayName(), "skill", "started", "", 0L);
             SkillRuntimeService.SkillReadResult result = skillRuntimeService.readSkill(binding, arguments);
             String observation = toJson(result.toMap());
-            eventSink.onToolCall(binding.displayName(), "skill", "completed", "已读取 " + result.filePath(), 0L);
+            String detail = skillReadDetail(result);
+            eventSink.onToolCall(binding.displayName(), "skill", "completed", detail, 0L);
             return new ToolExecution(observation, Map.of(
                 "toolName", binding.displayName(),
                 "toolType", "skill",
                 "status", "completed",
-                "summary", "已读取 " + result.filePath()
+                "summary", "已读取 " + result.filePath() + "，可展开查看内容",
+                "detail", detail
             ));
         }
         String observation = "未知工具：" + toolCall.name();
@@ -396,7 +399,8 @@ public class AgentRuntimeService {
                 modelName,
                 messages,
                 options,
-                tools
+                tools,
+                callLog.getId()
             ));
             callLog.succeed(result.responseSnapshot(), result.tokenUsage(), result.latencyMs(), clock.instant());
             modelCallLogRepository.save(callLog);
@@ -440,7 +444,8 @@ public class AgentRuntimeService {
             modelName,
             messages,
             options,
-            tools
+            tools,
+            callLog.getId()
         ), new ModelChatClient.StreamingCallback() {
             @Override
             public void onChunk(String deltaContent) {
@@ -528,7 +533,8 @@ public class AgentRuntimeService {
             modelName,
             finalMessages,
             options,
-            List.of()
+            List.of(),
+            callLog.getId()
         ), new ModelChatClient.StreamingCallback() {
             @Override
             public void onChunk(String deltaContent) {
@@ -932,6 +938,11 @@ public class AgentRuntimeService {
         return normalized.length() > 120 ? normalized.substring(0, 120) + "..." : normalized;
     }
 
+    private static String skillReadDetail(SkillRuntimeService.SkillReadResult result) {
+        String detail = "读取文件：" + result.filePath() + "\n\n" + firstNonBlank(result.content(), "[Skill 文件内容为空]");
+        return truncate(detail, TOOL_EVENT_DETAIL_MAX_LENGTH);
+    }
+
     private static String firstNonBlank(String... values) {
         for (String value : values) {
             if (value != null && !value.isBlank()) {
@@ -955,7 +966,8 @@ public class AgentRuntimeService {
         String modelName,
         List<ModelChatClient.ChatMessage> messages,
         Map<String, Object> options,
-        List<ModelChatClient.ToolDefinition> tools
+        List<ModelChatClient.ToolDefinition> tools,
+        UUID modelCallLogId
     ) {
         UUID runId = request.run().getId();
         return new ModelChatClient.ChatRequest(
@@ -967,7 +979,10 @@ public class AgentRuntimeService {
             messages,
             options,
             tools,
-            () -> cancellationGuard.isCancelled(runId)
+            () -> cancellationGuard.isCancelled(runId),
+            runId,
+            request.nodeRun().getId(),
+            modelCallLogId
         );
     }
 

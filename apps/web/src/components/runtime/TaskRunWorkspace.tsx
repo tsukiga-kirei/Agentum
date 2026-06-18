@@ -1956,7 +1956,7 @@ function nodeCapabilities(node: any): RuntimeCapabilityItem[] {
         status,
         statusLabel: status === "error" ? "调用失败" : "调用完成",
         summary: stringifyValue(tool.summary || tool.result || "智能体已完成该工具调用。"),
-        resultSummary: stringifyValue(tool.summary || tool.result || ""),
+        resultSummary: stringifyValue(tool.detail || tool.result || tool.summary || ""),
       });
     });
   }

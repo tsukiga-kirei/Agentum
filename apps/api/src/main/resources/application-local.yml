@@ -25,8 +25,8 @@ spring:
 logging:
   level:
     root: INFO
-    # 本地排查模型连通性、流式调用和运行态 SSE 时打开 DEBUG；生产 profile 勿沿用
-#    com.agentum.agent.infrastructure: DEBUG
+    # 本地默认输出脱敏后的 AI 请求/响应链路，可通过 AGENTUM_AI_DEBUG_LOG_LEVEL=INFO 关闭；生产 profile 不启用。
+    com.agentum.agent.infrastructure.OpenAiCompatibleModelChatClient: ${AGENTUM_AI_DEBUG_LOG_LEVEL:DEBUG}
 #    com.agentum.agent.application.AgentRuntimeService: DEBUG
 #    com.agentum.system.infrastructure.HttpModelProviderConnectionTester: DEBUG
 #    com.agentum.workbench.application.WorkbenchRuntimeService: DEBUG

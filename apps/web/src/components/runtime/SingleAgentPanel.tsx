@@ -148,7 +148,7 @@ function buildConversationTurns(
     }
     return {
       ...turn,
-      toolSteps: normalizeTurnSteps(dedupeProcessSteps([...(turn.toolSteps ?? []), ...toolSteps]), {
+      toolSteps: normalizeTurnSteps(dedupeProcessSteps(mergeTurnProcessSteps(turn.toolSteps ?? [], toolSteps)), {
         running: options.running,
         hasFinalAnswerToolResult: options.hasFinalAnswerToolResult,
       }),
@@ -178,6 +178,20 @@ function dedupeProcessSteps(steps: AgentExecutionStep[]): AgentExecutionStep[] {
     seen.add(key);
     return true;
   });
+}
+
+/**
+ * 完成态会同时拿到 chatMessages.processSteps 与 outputs.toolCalls，两者是同一次调用的不同持久化视图。
+ * chatMessages 保留完整详情，因此同名工具已存在时只丢弃外层重复项；同一轮真实重复调用仍会完整保留在 messageSteps 中。
+ */
+function mergeTurnProcessSteps(messageSteps: AgentExecutionStep[], runtimeSteps: AgentExecutionStep[]): AgentExecutionStep[] {
+  const persistedToolTitles = new Set(
+    messageSteps.filter((step) => step.kind === "tool").map((step) => step.title),
+  );
+  return [
+    ...messageSteps,
+    ...runtimeSteps.filter((step) => step.kind !== "tool" || !persistedToolTitles.has(step.title)),
+  ];
 }
 
 function ToolStepRow({
