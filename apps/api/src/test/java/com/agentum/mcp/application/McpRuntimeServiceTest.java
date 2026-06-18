@@ -130,6 +130,37 @@ class McpRuntimeServiceTest {
         assertThat(savedLogs.getLast().getToolName()).isEqualTo("get_financial_work_report_core_kpi");
     }
 
+    @Test
+    void shouldRecursivelySanitizeSuccessfulMcpResponseBeforeReturningAndAuditing() {
+        McpRuntimeService.McpToolBinding binding = service.resolveMcpTools(request()).getFirst();
+        when(runtimeClient.callTool(any())).thenReturn(new McpRuntimeClient.ToolResult(
+            Map.of(
+                "isError", false,
+                "structuredContent", Map.of(
+                    "token", "top-secret-token",
+                    "rows", List.of(Map.of(
+                        "indicator", "利润总额",
+                        "credentials", Map.of("apiKey", "nested-secret-key")
+                    ))
+                )
+            ),
+            18L
+        ));
+
+        McpRuntimeService.ExecutedMcpTool result = service.executeResolvedTool(
+            request(),
+            binding,
+            Map.of("pdt", "20260408")
+        );
+
+        assertThat(result.responsePayload().toString())
+            .contains("利润总额", "***")
+            .doesNotContain("top-secret-token", "nested-secret-key");
+        assertThat(savedLogs.getLast().getStatus()).isEqualTo("success");
+        assertThat(savedLogs.getLast().getResponsePayload().toString())
+            .doesNotContain("top-secret-token", "nested-secret-key");
+    }
+
     private McpRuntimeRequest request() {
         return new McpRuntimeRequest(
             run,

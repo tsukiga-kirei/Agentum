@@ -348,6 +348,7 @@ class AgentRuntimeServiceTest {
         assertThat(toolCalls).singleElement().satisfies(tool -> {
             assertThat(tool.get("status")).isEqualTo("failed");
             assertThat(tool.get("summary")).isEqualTo("数据中台连接失败");
+            assertThat(tool.get("detail")).asString().contains("MCP_TOOL_EXECUTION_FAILED", "数据中台连接失败");
         });
     }
 

@@ -10,7 +10,6 @@ import com.agentum.system.infrastructure.TenantCapabilityGrantRepository;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -139,7 +138,8 @@ public class McpRuntimeService {
                     firstNonBlank(stringValue(result.responsePayload().get("text")), "MCP 工具返回执行失败")
                 );
             }
-            callLog.succeed(sanitizeMap(result.responsePayload()), result.latencyMs(), clock.instant());
+            Map<String, Object> sanitizedResponse = sanitizeMap(result.responsePayload());
+            callLog.succeed(sanitizedResponse, result.latencyMs(), clock.instant());
             mcpCallLogRepository.save(callLog);
             log.info(
                 "MCP 工具调用成功 tenantId={} runId={} nodeRunId={} capabilityId={} toolName={} latencyMs={} requestId={}",
@@ -151,7 +151,7 @@ public class McpRuntimeService {
                 result.latencyMs(),
                 RequestIds.current()
             );
-            return new ExecutedMcpTool(binding.functionName(), toolName, capability.getCode(), result.responsePayload(), result.latencyMs(), callLog.getId());
+            return new ExecutedMcpTool(binding.functionName(), toolName, capability.getCode(), sanitizedResponse, result.latencyMs(), callLog.getId());
         } catch (ApiException exception) {
             callLog.fail(exception.getCode(), exception.getMessage(), 0L, clock.instant());
             mcpCallLogRepository.save(callLog);
@@ -185,9 +185,27 @@ public class McpRuntimeService {
     }
 
     private Map<String, Object> sanitizeMap(Map<String, Object> source) {
-        Map<String, Object> result = new HashMap<>();
-        source.forEach((key, value) -> result.put(key, isSensitive(key) ? "***" : value));
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (source == null) {
+            return result;
+        }
+        source.forEach((key, value) -> result.put(key, isSensitive(key) ? "***" : sanitizeValue(value)));
         return result;
+    }
+
+    private Object sanitizeValue(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> sanitized = new LinkedHashMap<>();
+            map.forEach((key, nestedValue) -> {
+                String keyText = key == null ? "" : key.toString();
+                sanitized.put(keyText, isSensitive(keyText) ? "***" : sanitizeValue(nestedValue));
+            });
+            return sanitized;
+        }
+        if (value instanceof List<?> list) {
+            return list.stream().map(this::sanitizeValue).toList();
+        }
+        return value;
     }
 
     @SuppressWarnings("unchecked")
@@ -251,7 +269,16 @@ public class McpRuntimeService {
 
     private boolean isSensitive(String key) {
         String normalized = key == null ? "" : key.toLowerCase();
-        return normalized.contains("password") || normalized.contains("token") || normalized.contains("secret") || normalized.contains("apikey") || normalized.contains("api_key");
+        return normalized.contains("password")
+            || normalized.contains("token")
+            || normalized.contains("secret")
+            || normalized.contains("apikey")
+            || normalized.contains("api_key")
+            || normalized.contains("authorization")
+            || normalized.contains("credential")
+            || normalized.contains("cookie")
+            || normalized.contains("privatekey")
+            || normalized.contains("private_key");
     }
 
     private static List<String> readStringList(Map<String, Object> config, String... keys) {

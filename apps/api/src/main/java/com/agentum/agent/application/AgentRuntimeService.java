@@ -313,12 +313,13 @@ public class AgentRuntimeService {
                     request.operatorUserId()
                 ), binding, arguments);
                 String observation = toJson(result.responsePayload());
-                eventSink.onToolCall(binding.displayName(), "mcp", "completed", summarizeText(observation), result.latencyMs());
+                eventSink.onToolCall(binding.displayName(), "mcp", "completed", observation, result.latencyMs());
                 return new ToolExecution(observation, Map.of(
                     "toolName", binding.displayName(),
                     "toolType", "mcp",
                     "status", "completed",
                     "summary", summarizeText(observation),
+                    "detail", observation,
                     "callLogId", result.callLogId().toString()
                 ));
             } catch (ApiException exception) {
@@ -337,7 +338,8 @@ public class AgentRuntimeService {
                     "toolName", binding.displayName(),
                     "toolType", "mcp",
                     "status", "failed",
-                    "summary", exception.getMessage()
+                    "summary", exception.getMessage(),
+                    "detail", observation
                 ));
             }
         }
@@ -644,7 +646,7 @@ public class AgentRuntimeService {
                 : "调用 MCP：" + stringValue(tool.get("toolName")));
             step.put("summary", stringValue(tool.get("summary")));
             step.put("status", "failed".equals(stringValue(tool.get("status"))) ? "error" : "done");
-            step.put("detail", stringValue(tool.get("summary")));
+            step.put("detail", firstNonBlank(stringValue(tool.get("detail")), stringValue(tool.get("summary"))));
             step.put("toolType", toolType);
             steps.add(step);
         }
