@@ -25,6 +25,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -323,7 +324,21 @@ public class AgentRuntimeService {
             } catch (ApiException exception) {
                 // MCP 协议可能以 HTTP 200 + isError 返回业务失败，必须明确推送失败事件，避免界面继续显示绿色完成态。
                 eventSink.onToolCall(binding.displayName(), "mcp", "failed", exception.getMessage(), 0L);
-                throw exception;
+                if (!isRecoverableMcpFailure(exception)) {
+                    throw exception;
+                }
+                // 外部工具暂时不可用时把失败作为 observation 回写模型，允许模型换用其他工具或向用户解释缺失数据。
+                String observation = toJson(Map.of(
+                    "isError", true,
+                    "errorCode", exception.getCode(),
+                    "text", exception.getMessage()
+                ));
+                return new ToolExecution(observation, Map.of(
+                    "toolName", binding.displayName(),
+                    "toolType", "mcp",
+                    "status", "failed",
+                    "summary", exception.getMessage()
+                ));
             }
         }
         if (skillToolByName.containsKey(toolCall.name())) {
@@ -347,6 +362,10 @@ public class AgentRuntimeService {
             "status", "failed",
             "summary", observation
         ));
+    }
+
+    private boolean isRecoverableMcpFailure(ApiException exception) {
+        return Set.of("MCP_TOOL_EXECUTION_FAILED", "MCP_CALL_FAILED").contains(exception.getCode());
     }
 
     private LoggedChatResult callModelWithLog(

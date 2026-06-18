@@ -9,6 +9,7 @@ import com.agentum.agent.domain.ModelCallLogEntity;
 import com.agentum.agent.infrastructure.ModelCallLogRepository;
 import com.agentum.asset.infrastructure.TenantAssetCapabilityRepository;
 import com.agentum.mcp.application.McpRuntimeService;
+import com.agentum.shared.api.ApiException;
 import com.agentum.shared.security.FieldEncryptionService;
 import com.agentum.system.domain.ModelProviderEntity;
 import com.agentum.system.domain.TenantModelAssignmentEntity;
@@ -29,6 +30,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
 
 class AgentRuntimeServiceTest {
 
@@ -240,6 +242,115 @@ class AgentRuntimeServiceTest {
         assertThat(result.outputs().get("final_answer")).asString().contains("担保");
     }
 
+    @Test
+    void shouldLetModelContinueAfterRecoverableMcpFailure() {
+        TenantModelAssignmentRepository assignmentRepository = mock(TenantModelAssignmentRepository.class);
+        ModelProviderRepository providerRepository = mock(ModelProviderRepository.class);
+        SystemCapabilityRepository capabilityRepository = mock(SystemCapabilityRepository.class);
+        TenantAssetCapabilityRepository assetRepository = mock(TenantAssetCapabilityRepository.class);
+        McpRuntimeService mcpRuntimeService = mock(McpRuntimeService.class);
+        SkillRuntimeService skillRuntimeService = mock(SkillRuntimeService.class);
+        ModelCallLogRepository callLogRepository = mock(ModelCallLogRepository.class);
+        McpFailureThenFinalAnswerChatClient modelChatClient = new McpFailureThenFinalAnswerChatClient();
+        AgentRuntimeService service = new AgentRuntimeService(
+            assignmentRepository,
+            providerRepository,
+            capabilityRepository,
+            assetRepository,
+            mcpRuntimeService,
+            skillRuntimeService,
+            mock(FieldEncryptionService.class),
+            callLogRepository,
+            modelChatClient,
+            new ObjectMapper(),
+            Clock.fixed(NOW, ZoneOffset.UTC),
+            mock(RunCancellationGuard.class),
+            new PromptContentResolver(capabilityRepository, assetRepository)
+        );
+        ModelProviderEntity provider = ModelProviderEntity.create(
+            "OpenAI 兼容",
+            "openai-compatible",
+            "https://example.test",
+            "gpt-4o-mini",
+            "active",
+            NOW
+        );
+        provider.getSettings().put("maxTokens", 8192);
+        TenantModelAssignmentEntity assignment = TenantModelAssignmentEntity.create(TENANT_ID, provider.getId(), "gpt-4o-mini", "enabled", NOW);
+        WorkflowRunEntity run = WorkflowRunEntity.create(
+            TENANT_ID,
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            1,
+            "金融月报",
+            "金融月报流程",
+            OPERATOR_ID,
+            2,
+            "20260618-MCP",
+            NOW
+        );
+        Map<String, Object> config = Map.of("systemPrompt", "你是金融分析智能体", "userPrompt", "请生成金融月报");
+        WorkflowNodeRunEntity nodeRun = WorkflowNodeRunEntity.pending(
+            run.getId(),
+            TENANT_ID,
+            run.getWorkflowId(),
+            run.getWorkflowVersionId(),
+            "financial_agent",
+            "agent",
+            "金融月报智能体",
+            Map.of(),
+            Map.of(),
+            config,
+            1,
+            NOW
+        );
+        McpRuntimeService.McpToolBinding binding = new McpRuntimeService.McpToolBinding(
+            "mcp_financial_core_kpi",
+            UUID.randomUUID(),
+            "cap_financial_report",
+            "金融月报 / 核心经营指标",
+            "获取核心经营指标",
+            "get_financial_work_report_core_kpi",
+            "streamable_http",
+            "http://127.0.0.1:3001/mcp",
+            "http://127.0.0.1:3001/mcp",
+            Map.of(
+                "type", "object",
+                "properties", Map.of("pdt", Map.of("type", "string")),
+                "required", List.of("pdt")
+            )
+        );
+
+        when(assignmentRepository.findByTenantIdOrderByCreatedAtDesc(TENANT_ID)).thenReturn(List.of(assignment));
+        when(providerRepository.findById(provider.getId())).thenReturn(Optional.of(provider));
+        when(mcpRuntimeService.resolveMcpTools(any())).thenReturn(List.of(binding));
+        when(mcpRuntimeService.executeResolvedTool(any(), any(), any())).thenThrow(new ApiException(
+            HttpStatus.BAD_GATEWAY,
+            "MCP_TOOL_EXECUTION_FAILED",
+            "数据中台连接失败"
+        ));
+        when(skillRuntimeService.resolveSkillTools(TENANT_ID, config)).thenReturn(List.of());
+        when(callLogRepository.save(any(ModelCallLogEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        AgentRuntimeResult result = service.execute(new AgentRuntimeRequest(
+            run,
+            nodeRun,
+            config,
+            Map.of(),
+            Map.of(),
+            OPERATOR_ID
+        ));
+
+        assertThat(modelChatClient.requests()).hasSize(2);
+        assertThat(result.outputs().get("final_answer")).asString().contains("数据中台暂时不可用");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> toolCalls = (List<Map<String, Object>>) result.outputs().get("toolCalls");
+        assertThat(toolCalls).singleElement().satisfies(tool -> {
+            assertThat(tool.get("status")).isEqualTo("failed");
+            assertThat(tool.get("summary")).isEqualTo("数据中台连接失败");
+        });
+    }
+
     private static final class ScriptedModelChatClient implements ModelChatClient {
 
         private final ArrayList<ChatRequest> requests = new ArrayList<>();
@@ -263,6 +374,46 @@ class AgentRuntimeServiceTest {
                 Map.of(),
                 18L,
                 List.of(new ToolCall("call-final", "final_answer", "{\"answer\":\"## 结论\\n可授信，建议补充担保条件。\"}")),
+                "tool_calls"
+            );
+        }
+
+        private List<ChatRequest> requests() {
+            return requests;
+        }
+    }
+
+    private static final class McpFailureThenFinalAnswerChatClient implements ModelChatClient {
+
+        private final ArrayList<ChatRequest> requests = new ArrayList<>();
+
+        @Override
+        public ChatResult chat(ChatRequest request) {
+            requests.add(request);
+            if (requests.size() == 1) {
+                return new ChatResult(
+                    "",
+                    Map.of("finishReason", "tool_calls"),
+                    Map.of(),
+                    10L,
+                    List.of(new ToolCall(
+                        "call-mcp",
+                        "mcp_financial_core_kpi",
+                        "{\"pdt\":\"20260618\"}"
+                    )),
+                    "tool_calls"
+                );
+            }
+            return new ChatResult(
+                "",
+                Map.of("finishReason", "tool_calls"),
+                Map.of(),
+                10L,
+                List.of(new ToolCall(
+                    "call-final",
+                    "final_answer",
+                    "{\"answer\":\"数据中台暂时不可用，无法获取真实指标，请检查连接配置后重试。\"}"
+                )),
                 "tool_calls"
             );
         }
