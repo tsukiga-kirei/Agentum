@@ -118,6 +118,8 @@ public class HttpMcpStreamableHttpRuntimeClient implements McpRuntimeClient {
         HttpRequest request = HttpRequest.newBuilder(endpointUri)
             .timeout(OPERATION_TIMEOUT)
             .header("Content-Type", "application/json")
+            // Streamable HTTP 要求通知类 POST 同样声明两种响应类型，否则严格实现会返回 406。
+            .header("Accept", "application/json, text/event-stream")
             .POST(HttpRequest.BodyPublishers.ofString(body))
             .build();
         HttpResponse<Void> response = httpClient.send(request, HttpResponse.BodyHandlers.discarding());
