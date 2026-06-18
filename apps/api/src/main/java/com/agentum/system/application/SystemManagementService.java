@@ -41,6 +41,7 @@ import com.agentum.delivery.application.EmailDeliveryTestRequest;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -599,6 +600,15 @@ public class SystemManagementService {
         };
 
         Instant checkedAt = clock.instant();
+        if ("mcp".equals(capability.getCapabilityType()) && "success".equals(result.status())) {
+            capability.recordDiscoveredTools(result.tools().stream().map(tool -> {
+                Map<String, Object> snapshot = new LinkedHashMap<>();
+                snapshot.put("name", tool.name());
+                snapshot.put("description", tool.description());
+                snapshot.put("inputSchema", tool.inputSchema());
+                return snapshot;
+            }).toList(), checkedAt);
+        }
         capability.recordConnectivityCheck(mapTestStatusToConnectivity(result.status()), checkedAt, checkedAt);
         systemCapabilityRepository.save(capability);
         log.info(
@@ -1037,6 +1047,9 @@ public class SystemManagementService {
                 }
             }
             Object tools = config.get("tools");
+            if (!(tools instanceof List<?>) && existingConfig != null) {
+                tools = existingConfig.get("tools");
+            }
             if (tools instanceof List<?>) {
                 result.put("tools", tools);
             }

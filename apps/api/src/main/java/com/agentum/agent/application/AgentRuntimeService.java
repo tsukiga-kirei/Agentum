@@ -303,22 +303,28 @@ public class AgentRuntimeService {
         if (mcpToolByName.containsKey(toolCall.name())) {
             McpRuntimeService.McpToolBinding binding = mcpToolByName.get(toolCall.name());
             eventSink.onToolCall(binding.displayName(), "mcp", "started", "", 0L);
-            McpRuntimeService.ExecutedMcpTool result = mcpRuntimeService.executeResolvedTool(new McpRuntimeRequest(
-                request.run(),
-                request.nodeRun(),
-                request.nodeConfig(),
-                request.variables(),
-                request.operatorUserId()
-            ), binding, arguments);
-            String observation = toJson(result.responsePayload());
-            eventSink.onToolCall(binding.displayName(), "mcp", "completed", summarizeText(observation), result.latencyMs());
-            return new ToolExecution(observation, Map.of(
-                "toolName", binding.displayName(),
-                "toolType", "mcp",
-                "status", "completed",
-                "summary", summarizeText(observation),
-                "callLogId", result.callLogId().toString()
-            ));
+            try {
+                McpRuntimeService.ExecutedMcpTool result = mcpRuntimeService.executeResolvedTool(new McpRuntimeRequest(
+                    request.run(),
+                    request.nodeRun(),
+                    request.nodeConfig(),
+                    request.variables(),
+                    request.operatorUserId()
+                ), binding, arguments);
+                String observation = toJson(result.responsePayload());
+                eventSink.onToolCall(binding.displayName(), "mcp", "completed", summarizeText(observation), result.latencyMs());
+                return new ToolExecution(observation, Map.of(
+                    "toolName", binding.displayName(),
+                    "toolType", "mcp",
+                    "status", "completed",
+                    "summary", summarizeText(observation),
+                    "callLogId", result.callLogId().toString()
+                ));
+            } catch (ApiException exception) {
+                // MCP 协议可能以 HTTP 200 + isError 返回业务失败，必须明确推送失败事件，避免界面继续显示绿色完成态。
+                eventSink.onToolCall(binding.displayName(), "mcp", "failed", exception.getMessage(), 0L);
+                throw exception;
+            }
         }
         if (skillToolByName.containsKey(toolCall.name())) {
             SkillRuntimeService.SkillToolBinding binding = skillToolByName.get(toolCall.name());

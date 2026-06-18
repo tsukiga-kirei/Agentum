@@ -3,6 +3,7 @@ package com.agentum.mcp.application;
 import com.agentum.mcp.domain.McpCallLogEntity;
 import com.agentum.mcp.infrastructure.McpCallLogRepository;
 import com.agentum.shared.api.ApiException;
+import com.agentum.shared.api.RequestIds;
 import com.agentum.system.domain.SystemCapabilityEntity;
 import com.agentum.system.infrastructure.SystemCapabilityRepository;
 import com.agentum.system.infrastructure.TenantCapabilityGrantRepository;
@@ -17,11 +18,14 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 @Service
 public class McpRuntimeService {
 
+    private static final Logger log = LoggerFactory.getLogger(McpRuntimeService.class);
     private static final Set<String> SENTINEL_VALUES = Set.of("", "none", "custom");
 
     private final SystemCapabilityRepository systemCapabilityRepository;
@@ -50,40 +54,67 @@ public class McpRuntimeService {
             return List.of();
         }
         List<McpToolBinding> bindings = new ArrayList<>();
-        int index = 0;
+        int bindingIndex = 0;
         for (String mcpId : mcpIds) {
             UUID capabilityId = parseUuid(mcpId)
                 .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "MCP_CAPABILITY_ID_INVALID", "MCP 能力 ID 不合法"));
             SystemCapabilityEntity capability = resolveCapability(request, capabilityId);
-            String remoteToolName = firstNonBlank(
+            String configuredToolName = firstNonBlank(
                 stringValue(request.nodeConfig().get("toolName")),
                 stringValue(request.nodeConfig().get("mcpToolName")),
                 stringValue(capability.getConfig().get("defaultToolName")),
                 stringValue(capability.getConfig().get("toolName"))
             );
-            String suffix = remoteToolName.isBlank() ? "call" : remoteToolName;
             String transportType = firstNonBlank(stringValue(capability.getConfig().get("transport")), "sse");
             String endpointUrl = firstNonBlank(stringValue(capability.getConfig().get("endpointUrl")), stringValue(capability.getConfig().get("sseUrl")));
-            bindings.add(new McpToolBinding(
-                sanitizeToolName("mcp_" + capability.getCode() + "_" + suffix + "_" + index),
-                capability.getId(),
-                capability.getCode(),
-                capability.getName(),
-                firstNonBlank(capability.getDescription(), "调用租户已授权 MCP 能力"),
-                remoteToolName,
-                transportType,
-                endpointUrl,
-                endpointUrl,
-                mcpToolParameters(capability)
-            ));
-            index++;
+            List<DiscoveredMcpTool> discoveredTools = readDiscoveredTools(capability);
+            if (!configuredToolName.isBlank()) {
+                DiscoveredMcpTool selected = discoveredTools.stream()
+                    .filter(tool -> configuredToolName.equals(tool.name()))
+                    .findFirst()
+                    .orElse(new DiscoveredMcpTool(configuredToolName, "", Map.of()));
+                bindings.add(toBinding(capability, selected, transportType, endpointUrl, bindingIndex++));
+                continue;
+            }
+            if (discoveredTools.isEmpty()) {
+                throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "MCP_TOOL_METADATA_REQUIRED",
+                    "MCP 能力尚未发现可用工具，请在系统管理中重新测试连接"
+                );
+            }
+            for (DiscoveredMcpTool tool : discoveredTools) {
+                bindings.add(toBinding(capability, tool, transportType, endpointUrl, bindingIndex++));
+            }
         }
         return bindings;
     }
 
+    private McpToolBinding toBinding(
+        SystemCapabilityEntity capability,
+        DiscoveredMcpTool tool,
+        String transportType,
+        String endpointUrl,
+        int index
+    ) {
+        String description = firstNonBlank(tool.description(), capability.getDescription(), "调用租户已授权 MCP 能力");
+        return new McpToolBinding(
+            sanitizeToolName("mcp_" + capability.getCode() + "_" + tool.name() + "_" + index),
+            capability.getId(),
+            capability.getCode(),
+            capability.getName() + " / " + tool.name(),
+            description,
+            tool.name(),
+            transportType,
+            endpointUrl,
+            endpointUrl,
+            mcpToolParameters(tool.inputSchema())
+        );
+    }
+
     public ExecutedMcpTool executeResolvedTool(McpRuntimeRequest request, McpToolBinding binding, Map<String, Object> rawArguments) {
         SystemCapabilityEntity capability = resolveCapability(request, binding.capabilityId());
-        String toolName = firstNonBlank(binding.remoteToolName(), capability.getCode());
+        String toolName = firstNonBlank(binding.remoteToolName());
         if (toolName.isBlank()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "MCP_TOOL_NAME_REQUIRED", "MCP 节点未配置工具名称");
         }
@@ -101,12 +132,39 @@ public class McpRuntimeService {
                 toolName,
                 arguments
             ));
+            if (Boolean.TRUE.equals(result.responsePayload().get("isError"))) {
+                throw new ApiException(
+                    HttpStatus.BAD_GATEWAY,
+                    "MCP_TOOL_EXECUTION_FAILED",
+                    firstNonBlank(stringValue(result.responsePayload().get("text")), "MCP 工具返回执行失败")
+                );
+            }
             callLog.succeed(sanitizeMap(result.responsePayload()), result.latencyMs(), clock.instant());
             mcpCallLogRepository.save(callLog);
+            log.info(
+                "MCP 工具调用成功 tenantId={} runId={} nodeRunId={} capabilityId={} toolName={} latencyMs={} requestId={}",
+                request.run().getTenantId(),
+                request.run().getId(),
+                request.nodeRun().getId(),
+                capability.getId(),
+                toolName,
+                result.latencyMs(),
+                RequestIds.current()
+            );
             return new ExecutedMcpTool(binding.functionName(), toolName, capability.getCode(), result.responsePayload(), result.latencyMs(), callLog.getId());
         } catch (ApiException exception) {
             callLog.fail(exception.getCode(), exception.getMessage(), 0L, clock.instant());
             mcpCallLogRepository.save(callLog);
+            log.warn(
+                "MCP 工具调用失败 tenantId={} runId={} nodeRunId={} capabilityId={} toolName={} errorCode={} requestId={}",
+                request.run().getTenantId(),
+                request.run().getId(),
+                request.nodeRun().getId(),
+                capability.getId(),
+                toolName,
+                exception.getCode(),
+                RequestIds.current()
+            );
             throw exception;
         }
     }
@@ -150,13 +208,9 @@ public class McpRuntimeService {
     }
 
     @SuppressWarnings("unchecked")
-    private Map<String, Object> mcpToolParameters(SystemCapabilityEntity capability) {
-        Object schema = capability.getConfig().get("inputSchema");
-        if (!(schema instanceof Map<?, ?>)) {
-            schema = capability.getConfig().get("parameters");
-        }
-        if (schema instanceof Map<?, ?> map && !map.isEmpty()) {
-            return new LinkedHashMap<>((Map<String, Object>) map);
+    private Map<String, Object> mcpToolParameters(Map<String, Object> inputSchema) {
+        if (inputSchema != null && !inputSchema.isEmpty()) {
+            return new LinkedHashMap<>(inputSchema);
         }
         return Map.of(
             "type", "object",
@@ -168,6 +222,31 @@ public class McpRuntimeService {
             ),
             "required", List.of("arguments")
         );
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<DiscoveredMcpTool> readDiscoveredTools(SystemCapabilityEntity capability) {
+        Object value = capability.getConfig().get("tools");
+        if (!(value instanceof List<?> tools)) {
+            return List.of();
+        }
+        List<DiscoveredMcpTool> result = new ArrayList<>();
+        for (Object item : tools) {
+            if (!(item instanceof Map<?, ?> rawTool)) {
+                continue;
+            }
+            String name = stringValue(rawTool.get("name"));
+            if (name.isBlank()) {
+                continue;
+            }
+            String description = stringValue(rawTool.get("description"));
+            Object rawSchema = rawTool.get("inputSchema");
+            Map<String, Object> inputSchema = rawSchema instanceof Map<?, ?> schema
+                ? new LinkedHashMap<>((Map<String, Object>) schema)
+                : Map.of();
+            result.add(new DiscoveredMcpTool(name, description, inputSchema));
+        }
+        return result;
     }
 
     private boolean isSensitive(String key) {
@@ -238,6 +317,9 @@ public class McpRuntimeService {
         public McpToolBinding {
             parameters = parameters == null ? Map.of() : Map.copyOf(parameters);
         }
+    }
+
+    private record DiscoveredMcpTool(String name, String description, Map<String, Object> inputSchema) {
     }
 
     public record ExecutedMcpTool(

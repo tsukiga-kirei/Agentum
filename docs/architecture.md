@@ -371,7 +371,7 @@ pending -> running -> paused -> resumed -> running -> completed
 
 模型不能看到所有工具，只能看到当前节点和当前用户可用能力池中的工具。
 
-当前运行态已支持标准 MCP SSE 接入：系统管理登记 `sseUrl` 后，运行节点按租户能力池授权复核，通过 `initialize` / `notifications/initialized` / `tools/call` 执行工具，并将工具名、脱敏参数、结果、耗时和失败原因写入 `mcp_call_logs`。
+当前运行态已支持标准 MCP SSE 与 Streamable HTTP 接入：系统管理登记端点并测试连接后，平台持久化 `tools/list` 返回的工具名、描述和 `inputSchema` 契约快照；运行节点按租户能力池授权复核，把每个远程工具分别声明给模型，再通过 `initialize` / `notifications/initialized` / `tools/call` 执行。工具名、脱敏参数、结果、耗时和失败原因写入 `mcp_call_logs`，MCP 返回的 `isError=true` 必须按失败记录，不能因 HTTP 请求成功而误记为工具成功。
 
 智能体节点的 MCP 由 `AgentRuntimeService` 在 ReAct 循环中处理：`McpRuntimeService.resolveMcpTools` 把当前节点可用 MCP 转成模型工具声明，模型选择具体工具后执行 `McpRuntimeService.executeResolvedTool`，观察结果作为 tool message 回写到下一轮模型推理。最终输出必须通过 `final_answer` 工具提交。
 

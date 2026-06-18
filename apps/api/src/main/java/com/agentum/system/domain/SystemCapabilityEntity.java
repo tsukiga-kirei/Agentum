@@ -5,7 +5,9 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.List;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -114,6 +116,21 @@ public class SystemCapabilityEntity {
     public void recordConnectivityCheck(String status, Instant checkedAt, Instant now) {
         this.connectivityStatus = "online".equals(status) ? "online" : "offline";
         this.connectivityCheckedAt = checkedAt;
+        this.updatedAt = now;
+    }
+
+    /**
+     * MCP 连通性测试得到的工具清单属于运行时契约快照，需要和端点配置一起持久化。
+     * AI 运行时据此获得真实工具名和输入 Schema，不能用平台能力编码猜测远端工具名。
+     */
+    public void recordDiscoveredTools(List<Map<String, Object>> tools, Instant now) {
+        if (this.config == null) {
+            this.config = new HashMap<>();
+        }
+        List<Map<String, Object>> snapshot = tools == null
+            ? List.of()
+            : tools.stream().map(LinkedHashMap::new).map(Map::<String, Object>copyOf).toList();
+        this.config.put("tools", snapshot);
         this.updatedAt = now;
     }
 

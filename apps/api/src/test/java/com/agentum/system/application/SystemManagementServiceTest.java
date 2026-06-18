@@ -775,6 +775,52 @@ class SystemManagementServiceTest {
     }
 
     @Test
+    void shouldPersistDiscoveredMcpToolsAfterSuccessfulConnectionTest() {
+        SystemCapabilityRepository systemCapabilityRepository = mock(SystemCapabilityRepository.class);
+        McpConnectionTester mcpConnectionTester = mock(McpConnectionTester.class);
+        SystemCapabilityEntity capability = SystemCapabilityEntity.create(
+            "mcp",
+            "金融月报",
+            "cap_financial_report",
+            "v1",
+            "金融业务工作报告 MCP",
+            "medium",
+            "active",
+            Map.of(
+                "transport", "streamable_http",
+                "endpointUrl", "http://127.0.0.1:3001/mcp"
+            ),
+            Instant.parse("2026-05-15T08:00:00Z")
+        );
+        Map<String, Object> inputSchema = Map.of(
+            "type", "object",
+            "properties", Map.of("pdt", Map.of("type", "string")),
+            "required", List.of("pdt")
+        );
+        when(systemCapabilityRepository.findById(capability.getId())).thenReturn(Optional.of(capability));
+        when(mcpConnectionTester.test(any())).thenReturn(new McpConnectionTestOutcome(
+            "success",
+            "已发现 1 个工具",
+            List.of(new McpConnectionTestOutcome.McpToolDescriptor(
+                "get_financial_work_report_core_kpi",
+                "获取核心经营指标",
+                inputSchema
+            ))
+        ));
+        SystemManagementService service = buildService(systemCapabilityRepository, mcpConnectionTester);
+
+        SystemManagementApi.CapabilityTestResult result = service.testCapability(capability.getId());
+
+        assertThat(result.status()).isEqualTo("success");
+        assertThat(capability.getConfig().get("tools")).isEqualTo(List.of(Map.of(
+            "name", "get_financial_work_report_core_kpi",
+            "description", "获取核心经营指标",
+            "inputSchema", inputSchema
+        )));
+        verify(systemCapabilityRepository).save(capability);
+    }
+
+    @Test
     void shouldRejectMcpCapabilityWithoutEndpointUrl() {
         SystemManagementService service = buildService(mock(ModelProviderRepository.class), mock(SystemCapabilityRepository.class));
 
@@ -989,6 +1035,34 @@ class SystemManagementServiceTest {
             mock(ModelProviderTypeRepository.class),
             systemCapabilityRepository,
             mock(ModelProviderConnectionTester.class)
+        );
+    }
+
+    private static SystemManagementService buildService(
+        SystemCapabilityRepository systemCapabilityRepository,
+        McpConnectionTester mcpConnectionTester
+    ) {
+        return new SystemManagementService(
+            mock(TenantRepository.class),
+            mock(ModelProviderRepository.class),
+            mock(ModelProviderTypeRepository.class),
+            systemCapabilityRepository,
+            mock(TenantCapabilityGrantRepository.class),
+            mock(TenantModelAssignmentRepository.class),
+            mock(UserAccountRepository.class),
+            mock(UserRoleAssignmentRepository.class),
+            mock(RoleRepository.class),
+            mock(DepartmentRepository.class),
+            mock(UserMembershipRepository.class),
+            mock(UserMembershipRoleRepository.class),
+            mock(PasswordEncoder.class),
+            FIELD_ENCRYPTION,
+            mock(ModelProviderConnectionTester.class),
+            mock(McpSseConnectionTester.class),
+            mcpConnectionTester,
+            mock(SkillManifestProbe.class),
+            mock(EmailDeliveryConnectionTester.class),
+            Clock.fixed(Instant.parse("2026-05-15T08:00:00Z"), ZoneOffset.UTC)
         );
     }
 
