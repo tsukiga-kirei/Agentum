@@ -1,5 +1,3 @@
-<div align="center">
-
 # Agentum
 
 **AI 驱动的企业智能体工作流平台**  
@@ -11,8 +9,6 @@
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-6DB33F.svg)](https://spring.io/projects/spring-boot)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791.svg)](https://www.postgresql.org/)
 [![Docker Compose](https://img.shields.io/badge/Docker-Compose-2496ED.svg)](https://docs.docker.com/compose/)
-
-</div>
 
 ---
 
@@ -71,6 +67,8 @@ make dev-infra
 ```bash
 ./gradlew :apps:api:bootRun
 ```
+
+根目录 `.env.example` 提供本地环境变量模板。Docker Compose 会读取复制后的 `.env`；直接使用 Gradle 启动时，需要在终端或 IDE Run Configuration 中设置环境变量。`AGENTUM_AUTH_TOKEN_SECRET` 用于登录 Token 签名，`AGENTUM_AUTH_SSO_STATE_SECRET` 用于 SSO 临时状态签名，`AGENTUM_FIELD_ENCRYPTION_MASTER_KEY` 用于解密已保存的模型 API Key、OIDC Client Secret 等敏感字段。模板中的公开值只用于本地免配置启动，不能用于生产；生产必须分别通过独立 Secret 或 KMS / Vault 注入。字段加密主密钥生成密文后必须保持稳定，不能与 Token 签名密钥复用。
 
 启动前端：
 

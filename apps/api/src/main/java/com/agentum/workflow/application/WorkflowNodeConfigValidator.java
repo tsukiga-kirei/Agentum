@@ -8,7 +8,6 @@ import com.agentum.system.infrastructure.SystemCapabilityRepository;
 import com.agentum.system.infrastructure.TenantCapabilityGrantRepository;
 import com.agentum.workflow.interfaces.WorkflowDraftApi;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -16,8 +15,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
@@ -27,7 +24,6 @@ import org.springframework.stereotype.Component;
 @Component
 public class WorkflowNodeConfigValidator {
 
-    private static final Logger log = LoggerFactory.getLogger(WorkflowNodeConfigValidator.class);
     private static final Set<String> SENTINEL_VALUES = Set.of("custom", "none", "");
     private static final String ACTIVE_STATUS = "active";
     /** 智能体集群支持的执行方式枚举，后续扩展新策略时在此追加。 */
@@ -156,7 +152,7 @@ public class WorkflowNodeConfigValidator {
         Set<String> fieldVariables = new LinkedHashSet<>();
         for (Map<String, Object> field : fields) {
             String variable = rawString(field.get("variable"));
-            if (!isValidVariableName(variable)) {
+            if (isInvalidVariableName(variable)) {
                 issues.add(issue("WORKFLOW_VALIDATION_INPUT_FIELD_VARIABLE_INVALID", "节点[" + node.name() + "]的输入字段变量名不合法：" + variable, node));
                 continue;
             }
@@ -181,7 +177,7 @@ public class WorkflowNodeConfigValidator {
         Set<String> agentOutputs = new LinkedHashSet<>();
         for (int index = 0; index < agents.size(); index++) {
             String output = rawString(agents.get(index).get("output"));
-            if (!isValidVariableName(output)) {
+            if (isInvalidVariableName(output)) {
                 issues.add(issue(
                     "WORKFLOW_VALIDATION_CLUSTER_AGENT_OUTPUT_INVALID",
                     "节点[" + node.name() + "]的第 " + (index + 1) + " 个子智能体输出变量名不合法：" + output,
@@ -385,8 +381,8 @@ public class WorkflowNodeConfigValidator {
         return value == null ? "" : String.valueOf(value).trim();
     }
 
-    private static boolean isValidVariableName(String value) {
-        return value != null && value.matches("^[a-z][a-z0-9_]*$");
+    private static boolean isInvalidVariableName(String value) {
+        return value == null || !value.matches("^[a-z][a-z0-9_]*$");
     }
 
     private static Set<String> variableSet(List<String> variables) {
@@ -404,7 +400,6 @@ public class WorkflowNodeConfigValidator {
     /**
      * 从 config 中提取字符串列表；支持两个候选键名以兼容前端新旧字段名。
      */
-    @SuppressWarnings("unchecked")
     private static List<String> extractStringList(Map<String, Object> config, String primaryKey, String fallbackKey) {
         Object value = config.get(primaryKey);
         if (value == null) {

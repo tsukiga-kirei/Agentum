@@ -10,7 +10,7 @@ import java.util.Base64;
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
@@ -28,9 +28,13 @@ public class FieldEncryptionService {
     private final SecretKeySpec keySpec;
     private final SecureRandom secureRandom = new SecureRandom();
 
-    public FieldEncryptionService(
-        @Value("${agentum.security.field-encryption.master-key:${agentum.auth.token-secret:agentum-local-field-encryption-key}}") String masterKey
-    ) {
+    @Autowired
+    public FieldEncryptionService(FieldEncryptionProperties properties) {
+        this(properties.getMasterKey());
+    }
+
+    /** 仅供不启动 Spring 容器的单元测试显式提供测试密钥。 */
+    public FieldEncryptionService(String masterKey) {
         this.keySpec = new SecretKeySpec(deriveKey(masterKey), "AES");
     }
 
@@ -76,6 +80,9 @@ public class FieldEncryptionService {
     private static byte[] deriveKey(String masterKey) {
         if (masterKey == null || masterKey.isBlank()) {
             throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "FIELD_ENCRYPTION_KEY_MISSING", "字段加密主密钥未配置");
+        }
+        if (masterKey.length() < 32) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "FIELD_ENCRYPTION_KEY_WEAK", "字段加密主密钥长度不能少于 32 个字符");
         }
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");

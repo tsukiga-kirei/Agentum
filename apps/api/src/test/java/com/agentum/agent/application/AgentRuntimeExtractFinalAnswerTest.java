@@ -25,7 +25,6 @@ class AgentRuntimeExtractFinalAnswerTest {
         return new AgentRuntimeService(
             mock(TenantModelAssignmentRepository.class),
             mock(ModelProviderRepository.class),
-            mock(SystemCapabilityRepository.class),
             mock(TenantAssetCapabilityRepository.class),
             mock(McpRuntimeService.class),
             mock(SkillRuntimeService.class),

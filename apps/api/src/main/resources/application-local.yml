@@ -30,8 +30,11 @@ logging:
 
 agentum:
   auth:
-    token-secret: agentum-local-development-secret-change-before-production
+    # 本地默认值仅用于免配置启动；生产必须分别注入随机 Secret，不能沿用这些公开值。
+    token-secret: ${AGENTUM_AUTH_TOKEN_SECRET:agentum-local-development-secret-change-before-production}
+    sso-state-secret: ${AGENTUM_AUTH_SSO_STATE_SECRET:agentum-local-sso-state-secret-change-before-production}
     token-ttl-minutes: 480
   security:
     field-encryption:
-      master-key: agentum-local-field-encryption-secret-change-before-production
+      # 本地默认值仅用于免配置启动；已有密文后不要随意更换。生产必须注入独立 Secret，不能复用 token-secret。
+      master-key: ${AGENTUM_FIELD_ENCRYPTION_MASTER_KEY:agentum-local-field-encryption-secret-change-before-production}

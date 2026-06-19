@@ -2,7 +2,7 @@ spring:
   application:
     name: agentum-api
   profiles:
-    active: local
+    active: ${SPRING_PROFILES_ACTIVE:local}
   flyway:
     locations:
       - classpath:db/migration/schema

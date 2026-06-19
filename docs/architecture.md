@@ -535,6 +535,12 @@ GET /api/.../xxx?page=1&size=20&sort=createdAt,desc
 
 ## 9. 部署演进
 
+### 9.1 字段加密主密钥
+
+模型 API Key、OIDC Client Secret 和外部交付凭证等敏感字段使用 AES-GCM 密文落库，应用通过 `agentum.security.field-encryption.master-key` 派生数据密钥。本地 profile 可由 `AGENTUM_FIELD_ENCRYPTION_MASTER_KEY` 覆盖开发默认值；非本地环境必须通过独立 Secret 或 KMS / Vault 注入，禁止与 `agentum.auth.token-secret` 复用，禁止写入仓库、日志或接口响应。登录 Token 签名密钥与 SSO 状态签名密钥分别通过 `AGENTUM_AUTH_TOKEN_SECRET`、`AGENTUM_AUTH_SSO_STATE_SECRET` 注入，三类密钥必须相互独立。
+
+主密钥与现有密文构成生命周期绑定：直接替换会导致历史密文无法解密。正式轮换前必须实现带密钥版本的密文格式和“旧密钥解密、新密钥重加密”的迁移流程；当前 `v1:` 密文尚不支持无迁移直接轮换。
+
 第一阶段：
 
 - 单体 API。

@@ -39,7 +39,7 @@ public class AuthTokenService {
     @Autowired
     public AuthTokenService(
         ObjectMapper objectMapper,
-        @Value("${agentum.auth.token-secret:agentum-local-development-secret-change-before-production}") String tokenSecret,
+        @Value("${agentum.auth.token-secret}") String tokenSecret,
         @Value("${agentum.auth.token-ttl-minutes:480}") long tokenTtlMinutes
     ) {
         this(objectMapper, Clock.systemUTC(), tokenSecret, Duration.ofMinutes(tokenTtlMinutes));

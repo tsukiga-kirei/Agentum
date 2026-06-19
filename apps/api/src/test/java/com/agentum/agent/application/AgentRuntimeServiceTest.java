@@ -52,7 +52,6 @@ class AgentRuntimeServiceTest {
         AgentRuntimeService service = new AgentRuntimeService(
             assignmentRepository,
             providerRepository,
-            capabilityRepository,
             assetRepository,
             mcpRuntimeService,
             skillRuntimeService,
@@ -141,7 +140,7 @@ class AgentRuntimeServiceTest {
         assertThat(result.outputs()).containsEntry("agentMode", "react");
         assertThat(result.outputs().get("final_answer")).asString().contains("可授信");
         assertThat(result.outputs().get("agent_response")).asString().contains("可授信");
-        assertThat(result.outputs().get("toolCalls")).asList().hasSize(1);
+        assertThat((List<?>) result.outputs().get("toolCalls")).hasSize(1);
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> toolCalls = (List<Map<String, Object>>) result.outputs().get("toolCalls");
         assertThat(toolCalls).singleElement().satisfies(tool -> {
@@ -155,9 +154,9 @@ class AgentRuntimeServiceTest {
             assertThat(request.nodeRunId()).isEqualTo(nodeRun.getId());
             assertThat(request.modelCallLogId()).isNotNull();
         });
-        assertThat(modelChatClient.requests().get(0).tools()).extracting(ModelChatClient.ToolDefinition::name)
+        assertThat(modelChatClient.requests().getFirst().tools()).extracting(ModelChatClient.ToolDefinition::name)
             .contains("skill_credit_read", "final_answer");
-        assertThat(result.outputs().get("chatMessages")).asList().hasSize(2);
+        assertThat((List<?>) result.outputs().get("chatMessages")).hasSize(2);
     }
 
     @Test
@@ -174,7 +173,6 @@ class AgentRuntimeServiceTest {
         AgentRuntimeService service = new AgentRuntimeService(
             assignmentRepository,
             providerRepository,
-            capabilityRepository,
             assetRepository,
             mcpRuntimeService,
             skillRuntimeService,
@@ -251,10 +249,10 @@ class AgentRuntimeServiceTest {
         ));
 
         assertThat(modelChatClient.requests()).hasSize(1);
-        assertThat(modelChatClient.requests().get(0).tools())
+        assertThat(modelChatClient.requests().getFirst().tools())
             .extracting(ModelChatClient.ToolDefinition::name)
             .containsExactly("final_answer");
-        assertThat(modelChatClient.requests().get(0).messages())
+        assertThat(modelChatClient.requests().getFirst().messages())
             .extracting(ModelChatClient.ChatMessage::role)
             .containsExactly("system", "user", "assistant", "user");
         @SuppressWarnings("unchecked")
@@ -278,7 +276,6 @@ class AgentRuntimeServiceTest {
         AgentRuntimeService service = new AgentRuntimeService(
             assignmentRepository,
             providerRepository,
-            capabilityRepository,
             assetRepository,
             mcpRuntimeService,
             skillRuntimeService,

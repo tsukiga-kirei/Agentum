@@ -35,7 +35,7 @@ public class SsoStateService {
 
     @Autowired
     public SsoStateService(
-        @Value("${agentum.auth.sso-state-secret:${agentum.auth.token-secret:agentum-local-sso-state-secret}}") String secret,
+        @Value("${agentum.auth.sso-state-secret}") String secret,
         @Value("${agentum.auth.sso-state-ttl-minutes:5}") long ttlMinutes
     ) {
         this(Clock.systemUTC(), secret, Duration.ofMinutes(ttlMinutes));

@@ -13,12 +13,10 @@ import com.agentum.shared.security.FieldEncryptionService;
 import com.agentum.system.domain.ModelProviderEntity;
 import com.agentum.system.domain.TenantModelAssignmentEntity;
 import com.agentum.system.infrastructure.ModelProviderRepository;
-import com.agentum.system.infrastructure.SystemCapabilityRepository;
 import com.agentum.system.infrastructure.TenantModelAssignmentRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -46,7 +44,6 @@ public class AgentRuntimeService {
 
     private final TenantModelAssignmentRepository tenantModelAssignmentRepository;
     private final ModelProviderRepository modelProviderRepository;
-    private final SystemCapabilityRepository systemCapabilityRepository;
     private final TenantAssetCapabilityRepository tenantAssetCapabilityRepository;
     private final McpRuntimeService mcpRuntimeService;
     private final SkillRuntimeService skillRuntimeService;
@@ -62,7 +59,6 @@ public class AgentRuntimeService {
     public AgentRuntimeService(
         TenantModelAssignmentRepository tenantModelAssignmentRepository,
         ModelProviderRepository modelProviderRepository,
-        SystemCapabilityRepository systemCapabilityRepository,
         TenantAssetCapabilityRepository tenantAssetCapabilityRepository,
         McpRuntimeService mcpRuntimeService,
         SkillRuntimeService skillRuntimeService,
@@ -77,7 +73,6 @@ public class AgentRuntimeService {
     ) {
         this.tenantModelAssignmentRepository = tenantModelAssignmentRepository;
         this.modelProviderRepository = modelProviderRepository;
-        this.systemCapabilityRepository = systemCapabilityRepository;
         this.tenantAssetCapabilityRepository = tenantAssetCapabilityRepository;
         this.mcpRuntimeService = mcpRuntimeService;
         this.skillRuntimeService = skillRuntimeService;
@@ -93,26 +88,6 @@ public class AgentRuntimeService {
 
     public AgentRuntimeResult execute(AgentRuntimeRequest request) {
         return executeAgentLoop(request, AgentRuntimeEventSink.noop(), false);
-    }
-
-    public AgentRuntimeResult executeStreaming(AgentRuntimeRequest request, ModelChatClient.StreamingCallback clientCallback) {
-        AgentRuntimeResult result = executeAgentLoop(request, new AgentRuntimeEventSink() {
-            @Override
-            public void onToken(String deltaContent, String accumulatedContent) {
-                clientCallback.onChunk(deltaContent);
-            }
-
-            @Override
-            public void onCompleted(String finalAnswer) {
-                clientCallback.onComplete(new ModelChatClient.ChatResult(finalAnswer, Map.of("content", finalAnswer), Map.of(), 0L));
-            }
-
-            @Override
-            public void onFailed(String code, String message) {
-                clientCallback.onError(code, message);
-            }
-        }, true);
-        return result;
     }
 
     public AgentRuntimeResult executeStreaming(AgentRuntimeRequest request, AgentRuntimeEventSink eventSink) {
@@ -700,7 +675,7 @@ public class AgentRuntimeService {
         outputs.put("modelCallLogIds", modelCallLogIds);
         outputs.put("chatMessages", buildChatMessages(config, renderedUserPrompt, finalAnswer, finalAnswerSource, modelContent, toolCallSummaries));
         if (!modelCallLogIds.isEmpty()) {
-            outputs.put("modelCallLogId", modelCallLogIds.get(modelCallLogIds.size() - 1));
+            outputs.put("modelCallLogId", modelCallLogIds.getLast());
         }
         return outputs;
     }
@@ -781,18 +756,6 @@ public class AgentRuntimeService {
             log.debug("工具参数 JSON 解析失败，按原始文本保留 requestId={}", RequestIds.current(), exception);
         }
         return Map.of("raw", rawJson);
-    }
-
-    /** final_answer 专用：已知截断时不走 Jackson，避免无意义的 EOF 堆栈。 */
-    private static int intValue(Object value, int fallback) {
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        try {
-            return value == null ? fallback : Integer.parseInt(value.toString());
-        } catch (NumberFormatException exception) {
-            return fallback;
-        }
     }
 
     private int resolveMaxIterationsPerTurn(Map<String, Object> config) {
@@ -939,7 +902,7 @@ public class AgentRuntimeService {
 
     private String renderTemplate(String template, Map<String, Object> variables, Map<String, Object> toolOutputs) {
         Matcher matcher = VARIABLE_PATTERN.matcher(template == null ? "" : template);
-        StringBuffer result = new StringBuffer();
+        StringBuilder result = new StringBuilder();
         while (matcher.find()) {
             String key = matcher.group(1);
             Object value = variables.containsKey(key) ? variables.get(key) : toolOutputs.get(key);
@@ -1032,10 +995,6 @@ public class AgentRuntimeService {
 
     private static String stringValue(Object value) {
         return value == null ? "" : value.toString().trim();
-    }
-
-    private static String normalizeForCompare(String value) {
-        return value == null ? "" : value.replaceAll("\\s+", " ").trim();
     }
 
     private static String truncate(String value, int maxLength) {
