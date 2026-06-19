@@ -147,6 +147,7 @@ public class AgentRuntimeService {
         int maxIterations = resolveMaxIterationsPerTurn(config);
         List<String> modelCallLogIds = new ArrayList<>();
         List<Map<String, Object>> toolCallSummaries = new ArrayList<>();
+        TokenUsageAccumulator turnTokenUsage = new TokenUsageAccumulator();
         String finalAnswer = "";
         String finalModelContent = "";
         String finalAnswerSource = "";
@@ -161,6 +162,7 @@ public class AgentRuntimeService {
                     : callModelWithLog(request, provider, modelName, messages, options, toolDefinitions);
                 modelCallLogIds.add(loggedResult.callLogId());
                 ModelChatClient.ChatResult result = loggedResult.result();
+                turnTokenUsage.add(result.tokenUsage());
                 if (!firstNonBlank(result.content()).isBlank()) {
                     finalModelContent = result.content();
                 }
@@ -200,7 +202,17 @@ public class AgentRuntimeService {
             if (finalAnswer.isBlank()) {
                 assertRunNotCancelled(request.run().getId());
                 eventSink.onPhase("model_calling", "工具循环达到上限，正在汇总最终答案。");
-                finalAnswer = synthesizeFinalAnswer(request, provider, modelName, messages, options, streamFinalAnswer, eventSink, modelCallLogIds);
+                finalAnswer = synthesizeFinalAnswer(
+                    request,
+                    provider,
+                    modelName,
+                    messages,
+                    options,
+                    streamFinalAnswer,
+                    eventSink,
+                    modelCallLogIds,
+                    turnTokenUsage
+                );
                 finalAnswerSource = "synthesized";
                 if (finalModelContent.isBlank()) {
                     finalModelContent = finalAnswer;
@@ -215,7 +227,8 @@ public class AgentRuntimeService {
                 finalAnswer,
                 finalAnswerSource,
                 finalModelContent,
-                renderedUserPrompt
+                renderedUserPrompt,
+                turnTokenUsage.value()
             );
             eventSink.onPhase("completed", "智能体已完成最终回答。");
             eventSink.onCompleted(finalAnswer);
@@ -482,13 +495,15 @@ public class AgentRuntimeService {
         Map<String, Object> options,
         boolean streamFinalAnswer,
         AgentRuntimeEventSink eventSink,
-        List<String> modelCallLogIds
+        List<String> modelCallLogIds,
+        TokenUsageAccumulator turnTokenUsage
     ) {
         List<ModelChatClient.ChatMessage> finalMessages = new ArrayList<>(messages);
         finalMessages.add(new ModelChatClient.ChatMessage("user", "请基于以上推理和工具观察结果，生成完整最终答案。"));
         if (!streamFinalAnswer) {
             LoggedChatResult result = callModelWithLog(request, provider, modelName, finalMessages, options, List.of());
             modelCallLogIds.add(result.callLogId());
+            turnTokenUsage.add(result.result().tokenUsage());
             return result.result().content();
         }
 
@@ -537,6 +552,7 @@ public class AgentRuntimeService {
         try {
             ModelChatClient.ChatResult result = future.get();
             modelCallLogIds.add(callLogId(callLog));
+            turnTokenUsage.add(result.tokenUsage());
             return result.content();
         } catch (ExecutionException exception) {
             if (exception.getCause() instanceof ApiException apiException) {
@@ -592,7 +608,8 @@ public class AgentRuntimeService {
         String finalAnswer,
         String finalAnswerSource,
         String modelContent,
-        List<Map<String, Object>> toolCallSummaries
+        List<Map<String, Object>> toolCallSummaries,
+        TokenUsage tokenUsage
     ) {
         List<Map<String, Object>> messages = new ArrayList<>();
         List<Map<String, Object>> history = readConversationHistory(config);
@@ -604,6 +621,7 @@ public class AgentRuntimeService {
         Map<String, Object> assistantMessage = new LinkedHashMap<>();
         assistantMessage.put("role", "assistant");
         assistantMessage.put("content", finalAnswer);
+        assistantMessage.put("tokenUsage", tokenUsage.toMap());
         List<Map<String, Object>> processSteps = buildChatMessageProcessSteps(modelContent, finalAnswerSource, toolCallSummaries);
         if (!processSteps.isEmpty()) {
             assistantMessage.put("processSteps", processSteps);
@@ -656,7 +674,8 @@ public class AgentRuntimeService {
         String finalAnswer,
         String finalAnswerSource,
         String modelContent,
-        String renderedUserPrompt
+        String renderedUserPrompt,
+        TokenUsage tokenUsage
     ) {
         Map<String, Object> outputs = new LinkedHashMap<>();
         String outputName = firstNonBlank(stringValue(config.get("output")), stringValue(config.get("outputVariable")), "agent_response");
@@ -673,7 +692,16 @@ public class AgentRuntimeService {
         outputs.put("agentMode", "react");
         outputs.put("toolCalls", toolCallSummaries);
         outputs.put("modelCallLogIds", modelCallLogIds);
-        outputs.put("chatMessages", buildChatMessages(config, renderedUserPrompt, finalAnswer, finalAnswerSource, modelContent, toolCallSummaries));
+        outputs.put("tokenUsage", tokenUsage.toMap());
+        outputs.put("chatMessages", buildChatMessages(
+            config,
+            renderedUserPrompt,
+            finalAnswer,
+            finalAnswerSource,
+            modelContent,
+            toolCallSummaries,
+            tokenUsage
+        ));
         if (!modelCallLogIds.isEmpty()) {
             outputs.put("modelCallLogId", modelCallLogIds.getLast());
         }
@@ -795,6 +823,19 @@ public class AgentRuntimeService {
     }
 
     private record LoggedChatResult(ModelChatClient.ChatResult result, String callLogId, String streamedDisplayText) {
+    }
+
+    /** 一轮 ReAct 可能调用模型多次，最终按用户可理解的“本轮对话”统一累计。 */
+    private static final class TokenUsageAccumulator {
+        private TokenUsage value = TokenUsage.empty();
+
+        void add(Map<String, Object> providerUsage) {
+            value = value.plus(TokenUsage.fromProviderUsage(providerUsage));
+        }
+
+        TokenUsage value() {
+            return value;
+        }
     }
 
     private record ToolExecution(String observation, Map<String, Object> summary) {

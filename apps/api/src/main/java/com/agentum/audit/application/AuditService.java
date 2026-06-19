@@ -1,6 +1,7 @@
 package com.agentum.audit.application;
 
 import com.agentum.agent.domain.ModelCallLogEntity;
+import com.agentum.agent.application.TokenUsage;
 import com.agentum.agent.infrastructure.ModelCallLogRepository;
 import com.agentum.audit.domain.AuditLogEntity;
 import com.agentum.audit.infrastructure.AuditLogRepository;
@@ -226,7 +227,7 @@ public class AuditService {
                 log.getStatus(),
                 maskMap(log.getPromptSnapshot(), sensitiveKeys, sensitivePlainValues),
                 maskMap(log.getResponseSnapshot(), sensitiveKeys, sensitivePlainValues),
-                log.getTokenUsage(),
+                log.getNormalizedTokenUsage(),
                 log.getLatencyMs(),
                 log.getCreatedAt(),
                 log.getCompletedAt()
@@ -268,6 +269,10 @@ public class AuditService {
             ))
             .collect(Collectors.toList());
 
+        TokenUsage runTokenUsage = modelLogs.stream()
+            .map(ModelCallLogEntity::getNormalizedTokenUsage)
+            .reduce(TokenUsage.empty(), TokenUsage::plus);
+
         // 组装返回数据只读证据链
         return new AuditEvidenceDto(
             new AuditEvidenceDto.WorkflowRunInfo(
@@ -280,6 +285,7 @@ public class AuditService {
                 run.getCompletedAt(),
                 operatorNames.getOrDefault(run.getCreatedBy(), "System")
             ),
+            runTokenUsage,
             nodeRunInfos,
             variableSnapshotInfos,
             runEventInfos,
@@ -323,7 +329,8 @@ public class AuditService {
                 runTitles.getOrDefault(log.getRunId(), "Unknown Run"),
                 log.getPromptSnapshot(),
                 log.getResponseSnapshot(),
-                log.getErrorMessage()
+                log.getErrorMessage(),
+                log.getNormalizedTokenUsage()
             ));
             return PageResponse.from(dtos);
         }
@@ -346,7 +353,8 @@ public class AuditService {
             runTitles.getOrDefault(log.getRunId(), "Unknown Run"),
             log.getRequestPayload(),
             log.getResponsePayload(),
-            log.getErrorMessage()
+            log.getErrorMessage(),
+            null
         ));
         return PageResponse.from(dtos);
     }

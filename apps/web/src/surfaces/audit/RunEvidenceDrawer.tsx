@@ -4,7 +4,7 @@ import type { TabsProps } from "antd";
 import {
   Clock, User, ClipboardList, Activity, Sparkles, Cpu,
   Send, AlertCircle, Code2, Lock, EyeOff, CheckCircle2,
-  Timer, FileText
+  Timer, FileText, Sigma
 } from "lucide-react";
 import { auditApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
@@ -208,6 +208,11 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
                       <Timer size={11} className="inline mr-1 opacity-50" />
                       {m.latencyMs ? `${m.latencyMs} ms` : "—"}
                     </span>
+                  </div>
+                  <div className="mb-3 flex flex-wrap gap-2 text-xs text-zinc-500">
+                    <span className="rounded-md bg-violet-50 px-2 py-1 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">总计 {m.tokenUsage.totalTokens.toLocaleString("zh-CN")}</span>
+                    <span className="rounded-md bg-zinc-100 px-2 py-1 dark:bg-zinc-800">输入 {m.tokenUsage.inputTokens.toLocaleString("zh-CN")}</span>
+                    <span className="rounded-md bg-zinc-100 px-2 py-1 dark:bg-zinc-800">输出 {m.tokenUsage.outputTokens.toLocaleString("zh-CN")}</span>
                   </div>
                   <div>
                     <p className="run-evidence-section-label text-xs font-bold tracking-wider text-zinc-400 mb-1.5 uppercase">提示词快照 (Prompt Snapshot)</p>
@@ -431,6 +436,10 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
                       <CheckCircle2 size={14} />
                       结束于: {formatDate(evidence.runInfo.completedAt)}
                     </span>
+                    <span className="run-evidence-hero-meta-item" title="本次运行全部模型调用累计">
+                      <Sigma size={14} />
+                      Token: {evidence.tokenUsage.totalTokens.toLocaleString("zh-CN")}（输入 {evidence.tokenUsage.inputTokens.toLocaleString("zh-CN")} / 输出 {evidence.tokenUsage.outputTokens.toLocaleString("zh-CN")}）
+                    </span>
                   </div>
                 </div>
               </div>
@@ -606,4 +615,3 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
     </Drawer>
   );
 }
-

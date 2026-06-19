@@ -9,6 +9,12 @@ export interface AuditRunSummary {
   operatorName: string;
 }
 
+export interface TokenUsageInfo {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+}
+
 export interface WorkflowRunInfo {
   id: string;
   title: string;
@@ -63,7 +69,7 @@ export interface ModelCallLogInfo {
   status: string;
   promptSnapshot: Record<string, any>;
   responseSnapshot: Record<string, any>;
-  tokenUsage: Record<string, any>;
+  tokenUsage: TokenUsageInfo;
   latencyMs: number | null;
   createdAt: string;
   completedAt: string | null;
@@ -98,6 +104,7 @@ export interface DeliveryRecordInfo {
 
 export interface AuditEvidence {
   runInfo: WorkflowRunInfo;
+  tokenUsage: TokenUsageInfo;
   nodeRuns: NodeRunInfo[];
   variableSnapshots: VariableSnapshotInfo[];
   runEvents: RunEventInfo[];
@@ -119,6 +126,7 @@ export interface AuditToolCall {
   requestPayload: Record<string, any>;
   responsePayload: Record<string, any>;
   errorMessage: string | null;
+  tokenUsage: TokenUsageInfo | null;
 }
 
 export interface AuditOperationLog {

@@ -41,12 +41,20 @@ export type RuntimeNodeField = {
   sensitive?: boolean;
 };
 
+/** 供应商 usage 标准化后的 token 用量；一条 assistant 消息对应一轮累计。 */
+export type RuntimeTokenUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+};
+
 /** 对话消息 */
 export type RuntimeChatMessage = {
   id: string;
   role: "user" | "assistant" | "system";
   author: string;
   content: string;
+  tokenUsage?: RuntimeTokenUsage;
   /** 当前 assistant 回复对应的工具/生成步骤 */
   processSteps?: AgentExecutionStep[];
   /** 是否正在流式输出中 */

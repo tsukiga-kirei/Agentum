@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Empty, Pagination, message, Tag, Select, Segmented } from "antd";
-import { Search, Info, Cpu, Sparkles, ChevronDown, ChevronUp, AlertCircle, Clock, Activity } from "lucide-react";
+import { Search, Info, Cpu, Sparkles, ChevronDown, ChevronUp, AlertCircle, Clock, Activity, Sigma } from "lucide-react";
 import { auditApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import type { AuditToolCall } from "../../types/audit";
@@ -184,6 +184,7 @@ export function ToolAuditTab({ setLoading }: ToolAuditTabProps) {
                         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-400 mt-1">
                           <span>所属运行: {log.callerName}</span>
                           <span>触发时间: {formatDate(log.createdAt)}</span>
+                          {log.tokenUsage ? <span>Token: {log.tokenUsage.totalTokens.toLocaleString("zh-CN")}</span> : null}
                         </div>
                       </div>
                     </div>
@@ -203,6 +204,14 @@ export function ToolAuditTab({ setLoading }: ToolAuditTabProps) {
                   {/* 展开的详情日志 */}
                   {isExpanded && (
                     <div className="w-full px-4 pb-4 border-t border-dashed border-zinc-100 dark:border-zinc-800 pt-3 bg-zinc-50/30 dark:bg-zinc-950/10 space-y-4">
+                      {log.tokenUsage ? (
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+                          <Sigma size={13} className="text-violet-500" />
+                          <span className="font-semibold text-zinc-700 dark:text-zinc-200">本次调用 {log.tokenUsage.totalTokens.toLocaleString("zh-CN")} tokens</span>
+                          <span>输入 {log.tokenUsage.inputTokens.toLocaleString("zh-CN")}</span>
+                          <span>输出 {log.tokenUsage.outputTokens.toLocaleString("zh-CN")}</span>
+                        </div>
+                      ) : null}
                       {/* 参数与返回值 */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-1.5">

@@ -157,6 +157,11 @@ class AgentRuntimeServiceTest {
         assertThat(modelChatClient.requests().getFirst().tools()).extracting(ModelChatClient.ToolDefinition::name)
             .contains("skill_credit_read", "final_answer");
         assertThat((List<?>) result.outputs().get("chatMessages")).hasSize(2);
+        assertThat(result.outputs().get("tokenUsage")).isEqualTo(Map.of(
+            "inputTokens", 180L,
+            "outputTokens", 50L,
+            "totalTokens", 230L
+        ));
     }
 
     @Test
@@ -395,7 +400,7 @@ class AgentRuntimeServiceTest {
                 return new ChatResult(
                     "",
                     Map.of("finishReason", "tool_calls"),
-                    Map.of(),
+                    Map.of("prompt_tokens", 80, "completion_tokens", 20, "total_tokens", 100),
                     12L,
                     List.of(new ToolCall("call-skill", "skill_credit_read", "{}")),
                     "tool_calls"
@@ -404,7 +409,7 @@ class AgentRuntimeServiceTest {
             return new ChatResult(
                 "",
                 Map.of("finishReason", "tool_calls"),
-                Map.of(),
+                Map.of("prompt_tokens", 100, "completion_tokens", 30, "total_tokens", 130),
                 18L,
                 List.of(new ToolCall("call-final", "final_answer", "{\"answer\":\"## 结论\\n可授信，建议补充担保条件。\"}")),
                 "tool_calls"

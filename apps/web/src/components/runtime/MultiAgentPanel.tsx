@@ -1,10 +1,10 @@
 import React, { useMemo, useState, useEffect } from "react";
-import type { AgentExecutionStep, RuntimeCapabilityItem, RuntimeChatMessage, RuntimePreviewStep, RunStreamState } from "../../types/runtime-types";
+import type { AgentExecutionStep, RuntimeCapabilityItem, RuntimeChatMessage, RuntimePreviewStep, RuntimeTokenUsage, RunStreamState } from "../../types/runtime-types";
 import { AlertCircle, Bot, CheckCircle2, ChevronRight, Loader2, MessageSquarePlus, PencilLine, Settings2, Sparkles, Users, Wrench } from "lucide-react";
 import { Drawer, message } from "antd";
 import { useAuthStore } from "../../stores/authStore";
 import { SingleAgentPanel } from "./SingleAgentPanel";
-import { mergeClusterAgents } from "../../utils/clusterAgentsMerge";
+import { mergeClusterAgents, parseClusterAgentSummariesFromOutputs } from "../../utils/clusterAgentsMerge";
 import { formatRuntimeErrorMessage } from "../../utils/runtimeErrors";
 import { pickBestAgentOutput } from "../../utils/agentOutputText";
 import { resolveSystemDisplayPrompt, resolveUserDisplayPrompt } from "../../utils/resolveDisplayPrompts";
@@ -32,6 +32,7 @@ type DrawerAgent = {
   skillNames: string[];
   mcpNames: string[];
   conversationHistory: RuntimeChatMessage[];
+  tokenUsage?: RuntimeTokenUsage;
   allowQuestion: boolean;
   allowUserEdit: boolean;
 };
@@ -59,11 +60,14 @@ export function MultiAgentPanel({
       stepState: activeStep.state,
       stepRunning: activeStep.state === "running" || isStreaming,
     });
+    const persistedAgents = parseClusterAgentSummariesFromOutputs(activeStep.outputs);
 
     return merged.map((agent) => {
       const config = configAgents[agent.index] ?? configAgents.find(
         (item) => String(item.name || item.label || "") === agent.name
       );
+      const persistedAgent = persistedAgents[agent.index] ?? persistedAgents.find((item) => String(item.name ?? "") === agent.name);
+      const persistedMessages = readPersistedConversation(persistedAgent?.chatMessages, agent.name, String(activeStep.nodeRunId ?? `cluster-${agent.index}`));
       return {
         ...agent,
         systemPrompt: config ? resolveSystemDisplayPrompt(config) : resolveSystemDisplayPrompt(undefined),
@@ -78,7 +82,10 @@ export function MultiAgentPanel({
         ),
         skillNames: readNameList(config?.skillNames ?? config?.skillIds ?? config?.skills),
         mcpNames: readNameList(config?.mcpNames ?? config?.mcpIds ?? config?.mcpServices),
-        conversationHistory: readAgentConversationHistory(config, agent.name, String(activeStep.nodeRunId ?? `cluster-${agent.index}`)),
+        conversationHistory: persistedMessages.length > 0
+          ? persistedMessages
+          : readAgentConversationHistory(config, agent.name, String(activeStep.nodeRunId ?? `cluster-${agent.index}`)),
+        tokenUsage: readTokenUsage(persistedAgent?.tokenUsage),
         allowQuestion: readAgentFollowUpAllowed(config, activeStep.configSnapshot),
         allowUserEdit: readAgentEditAllowed(config, activeStep.configSnapshot),
       };
@@ -301,6 +308,41 @@ function readAgentConversationHistory(
   });
 }
 
+function readPersistedConversation(value: unknown, agentName: string, idPrefix: string): RuntimeChatMessage[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item, index) => {
+    if (!item || typeof item !== "object") {
+      return [];
+    }
+    const record = item as Record<string, unknown>;
+    const role = record.role === "user" ? "user" : record.role === "assistant" ? "assistant" : "";
+    const content = String(record.content ?? "").trim();
+    if (!role || !content) {
+      return [];
+    }
+    return [{
+      id: `${idPrefix}-persisted-${index}`,
+      role,
+      author: role === "user" ? "我" : agentName,
+      content,
+      tokenUsage: readTokenUsage(record.tokenUsage),
+    }];
+  });
+}
+
+function readTokenUsage(value: unknown): RuntimeTokenUsage | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  const inputTokens = Number(record.inputTokens ?? 0);
+  const outputTokens = Number(record.outputTokens ?? 0);
+  const totalTokens = Number(record.totalTokens ?? inputTokens + outputTokens);
+  return Number.isFinite(totalTokens) && totalTokens > 0 ? { inputTokens, outputTokens, totalTokens } : undefined;
+}
+
 function readNameList(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
@@ -451,6 +493,7 @@ function buildAgentChatMessages(
   if (lastMessage?.role === "assistant" && lastMessage.content.trim() === finalContent.trim()) {
     messages[messages.length - 1] = {
       ...lastMessage,
+      tokenUsage: lastMessage.tokenUsage ?? agent.tokenUsage,
       processSteps,
     };
     return messages;
@@ -461,6 +504,7 @@ function buildAgentChatMessages(
     role: "assistant",
     author: agent.name,
     content: finalContent,
+    tokenUsage: agent.tokenUsage,
     processSteps,
   });
   return messages;

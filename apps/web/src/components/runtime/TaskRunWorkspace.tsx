@@ -1826,6 +1826,7 @@ function buildLiveChatMessages(step: RuntimePreviewStep, streamingText: string):
       role,
       author: role === "user" ? "我" : step.title,
       content,
+      tokenUsage: readTokenUsage((item as { tokenUsage?: unknown }).tokenUsage),
       processSteps: role === "assistant" ? readMessageProcessSteps((item as { processSteps?: unknown }).processSteps, `${step.nodeRunId}-history-${index}`) : undefined,
     });
   });
@@ -1881,6 +1882,7 @@ function nodeMessages(node: any): RuntimeChatMessage[] {
           role,
           author: role === "user" ? "我" : node.name,
           content,
+          tokenUsage: readTokenUsage(item?.tokenUsage),
           processSteps: role === "assistant" ? readMessageProcessSteps(item?.processSteps, `${node.id}-chat-${index}`) : undefined,
         });
       });
@@ -1907,6 +1909,19 @@ function nodeMessages(node: any): RuntimeChatMessage[] {
     }
   }
   return messages;
+}
+
+function readTokenUsage(value: unknown): import("../../types/runtime-types").RuntimeTokenUsage | undefined {
+  if (!isRuntimeRecord(value)) {
+    return undefined;
+  }
+  const inputTokens = Number(value.inputTokens ?? 0);
+  const outputTokens = Number(value.outputTokens ?? 0);
+  const totalTokens = Number(value.totalTokens ?? inputTokens + outputTokens);
+  if (![inputTokens, outputTokens, totalTokens].every(Number.isFinite) || totalTokens <= 0) {
+    return undefined;
+  }
+  return { inputTokens, outputTokens, totalTokens };
 }
 
 function readMessageProcessSteps(value: unknown, prefix: string): AgentExecutionStep[] {

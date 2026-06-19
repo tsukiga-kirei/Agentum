@@ -965,6 +965,8 @@ public class WorkbenchRuntimeService {
                 String body = row.getOutput() == null ? "" : stringValue(row.getOutput().get("final_answer"));
                 summary.put("final_answer", body);
                 summary.put("summary", summarizeAnswer(body));
+                summary.put("tokenUsage", row.getOutput() == null ? Map.of() : row.getOutput().getOrDefault("tokenUsage", Map.of()));
+                summary.put("chatMessages", row.getOutput() == null ? List.of() : row.getOutput().getOrDefault("chatMessages", List.of()));
             } else {
                 summary.put("errorCode", row.getErrorCode() == null ? "" : row.getErrorCode());
                 summary.put("errorMessage", row.getErrorMessage() == null ? "" : row.getErrorMessage());
@@ -2059,6 +2061,8 @@ public class WorkbenchRuntimeService {
                 summary.put("final_answer", finalAnswer == null ? "" : finalAnswer.toString());
                 Object rowSummary = row.getOutput() == null ? null : row.getOutput().get("summary");
                 summary.put("summary", rowSummary == null ? "已完成" : rowSummary.toString());
+                summary.put("tokenUsage", row.getOutput() == null ? Map.of() : row.getOutput().getOrDefault("tokenUsage", Map.of()));
+                summary.put("chatMessages", row.getOutput() == null ? List.of() : row.getOutput().getOrDefault("chatMessages", List.of()));
             } else {
                 summary.put("errorCode", row.getErrorCode() == null ? "" : row.getErrorCode());
                 summary.put("errorMessage", row.getErrorMessage() == null ? "" : row.getErrorMessage());

@@ -1,5 +1,6 @@
 package com.agentum.audit.application;
 
+import com.agentum.agent.application.TokenUsage;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -11,6 +12,7 @@ import java.util.UUID;
  */
 public record AuditEvidenceDto(
     WorkflowRunInfo runInfo,
+    TokenUsage tokenUsage,
     List<NodeRunInfo> nodeRuns,
     List<VariableSnapshotInfo> variableSnapshots,
     List<RunEventInfo> runEvents,
@@ -73,7 +75,7 @@ public record AuditEvidenceDto(
         String status,
         Map<String, Object> promptSnapshot, // 经过脱敏
         Map<String, Object> responseSnapshot, // 经过脱敏
-        Map<String, Object> tokenUsage,
+        TokenUsage tokenUsage,
         Long latencyMs,
         Instant createdAt,
         Instant completedAt

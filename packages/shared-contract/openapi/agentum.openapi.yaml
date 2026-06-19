@@ -2719,6 +2719,74 @@ paths:
           description: 当前账号不是系统管理员
         "404":
           description: 模型分配不存在
+  /api/tenants/{tenantId}/audit/runs/{runId}/evidence:
+    get:
+      summary: 获取运行全链路审计证据
+      tags: [Audit]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: runId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: 只读运行证据链，包含运行累计与逐次模型调用 Token 用量
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/AuditEvidence"
+  /api/tenants/{tenantId}/audit/tools:
+    get:
+      summary: 分页查询模型或 MCP 调用审计
+      tags: [Audit]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: toolType
+          in: query
+          schema: { type: string, enum: [mcp, model], default: mcp }
+        - name: status
+          in: query
+          schema: { type: string }
+        - name: keyword
+          in: query
+          schema: { type: string }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: size
+          in: query
+          schema: { type: integer, default: 20 }
+        - name: sort
+          in: query
+          schema: { type: string, default: "createdAt,desc" }
+      responses:
+        "200":
+          description: 调用审计分页；模型调用包含标准化 Token 用量
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/AuditToolCallPageResponse"
 components:
   securitySchemes:
     bearerAuth:
@@ -4149,6 +4217,7 @@ components:
         outputs:
           type: object
           additionalProperties: true
+          description: 智能体输出包含 tokenUsage；chatMessages 中每条 assistant 消息也包含该轮累计 TokenUsage。
         config:
           type: object
           additionalProperties: true
@@ -4165,6 +4234,78 @@ components:
         - outputs
         - config
         - sortOrder
+    TokenUsage:
+      type: object
+      description: 标准化 Token 用量。输入兼容供应商 prompt/input，输出兼容 completion/output。
+      properties:
+        inputTokens:
+          type: integer
+          format: int64
+          minimum: 0
+        outputTokens:
+          type: integer
+          format: int64
+          minimum: 0
+        totalTokens:
+          type: integer
+          format: int64
+          minimum: 0
+      required: [inputTokens, outputTokens, totalTokens]
+    AuditModelCallLog:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        nodeRunId: { type: string, format: uuid }
+        modelName: { type: string }
+        status: { type: string }
+        promptSnapshot: { type: object, additionalProperties: true }
+        responseSnapshot: { type: object, additionalProperties: true }
+        tokenUsage: { $ref: "#/components/schemas/TokenUsage" }
+        latencyMs: { type: integer, format: int64, nullable: true }
+        createdAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time, nullable: true }
+      required: [id, nodeRunId, modelName, status, promptSnapshot, responseSnapshot, tokenUsage, createdAt]
+    AuditEvidence:
+      type: object
+      properties:
+        runInfo: { type: object, additionalProperties: true }
+        tokenUsage: { $ref: "#/components/schemas/TokenUsage" }
+        nodeRuns: { type: array, items: { type: object, additionalProperties: true } }
+        variableSnapshots: { type: array, items: { type: object, additionalProperties: true } }
+        runEvents: { type: array, items: { type: object, additionalProperties: true } }
+        modelCallLogs: { type: array, items: { $ref: "#/components/schemas/AuditModelCallLog" } }
+        mcpCallLogs: { type: array, items: { type: object, additionalProperties: true } }
+        deliveryRecords: { type: array, items: { type: object, additionalProperties: true } }
+      required: [runInfo, tokenUsage, nodeRuns, variableSnapshots, runEvents, modelCallLogs, mcpCallLogs, deliveryRecords]
+    AuditToolCall:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        runId: { type: string, format: uuid }
+        nodeRunId: { type: string, format: uuid }
+        toolType: { type: string, enum: [MCP, MODEL] }
+        toolName: { type: string }
+        status: { type: string }
+        latencyMs: { type: integer, format: int64, nullable: true }
+        createdAt: { type: string, format: date-time }
+        callerName: { type: string }
+        requestPayload: { type: object, additionalProperties: true }
+        responsePayload: { type: object, additionalProperties: true }
+        errorMessage: { type: string, nullable: true }
+        tokenUsage:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/TokenUsage"
+      required: [id, runId, nodeRunId, toolType, toolName, status, createdAt, callerName, requestPayload, responsePayload]
+    AuditToolCallPageResponse:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/AuditToolCall" } }
+        page: { type: integer }
+        size: { type: integer }
+        total: { type: integer, format: int64 }
+        totalPages: { type: integer }
+      required: [items, page, size, total, totalPages]
     WorkbenchRunEventRow:
       type: object
       properties:

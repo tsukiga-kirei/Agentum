@@ -2,6 +2,7 @@ package com.agentum.agent.domain;
 
 import com.agentum.workflow.domain.WorkflowNodeRunEntity;
 import com.agentum.workflow.domain.WorkflowRunEntity;
+import com.agentum.agent.application.TokenUsage;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -60,6 +61,15 @@ public class ModelCallLogEntity {
     @Column(name = "token_usage", nullable = false, columnDefinition = "jsonb")
     private Map<String, Object> tokenUsage;
 
+    @Column(name = "input_tokens", nullable = false)
+    private long inputTokens;
+
+    @Column(name = "output_tokens", nullable = false)
+    private long outputTokens;
+
+    @Column(name = "total_tokens", nullable = false)
+    private long totalTokens;
+
     @Column(name = "error_code", length = 80)
     private String errorCode;
 
@@ -109,6 +119,10 @@ public class ModelCallLogEntity {
         this.status = "success";
         this.responseSnapshot = responseSnapshot == null ? new HashMap<>() : new HashMap<>(responseSnapshot);
         this.tokenUsage = tokenUsage == null ? new HashMap<>() : new HashMap<>(tokenUsage);
+        TokenUsage normalizedUsage = TokenUsage.fromProviderUsage(tokenUsage);
+        this.inputTokens = normalizedUsage.inputTokens();
+        this.outputTokens = normalizedUsage.outputTokens();
+        this.totalTokens = normalizedUsage.totalTokens();
         this.latencyMs = latencyMs;
         this.completedAt = now;
     }
@@ -178,6 +192,10 @@ public class ModelCallLogEntity {
 
     public Map<String, Object> getTokenUsage() {
         return tokenUsage;
+    }
+
+    public TokenUsage getNormalizedTokenUsage() {
+        return new TokenUsage(inputTokens, outputTokens, totalTokens);
     }
 
     public String getErrorCode() {

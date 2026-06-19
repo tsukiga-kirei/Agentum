@@ -1,5 +1,6 @@
 package com.agentum.audit.application;
 
+import com.agentum.agent.application.TokenUsage;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
@@ -19,5 +20,6 @@ public record AuditToolCallDto(
     String callerName, // 如关联工作流运行或节点名称
     Map<String, Object> requestPayload,
     Map<String, Object> responsePayload,
-    String errorMessage
+    String errorMessage,
+    TokenUsage tokenUsage
 ) {}

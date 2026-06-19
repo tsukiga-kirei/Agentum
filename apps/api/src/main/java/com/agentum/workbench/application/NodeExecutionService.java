@@ -471,6 +471,8 @@ public class NodeExecutionService {
             summaryEntry.put("status", "completed");
             summaryEntry.put("final_answer", displayText);
             summaryEntry.put("summary", summarizeText(displayText));
+            summaryEntry.put("tokenUsage", output.getOrDefault("tokenUsage", Map.of()));
+            summaryEntry.put("chatMessages", output.getOrDefault("chatMessages", List.of()));
             summaries.add(summaryEntry);
         }
         result.put("clusterAgents", summaries);

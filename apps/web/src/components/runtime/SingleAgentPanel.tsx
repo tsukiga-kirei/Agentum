@@ -10,8 +10,9 @@ import {
   Loader2,
   MessageSquarePlus,
   PencilLine,
+  Sigma,
 } from "lucide-react";
-import type { AgentExecutionStep, RuntimeChatMessage, RuntimePreviewStep } from "../../types/runtime-types";
+import type { AgentExecutionStep, RuntimeChatMessage, RuntimePreviewStep, RuntimeTokenUsage } from "../../types/runtime-types";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { AnswerEditModal } from "./AnswerEditModal";
 import { FollowUpModal } from "./FollowUpModal";
@@ -43,6 +44,7 @@ type ConversationTurn = {
   userMessage: string;
   toolSteps: AgentExecutionStep[];
   finalAnswer: string;
+  tokenUsage?: RuntimeTokenUsage;
   current: boolean;
 };
 
@@ -114,6 +116,7 @@ function buildConversationTurns(
         userMessage: pendingUser,
         toolSteps: normalizeTurnSteps(message.processSteps ?? [], { running: false }),
         finalAnswer: content,
+        tokenUsage: message.tokenUsage,
         current: false,
       });
       pendingUser = "";
@@ -357,17 +360,33 @@ function ConversationTurnBlock({
         ) : null}
 
         {showFinalAnswerBody ? (
-          <div className="agent-turn-assistant">
-            <MarkdownRenderer
-              content={turn.finalAnswer}
-              compact
-            />
-          </div>
+          <>
+            <div className="agent-turn-assistant">
+              <MarkdownRenderer
+                content={turn.finalAnswer}
+                compact
+              />
+            </div>
+            {turn.tokenUsage ? <TokenUsageLine usage={turn.tokenUsage} /> : null}
+          </>
         ) : waitingForAnswer && turn.toolSteps.length === 0 ? (
           <div className="agent-turn-waiting">智能体正在生成回复…</div>
         ) : null}
       </div>
     </section>
+  );
+}
+
+function TokenUsageLine({ usage }: { usage: RuntimeTokenUsage }) {
+  return (
+    <div className="mt-2 flex items-center justify-end gap-1.5 text-[11px] text-[var(--color-text-tertiary)]" title="本轮包含智能体为完成回答发起的全部模型调用">
+      <Sigma size={12} aria-hidden="true" />
+      <span>本轮 {usage.totalTokens.toLocaleString("zh-CN")} tokens</span>
+      <span aria-hidden="true">·</span>
+      <span>输入 {usage.inputTokens.toLocaleString("zh-CN")}</span>
+      <span aria-hidden="true">·</span>
+      <span>输出 {usage.outputTokens.toLocaleString("zh-CN")}</span>
+    </div>
   );
 }
 

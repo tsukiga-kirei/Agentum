@@ -129,6 +129,9 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
         Map<String, Object> payload = buildPayload(request);
         Map<String, Object> streamPayload = new LinkedHashMap<>(payload);
         streamPayload.put("stream", true);
+        // OpenAI 兼容流式接口默认常常不返回 usage；显式请求最终 usage chunk，
+        // 才能让运行详情和审计展示真实 token，而不是用文本长度估算。
+        streamPayload.put("stream_options", Map.of("include_usage", true));
         logChatRequest(request, uri, streamPayload, true);
 
         try {

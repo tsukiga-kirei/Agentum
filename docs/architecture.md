@@ -387,7 +387,7 @@ pending -> running -> paused -> resumed -> running -> completed
 
 模型密钥必须服务端加密存储，前端只展示脱敏状态。
 
-当前运行态按 `tenant_model_assignments` 选择租户启用模型，解密模型供应商 API Key 后调用 OpenAI 兼容 / 通义兼容 / Azure OpenAI Chat Completions。聊天客户端支持 Function Calling 工具声明与 SSE 文本流，把每轮提示词摘要、响应摘要、Token 用量、耗时和失败原因写入 `model_call_logs`。Anthropic Messages 协议暂未接入，运行时会返回明确错误而不是生成占位输出。
+当前运行态按 `tenant_model_assignments` 选择租户启用模型，解密模型供应商 API Key 后调用 OpenAI 兼容 / 通义兼容 / Azure OpenAI Chat Completions。聊天客户端支持 Function Calling 工具声明与 SSE 文本流，并显式请求流式 usage；`model_call_logs` 同时保存供应商原始 usage 与标准化 `input_tokens`、`output_tokens`、`total_tokens`。一次用户消息可能触发多次 ReAct 调用，运行输出按“本轮对话”累计后写入对应 assistant 消息，审计则保留逐次调用和整次运行汇总。Anthropic Messages 协议暂未接入，运行时会返回明确错误而不是生成占位输出。
 
 ### 5.10 交付模块
 
