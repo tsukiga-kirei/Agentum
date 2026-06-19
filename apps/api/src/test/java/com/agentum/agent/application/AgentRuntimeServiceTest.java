@@ -62,7 +62,8 @@ class AgentRuntimeServiceTest {
             new ObjectMapper(),
             Clock.fixed(NOW, ZoneOffset.UTC),
             mock(RunCancellationGuard.class),
-            new PromptContentResolver(capabilityRepository, assetRepository)
+            new PromptContentResolver(capabilityRepository, assetRepository),
+            runtimeProperties()
         );
 
         ModelProviderEntity provider = ModelProviderEntity.create(
@@ -97,7 +98,12 @@ class AgentRuntimeServiceTest {
             "智能体分析",
             Map.of(),
             Map.of(),
-            Map.of("systemPrompt", "你是授信分析智能体", "userPrompt", "请分析 {{company}}", "skillIds", List.of("skill-id")),
+            Map.of(
+                "systemPrompt", "你是授信分析智能体",
+                "userPrompt", "请分析 {{company}}",
+                "skillIds", List.of("skill-id"),
+                "maxAgentIterationsPerTurn", 4
+            ),
             1,
             NOW
         );
@@ -178,7 +184,8 @@ class AgentRuntimeServiceTest {
             new ObjectMapper(),
             Clock.fixed(NOW, ZoneOffset.UTC),
             mock(RunCancellationGuard.class),
-            new PromptContentResolver(capabilityRepository, assetRepository)
+            new PromptContentResolver(capabilityRepository, assetRepository),
+            runtimeProperties()
         );
 
         ModelProviderEntity provider = ModelProviderEntity.create(
@@ -206,6 +213,7 @@ class AgentRuntimeServiceTest {
         Map<String, Object> config = new LinkedHashMap<>(Map.of(
             "systemPrompt", "你是授信分析智能体",
             "userPrompt", "请分析 {{company}}",
+            "maxAgentIterationsPerTurn", 4,
             "conversationHistory", List.of(
                 Map.of("role", "user", "content", "请分析云程科技"),
                 Map.of("role", "assistant", "content", "初步结论：可授信。"),
@@ -280,7 +288,8 @@ class AgentRuntimeServiceTest {
             new ObjectMapper(),
             Clock.fixed(NOW, ZoneOffset.UTC),
             mock(RunCancellationGuard.class),
-            new PromptContentResolver(capabilityRepository, assetRepository)
+            new PromptContentResolver(capabilityRepository, assetRepository),
+            runtimeProperties()
         );
         ModelProviderEntity provider = ModelProviderEntity.create(
             "OpenAI 兼容",
@@ -304,7 +313,11 @@ class AgentRuntimeServiceTest {
             "20260618-MCP",
             NOW
         );
-        Map<String, Object> config = Map.of("systemPrompt", "你是金融分析智能体", "userPrompt", "请生成金融月报");
+        Map<String, Object> config = Map.of(
+            "systemPrompt", "你是金融分析智能体",
+            "userPrompt", "请生成金融月报",
+            "maxAgentIterationsPerTurn", 4
+        );
         WorkflowNodeRunEntity nodeRun = WorkflowNodeRunEntity.pending(
             run.getId(),
             TENANT_ID,
@@ -365,6 +378,13 @@ class AgentRuntimeServiceTest {
             assertThat(tool.get("summary")).isEqualTo("数据中台连接失败");
             assertThat(tool.get("detail")).asString().contains("MCP_TOOL_EXECUTION_FAILED", "数据中台连接失败");
         });
+    }
+
+    private static AgentRuntimeProperties runtimeProperties() {
+        AgentRuntimeProperties properties = new AgentRuntimeProperties();
+        properties.setSuggestedIterationsPerTurn(4);
+        properties.setMaxIterationsPerTurn(20);
+        return properties;
     }
 
     private static final class ScriptedModelChatClient implements ModelChatClient {

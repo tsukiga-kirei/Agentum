@@ -1,5 +1,6 @@
 package com.agentum.workflow.application;
 
+import com.agentum.agent.application.AgentRuntimeProperties;
 import com.agentum.asset.application.AssetManagementService;
 import com.agentum.system.domain.SystemCapabilityEntity;
 import com.agentum.system.domain.TenantCapabilityGrantEntity;
@@ -35,15 +36,18 @@ public class WorkflowNodeConfigValidator {
     private final SystemCapabilityRepository systemCapabilityRepository;
     private final TenantCapabilityGrantRepository tenantCapabilityGrantRepository;
     private final AssetManagementService assetManagementService;
+    private final AgentRuntimeProperties agentRuntimeProperties;
 
     public WorkflowNodeConfigValidator(
         SystemCapabilityRepository systemCapabilityRepository,
         TenantCapabilityGrantRepository tenantCapabilityGrantRepository,
-        AssetManagementService assetManagementService
+        AssetManagementService assetManagementService,
+        AgentRuntimeProperties agentRuntimeProperties
     ) {
         this.systemCapabilityRepository = systemCapabilityRepository;
         this.tenantCapabilityGrantRepository = tenantCapabilityGrantRepository;
         this.assetManagementService = assetManagementService;
+        this.agentRuntimeProperties = agentRuntimeProperties;
     }
 
     public List<WorkflowDraftApi.WorkflowValidationIssue> validateCapabilityReferences(
@@ -70,6 +74,7 @@ public class WorkflowNodeConfigValidator {
                 validateTenantAssetId(tenantId, operatorUserId, extractString(config, "promptTemplateId"), "prompt_template", "系统提示词模板", node, issues);
                 validateTenantAssetId(tenantId, operatorUserId, extractString(config, "userPromptTemplateId"), "prompt_template", "用户提示词模板", node, issues);
                 validateAgentPromptConfiguration(config, node, "节点[" + node.name() + "]", issues);
+                validateAgentIterationLimit(config, node, "节点[" + node.name() + "]", issues);
                 validateIds(tenantId, operatorUserId, extractStringList(config, "mcpIds", "mcpServices"), "mcp", "MCP", node, poolCapabilities, issues);
                 validateIds(tenantId, operatorUserId, extractStringList(config, "skillIds", "skills"), "skill", "Skill", node, poolCapabilities, issues);
             } else if ("parallel_group".equals(nodeType)) {
@@ -95,6 +100,7 @@ public class WorkflowNodeConfigValidator {
                     validateTenantAssetId(tenantId, operatorUserId, extractString(agent, "promptTemplateId"), "prompt_template", "系统提示词模板", node, issues);
                     validateTenantAssetId(tenantId, operatorUserId, extractString(agent, "userPromptTemplateId"), "prompt_template", "用户提示词模板", node, issues);
                     validateAgentPromptConfiguration(agent, node, subject, issues);
+                    validateAgentIterationLimit(agent, node, subject, issues);
                     validateIds(tenantId, operatorUserId, extractStringList(agent, "mcpIds", "mcpServices"), "mcp", "MCP", node, poolCapabilities, issues);
                     validateIds(tenantId, operatorUserId, extractStringList(agent, "skillIds", "skills"), "skill", "Skill", node, poolCapabilities, issues);
                 }
@@ -318,6 +324,46 @@ public class WorkflowNodeConfigValidator {
                 subject + "的用户提示词为自定义时必须填写正文，或选择用户提示词模板",
                 node
             ));
+        }
+    }
+
+    private void validateAgentIterationLimit(
+        Map<String, Object> config,
+        WorkflowDraftApi.WorkflowNodeRow node,
+        String subject,
+        List<WorkflowDraftApi.WorkflowValidationIssue> issues
+    ) {
+        Object rawValue = config.get("maxAgentIterationsPerTurn");
+        int value = parsePositiveInteger(rawValue);
+        int maximum = Math.max(1, agentRuntimeProperties.getMaxIterationsPerTurn());
+        if (rawValue == null) {
+            issues.add(issue(
+                "WORKFLOW_VALIDATION_AGENT_ITERATIONS_REQUIRED",
+                subject + "必须配置单轮最大推理次数",
+                node
+            ));
+        } else if (value < 1 || value > maximum) {
+            issues.add(issue(
+                "WORKFLOW_VALIDATION_AGENT_ITERATIONS_INVALID",
+                subject + "的单轮最大推理次数必须在 1 到 " + maximum + " 之间",
+                node
+            ));
+        }
+    }
+
+    private static int parsePositiveInteger(Object value) {
+        if (value instanceof Number number) {
+            double numericValue = number.doubleValue();
+            if (!Double.isFinite(numericValue) || numericValue != Math.rint(numericValue)
+                || numericValue > Integer.MAX_VALUE || numericValue < Integer.MIN_VALUE) {
+                return -1;
+            }
+            return (int) numericValue;
+        }
+        try {
+            return value == null ? -1 : Integer.parseInt(value.toString());
+        } catch (NumberFormatException exception) {
+            return -1;
         }
     }
 

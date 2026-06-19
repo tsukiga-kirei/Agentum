@@ -1,6 +1,6 @@
 # 当前进度与后续计划
 
-更新时间：2026-06-15（Word 文档交付接入 MinIO：流程设计态支持字体、字号、缩进、行距配置和 docx 预览 / 导出；运行态生成的 docx 持久化到对象存储并支持下载）。
+更新时间：2026-06-19（智能体单轮最大推理次数改为节点级配置，设计目录统一下发建议值和平台上限；补充 Skill/MCP 运行机制与 Skill 脚本执行边界说明）。
 
 本文档只记录当前施工状态、阶段计划和下一步任务。长期规范、系统说明和架构设计分别维护在：
 
@@ -8,6 +8,7 @@
 - [系统详细梳理介绍](../system-overview.md)
 - [能力—流程—权限治理](../capability-workflow-governance.md)
 - [AI 运行态接入说明](../ai-runtime-integration.md)
+- [Skill 与 MCP 运行机制](../skill-mcp-runtime-guide.md)
 - [运行态异步执行设计（MQ + Redis）](../runtime-async-execution-design.md)
 - [流程创建与运行态节点检查说明](./workflow-creation-runtime-node-guide-2026-06-11.md)
 
@@ -166,6 +167,7 @@
 - 后端运行态已从占位输出升级为 `WorkflowRuntimeExecutor` + `AgentRuntimeService` 分发：触发、条件、汇聚节点本地完成；单智能体和智能体集群调用租户已启用模型分配，支持 OpenAI / 通义兼容与 Azure OpenAI Chat Completions；智能体节点已改为 ReAct/Function Calling 模式，模型可自主调用当前节点可用的 Skill 读取工具和 MCP SSE `tools/call`，最后通过 `final_answer` 提交 Markdown 结论；交付节点支持系统内置邮箱、Webhook 和 Word 文档交付能力。
 - 新增运行态勾稽表 `variable_snapshots`、`model_call_logs`、`mcp_call_logs`、`delivery_records`，节点完成后写入变量快照，模型 / MCP / 交付调用均关联租户、运行、节点、流程定义和发布版本；执行失败会把运行与当前节点标记为失败并写入 `node_failed` 事件，不再返回“尚未接入”的占位输出。
 - MCP 多工具运行契约已补齐：系统管理连通性测试会持久化 `tools/list` 的真实工具名、描述和输入 Schema，智能体按远程工具逐项获得可调用定义与必填参数；移除以平台能力编码回退远程工具名的错误路径，并将 MCP `isError=true` 正确记为失败及推送失败事件。可恢复的工具执行 / 网络失败会作为 observation 回写模型继续回答，权限与配置错误仍终止节点。
+- 智能体循环次数已改为流程节点级配置：单智能体和每个集群子智能体分别保存 `maxAgentIterationsPerTurn`，首次执行与每次追问独立重新计数；设计目录由后端下发建议值和平台最大值，运行时不再对旧快照隐式使用固定次数。补充 [Skill 与 MCP 运行机制](../skill-mcp-runtime-guide.md)，明确 Skill 当前只读文本、不执行脚本，以及 MCP 工具发现、参数、失败恢复和审计链路。
 - 业务工作台运行详情收敛为真实可操作项：待办节点只显示提交动作，AI / MCP / Skill / 交付节点展示后端输出、调用状态和交付摘要；执行历史去掉与左侧流程轨重复的节点列表，改为选中步骤快照 + 事件时间线；已保存任务可对智能体节点释放重新生成入口，追问追加上下文和后端取消补偿继续建设。
 - 流程设计落地版本治理方案 C：`workflow_definitions.launch_enabled` 控制业务入口收回/恢复；列表与详情展示 `latestVersionNumber`、`hasUnpublishedChanges`；创建者可删除流程或收回业务入口；业务工作台可发起列表改为「有冻结版本且入口未收回」，与设计态 `status` 解耦；新增 [能力—流程—权限治理](../capability-workflow-governance.md) 文档。
 - 企业 SSO 完成 OIDC 第一版骨架：新增租户 SSO Provider 与外部身份绑定表，登录页按租户发现 SSO 身份源，后端生成签名 `state` 与 `nonce` 并完成 OIDC 回调后的本地 token 签发；新增 [企业 SSO 对接说明](../sso-integration.md)，明确业务系统只需按标准 OIDC 提供身份，不承载 Agentum 权限判断。

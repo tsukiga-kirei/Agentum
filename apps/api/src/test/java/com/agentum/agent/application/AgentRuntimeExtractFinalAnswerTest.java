@@ -35,8 +35,16 @@ class AgentRuntimeExtractFinalAnswerTest {
             new ObjectMapper(),
             Clock.systemUTC(),
             mock(RunCancellationGuard.class),
-            new PromptContentResolver(mock(SystemCapabilityRepository.class), mock(TenantAssetCapabilityRepository.class))
+            new PromptContentResolver(mock(SystemCapabilityRepository.class), mock(TenantAssetCapabilityRepository.class)),
+            runtimeProperties()
         );
+    }
+
+    private static AgentRuntimeProperties runtimeProperties() {
+        AgentRuntimeProperties properties = new AgentRuntimeProperties();
+        properties.setSuggestedIterationsPerTurn(4);
+        properties.setMaxIterationsPerTurn(20);
+        return properties;
     }
 
     @Test

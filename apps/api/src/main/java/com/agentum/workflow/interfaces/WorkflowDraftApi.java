@@ -72,7 +72,14 @@ public final class WorkflowDraftApi {
     public record WorkflowDesignerCatalog(
         WorkflowBrickTemplate systemTrigger,
         List<WorkflowBrickTemplate> brickTemplates,
-        Map<String, WorkflowVariableTemplate> variableMetadata
+        Map<String, WorkflowVariableTemplate> variableMetadata,
+        AgentRuntimeLimits agentRuntimeLimits
+    ) {
+    }
+
+    public record AgentRuntimeLimits(
+        int suggestedIterationsPerTurn,
+        int maxIterationsPerTurn
     ) {
     }
 

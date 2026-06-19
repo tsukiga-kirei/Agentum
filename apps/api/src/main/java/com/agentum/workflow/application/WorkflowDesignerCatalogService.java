@@ -1,5 +1,6 @@
 package com.agentum.workflow.application;
 
+import com.agentum.agent.application.AgentRuntimeProperties;
 import com.agentum.workflow.interfaces.WorkflowDraftApi;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -9,13 +10,27 @@ import org.springframework.stereotype.Service;
 @Service
 public class WorkflowDesignerCatalogService {
 
+    private final AgentRuntimeProperties agentRuntimeProperties;
+
+    public WorkflowDesignerCatalogService(AgentRuntimeProperties agentRuntimeProperties) {
+        this.agentRuntimeProperties = agentRuntimeProperties;
+    }
+
     public WorkflowDraftApi.WorkflowDesignerCatalog getCatalog() {
+        WorkflowDraftApi.AgentRuntimeLimits limits = agentRuntimeLimits();
         // 积木模板由后端统一下发，前端只负责渲染和保存设计结果，避免不同页面各自沉淀不可追踪的默认配置。
         return new WorkflowDraftApi.WorkflowDesignerCatalog(
             systemTrigger(),
-            List.of(inputBrick(), agentBrick(), clusterBrick(), deliveryBrick()),
-            variableMetadata()
+            List.of(inputBrick(), agentBrick(limits), clusterBrick(limits), deliveryBrick()),
+            variableMetadata(),
+            limits
         );
+    }
+
+    private WorkflowDraftApi.AgentRuntimeLimits agentRuntimeLimits() {
+        int maximum = Math.max(1, agentRuntimeProperties.getMaxIterationsPerTurn());
+        int suggested = Math.min(Math.max(1, agentRuntimeProperties.getSuggestedIterationsPerTurn()), maximum);
+        return new WorkflowDraftApi.AgentRuntimeLimits(suggested, maximum);
     }
 
     private WorkflowDraftApi.WorkflowBrickTemplate systemTrigger() {
@@ -66,7 +81,7 @@ public class WorkflowDesignerCatalogService {
         );
     }
 
-    private WorkflowDraftApi.WorkflowBrickTemplate agentBrick() {
+    private WorkflowDraftApi.WorkflowBrickTemplate agentBrick(WorkflowDraftApi.AgentRuntimeLimits limits) {
         return new WorkflowDraftApi.WorkflowBrickTemplate(
             "agent",
             "单智能体节点",
@@ -78,17 +93,18 @@ public class WorkflowDesignerCatalogService {
             "agent_response",
             List.of(),
             List.of("agent_response"),
-            Map.of(
-                "brickType", "agent",
-                "agentSource", "custom",
-                "agentAssetId", "custom",
-                "promptTemplateId", "none",
-                "systemPromptTemplateId", "none",
-                "userPromptTemplateId", "none",
-                "systemPrompt", WorkflowPromptDefaults.DEFAULT_SYSTEM_PROMPT,
-                "userPrompt", WorkflowPromptDefaults.DEFAULT_USER_PROMPT,
-                "mcpServices", List.of(),
-                "skills", List.of()
+            Map.ofEntries(
+                Map.entry("brickType", "agent"),
+                Map.entry("agentSource", "custom"),
+                Map.entry("agentAssetId", "custom"),
+                Map.entry("promptTemplateId", "none"),
+                Map.entry("systemPromptTemplateId", "none"),
+                Map.entry("userPromptTemplateId", "none"),
+                Map.entry("systemPrompt", WorkflowPromptDefaults.DEFAULT_SYSTEM_PROMPT),
+                Map.entry("userPrompt", WorkflowPromptDefaults.DEFAULT_USER_PROMPT),
+                Map.entry("mcpServices", List.of()),
+                Map.entry("skills", List.of()),
+                Map.entry("maxAgentIterationsPerTurn", limits.suggestedIterationsPerTurn())
             ),
             "待配置",
             "追问确认",
@@ -97,7 +113,7 @@ public class WorkflowDesignerCatalogService {
         );
     }
 
-    private WorkflowDraftApi.WorkflowBrickTemplate clusterBrick() {
+    private WorkflowDraftApi.WorkflowBrickTemplate clusterBrick(WorkflowDraftApi.AgentRuntimeLimits limits) {
         return new WorkflowDraftApi.WorkflowBrickTemplate(
             "cluster",
             "智能体集群节点",
@@ -111,7 +127,7 @@ public class WorkflowDesignerCatalogService {
             List.of("cluster_result"),
             Map.of(
                 "brickType", "cluster",
-                "clusterAgents", List.of(clusterAgent(1), clusterAgent(2)),
+                "clusterAgents", List.of(clusterAgent(1, limits), clusterAgent(2, limits)),
                 "mergeRule", "按业务顺序合并多个智能体输出，冲突内容保留来源并交给用户审查。"
             ),
             "待配置",
@@ -146,7 +162,7 @@ public class WorkflowDesignerCatalogService {
         );
     }
 
-    private Map<String, Object> clusterAgent(int index) {
+    private Map<String, Object> clusterAgent(int index, WorkflowDraftApi.AgentRuntimeLimits limits) {
         Map<String, Object> agent = new LinkedHashMap<>();
         agent.put("id", "cluster_agent_" + index);
         agent.put("name", "子智能体 " + index);
@@ -159,6 +175,7 @@ public class WorkflowDesignerCatalogService {
         agent.put("systemPrompt", WorkflowPromptDefaults.DEFAULT_SYSTEM_PROMPT);
         agent.put("userPrompt", WorkflowPromptDefaults.DEFAULT_CLUSTER_USER_PROMPT);
         agent.put("output", "agent_" + index + "_output");
+        agent.put("maxAgentIterationsPerTurn", limits.suggestedIterationsPerTurn());
         return agent;
     }
 

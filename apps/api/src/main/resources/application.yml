@@ -22,6 +22,10 @@ agentum:
       object-prefix: ${MINIO_OBJECT_PREFIX:deliveries/documents}
       auto-create-bucket: ${MINIO_AUTO_CREATE_BUCKET:true}
   runtime:
+    agent:
+      # 每个流程节点必须保存业务值；建议值用于设计态初始化，最大值用于平台安全约束，运行时不做隐式兜底。
+      suggested-iterations-per-turn: ${AGENTUM_AGENT_SUGGESTED_ITERATIONS_PER_TURN:4}
+      max-iterations-per-turn: ${AGENTUM_AGENT_MAX_ITERATIONS_PER_TURN:20}
     execution:
       node-timeout-seconds: ${AGENTUM_RUNTIME_NODE_TIMEOUT_SECONDS:1800}
       worker-concurrency: ${AGENTUM_RUNTIME_WORKER_CONCURRENCY:4}

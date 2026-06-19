@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 import com.agentum.asset.application.AssetManagementService;
+import com.agentum.agent.application.AgentRuntimeProperties;
 import com.agentum.system.domain.SystemCapabilityEntity;
 import com.agentum.system.domain.TenantCapabilityGrantEntity;
 import com.agentum.system.infrastructure.SystemCapabilityRepository;
@@ -47,7 +48,8 @@ class WorkflowNodeConfigValidatorTest {
                 "systemPromptTemplateId", "none",
                 "userPromptTemplateId", "none",
                 "systemPrompt", "",
-                "userPrompt", ""
+                "userPrompt", "",
+                "maxAgentIterationsPerTurn", 4
             )
         );
 
@@ -74,13 +76,59 @@ class WorkflowNodeConfigValidatorTest {
                 "systemPromptTemplateId", "none",
                 "userPromptTemplateId", "none",
                 "systemPrompt", WorkflowPromptDefaults.DEFAULT_SYSTEM_PROMPT,
-                "userPrompt", WorkflowPromptDefaults.DEFAULT_USER_PROMPT
+                "userPrompt", WorkflowPromptDefaults.DEFAULT_USER_PROMPT,
+                "maxAgentIterationsPerTurn", 4
             )
         );
 
         List<WorkflowDraftApi.WorkflowValidationIssue> issues = validator().validateCapabilityReferences(TENANT_ID, USER_ID, List.of(node));
 
         assertThat(issues).isEmpty();
+    }
+
+    @Test
+    void shouldRejectAgentNodeWhenIterationLimitIsMissing() {
+        WorkflowDraftApi.WorkflowNodeRow node = new WorkflowDraftApi.WorkflowNodeRow(
+            "agent_1",
+            "agent",
+            "合同分析",
+            0,
+            0,
+            List.of(),
+            List.of(),
+            Map.of(
+                "systemPrompt", WorkflowPromptDefaults.DEFAULT_SYSTEM_PROMPT,
+                "userPrompt", WorkflowPromptDefaults.DEFAULT_USER_PROMPT
+            )
+        );
+
+        List<WorkflowDraftApi.WorkflowValidationIssue> issues = validator().validateCapabilityReferences(TENANT_ID, USER_ID, List.of(node));
+
+        assertThat(issues).extracting(WorkflowDraftApi.WorkflowValidationIssue::code)
+            .containsExactly("WORKFLOW_VALIDATION_AGENT_ITERATIONS_REQUIRED");
+    }
+
+    @Test
+    void shouldRejectAgentNodeWhenIterationLimitExceedsPlatformMaximum() {
+        WorkflowDraftApi.WorkflowNodeRow node = new WorkflowDraftApi.WorkflowNodeRow(
+            "agent_1",
+            "agent",
+            "合同分析",
+            0,
+            0,
+            List.of(),
+            List.of(),
+            Map.of(
+                "systemPrompt", WorkflowPromptDefaults.DEFAULT_SYSTEM_PROMPT,
+                "userPrompt", WorkflowPromptDefaults.DEFAULT_USER_PROMPT,
+                "maxAgentIterationsPerTurn", 21
+            )
+        );
+
+        List<WorkflowDraftApi.WorkflowValidationIssue> issues = validator().validateCapabilityReferences(TENANT_ID, USER_ID, List.of(node));
+
+        assertThat(issues).extracting(WorkflowDraftApi.WorkflowValidationIssue::code)
+            .containsExactly("WORKFLOW_VALIDATION_AGENT_ITERATIONS_INVALID");
     }
 
     @Test
@@ -106,6 +154,7 @@ class WorkflowNodeConfigValidatorTest {
                 "userPromptTemplateId", "none",
                 "systemPrompt", WorkflowPromptDefaults.DEFAULT_SYSTEM_PROMPT,
                 "userPrompt", WorkflowPromptDefaults.DEFAULT_USER_PROMPT,
+                "maxAgentIterationsPerTurn", 4,
                 "skillIds", List.of(skill.getId().toString())
             )
         );
@@ -180,6 +229,7 @@ class WorkflowNodeConfigValidatorTest {
                         "userPromptTemplateId", "none",
                         "systemPrompt", WorkflowPromptDefaults.DEFAULT_SYSTEM_PROMPT,
                         "userPrompt", WorkflowPromptDefaults.DEFAULT_CLUSTER_USER_PROMPT,
+                        "maxAgentIterationsPerTurn", 4,
                         "output", "agent_1_output"
                     )
                 )
@@ -211,6 +261,7 @@ class WorkflowNodeConfigValidatorTest {
                         "userPromptTemplateId", "none",
                         "systemPrompt", WorkflowPromptDefaults.DEFAULT_SYSTEM_PROMPT,
                         "userPrompt", WorkflowPromptDefaults.DEFAULT_CLUSTER_USER_PROMPT,
+                        "maxAgentIterationsPerTurn", 4,
                         "output", "cluster_1_agent_1_output"
                     )
                 )
@@ -223,6 +274,18 @@ class WorkflowNodeConfigValidatorTest {
     }
 
     private WorkflowNodeConfigValidator validator() {
-        return new WorkflowNodeConfigValidator(systemCapabilityRepository, tenantCapabilityGrantRepository, assetManagementService);
+        return new WorkflowNodeConfigValidator(
+            systemCapabilityRepository,
+            tenantCapabilityGrantRepository,
+            assetManagementService,
+            runtimeProperties()
+        );
+    }
+
+    private static AgentRuntimeProperties runtimeProperties() {
+        AgentRuntimeProperties properties = new AgentRuntimeProperties();
+        properties.setSuggestedIterationsPerTurn(4);
+        properties.setMaxIterationsPerTurn(20);
+        return properties;
     }
 }

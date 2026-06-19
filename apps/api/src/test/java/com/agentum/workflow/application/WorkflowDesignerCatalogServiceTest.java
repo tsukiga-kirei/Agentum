@@ -2,12 +2,14 @@ package com.agentum.workflow.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.agentum.agent.application.AgentRuntimeProperties;
 import com.agentum.workflow.interfaces.WorkflowDraftApi;
 import org.junit.jupiter.api.Test;
 
 class WorkflowDesignerCatalogServiceTest {
 
-    private final WorkflowDesignerCatalogService service = new WorkflowDesignerCatalogService();
+    private final AgentRuntimeProperties runtimeProperties = runtimeProperties();
+    private final WorkflowDesignerCatalogService service = new WorkflowDesignerCatalogService(runtimeProperties);
 
     @Test
     void shouldReturnBackendManagedBrickTemplates() {
@@ -21,5 +23,18 @@ class WorkflowDesignerCatalogServiceTest {
             .flatExtracting(template -> template.defaultOutputVariables())
             .contains("input_1", "agent_response", "cluster_result", "delivery_record");
         assertThat(catalog.variableMetadata()).containsKeys("starter", "input_1", "agent_response", "cluster_result", "delivery_record");
+        assertThat(catalog.agentRuntimeLimits().suggestedIterationsPerTurn()).isEqualTo(4);
+        assertThat(catalog.agentRuntimeLimits().maxIterationsPerTurn()).isEqualTo(20);
+        assertThat(catalog.brickTemplates().stream()
+            .filter(template -> "agent".equals(template.brickType()))
+            .findFirst().orElseThrow().defaultConfig())
+            .containsEntry("maxAgentIterationsPerTurn", 4);
+    }
+
+    private static AgentRuntimeProperties runtimeProperties() {
+        AgentRuntimeProperties properties = new AgentRuntimeProperties();
+        properties.setSuggestedIterationsPerTurn(4);
+        properties.setMaxIterationsPerTurn(20);
+        return properties;
     }
 }

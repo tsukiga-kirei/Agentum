@@ -140,6 +140,7 @@ docs/                     产品与架构文档
 | [开发规范](./docs/development-standards.md) | 命名、接口、测试与 AI 协作约定 |
 | [能力—流程—权限治理](./docs/capability-workflow-governance.md) | 版本模型、引用勾稽、收回/删除与后续选型 |
 | [AI 运行态接入说明](./docs/ai-runtime-integration.md) | 模型、MCP、Skill、提示词模板与流程运行时的当前实现 |
+| [Skill 与 MCP 运行机制](./docs/skill-mcp-runtime-guide.md) | Skill 读取、MCP 工具发现与调用、参数 Schema、失败恢复、审计和当前脚本执行边界 |
 | [运行态异步执行设计](./docs/runtime-async-execution-design.md) | MQ + Redis 执行解耦、SSE 回放与中断/恢复语义（已落地，仅 async 模式） |
 | [Word 文档交付说明](./docs/word-document-delivery.md) | 系统内置 Word 交付的配置分层、预览接口和下载接口 |
 | [企业 SSO 对接说明](./docs/sso-integration.md) | OIDC 单点登录边界、业务系统配合方式与当前实现状态 |

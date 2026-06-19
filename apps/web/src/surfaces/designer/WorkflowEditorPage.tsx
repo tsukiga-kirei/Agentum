@@ -38,6 +38,7 @@ import { AgentumApiError, assetApi, workflowApi } from "../../services/apiClient
 import { useAuthStore } from "../../stores/authStore";
 import type { AssetType, MyAssetRow, SystemCapabilityAssetRow } from "../../types/asset";
 import type {
+  AgentRuntimeLimits,
   FileDownloadResponse,
   WordDocumentPreviewRequest,
   WorkflowBrickTemplate,
@@ -146,6 +147,7 @@ type ClusterAgentConfig = {
   userPrompt: string;
   output: string;
   maxTokens?: number;
+  maxAgentIterationsPerTurn: number;
   allowUserEdit: boolean;
   allowQuestion: boolean;
 };
@@ -358,7 +360,9 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
         }
         setDesignerCatalog(catalog);
         const hasPersistedGraph = detail.nodes.some((node) => node.nodeType !== "trigger" && node.nodeId !== SYSTEM_TRIGGER_ID);
-        const nextNodes = hasPersistedGraph ? ensureSystemTrigger(detail.nodes.map(toEditorNode), catalog) : [createNodeFromTemplate(catalog.systemTrigger, 0, [])];
+        const nextNodes = hasPersistedGraph
+          ? ensureSystemTrigger(detail.nodes.map((node) => toEditorNode(node, catalog.agentRuntimeLimits)), catalog)
+          : [createNodeFromTemplate(catalog.systemTrigger, 0, [])];
         const nextEdges = hasPersistedGraph ? detail.edges.map(toEditorEdge) : [];
         const nextVariables = detail.variables.length > 0 ? toWorkflowVariables(detail.variables, nextNodes) : buildWorkflowVariables(nextNodes, catalog.variableMetadata);
         setNodes(nextNodes);
@@ -509,7 +513,10 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
         nodes: mergePersistedNodeConfigs(sentNodeDrafts, detail.nodes),
       };
       applyPersistedDetail(mergedDetail, designerCatalog, setNodes, setEdges, setSelectedNodeId);
-      setDeclaredVariables(toWorkflowVariables(mergedDetail.variables, mergedDetail.nodes.map(toEditorNode)));
+      setDeclaredVariables(toWorkflowVariables(
+        mergedDetail.variables,
+        mergedDetail.nodes.map((node) => toEditorNode(node, designerCatalog.agentRuntimeLimits)),
+      ));
       messageApi.success("流程设计已保存");
       setSaveSucceeded(true);
       if (saveSucceededTimerRef.current !== null) {
@@ -785,7 +792,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
         </main>
 
         <div className="min-h-0 overflow-y-auto bg-[var(--color-bg-layout)] p-4">
-          {selectedNode ? (
+          {selectedNode && designerCatalog ? (
             <NodeConfigPanel
               node={selectedNode}
               availableVariables={availableVariables}
@@ -793,6 +800,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
               capabilities={capabilityOptions}
               capabilitiesLoading={capabilitiesLoading}
               capabilityError={capabilityError}
+              agentRuntimeLimits={designerCatalog.agentRuntimeLimits}
               onUpdateNode={updateSelectedNode}
               onUpdateConfig={updateSelectedConfig}
               onSyncAgentConfig={updateSelectedConfigAndNode}
@@ -1040,6 +1048,7 @@ function NodeConfigPanel({
   capabilities,
   capabilitiesLoading,
   capabilityError,
+  agentRuntimeLimits,
   onUpdateNode,
   onUpdateConfig,
   onSyncAgentConfig,
@@ -1050,6 +1059,7 @@ function NodeConfigPanel({
   capabilities: WorkflowCapabilityOption[];
   capabilitiesLoading: boolean;
   capabilityError: string;
+  agentRuntimeLimits: AgentRuntimeLimits;
   onUpdateNode: (patch: Partial<EditorNodeData>) => void;
   onUpdateConfig: (nextConfig: Record<string, unknown>) => void;
   onSyncAgentConfig: (nextConfig: Record<string, unknown>, patch: Partial<EditorNodeData>) => void;
@@ -1086,11 +1096,11 @@ function NodeConfigPanel({
           />
 
           {brickType === "agent" ? (
-            <SingleAgentBrickConfig node={node} availableVariables={availableVariables} capabilityState={capabilityState} onSyncConfig={onSyncAgentConfig} onUpdateConfig={onUpdateConfig} onUpdateNode={onUpdateNode} />
+            <SingleAgentBrickConfig node={node} availableVariables={availableVariables} capabilityState={capabilityState} agentRuntimeLimits={agentRuntimeLimits} onSyncConfig={onSyncAgentConfig} onUpdateConfig={onUpdateConfig} onUpdateNode={onUpdateNode} />
           ) : null}
 
           {brickType === "cluster" ? (
-            <AgentClusterBrickConfig node={node} availableVariables={availableVariables} capabilityState={capabilityState} onUpdateConfig={onUpdateConfig} onUpdateNode={onUpdateNode} />
+            <AgentClusterBrickConfig node={node} availableVariables={availableVariables} capabilityState={capabilityState} agentRuntimeLimits={agentRuntimeLimits} onUpdateConfig={onUpdateConfig} onUpdateNode={onUpdateNode} />
           ) : null}
 
           {brickType === "delivery" ? (
@@ -1364,6 +1374,7 @@ function SingleAgentBrickConfig({
   node,
   availableVariables,
   capabilityState,
+  agentRuntimeLimits,
   onSyncConfig,
   onUpdateConfig,
   onUpdateNode,
@@ -1371,6 +1382,7 @@ function SingleAgentBrickConfig({
   node: WorkflowEditorNode;
   availableVariables: WorkflowVariable[];
   capabilityState: WorkflowCapabilityState;
+  agentRuntimeLimits: AgentRuntimeLimits;
   onSyncConfig: (nextConfig: Record<string, unknown>, patch: Partial<EditorNodeData>) => void;
   onUpdateConfig: (nextConfig: Record<string, unknown>) => void;
   onUpdateNode: (patch: Partial<EditorNodeData>) => void;
@@ -1425,6 +1437,7 @@ function SingleAgentBrickConfig({
                     userPrompt: DEFAULT_USER_PROMPT,
                     mcpIds: [],
                     skillIds: [],
+                    maxAgentIterationsPerTurn: agentRuntimeLimits.suggestedIterationsPerTurn,
                   });
                   onUpdateNode({ toolCount: 0, allowUserEdit: false, allowQuestion: false });
                 }}
@@ -1441,6 +1454,7 @@ function SingleAgentBrickConfig({
           promptAssets={promptAssets}
           mcpAssets={mcpAssets}
           skillAssets={skillAssets}
+          agentRuntimeLimits={agentRuntimeLimits}
           onClose={() => setModalOpen(false)}
           onConfigChange={onSyncConfig}
         />
@@ -1453,18 +1467,20 @@ function AgentClusterBrickConfig({
   node,
   availableVariables,
   capabilityState,
+  agentRuntimeLimits,
   onUpdateConfig,
   onUpdateNode,
 }: {
   node: WorkflowEditorNode;
   availableVariables: WorkflowVariable[];
   capabilityState: WorkflowCapabilityState;
+  agentRuntimeLimits: AgentRuntimeLimits;
   onUpdateConfig: (nextConfig: Record<string, unknown>) => void;
   onUpdateNode: (patch: Partial<EditorNodeData>) => void;
 }) {
   const config = node.data.rawConfig ?? {};
   const [editingAgent, setEditingAgent] = useState<ClusterAgentConfig | null>(null);
-  const agents = readClusterAgents(config.clusterAgents);
+  const agents = readClusterAgents(config.clusterAgents, agentRuntimeLimits);
   const agentAssets = filterCapabilities(capabilityState.capabilities, "agent_template");
   const promptAssets = filterCapabilities(capabilityState.capabilities, "prompt_template");
   const mcpAssets = filterCapabilities(capabilityState.capabilities, "mcp");
@@ -1481,7 +1497,7 @@ function AgentClusterBrickConfig({
       <div className="workflow-config-list-box">
         <div className="workflow-config-list-header">
           <span>集群智能体</span>
-          <button type="button" onClick={() => setEditingAgent(createClusterAgent(agents.length, node.id))} className="agent-button agent-button-primary h-8 px-3 text-xs">
+          <button type="button" onClick={() => setEditingAgent(createClusterAgent(agents.length, node.id, agentRuntimeLimits.suggestedIterationsPerTurn))} className="agent-button agent-button-primary h-8 px-3 text-xs">
             <Plus className="h-3.5 w-3.5" aria-hidden="true" />
             新增智能体
           </button>
@@ -1534,6 +1550,7 @@ function AgentClusterBrickConfig({
           promptAssets={promptAssets}
           mcpAssets={mcpAssets}
           skillAssets={skillAssets}
+          agentRuntimeLimits={agentRuntimeLimits}
           onClose={() => setEditingAgent(null)}
           onSave={(agent) => {
             const exists = agents.some((item) => item.id === agent.id);
@@ -2270,11 +2287,12 @@ type SingleAgentConfigDraft = {
   mcpIds: string[];
   skillIds: string[];
   maxTokens?: number;
+  maxAgentIterationsPerTurn: number;
   allowUserEdit: boolean;
   allowQuestion: boolean;
 };
 
-function buildSingleAgentConfigDraft(node: WorkflowEditorNode): SingleAgentConfigDraft {
+function buildSingleAgentConfigDraft(node: WorkflowEditorNode, agentRuntimeLimits: AgentRuntimeLimits): SingleAgentConfigDraft {
   const config = node.data.rawConfig ?? {};
   return {
     agentAssetId: readString(config.agentAssetId, "custom"),
@@ -2285,6 +2303,7 @@ function buildSingleAgentConfigDraft(node: WorkflowEditorNode): SingleAgentConfi
     mcpIds: readStringArray(config.mcpIds ?? config.mcpServices, []),
     skillIds: readStringArray(config.skillIds ?? config.skills, []),
     maxTokens: readOptionalInt(config.maxTokens),
+    maxAgentIterationsPerTurn: readAgentIterationsPerTurn(config.maxAgentIterationsPerTurn, agentRuntimeLimits),
     allowUserEdit: node.data.allowUserEdit,
     allowQuestion: node.data.allowQuestion,
   };
@@ -2302,6 +2321,7 @@ function buildSingleAgentConfigPayload(draft: SingleAgentConfigDraft): Record<st
     mcpIds: draft.mcpIds,
     skillIds: draft.skillIds,
     ...(draft.maxTokens ? { maxTokens: draft.maxTokens } : {}),
+    maxAgentIterationsPerTurn: draft.maxAgentIterationsPerTurn,
   };
 }
 
@@ -2320,6 +2340,7 @@ function SingleAgentConfigModal({
   promptAssets,
   mcpAssets,
   skillAssets,
+  agentRuntimeLimits,
   onClose,
   onConfigChange,
 }: {
@@ -2329,11 +2350,12 @@ function SingleAgentConfigModal({
   promptAssets: WorkflowCapabilityOption[];
   mcpAssets: WorkflowCapabilityOption[];
   skillAssets: WorkflowCapabilityOption[];
+  agentRuntimeLimits: AgentRuntimeLimits;
   onClose: () => void;
   onConfigChange: (config: Record<string, unknown>, patch: Partial<EditorNodeData>) => void;
 }) {
   const { message } = App.useApp();
-  const initialDraftRef = useRef(buildSingleAgentConfigDraft(node));
+  const initialDraftRef = useRef(buildSingleAgentConfigDraft(node, agentRuntimeLimits));
   const [draft, setDraftState] = useState<SingleAgentConfigDraft>(initialDraftRef.current);
   const onConfigChangeRef = useRef(onConfigChange);
   onConfigChangeRef.current = onConfigChange;
@@ -2419,6 +2441,11 @@ function SingleAgentConfigModal({
             value={draft.maxTokens}
             onChange={(value) => setDraft({ ...draft, maxTokens: value })}
           />
+          <MaxAgentIterationsPerTurnField
+            value={draft.maxAgentIterationsPerTurn}
+            maximum={agentRuntimeLimits.maxIterationsPerTurn}
+            onChange={(value) => setDraft({ ...draft, maxAgentIterationsPerTurn: value })}
+          />
           <AgentInteractionOptions
             allowUserEdit={draft.allowUserEdit}
             allowQuestion={draft.allowQuestion}
@@ -2458,6 +2485,7 @@ function ClusterAgentModal({
   promptAssets,
   mcpAssets,
   skillAssets,
+  agentRuntimeLimits,
   onClose,
   onSave,
 }: {
@@ -2467,6 +2495,7 @@ function ClusterAgentModal({
   promptAssets: WorkflowCapabilityOption[];
   mcpAssets: WorkflowCapabilityOption[];
   skillAssets: WorkflowCapabilityOption[];
+  agentRuntimeLimits: AgentRuntimeLimits;
   onClose: () => void;
   onSave: (agent: ClusterAgentConfig) => void;
 }) {
@@ -2552,6 +2581,11 @@ function ClusterAgentModal({
             value={draft.maxTokens}
             onChange={(value) => setDraft({ ...draft, maxTokens: value })}
           />
+          <MaxAgentIterationsPerTurnField
+            value={draft.maxAgentIterationsPerTurn}
+            maximum={agentRuntimeLimits.maxIterationsPerTurn}
+            onChange={(value) => setDraft({ ...draft, maxAgentIterationsPerTurn: value })}
+          />
           <AgentInteractionOptions
             allowUserEdit={draft.allowUserEdit}
             allowQuestion={draft.allowQuestion}
@@ -2621,6 +2655,42 @@ function MaxTokensField({
           />
         </div>
         <span className="sys-field-hint">节点级覆盖供应商默认值；长报告建议 8192 或以上。</span>
+      </label>
+    </div>
+  );
+}
+
+function MaxAgentIterationsPerTurnField({
+  value,
+  maximum,
+  onChange,
+}: {
+  value: number;
+  maximum: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <div className="workflow-modal-section">
+      <label className="sys-field">
+        <span className="sys-field-label">单轮最大推理次数</span>
+        <div className="sys-field-input-wrap">
+          <ListChecks size={16} className="sys-field-prefix" aria-hidden="true" />
+          <input
+            className="sys-field-input"
+            type="number"
+            min={1}
+            max={maximum}
+            step={1}
+            value={value}
+            onChange={(event) => {
+              const parsed = Number.parseInt(event.target.value, 10);
+              if (Number.isFinite(parsed)) {
+                onChange(Math.min(maximum, Math.max(1, parsed)));
+              }
+            }}
+          />
+        </div>
+        <span className="sys-field-hint">允许 1～{maximum} 次；首次执行和每次追问都会重新计数，达到上限后系统会进行一次无工具的答案汇总。</span>
       </label>
     </div>
   );
@@ -2909,12 +2979,15 @@ function createNodeFromTemplate(template: WorkflowBrickTemplate, index: number, 
   }
 
   if (brickType === "cluster") {
-    const clusterAgents = readClusterAgents(rawConfig.clusterAgents).map((agent, agentIndex) => ({
+    // 后端目录已为每个子智能体写入建议循环次数；创建节点时原样继承，不在前端再定义默认值。
+    const clusterAgents = (Array.isArray(rawConfig.clusterAgents) ? rawConfig.clusterAgents : [])
+      .filter(isClusterAgentConfig)
+      .map((agent, agentIndex) => ({
       ...agent,
       userPrompt: readString(agent.userPrompt, "") || DEFAULT_CLUSTER_USER_PROMPT,
       systemPrompt: readString(agent.systemPrompt, "") || DEFAULT_SYSTEM_PROMPT,
       output: createClusterAgentOutputVariable(id, agentIndex),
-    }));
+      }));
     rawConfig.clusterAgents = clusterAgents;
     rawConfig.executionMode = readString(rawConfig.executionMode, "parallel");
     outputVariables = clusterAgents.map((agent) => agent.output);
@@ -2973,7 +3046,7 @@ function createInputField(index: number): InputFieldConfig {
   };
 }
 
-function createClusterAgent(index: number, nodeId = "cluster"): ClusterAgentConfig {
+function createClusterAgent(index: number, nodeId: string, suggestedIterationsPerTurn: number): ClusterAgentConfig {
   return {
     id: `cluster_agent_${Date.now().toString(36)}_${index}`,
     name: `子智能体 ${index + 1}`,
@@ -2986,6 +3059,7 @@ function createClusterAgent(index: number, nodeId = "cluster"): ClusterAgentConf
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
     userPrompt: DEFAULT_CLUSTER_USER_PROMPT,
     output: createClusterAgentOutputVariable(nodeId, index),
+    maxAgentIterationsPerTurn: suggestedIterationsPerTurn,
     allowUserEdit: false,
     allowQuestion: false,
   };
@@ -3015,8 +3089,21 @@ function ensureSystemTrigger(nextNodes: WorkflowEditorNode[], catalog: WorkflowD
   return [createNodeFromTemplate(catalog.systemTrigger, 0, []), ...nextNodes];
 }
 
-function toEditorNode(node: WorkflowNodeDraft): WorkflowEditorNode {
-  const config = (node.config ?? {}) as Record<string, unknown>;
+function toEditorNode(node: WorkflowNodeDraft, agentRuntimeLimits: AgentRuntimeLimits): WorkflowEditorNode {
+  const config = { ...(node.config ?? {}) } as Record<string, unknown>;
+  if (node.nodeType === "agent" && !readOptionalInt(config.maxAgentIterationsPerTurn)) {
+    config.maxAgentIterationsPerTurn = agentRuntimeLimits.suggestedIterationsPerTurn;
+  } else if (node.nodeType === "agent") {
+    config.maxAgentIterationsPerTurn = readAgentIterationsPerTurn(config.maxAgentIterationsPerTurn, agentRuntimeLimits);
+  }
+  if (node.nodeType === "parallel_group" && Array.isArray(config.clusterAgents)) {
+    config.clusterAgents = config.clusterAgents.map((agent) => isRecord(agent)
+      ? {
+        ...agent,
+        maxAgentIterationsPerTurn: readAgentIterationsPerTurn(agent.maxAgentIterationsPerTurn, agentRuntimeLimits),
+      }
+      : agent);
+  }
   const brickType = readBrickType(config.brickType, inferBrickTypeFromNodeType(node.nodeType));
   const fallback = buildFallbackNodeData(node.nodeType, brickType);
 
@@ -3122,7 +3209,10 @@ function applyPersistedDetail(
   setEdges: (edges: WorkflowEditorEdge[]) => void,
   setSelectedNodeId: (updater: string | ((currentSelection: string) => string)) => void,
 ) {
-  const nextNodes = ensureSystemTrigger(detail.nodes.map(toEditorNode), catalog);
+  const nextNodes = ensureSystemTrigger(
+    detail.nodes.map((node) => toEditorNode(node, catalog.agentRuntimeLimits)),
+    catalog,
+  );
   const nextEdges = detail.edges.map(toEditorEdge);
   setNodes(nextNodes);
   setEdges(nextEdges.length > 0 ? nextEdges : rebuildSequentialEdges(nextNodes.filter((node) => node.id !== SYSTEM_TRIGGER_ID)));
@@ -3324,7 +3414,7 @@ function readInputFields(value: unknown, outputVariables: string[]): InputFieldC
     : [createInputField(0)];
 }
 
-function readClusterAgents(value: unknown): ClusterAgentConfig[] {
+function readClusterAgents(value: unknown, agentRuntimeLimits: AgentRuntimeLimits): ClusterAgentConfig[] {
   if (Array.isArray(value)) {
     const agents = value.filter(isClusterAgentConfig);
     if (agents.length > 0) {
@@ -3339,6 +3429,7 @@ function readClusterAgents(value: unknown): ClusterAgentConfig[] {
         systemPrompt: readString(agent.systemPrompt, DEFAULT_SYSTEM_PROMPT),
         userPrompt: readString(agent.userPrompt, DEFAULT_CLUSTER_USER_PROMPT),
         maxTokens: readOptionalInt(agent.maxTokens),
+        maxAgentIterationsPerTurn: readAgentIterationsPerTurn(agent.maxAgentIterationsPerTurn, agentRuntimeLimits),
         allowUserEdit: readBoolean(agent.allowUserEdit, false),
         allowQuestion: readBoolean(agent.allowQuestion, false),
       }));
@@ -3367,6 +3458,17 @@ function readOptionalInt(value: unknown): number | undefined {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
   }
   return undefined;
+}
+
+function readAgentIterationsPerTurn(value: unknown, limits: AgentRuntimeLimits): number {
+  return Math.min(
+    readPositiveInt(value, limits.suggestedIterationsPerTurn),
+    Math.max(1, limits.maxIterationsPerTurn),
+  );
+}
+
+function readPositiveInt(value: unknown, fallback: number): number {
+  return readOptionalInt(value) ?? fallback;
 }
 
 function readString(value: unknown, fallback: string): string {

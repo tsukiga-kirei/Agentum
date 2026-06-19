@@ -42,7 +42,6 @@ public class AgentRuntimeService {
 
     private static final Logger log = LoggerFactory.getLogger(AgentRuntimeService.class);
     private static final Pattern VARIABLE_PATTERN = Pattern.compile("\\{\\{\\s*([\\w.\\-\\u4e00-\\u9fa5]+)\\s*}}");
-    private static final int DEFAULT_MAX_AGENT_ITERATIONS = 4;
     private static final int TOOL_EVENT_DETAIL_MAX_LENGTH = 4000;
 
     private final TenantModelAssignmentRepository tenantModelAssignmentRepository;
@@ -58,6 +57,7 @@ public class AgentRuntimeService {
     private final Clock clock;
     private final RunCancellationGuard cancellationGuard;
     private final PromptContentResolver promptContentResolver;
+    private final AgentRuntimeProperties runtimeProperties;
 
     public AgentRuntimeService(
         TenantModelAssignmentRepository tenantModelAssignmentRepository,
@@ -72,7 +72,8 @@ public class AgentRuntimeService {
         ObjectMapper objectMapper,
         Clock clock,
         RunCancellationGuard cancellationGuard,
-        PromptContentResolver promptContentResolver
+        PromptContentResolver promptContentResolver,
+        AgentRuntimeProperties runtimeProperties
     ) {
         this.tenantModelAssignmentRepository = tenantModelAssignmentRepository;
         this.modelProviderRepository = modelProviderRepository;
@@ -87,6 +88,7 @@ public class AgentRuntimeService {
         this.clock = clock;
         this.cancellationGuard = cancellationGuard;
         this.promptContentResolver = promptContentResolver;
+        this.runtimeProperties = runtimeProperties;
     }
 
     public AgentRuntimeResult execute(AgentRuntimeRequest request) {
@@ -166,7 +168,8 @@ public class AgentRuntimeService {
         Map<String, Object> options = modelOptions(provider, config);
         options.putIfAbsent("parallelToolCalls", false);
         ensureMaxTokensConfigured(options);
-        int maxIterations = intValue(config.get("maxAgentIterations"), DEFAULT_MAX_AGENT_ITERATIONS);
+        // executeAgentLoop 每次初次执行或追问都会重新创建，因此该上限天然按“单轮对话”独立计数。
+        int maxIterations = resolveMaxIterationsPerTurn(config);
         List<String> modelCallLogIds = new ArrayList<>();
         List<Map<String, Object>> toolCallSummaries = new ArrayList<>();
         String finalAnswer = "";
@@ -789,6 +792,42 @@ public class AgentRuntimeService {
             return value == null ? fallback : Integer.parseInt(value.toString());
         } catch (NumberFormatException exception) {
             return fallback;
+        }
+    }
+
+    private int resolveMaxIterationsPerTurn(Map<String, Object> config) {
+        int platformMaximum = Math.max(1, runtimeProperties.getMaxIterationsPerTurn());
+        if (!config.containsKey("maxAgentIterationsPerTurn")) {
+            throw new ApiException(
+                HttpStatus.BAD_REQUEST,
+                "AGENT_MAX_ITERATIONS_PER_TURN_REQUIRED",
+                "智能体节点未配置单轮最大推理次数，请返回流程设计器补充配置并重新发布"
+            );
+        }
+        int configured = strictIntegerValue(config.get("maxAgentIterationsPerTurn"));
+        if (configured < 1 || configured > platformMaximum) {
+            throw new ApiException(
+                HttpStatus.BAD_REQUEST,
+                "AGENT_MAX_ITERATIONS_PER_TURN_INVALID",
+                "智能体单轮最大推理次数必须在 1 到 " + platformMaximum + " 之间"
+            );
+        }
+        return configured;
+    }
+
+    private static int strictIntegerValue(Object value) {
+        if (value instanceof Number number) {
+            double numericValue = number.doubleValue();
+            if (Double.isFinite(numericValue) && numericValue == Math.rint(numericValue)
+                && numericValue <= Integer.MAX_VALUE && numericValue >= Integer.MIN_VALUE) {
+                return (int) numericValue;
+            }
+            return -1;
+        }
+        try {
+            return value == null ? -1 : Integer.parseInt(value.toString());
+        } catch (NumberFormatException exception) {
+            return -1;
         }
     }
 

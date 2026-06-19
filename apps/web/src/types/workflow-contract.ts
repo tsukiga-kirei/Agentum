@@ -129,6 +129,12 @@ export type WorkflowDesignerCatalog = {
   systemTrigger: WorkflowBrickTemplate;
   brickTemplates: WorkflowBrickTemplate[];
   variableMetadata: Record<string, WorkflowVariableTemplate>;
+  agentRuntimeLimits: AgentRuntimeLimits;
+};
+
+export type AgentRuntimeLimits = {
+  suggestedIterationsPerTurn: number;
+  maxIterationsPerTurn: number;
 };
 
 export type WorkflowBrickTemplate = {
