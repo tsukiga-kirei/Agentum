@@ -191,7 +191,7 @@ export function ToolAuditTab({ setLoading }: ToolAuditTabProps) {
                   <div className="flex items-center gap-4 text-right">
                     <div className="text-xs text-zinc-400 hidden sm:block">
                       <div className="flex items-center gap-1">
-                        <Clock size={12} /> {log.latencyMs ? `${log.latencyMs} ms` : "—"}
+                        <Clock size={12} /> {log.latencyMs != null ? `${log.latencyMs} ms` : "—"}
                       </div>
                     </div>
                     <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-50 text-zinc-400 transition-colors group-hover:bg-primary-50 group-hover:text-primary-600 dark:bg-zinc-800 dark:group-hover:bg-primary-950/40">
@@ -246,7 +246,7 @@ export function ToolAuditTab({ setLoading }: ToolAuditTabProps) {
                   <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-zinc-500 dark:text-zinc-400">
                     <span>所属运行：{selectedLog.callerName}</span>
                     <span>触发时间：{formatDate(selectedLog.createdAt)}</span>
-                    <span>耗时：{selectedLog.latencyMs ? `${selectedLog.latencyMs} ms` : "—"}</span>
+                    <span>耗时：{selectedLog.latencyMs != null ? `${selectedLog.latencyMs} ms` : "—"}</span>
                   </div>
                 </div>
               </div>

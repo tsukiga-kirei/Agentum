@@ -7,6 +7,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
@@ -127,12 +128,20 @@ public class ModelCallLogEntity {
         this.completedAt = now;
     }
 
-    public void fail(String errorCode, String errorMessage, long latencyMs, Instant now) {
+    public void fail(String errorCode, String errorMessage, Instant now) {
         this.status = "failed";
         this.errorCode = errorCode;
         this.errorMessage = truncate(errorMessage);
-        this.latencyMs = latencyMs;
+        // 失败调用同样需要真实耗时，便于区分即时配置错误、远端业务失败和网络超时。
+        this.latencyMs = elapsedMillis(createdAt, now);
         this.completedAt = now;
+    }
+
+    private static long elapsedMillis(Instant startedAt, Instant completedAt) {
+        if (startedAt == null || completedAt == null) {
+            return 0L;
+        }
+        return Math.max(0L, Duration.between(startedAt, completedAt).toMillis());
     }
 
     private static String truncate(String value) {

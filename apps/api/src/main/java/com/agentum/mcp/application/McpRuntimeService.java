@@ -153,7 +153,7 @@ public class McpRuntimeService {
             );
             return new ExecutedMcpTool(binding.functionName(), toolName, capability.getCode(), sanitizedResponse, result.latencyMs(), callLog.getId());
         } catch (ApiException exception) {
-            callLog.fail(exception.getCode(), exception.getMessage(), 0L, clock.instant());
+            callLog.fail(exception.getCode(), exception.getMessage(), clock.instant());
             mcpCallLogRepository.save(callLog);
             log.warn(
                 "MCP 工具调用失败 tenantId={} runId={} nodeRunId={} capabilityId={} toolName={} errorCode={} requestId={}",

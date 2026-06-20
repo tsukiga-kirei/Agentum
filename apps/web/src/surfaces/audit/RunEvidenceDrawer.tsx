@@ -167,7 +167,7 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
                     </span>
                     <span className="run-evidence-call-meta text-xs text-zinc-500 flex items-center gap-1">
                       <Timer size={11} className="inline mr-1 opacity-50" />
-                      {m.latencyMs ? `${m.latencyMs} ms` : "—"}
+                      {m.latencyMs != null ? `${m.latencyMs} ms` : "—"}
                     </span>
                   </div>
                   <div className="mb-3 flex flex-wrap gap-2 text-xs text-zinc-500">
@@ -206,7 +206,7 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
                     </span>
                     <span className="run-evidence-call-meta text-xs text-zinc-500 flex items-center gap-1">
                       {m.status === "success" ? <span className="text-green-500 font-semibold">成功</span> : <span className="text-red-500 font-semibold">失败</span>}
-                      {m.latencyMs ? ` · ${m.latencyMs} ms` : ""}
+                      {m.latencyMs != null ? ` · ${m.latencyMs} ms` : ""}
                     </span>
                   </div>
                   <div>

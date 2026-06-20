@@ -397,7 +397,7 @@ public class AgentRuntimeService {
             modelCallLogRepository.save(callLog);
             return new LoggedChatResult(result, callLogId(callLog), "");
         } catch (ApiException exception) {
-            callLog.fail(exception.getCode(), exception.getMessage(), 0L, clock.instant());
+            callLog.fail(exception.getCode(), exception.getMessage(), clock.instant());
             modelCallLogRepository.save(callLog);
             throw exception;
         }
@@ -463,7 +463,7 @@ public class AgentRuntimeService {
 
             @Override
             public void onError(String code, String message) {
-                callLog.fail(code, message, 0L, clock.instant());
+                callLog.fail(code, message, clock.instant());
                 modelCallLogRepository.save(callLog);
                 future.completeExceptionally(modelStreamException(code, message));
             }
@@ -544,7 +544,7 @@ public class AgentRuntimeService {
 
             @Override
             public void onError(String code, String message) {
-                callLog.fail(code, message, 0L, clock.instant());
+                callLog.fail(code, message, clock.instant());
                 modelCallLogRepository.save(callLog);
                 future.completeExceptionally(modelStreamException(code, message));
             }
