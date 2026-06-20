@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { Empty, Pagination, message, Select } from "antd";
-import { Search, ClipboardList, Calendar, User, Info, Eye, Activity, ChevronDown } from "lucide-react";
+import { Search, ClipboardList, Eye, Activity, ChevronDown } from "lucide-react";
 import { auditApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import type { AuditRunSummary } from "../../types/audit";
 import { RunEvidenceDrawer } from "./RunEvidenceDrawer";
+import { RunStateBadge } from "./RunStateBadge";
 
 interface ExecutionAuditTabProps {
   setLoading: (loading: boolean) => void;
@@ -58,17 +59,6 @@ export function ExecutionAuditTab({ setLoading }: ExecutionAuditTabProps) {
     fetchRuns(p, s);
   };
 
-  const formatState = (s: string) => {
-    switch (s) {
-      case "running": return { label: "执行中", cls: "sys-status--active" };
-      case "paused": return { label: "已暂停", cls: "sys-status--paused" };
-      case "completed": return { label: "已完成", cls: "sys-status--success" };
-      case "failed": return { label: "已失败", cls: "sys-status--inactive" };
-      case "canceled": return { label: "已取消", cls: "sys-status--inactive" };
-      default: return { label: s, cls: "sys-status--inactive" };
-    }
-  };
-
   const formatDate = (isoStr: string | null) => {
     if (!isoStr) return "—";
     return new Date(isoStr).toLocaleString("zh-CN", { hour12: false });
@@ -93,17 +83,16 @@ export function ExecutionAuditTab({ setLoading }: ExecutionAuditTabProps) {
           <Select
             value={state}
             onChange={(value) => setState(value)}
-            className="agent-admin-select w-36"
+            className="agent-admin-select w-44"
             classNames={selectClassNames}
             suffixIcon={selectSuffixIcon}
             prefix={<Activity className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
             options={[
-              { value: "", label: "全部状态" },
-              { value: "running", label: "执行中" },
-              { value: "paused", label: "已暂停" },
-              { value: "completed", label: "已完成" },
-              { value: "failed", label: "已失败" },
-              { value: "canceled", label: "已取消" }
+              { value: "", label: <RunStateBadge state="all" /> },
+              { value: "running", label: <RunStateBadge state="running" /> },
+              { value: "paused", label: <RunStateBadge state="paused" /> },
+              { value: "completed", label: <RunStateBadge state="completed" /> },
+              { value: "failed", label: <RunStateBadge state="failed" /> },
             ]}
           />
         </div>
@@ -117,7 +106,6 @@ export function ExecutionAuditTab({ setLoading }: ExecutionAuditTabProps) {
         <div className="space-y-3">
           <div className="workbench-task-center-list">
             {runs.map((run, index) => {
-              const stateInfo = formatState(run.state);
               return (
                 <div
                   key={run.id}
@@ -134,10 +122,7 @@ export function ExecutionAuditTab({ setLoading }: ExecutionAuditTabProps) {
                         <span className="font-semibold text-zinc-800 dark:text-zinc-100 group-hover:text-primary-600 transition-colors text-sm">
                           {run.title}
                         </span>
-                        <span className={`sys-status ${stateInfo.cls}`}>
-                          <span className="sys-status-dot" />
-                          {stateInfo.label}
-                        </span>
+                        <RunStateBadge state={run.state} />
                       </div>
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-400 mt-1">
                         <span className="flex items-center gap-1">

@@ -2469,6 +2469,52 @@ textarea:focus-visible {
 }
 .sys-status--inactive { color: var(--color-text-tertiary); background: var(--color-bg-hover); }
 .sys-status--inactive .sys-status-dot { background: var(--color-text-tertiary); }
+.sys-status--neutral {
+  color: var(--color-text-secondary);
+  background: var(--color-bg-hover);
+  box-shadow: inset 0 0 0 1px var(--color-border-light);
+}
+.sys-status--neutral .sys-status-dot { background: var(--color-text-tertiary); }
+.sys-status--running {
+  color: #2563eb;
+  background: rgba(59, 130, 246, 0.11);
+  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.18);
+}
+.sys-status--running .sys-status-dot {
+  background: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16);
+  animation: status-pulse 2s infinite ease-in-out;
+}
+.sys-status--paused {
+  color: #b45309;
+  background: rgba(245, 158, 11, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.2);
+}
+.sys-status--paused .sys-status-dot { background: #f59e0b; }
+.sys-status--success {
+  color: #047857;
+  background: rgba(16, 185, 129, 0.11);
+  box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.18);
+}
+.sys-status--success .sys-status-dot { background: #10b981; }
+.sys-status--failed {
+  color: #be123c;
+  background: rgba(244, 63, 94, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(244, 63, 94, 0.18);
+}
+.sys-status--failed .sys-status-dot { background: #f43f5e; }
+.sys-status--canceled {
+  color: #6d28d9;
+  background: rgba(139, 92, 246, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(139, 92, 246, 0.18);
+}
+.sys-status--canceled .sys-status-dot { background: #8b5cf6; }
+
+:root[data-theme="dark"] .sys-status--running { color: #93c5fd; }
+:root[data-theme="dark"] .sys-status--paused { color: #fcd34d; }
+:root[data-theme="dark"] .sys-status--success { color: #6ee7b7; }
+:root[data-theme="dark"] .sys-status--failed { color: #fda4af; }
+:root[data-theme="dark"] .sys-status--canceled { color: #c4b5fd; }
 
 /* 信息标签 */
 .sys-info-tags { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }

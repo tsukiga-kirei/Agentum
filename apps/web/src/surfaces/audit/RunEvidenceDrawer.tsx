@@ -9,6 +9,7 @@ import {
 import { auditApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import type { AuditEvidence } from "../../types/audit";
+import { RunStateBadge } from "./RunStateBadge";
 
 interface RunEvidenceDrawerProps {
   runId: string | null;
@@ -68,53 +69,6 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
   const activeNodeModelCalls = evidence?.modelCallLogs.filter((m) => m.nodeRunId === activeNode?.id) || [];
   const activeNodeMcpCalls = evidence?.mcpCallLogs.filter((m) => m.nodeRunId === activeNode?.id) || [];
   const activeNodeDeliveries = evidence?.deliveryRecords.filter((d) => d.nodeRunId === activeNode?.id) || [];
-
-  const formatState = (s: string) => {
-    switch (s) {
-      case "running":
-        return (
-          <span className="sys-status sys-status--active">
-            <span className="sys-status-dot" />
-            执行中
-          </span>
-        );
-      case "paused":
-        return (
-          <span className="sys-status sys-status--paused">
-            <span className="sys-status-dot" />
-            已暂停
-          </span>
-        );
-      case "completed":
-        return (
-          <span className="sys-status sys-status--success">
-            <span className="sys-status-dot" />
-            已完成
-          </span>
-        );
-      case "failed":
-        return (
-          <span className="sys-status sys-status--inactive">
-            <span className="sys-status-dot" />
-            已失败
-          </span>
-        );
-      case "canceled":
-        return (
-          <span className="sys-status sys-status--inactive">
-            <span className="sys-status-dot" />
-            已取消
-          </span>
-        );
-      default:
-        return (
-          <span className="sys-status sys-status--inactive">
-            <span className="sys-status-dot" />
-            {s}
-          </span>
-        );
-    }
-  };
 
   const formatDate = (isoStr: string | null) => {
     if (!isoStr) return "—";
@@ -417,7 +371,7 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
                 <div className="run-evidence-hero-body">
                   <div className="run-evidence-hero-title">
                     <h3 className="text-lg font-bold">{evidence.runInfo.title}</h3>
-                    {formatState(evidence.runInfo.state)}
+                    <RunStateBadge state={evidence.runInfo.state} />
                   </div>
                   <div className="run-evidence-hero-meta">
                     <span className="run-evidence-hero-meta-item">
