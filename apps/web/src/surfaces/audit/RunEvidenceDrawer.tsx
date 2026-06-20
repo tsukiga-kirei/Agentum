@@ -16,6 +16,8 @@ interface RunEvidenceDrawerProps {
   onClose: () => void;
 }
 
+const AGENT_NODE_TYPES = new Set(["agent", "parallel_group"]);
+
 /**
  * 运行全链路审计证据链抽屉
  *
@@ -91,9 +93,10 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
   const getNodeIcon = (type: string) => {
     switch (type) {
       case "trigger": return <Activity size={13} />;
-      case "input": return <ClipboardList size={13} />;
+      case "user_input":
+      case "human_review": return <ClipboardList size={13} />;
       case "agent": return <Sparkles size={13} />;
-      case "cluster": return <Sparkles size={13} />;
+      case "parallel_group": return <Sparkles size={13} />;
       case "delivery": return <Send size={13} />;
       default: return <Code2 size={13} />;
     }
@@ -108,7 +111,7 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
 
   // 构建右侧节点详情的 Tab items（替代废弃的 Tabs.TabPane）
   const buildNodeTabItems = (): TabsProps["items"] => {
-    return [
+    const items: NonNullable<TabsProps["items"]> = [
       {
         key: "variables",
         label: "数据变量快照",
@@ -143,7 +146,11 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
           </div>
         ),
       },
-      {
+    ];
+
+    // 模型与工具调用只属于单智能体/智能体集群节点；即使本次调用数为 0，也保留页签表达该节点具备的运行能力。
+    if (activeNode && AGENT_NODE_TYPES.has(activeNode.nodeType)) {
+      items.push({
         key: "models",
         label: `模型调用 (${activeNodeModelCalls.length})`,
         children: (
@@ -181,8 +188,8 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
             )}
           </div>
         ),
-      },
-      {
+      });
+      items.push({
         key: "mcp",
         label: `MCP工具/Skill (${activeNodeMcpCalls.length})`,
         children: (
@@ -215,8 +222,12 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
             )}
           </div>
         ),
-      },
-      {
+      });
+    }
+
+    // 交付证据只在交付节点出现，避免输入、审核等普通节点展示永远为 0 的无关页签。
+    if (activeNode?.nodeType === "delivery") {
+      items.push({
         key: "deliveries",
         label: `交付推送 (${activeNodeDeliveries.length})`,
         children: (
@@ -261,8 +272,10 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
             )}
           </div>
         ),
-      },
-    ];
+      });
+    }
+
+    return items;
   };
 
   // 构建底部全景辅助的 Tab items
@@ -464,6 +477,7 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
                               </div>
 
                               <Tabs
+                                key={activeNode.id}
                                 defaultActiveKey="variables"
                                 className="agent-admin-tabs run-evidence-tabs"
                                 items={buildNodeTabItems()}
