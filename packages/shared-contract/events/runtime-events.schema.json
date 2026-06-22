@@ -42,6 +42,7 @@
       "properties": {
         "runId": { "type": "string", "format": "uuid" },
         "nodeRunId": { "type": "string", "format": "uuid" },
+        "streamKind": { "type": "string", "enum": ["reasoning", "model_content", "final_answer"] },
         "deltaContent": { "type": "string" },
         "accumulatedContent": { "type": "string" },
         "timestamp": { "type": "string", "format": "date-time" }
@@ -74,6 +75,7 @@
         "message": { "type": "string", "description": "eventType=phase 时的阶段说明" },
         "deltaContent": { "type": "string" },
         "accumulatedContent": { "type": "string" },
+        "streamKind": { "type": "string", "enum": ["reasoning", "model_content", "final_answer"] },
         "toolName": { "type": "string" },
         "toolType": { "type": "string", "enum": ["mcp", "skill"] },
         "toolStatus": { "type": "string", "enum": ["started", "completed", "failed"] },

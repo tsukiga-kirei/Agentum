@@ -58,6 +58,18 @@ export function buildModelOutputSteps(step: RuntimePreviewStep, finalAnswer: str
   }
 
   const outputs = step.outputs ?? [];
+  const reasoning = outputs.find((field) => field.label === "reasoning_content" || field.label === "reasoningContext")?.value;
+  if (reasoning?.trim()) {
+    steps.push({
+      id: "persisted-reasoning",
+      kind: "reasoning",
+      title: "深度推理",
+      summary: "可展开查看推理过程",
+      status: "done",
+      detail: reasoning.trim(),
+      toolType: "reasoning",
+    });
+  }
   const rawOutputLabels = ["model_content", "modelContent", "raw_content", "rawContent", "response_content", "responseContent", "content", "responseBody"];
   rawOutputLabels.forEach((label) => {
     const value = outputs.find((field) => field.label === label)?.value;
@@ -127,7 +139,7 @@ export function readAgentPermissions(config: Record<string, unknown> | undefined
 
 /** 运行页前置区只展示用户关心的 AI 过程：工具调用、模型原始返回和 final_answer。 */
 export function filterUserVisibleSteps(steps: AgentExecutionStep[]): AgentExecutionStep[] {
-  return steps.filter((step) => step.kind === "tool" || step.kind === "model_output" || step.kind === "final_answer");
+  return steps.filter((step) => step.kind === "tool" || step.kind === "reasoning" || step.kind === "model_output" || step.kind === "final_answer");
 }
 
 export function summarizeToolSteps(steps: AgentExecutionStep[], elapsedLabel = "", running = false): string {
@@ -185,6 +197,29 @@ export function upsertPhaseStep(
       status: phase === "completed" || phase === "failed" ? "done" : "running",
     },
   ];
+}
+
+export function upsertReasoningStep(
+  steps: AgentExecutionStep[],
+  accumulatedContent: string,
+  running: boolean,
+): AgentExecutionStep[] {
+  const nextStep: AgentExecutionStep = {
+    id: "reasoning",
+    kind: "reasoning",
+    title: running ? "深度推理中" : "深度推理",
+    summary: running ? "正在生成推理过程" : "可展开查看推理过程",
+    status: running ? "running" : "done",
+    detail: accumulatedContent,
+    toolType: "reasoning",
+  };
+  const existingIndex = steps.findIndex((step) => step.kind === "reasoning");
+  if (existingIndex < 0) {
+    return [...steps, nextStep];
+  }
+  const copy = [...steps];
+  copy[existingIndex] = nextStep;
+  return copy;
 }
 
 export function upsertToolStep(
@@ -258,7 +293,9 @@ export function upsertModelOutputStep(
 
 export function finalizeFinalAnswerStep(steps: AgentExecutionStep[]): AgentExecutionStep[] {
   return steps.map((step) =>
-    step.id === "live-final-answer"
+    step.kind === "reasoning"
+      ? { ...step, title: "深度推理", status: "done", summary: "可展开查看推理过程" }
+      : step.id === "live-final-answer"
       ? {
           ...step,
           status: "done",

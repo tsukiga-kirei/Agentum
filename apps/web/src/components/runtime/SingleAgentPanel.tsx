@@ -3,6 +3,7 @@ import { message } from "antd";
 import {
   Ban,
   Bot,
+  BrainCircuit,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -219,6 +220,8 @@ function ToolStepRow({
         <span className="agent-tool-step-icon">
           {step.status === "error" ? (
             <span className="agent-tool-step-dot agent-tool-step-dot--error" />
+          ) : step.kind === "reasoning" ? (
+            step.status === "running" ? <Loader2 size={12} className="animate-spin text-indigo-500" /> : <BrainCircuit size={12} className="text-indigo-500" />
           ) : step.kind === "model_output" ? (
             <Cpu size={12} className="text-emerald-500" />
           ) : (

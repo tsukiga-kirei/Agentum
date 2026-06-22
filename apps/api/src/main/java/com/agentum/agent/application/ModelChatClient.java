@@ -19,6 +19,10 @@ public interface ModelChatClient {
         default void onFinalAnswerDelta(String deltaContent, String accumulatedAnswer) {
         }
 
+        /** 推理模型返回的 reasoning / reasoning_content  增量。 */
+        default void onReasoningDelta(String deltaContent, String accumulatedReasoning) {
+        }
+
         void onComplete(ChatResult result);
         void onError(String code, String message);
     }
@@ -135,10 +139,22 @@ public interface ModelChatClient {
         Map<String, Object> tokenUsage,
         long latencyMs,
         List<ToolCall> toolCalls,
-        String finishReason
+        String finishReason,
+        String reasoningContent
     ) {
         public ChatResult(String content, Map<String, Object> responseSnapshot, Map<String, Object> tokenUsage, long latencyMs) {
-            this(content, responseSnapshot, tokenUsage, latencyMs, List.of(), "");
+            this(content, responseSnapshot, tokenUsage, latencyMs, List.of(), "", "");
+        }
+
+        public ChatResult(
+            String content,
+            Map<String, Object> responseSnapshot,
+            Map<String, Object> tokenUsage,
+            long latencyMs,
+            List<ToolCall> toolCalls,
+            String finishReason
+        ) {
+            this(content, responseSnapshot, tokenUsage, latencyMs, toolCalls, finishReason, "");
         }
 
         public ChatResult {
@@ -147,6 +163,7 @@ public interface ModelChatClient {
             tokenUsage = safeCopy(tokenUsage);
             toolCalls = toolCalls == null ? List.of() : List.copyOf(toolCalls);
             finishReason = finishReason == null ? "" : finishReason;
+            reasoningContent = reasoningContent == null ? "" : reasoningContent;
         }
 
         private static Map<String, Object> safeCopy(Map<String, Object> source) {

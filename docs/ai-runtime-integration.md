@@ -178,7 +178,7 @@ merge        -> 本地透传/合并变量
 3. 运行时 `AgentRuntimeService.resolveTenantModelAssignment` 取当前租户**第一个 enabled** 的分配
 4. 解密供应商 API Key，调用统一聊天客户端
 
-这意味着：**当前租户只能用到系统分配的那套模型供应商**；节点可覆盖 `modelName`，但不能绕过租户分配。
+这意味着：**当前租户只能用到系统分配的模型供应商**；流程节点保存 `modelProviderId` 与 `modelName`，运行时再次复核租户分配，不能通过手写配置绕过模型范围。系统管理把模型标记为推理模型后，节点才显示“启用深度推理”；开启时 OpenAI 兼容请求增加 `chat_template_kwargs: {"enable_thinking": true}`。流式与非流式响应会从 `reasoning`、`reasoning_content` 提取推理内容，独立展示为“深度推理”，不拼入 `final_answer`。
 
 ### 4.4 Agent 循环与 Prompt 组装方式
 

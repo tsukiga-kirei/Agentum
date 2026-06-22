@@ -76,7 +76,8 @@ public final class SystemManagementApi {
         String status,
         String connectivityStatus,
         Instant connectivityCheckedAt,
-        Integer maxTokens
+        Integer maxTokens,
+        boolean reasoningModel
     ) {
     }
 
@@ -108,7 +109,8 @@ public final class SystemManagementApi {
         @NotBlank @Size(max = 160) String defaultModel,
         @Size(max = 2000) String apiKey,
         @Size(max = 30) String status,
-        @NotNull @Min(256) @Max(131072) Integer maxTokens
+        @NotNull @Min(256) @Max(131072) Integer maxTokens,
+        boolean reasoningModel
     ) {
     }
 
@@ -119,7 +121,8 @@ public final class SystemManagementApi {
         @NotBlank @Size(max = 160) String defaultModel,
         @Size(max = 2000) String apiKey,
         @Size(max = 30) String status,
-        @NotNull @Min(256) @Max(131072) Integer maxTokens
+        @NotNull @Min(256) @Max(131072) Integer maxTokens,
+        boolean reasoningModel
     ) {
     }
 

@@ -163,6 +163,7 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
                             new InputStreamReader(rawBody, StandardCharsets.UTF_8))) {
                         String line;
                         StringBuilder accumulated = new StringBuilder();
+                        StringBuilder accumulatedReasoning = new StringBuilder();
                         String responseId = "";
                         String finishReason = "";
                         Map<String, Object> usage = new LinkedHashMap<>();
@@ -198,6 +199,11 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
                                             finishReason = firstChoice.get("finish_reason").asText("");
                                         }
                                         JsonNode delta = firstChoice.path("delta");
+                                        String reasoning = extractReasoningContent(delta);
+                                        if (!reasoning.isEmpty()) {
+                                            accumulatedReasoning.append(reasoning);
+                                            callback.onReasoningDelta(reasoning, accumulatedReasoning.toString());
+                                        }
                                         if (delta.has("content") && !delta.get("content").isNull()) {
                                             String content = delta.get("content").asText("");
                                             if (!content.isEmpty()) {
@@ -245,6 +251,10 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
                             responseId,
                             toolCalls
                         );
+                        if (!accumulatedReasoning.isEmpty()) {
+                            responseSnapshot = new LinkedHashMap<>(responseSnapshot);
+                            responseSnapshot.put("reasoning", accumulatedReasoning.toString());
+                        }
 
                         ChatResult result = new ChatResult(
                             accumulated.toString(),
@@ -252,7 +262,8 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
                             usage,
                             latency,
                             toolCalls,
-                            finishReason
+                            finishReason,
+                            accumulatedReasoning.toString()
                         );
                         String resolvedAnswer = FinalAnswerContentResolver.resolve(
                             result,
@@ -446,6 +457,7 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
             : objectMapper.createObjectNode();
         JsonNode message = firstChoice.path("message");
         String content = extractMessageContent(message);
+        String reasoningContent = extractReasoningContent(message);
         List<ModelChatClient.ToolCall> toolCalls = parseToolCalls(message.path("tool_calls"));
         if (content.isBlank() && toolCalls.isEmpty()) {
             throw new ApiException(HttpStatus.BAD_GATEWAY, "MODEL_RESPONSE_EMPTY", "模型未返回可用文本或工具调用");
@@ -456,6 +468,9 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
         responseSnapshot.put("content", content);
         responseSnapshot.put("finishReason", finishReason);
         responseSnapshot.put("id", root.path("id").asText(""));
+        if (!reasoningContent.isBlank()) {
+            responseSnapshot.put("reasoning", reasoningContent);
+        }
         if (!toolCalls.isEmpty()) {
             responseSnapshot.put("toolCalls", toolCalls.stream()
                 .map(toolCall -> Map.of(
@@ -465,7 +480,46 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
                 ))
                 .toList());
         }
-        return new ChatResult(content, responseSnapshot, usage, latencyMs, toolCalls, finishReason);
+        return new ChatResult(content, responseSnapshot, usage, latencyMs, toolCalls, finishReason, reasoningContent);
+    }
+
+    private String extractReasoningContent(JsonNode container) {
+        for (String field : List.of("reasoning", "reasoning_content")) {
+            JsonNode value = container.path(field);
+            String text = extractTextValue(value);
+            if (!text.isBlank()) {
+                return text;
+            }
+        }
+        return "";
+    }
+
+    private String extractTextValue(JsonNode value) {
+        if (value == null || value.isNull() || value.isMissingNode()) {
+            return "";
+        }
+        if (value.isTextual()) {
+            return value.asText("");
+        }
+        if (value.isArray()) {
+            List<String> parts = new ArrayList<>();
+            value.forEach(item -> {
+                String text = extractTextValue(item);
+                if (!text.isBlank()) {
+                    parts.add(text);
+                }
+            });
+            return String.join("\n", parts);
+        }
+        if (value.isObject()) {
+            for (String field : List.of("text", "content", "reasoning")) {
+                String text = extractTextValue(value.path(field));
+                if (!text.isBlank()) {
+                    return text;
+                }
+            }
+        }
+        return "";
     }
 
     private String extractMessageContent(JsonNode message) {
@@ -613,6 +667,7 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
         String loggedAnswer = resolvedFinalAnswer == null ? "" : resolvedFinalAnswer;
         Map<String, Object> responsePayload = new LinkedHashMap<>();
         responsePayload.put("content", result.content());
+        responsePayload.put("reasoning", result.reasoningContent());
         responsePayload.put("resolvedFinalAnswer", loggedAnswer);
         responsePayload.put("finishReason", result.finishReason());
         responsePayload.put("tokenUsage", result.tokenUsage());

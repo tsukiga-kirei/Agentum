@@ -3801,6 +3801,11 @@ components:
           type: string
           format: date-time
           nullable: true
+        maxTokens:
+          type: integer
+          nullable: true
+        reasoningModel:
+          type: boolean
       required:
         - id
         - name
@@ -3808,6 +3813,7 @@ components:
         - apiKeyConfigured
         - status
         - connectivityStatus
+        - reasoningModel
     ModelProviderPageResponse:
       type: object
       properties:
@@ -3838,6 +3844,12 @@ components:
           format: uuid
         status:
           type: string
+        maxTokens:
+          type: integer
+          minimum: 256
+          maximum: 131072
+        reasoningModel:
+          type: boolean
           enum:
             - success
             - failed
@@ -3908,6 +3920,8 @@ components:
         - name
         - providerType
         - defaultModel
+        - maxTokens
+        - reasoningModel
     UpdateModelProviderRequest:
       allOf:
         - $ref: "#/components/schemas/CreateModelProviderRequest"

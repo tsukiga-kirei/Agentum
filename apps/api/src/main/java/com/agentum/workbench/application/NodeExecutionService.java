@@ -338,6 +338,11 @@ public class NodeExecutionService {
                 emitStreaming("final_answer", deltaContent, accumulatedContent);
             }
 
+            @Override
+            public void onReasoningContent(String deltaContent, String accumulatedContent) {
+                emitStreaming("reasoning", deltaContent, accumulatedContent);
+            }
+
             private void emitStreaming(String streamKind, String deltaContent, String accumulatedContent) {
                 if (accumulatedContent != null && !accumulatedContent.isBlank()) {
                     accumulated.setLength(0);
@@ -695,6 +700,11 @@ public class NodeExecutionService {
             @Override
             public void onFinalAnswerContent(String deltaContent, String accumulatedContent) {
                 emitStreaming("final_answer", deltaContent, accumulatedContent);
+            }
+
+            @Override
+            public void onReasoningContent(String deltaContent, String accumulatedContent) {
+                emitStreaming("reasoning", deltaContent, accumulatedContent);
             }
 
             private void emitStreaming(String streamKind, String deltaContent, String accumulatedContent) {

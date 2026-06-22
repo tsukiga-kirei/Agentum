@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   CheckCircle2,
   Clock3,
+  DatabaseZap,
   Download,
   FileText,
   Hash,
@@ -43,6 +44,7 @@ import type {
   WordDocumentPreviewRequest,
   WorkflowBrickTemplate,
   WorkflowDesignerCatalog,
+  WorkflowModelOption,
   WorkflowDraftDetail,
   WorkflowEdgeDraft,
   WorkflowNodeDraft,
@@ -151,6 +153,9 @@ type ClusterAgentConfig = {
   maxAgentIterationsPerTurn: number;
   allowUserEdit: boolean;
   allowQuestion: boolean;
+  modelProviderId: string;
+  modelName: string;
+  enableThinking: boolean;
 };
 
 type WorkflowCapabilityOption = {
@@ -813,6 +818,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
               capabilitiesLoading={capabilitiesLoading}
               capabilityError={capabilityError}
               agentRuntimeLimits={designerCatalog.agentRuntimeLimits}
+              modelOptions={designerCatalog.modelOptions}
               onUpdateNode={updateSelectedNode}
               onUpdateConfig={updateSelectedConfig}
               onSyncAgentConfig={updateSelectedConfigAndNode}
@@ -1061,6 +1067,7 @@ function NodeConfigPanel({
   capabilitiesLoading,
   capabilityError,
   agentRuntimeLimits,
+  modelOptions,
   onUpdateNode,
   onUpdateConfig,
   onSyncAgentConfig,
@@ -1072,6 +1079,7 @@ function NodeConfigPanel({
   capabilitiesLoading: boolean;
   capabilityError: string;
   agentRuntimeLimits: AgentRuntimeLimits;
+  modelOptions: WorkflowModelOption[];
   onUpdateNode: (patch: Partial<EditorNodeData>) => void;
   onUpdateConfig: (nextConfig: Record<string, unknown>) => void;
   onSyncAgentConfig: (nextConfig: Record<string, unknown>, patch: Partial<EditorNodeData>) => void;
@@ -1108,11 +1116,11 @@ function NodeConfigPanel({
           />
 
           {brickType === "agent" ? (
-            <SingleAgentBrickConfig node={node} availableVariables={availableVariables} capabilityState={capabilityState} agentRuntimeLimits={agentRuntimeLimits} onSyncConfig={onSyncAgentConfig} onUpdateConfig={onUpdateConfig} onUpdateNode={onUpdateNode} />
+            <SingleAgentBrickConfig node={node} availableVariables={availableVariables} capabilityState={capabilityState} agentRuntimeLimits={agentRuntimeLimits} modelOptions={modelOptions} onSyncConfig={onSyncAgentConfig} onUpdateConfig={onUpdateConfig} onUpdateNode={onUpdateNode} />
           ) : null}
 
           {brickType === "cluster" ? (
-            <AgentClusterBrickConfig node={node} availableVariables={availableVariables} capabilityState={capabilityState} agentRuntimeLimits={agentRuntimeLimits} onUpdateConfig={onUpdateConfig} onUpdateNode={onUpdateNode} />
+            <AgentClusterBrickConfig node={node} availableVariables={availableVariables} capabilityState={capabilityState} agentRuntimeLimits={agentRuntimeLimits} modelOptions={modelOptions} onUpdateConfig={onUpdateConfig} onUpdateNode={onUpdateNode} />
           ) : null}
 
           {brickType === "delivery" ? (
@@ -1388,6 +1396,7 @@ function SingleAgentBrickConfig({
   availableVariables,
   capabilityState,
   agentRuntimeLimits,
+  modelOptions,
   onSyncConfig,
   onUpdateConfig,
   onUpdateNode,
@@ -1396,6 +1405,7 @@ function SingleAgentBrickConfig({
   availableVariables: WorkflowVariable[];
   capabilityState: WorkflowCapabilityState;
   agentRuntimeLimits: AgentRuntimeLimits;
+  modelOptions: WorkflowModelOption[];
   onSyncConfig: (nextConfig: Record<string, unknown>, patch: Partial<EditorNodeData>) => void;
   onUpdateConfig: (nextConfig: Record<string, unknown>) => void;
   onUpdateNode: (patch: Partial<EditorNodeData>) => void;
@@ -1450,6 +1460,9 @@ function SingleAgentBrickConfig({
                     userPrompt: DEFAULT_USER_PROMPT,
                     mcpIds: [],
                     skillIds: [],
+                    modelProviderId: modelOptions[0]?.providerId ?? "",
+                    modelName: modelOptions[0]?.modelName ?? "",
+                    enableThinking: false,
                     maxAgentIterationsPerTurn: agentRuntimeLimits.suggestedIterationsPerTurn,
                   });
                   onUpdateNode({ toolCount: 0, allowUserEdit: false, allowQuestion: false });
@@ -1468,6 +1481,7 @@ function SingleAgentBrickConfig({
           mcpAssets={mcpAssets}
           skillAssets={skillAssets}
           agentRuntimeLimits={agentRuntimeLimits}
+          modelOptions={modelOptions}
           onClose={() => setModalOpen(false)}
           onConfigChange={onSyncConfig}
         />
@@ -1481,6 +1495,7 @@ function AgentClusterBrickConfig({
   availableVariables,
   capabilityState,
   agentRuntimeLimits,
+  modelOptions,
   onUpdateConfig,
   onUpdateNode,
 }: {
@@ -1488,6 +1503,7 @@ function AgentClusterBrickConfig({
   availableVariables: WorkflowVariable[];
   capabilityState: WorkflowCapabilityState;
   agentRuntimeLimits: AgentRuntimeLimits;
+  modelOptions: WorkflowModelOption[];
   onUpdateConfig: (nextConfig: Record<string, unknown>) => void;
   onUpdateNode: (patch: Partial<EditorNodeData>) => void;
 }) {
@@ -1510,7 +1526,7 @@ function AgentClusterBrickConfig({
       <div className="workflow-config-list-box">
         <div className="workflow-config-list-header">
           <span>集群智能体</span>
-          <button type="button" onClick={() => setEditingAgent(createClusterAgent(agents.length, node.id, agentRuntimeLimits.suggestedIterationsPerTurn))} className="agent-button agent-button-primary h-8 px-3 text-xs">
+          <button type="button" onClick={() => setEditingAgent(createClusterAgent(agents.length, node.id, agentRuntimeLimits.suggestedIterationsPerTurn, modelOptions[0]))} className="agent-button agent-button-primary h-8 px-3 text-xs">
             <Plus className="h-3.5 w-3.5" aria-hidden="true" />
             新增智能体
           </button>
@@ -1564,6 +1580,7 @@ function AgentClusterBrickConfig({
           mcpAssets={mcpAssets}
           skillAssets={skillAssets}
           agentRuntimeLimits={agentRuntimeLimits}
+          modelOptions={modelOptions}
           onClose={() => setEditingAgent(null)}
           onSave={(agent) => {
             const exists = agents.some((item) => item.id === agent.id);
@@ -2315,10 +2332,15 @@ type SingleAgentConfigDraft = {
   maxAgentIterationsPerTurn: number;
   allowUserEdit: boolean;
   allowQuestion: boolean;
+  modelProviderId: string;
+  modelName: string;
+  enableThinking: boolean;
 };
 
-function buildSingleAgentConfigDraft(node: WorkflowEditorNode, agentRuntimeLimits: AgentRuntimeLimits): SingleAgentConfigDraft {
+function buildSingleAgentConfigDraft(node: WorkflowEditorNode, agentRuntimeLimits: AgentRuntimeLimits, modelOptions: WorkflowModelOption[]): SingleAgentConfigDraft {
   const config = node.data.rawConfig ?? {};
+  const configuredProviderId = readString(config.modelProviderId, "");
+  const selectedModel = modelOptions.find((model) => model.providerId === configuredProviderId) ?? modelOptions[0];
   return {
     agentAssetId: readString(config.agentAssetId, "custom"),
     systemPromptTemplateId: readString(config.systemPromptTemplateId, readString(config.promptTemplateId, "none")),
@@ -2331,6 +2353,9 @@ function buildSingleAgentConfigDraft(node: WorkflowEditorNode, agentRuntimeLimit
     maxAgentIterationsPerTurn: readAgentIterationsPerTurn(config.maxAgentIterationsPerTurn, agentRuntimeLimits),
     allowUserEdit: node.data.allowUserEdit,
     allowQuestion: node.data.allowQuestion,
+    modelProviderId: selectedModel?.providerId ?? "",
+    modelName: readString(config.modelName, selectedModel?.modelName ?? ""),
+    enableThinking: selectedModel?.reasoningModel ? readBoolean(config.enableThinking, false) : false,
   };
 }
 
@@ -2347,6 +2372,9 @@ function buildSingleAgentConfigPayload(draft: SingleAgentConfigDraft): Record<st
     skillIds: draft.skillIds,
     ...(draft.maxTokens ? { maxTokens: draft.maxTokens } : {}),
     maxAgentIterationsPerTurn: draft.maxAgentIterationsPerTurn,
+    modelProviderId: draft.modelProviderId,
+    modelName: draft.modelName,
+    enableThinking: draft.enableThinking,
   };
 }
 
@@ -2366,6 +2394,7 @@ function SingleAgentConfigModal({
   mcpAssets,
   skillAssets,
   agentRuntimeLimits,
+  modelOptions,
   onClose,
   onConfigChange,
 }: {
@@ -2376,11 +2405,12 @@ function SingleAgentConfigModal({
   mcpAssets: WorkflowCapabilityOption[];
   skillAssets: WorkflowCapabilityOption[];
   agentRuntimeLimits: AgentRuntimeLimits;
+  modelOptions: WorkflowModelOption[];
   onClose: () => void;
   onConfigChange: (config: Record<string, unknown>, patch: Partial<EditorNodeData>) => void;
 }) {
   const { message } = App.useApp();
-  const initialDraftRef = useRef(buildSingleAgentConfigDraft(node, agentRuntimeLimits));
+  const initialDraftRef = useRef(buildSingleAgentConfigDraft(node, agentRuntimeLimits, modelOptions));
   const [draft, setDraftState] = useState<SingleAgentConfigDraft>(initialDraftRef.current);
   const onConfigChangeRef = useRef(onConfigChange);
   onConfigChangeRef.current = onConfigChange;
@@ -2420,6 +2450,12 @@ function SingleAgentConfigModal({
               emptyLabel="自定义智能体"
               options={agentAssets}
               onChange={(value) => setDraft({ ...draft, agentAssetId: value })}
+            />
+            <ModelAndReasoningFields
+              modelOptions={modelOptions}
+              modelProviderId={draft.modelProviderId}
+              enableThinking={draft.enableThinking}
+              onChange={(patch) => setDraft({ ...draft, ...patch })}
             />
           </div>
           <PromptTemplateEditor
@@ -2511,6 +2547,7 @@ function ClusterAgentModal({
   mcpAssets,
   skillAssets,
   agentRuntimeLimits,
+  modelOptions,
   onClose,
   onSave,
 }: {
@@ -2521,11 +2558,18 @@ function ClusterAgentModal({
   mcpAssets: WorkflowCapabilityOption[];
   skillAssets: WorkflowCapabilityOption[];
   agentRuntimeLimits: AgentRuntimeLimits;
+  modelOptions: WorkflowModelOption[];
   onClose: () => void;
   onSave: (agent: ClusterAgentConfig) => void;
 }) {
   const { message } = App.useApp();
-  const [draft, setDraft] = useState<ClusterAgentConfig>(agent);
+  const initialModel = modelOptions.find((model) => model.providerId === agent.modelProviderId) ?? modelOptions[0];
+  const [draft, setDraft] = useState<ClusterAgentConfig>({
+    ...agent,
+    modelProviderId: initialModel?.providerId ?? "",
+    modelName: initialModel?.modelName ?? "",
+    enableThinking: initialModel?.reasoningModel ? agent.enableThinking : false,
+  });
 
   return (
     <div className="sys-modal-mask" onClick={onClose}>
@@ -2560,6 +2604,12 @@ function ClusterAgentModal({
               emptyLabel="自定义智能体"
               options={agentAssets}
               onChange={(value) => setDraft({ ...draft, agentAssetId: value })}
+            />
+            <ModelAndReasoningFields
+              modelOptions={modelOptions}
+              modelProviderId={draft.modelProviderId}
+              enableThinking={draft.enableThinking}
+              onChange={(patch) => setDraft({ ...draft, ...patch })}
             />
           </div>
           <PromptTemplateEditor
@@ -2682,6 +2732,59 @@ function MaxTokensField({
         <span className="sys-field-hint">节点级覆盖供应商默认值；长报告建议 8192 或以上。</span>
       </label>
     </div>
+  );
+}
+
+function ModelAndReasoningFields({
+  modelOptions,
+  modelProviderId,
+  enableThinking,
+  onChange,
+}: {
+  modelOptions: WorkflowModelOption[];
+  modelProviderId: string;
+  enableThinking: boolean;
+  onChange: (patch: { modelProviderId: string; modelName: string; enableThinking: boolean }) => void;
+}) {
+  const selectedModel = modelOptions.find((model) => model.providerId === modelProviderId) ?? modelOptions[0];
+
+  return (
+    <>
+      <SelectLikeField
+        label="运行模型"
+        icon={DatabaseZap}
+        value={selectedModel?.providerId ?? ""}
+        options={modelOptions.map((model) => ({
+          value: model.providerId,
+          label: `${model.providerName} · ${model.modelName}${model.reasoningModel ? " · 推理模型" : ""}`,
+        }))}
+        onChange={(providerId) => {
+          const model = modelOptions.find((item) => item.providerId === providerId);
+          onChange({
+            modelProviderId: providerId,
+            modelName: model?.modelName ?? "",
+            enableThinking: model?.reasoningModel ? enableThinking : false,
+          });
+        }}
+      />
+      {selectedModel?.reasoningModel ? (
+        <label className="workflow-toggle-row self-end">
+          <span>
+            <strong className="block text-sm">启用深度推理</strong>
+            <small className="mt-1 block text-xs font-normal text-[var(--color-text-tertiary)]">运行时展示独立推理过程，不混入最终答案</small>
+          </span>
+          <input
+            type="checkbox"
+            checked={enableThinking}
+            onChange={(event) => onChange({
+              modelProviderId: selectedModel.providerId,
+              modelName: selectedModel.modelName,
+              enableThinking: event.target.checked,
+            })}
+          />
+        </label>
+      ) : null}
+    </>
   );
 }
 
@@ -3072,7 +3175,7 @@ function createInputField(index: number): InputFieldConfig {
   };
 }
 
-function createClusterAgent(index: number, nodeId: string, suggestedIterationsPerTurn: number): ClusterAgentConfig {
+function createClusterAgent(index: number, nodeId: string, suggestedIterationsPerTurn: number, model?: WorkflowModelOption): ClusterAgentConfig {
   return {
     id: `cluster_agent_${Date.now().toString(36)}_${index}`,
     name: `子智能体 ${index + 1}`,
@@ -3088,6 +3191,9 @@ function createClusterAgent(index: number, nodeId: string, suggestedIterationsPe
     maxAgentIterationsPerTurn: suggestedIterationsPerTurn,
     allowUserEdit: false,
     allowQuestion: false,
+    modelProviderId: model?.providerId ?? "",
+    modelName: model?.modelName ?? "",
+    enableThinking: false,
   };
 }
 
@@ -3464,6 +3570,9 @@ function readClusterAgents(value: unknown, agentRuntimeLimits: AgentRuntimeLimit
         maxAgentIterationsPerTurn: readAgentIterationsPerTurn(agent.maxAgentIterationsPerTurn, agentRuntimeLimits),
         allowUserEdit: readBoolean(agent.allowUserEdit, false),
         allowQuestion: readBoolean(agent.allowQuestion, false),
+        modelProviderId: readString(agent.modelProviderId, ""),
+        modelName: readString(agent.modelName, ""),
+        enableThinking: readBoolean(agent.enableThinking, false),
       }));
     }
   }

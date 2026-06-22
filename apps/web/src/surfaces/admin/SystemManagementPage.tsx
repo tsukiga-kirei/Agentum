@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   Boxes,
+  BrainCircuit,
   Building2,
   Check,
   CircleAlert,
@@ -239,6 +240,7 @@ function buildModelFormValues(provider: ModelProviderRow): Record<string, string
     defaultModel: provider.defaultModel || "",
     status: provider.status,
     maxTokens: provider.maxTokens != null ? String(provider.maxTokens) : "",
+    reasoningModel: provider.reasoningModel ? "true" : "false",
   };
 }
 
@@ -694,7 +696,7 @@ export function SystemManagementPage() {
 
   const openModelModal = (provider: ModelProviderRow | null) => {
     setEditingModelProvider(provider);
-    modelRef.current = provider ? buildModelFormValues(provider) : { maxTokens: "8192" };
+    modelRef.current = provider ? buildModelFormValues(provider) : { maxTokens: "8192", reasoningModel: "false" };
     setSelectedModelProviderType(provider?.providerType ?? "");
     setModelFormKey((key) => key + 1);
     setModelModalOpen(true);
@@ -776,6 +778,7 @@ export function SystemManagementPage() {
         apiKey: d.apiKey?.trim() || undefined,
         status: d.status?.trim() || "draft",
         maxTokens,
+        reasoningModel: d.reasoningModel === "true",
       };
       if (editingModelProvider) {
         const updated = await systemApi.updateModelProvider(token, editingModelProvider.id, request);
@@ -1356,6 +1359,7 @@ export function SystemManagementPage() {
                             <ReachabilityBadge status={resolveConnectivityStatus(m.connectivityStatus)} />
                           </CardStatusStack>
                         </div>
+                        {m.reasoningModel ? <div className="sys-hint"><BrainCircuit size={14}/> 推理模型 · 支持流程节点启用深度推理</div> : null}
                         <div className="sys-card-meta">
                           <div className="sys-meta-item"><span className="sys-meta-label">基址</span><span className="sys-meta-value">{m.baseUrl||"未配置"}</span></div>
                           <div className="sys-meta-item"><span className="sys-meta-label">默认模型</span><span className="sys-meta-value">{m.defaultModel||"未配置"}</span></div>
@@ -1701,6 +1705,10 @@ export function SystemManagementPage() {
           })()}
           <div className="sys-field"><label className="sys-field-label">基址 URL</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder={modelProviderTypes.find((type)=>type.code===selectedModelProviderType)?.defaultBaseUrl || "https://api.example.com/v1"} maxLength={500} defaultValue={modelRef.current.baseUrl || ""} onChange={e=>{modelRef.current.baseUrl=e.target.value;}}/></div><div className="sys-field-hint">不填写时沿用供应商类型的默认基址</div></div>
           <div className="sys-field"><label className="sys-field-label sys-field-label--required">默认模型</label><div className="sys-field-input-wrap"><DatabaseZap size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如 qwen-max" maxLength={160} defaultValue={modelRef.current.defaultModel || ""} onChange={e=>{modelRef.current.defaultModel=e.target.value;}}/></div></div>
+          <label className="workflow-toggle-row">
+            <span><strong className="block text-sm">标记为推理模型</strong><small className="mt-1 block text-xs font-normal text-[var(--color-text-tertiary)]">标记后，流程设计可配置并展示独立的深度推理过程</small></span>
+            <input type="checkbox" defaultChecked={modelRef.current.reasoningModel === "true"} onChange={e=>{modelRef.current.reasoningModel=String(e.target.checked);}}/>
+          </label>
           <div className="sys-field"><label className="sys-field-label sys-field-label--required">最大输出 Token</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={256} max={131072} step={256} placeholder="例如 8192" defaultValue={modelRef.current.maxTokens || ""} onChange={e=>{modelRef.current.maxTokens=e.target.value;}}/></div><div className="sys-field-hint">控制单次模型回复上限；长报告建议 8192 或以上，不再由后端写死默认值。</div></div>
           <div className="sys-field"><label className="sys-field-label">API Key</label><div className="sys-field-input-wrap"><KeyRound size={16} className="sys-field-prefix"/><input className="sys-field-input" type="password" placeholder={editingModelProvider?.apiKeyConfigured ? "已配置，留空则保持不变" : "部分供应商需要填写"} maxLength={2000} onChange={e=>{modelRef.current.apiKey=e.target.value;}}/></div><div className="sys-field-hint">密钥由后端加密保存，不会在列表、日志或响应中回显；后续可替换为凭证托管。</div></div>
           <div className="sys-field"><label className="sys-field-label">状态</label><SysSelect icon={Check} placeholder="请选择状态" defaultValue={modelRef.current.status || ""} options={[{value:"draft",label:"草稿"},{value:"active",label:"可用"}]} onChange={v=>{modelRef.current.status=v;}}/></div>

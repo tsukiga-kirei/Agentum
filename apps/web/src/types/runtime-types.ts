@@ -66,7 +66,7 @@ export type RuntimeChatMessage = {
 /** 智能体执行步骤（主界面摘要 + 抽屉详情） */
 export type AgentExecutionStep = {
   id: string;
-  kind: "phase" | "tool" | "model_output" | "final_answer";
+  kind: "phase" | "tool" | "reasoning" | "model_output" | "final_answer";
   phaseKey?: AgentPhase;
   title: string;
   summary: string;
@@ -74,7 +74,7 @@ export type AgentExecutionStep = {
   durationMs?: number;
   /** 抽屉中展示的原始输出 */
   detail?: string;
-  toolType?: "mcp" | "skill" | "model";
+  toolType?: "mcp" | "skill" | "reasoning" | "model";
 };
 
 /** 能力调用项（MCP / Skill / 子智能体） */
@@ -199,7 +199,7 @@ export type AgentStreamingEvent = {
   runId: string;
   nodeRunId: string;
   /** model_content 表示模型普通正文，final_answer 表示 final_answer 工具参数正文 */
-  streamKind?: "model_content" | "final_answer";
+  streamKind?: "reasoning" | "model_content" | "final_answer";
   /** 本次增量文本 */
   deltaContent: string;
   /** 累计已输出文本 */
@@ -238,7 +238,7 @@ export type ClusterAgentEvent = {
   /** streaming 时的累计文本 */
   accumulatedContent?: string;
   /** streaming 时的内容来源 */
-  streamKind?: "model_content" | "final_answer";
+  streamKind?: "reasoning" | "model_content" | "final_answer";
   /** tool_call 时的工具名称 */
   toolName?: string;
   /** tool_call 时的工具类型 */
@@ -405,6 +405,7 @@ export type RunStreamState = {
     name: string;
     status: "pending" | "running" | "completed" | "failed";
     streamingText: string;
+    reasoningText?: string;
     outputSummary: string;
     errorMessage?: string;
     toolCalls: RuntimeCapabilityItem[];

@@ -1970,7 +1970,7 @@ function readMessageProcessSteps(value: unknown, prefix: string): AgentExecution
   }
   return value
     .map((item: any, index: number): AgentExecutionStep | null => {
-      const kind = item?.kind === "tool" || item?.kind === "model_output" || item?.kind === "final_answer"
+      const kind = item?.kind === "tool" || item?.kind === "reasoning" || item?.kind === "model_output" || item?.kind === "final_answer"
         ? item.kind
         : "model_output";
       const status = item?.status === "running" || item?.status === "error" ? item.status : "done";
@@ -1981,7 +1981,7 @@ function readMessageProcessSteps(value: unknown, prefix: string): AgentExecution
         summary: stringifyValue(item?.summary || ""),
         status,
         detail: stringifyValue(item?.detail || ""),
-        toolType: item?.toolType === "mcp" || item?.toolType === "skill" || item?.toolType === "model" ? item.toolType : undefined,
+        toolType: item?.toolType === "mcp" || item?.toolType === "skill" || item?.toolType === "reasoning" || item?.toolType === "model" ? item.toolType : undefined,
       };
     })
     .filter((item): item is AgentExecutionStep => item !== null);

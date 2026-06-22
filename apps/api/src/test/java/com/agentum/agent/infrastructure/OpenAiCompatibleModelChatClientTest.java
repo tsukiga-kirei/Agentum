@@ -89,6 +89,47 @@ class OpenAiCompatibleModelChatClientTest {
     }
 
     @Test
+    void shouldParseReasoningVariantsWithoutMixingIntoContent() throws Exception {
+        String body = """
+            {
+              "id": "chatcmpl-reasoning",
+              "choices": [{
+                "finish_reason": "stop",
+                "message": {
+                  "role": "assistant",
+                  "content": "最终答案",
+                  "reasoning_content": {"text": "先核对口径，再完成计算"}
+                }
+              }]
+            }
+            """;
+
+        ModelChatClient.ChatResult result = invokeParseResult(body);
+
+        assertThat(result.content()).isEqualTo("最终答案");
+        assertThat(result.reasoningContent()).isEqualTo("先核对口径，再完成计算");
+        assertThat(result.responseSnapshot()).containsEntry("reasoning", "先核对口径，再完成计算");
+    }
+
+    @Test
+    void shouldPassThinkingSwitchThroughChatTemplateKwargs() throws Exception {
+        ModelChatClient.ChatRequest request = new ModelChatClient.ChatRequest(
+            UUID.randomUUID(),
+            "openai-compatible",
+            "https://example.test",
+            "sk-test",
+            "glm-test",
+            List.of(new ModelChatClient.ChatMessage("user", "hello")),
+            Map.of("maxTokens", 8192, "chat_template_kwargs", Map.of("enable_thinking", false)),
+            List.of()
+        );
+
+        Map<String, Object> payload = invokeBuildPayload(request);
+
+        assertThat(payload).containsEntry("chat_template_kwargs", Map.of("enable_thinking", false));
+    }
+
+    @Test
     void shouldOmitMaxTokensWhenNotConfigured() throws Exception {
         Method method = OpenAiCompatibleModelChatClient.class.getDeclaredMethod("buildPayload", ModelChatClient.ChatRequest.class);
         method.setAccessible(true);

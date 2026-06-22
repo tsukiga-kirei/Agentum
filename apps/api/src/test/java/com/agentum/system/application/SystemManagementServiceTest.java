@@ -363,6 +363,7 @@ class SystemManagementServiceTest {
             "openai-compatible",
             "https://api.example.com/v1",
             "gpt-4o-mini",
+            false,
             "active",
             Instant.parse("2026-05-15T08:00:00Z")
         );
@@ -389,7 +390,8 @@ class SystemManagementServiceTest {
             "gpt-4o-mini",
             null,
             "draft",
-            8192
+            8192,
+            false
         )))
             .isInstanceOf(ApiException.class)
             .hasMessageContaining("已被租户启用");
@@ -425,12 +427,14 @@ class SystemManagementServiceTest {
             "gpt-4o-mini",
             "sk-test-secret",
             "active",
-            8192
+            8192,
+            true
         ));
 
         assertThat(savedProviders).hasSize(1);
         ModelProviderEntity provider = savedProviders.getFirst();
         assertThat(provider.getSettings().get("maxTokens")).isEqualTo(8192);
+        assertThat(provider.isReasoningModel()).isTrue();
         String encryptedApiKey = provider.getEncryptedApiKey();
         assertThat(encryptedApiKey).isNotBlank();
         assertThat(encryptedApiKey).doesNotContain("sk-test-secret");
@@ -447,6 +451,7 @@ class SystemManagementServiceTest {
             "openai-compatible",
             "https://api.example.com/v1",
             "gpt-4o-mini",
+            false,
             "active",
             Instant.parse("2026-05-15T08:00:00Z")
         );
@@ -492,6 +497,7 @@ class SystemManagementServiceTest {
             "openai-compatible",
             "https://api.example.com/v1",
             "gpt-4o-mini",
+            false,
             "active",
             Instant.parse("2026-05-15T08:00:00Z")
         );

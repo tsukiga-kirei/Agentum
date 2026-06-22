@@ -12,6 +12,7 @@ import {
   finalizeFinalAnswerStep,
   upsertModelOutputStep,
   upsertPhaseStep,
+  upsertReasoningStep,
   upsertToolStep,
 } from "../utils/agentExecutionSteps";
 import { API_BASE_URL } from "../services/apiClient";
@@ -378,7 +379,9 @@ export function useRunStream(
         const { accumulatedContent, streamKind } = event.data;
         setCurrentPhase("model_calling");
         setIsStreaming(true);
-        if (streamKind === "model_content") {
+        if (streamKind === "reasoning") {
+          setExecutionSteps((prev) => upsertReasoningStep(prev, accumulatedContent, true));
+        } else if (streamKind === "model_content") {
           setExecutionSteps((prev) => upsertModelOutputStep(prev, accumulatedContent, true));
         } else {
           setStreamingText(accumulatedContent);
@@ -421,6 +424,7 @@ export function useRunStream(
           agentName,
           eventType,
           accumulatedContent,
+          streamKind,
           toolName,
           toolType,
           toolStatus,
@@ -451,9 +455,13 @@ export function useRunStream(
           if (eventType === "started") {
             agent.status = "running";
             agent.streamingText = "";
+            agent.reasoningText = "";
             agent.toolCalls = [];
           } else if (eventType === "phase") {
             agent.status = "running";
+          } else if (eventType === "streaming" && accumulatedContent && streamKind === "reasoning") {
+            agent.status = "running";
+            agent.reasoningText = accumulatedContent;
           } else if (eventType === "streaming" && accumulatedContent) {
             agent.status = "running";
             agent.streamingText = accumulatedContent;

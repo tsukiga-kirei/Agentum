@@ -96,7 +96,7 @@ public class AgentRuntimeService {
 
     private AgentRuntimeResult executeAgentLoop(AgentRuntimeRequest request, AgentRuntimeEventSink eventSink, boolean streamFinalAnswer) {
         Map<String, Object> config = expandAgentConfig(request);
-        TenantModelAssignmentEntity assignment = resolveTenantModelAssignment(request.run().getTenantId());
+        TenantModelAssignmentEntity assignment = resolveTenantModelAssignment(request.run().getTenantId(), config);
         ModelProviderEntity provider = modelProviderRepository.findById(assignment.getProviderId())
             .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "MODEL_PROVIDER_NOT_FOUND", "租户分配的模型供应商不存在"));
         if (!"active".equals(provider.getStatus())) {
@@ -111,6 +111,10 @@ public class AgentRuntimeService {
         );
         if (modelName.isBlank()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "MODEL_NAME_REQUIRED", "租户模型分配未配置默认模型");
+        }
+        String assignedModelName = firstNonBlank(assignment.getDefaultModel(), provider.getDefaultModel());
+        if (!stringValue(config.get("modelProviderId")).isBlank() && !modelName.equals(assignedModelName)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "MODEL_NAME_NOT_ASSIGNED", "流程节点选择的模型与当前租户模型分配不一致");
         }
 
         List<McpRuntimeService.McpToolBinding> mcpTools = mcpRuntimeService.resolveMcpTools(new McpRuntimeRequest(
@@ -141,12 +145,17 @@ public class AgentRuntimeService {
         );
 
         Map<String, Object> options = modelOptions(provider, config);
+        if (provider.isReasoningModel()) {
+            // 仅推理模型发送网关扩展参数，普通模型保持标准 OpenAI Chat Completions 请求。
+            options.put("chat_template_kwargs", Map.of("enable_thinking", booleanValue(config.get("enableThinking"))));
+        }
         options.putIfAbsent("parallelToolCalls", false);
         ensureMaxTokensConfigured(options);
         // executeAgentLoop 每次初次执行或追问都会重新创建，因此该上限天然按“单轮对话”独立计数。
         int maxIterations = resolveMaxIterationsPerTurn(config);
         List<String> modelCallLogIds = new ArrayList<>();
         List<Map<String, Object>> toolCallSummaries = new ArrayList<>();
+        List<String> reasoningContents = new ArrayList<>();
         TokenUsageAccumulator turnTokenUsage = new TokenUsageAccumulator();
         String finalAnswer = "";
         String finalModelContent = "";
@@ -163,6 +172,9 @@ public class AgentRuntimeService {
                 modelCallLogIds.add(loggedResult.callLogId());
                 ModelChatClient.ChatResult result = loggedResult.result();
                 turnTokenUsage.add(result.tokenUsage());
+                if (!result.reasoningContent().isBlank()) {
+                    reasoningContents.add(result.reasoningContent());
+                }
                 if (!firstNonBlank(result.content()).isBlank()) {
                     finalModelContent = result.content();
                 }
@@ -211,7 +223,8 @@ public class AgentRuntimeService {
                     streamFinalAnswer,
                     eventSink,
                     modelCallLogIds,
-                    turnTokenUsage
+                    turnTokenUsage,
+                    reasoningContents
                 );
                 finalAnswerSource = "synthesized";
                 if (finalModelContent.isBlank()) {
@@ -228,7 +241,8 @@ public class AgentRuntimeService {
                 finalAnswerSource,
                 finalModelContent,
                 renderedUserPrompt,
-                turnTokenUsage.value()
+                turnTokenUsage.value(),
+                reasoningContents
             );
             eventSink.onPhase("completed", "智能体已完成最终回答。");
             eventSink.onCompleted(finalAnswer);
@@ -455,6 +469,11 @@ public class AgentRuntimeService {
             }
 
             @Override
+            public void onReasoningDelta(String deltaContent, String accumulatedReasoning) {
+                eventSink.onReasoningContent(deltaContent, accumulatedReasoning);
+            }
+
+            @Override
             public void onComplete(ModelChatClient.ChatResult result) {
                 callLog.succeed(result.responseSnapshot(), result.tokenUsage(), result.latencyMs(), clock.instant());
                 modelCallLogRepository.save(callLog);
@@ -496,7 +515,8 @@ public class AgentRuntimeService {
         boolean streamFinalAnswer,
         AgentRuntimeEventSink eventSink,
         List<String> modelCallLogIds,
-        TokenUsageAccumulator turnTokenUsage
+        TokenUsageAccumulator turnTokenUsage,
+        List<String> reasoningContents
     ) {
         List<ModelChatClient.ChatMessage> finalMessages = new ArrayList<>(messages);
         finalMessages.add(new ModelChatClient.ChatMessage("user", "请基于以上推理和工具观察结果，生成完整最终答案。"));
@@ -504,6 +524,9 @@ public class AgentRuntimeService {
             LoggedChatResult result = callModelWithLog(request, provider, modelName, finalMessages, options, List.of());
             modelCallLogIds.add(result.callLogId());
             turnTokenUsage.add(result.result().tokenUsage());
+            if (!result.result().reasoningContent().isBlank()) {
+                reasoningContents.add(result.result().reasoningContent());
+            }
             return result.result().content();
         }
 
@@ -536,6 +559,11 @@ public class AgentRuntimeService {
             }
 
             @Override
+            public void onReasoningDelta(String deltaContent, String accumulatedReasoning) {
+                eventSink.onReasoningContent(deltaContent, accumulatedReasoning);
+            }
+
+            @Override
             public void onComplete(ModelChatClient.ChatResult result) {
                 callLog.succeed(result.responseSnapshot(), result.tokenUsage(), result.latencyMs(), clock.instant());
                 modelCallLogRepository.save(callLog);
@@ -553,6 +581,9 @@ public class AgentRuntimeService {
             ModelChatClient.ChatResult result = future.get();
             modelCallLogIds.add(callLogId(callLog));
             turnTokenUsage.add(result.tokenUsage());
+            if (!result.reasoningContent().isBlank()) {
+                reasoningContents.add(result.reasoningContent());
+            }
             return result.content();
         } catch (ExecutionException exception) {
             if (exception.getCause() instanceof ApiException apiException) {
@@ -609,7 +640,8 @@ public class AgentRuntimeService {
         String finalAnswerSource,
         String modelContent,
         List<Map<String, Object>> toolCallSummaries,
-        TokenUsage tokenUsage
+        TokenUsage tokenUsage,
+        List<String> reasoningContents
     ) {
         List<Map<String, Object>> messages = new ArrayList<>();
         List<Map<String, Object>> history = readConversationHistory(config);
@@ -622,7 +654,7 @@ public class AgentRuntimeService {
         assistantMessage.put("role", "assistant");
         assistantMessage.put("content", finalAnswer);
         assistantMessage.put("tokenUsage", tokenUsage.toMap());
-        List<Map<String, Object>> processSteps = buildChatMessageProcessSteps(modelContent, finalAnswerSource, toolCallSummaries);
+        List<Map<String, Object>> processSteps = buildChatMessageProcessSteps(modelContent, finalAnswerSource, toolCallSummaries, reasoningContents);
         if (!processSteps.isEmpty()) {
             assistantMessage.put("processSteps", processSteps);
         }
@@ -633,9 +665,21 @@ public class AgentRuntimeService {
     private List<Map<String, Object>> buildChatMessageProcessSteps(
         String modelContent,
         String finalAnswerSource,
-        List<Map<String, Object>> toolCallSummaries
+        List<Map<String, Object>> toolCallSummaries,
+        List<String> reasoningContents
     ) {
         List<Map<String, Object>> steps = new ArrayList<>();
+        String reasoningContent = joinReasoningContents(reasoningContents);
+        if (!reasoningContent.isBlank()) {
+            Map<String, Object> step = new LinkedHashMap<>();
+            step.put("kind", "reasoning");
+            step.put("title", "深度推理");
+            step.put("summary", "可展开查看推理过程");
+            step.put("status", "done");
+            step.put("detail", reasoningContent);
+            step.put("toolType", "reasoning");
+            steps.add(step);
+        }
         for (Map<String, Object> tool : toolCallSummaries == null ? List.<Map<String, Object>>of() : toolCallSummaries) {
             String toolType = stringValue(tool.get("toolType"));
             if (!"mcp".equals(toolType) && !"skill".equals(toolType)) {
@@ -675,7 +719,8 @@ public class AgentRuntimeService {
         String finalAnswerSource,
         String modelContent,
         String renderedUserPrompt,
-        TokenUsage tokenUsage
+        TokenUsage tokenUsage,
+        List<String> reasoningContents
     ) {
         Map<String, Object> outputs = new LinkedHashMap<>();
         String outputName = firstNonBlank(stringValue(config.get("output")), stringValue(config.get("outputVariable")), "agent_response");
@@ -693,6 +738,10 @@ public class AgentRuntimeService {
         outputs.put("toolCalls", toolCallSummaries);
         outputs.put("modelCallLogIds", modelCallLogIds);
         outputs.put("tokenUsage", tokenUsage.toMap());
+        String reasoningContent = joinReasoningContents(reasoningContents);
+        if (!reasoningContent.isBlank()) {
+            outputs.put("reasoning_content", reasoningContent);
+        }
         outputs.put("chatMessages", buildChatMessages(
             config,
             renderedUserPrompt,
@@ -700,12 +749,19 @@ public class AgentRuntimeService {
             finalAnswerSource,
             modelContent,
             toolCallSummaries,
-            tokenUsage
+            tokenUsage,
+            reasoningContents
         ));
         if (!modelCallLogIds.isEmpty()) {
             outputs.put("modelCallLogId", modelCallLogIds.getLast());
         }
         return outputs;
+    }
+
+    private static String joinReasoningContents(List<String> reasoningContents) {
+        return reasoningContents == null ? "" : reasoningContents.stream()
+            .filter(content -> content != null && !content.isBlank())
+            .collect(Collectors.joining("\n\n"));
     }
 
     private Map<String, Object> promptSnapshot(
@@ -856,6 +912,9 @@ public class AgentRuntimeService {
             onToken(deltaContent, accumulatedContent);
         }
 
+        default void onReasoningContent(String deltaContent, String accumulatedContent) {
+        }
+
         default void onToolCall(String toolName, String toolType, String status, String result, long durationMs) {
         }
 
@@ -871,12 +930,27 @@ public class AgentRuntimeService {
         }
     }
 
-    private TenantModelAssignmentEntity resolveTenantModelAssignment(UUID tenantId) {
+    private TenantModelAssignmentEntity resolveTenantModelAssignment(UUID tenantId, Map<String, Object> config) {
+        String configuredProviderId = stringValue(config.get("modelProviderId"));
+        if (!configuredProviderId.isBlank()) {
+            UUID providerId = parseUuid(configuredProviderId)
+                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "MODEL_PROVIDER_ID_INVALID", "流程节点配置的模型供应商标识无效"));
+            return tenantModelAssignmentRepository.findByTenantIdAndProviderId(tenantId, providerId)
+                .filter(assignment -> "enabled".equals(assignment.getStatus()))
+                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "TENANT_MODEL_ASSIGNMENT_REQUIRED", "流程节点选择的模型未分配给当前租户或已停用"));
+        }
         return tenantModelAssignmentRepository.findByTenantIdOrderByCreatedAtDesc(tenantId)
             .stream()
             .filter(assignment -> "enabled".equals(assignment.getStatus()))
             .findFirst()
             .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "TENANT_MODEL_ASSIGNMENT_REQUIRED", "当前租户尚未分配可用模型"));
+    }
+
+    private static boolean booleanValue(Object value) {
+        if (value instanceof Boolean bool) {
+            return bool;
+        }
+        return value != null && Boolean.parseBoolean(value.toString());
     }
 
     private Map<String, Object> expandAgentConfig(AgentRuntimeRequest request) {

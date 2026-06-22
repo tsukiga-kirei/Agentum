@@ -73,7 +73,17 @@ public final class WorkflowDraftApi {
         WorkflowBrickTemplate systemTrigger,
         List<WorkflowBrickTemplate> brickTemplates,
         Map<String, WorkflowVariableTemplate> variableMetadata,
-        AgentRuntimeLimits agentRuntimeLimits
+        AgentRuntimeLimits agentRuntimeLimits,
+        List<WorkflowModelOption> modelOptions
+    ) {
+    }
+
+    public record WorkflowModelOption(
+        UUID providerId,
+        String providerName,
+        String providerType,
+        String modelName,
+        boolean reasoningModel
     ) {
     }
 

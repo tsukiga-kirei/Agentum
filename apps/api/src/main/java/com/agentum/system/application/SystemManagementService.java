@@ -332,6 +332,7 @@ public class SystemManagementService {
             providerType.getCode(),
             firstNonBlank(request.baseUrl(), providerType.getDefaultBaseUrl()),
             defaultModel,
+            request.reasoningModel(),
             request.status() == null ? null : request.status().trim(),
             clock.instant()
         );
@@ -370,6 +371,7 @@ public class SystemManagementService {
             providerType.getCode(),
             firstNonBlank(request.baseUrl(), providerType.getDefaultBaseUrl()),
             requireDefaultModel(request.defaultModel()),
+            request.reasoningModel(),
             targetStatus,
             clock.instant()
         );
@@ -1235,7 +1237,8 @@ public class SystemManagementService {
             entity.getStatus(),
             entity.getConnectivityStatus(),
             entity.getConnectivityCheckedAt(),
-            readMaxTokens(entity.getSettings())
+            readMaxTokens(entity.getSettings()),
+            entity.isReasoningModel()
         );
     }
 

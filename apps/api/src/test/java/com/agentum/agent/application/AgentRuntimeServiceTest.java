@@ -70,6 +70,7 @@ class AgentRuntimeServiceTest {
             "openai-compatible",
             "https://example.test",
             "gpt-4o-mini",
+            true,
             "active",
             NOW
         );
@@ -101,6 +102,7 @@ class AgentRuntimeServiceTest {
                 "systemPrompt", "你是授信分析智能体",
                 "userPrompt", "请分析 {{company}}",
                 "skillIds", List.of("skill-id"),
+                "enableThinking", false,
                 "maxAgentIterationsPerTurn", 4
             ),
             1,
@@ -153,6 +155,7 @@ class AgentRuntimeServiceTest {
             assertThat(request.runId()).isEqualTo(run.getId());
             assertThat(request.nodeRunId()).isEqualTo(nodeRun.getId());
             assertThat(request.modelCallLogId()).isNotNull();
+            assertThat(request.options()).containsEntry("chat_template_kwargs", Map.of("enable_thinking", false));
         });
         assertThat(modelChatClient.requests().getFirst().tools()).extracting(ModelChatClient.ToolDefinition::name)
             .contains("skill_credit_read", "final_answer");
@@ -196,6 +199,7 @@ class AgentRuntimeServiceTest {
             "openai-compatible",
             "https://example.test",
             "gpt-4o-mini",
+            false,
             "active",
             NOW
         );
@@ -298,6 +302,7 @@ class AgentRuntimeServiceTest {
             "openai-compatible",
             "https://example.test",
             "gpt-4o-mini",
+            false,
             "active",
             NOW
         );

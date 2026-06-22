@@ -47,7 +47,7 @@ public class WorkflowDraftController {
         HttpServletRequest request
     ) {
         workflowDesignAccess.assertCanDesign(principal, tenantId);
-        return ApiResponse.success(workflowDesignerCatalogService.getCatalog(), RequestIds.current(request));
+        return ApiResponse.success(workflowDesignerCatalogService.getCatalog(tenantId), RequestIds.current(request));
     }
 
     @GetMapping

@@ -23,6 +23,7 @@ type DrawerAgent = {
   name: string;
   status: "pending" | "running" | "completed" | "failed";
   streamingText: string;
+  reasoningText?: string;
   outputSummary: string;
   errorMessage?: string;
   toolCalls: RunStreamState["clusterAgents"][number]["toolCalls"];
@@ -328,6 +329,33 @@ function readPersistedConversation(value: unknown, agentName: string, idPrefix: 
       author: role === "user" ? "我" : agentName,
       content,
       tokenUsage: readTokenUsage(record.tokenUsage),
+      processSteps: readPersistedProcessSteps(record.processSteps, `${idPrefix}-persisted-${index}`),
+    }];
+  });
+}
+
+function readPersistedProcessSteps(value: unknown, idPrefix: string): AgentExecutionStep[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item, index) => {
+    if (!item || typeof item !== "object") {
+      return [];
+    }
+    const record = item as Record<string, unknown>;
+    const kind = record.kind === "tool" || record.kind === "reasoning" || record.kind === "model_output" || record.kind === "final_answer"
+      ? record.kind
+      : "model_output";
+    return [{
+      id: `${idPrefix}-step-${index}`,
+      kind,
+      title: String(record.title ?? (kind === "reasoning" ? "深度推理" : "执行步骤")),
+      summary: String(record.summary ?? ""),
+      status: record.status === "error" ? "error" as const : "done" as const,
+      detail: String(record.detail ?? ""),
+      toolType: record.toolType === "mcp" || record.toolType === "skill" || record.toolType === "reasoning" || record.toolType === "model"
+        ? record.toolType
+        : undefined,
     }];
   });
 }
@@ -399,6 +427,17 @@ function buildAgentExecutionSteps(agent: DrawerAgent): AgentExecutionStep[] {
       detail: tool.resultSummary,
       toolType: tool.kind,
     }));
+  if (agent.reasoningText?.trim()) {
+    toolSteps.push({
+      id: `cluster-reasoning-${agent.index}`,
+      kind: "reasoning",
+      title: agent.status === "running" ? "深度推理中" : "深度推理",
+      summary: agent.status === "running" ? "正在生成推理过程" : "可展开查看推理过程",
+      status: agent.status === "running" ? "running" : "done",
+      detail: agent.reasoningText.trim(),
+      toolType: "reasoning",
+    });
+  }
   if (outputText && (toolSteps.length > 0 || agent.status === "running")) {
     toolSteps.push({
       id: `cluster-model-output-${agent.index}`,

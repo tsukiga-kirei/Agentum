@@ -1,30 +1,65 @@
 package com.agentum.workflow.application;
 
 import com.agentum.agent.application.AgentRuntimeProperties;
+import com.agentum.system.infrastructure.ModelProviderRepository;
+import com.agentum.system.infrastructure.TenantModelAssignmentRepository;
 import com.agentum.workflow.interfaces.WorkflowDraftApi;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.springframework.stereotype.Service;
 
 @Service
 public class WorkflowDesignerCatalogService {
 
     private final AgentRuntimeProperties agentRuntimeProperties;
+    private final TenantModelAssignmentRepository tenantModelAssignmentRepository;
+    private final ModelProviderRepository modelProviderRepository;
 
-    public WorkflowDesignerCatalogService(AgentRuntimeProperties agentRuntimeProperties) {
+    public WorkflowDesignerCatalogService(
+        AgentRuntimeProperties agentRuntimeProperties,
+        TenantModelAssignmentRepository tenantModelAssignmentRepository,
+        ModelProviderRepository modelProviderRepository
+    ) {
         this.agentRuntimeProperties = agentRuntimeProperties;
+        this.tenantModelAssignmentRepository = tenantModelAssignmentRepository;
+        this.modelProviderRepository = modelProviderRepository;
     }
 
-    public WorkflowDraftApi.WorkflowDesignerCatalog getCatalog() {
+    public WorkflowDraftApi.WorkflowDesignerCatalog getCatalog(UUID tenantId) {
         WorkflowDraftApi.AgentRuntimeLimits limits = agentRuntimeLimits();
+        List<WorkflowDraftApi.WorkflowModelOption> models = modelOptions(tenantId);
+        WorkflowDraftApi.WorkflowModelOption defaultModel = models.isEmpty() ? null : models.getFirst();
         // 积木模板由后端统一下发，前端只负责渲染和保存设计结果，避免不同页面各自沉淀不可追踪的默认配置。
         return new WorkflowDraftApi.WorkflowDesignerCatalog(
             systemTrigger(),
-            List.of(inputBrick(), agentBrick(limits), clusterBrick(limits), deliveryBrick()),
+            List.of(inputBrick(), agentBrick(limits, defaultModel), clusterBrick(limits, defaultModel), deliveryBrick()),
             variableMetadata(),
-            limits
+            limits,
+            models
         );
+    }
+
+    private List<WorkflowDraftApi.WorkflowModelOption> modelOptions(UUID tenantId) {
+        // 流程只能选择当前租户已启用且供应商处于可用态的模型，运行时还会再次复核该边界。
+        return tenantModelAssignmentRepository.findByTenantIdOrderByCreatedAtDesc(tenantId).stream()
+            .filter(assignment -> "enabled".equals(assignment.getStatus()))
+            .flatMap(assignment -> modelProviderRepository.findById(assignment.getProviderId()).stream()
+                .filter(provider -> "active".equals(provider.getStatus()))
+                .map(provider -> new WorkflowDraftApi.WorkflowModelOption(
+                    provider.getId(),
+                    provider.getName(),
+                    provider.getProviderType(),
+                    firstNonBlank(assignment.getDefaultModel(), provider.getDefaultModel()),
+                    provider.isReasoningModel()
+                )))
+            .filter(option -> option.modelName() != null && !option.modelName().isBlank())
+            .toList();
+    }
+
+    private static String firstNonBlank(String first, String second) {
+        return first != null && !first.isBlank() ? first : second;
     }
 
     private WorkflowDraftApi.AgentRuntimeLimits agentRuntimeLimits() {
@@ -82,7 +117,10 @@ public class WorkflowDesignerCatalogService {
         );
     }
 
-    private WorkflowDraftApi.WorkflowBrickTemplate agentBrick(WorkflowDraftApi.AgentRuntimeLimits limits) {
+    private WorkflowDraftApi.WorkflowBrickTemplate agentBrick(
+        WorkflowDraftApi.AgentRuntimeLimits limits,
+        WorkflowDraftApi.WorkflowModelOption defaultModel
+    ) {
         return new WorkflowDraftApi.WorkflowBrickTemplate(
             "agent",
             "单智能体节点",
@@ -103,6 +141,9 @@ public class WorkflowDesignerCatalogService {
                 Map.entry("userPromptTemplateId", "none"),
                 Map.entry("systemPrompt", WorkflowPromptDefaults.DEFAULT_SYSTEM_PROMPT),
                 Map.entry("userPrompt", WorkflowPromptDefaults.DEFAULT_USER_PROMPT),
+                Map.entry("modelProviderId", defaultModel == null ? "" : defaultModel.providerId().toString()),
+                Map.entry("modelName", defaultModel == null ? "" : defaultModel.modelName()),
+                Map.entry("enableThinking", false),
                 Map.entry("mcpServices", List.of()),
                 Map.entry("skills", List.of()),
                 Map.entry("maxAgentIterationsPerTurn", limits.suggestedIterationsPerTurn())
@@ -114,7 +155,10 @@ public class WorkflowDesignerCatalogService {
         );
     }
 
-    private WorkflowDraftApi.WorkflowBrickTemplate clusterBrick(WorkflowDraftApi.AgentRuntimeLimits limits) {
+    private WorkflowDraftApi.WorkflowBrickTemplate clusterBrick(
+        WorkflowDraftApi.AgentRuntimeLimits limits,
+        WorkflowDraftApi.WorkflowModelOption defaultModel
+    ) {
         return new WorkflowDraftApi.WorkflowBrickTemplate(
             "cluster",
             "智能体集群节点",
@@ -128,7 +172,7 @@ public class WorkflowDesignerCatalogService {
             List.of("cluster_result"),
             Map.of(
                 "brickType", "cluster",
-                "clusterAgents", List.of(clusterAgent(1, limits), clusterAgent(2, limits)),
+                "clusterAgents", List.of(clusterAgent(1, limits, defaultModel), clusterAgent(2, limits, defaultModel)),
                 "mergeRule", "按业务顺序合并多个智能体输出，冲突内容保留来源并交给用户审查。"
             ),
             "待配置",
@@ -163,7 +207,11 @@ public class WorkflowDesignerCatalogService {
         );
     }
 
-    private Map<String, Object> clusterAgent(int index, WorkflowDraftApi.AgentRuntimeLimits limits) {
+    private Map<String, Object> clusterAgent(
+        int index,
+        WorkflowDraftApi.AgentRuntimeLimits limits,
+        WorkflowDraftApi.WorkflowModelOption defaultModel
+    ) {
         Map<String, Object> agent = new LinkedHashMap<>();
         agent.put("id", "cluster_agent_" + index);
         agent.put("name", "子智能体 " + index);
@@ -175,6 +223,9 @@ public class WorkflowDesignerCatalogService {
         agent.put("mcpIds", List.of());
         agent.put("systemPrompt", WorkflowPromptDefaults.DEFAULT_SYSTEM_PROMPT);
         agent.put("userPrompt", WorkflowPromptDefaults.DEFAULT_CLUSTER_USER_PROMPT);
+        agent.put("modelProviderId", defaultModel == null ? "" : defaultModel.providerId().toString());
+        agent.put("modelName", defaultModel == null ? "" : defaultModel.modelName());
+        agent.put("enableThinking", false);
         agent.put("output", "agent_" + index + "_output");
         agent.put("maxAgentIterationsPerTurn", limits.suggestedIterationsPerTurn());
         return agent;

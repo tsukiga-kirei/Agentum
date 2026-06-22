@@ -130,6 +130,15 @@ export type WorkflowDesignerCatalog = {
   brickTemplates: WorkflowBrickTemplate[];
   variableMetadata: Record<string, WorkflowVariableTemplate>;
   agentRuntimeLimits: AgentRuntimeLimits;
+  modelOptions: WorkflowModelOption[];
+};
+
+export type WorkflowModelOption = {
+  providerId: string;
+  providerName: string;
+  providerType: string;
+  modelName: string;
+  reasoningModel: boolean;
 };
 
 export type AgentRuntimeLimits = {

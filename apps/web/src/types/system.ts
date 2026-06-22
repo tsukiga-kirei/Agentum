@@ -57,6 +57,7 @@ export type ModelProviderRow = {
   connectivityStatus: string;
   connectivityCheckedAt: string | null;
   maxTokens: number | null;
+  reasoningModel: boolean;
 };
 
 export type ModelProviderTypeRow = {
@@ -86,6 +87,7 @@ export type CreateModelProviderRequest = {
   apiKey?: string;
   status?: string;
   maxTokens: number;
+  reasoningModel: boolean;
 };
 
 export type UpdateModelProviderRequest = CreateModelProviderRequest;

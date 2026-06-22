@@ -33,6 +33,9 @@ public class ModelProviderEntity {
     @Column(name = "default_model", length = 160)
     private String defaultModel;
 
+    @Column(name = "reasoning_model", nullable = false)
+    private boolean reasoningModel;
+
     @Column(nullable = false, length = 30)
     private String status;
 
@@ -60,6 +63,7 @@ public class ModelProviderEntity {
         String providerType,
         String baseUrl,
         String defaultModel,
+        boolean reasoningModel,
         String status,
         Instant now
     ) {
@@ -69,6 +73,7 @@ public class ModelProviderEntity {
         entity.providerType = providerType;
         entity.baseUrl = baseUrl;
         entity.defaultModel = defaultModel;
+        entity.reasoningModel = reasoningModel;
         entity.status = status == null ? "draft" : status;
         entity.settings = new HashMap<>();
         entity.connectivityStatus = "offline";
@@ -78,11 +83,12 @@ public class ModelProviderEntity {
         return entity;
     }
 
-    public void updateProfile(String name, String providerType, String baseUrl, String defaultModel, String status, Instant now) {
+    public void updateProfile(String name, String providerType, String baseUrl, String defaultModel, boolean reasoningModel, String status, Instant now) {
         this.name = name;
         this.providerType = providerType;
         this.baseUrl = baseUrl;
         this.defaultModel = defaultModel;
+        this.reasoningModel = reasoningModel;
         this.status = status == null ? "draft" : status;
         resetConnectivity(now);
     }
@@ -132,6 +138,10 @@ public class ModelProviderEntity {
 
     public String getDefaultModel() {
         return defaultModel;
+    }
+
+    public boolean isReasoningModel() {
+        return reasoningModel;
     }
 
     public String getStatus() {
