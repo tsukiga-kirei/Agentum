@@ -2771,7 +2771,6 @@ function ModelAndReasoningFields({
         <label className="workflow-toggle-row self-end">
           <span>
             <strong className="block text-sm">启用深度推理</strong>
-            <small className="mt-1 block text-xs font-normal text-[var(--color-text-tertiary)]">运行时展示独立推理过程，不混入最终答案</small>
           </span>
           <input
             type="checkbox"
