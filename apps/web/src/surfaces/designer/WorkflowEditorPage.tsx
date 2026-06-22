@@ -13,7 +13,6 @@ import {
   CheckCircle2,
   Clock3,
   DatabaseZap,
-  Download,
   FileText,
   Hash,
   Layers3,
@@ -34,14 +33,12 @@ import {
 import { WorkbenchGlobalActions } from "../../components/workbench/SurfacePageLayout";
 import { SysImpactConfirmModal } from "../../components/common/SysImpactConfirmModal";
 import { DocumentDeliveryStyleSections } from "../../components/document/DocumentDeliveryStyleSections";
-import { readLineSpacingMode, type DocumentDeliveryStyleValues } from "../../constants/documentDeliveryStyleOptions";
+import { readLineSpacingMode, readSpacingUnit, type DocumentDeliveryStyleValues, type ParagraphRule } from "../../constants/documentDeliveryStyleOptions";
 import { AgentumApiError, assetApi, workflowApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import type { AssetType, MyAssetRow, SystemCapabilityAssetRow } from "../../types/asset";
 import type {
   AgentRuntimeLimits,
-  FileDownloadResponse,
-  WordDocumentPreviewRequest,
   WorkflowBrickTemplate,
   WorkflowDesignerCatalog,
   WorkflowModelOption,
@@ -202,9 +199,12 @@ const DEFAULT_WORD_DOCUMENT_STYLE: DocumentDeliveryStyleDraft = {
   latinFont: "Times New Roman",
   numberFont: "Times New Roman",
   bodyFontSize: 12,
+  bodyAlignment: "left",
   heading1FontSize: 16,
   heading2FontSize: 14,
   heading3FontSize: 13,
+  heading4FontSize: 0,
+  heading5FontSize: 0,
   heading1ChineseFont: "",
   heading1LatinFont: "",
   heading1NumberFont: "",
@@ -214,11 +214,24 @@ const DEFAULT_WORD_DOCUMENT_STYLE: DocumentDeliveryStyleDraft = {
   heading3ChineseFont: "",
   heading3LatinFont: "",
   heading3NumberFont: "",
+  heading4ChineseFont: "",
+  heading4LatinFont: "",
+  heading4NumberFont: "",
+  heading5ChineseFont: "",
+  heading5LatinFont: "",
+  heading5NumberFont: "",
+  heading1Bold: true,
+  heading2Bold: true,
+  heading3Bold: true,
+  heading4Bold: true,
+  heading5Bold: true,
   tableChineseFont: "",
   tableLatinFont: "",
   tableNumberFont: "",
   tableFontSize: 0,
   tableCellAlignment: "left",
+  tableCellVerticalAlignment: "center",
+  tableCellPaddingVerticalPt: 1.5,
   tableHeaderBold: false,
   tableBorders: true,
   tableBorderWidthPt: 0.5,
@@ -231,6 +244,7 @@ const DEFAULT_WORD_DOCUMENT_STYLE: DocumentDeliveryStyleDraft = {
   firstLineIndentMode: "chars",
   firstLineIndentChars: 2,
   firstLineIndentCm: 0.75,
+  paragraphSpacingUnit: "pt",
   paragraphSpacingBefore: 0,
   paragraphSpacingAfter: 6,
   marginTopCm: 2.54,
@@ -239,22 +253,8 @@ const DEFAULT_WORD_DOCUMENT_STYLE: DocumentDeliveryStyleDraft = {
   marginRightCm: 3.18,
   titleCentered: false,
   headingFirstLineIndent: false,
+  paragraphRules: [],
 };
-const DEFAULT_WORD_PREVIEW_MARKDOWN = `# 交付文档预览
-
-这是一段正文预览，用来检查字体、字号、首行缩进和行距。
-
-## 结论摘要
-
-- 支持将 AI Markdown 转换为 Word 文档。
-- 支持标题、正文、列表、表格、引用和代码块。
-
-| 字段 | 示例 |
-| --- | --- |
-| 交付类型 | Word 文档 |
-| 文件格式 | docx |
-
-> 预览内容只用于设计阶段校验样式，不参与正式运行。`;
 
 const WORD_FILE_NAME_VARIABLES: VariableReferenceItem[] = [
   {
@@ -1607,7 +1607,6 @@ const STALE_DIRECT_DELIVERY_FIELDS = {
 const STALE_WORD_DELIVERY_FIELDS = {
   markdownContent: "",
   fileNameTemplate: "",
-  previewMarkdown: "",
 } as const;
 
 function DeliveryBrickConfig({
@@ -1641,7 +1640,6 @@ function DeliveryBrickConfig({
     || readString(config.documentKind, "") === "word"
   );
   const documentStyle = readDocumentDeliveryStyle(config.documentStyle, selectedDeliveryCapability?.config);
-  const [exporting, setExporting] = useState(false);
   const defaultMarkdownVariable = workflowVariables.find((variable) => variable.deliverable)?.name ?? workflowVariables[workflowVariables.length - 1]?.name ?? "";
   const defaultDirectTemplate = defaultMarkdownVariable
     ? `# 交付结果\n\n{{${defaultMarkdownVariable}}}`
@@ -1686,7 +1684,6 @@ function DeliveryBrickConfig({
         fileNameTemplate: readString(config.fileNameTemplate, "交付文档-{{runNumber}}.docx"),
         markdownContent: readString(config.markdownContent, defaultMarkdownTemplate),
         documentStyle: readDocumentDeliveryStyle(config.documentStyle, defaultWordDeliveryCapability.config),
-        previewMarkdown: readString(config.previewMarkdown, DEFAULT_WORD_PREVIEW_MARKDOWN),
       });
     }
   }, [isDirectDelivery, rawSelectedCapabilityId, defaultWordDeliveryCapability?.id]);
@@ -1714,7 +1711,6 @@ function DeliveryBrickConfig({
         fileNameTemplate: readString(config.fileNameTemplate, "交付文档-{{runNumber}}.docx"),
         markdownContent: readString(config.markdownContent, defaultMarkdownTemplate),
         documentStyle: readDocumentDeliveryStyle(config.documentStyle, capability.config),
-        previewMarkdown: readString(config.previewMarkdown, DEFAULT_WORD_PREVIEW_MARKDOWN),
       });
       return;
     }
@@ -1738,7 +1734,6 @@ function DeliveryBrickConfig({
         fileNameTemplate: readString(config.fileNameTemplate, "交付文档-{{runNumber}}.docx"),
         markdownContent: readString(config.markdownContent, defaultMarkdownTemplate),
         documentStyle: readDocumentDeliveryStyle(config.documentStyle, capability?.config),
-        previewMarkdown: readString(config.previewMarkdown, DEFAULT_WORD_PREVIEW_MARKDOWN),
       });
       return;
     }
@@ -1751,7 +1746,7 @@ function DeliveryBrickConfig({
     });
   }
 
-  function updateDocumentStyle(key: string, value: string | number | boolean) {
+  function updateDocumentStyle<K extends keyof DocumentDeliveryStyleDraft>(key: K, value: DocumentDeliveryStyleDraft[K]) {
     onUpdateConfig({
       documentStyle: {
         ...documentStyle,
@@ -1767,37 +1762,6 @@ function DeliveryBrickConfig({
         ...updates,
       },
     });
-  }
-
-  async function handleWordDocumentFile() {
-    if (!token || !user?.tenantId) {
-      messageApi.error("当前账号缺少租户上下文，无法生成 Word 文档");
-      return;
-    }
-    if (!effectiveSelectedCapabilityId) {
-      messageApi.error("请先选择 Word 文档交付能力");
-      return;
-    }
-    setExporting(true);
-    try {
-      const fileName = ensureDocxFileName(renderDesignTemplate(fileNameTemplate, workflowVariables));
-      const markdownTemplate = readString(config.markdownContent, defaultMarkdownTemplate);
-      const markdown = renderDesignTemplate(markdownTemplate, workflowVariables);
-      const request: WordDocumentPreviewRequest = {
-        capabilityId: effectiveSelectedCapabilityId,
-        markdown,
-        fileName,
-        style: documentStyle,
-      };
-      const file = await workflowApi.previewWordDocument(user.tenantId, token, request);
-      downloadFile(file);
-      messageApi.success("Word 预览样例已导出");
-    } catch (error) {
-      console.warn("[workflow] Word 文档预览生成失败", getWorkflowEditorErrorContext(error, user.tenantId, node.id));
-      messageApi.error(error instanceof AgentumApiError ? error.message : "Word 文档生成失败");
-    } finally {
-      setExporting(false);
-    }
   }
 
   return (
@@ -1849,20 +1813,9 @@ function DeliveryBrickConfig({
           {isWordDelivery ? (
         <div className="mt-4 space-y-4">
           <div className="rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-4">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h4 className="text-sm font-semibold text-[var(--color-text-primary)]">Word 文档交付</h4>
-                <p className="mt-1 text-xs text-[var(--color-text-secondary)]">交付正文模板会作为最终 Markdown，运行时将模板和变量拼接后转换为 docx 文件。</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => void handleWordDocumentFile()}
-                disabled={exporting || !effectiveSelectedCapabilityId}
-                className="agent-button agent-button-primary h-8 px-3 text-xs"
-              >
-                <Download className="h-3.5 w-3.5" aria-hidden="true" />
-                {exporting ? "导出中" : "导出预览样例"}
-              </button>
+            <div className="mb-3">
+              <h4 className="text-sm font-semibold text-[var(--color-text-primary)]">Word 文档交付</h4>
+              <p className="mt-1 text-xs text-[var(--color-text-secondary)]">交付正文模板会作为最终 Markdown，运行时将模板和变量拼接后转换为 docx 文件。</p>
             </div>
             <FileNameVariableBar
               items={fileNameVariableItems}
@@ -1879,7 +1832,7 @@ function DeliveryBrickConfig({
 
           <DocumentDeliveryStyleSections
             style={documentStyle}
-            onFieldChange={(key, value) => updateDocumentStyle(key, value)}
+            onFieldChange={updateDocumentStyle}
             onFieldsChange={updateDocumentStyles}
           />
 
@@ -1889,14 +1842,6 @@ function DeliveryBrickConfig({
             availableVariables={workflowVariables}
             onChange={(value) => onUpdateConfig({ markdownContent: value })}
             placeholder="最终转换为 Word 的 Markdown，可用 {{输出内容标识}} 引用之前步骤内容"
-          />
-          <PromptEditor
-            label="预览 Markdown"
-            value={readString(config.previewMarkdown, DEFAULT_WORD_PREVIEW_MARKDOWN)}
-            availableVariables={[]}
-            showVariableBar={false}
-            onChange={(value) => onUpdateConfig({ previewMarkdown: value })}
-            placeholder="仅用于设计阶段导出样例，不参与正式运行，也不会替换变量"
           />
         </div>
       ) : (
@@ -3654,9 +3599,12 @@ function readDocumentDeliveryStyle(rawStyle: unknown, capabilityConfig?: Record<
     latinFont: readString(merged.latinFont, String(DEFAULT_WORD_DOCUMENT_STYLE.latinFont)),
     numberFont: readString(merged.numberFont, String(DEFAULT_WORD_DOCUMENT_STYLE.numberFont)),
     bodyFontSize: readFontSizeLike(merged.bodyFontSize, DEFAULT_WORD_DOCUMENT_STYLE.bodyFontSize),
+    bodyAlignment: readString(merged.bodyAlignment, String(DEFAULT_WORD_DOCUMENT_STYLE.bodyAlignment)),
     heading1FontSize: readFontSizeLike(merged.heading1FontSize, DEFAULT_WORD_DOCUMENT_STYLE.heading1FontSize),
     heading2FontSize: readFontSizeLike(merged.heading2FontSize, DEFAULT_WORD_DOCUMENT_STYLE.heading2FontSize),
     heading3FontSize: readFontSizeLike(merged.heading3FontSize, DEFAULT_WORD_DOCUMENT_STYLE.heading3FontSize),
+    heading4FontSize: readTableFontSizeLike(merged.heading4FontSize, DEFAULT_WORD_DOCUMENT_STYLE.heading4FontSize),
+    heading5FontSize: readTableFontSizeLike(merged.heading5FontSize, DEFAULT_WORD_DOCUMENT_STYLE.heading5FontSize),
     heading1ChineseFont: readOptionalString(merged.heading1ChineseFont, DEFAULT_WORD_DOCUMENT_STYLE.heading1ChineseFont),
     heading1LatinFont: readOptionalString(merged.heading1LatinFont, DEFAULT_WORD_DOCUMENT_STYLE.heading1LatinFont),
     heading1NumberFont: readOptionalString(merged.heading1NumberFont, DEFAULT_WORD_DOCUMENT_STYLE.heading1NumberFont),
@@ -3666,11 +3614,24 @@ function readDocumentDeliveryStyle(rawStyle: unknown, capabilityConfig?: Record<
     heading3ChineseFont: readOptionalString(merged.heading3ChineseFont, DEFAULT_WORD_DOCUMENT_STYLE.heading3ChineseFont),
     heading3LatinFont: readOptionalString(merged.heading3LatinFont, DEFAULT_WORD_DOCUMENT_STYLE.heading3LatinFont),
     heading3NumberFont: readOptionalString(merged.heading3NumberFont, DEFAULT_WORD_DOCUMENT_STYLE.heading3NumberFont),
+    heading4ChineseFont: readOptionalString(merged.heading4ChineseFont, DEFAULT_WORD_DOCUMENT_STYLE.heading4ChineseFont),
+    heading4LatinFont: readOptionalString(merged.heading4LatinFont, DEFAULT_WORD_DOCUMENT_STYLE.heading4LatinFont),
+    heading4NumberFont: readOptionalString(merged.heading4NumberFont, DEFAULT_WORD_DOCUMENT_STYLE.heading4NumberFont),
+    heading5ChineseFont: readOptionalString(merged.heading5ChineseFont, DEFAULT_WORD_DOCUMENT_STYLE.heading5ChineseFont),
+    heading5LatinFont: readOptionalString(merged.heading5LatinFont, DEFAULT_WORD_DOCUMENT_STYLE.heading5LatinFont),
+    heading5NumberFont: readOptionalString(merged.heading5NumberFont, DEFAULT_WORD_DOCUMENT_STYLE.heading5NumberFont),
+    heading1Bold: readBooleanLike(merged.heading1Bold, Boolean(DEFAULT_WORD_DOCUMENT_STYLE.heading1Bold)),
+    heading2Bold: readBooleanLike(merged.heading2Bold, Boolean(DEFAULT_WORD_DOCUMENT_STYLE.heading2Bold)),
+    heading3Bold: readBooleanLike(merged.heading3Bold, Boolean(DEFAULT_WORD_DOCUMENT_STYLE.heading3Bold)),
+    heading4Bold: readBooleanLike(merged.heading4Bold, Boolean(DEFAULT_WORD_DOCUMENT_STYLE.heading4Bold)),
+    heading5Bold: readBooleanLike(merged.heading5Bold, Boolean(DEFAULT_WORD_DOCUMENT_STYLE.heading5Bold)),
     tableChineseFont: readOptionalString(merged.tableChineseFont, DEFAULT_WORD_DOCUMENT_STYLE.tableChineseFont),
     tableLatinFont: readOptionalString(merged.tableLatinFont, DEFAULT_WORD_DOCUMENT_STYLE.tableLatinFont),
     tableNumberFont: readOptionalString(merged.tableNumberFont, DEFAULT_WORD_DOCUMENT_STYLE.tableNumberFont),
     tableFontSize: readTableFontSizeLike(merged.tableFontSize, DEFAULT_WORD_DOCUMENT_STYLE.tableFontSize),
     tableCellAlignment: readString(merged.tableCellAlignment, DEFAULT_WORD_DOCUMENT_STYLE.tableCellAlignment),
+    tableCellVerticalAlignment: readString(merged.tableCellVerticalAlignment, String(DEFAULT_WORD_DOCUMENT_STYLE.tableCellVerticalAlignment)),
+    tableCellPaddingVerticalPt: readNumberLike(merged.tableCellPaddingVerticalPt, Number(DEFAULT_WORD_DOCUMENT_STYLE.tableCellPaddingVerticalPt)),
     tableHeaderBold: readBooleanLike(merged.tableHeaderBold, DEFAULT_WORD_DOCUMENT_STYLE.tableHeaderBold),
     tableBorders: readBooleanLike(merged.tableBorders, DEFAULT_WORD_DOCUMENT_STYLE.tableBorders),
     tableBorderWidthPt: readNumberLike(merged.tableBorderWidthPt, DEFAULT_WORD_DOCUMENT_STYLE.tableBorderWidthPt),
@@ -3683,6 +3644,7 @@ function readDocumentDeliveryStyle(rawStyle: unknown, capabilityConfig?: Record<
     firstLineIndentMode: (merged.firstLineIndentMode === "cm" ? "cm" : "chars") as "chars" | "cm",
     firstLineIndentChars: readNumberLike(merged.firstLineIndentChars, Number(DEFAULT_WORD_DOCUMENT_STYLE.firstLineIndentChars)),
     firstLineIndentCm: readNumberLike(merged.firstLineIndentCm, Number(DEFAULT_WORD_DOCUMENT_STYLE.firstLineIndentCm)),
+    paragraphSpacingUnit: readSpacingUnit(merged.paragraphSpacingUnit ?? DEFAULT_WORD_DOCUMENT_STYLE.paragraphSpacingUnit),
     paragraphSpacingBefore: readNumberLike(merged.paragraphSpacingBefore, Number(DEFAULT_WORD_DOCUMENT_STYLE.paragraphSpacingBefore)),
     paragraphSpacingAfter: readNumberLike(merged.paragraphSpacingAfter, Number(DEFAULT_WORD_DOCUMENT_STYLE.paragraphSpacingAfter)),
     marginTopCm: readNumberLike(merged.marginTopCm, Number(DEFAULT_WORD_DOCUMENT_STYLE.marginTopCm)),
@@ -3691,7 +3653,48 @@ function readDocumentDeliveryStyle(rawStyle: unknown, capabilityConfig?: Record<
     marginRightCm: readNumberLike(merged.marginRightCm, Number(DEFAULT_WORD_DOCUMENT_STYLE.marginRightCm)),
     titleCentered: readBooleanLike(merged.titleCentered, Boolean(DEFAULT_WORD_DOCUMENT_STYLE.titleCentered)),
     headingFirstLineIndent: readBooleanLike(merged.headingFirstLineIndent, Boolean(DEFAULT_WORD_DOCUMENT_STYLE.headingFirstLineIndent)),
+    paragraphRules: readParagraphRules(merged.paragraphRules),
   };
+}
+
+function readParagraphRules(value: unknown): ParagraphRule[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const allowedTargets = new Set(["index", "first", "second", "third", "last", "secondLast"]);
+  const allowedIndentModes = new Set(["", "none", "chars", "cm"]);
+  return value
+    .filter((item): item is Record<string, unknown> => isRecord(item))
+    .map((item, index) => {
+      const targetType = typeof item.targetType === "string" && allowedTargets.has(item.targetType)
+        ? (item.targetType as ParagraphRule["targetType"])
+        : "index";
+      const indentMode = typeof item.firstLineIndentMode === "string" && allowedIndentModes.has(item.firstLineIndentMode)
+        ? (item.firstLineIndentMode as ParagraphRule["firstLineIndentMode"])
+        : "";
+      const rawId = typeof item.id === "string" && item.id ? item.id : `rule-${index}`;
+      return {
+        id: rawId,
+        targetType,
+        targetIndex: Math.max(1, Math.round(readNumberLike(item.targetIndex, 1))),
+        alignment: readString(item.alignment, ""),
+        firstLineIndentMode: indentMode,
+        firstLineIndentChars: readNumberLike(item.firstLineIndentChars, 2),
+        firstLineIndentCm: readNumberLike(item.firstLineIndentCm, 0.75),
+        chineseFont: readOptionalString(item.chineseFont, ""),
+        latinFont: readOptionalString(item.latinFont, ""),
+        numberFont: readOptionalString(item.numberFont, ""),
+        fontSize: readTableFontSizeLike(item.fontSize, 0),
+        spacingUnit: (typeof item.spacingUnit === "string"
+          && ["line", "pt", "cm", "mm"].includes(item.spacingUnit)
+          ? item.spacingUnit
+          : "") as ParagraphRule["spacingUnit"],
+        spacingBefore: readNumberLike(item.spacingBefore, 0),
+        spacingAfter: readNumberLike(item.spacingAfter, 0),
+        blankLinesBefore: Math.max(0, Math.round(readNumberLike(item.blankLinesBefore, 0))),
+        blankLinesAfter: Math.max(0, Math.round(readNumberLike(item.blankLinesAfter, 0))),
+      };
+    });
 }
 
 function readFontSizeLike(value: unknown, fallback: string | number | boolean): string | number {
@@ -3790,36 +3793,6 @@ function appendFileNameToken(template: string, token: string): string {
 
 function normalizeWordFileNameTemplate(template: string): string {
   return template.replace(/\{\{\s*runId\s*\}\}/g, "{{runNumber}}");
-}
-
-function renderDesignTemplate(template: string, variables: WorkflowVariable[]) {
-  const sampleValues = new Map<string, string>([
-    ["runNumber", "RUN-20260615-001"],
-    ["nodeRunId", "preview_node"],
-    ["date", "2026-06-15"],
-    ["dateCompact", "20260615"],
-    ["started_at", "2026-06-15"],
-  ]);
-  variables.forEach((variable) => {
-    sampleValues.set(variable.name, `${variable.sourceNodeName}-${variable.name}`);
-  });
-  return template.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_match, variable: string) => sampleValues.get(variable) ?? variable);
-}
-
-function ensureDocxFileName(value: string) {
-  const sanitized = value.trim().replace(/[\\/:*?"<>|]/g, "_") || "交付文档";
-  return sanitized.toLowerCase().endsWith(".docx") ? sanitized : `${sanitized}.docx`;
-}
-
-function downloadFile(file: FileDownloadResponse) {
-  const url = window.URL.createObjectURL(file.blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = file.fileName;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => window.URL.revokeObjectURL(url), 30_000);
 }
 
 function isInputFieldConfig(value: unknown): value is InputFieldConfig {

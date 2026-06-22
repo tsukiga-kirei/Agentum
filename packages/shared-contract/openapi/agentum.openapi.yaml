@@ -4457,7 +4457,7 @@ components:
         - totalPages
     DocumentDeliveryStyle:
       type: object
-      description: Word 文档交付样式。字号可填 pt 数字或中文字号名（如四号、小四），段后间距为 pt，页边距为 cm，首行缩进为字符数。
+      description: Word 文档交付样式。字号可填 pt 数字或中文字号名（如四号、小四），段前段后单位由 paragraphSpacingUnit 决定，页边距为 cm，首行缩进为字符数。覆盖优先级：全局代码默认 < 系统能力 defaultStyle < 节点全局样式 < 多级标题规则 < 逐段个性化规则。
       properties:
         chineseFont:
           type: string
@@ -4474,6 +4474,11 @@ components:
             - type: integer
             - type: string
           default: 12
+        bodyAlignment:
+          type: string
+          enum: [left, center, right, both]
+          default: left
+          description: 正文段落对齐方式（左/居中/右/两端对齐）。
         heading1FontSize:
           oneOf:
             - type: integer
@@ -4489,6 +4494,18 @@ components:
             - type: integer
             - type: string
           default: 13
+        heading4FontSize:
+          oneOf:
+            - type: integer
+            - type: string
+          default: 0
+          description: 四级标题字号，0 表示继承三级标题。
+        heading5FontSize:
+          oneOf:
+            - type: integer
+            - type: string
+          default: 0
+          description: 五级标题字号，0 表示继承三级标题。
         heading1ChineseFont:
           type: string
           description: 一级标题中文字体，留空继承正文。
@@ -4516,6 +4533,44 @@ components:
         heading3NumberFont:
           type: string
           description: 三级标题数字字体，留空继承正文。
+        heading4ChineseFont:
+          type: string
+          description: 四级标题中文字体，留空继承三级标题。
+        heading4LatinFont:
+          type: string
+          description: 四级标题西文字体，留空继承三级标题。
+        heading4NumberFont:
+          type: string
+          description: 四级标题数字字体，留空继承三级标题。
+        heading5ChineseFont:
+          type: string
+          description: 五级标题中文字体，留空继承三级标题。
+        heading5LatinFont:
+          type: string
+          description: 五级标题西文字体，留空继承三级标题。
+        heading5NumberFont:
+          type: string
+          description: 五级标题数字字体，留空继承三级标题。
+        heading1Bold:
+          type: boolean
+          default: true
+          description: 一级标题是否加粗。
+        heading2Bold:
+          type: boolean
+          default: true
+          description: 二级标题是否加粗。
+        heading3Bold:
+          type: boolean
+          default: true
+          description: 三级标题是否加粗。
+        heading4Bold:
+          type: boolean
+          default: true
+          description: 四级标题是否加粗。
+        heading5Bold:
+          type: boolean
+          default: true
+          description: 五级标题是否加粗。
         tableChineseFont:
           type: string
           description: 表格中文字体，留空继承正文。
@@ -4535,7 +4590,18 @@ components:
           type: string
           enum: [left, center, right, both]
           default: left
-          description: 表格单元格文字对齐方式。
+          description: 表格单元格水平对齐方式。
+        tableCellVerticalAlignment:
+          type: string
+          enum: [top, center, bottom]
+          default: center
+          description: 表格单元格垂直对齐方式。
+        tableCellPaddingVerticalPt:
+          type: number
+          minimum: 0
+          maximum: 20
+          default: 1.5
+          description: 表格单元格上下内边距（pt），让文字与框线留出间距。
         tableHeaderBold:
           type: boolean
           default: false
@@ -4580,16 +4646,31 @@ components:
           minimum: 6
           maximum: 72
           description: 固定磅值行距，lineSpacingMode=exact 时生效。
+        firstLineIndentMode:
+          type: string
+          enum: [chars, cm]
+          default: chars
+          description: 首行缩进单位，chars 为字符数，cm 为厘米。
         firstLineIndentChars:
           type: number
           default: 2
+        firstLineIndentCm:
+          type: number
+          default: 0.75
+          description: 首行缩进厘米数，firstLineIndentMode=cm 时生效。
+        paragraphSpacingUnit:
+          type: string
+          enum: [line, pt, cm, mm]
+          default: pt
+          description: 段前段后间距单位。
         paragraphSpacingBefore:
-          type: integer
+          type: number
           default: 0
-          description: 正文段前间距，单位为 pt。
+          description: 正文段前间距，单位由 paragraphSpacingUnit 决定。
         paragraphSpacingAfter:
-          type: integer
+          type: number
           default: 6
+          description: 正文段后间距，单位由 paragraphSpacingUnit 决定。
         marginTopCm:
           type: number
           default: 2.54
@@ -4609,7 +4690,81 @@ components:
         headingFirstLineIndent:
           type: boolean
           default: false
-          description: 是否对 Markdown 标题（# / ## / ###）应用首行缩进。
+          description: 是否对 Markdown 标题应用首行缩进。
+        paragraphRules:
+          type: array
+          description: 逐段个性化规则，仅作用于非表格段落，优先级高于全局样式。空字段表示继承。
+          items:
+            $ref: '#/components/schemas/DocumentParagraphRule'
+    DocumentParagraphRule:
+      type: object
+      description: 针对指定段落（非表格）的个性化排版规则。空字符串字段表示继承，仅显式设置项参与覆盖。
+      properties:
+        id:
+          type: string
+          description: 前端用于列表渲染的本地标识。
+        targetType:
+          type: string
+          enum: [index, first, second, third, last, secondLast]
+          default: index
+          description: 目标段落选择方式；index 表示按 targetIndex 指定段号。
+        targetIndex:
+          type: integer
+          minimum: 1
+          default: 1
+          description: 目标段号（1 基，仅统计非表格段落），targetType=index 时生效。
+        alignment:
+          type: string
+          enum: ['', left, center, right, both]
+          default: ''
+          description: 段落对齐方式，空表示继承。
+        firstLineIndentMode:
+          type: string
+          enum: ['', none, chars, cm]
+          default: ''
+          description: 首行缩进方式，空表示继承，none 表示取消缩进。
+        firstLineIndentChars:
+          type: number
+          default: 2
+        firstLineIndentCm:
+          type: number
+          default: 0.75
+        chineseFont:
+          type: string
+          description: 中文字体，空表示继承。
+        latinFont:
+          type: string
+          description: 西文字体，空表示继承。
+        numberFont:
+          type: string
+          description: 数字字体，空表示继承。
+        fontSize:
+          oneOf:
+            - type: integer
+            - type: string
+          default: 0
+          description: 字号，0 表示继承。
+        spacingUnit:
+          type: string
+          enum: ['', line, pt, cm, mm]
+          default: ''
+          description: 段前段后间距单位，空表示不覆盖间距。
+        spacingBefore:
+          type: number
+          default: 0
+        spacingAfter:
+          type: number
+          default: 0
+        blankLinesBefore:
+          type: integer
+          minimum: 0
+          default: 0
+          description: 段前插入的空行数量，用于拉开间距。
+        blankLinesAfter:
+          type: integer
+          minimum: 0
+          default: 0
+          description: 段后插入的空行数量，用于拉开间距。
     WordDocumentPreviewRequest:
       type: object
       properties:

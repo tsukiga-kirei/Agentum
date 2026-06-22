@@ -2,10 +2,11 @@ import React, { useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import { AlignCenter, FileText, Hash, LayoutTemplate, Table2, Type } from "lucide-react";
 import {
+  BODY_ALIGNMENT_OPTIONS,
   CHINESE_FONT_OPTIONS,
   detectMarginPreset,
-  FIRST_LINE_INDENT_OPTIONS,
   FONT_SIZE_OPTIONS,
+  HEADING_BOLD_OPTIONS,
   HEADING_INDENT_OPTIONS,
   INHERITABLE_CHINESE_FONT_OPTIONS,
   INHERITABLE_LATIN_FONT_OPTIONS,
@@ -16,14 +17,20 @@ import {
   MARGIN_PRESETS,
   MARGIN_PRESET_OPTIONS,
   type MarginPresetKey,
-  PARAGRAPH_SPACING_AFTER_OPTIONS,
-  PARAGRAPH_SPACING_BEFORE_OPTIONS,
+  type SpacingUnit,
   readLineSpacingMode,
+  readSpacingUnit,
+  RULE_FONT_SIZE_OPTIONS,
+  spacingValueOptions,
+  SPACING_UNIT_OPTIONS,
   stringifyFontSizeValue,
+  stringifyRuleFontSizeValue,
   stringifyTableFontSizeValue,
   TABLE_BORDER_OPTIONS,
   TABLE_BORDER_WIDTH_OPTIONS,
   TABLE_CELL_ALIGNMENT_OPTIONS,
+  TABLE_CELL_PADDING_OPTIONS,
+  TABLE_CELL_VERTICAL_ALIGNMENT_OPTIONS,
   TABLE_FONT_SIZE_OPTIONS,
   TABLE_HEADER_BOLD_OPTIONS,
   TITLE_ALIGNMENT_OPTIONS,
@@ -88,6 +95,8 @@ export function DocumentDeliveryStyleAdminSections({
     [],
   );
   const [marginPreset, setMarginPreset] = useState<MarginPresetKey>(initialPreset);
+  const documentSpacingUnit: SpacingUnit = readSpacingUnit(values.documentParagraphSpacingUnit);
+  const documentSpacingOptions = useMemo(() => spacingValueOptions(documentSpacingUnit), [documentSpacingUnit]);
 
   function handleMarginPresetChange(value: string) {
     const preset = value as MarginPresetKey;
@@ -177,6 +186,24 @@ export function DocumentDeliveryStyleAdminSections({
             onChange={(value) => onChange("documentHeading3FontSize", value)}
           />
         </AdminStyleRow>
+        <AdminStyleRow>
+          <SelectField
+            label="四级标题字号"
+            icon={Hash}
+            defaultValue={stringifyRuleFontSizeValue(values.documentHeading4FontSize || "0")}
+            placeholder="继承三级标题"
+            options={RULE_FONT_SIZE_OPTIONS}
+            onChange={(value) => onChange("documentHeading4FontSize", value)}
+          />
+          <SelectField
+            label="五级标题字号"
+            icon={Hash}
+            defaultValue={stringifyRuleFontSizeValue(values.documentHeading5FontSize || "0")}
+            placeholder="继承三级标题"
+            options={RULE_FONT_SIZE_OPTIONS}
+            onChange={(value) => onChange("documentHeading5FontSize", value)}
+          />
+        </AdminStyleRow>
       </AdminStyleSection>
 
       <AdminStyleSection title="标题字体" description="可为各级标题单独设置中文、西文与数字字体，留空则继承正文。">
@@ -258,6 +285,102 @@ export function DocumentDeliveryStyleAdminSections({
             onChange={(value) => onChange("documentHeading3NumberFont", value)}
           />
         </AdminStyleRow>
+        <AdminStyleRow columns={3}>
+          <SelectField
+            label="四级标题中文字体"
+            icon={Type}
+            defaultValue={values.documentHeading4ChineseFont || ""}
+            placeholder="继承三级标题"
+            options={INHERITABLE_CHINESE_FONT_OPTIONS}
+            onChange={(value) => onChange("documentHeading4ChineseFont", value)}
+          />
+          <SelectField
+            label="四级标题西文字体"
+            icon={Type}
+            defaultValue={values.documentHeading4LatinFont || ""}
+            placeholder="继承三级标题"
+            options={INHERITABLE_LATIN_FONT_OPTIONS}
+            onChange={(value) => onChange("documentHeading4LatinFont", value)}
+          />
+          <SelectField
+            label="四级标题数字字体"
+            icon={Hash}
+            defaultValue={values.documentHeading4NumberFont || ""}
+            placeholder="继承三级标题"
+            options={INHERITABLE_NUMBER_FONT_OPTIONS}
+            onChange={(value) => onChange("documentHeading4NumberFont", value)}
+          />
+        </AdminStyleRow>
+        <AdminStyleRow columns={3}>
+          <SelectField
+            label="五级标题中文字体"
+            icon={Type}
+            defaultValue={values.documentHeading5ChineseFont || ""}
+            placeholder="继承三级标题"
+            options={INHERITABLE_CHINESE_FONT_OPTIONS}
+            onChange={(value) => onChange("documentHeading5ChineseFont", value)}
+          />
+          <SelectField
+            label="五级标题西文字体"
+            icon={Type}
+            defaultValue={values.documentHeading5LatinFont || ""}
+            placeholder="继承三级标题"
+            options={INHERITABLE_LATIN_FONT_OPTIONS}
+            onChange={(value) => onChange("documentHeading5LatinFont", value)}
+          />
+          <SelectField
+            label="五级标题数字字体"
+            icon={Hash}
+            defaultValue={values.documentHeading5NumberFont || ""}
+            placeholder="继承三级标题"
+            options={INHERITABLE_NUMBER_FONT_OPTIONS}
+            onChange={(value) => onChange("documentHeading5NumberFont", value)}
+          />
+        </AdminStyleRow>
+        <AdminStyleRow columns={3}>
+          <SelectField
+            label="一级标题加粗"
+            icon={Type}
+            defaultValue={values.documentHeading1Bold === "false" ? "false" : "true"}
+            placeholder="请选择是否加粗"
+            options={HEADING_BOLD_OPTIONS}
+            onChange={(value) => onChange("documentHeading1Bold", value)}
+          />
+          <SelectField
+            label="二级标题加粗"
+            icon={Type}
+            defaultValue={values.documentHeading2Bold === "false" ? "false" : "true"}
+            placeholder="请选择是否加粗"
+            options={HEADING_BOLD_OPTIONS}
+            onChange={(value) => onChange("documentHeading2Bold", value)}
+          />
+          <SelectField
+            label="三级标题加粗"
+            icon={Type}
+            defaultValue={values.documentHeading3Bold === "false" ? "false" : "true"}
+            placeholder="请选择是否加粗"
+            options={HEADING_BOLD_OPTIONS}
+            onChange={(value) => onChange("documentHeading3Bold", value)}
+          />
+        </AdminStyleRow>
+        <AdminStyleRow>
+          <SelectField
+            label="四级标题加粗"
+            icon={Type}
+            defaultValue={values.documentHeading4Bold === "false" ? "false" : "true"}
+            placeholder="请选择是否加粗"
+            options={HEADING_BOLD_OPTIONS}
+            onChange={(value) => onChange("documentHeading4Bold", value)}
+          />
+          <SelectField
+            label="五级标题加粗"
+            icon={Type}
+            defaultValue={values.documentHeading5Bold === "false" ? "false" : "true"}
+            placeholder="请选择是否加粗"
+            options={HEADING_BOLD_OPTIONS}
+            onChange={(value) => onChange("documentHeading5Bold", value)}
+          />
+        </AdminStyleRow>
       </AdminStyleSection>
 
       <AdminStyleSection title="表格" description="设置表格文字、首行、框线与独立行距；不再附加表头底色。">
@@ -297,12 +420,30 @@ export function DocumentDeliveryStyleAdminSections({
             onChange={(value) => onChange("documentTableFontSize", value)}
           />
           <SelectField
-            label="单元格对齐"
+            label="单元格水平对齐"
             icon={AlignCenter}
             defaultValue={values.documentTableCellAlignment || "left"}
             placeholder="请选择对齐方式"
             options={TABLE_CELL_ALIGNMENT_OPTIONS}
             onChange={(value) => onChange("documentTableCellAlignment", value)}
+          />
+        </AdminStyleRow>
+        <AdminStyleRow>
+          <SelectField
+            label="单元格垂直对齐"
+            icon={AlignCenter}
+            defaultValue={values.documentTableCellVerticalAlignment || "center"}
+            placeholder="请选择垂直对齐"
+            options={TABLE_CELL_VERTICAL_ALIGNMENT_OPTIONS}
+            onChange={(value) => onChange("documentTableCellVerticalAlignment", value)}
+          />
+          <SelectField
+            label="单元格上下内边距"
+            icon={Table2}
+            defaultValue={values.documentTableCellPaddingVerticalPt || "1.5"}
+            placeholder="请选择上下内边距"
+            options={TABLE_CELL_PADDING_OPTIONS}
+            onChange={(value) => onChange("documentTableCellPaddingVerticalPt", value)}
           />
         </AdminStyleRow>
         <AdminStyleRow>
@@ -370,13 +511,21 @@ export function DocumentDeliveryStyleAdminSections({
             SelectField={SelectField}
           />
         </AdminStyleRow>
-        <AdminStyleRow>
+        <AdminStyleRow columns={3}>
+          <SelectField
+            label="段距单位"
+            icon={FileText}
+            defaultValue={documentSpacingUnit}
+            placeholder="请选择段距单位"
+            options={SPACING_UNIT_OPTIONS}
+            onChange={(value) => onChange("documentParagraphSpacingUnit", value)}
+          />
           <SelectField
             label="段前间距"
             icon={FileText}
             defaultValue={values.documentParagraphSpacingBefore || "0"}
             placeholder="请选择段前间距"
-            options={PARAGRAPH_SPACING_BEFORE_OPTIONS}
+            options={documentSpacingOptions}
             onChange={(value) => onChange("documentParagraphSpacingBefore", value)}
           />
           <SelectField
@@ -384,11 +533,19 @@ export function DocumentDeliveryStyleAdminSections({
             icon={FileText}
             defaultValue={values.documentParagraphSpacingAfter || "6"}
             placeholder="请选择段后间距"
-            options={PARAGRAPH_SPACING_AFTER_OPTIONS}
+            options={documentSpacingOptions}
             onChange={(value) => onChange("documentParagraphSpacingAfter", value)}
           />
         </AdminStyleRow>
         <AdminStyleRow>
+          <SelectField
+            label="正文对齐"
+            icon={AlignCenter}
+            defaultValue={values.documentBodyAlignment || "left"}
+            placeholder="请选择正文对齐"
+            options={BODY_ALIGNMENT_OPTIONS}
+            onChange={(value) => onChange("documentBodyAlignment", value)}
+          />
           <SelectField
             label="首行标题对齐"
             icon={AlignCenter}

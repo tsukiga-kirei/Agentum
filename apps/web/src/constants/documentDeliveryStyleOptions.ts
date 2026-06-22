@@ -3,9 +3,12 @@ export type DocumentDeliveryStyleValues = {
   latinFont: string;
   numberFont: string;
   bodyFontSize: string | number;
+  bodyAlignment: string;
   heading1FontSize: string | number;
   heading2FontSize: string | number;
   heading3FontSize: string | number;
+  heading4FontSize: string | number;
+  heading5FontSize: string | number;
   heading1ChineseFont: string;
   heading1LatinFont: string;
   heading1NumberFont: string;
@@ -15,11 +18,24 @@ export type DocumentDeliveryStyleValues = {
   heading3ChineseFont: string;
   heading3LatinFont: string;
   heading3NumberFont: string;
+  heading4ChineseFont: string;
+  heading4LatinFont: string;
+  heading4NumberFont: string;
+  heading5ChineseFont: string;
+  heading5LatinFont: string;
+  heading5NumberFont: string;
+  heading1Bold: boolean;
+  heading2Bold: boolean;
+  heading3Bold: boolean;
+  heading4Bold: boolean;
+  heading5Bold: boolean;
   tableChineseFont: string;
   tableLatinFont: string;
   tableNumberFont: string;
   tableFontSize: string | number;
   tableCellAlignment: string;
+  tableCellVerticalAlignment: string;
+  tableCellPaddingVerticalPt: number;
   tableHeaderBold: boolean;
   tableBorders: boolean;
   tableBorderWidthPt: number;
@@ -32,6 +48,7 @@ export type DocumentDeliveryStyleValues = {
   firstLineIndentMode: FirstLineIndentMode;
   firstLineIndentChars: number;
   firstLineIndentCm: number;
+  paragraphSpacingUnit: SpacingUnit;
   paragraphSpacingBefore: number;
   paragraphSpacingAfter: number;
   marginTopCm: number;
@@ -40,12 +57,38 @@ export type DocumentDeliveryStyleValues = {
   marginRightCm: number;
   titleCentered: boolean;
   headingFirstLineIndent: boolean;
+  paragraphRules: ParagraphRule[];
 };
 
 export type SelectOption = { value: string; label: string };
 
 export type LineSpacingMode = "multiple" | "exact";
 export type FirstLineIndentMode = "chars" | "cm";
+export type SpacingUnit = "line" | "pt" | "cm" | "mm";
+export type ParagraphRuleTargetType = "index" | "first" | "second" | "third" | "last" | "secondLast";
+
+/**
+ * 逐段个性化规则。空字符串字段表示继承全局样式，仅显式设置的字段参与覆盖。
+ * fontSize 为 "0"/0 表示继承；spacingUnit 为 "" 表示不覆盖段前段后间距。
+ */
+export type ParagraphRule = {
+  id: string;
+  targetType: ParagraphRuleTargetType;
+  targetIndex: number;
+  alignment: string;
+  firstLineIndentMode: "" | "none" | "chars" | "cm";
+  firstLineIndentChars: number;
+  firstLineIndentCm: number;
+  chineseFont: string;
+  latinFont: string;
+  numberFont: string;
+  fontSize: string | number;
+  spacingUnit: "" | SpacingUnit;
+  spacingBefore: number;
+  spacingAfter: number;
+  blankLinesBefore: number;
+  blankLinesAfter: number;
+};
 
 
 export const LINE_SPACING_MODE_OPTIONS: SelectOption[] = [
@@ -306,6 +349,125 @@ export function stringifyTableFontSizeValue(value: string | number): string {
     return "0";
   }
   return stringifyFontSizeValue(value);
+}
+
+export const BODY_ALIGNMENT_OPTIONS: SelectOption[] = [
+  { value: "left", label: "左对齐（默认）" },
+  { value: "center", label: "居中对齐" },
+  { value: "right", label: "右对齐" },
+  { value: "both", label: "两端对齐" },
+];
+
+export const TABLE_CELL_VERTICAL_ALIGNMENT_OPTIONS: SelectOption[] = [
+  { value: "top", label: "顶端对齐" },
+  { value: "center", label: "居中（默认）" },
+  { value: "bottom", label: "底端对齐" },
+];
+
+export const TABLE_CELL_PADDING_OPTIONS: SelectOption[] = [0, 0.5, 1, 1.5, 2, 3, 4]
+  .map((pt) => ({ value: String(pt), label: pt === 0 ? "无（顶住框线）" : `${pt} 磅${pt === 1.5 ? "（默认）" : ""}` }));
+
+export const HEADING_BOLD_OPTIONS: SelectOption[] = [
+  { value: "true", label: "加粗（默认）" },
+  { value: "false", label: "不加粗" },
+];
+
+export const SPACING_UNIT_OPTIONS: SelectOption[] = [
+  { value: "line", label: "行" },
+  { value: "pt", label: "磅" },
+  { value: "cm", label: "厘米" },
+  { value: "mm", label: "毫米" },
+];
+
+export const RULE_SPACING_UNIT_OPTIONS: SelectOption[] = [
+  { value: "", label: "继承" },
+  ...SPACING_UNIT_OPTIONS,
+];
+
+/** 段前段后取值选项随单位变化，避免出现单位与数值不匹配的组合。 */
+export function spacingValueOptions(unit: SpacingUnit): SelectOption[] {
+  switch (unit) {
+    case "line":
+      return [0, 0.5, 1, 1.5, 2, 2.5, 3].map((value) => ({ value: String(value), label: `${value} 行` }));
+    case "cm":
+      return [0, 0.25, 0.5, 0.75, 1, 1.5, 2].map((value) => ({ value: String(value), label: `${value} cm` }));
+    case "mm":
+      return [0, 2.5, 5, 7.5, 10, 15, 20].map((value) => ({ value: String(value), label: `${value} mm` }));
+    default:
+      return [0, 3, 6, 9, 12, 18, 24].map((value) => ({ value: String(value), label: `${value} pt` }));
+  }
+}
+
+export function readSpacingUnit(value: unknown): SpacingUnit {
+  const text = typeof value === "string" ? value.toLowerCase() : "";
+  return text === "line" || text === "cm" || text === "mm" ? text : "pt";
+}
+
+export const PARAGRAPH_RULE_TARGET_OPTIONS: SelectOption[] = [
+  { value: "index", label: "指定段号（第 N 段）" },
+  { value: "first", label: "第一段" },
+  { value: "second", label: "第二段" },
+  { value: "third", label: "第三段" },
+  { value: "secondLast", label: "倒数第二段" },
+  { value: "last", label: "最后一段" },
+];
+
+export const RULE_ALIGNMENT_OPTIONS: SelectOption[] = [
+  { value: "", label: "继承" },
+  ...BODY_ALIGNMENT_OPTIONS.map((option) => ({
+    value: option.value,
+    label: option.label.replace("（默认）", ""),
+  })),
+];
+
+export const RULE_INDENT_MODE_OPTIONS: SelectOption[] = [
+  { value: "", label: "继承" },
+  { value: "none", label: "无缩进" },
+  { value: "chars", label: "按字符" },
+  { value: "cm", label: "按厘米" },
+];
+
+export const RULE_FONT_SIZE_OPTIONS: SelectOption[] = [
+  { value: "0", label: "继承" },
+  ...FONT_SIZE_OPTIONS,
+];
+
+export const BLANK_LINE_OPTIONS: SelectOption[] = [0, 1, 2, 3, 4, 5, 6]
+  .map((value) => ({ value: String(value), label: value === 0 ? "无" : `${value} 个空行` }));
+
+export function stringifyRuleFontSizeValue(value: string | number): string {
+  const text = String(value ?? "").trim();
+  if (!text || text === "0") {
+    return "0";
+  }
+  return stringifyFontSizeValue(value);
+}
+
+let paragraphRuleSeed = 0;
+
+export function createDefaultParagraphRule(): ParagraphRule {
+  paragraphRuleSeed += 1;
+  const id = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `rule-${Date.now()}-${paragraphRuleSeed}`;
+  return {
+    id,
+    targetType: "index",
+    targetIndex: 1,
+    alignment: "",
+    firstLineIndentMode: "",
+    firstLineIndentChars: 2,
+    firstLineIndentCm: 0.75,
+    chineseFont: "",
+    latinFont: "",
+    numberFont: "",
+    fontSize: "0",
+    spacingUnit: "",
+    spacingBefore: 0,
+    spacingAfter: 0,
+    blankLinesBefore: 0,
+    blankLinesAfter: 0,
+  };
 }
 
 export function detectMarginPreset(style: Pick<DocumentDeliveryStyleValues, "marginTopCm" | "marginBottomCm" | "marginLeftCm" | "marginRightCm">): MarginPresetKey {

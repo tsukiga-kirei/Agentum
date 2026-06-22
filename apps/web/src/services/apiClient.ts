@@ -65,7 +65,6 @@ import type {
   FileDownloadResponse,
   UpdateWorkflowAccessRequest,
   UpdateWorkflowDraftRequest,
-  WordDocumentPreviewRequest,
   WorkflowVariableDraft,
 } from "../types/workflow-contract";
 import type {
@@ -606,12 +605,6 @@ export const workbenchApi = {
 export const workflowApi = {
   getDesignerCatalog: (tenantId: string, token: string) =>
     apiRequest<WorkflowDesignerCatalog>(`/api/tenants/${tenantId}/workflows/drafts/designer-catalog`, { token }),
-  previewWordDocument: (tenantId: string, token: string, request: WordDocumentPreviewRequest) =>
-    apiFileRequest(`/api/tenants/${tenantId}/document-deliveries/preview`, {
-      method: "POST",
-      token,
-      body: request,
-    }),
   listShareableMembers: (tenantId: string, token: string) =>
     apiRequest<WorkflowShareableMemberRow[]>(`/api/tenants/${tenantId}/workflows/drafts/shareable-members`, { token }),
   listDrafts: (tenantId: string, token: string, page = 1, size = 10, keyword = "", scope: "all" | "mine" | "shared" = "all", status: "all" | "draft" | "published" | "review" = "all", sort = "updatedAt,desc") => {

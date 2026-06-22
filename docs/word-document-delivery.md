@@ -14,7 +14,7 @@
 
 Word 文档交付沿用系统能力池模型：
 
-- 系统管理员在系统管理中创建或启用 `Word 文档交付`，配置默认中西文字体、正文/标题/表格数字字体、字号、行距、表格格式、首行缩进、段后间距、页边距、首行标题对齐、文件大小和保留天数策略。
+- 系统管理员在系统管理中创建或启用 `Word 文档交付`，配置默认中西文字体、正文/各级标题/表格数字字体、字号、正文对齐、行距、表格格式（含单元格垂直对齐与上下内边距）、首行缩进、段前段后间距及单位、各级标题加粗、四五级标题、页边距、首行标题对齐、文件大小和保留天数策略。逐段个性化规则为节点级，系统级不配置。
 - 系统管理员把该能力加入租户可用能力池。
 - 租户管理员在租户管理中把能力分配给用户、部门或角色。
 - 流程设计者在交付节点选择该能力后，配置交付正文模板、文件名模板和节点级样式。节点级样式会随流程草稿和发布版本保存，运行时按快照生成文件。
@@ -34,7 +34,8 @@ Word 文档交付沿用系统能力池模型：
 | `markdownContent` | 最终交付正文模板，可使用 `{{变量名}}` 引用上游输出 |
 | `fileNameTemplate` | 文件名模板，默认 `交付文档-{{runNumber}}.docx`，可使用 `{{runNumber}}`、`{{date}}`、`{{dateCompact}}` 和上游变量 |
 | `documentStyle` | 节点级样式快照 |
-| `previewMarkdown` | 设计态导出样例，不替换变量，不影响正式运行 |
+
+节点配置页按「字体 / 字号 / 标题样式 / 段落 / 表格 / 页边距 / 个性化段落」分类折叠，已移除「导出预览样例」按钮与「预览 Markdown」编辑器。
 
 `documentStyle` 支持：
 
@@ -44,38 +45,77 @@ Word 文档交付沿用系统能力池模型：
   "latinFont": "Times New Roman",
   "numberFont": "Times New Roman",
   "bodyFontSize": "小四",
+  "bodyAlignment": "both",
   "heading1FontSize": "三号",
   "heading2FontSize": "四号",
   "heading3FontSize": 13,
-  "heading1NumberFont": "Times New Roman",
-  "heading2NumberFont": "Times New Roman",
-  "heading3NumberFont": "Times New Roman",
+  "heading4FontSize": 0,
+  "heading5FontSize": 0,
+  "heading1Bold": true,
+  "heading4Bold": false,
   "tableNumberFont": "Times New Roman",
   "tableHeaderBold": false,
   "tableBorders": true,
   "tableBorderWidthPt": 0.5,
+  "tableCellVerticalAlignment": "center",
+  "tableCellPaddingVerticalPt": 1.5,
   "tableLineSpacingMode": "multiple",
   "tableLineSpacing": 1.0,
   "lineSpacing": 1.5,
   "firstLineIndentChars": 2,
+  "paragraphSpacingUnit": "pt",
+  "paragraphSpacingBefore": 0,
   "paragraphSpacingAfter": 6,
   "marginTopCm": 2.54,
   "marginBottomCm": 2.54,
   "marginLeftCm": 3.18,
   "marginRightCm": 3.18,
-  "titleCentered": true
+  "titleCentered": true,
+  "paragraphRules": [
+    {
+      "targetType": "first",
+      "alignment": "center",
+      "fontSize": "三号",
+      "spacingUnit": "line",
+      "spacingBefore": 0,
+      "spacingAfter": 1,
+      "blankLinesAfter": 1
+    },
+    {
+      "targetType": "index",
+      "targetIndex": 3,
+      "firstLineIndentMode": "none",
+      "chineseFont": "楷体"
+    }
+  ]
 }
 ```
 
-数字字体按正文、一级标题、二级标题、三级标题和表格分别配置；标题与表格留空时继承正文数字字体。渲染器会把数字字符拆成独立 Word Run，确保配置实际生效，而不是仅保存到节点快照。
+### 样式覆盖优先级
 
-表格不再附加首行底色等默认样式。`tableHeaderBold` 控制首行是否加粗；`tableBorders=false` 时不输出框线，开启时统一使用全边框，`tableBorderWidthPt` 默认 `0.5` 磅；表格行距由 `tableLineSpacingMode`、`tableLineSpacing` 和 `tableLineSpacingPt` 独立控制，不继承正文行距。
+从低到高依次为：全局代码默认 < 系统能力 `defaultStyle` < 节点全局样式 `documentStyle` < 多级标题规则（按级别）< 逐段个性化规则 `paragraphRules`。个性化规则只作用于非表格段落，命中冲突时显式段号优先于特殊选择器，同类后添加者覆盖前者。
 
-字号字段支持 pt 数字，也支持中文字号名：`初号`、`小初`、`一号`、`小一`、`二号`、`小二`、`三号`、`小三`、`四号`、`小四`、`五号`、`小五`、`六号`。
+### 正文与段落
+
+`bodyAlignment` 控制正文对齐，可选 `left`/`center`/`right`/`both`（两端对齐）。段前段后由 `paragraphSpacingUnit` 决定单位，可选 `line`（行）/`pt`（磅）/`cm`/`mm`，`paragraphSpacingBefore`、`paragraphSpacingAfter` 为对应单位下的数值。
+
+### 多级标题
+
+字号字段支持 pt 数字，也支持中文字号名：`初号`、`小初`、`一号`、`小一`、`二号`、`小二`、`三号`、`小三`、`四号`、`小四`、`五号`、`小五`、`六号`。数字字体按正文、一至五级标题和表格分别配置；一至三级标题与表格留空时继承正文，四五级标题字号与字体留空时继承三级标题。Markdown 六级标题（`######`）自动按五级标题渲染。`heading1Bold`～`heading5Bold` 控制各级标题是否加粗，默认加粗。
+
+### 表格
+
+表格不再附加首行底色等默认样式。`tableHeaderBold` 控制首行是否加粗；`tableBorders=false` 时不输出框线，开启时统一使用全边框，`tableBorderWidthPt` 默认 `0.5` 磅；`tableCellVerticalAlignment` 控制单元格垂直对齐（`top`/`center`/`bottom`），`tableCellPaddingVerticalPt` 控制单元格上下内边距（pt，默认 `1.5`），避免文字顶住框线；表格行距由 `tableLineSpacingMode`、`tableLineSpacing` 和 `tableLineSpacingPt` 独立控制，不继承正文行距。渲染器会把数字字符拆成独立 Word Run，确保数字字体配置实际生效。
+
+### 逐段个性化规则
+
+`paragraphRules` 用于对指定段落单独排版，按非表格段落 1 基序号计数（标题、正文、列表项、引用均计入，表格与代码块不计入）。`targetType` 可选 `index`（配合 `targetIndex` 指定段号）、`first`、`second`、`third`、`last`、`secondLast`。每条规则可覆盖对齐、首行缩进（`firstLineIndentMode`：`none`/`chars`/`cm`）、中西文与数字字体、字号、段前段后（`spacingUnit` 为空表示不覆盖），并可通过 `blankLinesBefore`/`blankLinesAfter` 在段落前后插入空行拉开间距；留空字段表示继承全局样式。
 
 系统级 `maxFileSizeMb` 会在运行态 docx 生成后校验文件大小，超过限制时交付失败并记录错误；`retentionDays` 会写入交付结果的 `expiresAt`，后台清理任务按该时间删除 MinIO 对象并把交付记录标记为 `expired`。
 
 ## 设计态预览接口
+
+> 前端已移除「导出预览样例」入口，下述接口仍保留以便后续工具或调试调用。
 
 ```http
 POST /api/tenants/{tenantId}/document-deliveries/preview

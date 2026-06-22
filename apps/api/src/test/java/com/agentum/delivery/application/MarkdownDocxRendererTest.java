@@ -248,6 +248,147 @@ class MarkdownDocxRendererTest {
             .contains("<w:spacing w:before=\"200\" w:after=\"300\"/>");
     }
 
+    @Test
+    void shouldApplyTableVerticalAlignmentAndCellPadding() throws IOException {
+        DocumentDeliveryStyle style = DocumentDeliveryStyle.from(Map.of(
+            "tableCellVerticalAlignment", "top",
+            "tableCellPaddingVerticalPt", 2
+        ));
+
+        byte[] bytes = renderer.render("| 表头 | 数值 |\n| --- | --- |\n| 一 | 1 |", style);
+
+        String documentXml = unzip(bytes).get("word/document.xml");
+        assertThat(documentXml)
+            .contains("<w:vAlign w:val=\"top\"/>")
+            .contains("<w:top w:w=\"40\" w:type=\"dxa\"/>")
+            .contains("<w:bottom w:w=\"40\" w:type=\"dxa\"/>");
+    }
+
+    @Test
+    void shouldApplyBodyJustifyAlignment() throws IOException {
+        DocumentDeliveryStyle style = DocumentDeliveryStyle.from(Map.of("bodyAlignment", "both"));
+
+        byte[] bytes = renderer.render("正文两端对齐内容", style);
+
+        assertThat(unzip(bytes).get("word/document.xml")).contains("<w:jc w:val=\"both\"/>");
+    }
+
+    @Test
+    void shouldApplyParagraphSpacingInLineUnit() throws IOException {
+        DocumentDeliveryStyle style = DocumentDeliveryStyle.from(Map.of(
+            "paragraphSpacingUnit", "line",
+            "paragraphSpacingBefore", 1,
+            "paragraphSpacingAfter", 2
+        ));
+
+        byte[] bytes = renderer.render("行单位段距正文", style);
+
+        assertThat(unzip(bytes).get("word/document.xml"))
+            .contains("w:beforeLines=\"100\"")
+            .contains("w:afterLines=\"200\"");
+    }
+
+    @Test
+    void shouldApplyParagraphSpacingInCentimeters() throws IOException {
+        DocumentDeliveryStyle style = DocumentDeliveryStyle.from(Map.of(
+            "paragraphSpacingUnit", "cm",
+            "paragraphSpacingBefore", 1,
+            "paragraphSpacingAfter", 0
+        ));
+
+        byte[] bytes = renderer.render("厘米单位段距正文", style);
+
+        assertThat(unzip(bytes).get("word/document.xml")).contains("w:before=\"567\"");
+    }
+
+    @Test
+    void shouldRenderHeadingLevelsFourAndFiveAndMapSixToFive() throws IOException {
+        DocumentDeliveryStyle style = DocumentDeliveryStyle.defaults();
+
+        byte[] bytes = renderer.render("""
+            #### 四级标题
+
+            ##### 五级标题
+
+            ###### 六级标题
+            """, style);
+
+        String documentXml = unzip(bytes).get("word/document.xml");
+        assertThat(documentXml)
+            .contains("<w:pStyle w:val=\"Heading4\"/>")
+            .contains("<w:pStyle w:val=\"Heading5\"/>")
+            .contains("六级标题");
+        // 四级标题字号默认继承三级（13pt → 半磅 26）。
+        assertThat(style.headingFontSize(4)).isEqualTo(13);
+    }
+
+    @Test
+    void shouldRenderHeadingWithoutBoldWhenDisabled() throws IOException {
+        DocumentDeliveryStyle style = DocumentDeliveryStyle.from(Map.of("heading1Bold", false));
+
+        byte[] bytes = renderer.render("# 不加粗标题", style);
+
+        assertThat(unzip(bytes).get("word/document.xml")).doesNotContain("<w:b/>");
+    }
+
+    @Test
+    void shouldApplyParagraphRuleByIndexWithBlankLines() throws IOException {
+        DocumentDeliveryStyle style = DocumentDeliveryStyle.from(Map.of(
+            "paragraphRules", java.util.List.of(Map.of(
+                "targetType", "index",
+                "targetIndex", 1,
+                "alignment", "right",
+                "blankLinesAfter", 1
+            ))
+        ));
+
+        byte[] bytes = renderer.render("第一段\n\n第二段", style);
+
+        assertThat(unzip(bytes).get("word/document.xml"))
+            .contains("<w:jc w:val=\"right\"/>")
+            .contains("<w:t xml:space=\"preserve\"></w:t>");
+    }
+
+    @Test
+    void shouldApplyParagraphRuleWithLastSelector() throws IOException {
+        DocumentDeliveryStyle style = DocumentDeliveryStyle.from(Map.of(
+            "paragraphRules", java.util.List.of(Map.of(
+                "targetType", "last",
+                "chineseFont", "楷体"
+            ))
+        ));
+
+        byte[] bytes = renderer.render("第一段\n\n最后一段", style);
+
+        assertThat(unzip(bytes).get("word/document.xml")).contains("楷体");
+    }
+
+    @Test
+    void shouldRoundTripParagraphRulesThroughMap() {
+        DocumentDeliveryStyle style = DocumentDeliveryStyle.from(Map.of(
+            "paragraphRules", java.util.List.of(Map.of(
+                "targetType", "index",
+                "targetIndex", 2,
+                "alignment", "center",
+                "fontSize", "三号",
+                "spacingUnit", "line",
+                "spacingBefore", 0,
+                "spacingAfter", 1
+            ))
+        ));
+
+        assertThat(style.paragraphRules()).hasSize(1);
+        DocumentDeliveryStyle.ParagraphRule rule = style.paragraphRules().get(0);
+        assertThat(rule.targetType()).isEqualTo("index");
+        assertThat(rule.targetIndex()).isEqualTo(2);
+        assertThat(rule.fontSize()).isEqualTo(16);
+
+        DocumentDeliveryStyle reparsed = DocumentDeliveryStyle.from(style.toMap());
+        assertThat(reparsed.paragraphRules()).hasSize(1);
+        assertThat(reparsed.paragraphRules().get(0).alignment()).isEqualTo("center");
+        assertThat(reparsed.paragraphRules().get(0).spacingUnit()).isEqualTo("line");
+    }
+
     private static Map<String, String> unzip(byte[] bytes) throws IOException {
         Map<String, String> entries = new HashMap<>();
         try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(bytes), StandardCharsets.UTF_8)) {
