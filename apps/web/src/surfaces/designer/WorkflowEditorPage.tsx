@@ -132,6 +132,7 @@ type InputFieldConfig = {
   variable: string;
   placeholder: string;
   defaultValue: string;
+  required: boolean;
 };
 
 type ClusterAgentConfig = {
@@ -1340,6 +1341,7 @@ function InputFieldsManager({
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs font-medium text-[var(--color-text-tertiary)]">输入框 {index + 1}</span>
                 <TinyBadge>{field.variable}</TinyBadge>
+                {field.required ? <TinyBadge tone="warning">必填</TinyBadge> : <TinyBadge>选填</TinyBadge>}
               </div>
               <p className="mt-1 truncate text-sm font-semibold text-[var(--color-text-primary)]">{field.label}</p>
               <p className="mt-1 line-clamp-1 text-xs text-[var(--color-text-secondary)]">{field.placeholder || "未设置占位提示"}</p>
@@ -2268,6 +2270,17 @@ function InputFieldModal({
             onChange={(value) => setDraft({ ...draft, defaultValue: value })}
             placeholder="可用 {{输出内容标识}} 引用之前步骤内容"
           />
+          <label className="workflow-toggle-row">
+            <span>
+              <span className="block">是否必填</span>
+              <span className="mt-1 block text-xs font-normal text-[var(--color-text-tertiary)]">开启后，业务人员必须填写此项才能提交。</span>
+            </span>
+            <input
+              type="checkbox"
+              checked={draft.required}
+              onChange={(event) => setDraft({ ...draft, required: event.target.checked })}
+            />
+          </label>
         </div>
         <div className="sys-modal-footer">
           <button type="button" className="sys-btn sys-btn--default" onClick={onClose}>取消</button>
@@ -3043,6 +3056,7 @@ function createInputField(index: number): InputFieldConfig {
     variable: `input_${index + 1}`,
     placeholder: "请输入内容",
     defaultValue: "",
+    required: true,
   };
 }
 
@@ -3399,7 +3413,12 @@ function readInputFields(value: unknown, outputVariables: string[]): InputFieldC
   if (Array.isArray(value)) {
     const fields = value.filter(isInputFieldConfig);
     if (fields.length > 0) {
-      return fields.map((field) => ({ ...field, defaultValue: readString(field.defaultValue, "") }));
+      return fields.map((field) => ({
+        ...field,
+        defaultValue: readString(field.defaultValue, ""),
+        // 历史流程没有 required 字段，而旧运行态本就要求全部填写，因此缺省继续按必填解释。
+        required: field.required !== false,
+      }));
     }
   }
 
@@ -3410,6 +3429,7 @@ function readInputFields(value: unknown, outputVariables: string[]): InputFieldC
       variable,
       placeholder: "请输入内容",
       defaultValue: "",
+      required: true,
     }))
     : [createInputField(0)];
 }

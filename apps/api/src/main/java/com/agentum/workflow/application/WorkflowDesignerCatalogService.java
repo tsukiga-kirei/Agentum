@@ -71,7 +71,8 @@ public class WorkflowDesignerCatalogService {
                     "id", "field_1",
                     "label", "业务输入",
                     "variable", "input_1",
-                    "placeholder", "请输入业务资料"
+                    "placeholder", "请输入业务资料",
+                    "required", true
                 ))
             ),
             "等待输入",

@@ -8,6 +8,7 @@ type InputFieldShape = {
   variable: string;
   placeholder: string;
   defaultValue?: string;
+  required: boolean;
 };
 
 interface UserInputPanelProps {
@@ -40,6 +41,7 @@ export function UserInputPanel({
         variable: field.variable || field.label,
         placeholder: field.placeholder || `请输入${field.label}`,
         defaultValue: field.defaultValue,
+        required: field.required !== false,
       }));
     }
     return (activeStep.inputs || []).map((field, index) => ({
@@ -48,6 +50,7 @@ export function UserInputPanel({
       variable: field.label,
       placeholder: `请输入${field.label}`,
       defaultValue: field.value,
+      required: true,
     }));
   }, [activeStep.configSnapshot, activeStep.inputs]);
 
@@ -69,7 +72,7 @@ export function UserInputPanel({
   function handleFormSubmit(e: React.FormEvent) {
     e.preventDefault();
 
-    const emptyField = fieldConfigs.find((field) => !formValues[field.id]?.trim());
+    const emptyField = fieldConfigs.find((field) => field.required && !formValues[field.id]?.trim());
     if (emptyField) {
       setErrorMsg(`请填写「${emptyField.label}」`);
       return;
@@ -112,7 +115,7 @@ export function UserInputPanel({
                 <div key={field.id} className="flex flex-col gap-2">
                   <label className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1">
                     {field.label}
-                    <span className="text-rose-500">*</span>
+                    {field.required ? <span className="text-rose-500">*</span> : <span className="text-xs font-normal text-slate-400">（选填）</span>}
                   </label>
 
                   {isLargeText ? (

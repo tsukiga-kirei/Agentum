@@ -155,7 +155,7 @@ export function StepProgressRail({
                 disabled={isFuturePending}
                 onClick={() => onStepSelect(step, index)}
                 aria-current={isSelected ? "step" : undefined}
-                className={`w-8 h-8 rounded-full flex items-center justify-center border transition-all duration-300 z-10 ${visual.indicator} ${
+                className={`w-8 h-8 aspect-square shrink-0 rounded-full flex items-center justify-center border transition-all duration-300 z-10 ${visual.indicator} ${
                   isSelected ? "ring-4 ring-blue-500/15 dark:ring-blue-400/15 scale-105" : ""
                 } ${!isFuturePending ? "cursor-pointer" : "cursor-not-allowed"}`}
               >
@@ -167,7 +167,7 @@ export function StepProgressRail({
                 type="button"
                 disabled={isFuturePending}
                 onClick={() => onStepSelect(step, index)}
-                className={`flex-1 text-left px-3 py-2.5 rounded-lg border transition-all duration-200 ${
+                className={`min-w-0 flex-1 text-left px-3 py-2.5 rounded-lg border transition-all duration-200 ${
                   isSelected
                     ? visual.cardActive
                     : isFuturePending

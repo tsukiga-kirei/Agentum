@@ -23,7 +23,7 @@ import { DeliveryPreviewPanel } from "./DeliveryPreviewPanel";
 import { DeliveryResultPanel } from "./DeliveryResultPanel";
 import { resolveDeliveryDisplayContent } from "../../utils/deliveryContent";
 import { MarkdownRenderer } from "./MarkdownRenderer";
-import { workbenchApi } from "../../services/apiClient";
+import { AgentumApiError, workbenchApi } from "../../services/apiClient";
 import { formatRuntimeErrorMessage } from "../../utils/runtimeErrors";
 import { mergeClusterAgents, parseClusterAgentSummariesFromOutputs, clusterAgentDisplayText } from "../../utils/clusterAgentsMerge";
 import { WorkbenchGlobalActions } from "../workbench/SurfacePageLayout";
@@ -86,6 +86,7 @@ export function TaskRunWorkspace({
   onDelete,
   onReload,
 }: TaskRunWorkspaceProps) {
+  const [messageApi, messageContextHolder] = message.useMessage();
   const [runDetail, setRunDetail] = useState<WorkbenchRunDetail>(initialRun);
   const [activeRunTab, setActiveRunTab] = useState<RunWorkspaceTab>(() => resolveInitialRunTab(initialRun));
   const [selectedTraceStepIndex, setSelectedTraceStepIndex] = useState<number | null>(null);
@@ -810,8 +811,15 @@ export function TaskRunWorkspace({
       // 避免停留在“执行历史”页签让用户误以为还在查看旧快照。
       setSelectedTraceStepIndex(null);
       setActiveRunTab("current");
-    } catch (e: any) {
-      console.error("回退步骤失败", e);
+      messageApi.success("已回退到选定步骤，流程将从此处重新开始");
+    } catch (error: unknown) {
+      const reason = error instanceof AgentumApiError ? error.message : "步骤回退失败，请稍后重试";
+      // 回退属于运行态写操作：界面必须展示后端业务原因，控制台仅保留可追踪且脱敏的错误上下文。
+      console.warn("[workbench] 步骤回退失败", {
+        code: error instanceof AgentumApiError ? error.code : "unknown",
+        requestId: error instanceof AgentumApiError ? error.requestId : undefined,
+      });
+      messageApi.error(reason);
     }
   }
 
@@ -837,6 +845,7 @@ export function TaskRunWorkspace({
 
   return (
     <section className="workbench-task-workspace sys-fade-in flex flex-col h-full bg-[var(--color-bg-page)] overflow-hidden" aria-label="任务处理工作区">
+      {messageContextHolder}
       {/* 5a. Topbar bar actions */}
       <header className="surface-page-chrome pb-4 border-b border-[var(--color-border-light)] flex flex-col gap-4">
         {/* Row 1: Title, Page Actions, and Global Actions (Theme/Role switcher) */}

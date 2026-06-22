@@ -29,6 +29,11 @@ class WorkflowDesignerCatalogServiceTest {
             .filter(template -> "agent".equals(template.brickType()))
             .findFirst().orElseThrow().defaultConfig())
             .containsEntry("maxAgentIterationsPerTurn", 4);
+        @SuppressWarnings("unchecked")
+        var inputFields = (java.util.List<java.util.Map<String, Object>>) catalog.brickTemplates().stream()
+            .filter(template -> "input".equals(template.brickType()))
+            .findFirst().orElseThrow().defaultConfig().get("inputFields");
+        assertThat(inputFields.getFirst()).containsEntry("required", true);
     }
 
     private static AgentRuntimeProperties runtimeProperties() {

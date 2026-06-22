@@ -94,6 +94,33 @@ class WorkbenchRuntimeServiceTest {
     private final PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
 
     @Test
+    void shouldRejectEmptyRequiredInputAndKeepLegacyFieldsRequired() {
+        WorkflowRunEntity run = ownedRun(1);
+        WorkflowNodeRunEntity node = inputNode(run, List.of(
+            Map.of("id", "field_1", "label", "企业名称", "variable", "company_name", "required", true),
+            Map.of("id", "field_2", "label", "补充说明", "variable", "remark")
+        ));
+
+        assertThatThrownBy(() -> WorkbenchRuntimeService.validateRequiredInputFields(
+            node,
+            Map.of("company_name", "云程科技", "remark", " ")
+        ))
+            .extracting("code")
+            .isEqualTo("WORKBENCH_INPUT_REQUIRED");
+    }
+
+    @Test
+    void shouldAllowOptionalInputFieldToBeEmpty() {
+        WorkflowRunEntity run = ownedRun(1);
+        WorkflowNodeRunEntity node = inputNode(run, List.of(
+            Map.of("id", "field_1", "label", "企业名称", "variable", "company_name", "required", true),
+            Map.of("id", "field_2", "label", "补充说明", "variable", "remark", "required", false)
+        ));
+
+        WorkbenchRuntimeService.validateRequiredInputFields(node, Map.of("company_name", "云程科技", "remark", ""));
+    }
+
+    @Test
     void shouldListAllPublishedWorkflowsAndMarkLockedRows() {
         WorkbenchRuntimeService service = newService();
         WorkflowDefinitionEntity open = publishedDefinition("对全员开放流程", DESIGNER_ID, "all");
@@ -952,6 +979,23 @@ class WorkbenchRuntimeServiceTest {
             OPERATOR_ID,
             totalNodeCount,
             "20260610-TEST",
+            NOW
+        );
+    }
+
+    private WorkflowNodeRunEntity inputNode(WorkflowRunEntity run, List<Map<String, Object>> inputFields) {
+        return WorkflowNodeRunEntity.pending(
+            run.getId(),
+            TENANT_ID,
+            run.getWorkflowId(),
+            run.getWorkflowVersionId(),
+            "input_company",
+            "user_input",
+            "补充资料",
+            Map.of(),
+            Map.of(),
+            Map.of("inputFields", inputFields),
+            0,
             NOW
         );
     }

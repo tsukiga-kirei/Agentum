@@ -1605,8 +1605,10 @@ public class WorkbenchRuntimeService {
         List<WorkflowNodeRunEntity> nodes = workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(run.getId());
         WorkflowNodeRunEntity nodeRun = workflowNodeRunRepository.findByIdAndRunId(todo.getNodeRunId(), run.getId())
             .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_NODE_RUN_NOT_FOUND", "节点运行不存在"));
+        Map<String, Object> requestPayload = request == null || request.payload() == null ? Map.of() : request.payload();
+        validateRequiredInputFields(nodeRun, requestPayload);
         Instant now = clock.instant();
-        Map<String, Object> output = new HashMap<>(request == null || request.payload() == null ? Map.of() : request.payload());
+        Map<String, Object> output = new HashMap<>(requestPayload);
         if (request != null && request.comment() != null && !request.comment().isBlank()) {
             output.put("comment", request.comment().trim());
         }
@@ -1646,6 +1648,35 @@ public class WorkbenchRuntimeService {
         }
         workflowRunRepository.save(run);
         return getRunDetail(tenantId, principal, run.getId());
+    }
+
+    /**
+     * 输入节点的必填约束必须由后端基于发布版本快照复核，不能只依赖可被绕过的前端表单校验。
+     * 历史快照未保存 required 字段时沿用原有“全部必填”语义，避免旧流程静默放宽约束。
+     */
+    static void validateRequiredInputFields(WorkflowNodeRunEntity nodeRun, Map<String, Object> payload) {
+        if (!"user_input".equals(nodeRun.getNodeType())) {
+            return;
+        }
+        Object rawFields = nodeRun.getConfigSnapshot().get("inputFields");
+        if (!(rawFields instanceof List<?> fields)) {
+            return;
+        }
+        for (Object item : fields) {
+            if (!(item instanceof Map<?, ?> field) || Boolean.FALSE.equals(field.get("required"))) {
+                continue;
+            }
+            String variable = String.valueOf(field.get("variable") == null ? "" : field.get("variable")).trim();
+            Object value = payload.get(variable);
+            if (variable.isBlank() || value == null || (value instanceof String text && text.isBlank())) {
+                String label = String.valueOf(field.get("label") == null ? variable : field.get("label")).trim();
+                throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "WORKBENCH_INPUT_REQUIRED",
+                    "请填写「" + (label.isBlank() ? variable : label) + "」"
+                );
+            }
+        }
     }
 
     @Transactional(readOnly = true)
