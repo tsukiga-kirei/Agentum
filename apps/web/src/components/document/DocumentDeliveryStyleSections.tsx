@@ -399,19 +399,25 @@ export function DocumentDeliveryStyleSections({ style, onFieldChange, onFieldsCh
       </StyleSection>
 
       <StyleSection title="字号" description="正文与一至五级标题字号，四五级默认继承三级。">
-        <StyleRow columns={3}>
+        <StyleRow columns={2}>
           <StyleSelectField label="正文字号" icon={Hash} value={stringifyFontSizeValue(style.bodyFontSize)} options={FONT_SIZE_OPTIONS} onChange={(value) => onFieldChange("bodyFontSize", value)} />
-          <StyleSelectField label="一级标题字号" icon={Hash} value={stringifyFontSizeValue(style.heading1FontSize)} options={FONT_SIZE_OPTIONS} onChange={(value) => onFieldChange("heading1FontSize", value)} />
-          <StyleSelectField label="二级标题字号" icon={Hash} value={stringifyFontSizeValue(style.heading2FontSize)} options={FONT_SIZE_OPTIONS} onChange={(value) => onFieldChange("heading2FontSize", value)} />
         </StyleRow>
         <StyleRow columns={3}>
+          <StyleSelectField label="一级标题字号" icon={Hash} value={stringifyFontSizeValue(style.heading1FontSize)} options={FONT_SIZE_OPTIONS} onChange={(value) => onFieldChange("heading1FontSize", value)} />
+          <StyleSelectField label="二级标题字号" icon={Hash} value={stringifyFontSizeValue(style.heading2FontSize)} options={FONT_SIZE_OPTIONS} onChange={(value) => onFieldChange("heading2FontSize", value)} />
           <StyleSelectField label="三级标题字号" icon={Hash} value={stringifyFontSizeValue(style.heading3FontSize)} options={FONT_SIZE_OPTIONS} onChange={(value) => onFieldChange("heading3FontSize", value)} />
+        </StyleRow>
+        <StyleRow columns={3}>
           <StyleSelectField label="四级标题字号" icon={Hash} value={stringifyRuleFontSizeValue(style.heading4FontSize)} options={RULE_FONT_SIZE_OPTIONS} onChange={(value) => onFieldChange("heading4FontSize", value === "0" ? 0 : value)} />
           <StyleSelectField label="五级标题字号" icon={Hash} value={stringifyRuleFontSizeValue(style.heading5FontSize)} options={RULE_FONT_SIZE_OPTIONS} onChange={(value) => onFieldChange("heading5FontSize", value === "0" ? 0 : value)} />
         </StyleRow>
       </StyleSection>
 
-      <StyleSection title="标题样式" description="各级标题字体与是否加粗；四五级字体留空继承三级。">
+      <StyleSection title="标题样式" description="标题对齐、首行缩进，以及各级标题字体与是否加粗；四五级字体留空继承三级。">
+        <StyleRow columns={2}>
+          <StyleSelectField label="首行标题对齐" icon={AlignCenter} value={String(Boolean(style.titleCentered))} options={TITLE_ALIGNMENT_OPTIONS} onChange={(value) => onFieldChange("titleCentered", value === "true")} />
+          <StyleSelectField label="标题首行缩进" icon={FileText} value={String(Boolean(style.headingFirstLineIndent))} options={HEADING_INDENT_OPTIONS} onChange={(value) => onFieldChange("headingFirstLineIndent", value === "true")} />
+        </StyleRow>
         {HEADING_LEVELS.map(({ level, label }) => {
           const keys = headingFontKeys[level];
           return (
@@ -431,7 +437,6 @@ export function DocumentDeliveryStyleSections({ style, onFieldChange, onFieldsCh
       <StyleSection title="段落" description="正文对齐、行距、首行缩进与段前段后间距。">
         <StyleRow columns={2}>
           <StyleSelectField label="正文对齐" icon={AlignCenter} value={style.bodyAlignment} options={BODY_ALIGNMENT_OPTIONS} onChange={(value) => onFieldChange("bodyAlignment", value)} />
-          <StyleSelectField label="首行标题对齐" icon={AlignCenter} value={String(Boolean(style.titleCentered))} options={TITLE_ALIGNMENT_OPTIONS} onChange={(value) => onFieldChange("titleCentered", value === "true")} />
         </StyleRow>
         <StyleRow columns={2}>
           <LineSpacingStyleFields
@@ -464,9 +469,6 @@ export function DocumentDeliveryStyleSections({ style, onFieldChange, onFieldsCh
           <StyleSelectField label="段前间距" icon={FileText} value={stringifySelectValue(style.paragraphSpacingBefore)} options={spacingOptions} onChange={(value) => onFieldChange("paragraphSpacingBefore", Number(value))} />
           <StyleSelectField label="段后间距" icon={FileText} value={stringifySelectValue(style.paragraphSpacingAfter)} options={spacingOptions} onChange={(value) => onFieldChange("paragraphSpacingAfter", Number(value))} />
         </StyleRow>
-        <StyleRow columns={2}>
-          <StyleSelectField label="标题首行缩进" icon={FileText} value={String(Boolean(style.headingFirstLineIndent))} options={HEADING_INDENT_OPTIONS} onChange={(value) => onFieldChange("headingFirstLineIndent", value === "true")} />
-        </StyleRow>
       </StyleSection>
 
       <StyleSection title="表格" description="表格文字、对齐、单元格内边距、框线与行距。">
@@ -480,16 +482,16 @@ export function DocumentDeliveryStyleSections({ style, onFieldChange, onFieldsCh
           <StyleSelectField label="水平对齐" icon={AlignCenter} value={style.tableCellAlignment} options={TABLE_CELL_ALIGNMENT_OPTIONS} onChange={(value) => onFieldChange("tableCellAlignment", value)} />
           <StyleSelectField label="垂直对齐" icon={AlignCenter} value={style.tableCellVerticalAlignment} options={TABLE_CELL_VERTICAL_ALIGNMENT_OPTIONS} onChange={(value) => onFieldChange("tableCellVerticalAlignment", value)} />
         </StyleRow>
-        <StyleRow columns={3}>
-          <StyleSelectField label="上下内边距" icon={Table2} value={stringifySelectValue(style.tableCellPaddingVerticalPt)} options={TABLE_CELL_PADDING_OPTIONS} onChange={(value) => onFieldChange("tableCellPaddingVerticalPt", Number(value))} />
+        <StyleRow columns={2}>
+          <StyleSelectField label="上下内边距" icon={Table2} value={stringifySelectValue(style.tableCellPaddingVerticalPt ?? 1.5)} options={TABLE_CELL_PADDING_OPTIONS} onChange={(value) => onFieldChange("tableCellPaddingVerticalPt", Number(value))} />
           <StyleSelectField label="首行加粗" icon={Table2} value={String(style.tableHeaderBold)} options={TABLE_HEADER_BOLD_OPTIONS} onChange={(value) => onFieldChange("tableHeaderBold", value === "true")} />
-          <StyleSelectField label="表格框线" icon={Table2} value={String(style.tableBorders)} options={TABLE_BORDER_OPTIONS} onChange={(value) => onFieldChange("tableBorders", value === "true")} />
         </StyleRow>
-        {style.tableBorders ? (
-          <StyleRow columns={3}>
+        <StyleRow columns={2}>
+          <StyleSelectField label="表格框线" icon={Table2} value={String(style.tableBorders)} options={TABLE_BORDER_OPTIONS} onChange={(value) => onFieldChange("tableBorders", value === "true")} />
+          {style.tableBorders ? (
             <StyleSelectField label="框线磅数" icon={Table2} value={String(style.tableBorderWidthPt)} options={TABLE_BORDER_WIDTH_OPTIONS} onChange={(value) => onFieldChange("tableBorderWidthPt", Number(value))} />
-          </StyleRow>
-        ) : null}
+          ) : null}
+        </StyleRow>
         <StyleRow columns={2}>
           <LineSpacingStyleFields
             mode={style.tableLineSpacingMode}
