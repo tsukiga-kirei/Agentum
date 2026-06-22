@@ -14,7 +14,7 @@
 
 Word 文档交付沿用系统能力池模型：
 
-- 系统管理员在系统管理中创建或启用 `Word 文档交付`，配置默认字体、字号、行距、首行缩进、段后间距、页边距、首行标题对齐、文件大小和保留天数策略。
+- 系统管理员在系统管理中创建或启用 `Word 文档交付`，配置默认中西文字体、正文/标题/表格数字字体、字号、行距、表格格式、首行缩进、段后间距、页边距、首行标题对齐、文件大小和保留天数策略。
 - 系统管理员把该能力加入租户可用能力池。
 - 租户管理员在租户管理中把能力分配给用户、部门或角色。
 - 流程设计者在交付节点选择该能力后，配置交付正文模板、文件名模板和节点级样式。节点级样式会随流程草稿和发布版本保存，运行时按快照生成文件。
@@ -42,10 +42,20 @@ Word 文档交付沿用系统能力池模型：
 {
   "chineseFont": "宋体",
   "latinFont": "Times New Roman",
+  "numberFont": "Times New Roman",
   "bodyFontSize": "小四",
   "heading1FontSize": "三号",
   "heading2FontSize": "四号",
   "heading3FontSize": 13,
+  "heading1NumberFont": "Times New Roman",
+  "heading2NumberFont": "Times New Roman",
+  "heading3NumberFont": "Times New Roman",
+  "tableNumberFont": "Times New Roman",
+  "tableHeaderBold": false,
+  "tableBorders": true,
+  "tableBorderWidthPt": 0.5,
+  "tableLineSpacingMode": "multiple",
+  "tableLineSpacing": 1.0,
   "lineSpacing": 1.5,
   "firstLineIndentChars": 2,
   "paragraphSpacingAfter": 6,
@@ -56,6 +66,10 @@ Word 文档交付沿用系统能力池模型：
   "titleCentered": true
 }
 ```
+
+数字字体按正文、一级标题、二级标题、三级标题和表格分别配置；标题与表格留空时继承正文数字字体。渲染器会把数字字符拆成独立 Word Run，确保配置实际生效，而不是仅保存到节点快照。
+
+表格不再附加首行底色等默认样式。`tableHeaderBold` 控制首行是否加粗；`tableBorders=false` 时不输出框线，开启时统一使用全边框，`tableBorderWidthPt` 默认 `0.5` 磅；表格行距由 `tableLineSpacingMode`、`tableLineSpacing` 和 `tableLineSpacingPt` 独立控制，不继承正文行距。
 
 字号字段支持 pt 数字，也支持中文字号名：`初号`、`小初`、`一号`、`小一`、`二号`、`小二`、`三号`、`小三`、`四号`、`小四`、`五号`、`小五`、`六号`。
 

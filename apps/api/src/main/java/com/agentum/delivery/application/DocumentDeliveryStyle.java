@@ -12,20 +12,31 @@ import java.util.Set;
 public record DocumentDeliveryStyle(
     String chineseFont,
     String latinFont,
+    String numberFont,
     int bodyFontSize,
     int heading1FontSize,
     int heading2FontSize,
     int heading3FontSize,
     String heading1ChineseFont,
     String heading1LatinFont,
+    String heading1NumberFont,
     String heading2ChineseFont,
     String heading2LatinFont,
+    String heading2NumberFont,
     String heading3ChineseFont,
     String heading3LatinFont,
+    String heading3NumberFont,
     String tableChineseFont,
     String tableLatinFont,
+    String tableNumberFont,
     int tableFontSize,
     String tableCellAlignment,
+    boolean tableHeaderBold,
+    boolean tableBorders,
+    double tableBorderWidthPt,
+    String tableLineSpacingMode,
+    double tableLineSpacing,
+    int tableLineSpacingPt,
     String lineSpacingMode,
     double lineSpacing,
     int lineSpacingPt,
@@ -48,6 +59,7 @@ public record DocumentDeliveryStyle(
         return new DocumentDeliveryStyle(
             "宋体",
             "Times New Roman",
+            "Times New Roman",
             12,
             16,
             14,
@@ -60,8 +72,18 @@ public record DocumentDeliveryStyle(
             "",
             "",
             "",
+            "",
+            "",
+            "",
+            "",
             0,
             "left",
+            false,
+            true,
+            0.5,
+            "multiple",
+            1.0,
+            12,
             "multiple",
             1.5,
             18,
@@ -85,20 +107,31 @@ public record DocumentDeliveryStyle(
         return new DocumentDeliveryStyle(
             readString(source, "chineseFont", defaults.chineseFont()),
             readString(source, "latinFont", defaults.latinFont()),
+            readString(source, "numberFont", defaults.numberFont()),
             readInt(source, "bodyFontSize", defaults.bodyFontSize(), 8, 48),
             readInt(source, "heading1FontSize", defaults.heading1FontSize(), 8, 72),
             readInt(source, "heading2FontSize", defaults.heading2FontSize(), 8, 72),
             readInt(source, "heading3FontSize", defaults.heading3FontSize(), 8, 72),
             readOptionalString(source, "heading1ChineseFont"),
             readOptionalString(source, "heading1LatinFont"),
+            readOptionalString(source, "heading1NumberFont"),
             readOptionalString(source, "heading2ChineseFont"),
             readOptionalString(source, "heading2LatinFont"),
+            readOptionalString(source, "heading2NumberFont"),
             readOptionalString(source, "heading3ChineseFont"),
             readOptionalString(source, "heading3LatinFont"),
+            readOptionalString(source, "heading3NumberFont"),
             readOptionalString(source, "tableChineseFont"),
             readOptionalString(source, "tableLatinFont"),
+            readOptionalString(source, "tableNumberFont"),
             readInt(source, "tableFontSize", defaults.tableFontSize(), 0, 72),
             readAlignment(source, "tableCellAlignment", defaults.tableCellAlignment()),
+            readBoolean(source, "tableHeaderBold", defaults.tableHeaderBold()),
+            readBoolean(source, "tableBorders", defaults.tableBorders()),
+            readDouble(source, "tableBorderWidthPt", defaults.tableBorderWidthPt(), 0.25, 6.0),
+            readSpacingMode(source, "tableLineSpacingMode", defaults.tableLineSpacingMode()),
+            readDouble(source, "tableLineSpacing", defaults.tableLineSpacing(), 1.0, 3.0),
+            readInt(source, "tableLineSpacingPt", defaults.tableLineSpacingPt(), 6, 72),
             readLineSpacingMode(source, defaults.lineSpacingMode()),
             readDouble(source, "lineSpacing", defaults.lineSpacing(), 1.0, 3.0),
             readInt(source, "lineSpacingPt", defaults.lineSpacingPt(), 6, 72),
@@ -134,12 +167,25 @@ public record DocumentDeliveryStyle(
         return configured == null || configured.isBlank() ? latinFont : configured;
     }
 
+    public String headingNumberFont(int level) {
+        String configured = switch (Math.max(1, Math.min(3, level))) {
+            case 1 -> heading1NumberFont;
+            case 2 -> heading2NumberFont;
+            default -> heading3NumberFont;
+        };
+        return configured == null || configured.isBlank() ? numberFont : configured;
+    }
+
     public String tableResolvedChineseFont() {
         return tableChineseFont == null || tableChineseFont.isBlank() ? chineseFont : tableChineseFont;
     }
 
     public String tableResolvedLatinFont() {
         return tableLatinFont == null || tableLatinFont.isBlank() ? latinFont : tableLatinFont;
+    }
+
+    public String tableResolvedNumberFont() {
+        return tableNumberFont == null || tableNumberFont.isBlank() ? numberFont : tableNumberFont;
     }
 
     public int tableResolvedFontSize() {
@@ -157,26 +203,50 @@ public record DocumentDeliveryStyle(
         return (int) Math.round(240 * lineSpacing);
     }
 
+    public String resolvedTableLineSpacingRule() {
+        return "exact".equalsIgnoreCase(tableLineSpacingMode) ? "exact" : "auto";
+    }
+
+    public int resolvedTableLineTwips() {
+        if ("exact".equalsIgnoreCase(tableLineSpacingMode)) {
+            return tableLineSpacingPt * 20;
+        }
+        return (int) Math.round(240 * tableLineSpacing);
+    }
+
     public Map<String, Object> toMap() {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("chineseFont", chineseFont);
         result.put("latinFont", latinFont);
+        result.put("numberFont", numberFont);
         result.put("bodyFontSize", bodyFontSize);
         result.put("heading1FontSize", heading1FontSize);
         result.put("heading2FontSize", heading2FontSize);
         result.put("heading3FontSize", heading3FontSize);
         putOptional(result, "heading1ChineseFont", heading1ChineseFont);
         putOptional(result, "heading1LatinFont", heading1LatinFont);
+        putOptional(result, "heading1NumberFont", heading1NumberFont);
         putOptional(result, "heading2ChineseFont", heading2ChineseFont);
         putOptional(result, "heading2LatinFont", heading2LatinFont);
+        putOptional(result, "heading2NumberFont", heading2NumberFont);
         putOptional(result, "heading3ChineseFont", heading3ChineseFont);
         putOptional(result, "heading3LatinFont", heading3LatinFont);
+        putOptional(result, "heading3NumberFont", heading3NumberFont);
         putOptional(result, "tableChineseFont", tableChineseFont);
         putOptional(result, "tableLatinFont", tableLatinFont);
+        putOptional(result, "tableNumberFont", tableNumberFont);
         if (tableFontSize > 0) {
             result.put("tableFontSize", tableFontSize);
         }
         result.put("tableCellAlignment", tableCellAlignment);
+        result.put("tableHeaderBold", tableHeaderBold);
+        result.put("tableBorders", tableBorders);
+        result.put("tableBorderWidthPt", tableBorderWidthPt);
+        result.put("tableLineSpacingMode", tableLineSpacingMode);
+        result.put("tableLineSpacing", tableLineSpacing);
+        if ("exact".equalsIgnoreCase(tableLineSpacingMode)) {
+            result.put("tableLineSpacingPt", tableLineSpacingPt);
+        }
         result.put("lineSpacingMode", lineSpacingMode);
         result.put("lineSpacing", lineSpacing);
         if ("exact".equalsIgnoreCase(lineSpacingMode)) {
@@ -197,7 +267,11 @@ public record DocumentDeliveryStyle(
     }
 
     private static String readLineSpacingMode(Map<String, Object> source, String fallback) {
-        String text = readOptionalString(source, "lineSpacingMode");
+        return readSpacingMode(source, "lineSpacingMode", fallback);
+    }
+
+    private static String readSpacingMode(Map<String, Object> source, String key, String fallback) {
+        String text = readOptionalString(source, key);
         if (text.isBlank()) {
             return fallback;
         }

@@ -24,6 +24,7 @@ type LineSpacingStyleFieldsProps = {
   mode: LineSpacingMode;
   multiple: number;
   pt: number;
+  labelPrefix?: string;
   onModeChange: (mode: LineSpacingMode) => void;
   onMultipleChange: (value: number) => void;
   onPtChange: (value: number) => void;
@@ -44,6 +45,7 @@ export function LineSpacingStyleFields({
   mode,
   multiple,
   pt,
+  labelPrefix = "",
   onModeChange,
   onMultipleChange,
   onPtChange,
@@ -63,7 +65,7 @@ export function LineSpacingStyleFields({
   return (
     <>
       <SelectField
-        label="行距类型"
+        label={`${labelPrefix}行距类型`}
         icon={AlignCenter}
         value={mode}
         defaultValue={mode}
@@ -72,7 +74,7 @@ export function LineSpacingStyleFields({
       />
       {isExactLineSpacingMode(mode) ? (
         <SelectField
-          label="行距（磅）"
+          label={`${labelPrefix}行距（磅）`}
           icon={AlignCenter}
           value={ptValue}
           defaultValue={ptValue}
@@ -81,7 +83,7 @@ export function LineSpacingStyleFields({
         />
       ) : (
         <SelectField
-          label="行距（倍数）"
+          label={`${labelPrefix}行距（倍数）`}
           icon={AlignCenter}
           value={multipleValue}
           defaultValue={multipleValue}

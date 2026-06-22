@@ -9,7 +9,9 @@ import {
   HEADING_INDENT_OPTIONS,
   INHERITABLE_CHINESE_FONT_OPTIONS,
   INHERITABLE_LATIN_FONT_OPTIONS,
+  INHERITABLE_NUMBER_FONT_OPTIONS,
   LATIN_FONT_OPTIONS,
+  NUMBER_FONT_OPTIONS,
   MARGIN_CM_OPTIONS,
   MARGIN_PRESETS,
   MARGIN_PRESET_OPTIONS,
@@ -19,8 +21,11 @@ import {
   readLineSpacingMode,
   stringifyFontSizeValue,
   stringifyTableFontSizeValue,
+  TABLE_BORDER_OPTIONS,
+  TABLE_BORDER_WIDTH_OPTIONS,
   TABLE_CELL_ALIGNMENT_OPTIONS,
   TABLE_FONT_SIZE_OPTIONS,
+  TABLE_HEADER_BOLD_OPTIONS,
   TITLE_ALIGNMENT_OPTIONS,
 } from "../../constants/documentDeliveryStyleOptions";
 import { LineSpacingStyleFields } from "./LineSpacingStyleFields";
@@ -106,7 +111,7 @@ export function DocumentDeliveryStyleAdminSections({
 
   return (
     <div className="space-y-4">
-      <AdminStyleSection title="字体" description="设置文档中西文默认字体。">
+      <AdminStyleSection title="字体" description="设置正文的中文、西文与数字默认字体。">
         <AdminStyleRow>
           <SelectField
             label="中文字体"
@@ -123,6 +128,16 @@ export function DocumentDeliveryStyleAdminSections({
             placeholder="请选择西文字体"
             options={LATIN_FONT_OPTIONS}
             onChange={(value) => onChange("documentLatinFont", value)}
+          />
+        </AdminStyleRow>
+        <AdminStyleRow>
+          <SelectField
+            label="数字字体"
+            icon={Hash}
+            defaultValue={values.documentNumberFont || "Times New Roman"}
+            placeholder="请选择数字字体"
+            options={NUMBER_FONT_OPTIONS}
+            onChange={(value) => onChange("documentNumberFont", value)}
           />
         </AdminStyleRow>
       </AdminStyleSection>
@@ -166,7 +181,7 @@ export function DocumentDeliveryStyleAdminSections({
         </AdminStyleRow>
       </AdminStyleSection>
 
-      <AdminStyleSection title="标题字体" description="可为各级标题单独设置中西文字体，留空则继承正文。">
+      <AdminStyleSection title="标题字体" description="可为各级标题单独设置中文、西文与数字字体，留空则继承正文。">
         <AdminStyleRow>
           <SelectField
             label="一级标题中文字体"
@@ -183,6 +198,16 @@ export function DocumentDeliveryStyleAdminSections({
             placeholder="继承正文"
             options={INHERITABLE_LATIN_FONT_OPTIONS}
             onChange={(value) => onChange("documentHeading1LatinFont", value)}
+          />
+        </AdminStyleRow>
+        <AdminStyleRow>
+          <SelectField
+            label="一级标题数字字体"
+            icon={Hash}
+            defaultValue={values.documentHeading1NumberFont || ""}
+            placeholder="继承正文"
+            options={INHERITABLE_NUMBER_FONT_OPTIONS}
+            onChange={(value) => onChange("documentHeading1NumberFont", value)}
           />
         </AdminStyleRow>
         <AdminStyleRow>
@@ -205,6 +230,16 @@ export function DocumentDeliveryStyleAdminSections({
         </AdminStyleRow>
         <AdminStyleRow>
           <SelectField
+            label="二级标题数字字体"
+            icon={Hash}
+            defaultValue={values.documentHeading2NumberFont || ""}
+            placeholder="继承正文"
+            options={INHERITABLE_NUMBER_FONT_OPTIONS}
+            onChange={(value) => onChange("documentHeading2NumberFont", value)}
+          />
+        </AdminStyleRow>
+        <AdminStyleRow>
+          <SelectField
             label="三级标题中文字体"
             icon={Type}
             defaultValue={values.documentHeading3ChineseFont || ""}
@@ -221,9 +256,19 @@ export function DocumentDeliveryStyleAdminSections({
             onChange={(value) => onChange("documentHeading3LatinFont", value)}
           />
         </AdminStyleRow>
+        <AdminStyleRow>
+          <SelectField
+            label="三级标题数字字体"
+            icon={Hash}
+            defaultValue={values.documentHeading3NumberFont || ""}
+            placeholder="继承正文"
+            options={INHERITABLE_NUMBER_FONT_OPTIONS}
+            onChange={(value) => onChange("documentHeading3NumberFont", value)}
+          />
+        </AdminStyleRow>
       </AdminStyleSection>
 
-      <AdminStyleSection title="表格" description="设置表格内文字字体、字号与对齐方式。">
+      <AdminStyleSection title="表格" description="设置表格文字、首行、框线与独立行距；不再附加表头底色。">
         <AdminStyleRow>
           <SelectField
             label="表格中文字体"
@@ -244,6 +289,16 @@ export function DocumentDeliveryStyleAdminSections({
         </AdminStyleRow>
         <AdminStyleRow>
           <SelectField
+            label="表格数字字体"
+            icon={Hash}
+            defaultValue={values.documentTableNumberFont || ""}
+            placeholder="继承正文"
+            options={INHERITABLE_NUMBER_FONT_OPTIONS}
+            onChange={(value) => onChange("documentTableNumberFont", value)}
+          />
+        </AdminStyleRow>
+        <AdminStyleRow>
+          <SelectField
             label="表格字号"
             icon={Hash}
             defaultValue={stringifyTableFontSizeValue(values.documentTableFontSize || "0")}
@@ -258,6 +313,48 @@ export function DocumentDeliveryStyleAdminSections({
             placeholder="请选择对齐方式"
             options={TABLE_CELL_ALIGNMENT_OPTIONS}
             onChange={(value) => onChange("documentTableCellAlignment", value)}
+          />
+        </AdminStyleRow>
+        <AdminStyleRow>
+          <SelectField
+            label="首行加粗"
+            icon={Table2}
+            defaultValue={values.documentTableHeaderBold || "false"}
+            placeholder="请选择首行格式"
+            options={TABLE_HEADER_BOLD_OPTIONS}
+            onChange={(value) => onChange("documentTableHeaderBold", value)}
+          />
+          <SelectField
+            label="表格框线"
+            icon={Table2}
+            defaultValue={values.documentTableBorders || "true"}
+            placeholder="请选择框线"
+            options={TABLE_BORDER_OPTIONS}
+            onChange={(value) => onChange("documentTableBorders", value)}
+          />
+        </AdminStyleRow>
+        {values.documentTableBorders !== "false" ? (
+          <AdminStyleRow>
+            <SelectField
+              label="框线磅数"
+              icon={Table2}
+              defaultValue={values.documentTableBorderWidthPt || "0.5"}
+              placeholder="请选择框线磅数"
+              options={TABLE_BORDER_WIDTH_OPTIONS}
+              onChange={(value) => onChange("documentTableBorderWidthPt", value)}
+            />
+          </AdminStyleRow>
+        ) : null}
+        <AdminStyleRow>
+          <LineSpacingStyleFields
+            mode={readLineSpacingMode(values.documentTableLineSpacingMode)}
+            multiple={Number(values.documentTableLineSpacing || "1")}
+            pt={Number(values.documentTableLineSpacingPt || "12")}
+            labelPrefix="表格"
+            onModeChange={(value) => onChange("documentTableLineSpacingMode", value)}
+            onMultipleChange={(value) => onChange("documentTableLineSpacing", String(value))}
+            onPtChange={(value) => onChange("documentTableLineSpacingPt", String(value))}
+            SelectField={SelectField}
           />
         </AdminStyleRow>
       </AdminStyleSection>

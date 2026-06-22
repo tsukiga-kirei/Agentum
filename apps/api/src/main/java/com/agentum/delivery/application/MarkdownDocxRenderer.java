@@ -175,6 +175,7 @@ public class MarkdownDocxRenderer {
             text,
             style.headingLatinFont(safeLevel),
             style.headingChineseFont(safeLevel),
+            style.headingNumberFont(safeLevel),
             size,
             true,
             false
@@ -202,8 +203,8 @@ public class MarkdownDocxRenderer {
             case TABLE_CELL -> {
                 StringBuilder builder = new StringBuilder();
                 builder.append("<w:pPr><w:spacing w:after=\"0\" w:line=\"")
-                    .append(style.resolvedLineTwips())
-                    .append("\" w:lineRule=\"").append(style.resolvedLineSpacingRule()).append("\"/>");
+                    .append(style.resolvedTableLineTwips())
+                    .append("\" w:lineRule=\"").append(style.resolvedTableLineSpacingRule()).append("\"/>");
                 builder.append("<w:jc w:val=\"").append(xml(style.tableCellAlignment())).append("\"/>");
                 builder.append("</w:pPr>");
                 yield builder.toString();
@@ -215,6 +216,7 @@ public class MarkdownDocxRenderer {
                 text,
                 style.tableResolvedLatinFont(),
                 style.tableResolvedChineseFont(),
+                style.tableResolvedNumberFont(),
                 style.tableResolvedFontSize(),
                 false,
                 false
@@ -253,17 +255,17 @@ public class MarkdownDocxRenderer {
               <w:tblPr>
                 <w:tblW w:w="5000" w:type="pct"/>
                 <w:tblLayout w:type="fixed"/>
-                <w:tblBorders>
-                  <w:top w:val="single" w:sz="4" w:space="0" w:color="D0D7DE"/>
-                  <w:left w:val="single" w:sz="4" w:space="0" w:color="D0D7DE"/>
-                  <w:bottom w:val="single" w:sz="4" w:space="0" w:color="D0D7DE"/>
-                  <w:right w:val="single" w:sz="4" w:space="0" w:color="D0D7DE"/>
-                  <w:insideH w:val="single" w:sz="4" w:space="0" w:color="D0D7DE"/>
-                  <w:insideV w:val="single" w:sz="4" w:space="0" w:color="D0D7DE"/>
-                </w:tblBorders>
-              </w:tblPr>
-              <w:tblGrid>
             """.stripIndent());
+        if (style.tableBorders()) {
+            int borderSize = Math.max(2, (int) Math.round(style.tableBorderWidthPt() * 8));
+            result.append("<w:tblBorders>");
+            for (String edge : List.of("top", "left", "bottom", "right", "insideH", "insideV")) {
+                result.append("<w:").append(edge).append(" w:val=\"single\" w:sz=\"")
+                    .append(borderSize).append("\" w:space=\"0\" w:color=\"auto\"/>");
+            }
+            result.append("</w:tblBorders>");
+        }
+        result.append("</w:tblPr><w:tblGrid>");
         for (int columnIndex = 0; columnIndex < columnCount; columnIndex++) {
             result.append("<w:gridCol w:w=\"").append(columnWidthTwips).append("\"/>");
         }
@@ -276,11 +278,8 @@ public class MarkdownDocxRenderer {
                 result.append("<w:tc><w:tcPr><w:tcW w:w=\"")
                     .append(columnWidthTwips)
                     .append("\" w:type=\"dxa\"/>");
-                if (rowIndex == 0) {
-                    result.append("<w:shd w:fill=\"F6F8FA\"/>");
-                }
                 result.append("</w:tcPr>")
-                    .append(paragraph(cell, style, ParagraphKind.TABLE_CELL, false))
+                    .append(tableCellParagraph(cell, style, rowIndex == 0 && style.tableHeaderBold()))
                     .append("</w:tc>");
             }
             result.append("</w:tr>");
@@ -290,13 +289,14 @@ public class MarkdownDocxRenderer {
     }
 
     private String runs(String text, DocumentDeliveryStyle style, int sizePt, boolean defaultBold, boolean defaultItalic) {
-        return runs(text, style.latinFont(), style.chineseFont(), sizePt, defaultBold, defaultItalic);
+        return runs(text, style.latinFont(), style.chineseFont(), style.numberFont(), sizePt, defaultBold, defaultItalic);
     }
 
     private String runs(
         String text,
         String latinFont,
         String chineseFont,
+        String numberFont,
         int sizePt,
         boolean defaultBold,
         boolean defaultItalic
@@ -304,9 +304,60 @@ public class MarkdownDocxRenderer {
         List<InlineRun> runs = parseInline(text, defaultBold, defaultItalic);
         StringBuilder result = new StringBuilder();
         for (InlineRun inlineRun : runs) {
-            result.append(run(inlineRun.text(), latinFont, chineseFont, sizePt, inlineRun.bold(), inlineRun.italic(), inlineRun.code()));
+            appendRunsByNumberFont(result, inlineRun, latinFont, chineseFont, numberFont, sizePt);
         }
         return result.toString();
+    }
+
+    private void appendRunsByNumberFont(
+        StringBuilder result,
+        InlineRun inlineRun,
+        String latinFont,
+        String chineseFont,
+        String numberFont,
+        int sizePt
+    ) {
+        String text = inlineRun.text();
+        if (inlineRun.code() || text.isEmpty()) {
+            result.append(run(text, latinFont, chineseFont, sizePt, inlineRun.bold(), inlineRun.italic(), inlineRun.code()));
+            return;
+        }
+        int segmentStart = 0;
+        boolean numberSegment = Character.isDigit(text.charAt(0));
+        for (int index = 1; index <= text.length(); index++) {
+            boolean boundary = index == text.length() || Character.isDigit(text.charAt(index)) != numberSegment;
+            if (boundary) {
+                String segment = text.substring(segmentStart, index);
+                result.append(run(
+                    segment,
+                    numberSegment ? numberFont : latinFont,
+                    chineseFont,
+                    sizePt,
+                    inlineRun.bold(),
+                    inlineRun.italic(),
+                    false
+                ));
+                if (index < text.length()) {
+                    segmentStart = index;
+                    numberSegment = !numberSegment;
+                }
+            }
+        }
+    }
+
+    private String tableCellParagraph(String text, DocumentDeliveryStyle style, boolean bold) {
+        String pPr = "<w:pPr><w:spacing w:after=\"0\" w:line=\"" + style.resolvedTableLineTwips()
+            + "\" w:lineRule=\"" + style.resolvedTableLineSpacingRule() + "\"/><w:jc w:val=\""
+            + xml(style.tableCellAlignment()) + "\"/></w:pPr>";
+        return "<w:p>" + pPr + runs(
+            text,
+            style.tableResolvedLatinFont(),
+            style.tableResolvedChineseFont(),
+            style.tableResolvedNumberFont(),
+            style.tableResolvedFontSize(),
+            bold,
+            false
+        ) + "</w:p>";
     }
 
     private String run(String text, DocumentDeliveryStyle style, int sizePt, boolean bold, boolean italic, boolean code) {

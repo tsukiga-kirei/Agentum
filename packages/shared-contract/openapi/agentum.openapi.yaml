@@ -4451,6 +4451,10 @@ components:
         latinFont:
           type: string
           default: Times New Roman
+        numberFont:
+          type: string
+          default: Times New Roman
+          description: 正文数字字体。
         bodyFontSize:
           oneOf:
             - type: integer
@@ -4477,24 +4481,36 @@ components:
         heading1LatinFont:
           type: string
           description: 一级标题西文字体，留空继承正文。
+        heading1NumberFont:
+          type: string
+          description: 一级标题数字字体，留空继承正文。
         heading2ChineseFont:
           type: string
           description: 二级标题中文字体，留空继承正文。
         heading2LatinFont:
           type: string
           description: 二级标题西文字体，留空继承正文。
+        heading2NumberFont:
+          type: string
+          description: 二级标题数字字体，留空继承正文。
         heading3ChineseFont:
           type: string
           description: 三级标题中文字体，留空继承正文。
         heading3LatinFont:
           type: string
           description: 三级标题西文字体，留空继承正文。
+        heading3NumberFont:
+          type: string
+          description: 三级标题数字字体，留空继承正文。
         tableChineseFont:
           type: string
           description: 表格中文字体，留空继承正文。
         tableLatinFont:
           type: string
           description: 表格西文字体，留空继承正文。
+        tableNumberFont:
+          type: string
+          description: 表格数字字体，留空继承正文。
         tableFontSize:
           oneOf:
             - type: integer
@@ -4506,6 +4522,35 @@ components:
           enum: [left, center, right, both]
           default: left
           description: 表格单元格文字对齐方式。
+        tableHeaderBold:
+          type: boolean
+          default: false
+          description: 表格首行是否加粗；不再附加首行底色。
+        tableBorders:
+          type: boolean
+          default: true
+          description: 是否使用默认全边框。
+        tableBorderWidthPt:
+          type: number
+          minimum: 0.25
+          maximum: 6
+          default: 0.5
+          description: 全边框磅数，仅 tableBorders=true 时生效。
+        tableLineSpacingMode:
+          type: string
+          enum: [multiple, exact]
+          default: multiple
+          description: 表格行距类型。
+        tableLineSpacing:
+          type: number
+          default: 1
+          description: 表格倍数行距。
+        tableLineSpacingPt:
+          type: integer
+          default: 12
+          minimum: 6
+          maximum: 72
+          description: 表格固定磅值行距。
         lineSpacingMode:
           type: string
           enum: [multiple, exact]

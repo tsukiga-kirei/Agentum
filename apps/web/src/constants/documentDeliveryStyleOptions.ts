@@ -1,20 +1,31 @@
 export type DocumentDeliveryStyleValues = {
   chineseFont: string;
   latinFont: string;
+  numberFont: string;
   bodyFontSize: string | number;
   heading1FontSize: string | number;
   heading2FontSize: string | number;
   heading3FontSize: string | number;
   heading1ChineseFont: string;
   heading1LatinFont: string;
+  heading1NumberFont: string;
   heading2ChineseFont: string;
   heading2LatinFont: string;
+  heading2NumberFont: string;
   heading3ChineseFont: string;
   heading3LatinFont: string;
+  heading3NumberFont: string;
   tableChineseFont: string;
   tableLatinFont: string;
+  tableNumberFont: string;
   tableFontSize: string | number;
   tableCellAlignment: string;
+  tableHeaderBold: boolean;
+  tableBorders: boolean;
+  tableBorderWidthPt: number;
+  tableLineSpacingMode: LineSpacingMode;
+  tableLineSpacing: number;
+  tableLineSpacingPt: number;
   lineSpacingMode: LineSpacingMode;
   lineSpacing: number;
   lineSpacingPt: number;
@@ -70,6 +81,9 @@ export const INHERITABLE_LATIN_FONT_OPTIONS: SelectOption[] = [
   ...LATIN_FONT_OPTIONS,
 ];
 
+export const NUMBER_FONT_OPTIONS = LATIN_FONT_OPTIONS;
+export const INHERITABLE_NUMBER_FONT_OPTIONS = INHERITABLE_LATIN_FONT_OPTIONS;
+
 const CHINESE_FONT_SIZE_OPTIONS: SelectOption[] = [
   { value: "初号", label: "初号（42pt）" },
   { value: "小初", label: "小初（36pt）" },
@@ -107,6 +121,19 @@ export const TABLE_CELL_ALIGNMENT_OPTIONS: SelectOption[] = [
   { value: "right", label: "右对齐" },
   { value: "both", label: "两端对齐" },
 ];
+
+export const TABLE_HEADER_BOLD_OPTIONS: SelectOption[] = [
+  { value: "false", label: "不加粗（默认）" },
+  { value: "true", label: "加粗" },
+];
+
+export const TABLE_BORDER_OPTIONS: SelectOption[] = [
+  { value: "true", label: "有框线（全边框）" },
+  { value: "false", label: "无框线" },
+];
+
+export const TABLE_BORDER_WIDTH_OPTIONS: SelectOption[] = [0.25, 0.5, 0.75, 1, 1.5, 2, 2.25, 3, 4, 5, 6]
+  .map((pt) => ({ value: String(pt), label: `${pt} 磅${pt === 0.5 ? "（默认）" : ""}` }));
 
 export const LINE_SPACING_OPTIONS: SelectOption[] = [
   { value: "1", label: "单倍（1.0）" },

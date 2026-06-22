@@ -106,22 +106,30 @@ class MarkdownDocxRendererTest {
 
     @Test
     void shouldApplyHeadingFontsAndTableStyles() throws IOException {
-        DocumentDeliveryStyle style = DocumentDeliveryStyle.from(Map.of(
-            "heading1ChineseFont", "黑体",
-            "heading1LatinFont", "Arial",
-            "heading2ChineseFont", "仿宋_GB2312",
-            "tableChineseFont", "楷体",
-            "tableLatinFont", "Georgia",
-            "tableFontSize", 10,
-            "tableCellAlignment", "center"
+        DocumentDeliveryStyle style = DocumentDeliveryStyle.from(Map.ofEntries(
+            Map.entry("numberFont", "Calibri"),
+            Map.entry("heading1ChineseFont", "黑体"),
+            Map.entry("heading1LatinFont", "Arial"),
+            Map.entry("heading1NumberFont", "Georgia"),
+            Map.entry("heading2ChineseFont", "仿宋_GB2312"),
+            Map.entry("tableChineseFont", "楷体"),
+            Map.entry("tableLatinFont", "Georgia"),
+            Map.entry("tableNumberFont", "Arial"),
+            Map.entry("tableFontSize", 10),
+            Map.entry("tableCellAlignment", "center"),
+            Map.entry("tableHeaderBold", true),
+            Map.entry("tableBorders", true),
+            Map.entry("tableBorderWidthPt", 1),
+            Map.entry("tableLineSpacingMode", "exact"),
+            Map.entry("tableLineSpacingPt", 16)
         ));
 
         byte[] bytes = renderer.render("""
-            # 一级标题
+            # 一级标题 2026
 
             ## 二级标题
 
-            | 字段 | 内容 |
+            | 字段 | 2026 内容 |
             | --- | --- |
             | 结论 | 通过 |
             """, style);
@@ -129,6 +137,7 @@ class MarkdownDocxRendererTest {
         Map<String, String> entries = unzip(bytes);
         assertThat(style.headingChineseFont(1)).isEqualTo("黑体");
         assertThat(style.headingLatinFont(1)).isEqualTo("Arial");
+        assertThat(style.headingNumberFont(1)).isEqualTo("Georgia");
         assertThat(style.headingChineseFont(2)).isEqualTo("仿宋_GB2312");
         assertThat(style.tableResolvedFontSize()).isEqualTo(10);
         assertThat(entries.get("word/document.xml"))
@@ -137,11 +146,29 @@ class MarkdownDocxRendererTest {
             .contains("仿宋_GB2312")
             .contains("楷体")
             .contains("Georgia")
+            .contains("<w:t xml:space=\"preserve\">2026</w:t>")
             .contains("<w:jc w:val=\"center\"/>")
-            .contains("<w:sz w:val=\"20\"/>");
+            .contains("<w:sz w:val=\"20\"/>")
+            .contains("<w:top w:val=\"single\" w:sz=\"8\"")
+            .contains("w:line=\"320\" w:lineRule=\"exact\"")
+            .contains("<w:b/><w:bCs/>")
+            .doesNotContain("<w:shd w:fill=\"F6F8FA\"/>");
         assertThat(entries.get("word/styles.xml"))
             .contains("黑体")
             .contains("仿宋_GB2312");
+    }
+
+    @Test
+    void shouldRemoveTableBordersAndKeepHeaderPlainByDefault() throws IOException {
+        DocumentDeliveryStyle style = DocumentDeliveryStyle.from(Map.of("tableBorders", false));
+
+        byte[] bytes = renderer.render("| 表头 | 数值 |\n| --- | --- |\n| 一 | 1 |", style);
+
+        String documentXml = unzip(bytes).get("word/document.xml");
+        assertThat(documentXml)
+            .doesNotContain("<w:tblBorders>")
+            .doesNotContain("<w:shd")
+            .doesNotContain("<w:b/>");
     }
 
     @Test

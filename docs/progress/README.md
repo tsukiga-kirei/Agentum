@@ -1,6 +1,6 @@
 # 当前进度与后续计划
 
-更新时间：2026-06-19（智能体单轮最大推理次数改为节点级配置，设计目录统一下发建议值和平台上限；补充 Skill/MCP 运行机制与 Skill 脚本执行边界说明）。
+更新时间：2026-06-22（Word 交付补充正文、三级标题和表格数字字体；表格改为可选首行加粗、可选全边框及磅数、独立行距，并移除首行底色）。
 
 本文档只记录当前施工状态、阶段计划和下一步任务。长期规范、系统说明和架构设计分别维护在：
 
@@ -216,6 +216,7 @@
 - 运行态异步执行落地（2026-06-10）：新增 `com.agentum.runtime` 包（RabbitMQ 拓扑与命令发布/消费、Redis 执行租约、`RunProgressStreamWriter` / `RunStreamRelayService` Redis Stream 进度写入与 SSE 中继、`StaleExecutionReaper` 超时/失联回收、`RedisRunCancellationGuard` 取消与截止信号）与 Worker 侧 `NodeExecutionService`；新增迁移 `V202606100001`（`workflow_run_execution_jobs`、`workflow_cluster_agent_runs`）；`WorkbenchRuntimeService` 重构为 advance 入队化，删除 `@Async`、内存 `RunStreamEmitterRegistry` 与 `RunExecutionCancellationRegistry`；新增 `interrupt`（节点 `canceled` + 数据清空）、`restart`（整步重跑）、`recover`（保留已成功子智能体只重跑失败部分）端点；智能体集群支持 `parallel` 真并发与 `sequential` 顺序执行；模型瞬时错误自动重试（attempt ≤ 3）；节点执行超时由 `AGENTUM_RUNTIME_NODE_TIMEOUT_SECONDS` 控制。前端 `useRunStream` 支持 `replay` 整步回放、`lastEventId` 断线续传与 heartbeat 活性；`TaskRunWorkspace` 进入即执行、刷新无感恢复（activeJob 驱动）、看门狗异常判定；`StepActionBar` 重做「中断执行 / 重新执行 / 恢复进度」互斥按钮矩阵。本地开发必须先 `make dev-infra`。
 - 模型 Token 用量闭环（2026-06-19）：流式 Chat Completions 显式请求 usage，模型调用日志增加标准化输入、输出和总 Token 字段；单智能体每条 assistant 回复按本轮全部 ReAct 调用累计展示，多智能体按子智能体/对话轮次展示；运行审计详情展示整次运行累计和逐次调用用量，模型调用台账同步展示 Token 明细。
 - Word 文档交付落地（2026-06-15）：新增文档样式快照、轻量 Markdown -> DOCX 渲染器、MinIO/S3 对象存储、设计态预览接口 `/api/tenants/{tenantId}/document-deliveries/preview`、运行态下载接口 `/api/tenants/{tenantId}/delivery-records/{recordId}/download`，并新增演示数据种子 `word_document_delivery`。
+- Word 文档交付样式增强（2026-06-22）：系统管理初始化配置和流程交付节点均支持正文、一级至三级标题及表格数字字体；表格首行可选加粗且不再附加底色，框线可关闭，开启时统一为全边框并可选磅数（默认 0.5 磅），表格行距可独立配置；本地演示数据迁移从同层级西文字体初始化复制数字字体。
 
 需要继续推进：
 
@@ -429,3 +430,6 @@
 | 2026-06-05 | `pnpm lint:web` | 通过：业务工作台移除未接入动作、待办/任务记录口径和失败态展示后复验 |
 | 2026-06-05 | `pnpm build:web` | 通过：真实运行态前端构建复验；Vite 仍提示 Ant Design vendor chunk 超过 500 kB |
 | 2026-06-05 | `git diff --check` | 通过：真实运行态、前端交互和文档更新空白检查 |
+| 2026-06-22 | `./gradlew test` | 通过：Word 数字字体拆分、表格首行/框线/独立行距及系统配置清洗全套后端测试 |
+| 2026-06-22 | `pnpm lint:web` / `pnpm build:web` | 通过：流程 Word 交付节点与系统管理初始化配置前端复验；Vite 仍提示 Ant Design vendor chunk 超过 500 kB |
+| 2026-06-22 | OpenAPI YAML 解析 / `git diff --check` | 通过：Word 交付样式契约、初始化迁移和文档同步复验 |

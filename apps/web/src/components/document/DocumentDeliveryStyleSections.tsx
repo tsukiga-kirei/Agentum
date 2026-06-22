@@ -10,7 +10,9 @@ import {
   HEADING_INDENT_OPTIONS,
   INHERITABLE_CHINESE_FONT_OPTIONS,
   INHERITABLE_LATIN_FONT_OPTIONS,
+  INHERITABLE_NUMBER_FONT_OPTIONS,
   LATIN_FONT_OPTIONS,
+  NUMBER_FONT_OPTIONS,
   MARGIN_CM_OPTIONS,
   MARGIN_PRESETS,
   MARGIN_PRESET_OPTIONS,
@@ -21,8 +23,11 @@ import {
   stringifyFontSizeValue,
   stringifySelectValue,
   stringifyTableFontSizeValue,
+  TABLE_BORDER_OPTIONS,
+  TABLE_BORDER_WIDTH_OPTIONS,
   TABLE_CELL_ALIGNMENT_OPTIONS,
   TABLE_FONT_SIZE_OPTIONS,
+  TABLE_HEADER_BOLD_OPTIONS,
   TITLE_ALIGNMENT_OPTIONS,
 } from "../../constants/documentDeliveryStyleOptions";
 import { LineSpacingStyleFields } from "./LineSpacingStyleFields";
@@ -130,7 +135,7 @@ export function DocumentDeliveryStyleSections({ style, onFieldChange, onFieldsCh
 
   return (
     <div className="space-y-4">
-      <StyleSection title="字体" description="设置文档中西文默认字体。">
+      <StyleSection title="字体" description="设置正文的中文、西文与数字默认字体。">
         <StyleSelectField
           label="中文字体"
           icon={Type}
@@ -144,6 +149,13 @@ export function DocumentDeliveryStyleSections({ style, onFieldChange, onFieldsCh
           value={style.latinFont}
           options={LATIN_FONT_OPTIONS}
           onChange={(value) => onFieldChange("latinFont", value)}
+        />
+        <StyleSelectField
+          label="数字字体"
+          icon={Hash}
+          value={style.numberFont}
+          options={NUMBER_FONT_OPTIONS}
+          onChange={(value) => onFieldChange("numberFont", value)}
         />
       </StyleSection>
 
@@ -178,7 +190,7 @@ export function DocumentDeliveryStyleSections({ style, onFieldChange, onFieldsCh
         />
       </StyleSection>
 
-      <StyleSection title="标题字体" description="可为各级标题单独设置中西文字体，留空则继承正文。">
+      <StyleSection title="标题字体" description="可为各级标题单独设置中文、西文与数字字体，留空则继承正文。">
         <StyleSelectField
           label="一级标题中文字体"
           icon={Type}
@@ -192,6 +204,13 @@ export function DocumentDeliveryStyleSections({ style, onFieldChange, onFieldsCh
           value={style.heading1LatinFont}
           options={INHERITABLE_LATIN_FONT_OPTIONS}
           onChange={(value) => onFieldChange("heading1LatinFont", value)}
+        />
+        <StyleSelectField
+          label="一级标题数字字体"
+          icon={Hash}
+          value={style.heading1NumberFont}
+          options={INHERITABLE_NUMBER_FONT_OPTIONS}
+          onChange={(value) => onFieldChange("heading1NumberFont", value)}
         />
         <StyleSelectField
           label="二级标题中文字体"
@@ -208,6 +227,13 @@ export function DocumentDeliveryStyleSections({ style, onFieldChange, onFieldsCh
           onChange={(value) => onFieldChange("heading2LatinFont", value)}
         />
         <StyleSelectField
+          label="二级标题数字字体"
+          icon={Hash}
+          value={style.heading2NumberFont}
+          options={INHERITABLE_NUMBER_FONT_OPTIONS}
+          onChange={(value) => onFieldChange("heading2NumberFont", value)}
+        />
+        <StyleSelectField
           label="三级标题中文字体"
           icon={Type}
           value={style.heading3ChineseFont}
@@ -221,9 +247,16 @@ export function DocumentDeliveryStyleSections({ style, onFieldChange, onFieldsCh
           options={INHERITABLE_LATIN_FONT_OPTIONS}
           onChange={(value) => onFieldChange("heading3LatinFont", value)}
         />
+        <StyleSelectField
+          label="三级标题数字字体"
+          icon={Hash}
+          value={style.heading3NumberFont}
+          options={INHERITABLE_NUMBER_FONT_OPTIONS}
+          onChange={(value) => onFieldChange("heading3NumberFont", value)}
+        />
       </StyleSection>
 
-      <StyleSection title="表格" description="设置表格内文字字体、字号与对齐方式。">
+      <StyleSection title="表格" description="设置表格文字、首行、框线与独立行距；不再附加表头底色。">
         <StyleSelectField
           label="表格中文字体"
           icon={Table2}
@@ -239,6 +272,13 @@ export function DocumentDeliveryStyleSections({ style, onFieldChange, onFieldsCh
           onChange={(value) => onFieldChange("tableLatinFont", value)}
         />
         <StyleSelectField
+          label="表格数字字体"
+          icon={Hash}
+          value={style.tableNumberFont}
+          options={INHERITABLE_NUMBER_FONT_OPTIONS}
+          onChange={(value) => onFieldChange("tableNumberFont", value)}
+        />
+        <StyleSelectField
           label="表格字号"
           icon={Hash}
           value={stringifyTableFontSizeValue(style.tableFontSize)}
@@ -251,6 +291,47 @@ export function DocumentDeliveryStyleSections({ style, onFieldChange, onFieldsCh
           value={style.tableCellAlignment}
           options={TABLE_CELL_ALIGNMENT_OPTIONS}
           onChange={(value) => onFieldChange("tableCellAlignment", value)}
+        />
+        <StyleSelectField
+          label="首行加粗"
+          icon={Table2}
+          value={String(style.tableHeaderBold)}
+          options={TABLE_HEADER_BOLD_OPTIONS}
+          onChange={(value) => onFieldChange("tableHeaderBold", value === "true")}
+        />
+        <StyleSelectField
+          label="表格框线"
+          icon={Table2}
+          value={String(style.tableBorders)}
+          options={TABLE_BORDER_OPTIONS}
+          onChange={(value) => onFieldChange("tableBorders", value === "true")}
+        />
+        {style.tableBorders ? (
+          <StyleSelectField
+            label="框线磅数"
+            icon={Table2}
+            value={String(style.tableBorderWidthPt)}
+            options={TABLE_BORDER_WIDTH_OPTIONS}
+            onChange={(value) => onFieldChange("tableBorderWidthPt", Number(value))}
+          />
+        ) : null}
+        <LineSpacingStyleFields
+          mode={style.tableLineSpacingMode}
+          multiple={style.tableLineSpacing}
+          pt={style.tableLineSpacingPt}
+          labelPrefix="表格"
+          onModeChange={(value) => onFieldChange("tableLineSpacingMode", value)}
+          onMultipleChange={(value) => onFieldChange("tableLineSpacing", value)}
+          onPtChange={(value) => onFieldChange("tableLineSpacingPt", value)}
+          SelectField={(props) => (
+            <StyleSelectField
+              label={props.label}
+              icon={props.icon}
+              value={props.value ?? props.defaultValue ?? ""}
+              options={props.options}
+              onChange={props.onChange}
+            />
+          )}
         />
       </StyleSection>
 
