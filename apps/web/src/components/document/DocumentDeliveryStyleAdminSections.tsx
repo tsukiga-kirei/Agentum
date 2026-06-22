@@ -67,8 +67,8 @@ function AdminStyleSection({
   );
 }
 
-function AdminStyleRow({ children }: { children: React.ReactNode }) {
-  return <div className="sys-field-row">{children}</div>;
+function AdminStyleRow({ children, columns = 2 }: { children: React.ReactNode; columns?: 2 | 3 }) {
+  return <div className={columns === 3 ? "document-style-field-row--three" : "sys-field-row"}>{children}</div>;
 }
 
 export function DocumentDeliveryStyleAdminSections({
@@ -112,7 +112,7 @@ export function DocumentDeliveryStyleAdminSections({
   return (
     <div className="space-y-4">
       <AdminStyleSection title="字体" description="设置正文的中文、西文与数字默认字体。">
-        <AdminStyleRow>
+        <AdminStyleRow columns={3}>
           <SelectField
             label="中文字体"
             icon={Type}
@@ -129,8 +129,6 @@ export function DocumentDeliveryStyleAdminSections({
             options={LATIN_FONT_OPTIONS}
             onChange={(value) => onChange("documentLatinFont", value)}
           />
-        </AdminStyleRow>
-        <AdminStyleRow>
           <SelectField
             label="数字字体"
             icon={Hash}
@@ -182,7 +180,7 @@ export function DocumentDeliveryStyleAdminSections({
       </AdminStyleSection>
 
       <AdminStyleSection title="标题字体" description="可为各级标题单独设置中文、西文与数字字体，留空则继承正文。">
-        <AdminStyleRow>
+        <AdminStyleRow columns={3}>
           <SelectField
             label="一级标题中文字体"
             icon={Type}
@@ -199,8 +197,6 @@ export function DocumentDeliveryStyleAdminSections({
             options={INHERITABLE_LATIN_FONT_OPTIONS}
             onChange={(value) => onChange("documentHeading1LatinFont", value)}
           />
-        </AdminStyleRow>
-        <AdminStyleRow>
           <SelectField
             label="一级标题数字字体"
             icon={Hash}
@@ -210,7 +206,7 @@ export function DocumentDeliveryStyleAdminSections({
             onChange={(value) => onChange("documentHeading1NumberFont", value)}
           />
         </AdminStyleRow>
-        <AdminStyleRow>
+        <AdminStyleRow columns={3}>
           <SelectField
             label="二级标题中文字体"
             icon={Type}
@@ -227,8 +223,6 @@ export function DocumentDeliveryStyleAdminSections({
             options={INHERITABLE_LATIN_FONT_OPTIONS}
             onChange={(value) => onChange("documentHeading2LatinFont", value)}
           />
-        </AdminStyleRow>
-        <AdminStyleRow>
           <SelectField
             label="二级标题数字字体"
             icon={Hash}
@@ -238,7 +232,7 @@ export function DocumentDeliveryStyleAdminSections({
             onChange={(value) => onChange("documentHeading2NumberFont", value)}
           />
         </AdminStyleRow>
-        <AdminStyleRow>
+        <AdminStyleRow columns={3}>
           <SelectField
             label="三级标题中文字体"
             icon={Type}
@@ -255,8 +249,6 @@ export function DocumentDeliveryStyleAdminSections({
             options={INHERITABLE_LATIN_FONT_OPTIONS}
             onChange={(value) => onChange("documentHeading3LatinFont", value)}
           />
-        </AdminStyleRow>
-        <AdminStyleRow>
           <SelectField
             label="三级标题数字字体"
             icon={Hash}
@@ -269,7 +261,7 @@ export function DocumentDeliveryStyleAdminSections({
       </AdminStyleSection>
 
       <AdminStyleSection title="表格" description="设置表格文字、首行、框线与独立行距；不再附加表头底色。">
-        <AdminStyleRow>
+        <AdminStyleRow columns={3}>
           <SelectField
             label="表格中文字体"
             icon={Table2}
@@ -286,8 +278,6 @@ export function DocumentDeliveryStyleAdminSections({
             options={INHERITABLE_LATIN_FONT_OPTIONS}
             onChange={(value) => onChange("documentTableLatinFont", value)}
           />
-        </AdminStyleRow>
-        <AdminStyleRow>
           <SelectField
             label="表格数字字体"
             icon={Hash}

@@ -3179,6 +3179,11 @@ textarea:focus-visible {
 }
 .sys-select-option--selected .sys-select-check { opacity: 1; }
 .sys-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.document-style-field-row--three {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 16px;
+}
 
 /* 弹窗内页签 */
 .sys-modal-tabs {

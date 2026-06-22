@@ -52,11 +52,13 @@ function StyleSection({
   description,
   children,
   layout = "grid",
+  columns = 2,
 }: {
   title: string;
   description?: string;
   children: React.ReactNode;
   layout?: "grid" | "stack";
+  columns?: 2 | 3;
 }) {
   return (
     <section className="rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-4">
@@ -64,7 +66,7 @@ function StyleSection({
         <h5 className="text-sm font-semibold text-[var(--color-text-primary)]">{title}</h5>
         {description ? <p className="mt-1 text-xs text-[var(--color-text-secondary)]">{description}</p> : null}
       </div>
-      <div className={layout === "stack" ? "space-y-4" : "grid gap-4 lg:grid-cols-2"}>{children}</div>
+      <div className={layout === "stack" ? "space-y-4" : columns === 3 ? "grid gap-4 sm:grid-cols-3" : "grid gap-4 lg:grid-cols-2"}>{children}</div>
     </section>
   );
 }
@@ -135,7 +137,7 @@ export function DocumentDeliveryStyleSections({ style, onFieldChange, onFieldsCh
 
   return (
     <div className="space-y-4">
-      <StyleSection title="字体" description="设置正文的中文、西文与数字默认字体。">
+      <StyleSection title="字体" description="设置正文的中文、西文与数字默认字体。" columns={3}>
         <StyleSelectField
           label="中文字体"
           icon={Type}
@@ -190,7 +192,7 @@ export function DocumentDeliveryStyleSections({ style, onFieldChange, onFieldsCh
         />
       </StyleSection>
 
-      <StyleSection title="标题字体" description="可为各级标题单独设置中文、西文与数字字体，留空则继承正文。">
+      <StyleSection title="标题字体" description="可为各级标题单独设置中文、西文与数字字体，留空则继承正文。" columns={3}>
         <StyleSelectField
           label="一级标题中文字体"
           icon={Type}
@@ -256,7 +258,7 @@ export function DocumentDeliveryStyleSections({ style, onFieldChange, onFieldsCh
         />
       </StyleSection>
 
-      <StyleSection title="表格" description="设置表格文字、首行、框线与独立行距；不再附加表头底色。">
+      <StyleSection title="表格" description="设置表格文字、首行、框线与独立行距；不再附加表头底色。" columns={3}>
         <StyleSelectField
           label="表格中文字体"
           icon={Table2}

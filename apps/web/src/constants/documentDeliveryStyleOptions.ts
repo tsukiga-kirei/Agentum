@@ -81,8 +81,16 @@ export const INHERITABLE_LATIN_FONT_OPTIONS: SelectOption[] = [
   ...LATIN_FONT_OPTIONS,
 ];
 
-export const NUMBER_FONT_OPTIONS = LATIN_FONT_OPTIONS;
-export const INHERITABLE_NUMBER_FONT_OPTIONS = INHERITABLE_LATIN_FONT_OPTIONS;
+// 数字在 Word 中既可以使用 Times New Roman 等西文字体，也常按公文规范使用宋体、黑体等中文字体。
+export const NUMBER_FONT_OPTIONS: SelectOption[] = [
+  ...CHINESE_FONT_OPTIONS,
+  ...LATIN_FONT_OPTIONS,
+];
+
+export const INHERITABLE_NUMBER_FONT_OPTIONS: SelectOption[] = [
+  INHERIT_FONT_OPTION,
+  ...NUMBER_FONT_OPTIONS,
+];
 
 const CHINESE_FONT_SIZE_OPTIONS: SelectOption[] = [
   { value: "初号", label: "初号（42pt）" },
