@@ -2153,6 +2153,7 @@ function VariableReferenceItemBar({
         <Tooltip
           key={`${item.sourceLabel}-${item.name}`}
           rootClassName="agentum-tooltip"
+          zIndex={2800}
           title={<VariableReferenceTooltip item={item} />}
         >
           <button type="button" onClick={() => onPick(item.name)} aria-label={`插入变量 {{${item.name}}}`}>

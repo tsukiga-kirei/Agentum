@@ -183,6 +183,9 @@ export function TaskRunWorkspace({
       stream.isStreaming
       && stream.connectionState === "connected"
       && !!streamActiveNodeId;
+    const liveTemplateVariables = streamActiveNodeId
+      ? collectVariablesBeforeNode(runDetail, streamActiveNodeId)
+      : {};
 
     const updatedSteps = basePreview.steps.map((step) => {
       // 后端已标记失败/完成时，不再被 SSE 流式态覆盖为「运行中」。
@@ -190,7 +193,7 @@ export function TaskRunWorkspace({
         return step;
       }
       if (mergingLiveStep && step.nodeRunId === streamActiveNodeId) {
-        const chatMessages = buildLiveChatMessages(step, stream.streamingText);
+        const chatMessages = buildLiveChatMessages(step, stream.streamingText, liveTemplateVariables);
 
         return {
           ...step,
@@ -1816,7 +1819,11 @@ function nodeDescription(nodeType: string, config: any): string {
 }
 
 /** 运行中合并 SSE：追问保留 config 对话历史；重新执行后仅展示首轮用户提示 + 流式回复。 */
-function buildLiveChatMessages(step: RuntimePreviewStep, streamingText: string): RuntimeChatMessage[] {
+function buildLiveChatMessages(
+  step: RuntimePreviewStep,
+  streamingText: string,
+  templateVariables: Record<string, unknown>,
+): RuntimeChatMessage[] {
   const config = (step.configSnapshot ?? {}) as Record<string, unknown>;
   const history = Array.isArray(config.conversationHistory) ? config.conversationHistory : [];
   const messages: RuntimeChatMessage[] = [];
@@ -1847,7 +1854,8 @@ function buildLiveChatMessages(step: RuntimePreviewStep, streamingText: string):
         id: `${step.nodeRunId}-live-user`,
         role: "user",
         author: "我",
-        content: userPrompt,
+        // 后端会在模型调用前替换同一批上游变量；运行中也同步渲染，避免暂时展示原始 {{变量名}} 造成未传值的误解。
+        content: renderRuntimeTemplate(userPrompt, templateVariables),
       });
     }
   }
@@ -1872,6 +1880,29 @@ function buildLiveChatMessages(step: RuntimePreviewStep, streamingText: string):
   }
 
   return messages;
+}
+
+/** 汇总目标节点之前所有已完成节点的输出，与后端 NodeExecutionService.variablesBeforeNode 保持一致。 */
+function collectVariablesBeforeNode(run: WorkbenchRunDetail, nodeRunId: string): Record<string, unknown> {
+  const targetNode = run.nodes.find((node) => node.id === nodeRunId);
+  if (!targetNode) {
+    return {};
+  }
+  return run.nodes
+    .filter((node) => node.state === "completed" && node.sortOrder < targetNode.sortOrder)
+    .sort((left, right) => left.sortOrder - right.sortOrder)
+    .reduce<Record<string, unknown>>((variables, node) => {
+      Object.assign(variables, node.outputs ?? {});
+      return variables;
+    }, {});
+}
+
+function renderRuntimeTemplate(template: string, variables: Record<string, unknown>): string {
+  return template.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_placeholder, variableName: string) =>
+    Object.prototype.hasOwnProperty.call(variables, variableName)
+      ? stringifyValue(variables[variableName])
+      : "",
+  );
 }
 
 function nodeMessages(node: any): RuntimeChatMessage[] {
