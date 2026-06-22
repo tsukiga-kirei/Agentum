@@ -2276,6 +2276,11 @@ public class WorkbenchRuntimeService {
 
     private boolean isSensitiveVariable(String variableName) {
         String normalized = variableName == null ? "" : variableName.toLowerCase();
+        // tokenUsage 表示模型输入、输出和总 Token 数量，不包含访问凭证；不能因名称含 token 被误判为敏感信息。
+        // 若流程设计者确实将同名自定义变量标记为敏感，customSensitiveVariables 仍会优先触发遮蔽。
+        if ("tokenusage".equals(normalized) || "token_usage".equals(normalized)) {
+            return false;
+        }
         return normalized.contains("password")
             || normalized.contains("token")
             || normalized.contains("secret")

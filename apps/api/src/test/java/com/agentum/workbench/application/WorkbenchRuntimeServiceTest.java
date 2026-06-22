@@ -945,7 +945,8 @@ class WorkbenchRuntimeServiceTest {
         Map<String, Object> outputs = Map.of(
             "custom_sensitive_data", "secret-value",
             "normal_data", "public-value",
-            "password_field", "plaintext-pass"
+            "password_field", "plaintext-pass",
+            "tokenUsage", Map.of("inputTokens", 120, "outputTokens", 30, "totalTokens", 150)
         );
 
         service.saveNodeSuccess(run.getId(), agentNode.getId(), outputs, OPERATOR_ID);
@@ -954,7 +955,7 @@ class WorkbenchRuntimeServiceTest {
         verify(workflowVariableSnapshotRepository).saveAll(snapshotsCaptor.capture());
 
         List<WorkflowVariableSnapshotEntity> snapshots = snapshotsCaptor.getValue();
-        assertThat(snapshots).hasSize(3);
+        assertThat(snapshots).hasSize(4);
 
         Map<String, Object> snapshotValues = new HashMap<>();
         snapshots.forEach(s -> snapshotValues.put(s.getVariableName(), s.getValueSnapshot().get("value")));
@@ -962,6 +963,15 @@ class WorkbenchRuntimeServiceTest {
         assertThat(snapshotValues.get("custom_sensitive_data")).isEqualTo("***");
         assertThat(snapshotValues.get("password_field")).isEqualTo("***");
         assertThat(snapshotValues.get("normal_data")).isEqualTo("public-value");
+        assertThat(snapshotValues.get("tokenUsage")).isEqualTo(
+            Map.of("inputTokens", 120, "outputTokens", 30, "totalTokens", 150)
+        );
+        assertThat(snapshots.stream().filter(snapshot -> "tokenUsage".equals(snapshot.getVariableName())).findFirst())
+            .get()
+            .satisfies(snapshot -> {
+                assertThat(snapshot.isSensitive()).isFalse();
+                assertThat(snapshot.getValueType()).isEqualTo("object");
+            });
     }
 
     private WorkflowRunEntity ownedRun() {
