@@ -1,6 +1,8 @@
 package com.agentum.auth.interfaces;
 
 import com.agentum.auth.application.AuthService;
+import com.agentum.auth.application.AuthCookieService;
+import com.agentum.auth.application.AuthSessionResult;
 import com.agentum.auth.application.CurrentUserPrincipal;
 import com.agentum.shared.api.ApiResponse;
 import com.agentum.shared.api.ApiException;
@@ -11,6 +13,8 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpHeaders;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -26,14 +30,31 @@ public class AuthController {
     private static final Logger log = LoggerFactory.getLogger(AuthController.class);
 
     private final AuthService authService;
+    private final AuthCookieService cookieService;
 
-    public AuthController(AuthService authService) {
+    public AuthController(AuthService authService, AuthCookieService cookieService) {
         this.authService = authService;
+        this.cookieService = cookieService;
     }
 
     @PostMapping("/login")
-    public ApiResponse<LoginResponse> login(@Valid @RequestBody LoginRequest loginRequest, HttpServletRequest request) {
-        return ApiResponse.success(authService.login(loginRequest), RequestIds.current(request));
+    public ApiResponse<LoginResponse> login(@Valid @RequestBody LoginRequest loginRequest, HttpServletRequest request, HttpServletResponse response) {
+        AuthSessionResult result = authService.login(loginRequest);
+        response.addHeader(HttpHeaders.SET_COOKIE, cookieService.create(result.refreshToken()));
+        return ApiResponse.success(result.response(), RequestIds.current(request));
+    }
+
+    @PostMapping("/refresh")
+    public ApiResponse<LoginResponse> refresh(HttpServletRequest request, HttpServletResponse response) {
+        try {
+            AuthSessionResult result = authService.refresh(cookieService.read(request));
+            response.addHeader(HttpHeaders.SET_COOKIE, cookieService.create(result.refreshToken()));
+            return ApiResponse.success(result.response(), RequestIds.current(request));
+        } catch (ApiException exception) {
+            // 失效 Cookie 必须同步清理，否则刷新页面会重复携带同一枚无效令牌。
+            response.addHeader(HttpHeaders.SET_COOKIE, cookieService.clear());
+            throw exception;
+        }
     }
 
     // /me 返回与登录相同结构（含 roles、activeRole、menus），前端可据此恢复完整会话状态。
@@ -52,7 +73,8 @@ public class AuthController {
     public ApiResponse<SwitchRoleResponse> switchRole(
         @AuthenticationPrincipal CurrentUserPrincipal principal,
         @Valid @RequestBody SwitchRoleRequest switchRoleRequest,
-        HttpServletRequest request
+        HttpServletRequest request,
+        HttpServletResponse response
     ) {
         if (principal == null) {
             log.warn("角色切换被拒绝：缺少认证主体 requestId={}", RequestIds.current(request));
@@ -60,19 +82,16 @@ public class AuthController {
         }
 
         UUID targetRoleId = UUID.fromString(switchRoleRequest.roleId());
-        return ApiResponse.success(authService.switchRole(principal, targetRoleId), RequestIds.current(request));
+        AuthSessionResult result = authService.switchRole(principal, targetRoleId, cookieService.read(request));
+        response.addHeader(HttpHeaders.SET_COOKIE, cookieService.create(result.refreshToken()));
+        LoginResponse login = result.response();
+        return ApiResponse.success(new SwitchRoleResponse(login.token(), login.user(), login.activeRole(), login.permissions(), login.menus()), RequestIds.current(request));
     }
 
     @PostMapping("/logout")
-    public ApiResponse<Void> logout(@AuthenticationPrincipal CurrentUserPrincipal principal, HttpServletRequest request) {
-        // 当前阶段是无状态 Bearer Token，登出只清理前端本地凭据；这里保留审计线索，后续接入 token 吊销表。
-        log.info(
-            "用户登出 userId={} tenantId={} role={} requestId={}",
-            principal == null ? null : principal.userId(),
-            principal == null ? null : principal.tenantId(),
-            principal == null ? null : principal.role(),
-            RequestIds.current(request)
-        );
+    public ApiResponse<Void> logout(@AuthenticationPrincipal CurrentUserPrincipal principal, HttpServletRequest request, HttpServletResponse response) {
+        authService.logout(cookieService.read(request), principal);
+        response.addHeader(HttpHeaders.SET_COOKIE, cookieService.clear());
         return ApiResponse.success(RequestIds.current(request));
     }
 }

@@ -40,7 +40,7 @@ public class AuthTokenService {
     public AuthTokenService(
         ObjectMapper objectMapper,
         @Value("${agentum.auth.token-secret}") String tokenSecret,
-        @Value("${agentum.auth.token-ttl-minutes:480}") long tokenTtlMinutes
+        @Value("${agentum.auth.token-ttl-minutes:15}") long tokenTtlMinutes
     ) {
         this(objectMapper, Clock.systemUTC(), tokenSecret, Duration.ofMinutes(tokenTtlMinutes));
     }

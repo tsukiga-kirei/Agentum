@@ -187,6 +187,10 @@ com.agentum
 
 认证模块负责登录、登出、会话刷新、账号状态、角色切换和当前用户信息。
 
+当前会话采用短期 Access Token + 可轮换 Refresh Token：Access Token 是携带活跃用户、租户和角色上下文的 HS256 JWT，本地默认有效期 15 分钟；Refresh Token 是 256 位随机值，只通过 `HttpOnly`、`SameSite=Lax` Cookie 传递，数据库仅保存 SHA-256 摘要，本地默认有效期 30 天。刷新时使用悲观锁保证同一个 Refresh Token 只能成功使用一次，旧令牌随即吊销；登出和角色切换都会吊销当前 Refresh Token。前端对并发 401 只发起一次刷新，刷新失败后清理 Access Token 并立即返回登录页。登录状态不再由“是否关闭浏览器”决定，只由两类 Token 的有效性决定。
+
+登录页的“记住账号”只保存用户名偏好，绝不保存密码；密码自动填充由浏览器或系统密码管理器通过标准 `autocomplete` 接管。应用代码、Local Storage、Session Storage、日志和接口响应都不得保存或回显密码明文。Access Token 当前持久化到 Local Storage，Refresh Token 对 JavaScript 不可见；后续若前端面临更高 XSS 风险等级，应进一步收敛 Access Token 的浏览器存储方式并配套 CSP。
+
 请求进入业务接口后，应构造统一上下文：
 
 ```text

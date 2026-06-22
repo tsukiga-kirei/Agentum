@@ -70,6 +70,7 @@ class SsoAuthServiceTest {
             userAccountRepository,
             roleAssignmentRepository,
             authTokenService,
+            mock(AuthRefreshTokenService.class),
             oidcIdentityClient,
             menuService,
             stateService
@@ -91,7 +92,8 @@ class SsoAuthServiceTest {
         when(authTokenService.createToken(any(CurrentUserPrincipal.class))).thenReturn("agentum-token");
         when(menuService.resolveMenus("business", TENANT_ID, user.getId())).thenReturn(List.of());
 
-        LoginResponse response = service.handleCallback(PROVIDER_ID, "oidc-code", state);
+        AuthSessionResult result = service.handleCallback(PROVIDER_ID, "oidc-code", state);
+        LoginResponse response = result.response();
 
         assertThat(response.token()).isEqualTo("agentum-token");
         assertThat(response.user().username()).isEqualTo("operator");
@@ -116,6 +118,7 @@ class SsoAuthServiceTest {
             userAccountRepository == null ? mock(UserAccountRepository.class) : userAccountRepository,
             roleAssignmentRepository == null ? mock(UserRoleAssignmentRepository.class) : roleAssignmentRepository,
             authTokenService == null ? mock(AuthTokenService.class) : authTokenService,
+            mock(AuthRefreshTokenService.class),
             oidcIdentityClient == null ? mock(OidcIdentityClient.class) : oidcIdentityClient,
             menuService == null ? mock(MenuService.class) : menuService,
             new SsoStateService(Clock.fixed(NOW, ZoneOffset.UTC), "sso-test-secret", Duration.ofMinutes(5))
@@ -129,6 +132,7 @@ class SsoAuthServiceTest {
         UserAccountRepository userAccountRepository,
         UserRoleAssignmentRepository roleAssignmentRepository,
         AuthTokenService authTokenService,
+        AuthRefreshTokenService refreshTokenService,
         OidcIdentityClient oidcIdentityClient,
         MenuService menuService,
         SsoStateService stateService
@@ -140,6 +144,7 @@ class SsoAuthServiceTest {
             userAccountRepository,
             roleAssignmentRepository,
             authTokenService,
+            refreshTokenService,
             menuService,
             oidcIdentityClient,
             stateService,

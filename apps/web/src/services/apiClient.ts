@@ -90,6 +90,7 @@ type ApiEnvelope<T> = {
 type RequestOptions = Omit<RequestInit, "body"> & {
   body?: unknown;
   token?: string | null;
+  skipAuthRefresh?: boolean;
 };
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080";
@@ -108,6 +109,56 @@ export class AgentumApiError extends Error {
   }
 }
 
+type AuthSessionBridge = {
+  getAccessToken: () => string | null;
+  onRefreshed: (response: LoginResponse) => void;
+  onExpired: () => void;
+};
+
+let authSessionBridge: AuthSessionBridge | null = null;
+let refreshRequest: Promise<LoginResponse> | null = null;
+
+export function configureAuthSessionBridge(bridge: AuthSessionBridge): void {
+  authSessionBridge = bridge;
+}
+
+async function refreshAccessToken(): Promise<LoginResponse> {
+  if (!refreshRequest) {
+    refreshRequest = fetch(`${API_BASE_URL}/api/auth/refresh`, {
+      method: "POST",
+      credentials: "include",
+    })
+      .then(async (response) => {
+        const envelope = (await response.json()) as ApiEnvelope<LoginResponse>;
+        if (!response.ok || !envelope.success || !envelope.data) {
+          throw new AgentumApiError(
+            envelope.error?.message ?? "登录状态已失效，请重新登录",
+            envelope.error?.code ?? "AUTH_REFRESH_TOKEN_INVALID",
+            envelope.requestId,
+          );
+        }
+        authSessionBridge?.onRefreshed(envelope.data);
+        return envelope.data;
+      })
+      .catch((error) => {
+        authSessionBridge?.onExpired();
+        throw error;
+      })
+      .finally(() => {
+        refreshRequest = null;
+      });
+  }
+  return refreshRequest;
+}
+
+async function resolveAccessTokenAfterUnauthorized(rejectedToken: string): Promise<string> {
+  const currentToken = authSessionBridge?.getAccessToken();
+  if (currentToken && currentToken !== rejectedToken) {
+    return currentToken;
+  }
+  return (await refreshAccessToken()).token;
+}
+
 async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const headers = new Headers(options.headers);
 
@@ -124,6 +175,7 @@ async function apiRequest<T>(path: string, options: RequestOptions = {}): Promis
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...options,
+      credentials: "include",
       headers,
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
     });
@@ -143,6 +195,10 @@ async function apiRequest<T>(path: string, options: RequestOptions = {}): Promis
   }
 
   if (!response.ok || !envelope.success) {
+    if (response.status === 401 && options.token && !options.skipAuthRefresh && canRefreshSession(path)) {
+      const accessToken = await resolveAccessTokenAfterUnauthorized(options.token);
+      return apiRequest<T>(path, { ...options, token: accessToken, skipAuthRefresh: true });
+    }
     console.warn("[api] 请求失败", { path, status: response.status, code: envelope.error?.code, requestId: envelope.requestId });
     throw new AgentumApiError(
       envelope.error?.message ?? "请求失败，请稍后重试",
@@ -157,6 +213,10 @@ async function apiRequest<T>(path: string, options: RequestOptions = {}): Promis
   }
 
   return envelope.data;
+}
+
+function canRefreshSession(path: string): boolean {
+  return !["/api/auth/login", "/api/auth/refresh", "/api/auth/logout"].includes(path);
 }
 
 async function apiFileRequest(path: string, options: RequestOptions = {}): Promise<FileDownloadResponse> {
@@ -174,6 +234,7 @@ async function apiFileRequest(path: string, options: RequestOptions = {}): Promi
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...options,
+      credentials: "include",
       headers,
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
     });
@@ -183,6 +244,10 @@ async function apiFileRequest(path: string, options: RequestOptions = {}): Promi
   }
 
   if (!response.ok) {
+    if (response.status === 401 && options.token && !options.skipAuthRefresh) {
+      const accessToken = await resolveAccessTokenAfterUnauthorized(options.token);
+      return apiFileRequest(path, { ...options, token: accessToken, skipAuthRefresh: true });
+    }
     let message = "文件下载失败，请稍后重试";
     let code = "SYSTEM_FILE_REQUEST_FAILED";
     let requestId = response.headers.get("X-Request-Id") ?? "req_unknown";
@@ -233,10 +298,11 @@ export const authApi = {
     return `${API_BASE_URL}/api/auth/sso/authorize?${params.toString()}`;
   },
   login: (request: LoginRequest) => apiRequest<LoginResponse>("/api/auth/login", { method: "POST", body: request }),
+  refresh: () => apiRequest<LoginResponse>("/api/auth/refresh", { method: "POST", skipAuthRefresh: true }),
   me: (token: string) => apiRequest<MeResponse>("/api/auth/me", { token }),
   switchRole: (token: string, request: SwitchRoleRequest) =>
     apiRequest<SwitchRoleResponse>("/api/auth/switch-role", { method: "PUT", token, body: request }),
-  logout: (token: string) => apiRequest<void>("/api/auth/logout", { method: "POST", token }),
+  logout: (_token?: string) => apiRequest<void>("/api/auth/logout", { method: "POST" }),
 };
 
 export const organizationApi = {

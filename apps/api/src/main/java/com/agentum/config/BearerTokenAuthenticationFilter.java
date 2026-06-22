@@ -13,6 +13,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -82,6 +83,7 @@ public class BearerTokenAuthenticationFilter extends OncePerRequestFilter {
                 RequestIds.current(request)
             );
             response.setStatus(exception.getStatus().value());
+            response.setCharacterEncoding(StandardCharsets.UTF_8.name());
             response.setContentType(MediaType.APPLICATION_JSON_VALUE);
             ApiError error = new ApiError(exception.getCode(), exception.getMessage(), exception.getDetails());
             objectMapper.writeValue(response.getWriter(), ApiResponse.failure(error, RequestIds.current(request)));

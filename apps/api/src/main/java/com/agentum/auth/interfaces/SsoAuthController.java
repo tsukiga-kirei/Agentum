@@ -1,6 +1,8 @@
 package com.agentum.auth.interfaces;
 
 import com.agentum.auth.application.LoginCallbackPageRenderer;
+import com.agentum.auth.application.AuthCookieService;
+import com.agentum.auth.application.AuthSessionResult;
 import com.agentum.auth.application.SsoAuthService;
 import com.agentum.auth.application.SsoAuthorizeRedirect;
 import com.agentum.shared.api.ApiResponse;
@@ -11,6 +13,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.MediaType;
+import org.springframework.http.HttpHeaders;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -22,10 +25,12 @@ public class SsoAuthController {
 
     private final SsoAuthService ssoAuthService;
     private final LoginCallbackPageRenderer callbackPageRenderer;
+    private final AuthCookieService cookieService;
 
-    public SsoAuthController(SsoAuthService ssoAuthService, LoginCallbackPageRenderer callbackPageRenderer) {
+    public SsoAuthController(SsoAuthService ssoAuthService, LoginCallbackPageRenderer callbackPageRenderer, AuthCookieService cookieService) {
         this.ssoAuthService = ssoAuthService;
         this.callbackPageRenderer = callbackPageRenderer;
+        this.cookieService = cookieService;
     }
 
     @GetMapping("/api/public/tenants/{tenantId}/sso-providers")
@@ -48,9 +53,11 @@ public class SsoAuthController {
     public String callback(
         @PathVariable UUID providerId,
         @RequestParam String code,
-        @RequestParam String state
+        @RequestParam String state,
+        HttpServletResponse response
     ) {
-        LoginResponse loginResponse = ssoAuthService.handleCallback(providerId, code, state);
-        return callbackPageRenderer.render(loginResponse);
+        AuthSessionResult result = ssoAuthService.handleCallback(providerId, code, state);
+        response.addHeader(HttpHeaders.SET_COOKIE, cookieService.create(result.refreshToken()));
+        return callbackPageRenderer.render(result.response());
     }
 }

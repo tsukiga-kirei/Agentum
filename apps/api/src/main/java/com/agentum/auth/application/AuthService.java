@@ -40,6 +40,7 @@ public class AuthService {
     private final UserRoleAssignmentRepository roleAssignmentRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuthTokenService authTokenService;
+    private final AuthRefreshTokenService refreshTokenService;
     private final MenuService menuService;
     private final Clock clock;
 
@@ -50,10 +51,11 @@ public class AuthService {
         UserRoleAssignmentRepository roleAssignmentRepository,
         PasswordEncoder passwordEncoder,
         AuthTokenService authTokenService,
+        AuthRefreshTokenService refreshTokenService,
         MenuService menuService
     ) {
         this(userAccountRepository, tenantRepository, roleAssignmentRepository,
-            passwordEncoder, authTokenService, menuService, Clock.systemUTC());
+            passwordEncoder, authTokenService, refreshTokenService, menuService, Clock.systemUTC());
     }
 
     AuthService(
@@ -62,6 +64,7 @@ public class AuthService {
         UserRoleAssignmentRepository roleAssignmentRepository,
         PasswordEncoder passwordEncoder,
         AuthTokenService authTokenService,
+        AuthRefreshTokenService refreshTokenService,
         MenuService menuService,
         Clock clock
     ) {
@@ -70,6 +73,7 @@ public class AuthService {
         this.roleAssignmentRepository = roleAssignmentRepository;
         this.passwordEncoder = passwordEncoder;
         this.authTokenService = authTokenService;
+        this.refreshTokenService = refreshTokenService;
         this.menuService = menuService;
         this.clock = clock;
     }
@@ -79,7 +83,7 @@ public class AuthService {
     // -------------------------------------------------------------------------
 
     @Transactional
-    public LoginResponse login(LoginRequest request) {
+    public AuthSessionResult login(LoginRequest request) {
         PortalType portal = PortalType.fromCode(request.portal());
 
         if (portal.isTenantScoped() && request.tenantId() == null) {
@@ -129,7 +133,8 @@ public class AuthService {
         );
 
         AuthUserResponse userResponse = buildUserResponse(user, activeAssignment, tenant);
-        return new LoginResponse(token, userResponse, roles, activeRole, permissions, menus);
+        LoginResponse response = new LoginResponse(token, userResponse, roles, activeRole, permissions, menus);
+        return new AuthSessionResult(response, refreshTokenService.issue(user.getId(), activeAssignment.getId()));
     }
 
     // -------------------------------------------------------------------------
@@ -180,8 +185,8 @@ public class AuthService {
     // switchRole（角色切换）
     // -------------------------------------------------------------------------
 
-    @Transactional(readOnly = true)
-    public SwitchRoleResponse switchRole(CurrentUserPrincipal currentPrincipal, UUID targetRoleId) {
+    @Transactional
+    public AuthSessionResult switchRole(CurrentUserPrincipal currentPrincipal, UUID targetRoleId, String currentRefreshToken) {
         UserAccount user = userAccountRepository.findById(currentPrincipal.userId())
             .filter(account -> ACTIVE_STATUS.equals(account.getStatus()))
             .orElseThrow(() -> {
@@ -224,7 +229,52 @@ public class AuthService {
             targetAssignment.getTenantId(), RequestIds.current()
         );
 
-        return new SwitchRoleResponse(newToken, userResponse, activeRole, List.of(), menus);
+        refreshTokenService.revoke(currentRefreshToken);
+        LoginResponse response = new LoginResponse(
+            newToken,
+            userResponse,
+            buildRoleInfoList(roleAssignmentRepository.findByUserIdOrderByDefaultAssignmentDesc(user.getId())),
+            activeRole,
+            List.of(),
+            menus
+        );
+        return new AuthSessionResult(response, refreshTokenService.issue(user.getId(), targetAssignment.getId()));
+    }
+
+    @Transactional
+    public AuthSessionResult refresh(String rawRefreshToken) {
+        if (rawRefreshToken == null || rawRefreshToken.isBlank()) {
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "AUTH_REFRESH_TOKEN_MISSING", "登录状态已失效，请重新登录");
+        }
+        RotatedRefreshToken rotated = refreshTokenService.rotate(rawRefreshToken);
+        UserAccount user = userAccountRepository.findById(rotated.userId())
+            .filter(account -> ACTIVE_STATUS.equals(account.getStatus()))
+            .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "AUTH_REFRESH_TOKEN_INVALID", "登录状态已失效，请重新登录"));
+        List<UserRoleAssignmentEntity> assignments = roleAssignmentRepository.findByUserIdOrderByDefaultAssignmentDesc(user.getId());
+        UserRoleAssignmentEntity assignment = findAssignmentById(assignments, rotated.roleAssignmentId(), user.getId());
+        TenantEntity tenant = assignment.getTenantId() == null ? null : tenantRepository.findByIdAndStatus(assignment.getTenantId(), ACTIVE_STATUS)
+            .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "AUTH_REFRESH_TOKEN_INVALID", "登录状态已失效，请重新登录"));
+        CurrentUserPrincipal principal = buildPrincipal(user, assignment, assignment.getRole());
+        LoginResponse response = new LoginResponse(
+            authTokenService.createToken(principal),
+            buildUserResponse(user, assignment, tenant),
+            buildRoleInfoList(assignments),
+            buildRoleInfo(assignment, tenant),
+            List.of(),
+            menuService.resolveMenus(assignment.getRole(), assignment.getTenantId(), user.getId())
+        );
+        log.info("Access Token 刷新成功 userId={} tenantId={} roleAssignmentId={} requestId={}", user.getId(), assignment.getTenantId(), assignment.getId(), RequestIds.current());
+        return new AuthSessionResult(response, rotated.issuedToken());
+    }
+
+    @Transactional
+    public void logout(String rawRefreshToken, CurrentUserPrincipal principal) {
+        refreshTokenService.revoke(rawRefreshToken);
+        log.info(
+            "用户登出 userId={} tenantId={} role={} requestId={}",
+            principal == null ? null : principal.userId(), principal == null ? null : principal.tenantId(),
+            principal == null ? null : principal.role(), RequestIds.current()
+        );
     }
 
     // -------------------------------------------------------------------------

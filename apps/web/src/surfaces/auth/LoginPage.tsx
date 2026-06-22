@@ -119,6 +119,14 @@ export function LoginPage() {
   }, [messageApi]);
 
   useEffect(() => {
+    const notice = window.sessionStorage.getItem("agentum_auth_notice");
+    if (notice) {
+      window.sessionStorage.removeItem("agentum_auth_notice");
+      showLoginError(notice);
+    }
+  }, [showLoginError]);
+
+  useEffect(() => {
     let active = true;
 
     fetchTenants()
@@ -133,7 +141,7 @@ export function LoginPage() {
     };
   }, [fetchTenants, showLoginError]);
 
-  // 恢复上次登录页偏好（入口、租户、用户名、记住我）；不恢复密码。
+  // 恢复上次登录页偏好；只有勾选“记住账号”才恢复用户名，密码始终交给浏览器密码管理器。
   useEffect(() => {
     const prefs = readLoginPrefs();
 
@@ -144,7 +152,7 @@ export function LoginPage() {
     setActivePortal(prefs.portal);
     form.setFieldsValue({
       rememberMe: prefs.rememberMe,
-      username: prefs.username ?? "",
+      username: prefs.rememberMe ? prefs.username ?? "" : "",
       tenantId: prefs.tenantId,
     });
   }, [form]);
@@ -260,7 +268,7 @@ export function LoginPage() {
         rememberMe,
         portal: activePortal,
         tenantId: shouldSelectTenant ? tenantId : undefined,
-        username,
+        username: rememberMe ? username : undefined,
       });
     } finally {
       setLoading(false);
@@ -408,10 +416,10 @@ export function LoginPage() {
                   />
                 </Form.Item>
 
-                {/* 记住我 */}
+                {/* 只记住账号；密码交给浏览器/系统密码管理器，登录态完全由 Token 控制。 */}
                 <div className="login-form-actions">
                   <Form.Item name="rememberMe" valuePropName="checked" noStyle>
-                    <Checkbox>记住我</Checkbox>
+                    <Checkbox>记住账号</Checkbox>
                   </Form.Item>
                   <Button type="link" className="login-forgot-button">
                     忘记密码？

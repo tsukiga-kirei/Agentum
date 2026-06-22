@@ -31,6 +31,7 @@ class AuthServiceTest {
         UserRoleAssignmentRepository roleAssignmentRepository = mock(UserRoleAssignmentRepository.class);
         PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
         AuthTokenService authTokenService = mock(AuthTokenService.class);
+        AuthRefreshTokenService refreshTokenService = mock(AuthRefreshTokenService.class);
         MenuService menuService = mock(MenuService.class);
         AuthService authService = new AuthService(
             userAccountRepository,
@@ -38,6 +39,7 @@ class AuthServiceTest {
             roleAssignmentRepository,
             passwordEncoder,
             authTokenService,
+            refreshTokenService,
             menuService,
             Clock.fixed(NOW, ZoneOffset.UTC)
         );

@@ -152,12 +152,12 @@ GET /api/auth/sso/authorize?tenantId={tenantId}&providerId={providerId}&portal=b
 - 登录页按租户发现 SSO Provider。
 - OIDC 授权跳转、签名 `state`、`nonce`。
 - OIDC 回调换取并校验 `id_token`。
-- 外部身份绑定到本地用户后签发 Agentum 自己的 token。
-- 回调页通过 `postMessage` 把 `LoginResponse` 交回前端，避免 token 出现在 URL 查询串。
+- 外部身份绑定到本地用户后签发 Agentum Access Token，并通过 HttpOnly Cookie 建立可轮换的 Refresh Token 会话。
+- 回调页通过 `postMessage` 把含 Access Token 的 `LoginResponse` 交回前端，Refresh Token 只通过 Set-Cookie 写入，二者都不会出现在 URL 查询串。
 
 待后续实现：
 
 - 系统管理页面中的 SSO Provider 配置表单。
 - 租户管理中的外部组到部门 / 租户内角色映射。
 - JIT 自动创建用户策略。
-- SAML、SCIM、MFA、单点登出和 token 吊销。
+- SAML、SCIM、MFA、OIDC Provider 单点登出、登录设备管理和全端下线；Agentum 本地 Refresh Token 轮换与单会话吊销已经落地。

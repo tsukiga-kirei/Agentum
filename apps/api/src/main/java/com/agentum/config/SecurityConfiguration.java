@@ -8,6 +8,7 @@ import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,6 +52,7 @@ public class SecurityConfiguration {
                 .requestMatchers(HttpMethod.GET, "/api/public/tenants").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/public/tenants/*/sso-providers").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/auth/refresh", "/api/auth/logout").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/auth/sso/authorize").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/auth/sso/callback/*").permitAll()
                 .requestMatchers("/actuator/health", "/actuator/info").permitAll()
@@ -97,6 +99,7 @@ public class SecurityConfiguration {
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Request-Id"));
         configuration.setExposedHeaders(List.of("X-Request-Id", "Content-Disposition"));
+        configuration.setAllowCredentials(true);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/api/**", configuration);
         return source;
@@ -111,6 +114,7 @@ public class SecurityConfiguration {
     ) throws IOException {
         log.warn("安全访问被拒绝 path={} code={} status={} requestId={}", request.getRequestURI(), code, status.value(), RequestIds.current(request));
         response.setStatus(status.value());
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         ApiError error = new ApiError(code, message);
         objectMapper.writeValue(response.getWriter(), ApiResponse.failure(error, RequestIds.current(request)));

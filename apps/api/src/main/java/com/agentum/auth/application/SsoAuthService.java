@@ -48,6 +48,7 @@ public class SsoAuthService {
     private final UserAccountRepository userAccountRepository;
     private final UserRoleAssignmentRepository roleAssignmentRepository;
     private final AuthTokenService authTokenService;
+    private final AuthRefreshTokenService refreshTokenService;
     private final MenuService menuService;
     private final OidcIdentityClient oidcIdentityClient;
     private final SsoStateService stateService;
@@ -64,6 +65,7 @@ public class SsoAuthService {
         UserAccountRepository userAccountRepository,
         UserRoleAssignmentRepository roleAssignmentRepository,
         AuthTokenService authTokenService,
+        AuthRefreshTokenService refreshTokenService,
         MenuService menuService,
         OidcIdentityClient oidcIdentityClient,
         SsoStateService stateService,
@@ -78,6 +80,7 @@ public class SsoAuthService {
             userAccountRepository,
             roleAssignmentRepository,
             authTokenService,
+            refreshTokenService,
             menuService,
             oidcIdentityClient,
             stateService,
@@ -95,6 +98,7 @@ public class SsoAuthService {
         UserAccountRepository userAccountRepository,
         UserRoleAssignmentRepository roleAssignmentRepository,
         AuthTokenService authTokenService,
+        AuthRefreshTokenService refreshTokenService,
         MenuService menuService,
         OidcIdentityClient oidcIdentityClient,
         SsoStateService stateService,
@@ -109,6 +113,7 @@ public class SsoAuthService {
         this.userAccountRepository = userAccountRepository;
         this.roleAssignmentRepository = roleAssignmentRepository;
         this.authTokenService = authTokenService;
+        this.refreshTokenService = refreshTokenService;
         this.menuService = menuService;
         this.oidcIdentityClient = oidcIdentityClient;
         this.stateService = stateService;
@@ -155,7 +160,7 @@ public class SsoAuthService {
     }
 
     @Transactional
-    public LoginResponse handleCallback(UUID providerId, String code, String state) {
+    public AuthSessionResult handleCallback(UUID providerId, String code, String state) {
         SsoState parsedState = stateService.parseState(state);
         if (!providerId.equals(parsedState.providerId())) {
             throw new ApiException(HttpStatus.UNAUTHORIZED, "AUTH_SSO_PROVIDER_MISMATCH", "企业 SSO 身份源不匹配，请重新登录");
@@ -196,7 +201,8 @@ public class SsoAuthService {
             "企业 SSO 登录成功 userId={} tenantId={} providerId={} portal={} roleAssignmentId={} requestId={}",
             user.getId(), parsedState.tenantId(), providerId, parsedState.portal(), activeAssignment.getId(), RequestIds.current()
         );
-        return new LoginResponse(token, buildUserResponse(user, activeAssignment, tenant), roles, activeRole, List.of(), menus);
+        LoginResponse response = new LoginResponse(token, buildUserResponse(user, activeAssignment, tenant), roles, activeRole, List.of(), menus);
+        return new AuthSessionResult(response, refreshTokenService.issue(user.getId(), activeAssignment.getId()));
     }
 
     private TenantSsoProviderEntity loadProvider(UUID tenantId, UUID providerId) {

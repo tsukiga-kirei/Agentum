@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { AgentumApiError, authApi } from "../services/apiClient";
+import { AgentumApiError, authApi, configureAuthSessionBridge } from "../services/apiClient";
 import type { AuthUser, LoginResponse, MenuItem, PortalType, RoleInfo, SsoProviderOption, TenantOption, ThemeMode } from "../types/auth";
 import { clearAuthToken, persistAuthToken, readStoredAuthToken } from "./authSession";
 
@@ -29,7 +29,7 @@ type AuthState = {
   ssoProvidersLoading: boolean;
   /** 是否已完成初始化检查（例如从本地缓存恢复） */
   initialized: boolean;
-  /** 当前 token 是否写入 localStorage（记住我）；否则仅 sessionStorage */
+  /** Access Token 始终持久化；该字段仅保留兼容现有调用。 */
   sessionPersist: boolean;
   /** 当前主题模式 */
   themeMode: ThemeMode;
@@ -40,7 +40,7 @@ type AuthActions = {
   fetchTenants: () => Promise<void>;
   /** 根据租户加载可用企业 SSO 身份源 */
   fetchSsoProviders: (tenantId?: string) => Promise<void>;
-  /** 登录并保存后端返回的 token、角色列表和菜单；rememberMe 决定 token 存 localStorage 或 sessionStorage */
+  /** 登录并保存 Access Token、角色和菜单；rememberMe 仅控制登录页是否保存用户名偏好。 */
   login: (
     username: string,
     password: string,
@@ -110,7 +110,7 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     }
   },
 
-  login: async (username, password, portal, tenantId, rememberMe = false) => {
+  login: async (username, password, portal, tenantId, _rememberMe = false) => {
     if (!username || !password) {
       return { success: false, message: "请输入用户名和密码" };
     }
@@ -128,8 +128,7 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         tenantId: portal === "system_admin" ? undefined : tenantId,
       });
 
-      // 记住我：token 进 localStorage；否则仅 sessionStorage，关闭浏览器后需重新登录
-      persistAuthToken(response.token, rememberMe);
+      persistAuthToken(response.token);
       set({
         user: response.user,
         token: response.token,
@@ -138,7 +137,7 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         permissions: response.permissions,
         menus: response.menus,
         initialized: true,
-        sessionPersist: rememberMe,
+        sessionPersist: true,
       });
       return { success: true };
     } catch (error) {
@@ -152,8 +151,8 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     }
   },
 
-  completeSsoLogin: (response, rememberMe = false) => {
-    persistAuthToken(response.token, rememberMe);
+  completeSsoLogin: (response, _rememberMe = false) => {
+    persistAuthToken(response.token);
     set({
       user: response.user,
       token: response.token,
@@ -162,7 +161,7 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       permissions: response.permissions,
       menus: response.menus,
       initialized: true,
-      sessionPersist: rememberMe,
+      sessionPersist: true,
     });
   },
 
@@ -193,9 +192,11 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         // /me 返回与登录相同的结构（含 roles、activeRole、menus），前端可完整恢复会话状态。
         void authApi.me(stored.token)
           .then((meResponse) => {
+            // /me 触发自动续签时 bridge 已先写入新 Access Token，不能再用缓存里的过期值覆盖。
+            const activeToken = get().token ?? stored.token;
             set({
               user: meResponse.user,
-              token: stored.token,
+              token: activeToken,
               roles: meResponse.roles,
               activeRole: meResponse.activeRole,
               permissions: meResponse.permissions,
@@ -221,7 +222,21 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         return;
       }
 
-      set({ initialized: true });
+      void authApi.refresh()
+        .then((response) => {
+          persistAuthToken(response.token);
+          set({
+            user: response.user,
+            token: response.token,
+            roles: response.roles,
+            activeRole: response.activeRole,
+            permissions: response.permissions,
+            menus: response.menus,
+            sessionPersist: true,
+            initialized: true,
+          });
+        })
+        .catch(() => set({ initialized: true }));
     } catch (error) {
       console.warn("[auth] 本地会话缓存损坏，已忽略", getErrorLogContext(error));
       clearAuthToken();
@@ -273,6 +288,37 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     get().setThemeMode(next);
   },
 }));
+
+configureAuthSessionBridge({
+  getAccessToken: () => useAuthStore.getState().token,
+  onRefreshed: (response) => {
+    persistAuthToken(response.token);
+    useAuthStore.setState({
+      user: response.user,
+      token: response.token,
+      roles: response.roles,
+      activeRole: response.activeRole,
+      permissions: response.permissions,
+      menus: response.menus,
+      sessionPersist: true,
+      initialized: true,
+    });
+  },
+  onExpired: () => {
+    clearAuthToken();
+    window.sessionStorage.setItem("agentum_auth_notice", "登录状态已失效，请重新登录");
+    useAuthStore.setState({
+      user: null,
+      token: null,
+      roles: [],
+      activeRole: null,
+      permissions: [],
+      menus: [],
+      sessionPersist: false,
+      initialized: true,
+    });
+  },
+});
 
 function restoreTheme(set: (state: Partial<AuthState & AuthActions>) => void) {
   const savedTheme = window.localStorage.getItem(THEME_KEY);

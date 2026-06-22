@@ -77,6 +77,31 @@ paths:
                         $ref: "#/components/schemas/LoginResponse"
         "401":
           description: 未登录或令牌无效
+  /api/auth/refresh:
+    post:
+      summary: 轮换 Refresh Token 并签发新的 Access Token
+      description: Refresh Token 通过 HttpOnly Cookie 传递；成功后旧令牌立即失效并通过 Set-Cookie 返回新令牌。
+      tags:
+        - Auth
+      responses:
+        "200":
+          description: 刷新成功
+          headers:
+            Set-Cookie:
+              description: 轮换后的 HttpOnly Refresh Token Cookie
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/LoginResponse"
+        "401":
+          description: Refresh Token 缺失、过期、已吊销或已使用
   /api/auth/switch-role:
     put:
       summary: 切换当前活跃角色
@@ -111,8 +136,7 @@ paths:
       summary: 退出登录
       tags:
         - Auth
-      security:
-        - bearerAuth: []
+      description: 吊销当前 Refresh Token 并清理 HttpOnly Cookie；Access Token 最多在其短有效期内自然失效。
       responses:
         "200":
           description: 已退出
@@ -2866,6 +2890,7 @@ components:
         token:
           type: string
           nullable: true
+          description: 短期 Access Token；/api/auth/me 响应中为 null
         user:
           $ref: "#/components/schemas/AuthUser"
         roles:

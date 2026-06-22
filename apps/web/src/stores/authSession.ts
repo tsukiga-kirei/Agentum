@@ -1,10 +1,10 @@
 import type { PortalType } from "../types/auth";
 
-/** 持久登录（勾选「记住我」）时存放 token 的 key */
+/** 持久化 Access Token 的 key；是否保存账号偏好不影响此项。 */
 export const AUTH_STORAGE_KEY = "agentum_auth";
-/** 会话级登录（未勾选）时存放 token 的 key，关闭浏览器后失效 */
+/** 旧版会话级 Token key，仅用于升级时清理。 */
 export const AUTH_SESSION_STORAGE_KEY = "agentum_auth_session";
-/** 登录页表单偏好（不含密码、不含 token） */
+/** 登录页表单偏好（勾选“记住账号”时才保存用户名；始终不保存密码或 Token） */
 export const LOGIN_PREFS_KEY = "agentum_login_prefs";
 
 type StoredAuthPayload = {
@@ -19,32 +19,18 @@ export type LoginPrefs = {
 };
 
 /**
- * 按「记住我」选择写入 localStorage 或 sessionStorage，并清理另一侧，避免双份 token。
+ * Access Token 始终持久化；登录状态是否有效只由 Access/Refresh Token 判断，与“记住账号”无关。
  */
-export function persistAuthToken(token: string, persist: boolean): void {
+export function persistAuthToken(token: string, _persist = true): void {
   const payload = JSON.stringify({ token } satisfies StoredAuthPayload);
-
-  if (persist) {
-    window.localStorage.setItem(AUTH_STORAGE_KEY, payload);
-    window.sessionStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
-    return;
-  }
-
-  window.sessionStorage.setItem(AUTH_SESSION_STORAGE_KEY, payload);
-  window.localStorage.removeItem(AUTH_STORAGE_KEY);
+  window.localStorage.setItem(AUTH_STORAGE_KEY, payload);
+  window.sessionStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
 }
 
 /**
- * 恢复会话时读取 token：优先 session（未勾选记住我的当前浏览器会话），再读持久缓存。
+ * 恢复会话时读取持久化的 Access Token；Refresh Token 由 HttpOnly Cookie 管理。
  */
 export function readStoredAuthToken(): { token: string; persist: boolean } | null {
-  const sessionRaw = window.sessionStorage.getItem(AUTH_SESSION_STORAGE_KEY);
-  const fromSession = parseStoredToken(sessionRaw);
-
-  if (fromSession) {
-    return { token: fromSession, persist: false };
-  }
-
   const localRaw = window.localStorage.getItem(AUTH_STORAGE_KEY);
   const fromLocal = parseStoredToken(localRaw);
 
