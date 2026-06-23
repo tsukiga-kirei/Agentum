@@ -1,0 +1,118 @@
+.agent-word-preview-drawer .ant-drawer-content,
+.agent-word-preview-drawer .ant-drawer-header,
+.agent-word-preview-drawer .ant-drawer-body {
+  background: var(--color-bg-page);
+  color: var(--color-text-primary);
+}
+
+.agent-word-preview-drawer .ant-drawer-header {
+  border-bottom: 1px solid var(--color-border-light);
+  padding: 14px 20px;
+}
+
+.agent-word-preview-drawer .ant-drawer-body {
+  padding: 0;
+  overflow: hidden;
+}
+
+.agent-word-preview-drawer__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.agent-word-preview-drawer__title-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+}
+
+.agent-word-preview-drawer__title strong,
+.agent-word-preview-drawer__title small {
+  display: block;
+}
+
+.agent-word-preview-drawer__title strong {
+  color: var(--color-text-primary);
+  font-size: 15px;
+  line-height: 20px;
+}
+
+.agent-word-preview-drawer__title small {
+  max-width: 520px;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-word-preview-drawer__body {
+  position: relative;
+  height: 100%;
+  min-height: 360px;
+  overflow: auto;
+  background: var(--color-bg-page);
+}
+
+.agent-word-preview-drawer__document {
+  min-height: 100%;
+  padding: 28px;
+}
+
+.agent-word-preview-drawer__state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px;
+  color: var(--color-text-secondary);
+  text-align: center;
+  background: var(--color-bg-page);
+}
+
+.agent-word-preview-drawer__state--error svg {
+  color: var(--color-text-tertiary);
+}
+
+.agent-word-preview-drawer__state--error strong {
+  color: var(--color-text-primary);
+  font-size: 15px;
+}
+
+.agent-word-preview-drawer__state--error span {
+  max-width: 440px;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.agent-word-preview-drawer__document .agent-word-preview-wrapper {
+  background: transparent;
+}
+
+.agent-word-preview-drawer__document .agent-word-preview-wrapper > section {
+  margin: 0 auto 24px;
+  box-shadow: 0 8px 28px rgb(15 23 42 / 0.10);
+}
+
+@media (max-width: 720px) {
+  .agent-word-preview-drawer__document {
+    padding: 16px 8px;
+  }
+
+  .agent-word-preview-drawer__title small {
+    max-width: 46vw;
+  }
+}

@@ -21,6 +21,7 @@ import { UserInputPanel } from "./UserInputPanel";
 import { MultiAgentPanel } from "./MultiAgentPanel";
 import { DeliveryPreviewPanel } from "./DeliveryPreviewPanel";
 import { DeliveryResultPanel } from "./DeliveryResultPanel";
+import { WordDocumentPreviewDrawer } from "./WordDocumentPreviewDrawer";
 import { resolveDeliveryDisplayContent } from "../../utils/deliveryContent";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { AgentumApiError, workbenchApi } from "../../services/apiClient";
@@ -39,7 +40,8 @@ import {
   RotateCcw,
   CheckCircle2,
   Send,
-  Download
+  Download,
+  Eye
 } from "lucide-react";
 
 interface TaskRunWorkspaceProps {
@@ -1498,6 +1500,7 @@ function RunDeliveriesPanel({
 
   const [copied, setCopied] = useState(false);
   const [downloadingRecordId, setDownloadingRecordId] = useState("");
+  const [previewDocument, setPreviewDocument] = useState<{ recordId: string; fileName: string } | null>(null);
 
   const handleCopy = () => {
     if (deliveryDisplayContent) {
@@ -1595,15 +1598,25 @@ function RunDeliveriesPanel({
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   {item.recordId && item.fileName ? (
-                    <button
-                      type="button"
-                      onClick={() => void handleDownloadDelivery(item.recordId!)}
-                      disabled={downloadingRecordId === item.recordId}
-                      className="agent-button h-8 px-3 text-xs"
-                    >
-                      <Download size={14} />
-                      {downloadingRecordId === item.recordId ? "下载中" : "下载文档"}
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewDocument({ recordId: item.recordId!, fileName: item.fileName! })}
+                        className="agent-button h-8 px-3 text-xs"
+                      >
+                        <Eye size={14} />
+                        预览文档
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleDownloadDelivery(item.recordId!)}
+                        disabled={downloadingRecordId === item.recordId}
+                        className="agent-button h-8 px-3 text-xs"
+                      >
+                        <Download size={14} />
+                        {downloadingRecordId === item.recordId ? "下载中" : "下载文档"}
+                      </button>
+                    </>
                   ) : null}
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                     isFlowCompleted
@@ -1637,6 +1650,19 @@ function RunDeliveriesPanel({
             <MarkdownRenderer content={deliveryDisplayContent} />
           </div>
         </div>
+      ) : null}
+
+      {previewDocument ? (
+        <WordDocumentPreviewDrawer
+          open
+          tenantId={tenantId}
+          token={token}
+          recordId={previewDocument.recordId}
+          fileName={previewDocument.fileName}
+          downloading={downloadingRecordId === previewDocument.recordId}
+          onClose={() => setPreviewDocument(null)}
+          onDownload={() => void handleDownloadDelivery(previewDocument.recordId)}
+        />
       ) : null}
     </div>
   );
