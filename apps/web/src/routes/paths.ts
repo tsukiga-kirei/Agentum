@@ -2,6 +2,7 @@ export type SurfaceKey = "workbench" | "designer" | "assets" | "tenant" | "syste
 
 export const paths = {
   login: "/login",
+  setup: "/setup",
   app: "/app",
   workbench: {
     root: "/app/workbench",

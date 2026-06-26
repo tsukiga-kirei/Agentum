@@ -2324,6 +2324,78 @@ textarea:focus-visible {
   text-align: center;
 }
 
+.setup-container {
+  min-height: 620px;
+}
+
+.setup-branding {
+  background: linear-gradient(135deg, rgba(190, 18, 60, 0.9), rgba(79, 70, 229, 0.88));
+}
+
+.setup-status-panel {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(16px);
+}
+
+.setup-status-icon {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  color: #a7f3d0;
+}
+
+.setup-status-panel strong {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 14px;
+  color: #ffffff;
+}
+
+.setup-status-panel span {
+  display: block;
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
+.setup-heading-mark {
+  display: inline-flex;
+  width: 42px;
+  height: 42px;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 18px;
+  border: 1px solid color-mix(in srgb, #dc2626 28%, var(--color-border));
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, #dc2626 10%, var(--color-bg-card));
+  color: #dc2626;
+}
+
+.setup-heading-mark svg {
+  width: 22px;
+  height: 22px;
+}
+
+.setup-form .ant-form-item {
+  margin-bottom: 18px;
+}
+
+.setup-submit-button.ant-btn-primary {
+  background: linear-gradient(135deg, #dc2626, #4f46e5);
+  box-shadow: 0 10px 24px rgba(220, 38, 38, 0.24);
+}
+
+.setup-submit-button.ant-btn-primary:hover,
+.setup-submit-button.ant-btn-primary:focus {
+  background: linear-gradient(135deg, #b91c1c, #4338ca) !important;
+}
+
 @media (max-width: 768px) {
   .login-branding {
     display: none;

@@ -51,6 +51,8 @@ public class SecurityConfiguration {
                 .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/public/tenants").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/public/tenants/*/sso-providers").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/auth/bootstrap-status").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/auth/bootstrap").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/auth/refresh", "/api/auth/logout").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/auth/sso/basic-entry").permitAll()

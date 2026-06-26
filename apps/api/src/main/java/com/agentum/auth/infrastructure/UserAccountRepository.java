@@ -13,5 +13,7 @@ public interface UserAccountRepository extends JpaRepository<UserAccount, UUID> 
 
     boolean existsByUsername(String username);
 
+    long count();
+
     boolean existsByUsernameAndIdNot(String username, UUID id);
 }

@@ -6,11 +6,12 @@ import com.agentum.auth.domain.UserRoleAssignmentEntity;
 import com.agentum.auth.infrastructure.UserAccountRepository;
 import com.agentum.auth.infrastructure.UserRoleAssignmentRepository;
 import com.agentum.auth.interfaces.AuthUserResponse;
+import com.agentum.auth.interfaces.BootstrapAdminRequest;
+import com.agentum.auth.interfaces.BootstrapStatusResponse;
 import com.agentum.auth.interfaces.LoginRequest;
 import com.agentum.auth.interfaces.LoginResponse;
 import com.agentum.auth.interfaces.MenuItemResponse;
 import com.agentum.auth.interfaces.RoleInfoResponse;
-import com.agentum.auth.interfaces.SwitchRoleResponse;
 import com.agentum.shared.api.ApiException;
 import com.agentum.shared.api.RequestIds;
 import com.agentum.tenant.domain.TenantEntity;
@@ -76,6 +77,45 @@ public class AuthService {
         this.refreshTokenService = refreshTokenService;
         this.menuService = menuService;
         this.clock = clock;
+    }
+
+    // -------------------------------------------------------------------------
+    // bootstrap
+    // -------------------------------------------------------------------------
+
+    @Transactional(readOnly = true)
+    public BootstrapStatusResponse bootstrapStatus() {
+        return new BootstrapStatusResponse(userAccountRepository.count() == 0);
+    }
+
+    @Transactional
+    public synchronized void bootstrapAdmin(BootstrapAdminRequest request) {
+        // 首次部署没有任何认证主体，唯一安全边界就是“全库零用户”。事务内再次检查，避免并发初始化创建多个首管账号。
+        if (userAccountRepository.count() > 0) {
+            log.warn("系统管理员初始化被拒绝：系统已存在用户 requestId={}", RequestIds.current());
+            throw new ApiException(HttpStatus.CONFLICT, "AUTH_BOOTSTRAP_ALREADY_INITIALIZED", "系统已初始化，不能重复创建管理员");
+        }
+
+        String username = request.username().trim();
+        String displayName = request.displayName().trim();
+        String email = request.email() == null ? "" : request.email().trim();
+
+        if (userAccountRepository.existsByUsername(username)) {
+            log.warn("系统管理员初始化被拒绝：用户名重复 username={} requestId={}", username, RequestIds.current());
+            throw new ApiException(HttpStatus.CONFLICT, "AUTH_USERNAME_EXISTS", "用户名已存在");
+        }
+
+        UserAccount user = UserAccount.create(username, passwordEncoder.encode(request.password()), displayName, email);
+        userAccountRepository.save(user);
+        roleAssignmentRepository.save(UserRoleAssignmentEntity.create(
+            user.getId(),
+            PortalType.SYSTEM_ADMIN.code(),
+            null,
+            "系统管理员 - " + displayName,
+            true
+        ));
+
+        log.info("系统管理员初始化成功 userId={} username={} requestId={}", user.getId(), user.getUsername(), RequestIds.current());
     }
 
     // -------------------------------------------------------------------------

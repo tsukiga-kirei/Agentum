@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from "react-router-dom";
 import { AppLayout } from "../layouts/AppLayout";
 import { AssetsPage } from "../surfaces/assets/AssetsPage";
 import { LoginPage } from "../surfaces/auth/LoginPage";
+import { SetupPage } from "../surfaces/auth/SetupPage";
 import { WorkflowDraftsPage } from "../surfaces/designer/WorkflowDraftsPage";
 import { TenantManagementPage } from "../surfaces/admin/TenantManagementPage";
 import { SystemManagementPage } from "../surfaces/admin/SystemManagementPage";
@@ -18,6 +19,10 @@ export const appRouter = createBrowserRouter([
   {
     path: paths.login,
     element: <LoginPage />,
+  },
+  {
+    path: paths.setup,
+    element: <SetupPage />,
   },
   {
     path: "/",

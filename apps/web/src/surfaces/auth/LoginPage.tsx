@@ -7,7 +7,7 @@ import { readLoginPrefs, saveLoginPrefs } from "../../stores/authSession";
 import { ThemeToggle } from "../../components/ThemeToggle";
 import { AgentumMark } from "../../components/brand/AgentumMark";
 import { API_BASE_URL, authApi } from "../../services/apiClient";
-import { firstAllowedSurfacePath } from "../../routes/paths";
+import { firstAllowedSurfacePath, paths } from "../../routes/paths";
 import type { LoginResponse, PortalType } from "../../types/auth";
 
 // 登录入口选项，与 docs/system-overview.md 中角色定义对齐。
@@ -60,6 +60,7 @@ export function LoginPage() {
   const user = useAuthStore((s) => s.user);
   const menus = useAuthStore((s) => s.menus);
   const themeMode = useAuthStore((s) => s.themeMode);
+  const bootstrapRequired = useAuthStore((s) => s.bootstrapRequired);
   const navigate = useNavigate();
   const location = useLocation();
   const isDark = themeMode === "dark";
@@ -72,12 +73,17 @@ export function LoginPage() {
   const [messageApi, messageContextHolder] = message.useMessage();
 
   useEffect(() => {
+    if (bootstrapRequired) {
+      navigate(paths.setup, { replace: true });
+      return;
+    }
+
     if (!user) {
       return;
     }
     const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname;
     navigate(from ?? firstAllowedSurfacePath(menus), { replace: true });
-  }, [location.state, menus, navigate, user]);
+  }, [bootstrapRequired, location.state, menus, navigate, user]);
 
   const currentPortal = portals.find((p) => p.key === activePortal) ?? portals[0];
   const shouldSelectTenant = activePortal !== "system_admin";

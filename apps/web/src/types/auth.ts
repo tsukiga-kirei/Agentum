@@ -65,6 +65,19 @@ export type LoginRequest = {
   tenantId?: string;
 };
 
+/** 首次部署初始化状态。 */
+export type BootstrapStatusResponse = {
+  needsSetup: boolean;
+};
+
+/** 首次部署创建系统管理员请求。 */
+export type BootstrapAdminRequest = {
+  username: string;
+  displayName: string;
+  password: string;
+  email?: string;
+};
+
 /** 登录响应中的用户信息 */
 export type AuthUser = {
   id: string;

@@ -54,6 +54,47 @@ paths:
                         type: array
                         items:
                           $ref: "#/components/schemas/SsoProviderOption"
+  /api/auth/bootstrap-status:
+    get:
+      summary: 获取首次部署初始化状态
+      description: 当 users 表没有任何账号时返回 needsSetup=true，前端应跳转到初始化页创建首个系统管理员。
+      tags:
+        - Auth
+      responses:
+        "200":
+          description: 初始化状态
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/BootstrapStatusResponse"
+  /api/auth/bootstrap:
+    post:
+      summary: 创建首个系统管理员
+      description: 仅在系统无任何用户时允许调用，创建 system_admin 角色且 tenantId 为空的首个管理员账号。
+      tags:
+        - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BootstrapAdminRequest"
+      responses:
+        "200":
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+        "400":
+          description: 参数不合法
+        "409":
+          description: 系统已初始化，不能重复创建管理员
   /api/auth/login:
     post:
       summary: 登录并建立活跃入口上下文
@@ -3002,6 +3043,35 @@ components:
         - id
         - name
         - providerType
+    BootstrapStatusResponse:
+      type: object
+      properties:
+        needsSetup:
+          type: boolean
+      required:
+        - needsSetup
+    BootstrapAdminRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          pattern: "^[a-zA-Z0-9_]{3,100}$"
+        displayName:
+          type: string
+          maxLength: 100
+        password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 100
+        email:
+          type: string
+          format: email
+          maxLength: 255
+      required:
+        - username
+        - displayName
+        - password
     LoginRequest:
       type: object
       properties:

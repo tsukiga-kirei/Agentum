@@ -1,13 +1,18 @@
 package com.agentum.auth.application;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 import com.agentum.auth.domain.UserAccount;
 import com.agentum.auth.domain.UserRoleAssignmentEntity;
 import com.agentum.auth.infrastructure.UserAccountRepository;
 import com.agentum.auth.infrastructure.UserRoleAssignmentRepository;
+import com.agentum.auth.interfaces.BootstrapAdminRequest;
 import com.agentum.shared.api.ApiException;
 import com.agentum.tenant.infrastructure.TenantRepository;
 import java.time.Clock;
@@ -17,12 +22,67 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 class AuthServiceTest {
 
     private static final UUID TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000101");
     private static final Instant NOW = Instant.parse("2026-05-15T08:00:00Z");
+
+    @Test
+    void shouldReportBootstrapRequiredWhenNoUserExists() {
+        UserAccountRepository userAccountRepository = mock(UserAccountRepository.class);
+        AuthService authService = newAuthService(userAccountRepository);
+
+        when(userAccountRepository.count()).thenReturn(0L);
+
+        assertThat(authService.bootstrapStatus().needsSetup()).isTrue();
+    }
+
+    @Test
+    void shouldCreateFirstSystemAdminDuringBootstrap() {
+        UserAccountRepository userAccountRepository = mock(UserAccountRepository.class);
+        UserRoleAssignmentRepository roleAssignmentRepository = mock(UserRoleAssignmentRepository.class);
+        PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
+        AuthService authService = newAuthService(userAccountRepository, roleAssignmentRepository, passwordEncoder);
+
+        when(userAccountRepository.count()).thenReturn(0L);
+        when(userAccountRepository.existsByUsername("root_admin")).thenReturn(false);
+        when(passwordEncoder.encode("agentum123")).thenReturn("hashed-password");
+
+        authService.bootstrapAdmin(new BootstrapAdminRequest(" root_admin ", "平台管理员", "agentum123", "root@agentum.dev"));
+
+        ArgumentCaptor<UserAccount> userCaptor = ArgumentCaptor.forClass(UserAccount.class);
+        ArgumentCaptor<UserRoleAssignmentEntity> roleCaptor = ArgumentCaptor.forClass(UserRoleAssignmentEntity.class);
+        verify(userAccountRepository).save(userCaptor.capture());
+        verify(roleAssignmentRepository).save(roleCaptor.capture());
+
+        UserAccount user = userCaptor.getValue();
+        UserRoleAssignmentEntity role = roleCaptor.getValue();
+        assertThat(user.getUsername()).isEqualTo("root_admin");
+        assertThat(user.getPasswordHash()).isEqualTo("hashed-password");
+        assertThat(role.getUserId()).isEqualTo(user.getId());
+        assertThat(role.getRole()).isEqualTo("system_admin");
+        assertThat(role.getTenantId()).isNull();
+        assertThat(role.isDefaultAssignment()).isTrue();
+    }
+
+    @Test
+    void shouldRejectBootstrapWhenUserAlreadyExists() {
+        UserAccountRepository userAccountRepository = mock(UserAccountRepository.class);
+        UserRoleAssignmentRepository roleAssignmentRepository = mock(UserRoleAssignmentRepository.class);
+        AuthService authService = newAuthService(userAccountRepository, roleAssignmentRepository, mock(PasswordEncoder.class));
+
+        when(userAccountRepository.count()).thenReturn(1L);
+
+        assertThatThrownBy(() -> authService.bootstrapAdmin(new BootstrapAdminRequest("root_admin", "平台管理员", "agentum123", "")))
+            .isInstanceOf(ApiException.class)
+            .extracting("code")
+            .isEqualTo("AUTH_BOOTSTRAP_ALREADY_INITIALIZED");
+        verify(userAccountRepository, never()).save(any());
+        verify(roleAssignmentRepository, never()).save(any());
+    }
 
     @Test
     void shouldRejectCurrentUserWhenTenantIsSuspended() {
@@ -63,5 +123,26 @@ class AuthServiceTest {
             .isInstanceOf(ApiException.class)
             .extracting("code")
             .isEqualTo("TENANT_NOT_AVAILABLE");
+    }
+
+    private AuthService newAuthService(UserAccountRepository userAccountRepository) {
+        return newAuthService(userAccountRepository, mock(UserRoleAssignmentRepository.class), mock(PasswordEncoder.class));
+    }
+
+    private AuthService newAuthService(
+        UserAccountRepository userAccountRepository,
+        UserRoleAssignmentRepository roleAssignmentRepository,
+        PasswordEncoder passwordEncoder
+    ) {
+        return new AuthService(
+            userAccountRepository,
+            mock(TenantRepository.class),
+            roleAssignmentRepository,
+            passwordEncoder,
+            mock(AuthTokenService.class),
+            mock(AuthRefreshTokenService.class),
+            mock(MenuService.class),
+            Clock.fixed(NOW, ZoneOffset.UTC)
+        );
     }
 }

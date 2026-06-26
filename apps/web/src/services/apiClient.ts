@@ -1,4 +1,4 @@
-import type { LoginRequest, LoginResponse, MeResponse, PortalType, SsoProviderOption, SwitchRoleRequest, SwitchRoleResponse, TenantOption } from "../types/auth";
+import type { BootstrapAdminRequest, BootstrapStatusResponse, LoginRequest, LoginResponse, MeResponse, PortalType, SsoProviderOption, SwitchRoleRequest, SwitchRoleResponse, TenantOption } from "../types/auth";
 import type { AssetSummary, CreateMyAssetRequest, MyAssetDetail, MyAssetPage, MyAssetRow, ShareableMemberRow, SystemCapabilityAssetPage, UpdateMyAssetAccessRequest, UpdateMyAssetRequest } from "../types/asset";
 import type { AuditEvidence, AuditOperationLog, AuditRunSummary, AuditToolCall } from "../types/audit";
 import type {
@@ -217,7 +217,7 @@ async function apiRequest<T>(path: string, options: RequestOptions = {}): Promis
 }
 
 function canRefreshSession(path: string): boolean {
-  return !["/api/auth/login", "/api/auth/refresh", "/api/auth/logout"].includes(path);
+  return !["/api/auth/bootstrap-status", "/api/auth/bootstrap", "/api/auth/login", "/api/auth/refresh", "/api/auth/logout"].includes(path);
 }
 
 async function apiFileRequest(path: string, options: RequestOptions = {}): Promise<FileDownloadResponse> {
@@ -292,6 +292,9 @@ function resolveFileName(contentDisposition: string | null): string {
 }
 
 export const authApi = {
+  bootstrapStatus: () => apiRequest<BootstrapStatusResponse>("/api/auth/bootstrap-status", { skipAuthRefresh: true }),
+  bootstrapAdmin: (request: BootstrapAdminRequest) =>
+    apiRequest<void>("/api/auth/bootstrap", { method: "POST", body: request, skipAuthRefresh: true }),
   listTenants: () => apiRequest<TenantOption[]>("/api/public/tenants"),
   listSsoProviders: (tenantId: string) => apiRequest<SsoProviderOption[]>(`/api/public/tenants/${tenantId}/sso-providers`),
   ssoAuthorizeUrl: (tenantId: string, providerId: string, portal: PortalType) => {

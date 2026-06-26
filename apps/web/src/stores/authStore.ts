@@ -27,6 +27,8 @@ type AuthState = {
   ssoProviders: SsoProviderOption[];
   /** SSO 身份源是否正在加载 */
   ssoProvidersLoading: boolean;
+  /** 当前后端是否处于零用户初始化阶段 */
+  bootstrapRequired: boolean;
   /** 是否已完成初始化检查（例如从本地缓存恢复） */
   initialized: boolean;
   /** Access Token 始终持久化；该字段仅保留兼容现有调用。 */
@@ -50,6 +52,8 @@ type AuthActions = {
   ) => Promise<{ success: boolean; message?: string }>;
   /** SSO 回调完成后写入 Agentum 自己的 token 和角色上下文 */
   completeSsoLogin: (response: LoginResponse, rememberMe?: boolean) => void;
+  /** 首次部署时创建首个系统管理员账号 */
+  createBootstrapAdmin: (request: { username: string; displayName: string; password: string; email?: string }) => Promise<{ success: boolean; message?: string }>;
   /** 退出登录 */
   logout: () => Promise<void>;
   /** 从本地缓存恢复会话（调用 /api/auth/me 获取完整角色和菜单上下文） */
@@ -75,6 +79,7 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   tenantsLoading: false,
   ssoProviders: [],
   ssoProvidersLoading: false,
+  bootstrapRequired: false,
   initialized: false,
   sessionPersist: false,
   themeMode: "light",
@@ -136,6 +141,7 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         activeRole: response.activeRole,
         permissions: response.permissions,
         menus: response.menus,
+        bootstrapRequired: false,
         initialized: true,
         sessionPersist: true,
       });
@@ -160,9 +166,26 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       activeRole: response.activeRole,
       permissions: response.permissions,
       menus: response.menus,
+      bootstrapRequired: false,
       initialized: true,
       sessionPersist: true,
     });
+  },
+
+  createBootstrapAdmin: async (request) => {
+    try {
+      await authApi.bootstrapAdmin(request);
+      set({ bootstrapRequired: false, initialized: true });
+      return { success: true };
+    } catch (error) {
+      if (error instanceof AgentumApiError) {
+        console.warn("[auth] 系统管理员初始化失败", { code: error.code, requestId: error.requestId });
+        return { success: false, message: error.message };
+      }
+
+      console.error("[auth] 系统管理员初始化请求异常", getErrorLogContext(error));
+      return { success: false, message: "无法连接后端服务，请确认 API 已启动" };
+    }
   },
 
   logout: async () => {
@@ -183,7 +206,33 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   restoreSession: () => {
     restoreTheme(set);
 
-    try {
+    void (async () => {
+      try {
+        const status = await authApi.bootstrapStatus();
+
+        if (status.needsSetup) {
+          // 零用户阶段不信任任何本地缓存 token，前端只允许进入首个系统管理员创建页。
+          clearAuthToken();
+          set({
+            user: null,
+            token: null,
+            roles: [],
+            activeRole: null,
+            permissions: [],
+            menus: [],
+            bootstrapRequired: true,
+            sessionPersist: false,
+            initialized: true,
+          });
+          return;
+        }
+
+        set({ bootstrapRequired: false });
+      } catch (error) {
+        // 初始化状态接口失败时继续走常规会话恢复，让登录页展示更具体的后端连接错误。
+        console.warn("[auth] 初始化状态检查失败，继续尝试恢复会话", getErrorLogContext(error));
+      }
+
       const stored = readStoredAuthToken();
 
       if (stored?.token) {
@@ -201,6 +250,7 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
               activeRole: meResponse.activeRole,
               permissions: meResponse.permissions,
               menus: meResponse.menus,
+              bootstrapRequired: false,
               initialized: true,
               sessionPersist: stored.persist,
             });
@@ -215,6 +265,7 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
               activeRole: null,
               permissions: [],
               menus: [],
+              bootstrapRequired: false,
               sessionPersist: false,
               initialized: true,
             });
@@ -232,16 +283,17 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
             activeRole: response.activeRole,
             permissions: response.permissions,
             menus: response.menus,
+            bootstrapRequired: false,
             sessionPersist: true,
             initialized: true,
           });
         })
-        .catch(() => set({ initialized: true }));
-    } catch (error) {
+        .catch(() => set({ bootstrapRequired: false, initialized: true }));
+    })().catch((error) => {
       console.warn("[auth] 本地会话缓存损坏，已忽略", getErrorLogContext(error));
       clearAuthToken();
-      set({ initialized: true });
-    }
+      set({ bootstrapRequired: false, initialized: true });
+    });
   },
 
   switchRole: async (roleId) => {
@@ -300,6 +352,7 @@ configureAuthSessionBridge({
       activeRole: response.activeRole,
       permissions: response.permissions,
       menus: response.menus,
+      bootstrapRequired: false,
       sessionPersist: true,
       initialized: true,
     });
@@ -314,6 +367,7 @@ configureAuthSessionBridge({
       activeRole: null,
       permissions: [],
       menus: [],
+      bootstrapRequired: false,
       sessionPersist: false,
       initialized: true,
     });

@@ -37,6 +37,17 @@ public class AuthController {
         this.cookieService = cookieService;
     }
 
+    @GetMapping("/bootstrap-status")
+    public ApiResponse<BootstrapStatusResponse> bootstrapStatus(HttpServletRequest request) {
+        return ApiResponse.success(authService.bootstrapStatus(), RequestIds.current(request));
+    }
+
+    @PostMapping("/bootstrap")
+    public ApiResponse<Void> bootstrapAdmin(@Valid @RequestBody BootstrapAdminRequest bootstrapRequest, HttpServletRequest request) {
+        authService.bootstrapAdmin(bootstrapRequest);
+        return ApiResponse.success(RequestIds.current(request));
+    }
+
     @PostMapping("/login")
     public ApiResponse<LoginResponse> login(@Valid @RequestBody LoginRequest loginRequest, HttpServletRequest request, HttpServletResponse response) {
         AuthSessionResult result = authService.login(loginRequest);
