@@ -407,7 +407,7 @@ pending -> running -> paused -> resumed -> running -> completed
 - 写入数据库。
 - 记录交付结果和失败重试。
 
-交付能力分为系统内置和自定义适配器。系统内置交付能力由 API / Worker 原生实现，例如邮箱发送和 Word 文档生成；自定义交付适配器放在 `capabilities/delivery/<delivery-key>/`，通过 Manifest 声明 `runtime`、`entry`、`configSchema`、`inputSchema`、`outputSchema` 和风险等级。高风险交付能力必须走权限校验、审批或二次确认。
+交付能力分为系统内置和自定义适配器。系统内置交付能力由 API / Worker 原生实现，例如邮箱发送、Webhook 调用和 Word 文档生成；自定义交付适配器放在 `capabilities/delivery/<delivery-key>/`，通过 Manifest 声明 `runtime`、`entry`、`configSchema`、`inputSchema`、`outputSchema` 和风险等级。OA、PDF、IM、数据库写入等强依赖客户环境和版式规范的通道进入后续个性化集成阶段，不作为阶段一基础治理验收项。高风险交付能力必须走权限校验、审批或二次确认。
 
 当前运行态已支持三类能力化交付：系统内置邮箱发送、Webhook 调用和 Word 文档生成。Word 初版由 API 内轻量渲染器把 AI Markdown 转为 `.docx`，文件写入 MinIO/S3 兼容对象存储，并通过 `delivery_records` 记录下载入口；复杂模板、图片、目录、页眉页脚和大文档后续应迁移到 Worker。所有交付动作都会写入 `delivery_records`，并关联租户、运行、节点、流程定义和发布版本；失败时节点和运行进入失败状态。
 
@@ -546,18 +546,20 @@ GET /api/.../xxx?page=1&size=20&sort=createdAt,desc
 
 主密钥与现有密文构成生命周期绑定：直接替换会导致历史密文无法解密。正式轮换前必须实现带密钥版本的密文格式和“旧密钥解密、新密钥重加密”的迁移流程；当前 `v1:` 密文尚不支持无迁移直接轮换。
 
-第一阶段：
+第一阶段（已完成）：
 
 - 单体 API。
 - 单前端应用。
 - PostgreSQL、Redis、RabbitMQ、MinIO。
-- Worker 可占位。
+- RabbitMQ + Redis Stream 异步运行态。
+- 邮箱、Webhook 和 Word 文档基础交付。
 
 第二阶段：
 
-- 文档生成和外部交付任务进入 Worker。
+- 复杂文档生成和外部交付任务进入 Worker。
 - MCP 网关能力增强。
 - 审计查询和运行记录可分页检索。
+- OA、PDF、IM 等按客户场景做个性化适配。
 
 第三阶段：
 

@@ -1,38 +1,78 @@
 # Agentum
 
-**AI 驱动的企业智能体工作流平台**  
-*— Agentic workflow platform that combines AI execution with clear, governable enterprise process steps.*
+**面向企业流程的多智能体协作平台**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Java](https://img.shields.io/badge/Java-21+-orange.svg)](https://openjdk.org/)
 [![React](https://img.shields.io/badge/React-18+-61DAFB.svg)](https://react.dev/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-6DB33F.svg)](https://spring.io/projects/spring-boot)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791.svg)](https://www.postgresql.org/)
-[![Docker Compose](https://img.shields.io/badge/Docker-Compose-2496ED.svg)](https://docs.docker.com/compose/)
 
----
+Agentum 不是把业务流程拆成大量低代码节点，也不是把一件复杂任务直接丢给一个模型临时生成 subagent。它的核心思路是：**企业先沉淀可治理的智能体、Skill、MCP 和提示词资产，再用少量业务步骤把这些能力组织起来，让多个专门智能体协作完成复杂任务。**
 
-## 项目简介
+相比 Dify 这类偏“流程节点编排”的产品，Agentum 希望减少分支、变量、工具调用节点对业务人员的打扰。设计者只需要关心几个关键步骤：用户输入、单智能体处理、智能体集群协作、人工审核和最终交付。真正的工具选择、信息补全、章节生成、风险分析等细节，由节点里的智能体根据上下文自主完成。
 
-Agentum 是一个以智能体为执行单元的企业工作流平台。它面向「任务主体交给 AI、流程边界交给企业」这一协作方式：企业先把 SOP 整理成清晰可理解的流程步骤，智能体在每一步的具体上下文里调用 Skill、MCP、提示词模板和模型能力；业务同学在输入、追问、审核等节点介入，最终形成可暂停、可恢复、可审计、可交付的业务结果。
+相比直接使用大模型自己的 subagent / multi-agent 能力，Agentum 更强调企业可维护性。每个智能体不是一次对话里的临时角色，而是可登记、可发布、可分配、可审计的资产。这样即使模型能力没有强到可以独立规划全部任务，也能通过“资料核验智能体、风险分析智能体、报告撰写智能体、结论汇总智能体”等明确分工协作，把复杂任务拆给多个能力较弱但职责清晰的模型/智能体完成。
 
-与一次性对话式 AI 不同，Agentum 强调步骤化推进、责任节点和运行留痕；与面向个人的可视化编排工具不同，它从第一版内建多租户、组织权限、能力池治理和发布校验，让 AI 能力真正进入企业日常流程，而不是停留在演示级编排。
+当前项目已完成**阶段一：框架与基础治理**。后续重点转向稳定化、平台增强和客户侧个性化集成。
 
-当前处于**阶段一：框架与基础治理**。身份、租户、组织权限、能力资产、流程设计草稿和业务工作台运行态已打通；后端运行态采用 Agent ReAct 模式，支持模型自主调用 Skill / MCP 工具并通过 SSE 输出 Markdown `final_answer`，同时保留交付记录、变量快照、模型/MCP 调用留痕和标准化 Token 用量。运行态执行已重构为 **RabbitMQ 异步执行 + Redis Stream 进度回放**：刷新/重进页面无感恢复，支持主动中断后「重新执行」与失败后「恢复进度」（保留已成功子智能体结果）。系统内置交付已支持邮箱、Webhook 和 Word 文档初版；高风险审批和完整运行审计能力仍在继续建设中。详见 [当前进度](./docs/progress/README.md)。
+## 产品亮点
 
----
+- **以智能体配置代替繁琐流程编排**：流程不追求把每个工具调用画成节点，而是把 AI 能力封装进智能体模板、提示词模板、Skill 和 MCP，让流程保持业务可读。
+- **多 Agent 是企业资产，不是临时提示词角色**：智能体模板可以创建、发布、共享和授权；流程引用的是被治理过的能力，而不是一次性写在 prompt 里的角色描述。
+- **弱模型也能协作完成复杂任务**：通过智能体集群节点把任务拆给多个子智能体，分别处理数据获取、事实核验、分析判断、内容生成和汇总，降低对单个超强模型的依赖。
+- **业务步骤清晰，AI 细节留在节点内部**：业务用户看到的是输入、待办、审核、运行进度和交付物；设计者看到的是阶段积木和能力选择；审计人员看到的是证据链。
+- **从第一版内建企业治理**：多租户、系统管理、租户管理、能力池分配、资源范围、发布校验、运行留痕和交付记录都是基础模型的一部分。
+- **适合客户系统集成**：邮箱、Webhook 和 Word 文档作为通用交付先内置；OA、PDF、IM、专属数据源等按客户环境通过 MCP 或交付适配器扩展。
 
-## 核心能力
+## 核心工作方式
 
-- **多租户与角色入口** — 业务用户、租户管理、系统管理三类登录入口，后端按租户、角色、资源范围与能力池复核每个请求
-- **阶段积木流程设计** — 以步骤组织流程，支持变量声明、发布校验与不可变版本快照
-- **能力资产治理** — 智能体模板、Skills、MCP、提示词模板与交付能力统一登记、版本化与分配
-- **能力池分配模型** — 系统管理配置租户可用能力池，租户管理分配至成员、部门与角色
-- **智能体节点运行时** — 节点内以 ReAct/Function Calling 方式调用模型、Skill 和 MCP，支持单智能体与多智能体集群流式执行
-- **人工卡点与交付** — 输入、审核、暂停恢复，当前支持邮箱、Webhook 和 Word 文档交付；PDF、OA、IM 适配继续建设
-- **运行审计** — 追溯运行链路、变量快照、模型调用、MCP 调用与交付记录；独立审计页和补偿操作继续建设
+```text
+沉淀能力资产
+  -> 设计少量业务步骤
+  -> 单智能体或多智能体集群执行
+  -> 人工输入 / 审核介入
+  -> 交付结果并保留证据链
+```
 
----
+一个典型流程可以是：
+
+```text
+输入企业名称
+  -> 资料核验智能体调用可用 MCP 获取事实数据
+  -> 多个分析智能体并行生成风险、财务、行业和司法章节
+  -> 汇总智能体统一口径
+  -> 人工审核
+  -> 生成 Word 报告并通过邮件或 Webhook 交付
+```
+
+这里的重点不是把每个查询、判断、拼接都变成流程节点，而是维护好每类智能体的职责、可用工具和输出约束。
+
+## 代码中的实现对应
+
+- `apps/api/src/main/java/com/agentum/agent/application/AgentRuntimeService.java`：智能体运行核心，负责装配模型、提示词、Skill、MCP 工具声明，并通过 ReAct / Function Calling 让模型自主选择工具和提交最终答案。
+- `apps/api/src/main/java/com/agentum/workbench/application/DefaultWorkflowRuntimeExecutor.java`：运行态节点分发入口，把 `agent`、`parallel_group`、`delivery` 等节点交给对应服务执行。
+- `apps/api/src/main/java/com/agentum/workflow/application/WorkflowDesignerCatalogService.java`：设计态积木目录，当前收敛为输入节点、单智能体节点、智能体集群节点和交付节点。
+- `apps/api/src/main/java/com/agentum/asset/application/AssetManagementService.java`：能力资产治理，区分系统能力、用户自建智能体/提示词模板、读取范围和编辑范围。
+- `apps/api/src/main/java/com/agentum/system/application/SystemManagementService.java`：系统管理能力，负责模型供应商、全局能力、租户能力池和租户模型分配。
+- `apps/api/src/main/java/com/agentum/organization/application/TenantOrganizationService.java`：租户内成员、部门、角色、页签和能力分配治理。
+- `apps/web/src/surfaces/designer/WorkflowEditorPage.tsx`：前端阶段积木编辑器，设计者在这里配置输入、智能体、智能体集群和交付。
+- `apps/web/src/surfaces/assets/AssetsPage.tsx`：能力资产页面，展示“对我开放”和“我的能力”，支撑智能体模板和提示词模板的草稿发布模型。
+- `apps/web/src/surfaces/workbench/WorkbenchShell.tsx`：业务工作台入口，承载普通用户的待办、流程发起、运行详情和交付查看。
+- `apps/web/src/surfaces/audit/AuditPage.tsx`：运行审计入口，用于查看运行、工具调用、变量快照和交付证据。
+
+## 已完成的阶段一能力
+
+- 三类入口：业务用户、租户管理、系统管理。
+- 多租户认证、角色切换、菜单驱动和租户上下文校验。
+- 系统管理：租户、模型供应商、全局能力、租户能力池和模型分配。
+- 租户管理：成员、部门、角色、页签分配、能力池分配和组织勾稽。
+- 能力资产：智能体模板、提示词模板、Skill、MCP、交付能力的展示、发布和授权边界。
+- 流程设计：草稿、阶段积木、变量声明、发布校验、不可变版本和协作权限。
+- 运行态：用户输入、人工审核、单智能体、多智能体集群、追问、重新执行、失败恢复。
+- 智能体运行：模型调用、Skill 读取、MCP 工具调用、推理内容、Token 用量和最终答案留痕。
+- 基础交付：邮箱、Webhook、Word 文档生成和下载。
+- 审计证据链：运行事件、变量快照、模型调用、MCP 调用和交付记录。
 
 ## 技术栈
 
@@ -41,12 +81,9 @@ Agentum 是一个以智能体为执行单元的企业工作流平台。它面向
 | 前端 | React、TypeScript、Vite、Tailwind CSS、Ant Design、Zustand |
 | 后端 | Java 21、Spring Boot、Spring Security、Spring Data JPA |
 | 数据 | PostgreSQL、Flyway |
-| 中间件 | Redis、RabbitMQ、MinIO（S3 兼容） |
-| 契约 | OpenAPI、JSON Schema（`packages/shared-contract`） |
-| Worker | Java Worker 优先；文档生成、AI 重任务可补 Python Worker |
-| 本地环境 | Docker Compose（PostgreSQL、Redis、RabbitMQ、MinIO、Mailpit） |
-
----
+| 运行依赖 | Redis、RabbitMQ、MinIO、Mailpit |
+| 契约 | OpenAPI、JSON Schema |
+| 能力源码 | `capabilities/skills`、`capabilities/mcp-servers`、`capabilities/delivery` |
 
 ## 快速开始
 
@@ -56,30 +93,22 @@ Agentum 是一个以智能体为执行单元的企业工作流平台。它面向
 pnpm install
 ```
 
-启动本地基础设施（**必须先于后端启动**：运行态强依赖 Redis 与 RabbitMQ，未启动时任务执行无法工作）：
+启动本地基础设施：
 
 ```bash
 make dev-infra
 ```
 
-启动后端 API：
+启动后端：
 
 ```bash
 ./gradlew :apps:api:bootRun
 ```
 
-根目录 `.env.example` 提供本地环境变量模板。Docker Compose 会读取复制后的 `.env`；直接使用 Gradle 启动时，需要在终端或 IDE Run Configuration 中设置环境变量。`AGENTUM_AUTH_TOKEN_SECRET` 用于 Access Token 签名，`AGENTUM_AUTH_ACCESS_TOKEN_TTL_MINUTES` 和 `AGENTUM_AUTH_REFRESH_TOKEN_TTL_DAYS` 控制会话期限，`AGENTUM_AUTH_SSO_STATE_SECRET` 用于 SSO 临时状态签名，`AGENTUM_FIELD_ENCRYPTION_MASTER_KEY` 用于解密已保存的模型 API Key、OIDC Client Secret 等敏感字段。模板中的公开值只用于本地免配置启动，不能用于生产；生产必须分别通过独立 Secret 或 KMS / Vault 注入。字段加密主密钥生成密文后必须保持稳定，不能与 Token 签名密钥复用。
-
 启动前端：
 
 ```bash
 pnpm dev:web
-```
-
-关闭基础设施：
-
-```bash
-make down-infra
 ```
 
 常用验证：
@@ -88,23 +117,12 @@ make down-infra
 pnpm lint:web
 pnpm build:web
 ./gradlew test
+git diff --check
 ```
-
-### 默认端口
-
-| 服务 | 地址 |
-| --- | --- |
-| Web | `http://localhost:5173` |
-| API | `http://localhost:8080` |
-| PostgreSQL | `localhost:5432` |
-| Redis | `localhost:6379` |
-| RabbitMQ | `localhost:5672`（管理台 `15672`） |
-| MinIO | `localhost:9000`（控制台 `9001`） |
-| Mailpit | SMTP `1025`（控制台 `8025`） |
 
 ### 演示账号
 
-`local` profile 加载 `db/migration/devdata`，初始密码均为 **`agentum123`**。
+`local` profile 加载本地演示数据，初始密码均为 `agentum123`。
 
 | 用户名 | 入口 | 租户 |
 | --- | --- | --- |
@@ -113,21 +131,17 @@ pnpm build:web
 | `designer` | 业务用户 | 云程科技 |
 | `tenantadmin` | 租户管理 | 云程科技 |
 
----
-
 ## 目录结构
 
 ```text
 apps/web                  前端工作台
 apps/api                  后端 API
 packages/shared-contract  OpenAPI、JSON Schema 与事件契约
-capabilities/             产品运行时能力源码（Skill、MCP、交付适配器）
-workers/                  文档 / AI 等 Worker
+capabilities/             产品运行时能力源码
+workers/                  后续长耗时任务 Worker
 deploy/                   部署与本地配置
-docs/                     产品与架构文档
+docs/                     产品、架构和进度文档
 ```
-
----
 
 ## 文档
 
@@ -137,20 +151,13 @@ docs/                     产品与架构文档
 | [架构文档](./docs/architecture.md) | 模块边界、数据模型、部署演进 |
 | [开发规范](./docs/development-standards.md) | 命名、接口、测试与 AI 协作约定 |
 | [能力—流程—权限治理](./docs/capability-workflow-governance.md) | 版本模型、引用勾稽、收回/删除与后续选型 |
-| [AI 运行态接入说明](./docs/ai-runtime-integration.md) | 模型、MCP、Skill、提示词模板与流程运行时的当前实现 |
-| [Skill 与 MCP 运行机制](./docs/skill-mcp-runtime-guide.md) | Skill 读取、MCP 工具发现与调用、参数 Schema、失败恢复、审计和当前脚本执行边界 |
-| [运行态异步执行设计](./docs/runtime-async-execution-design.md) | MQ + Redis 执行解耦、SSE 回放与中断/恢复语义（已落地，仅 async 模式） |
-| [Word 文档交付说明](./docs/word-document-delivery.md) | 系统内置 Word 交付的配置分层、预览接口和下载接口 |
-| [企业 SSO 对接说明](./docs/sso-integration.md) | OIDC 单点登录边界、业务系统配合方式与当前实现状态 |
-| [当前进度](./docs/progress/README.md) | 阶段计划与施工状态 |
-| [流程创建与运行态节点检查说明](./docs/progress/workflow-creation-runtime-node-guide-2026-06-11.md) | 创建流程节点、发布校验、中断/重新执行/恢复进度语义与本轮修复记录 |
+| [AI 运行态接入说明](./docs/ai-runtime-integration.md) | 模型、MCP、Skill、提示词模板与流程运行时 |
+| [Skill 与 MCP 运行机制](./docs/skill-mcp-runtime-guide.md) | Skill 读取、MCP 工具发现与调用、参数 Schema、失败恢复和审计 |
+| [运行态异步执行设计](./docs/runtime-async-execution-design.md) | 执行解耦、SSE 回放与中断/恢复语义 |
+| [Word 文档交付说明](./docs/word-document-delivery.md) | 系统内置 Word 交付的配置、预览和下载 |
+| [企业 SSO 对接说明](./docs/sso-integration.md) | OIDC 单点登录边界与当前实现 |
+| [当前进度](./docs/progress/README.md) | 阶段计划、完成状态和后续开发说明 |
 | [AGENTS.md](./AGENTS.md) | 仓库内 AI 代理开发入口 |
-
----
-
-## 贡献
-
-欢迎通过 Pull Request 参与。建议小步提交，说明变更背景、影响范围与验证结果；涉及权限、状态机、变量解析、MCP / 模型调用、审计或交付能力时，请同步补测试或注明剩余风险。
 
 ## License
 
