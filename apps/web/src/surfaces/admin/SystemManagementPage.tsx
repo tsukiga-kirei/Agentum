@@ -47,11 +47,13 @@ import type {
   CapabilityTestResult,
   ModelProviderRow,
   ModelProviderTypeRow,
+  SaveTenantSsoProviderRequest,
   SystemCapabilityRow,
   SystemSummary,
   SystemTenantRow,
   TenantCapabilityGrantRow,
   TenantModelAssignmentRow,
+  TenantSsoProviderRow,
   UpdateTenantAdminProfileRequest,
 } from "../../types/system";
 
@@ -397,6 +399,7 @@ export function SystemManagementPage() {
 
   const token = useAuthStore((s) => s.token);
   const themeMode = useAuthStore((s) => s.themeMode);
+  const fetchSsoProviders = useAuthStore((s) => s.fetchSsoProviders);
   const [messageApi, messageContextHolder] = message.useMessage();
   const drawerRootClassName = themeMode === "dark" ? "agent-admin-drawer agent-admin-drawer--dark" : "agent-admin-drawer";
 
@@ -421,6 +424,10 @@ export function SystemManagementPage() {
   const [tenantActiveTab, setTenantActiveTab] = useState("default");
   const [tenantCapabilityGrants, setTenantCapabilityGrants] = useState<TenantCapabilityGrantRow[]>([]);
   const [tenantModelAssignments, setTenantModelAssignments] = useState<TenantModelAssignmentRow[]>([]);
+  const [tenantSsoProviders, setTenantSsoProviders] = useState<TenantSsoProviderRow[]>([]);
+  const [tenantSsoType, setTenantSsoType] = useState<"oidc" | "basic">("oidc");
+  const [tenantSsoEnabled, setTenantSsoEnabled] = useState(false);
+  const tenantSsoRef = useRef<Record<string, string>>({});
   const [tenantOrganizationOverview, setTenantOrganizationOverview] = useState<TenantOrganizationOverview | null>(null);
   const [tenantOrganizationLoading, setTenantOrganizationLoading] = useState(false);
   const [tenantOrganizationError, setTenantOrganizationError] = useState("");
@@ -563,6 +570,30 @@ export function SystemManagementPage() {
     }
   }, [token, handleApiError]);
 
+  const loadTenantSsoProviders = useCallback(async (tenantId: string) => {
+    if (!token) return;
+    try {
+      const providers = await systemApi.listTenantSsoProviders(tenantId, token);
+      setTenantSsoProviders(providers);
+      const enabledProvider = providers.find((provider) => provider.status === "enabled") ?? providers[0];
+      const nextType = enabledProvider?.providerType ?? "oidc";
+      setTenantSsoType(nextType);
+      setTenantSsoEnabled(enabledProvider?.status === "enabled");
+      tenantSsoRef.current = enabledProvider ? {
+        name: enabledProvider.name,
+        issuer: enabledProvider.issuer ?? "",
+        clientId: enabledProvider.clientId ?? "",
+        authorizationEndpoint: enabledProvider.authorizationEndpoint ?? "",
+        tokenEndpoint: enabledProvider.tokenEndpoint ?? "",
+        jwksUri: enabledProvider.jwksUri ?? "",
+        allowedIpRanges: enabledProvider.allowedIpRanges ?? "",
+        allowedDomains: enabledProvider.allowedDomains ?? "",
+      } : {};
+    } catch (e) {
+      handleApiError(e, "加载租户企业认证配置失败");
+    }
+  }, [token, handleApiError]);
+
   const loadTenantOrganizationOverview = useCallback(async (tenantId: string) => {
     if (!token) return;
     setTenantOrganizationLoading(true);
@@ -601,11 +632,14 @@ export function SystemManagementPage() {
       void loadModels();
       void loadTenantModelAssignments(selectedTenant.id);
     }
+    if (tenantActiveTab === "auth") {
+      void loadTenantSsoProviders(selectedTenant.id);
+    }
     if (tenantActiveTab === "members") {
       // 系统管理抽屉只做跨租户诊断视图，实际成员维护仍回到租户管理页并由后端复核租户上下文。
       void loadTenantOrganizationOverview(selectedTenant.id);
     }
-  }, [selectedTenant, tenantDrawerOpen, tenantActiveTab, loadConfigCapabilities, loadTenantCapabilityGrants, loadModels, loadTenantModelAssignments, loadTenantOrganizationOverview]);
+  }, [selectedTenant, tenantDrawerOpen, tenantActiveTab, loadConfigCapabilities, loadTenantCapabilityGrants, loadModels, loadTenantModelAssignments, loadTenantSsoProviders, loadTenantOrganizationOverview]);
 
   const patchTenantStatus = async (tenantId: string, status: string) => {
     if (!token) return;
@@ -1102,6 +1136,35 @@ export function SystemManagementPage() {
     }
   };
 
+  const submitTenantSsoProvider = async () => {
+    if (!token || !selectedTenant) return;
+    const d = tenantSsoRef.current;
+    const body: SaveTenantSsoProviderRequest = {
+      providerType: tenantSsoType,
+      status: tenantSsoEnabled ? "enabled" : "disabled",
+    };
+    if (tenantSsoType === "oidc") {
+      body.issuer = d.issuer?.trim();
+      body.clientId = d.clientId?.trim();
+      body.clientSecret = d.clientSecret?.trim();
+      body.authorizationEndpoint = d.authorizationEndpoint?.trim();
+      body.tokenEndpoint = d.tokenEndpoint?.trim();
+      body.jwksUri = d.jwksUri?.trim();
+    } else {
+      body.basicPassword = d.basicPassword?.trim();
+      body.allowedIpRanges = d.allowedIpRanges?.trim();
+      body.allowedDomains = d.allowedDomains?.trim();
+    }
+    try {
+      await systemApi.saveTenantSsoProvider(selectedTenant.id, token, body);
+      messageApi.success(tenantSsoEnabled ? "租户企业认证配置已启用" : "租户企业认证已关闭");
+      void loadTenantSsoProviders(selectedTenant.id);
+      void fetchSsoProviders(selectedTenant.id);
+    } catch (e) {
+      handleApiError(e, "保存租户企业认证配置失败");
+    }
+  };
+
   const navItems: { key: SystemSection; label: string; icon: typeof LayoutDashboard; description: string }[] = [
     { key: "overview", label: "平台概览", icon: LayoutDashboard, description: "全局统计与治理概况" },
     { key: "tenants", label: "租户管理", icon: Building2, description: "隔离边界与全局分配" },
@@ -1496,6 +1559,7 @@ export function SystemManagementPage() {
           <div className="sys-drawer-tabs">
             {[
               { key: "default", label: "基本信息", icon: Info },
+              { key: "auth", label: "企业认证", icon: ShieldCheck },
               { key: "capabilities", label: "能力配置", icon: Boxes },
               { key: "members", label: "成员 / 角色", icon: Users },
               { key: "models", label: "模型分配", icon: DatabaseZap },
@@ -1524,6 +1588,81 @@ export function SystemManagementPage() {
                       {selectedTenant.status==='active'?'停用租户':'启用租户'}
                     </button>
                   </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 企业认证 */}
+          {tenantActiveTab === "auth" && (
+            <div className="sys-drawer-section sys-drawer-section-enter" key={`tenant-sso-${tenantSsoType}-${tenantSsoProviders.map((item) => item.id).join("-")}`}>
+              <div className="sys-section-header"><ShieldCheck size={18}/> 企业认证</div>
+              <div className="sys-hint"><Info size={14}/> 企业认证只负责外部身份校验；登录成功后仍按 Agentum 本地租户、入口角色和资源权限重新判权。</div>
+              <div className="sys-config-group">
+                <div className="sys-form-row">
+                  <span className="sys-form-label">启用状态</span>
+                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    <span className={`sys-status sys-status--${tenantSsoEnabled ? "active" : "inactive"}`}><span className="sys-status-dot"/>{tenantSsoEnabled ? "已启用" : "未启用"}</span>
+                    <button type="button" className="sys-btn sys-btn--default sys-btn--sm" onClick={() => setTenantSsoEnabled(!tenantSsoEnabled)}>
+                      {tenantSsoEnabled ? "关闭企业认证" : "开启企业认证"}
+                    </button>
+                  </div>
+                </div>
+                <div className="sys-field">
+                  <label className="sys-field-label sys-field-label--required">认证方式</label>
+                  <SysSelect
+                    icon={ShieldCheck}
+                    value={tenantSsoType}
+                    options={[{ value: "oidc", label: "OAuth2 / OIDC" }, { value: "basic", label: "Basic" }]}
+                    onChange={(value) => {
+                      const nextType = value as "oidc" | "basic";
+                      setTenantSsoType(nextType);
+                      const provider = tenantSsoProviders.find((item) => item.providerType === nextType);
+                      setTenantSsoEnabled(provider?.status === "enabled");
+                      tenantSsoRef.current = provider ? {
+                        issuer: provider.issuer ?? "",
+                        clientId: provider.clientId ?? "",
+                        authorizationEndpoint: provider.authorizationEndpoint ?? "",
+                        tokenEndpoint: provider.tokenEndpoint ?? "",
+                        jwksUri: provider.jwksUri ?? "",
+                        allowedIpRanges: provider.allowedIpRanges ?? "",
+                        allowedDomains: provider.allowedDomains ?? "",
+                      } : {};
+                    }}
+                  />
+                </div>
+
+                {tenantSsoType === "oidc" ? (
+                  <>
+                    <div className="sys-field"><label className="sys-field-label sys-field-label--required">Issuer</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="https://idp.example.com" defaultValue={tenantSsoRef.current.issuer || ""} onChange={(event) => { tenantSsoRef.current.issuer = event.target.value; }} /></div></div>
+                    <div className="sys-field-row">
+                      <div className="sys-field"><label className="sys-field-label sys-field-label--required">Client ID</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" defaultValue={tenantSsoRef.current.clientId || ""} onChange={(event) => { tenantSsoRef.current.clientId = event.target.value; }} /></div></div>
+                      <div className="sys-field"><label className="sys-field-label">{tenantSsoProviders.find((item) => item.providerType === "oidc")?.clientSecretConfigured ? "Client Secret（留空保留原值）" : "Client Secret"}</label><div className="sys-field-input-wrap"><KeyRound size={16} className="sys-field-prefix"/><input className="sys-field-input" type="password" onChange={(event) => { tenantSsoRef.current.clientSecret = event.target.value; }} /></div></div>
+                    </div>
+                    <div className="sys-field"><label className="sys-field-label sys-field-label--required">授权地址</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" defaultValue={tenantSsoRef.current.authorizationEndpoint || ""} onChange={(event) => { tenantSsoRef.current.authorizationEndpoint = event.target.value; }} /></div></div>
+                    <div className="sys-field"><label className="sys-field-label sys-field-label--required">Token 地址</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" defaultValue={tenantSsoRef.current.tokenEndpoint || ""} onChange={(event) => { tenantSsoRef.current.tokenEndpoint = event.target.value; }} /></div></div>
+                    <div className="sys-field"><label className="sys-field-label sys-field-label--required">JWKS 地址</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" defaultValue={tenantSsoRef.current.jwksUri || ""} onChange={(event) => { tenantSsoRef.current.jwksUri = event.target.value; }} /></div></div>
+                  </>
+                ) : (
+                  <>
+                    <div className="sys-field">
+                      <label className="sys-field-label">{tenantSsoProviders.find((item) => item.providerType === "basic")?.basicPasswordConfigured ? "共享密码（留空保留原值）" : "共享密码"}</label>
+                      <div className="sys-field-input-wrap"><KeyRound size={16} className="sys-field-prefix"/><input className="sys-field-input" type="password" placeholder="业务系统调用 Basic 单点入口时使用" onChange={(event) => { tenantSsoRef.current.basicPassword = event.target.value; }} /></div>
+                      <div className="sys-field-hint">业务系统访问 Agentum Basic 单点入口时，Basic username 使用 tenantCode/username，password 使用这里配置的共享密码。</div>
+                    </div>
+                    <div className="sys-field-row">
+                      <div className="sys-field"><label className="sys-field-label">允许 IP</label><div className="sys-field-input-wrap"><ServerCog size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="逗号分隔，留空不限制" defaultValue={tenantSsoRef.current.allowedIpRanges || ""} onChange={(event) => { tenantSsoRef.current.allowedIpRanges = event.target.value; }} /></div></div>
+                      <div className="sys-field"><label className="sys-field-label">允许域名</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如 oa.example.com，留空不限制" defaultValue={tenantSsoRef.current.allowedDomains || ""} onChange={(event) => { tenantSsoRef.current.allowedDomains = event.target.value; }} /></div></div>
+                    </div>
+                    <div className="sys-hint"><Info size={14}/> Basic 单点入口：/api/auth/sso/basic-entry?portal=business。该方式不使用用户个人密码，必须由可信业务系统服务端发起。</div>
+                  </>
+                )}
+                <div className="tenant-org-actionbar tenant-admin-actionbar">
+                  <div className="sys-info-tags tenant-admin-tags">
+                    <span className="sys-info-tag sys-info-tag--primary">{tenantSsoType === "basic" ? "Basic" : "OAuth2 / OIDC"}</span>
+                    <span className="sys-info-tag">{tenantSsoEnabled ? "保存后登录页展示企业入口" : "保存后关闭企业入口"}</span>
+                  </div>
+                  <button type="button" className="sys-btn sys-btn--primary sys-btn--sm" onClick={() => void submitTenantSsoProvider()}><ShieldCheck size={14}/> 保存企业认证</button>
                 </div>
               </div>
             </div>

@@ -17,4 +17,6 @@ public interface TenantRepository extends JpaRepository<TenantEntity, UUID> {
     boolean existsByCode(String code);
 
     Optional<TenantEntity> findByIdAndStatus(UUID id, String status);
+
+    Optional<TenantEntity> findByCodeAndStatus(String code, String status);
 }

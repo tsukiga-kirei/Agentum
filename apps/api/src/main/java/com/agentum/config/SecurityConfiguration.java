@@ -53,6 +53,7 @@ public class SecurityConfiguration {
                 .requestMatchers(HttpMethod.GET, "/api/public/tenants/*/sso-providers").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/auth/refresh", "/api/auth/logout").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/auth/sso/basic-entry").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/auth/sso/authorize").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/auth/sso/callback/*").permitAll()
                 .requestMatchers("/actuator/health", "/actuator/info").permitAll()

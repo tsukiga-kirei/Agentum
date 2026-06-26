@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 import com.agentum.delivery.application.EmailDeliveryConnectionTester;
 import com.agentum.auth.domain.UserAccount;
 import com.agentum.auth.domain.UserRoleAssignmentEntity;
+import com.agentum.auth.infrastructure.TenantSsoProviderRepository;
 import com.agentum.auth.infrastructure.UserAccountRepository;
 import com.agentum.auth.infrastructure.UserRoleAssignmentRepository;
 import com.agentum.organization.domain.UserMembershipEntity;
@@ -82,6 +83,7 @@ class SystemManagementServiceTest {
             systemCapabilityRepository,
             tenantCapabilityGrantRepository,
             tenantModelAssignmentRepository,
+            mock(TenantSsoProviderRepository.class),
             userAccountRepository,
             userRoleAssignmentRepository,
             roleRepository,
@@ -1055,6 +1057,7 @@ class SystemManagementServiceTest {
             systemCapabilityRepository,
             mock(TenantCapabilityGrantRepository.class),
             mock(TenantModelAssignmentRepository.class),
+            mock(TenantSsoProviderRepository.class),
             mock(UserAccountRepository.class),
             mock(UserRoleAssignmentRepository.class),
             mock(RoleRepository.class),
@@ -1159,6 +1162,7 @@ class SystemManagementServiceTest {
             systemCapabilityRepository,
             tenantCapabilityGrantRepository,
             tenantModelAssignmentRepository,
+            mock(TenantSsoProviderRepository.class),
             userAccountRepository,
             userRoleAssignmentRepository,
             roleRepository,
@@ -1195,6 +1199,7 @@ class SystemManagementServiceTest {
             systemCapabilityRepository,
             tenantCapabilityGrantRepository,
             tenantModelAssignmentRepository,
+            mock(TenantSsoProviderRepository.class),
             mock(UserAccountRepository.class),
             mock(UserRoleAssignmentRepository.class),
             mock(RoleRepository.class),

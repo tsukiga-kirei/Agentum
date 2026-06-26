@@ -54,7 +54,6 @@ export function LoginPage() {
   const tenantsLoading = useAuthStore((s) => s.tenantsLoading);
   const fetchTenants = useAuthStore((s) => s.fetchTenants);
   const ssoProviders = useAuthStore((s) => s.ssoProviders);
-  const ssoProvidersLoading = useAuthStore((s) => s.ssoProvidersLoading);
   const fetchSsoProviders = useAuthStore((s) => s.fetchSsoProviders);
   const login = useAuthStore((s) => s.login);
   const completeSsoLogin = useAuthStore((s) => s.completeSsoLogin);
@@ -104,6 +103,7 @@ export function LoginPage() {
       </span>
     ),
   }));
+  const oidcSsoProviders = ssoProviders.filter((provider) => provider.providerType === "oidc");
 
   const showLoginError = useCallback((content: string) => {
     void messageApi.open({
@@ -275,7 +275,7 @@ export function LoginPage() {
     }
   }
 
-  function handleSsoLogin(providerId: string) {
+  async function handleSsoLogin(provider: { id: string; providerType: string }) {
     clearLoginError();
 
     if (!selectedTenantId || typeof selectedTenantId !== "string") {
@@ -283,8 +283,14 @@ export function LoginPage() {
       return;
     }
 
-    setSsoLoadingProviderId(providerId);
-    const url = authApi.ssoAuthorizeUrl(selectedTenantId, providerId, activePortal);
+    setSsoLoadingProviderId(provider.id);
+    if (provider.providerType === "basic") {
+      showLoginError("当前租户启用了 Basic 单点入口，请从已授权业务系统进入 Agentum");
+      setSsoLoadingProviderId(null);
+      return;
+    }
+
+    const url = authApi.ssoAuthorizeUrl(selectedTenantId, provider.id, activePortal);
     const popup = window.open(url, "agentum-sso-login", "width=720,height=760");
 
     if (!popup) {
@@ -440,30 +446,24 @@ export function LoginPage() {
               </Form>
             </ConfigProvider>
 
-            {/* 企业 SSO：仅展示当前租户已启用的身份源；权限仍由后端登录回调后重新计算。 */}
-            <div className="login-sso-placeholder">
-              {shouldSelectTenant && ssoProviders.length > 0 ? (
-                <>
-                  <div className="login-sso-divider"><span>企业 SSO</span></div>
-                  <div className="login-sso-actions">
-                    {ssoProviders.map((provider) => (
-                      <Button
-                        key={provider.id}
-                        block
-                        className="login-sso-button"
-                        loading={ssoLoadingProviderId === provider.id}
-                        type="default"
-                        onClick={() => handleSsoLogin(provider.id)}
-                      >
-                        {provider.name}
-                      </Button>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <p>{ssoProvidersLoading ? "正在检查企业 SSO 配置…" : "当前租户未启用企业 SSO"}</p>
-              )}
-            </div>
+            {shouldSelectTenant && oidcSsoProviders.length > 0 ? (
+              <div className="login-sso-placeholder">
+                <div className="login-sso-actions">
+                  {oidcSsoProviders.map((provider) => (
+                    <Button
+                      key={provider.id}
+                      block
+                      className="login-sso-button"
+                      loading={ssoLoadingProviderId === provider.id}
+                      type="default"
+                      onClick={() => void handleSsoLogin(provider)}
+                    >
+                      {provider.name}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
             {/* 页脚 */}
             <div className="login-footer">

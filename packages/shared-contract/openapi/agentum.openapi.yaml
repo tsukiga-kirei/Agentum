@@ -27,6 +27,33 @@ paths:
                         type: array
                         items:
                           $ref: "#/components/schemas/TenantOption"
+  /api/public/tenants/{tenantId}/sso-providers:
+    get:
+      summary: 获取租户已启用企业认证入口
+      description: 登录页按当前租户发现企业认证方式。OAuth2/OIDC 可由前端发起授权跳转；Basic 只提示从可信业务系统进入。
+      tags:
+        - Auth
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 当前租户启用的企业认证入口
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/SsoProviderOption"
   /api/auth/login:
     post:
       summary: 登录并建立活跃入口上下文
@@ -140,6 +167,32 @@ paths:
       responses:
         "200":
           description: 已退出
+  /api/auth/sso/basic-entry:
+    get:
+      summary: Basic 共享密钥单点入口
+      description: 可信业务系统使用 Basic username `tenantCode/username` 和租户共享密码访问；成功后返回登录桥接 HTML 并设置 Refresh Cookie。
+      tags:
+        - Auth
+      parameters:
+        - name: portal
+          in: query
+          schema:
+            type: string
+            enum: [business, tenant_admin]
+            default: business
+      security:
+        - basicAuth: []
+      responses:
+        "200":
+          description: 登录桥接 HTML
+          content:
+            text/html:
+              schema:
+                type: string
+        "401":
+          description: Basic 凭据缺失或共享密码错误
+        "403":
+          description: 来源 IP / 域名不在白名单或用户无入口权限
   /api/tenants/{tenantId}/assets/summary:
     get:
       summary: 获取能力资产总览
@@ -2193,6 +2246,72 @@ paths:
           description: 当前账号不是系统管理员
         "404":
           description: 租户不存在
+  /api/system/tenants/{tenantId}/sso-providers:
+    get:
+      summary: 查询租户企业认证配置
+      tags:
+        - System
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 租户企业认证配置列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/TenantSsoProviderRow"
+    post:
+      summary: 保存租户企业认证配置
+      description: 同一租户只能启用一种企业认证方式；启用 OIDC 会停用 Basic，启用 Basic 会停用 OIDC。
+      tags:
+        - System
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveTenantSsoProviderRequest"
+      responses:
+        "200":
+          description: 保存后的企业认证配置
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/TenantSsoProviderRow"
+        "400":
+          description: 配置字段缺失或类型非法
+        "401":
+          description: 未登录或令牌无效
+        "403":
+          description: 当前账号不是系统管理员
   /api/system/model-provider-types:
     get:
       summary: 列出模型供应商类型字典
@@ -2817,6 +2936,9 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    basicAuth:
+      type: http
+      scheme: basic
   schemas:
     ApiError:
       type: object
@@ -2865,6 +2987,21 @@ components:
         - id
         - name
         - code
+    SsoProviderOption:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        providerType:
+          type: string
+          enum: [oidc, basic, saml]
+      required:
+        - id
+        - name
+        - providerType
     LoginRequest:
       type: object
       properties:
@@ -3744,6 +3881,99 @@ components:
           description: active 或 suspended
       required:
         - status
+    TenantSsoProviderRow:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          nullable: true
+        tenantId:
+          type: string
+          format: uuid
+        providerType:
+          type: string
+          enum: [oidc, basic]
+        name:
+          type: string
+        status:
+          type: string
+          enum: [enabled, disabled]
+        issuer:
+          type: string
+          nullable: true
+        clientId:
+          type: string
+          nullable: true
+        clientSecretConfigured:
+          type: boolean
+        authorizationEndpoint:
+          type: string
+          nullable: true
+        tokenEndpoint:
+          type: string
+          nullable: true
+        jwksUri:
+          type: string
+          nullable: true
+        basicPasswordConfigured:
+          type: boolean
+        allowedIpRanges:
+          type: string
+          nullable: true
+        allowedDomains:
+          type: string
+          nullable: true
+      required:
+        - tenantId
+        - providerType
+        - name
+        - status
+        - clientSecretConfigured
+        - basicPasswordConfigured
+    SaveTenantSsoProviderRequest:
+      type: object
+      properties:
+        providerType:
+          type: string
+          enum: [oidc, basic]
+        name:
+          type: string
+          maxLength: 160
+        status:
+          type: string
+          enum: [enabled, disabled]
+        issuer:
+          type: string
+          maxLength: 500
+        clientId:
+          type: string
+          maxLength: 200
+        clientSecret:
+          type: string
+          format: password
+          maxLength: 2000
+        authorizationEndpoint:
+          type: string
+          maxLength: 800
+        tokenEndpoint:
+          type: string
+          maxLength: 800
+        jwksUri:
+          type: string
+          maxLength: 800
+        basicPassword:
+          type: string
+          format: password
+          maxLength: 2000
+        allowedIpRanges:
+          type: string
+          maxLength: 1000
+        allowedDomains:
+          type: string
+          maxLength: 1000
+      required:
+        - providerType
     CreateTenantRequest:
       type: object
       properties:

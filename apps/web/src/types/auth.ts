@@ -18,7 +18,7 @@ export type TenantOption = {
 export type SsoProviderOption = {
   id: string;
   name: string;
-  providerType: "oidc" | "saml";
+  providerType: "oidc" | "basic" | "saml";
 };
 
 /** 系统角色（三大入口角色），用于 user_role_assignments.role */

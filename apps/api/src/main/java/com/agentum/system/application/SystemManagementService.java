@@ -22,7 +22,9 @@ import com.agentum.system.infrastructure.TenantModelAssignmentRepository;
 import com.agentum.system.application.McpSseTestOutcome.McpToolDescriptor;
 import com.agentum.system.interfaces.SystemManagementApi;
 import com.agentum.auth.domain.UserAccount;
+import com.agentum.auth.domain.TenantSsoProviderEntity;
 import com.agentum.auth.domain.UserRoleAssignmentEntity;
+import com.agentum.auth.infrastructure.TenantSsoProviderRepository;
 import com.agentum.auth.infrastructure.UserAccountRepository;
 import com.agentum.auth.infrastructure.UserRoleAssignmentRepository;
 import com.agentum.organization.domain.DepartmentEntity;
@@ -80,6 +82,7 @@ public class SystemManagementService {
     private final SystemCapabilityRepository systemCapabilityRepository;
     private final TenantCapabilityGrantRepository tenantCapabilityGrantRepository;
     private final TenantModelAssignmentRepository tenantModelAssignmentRepository;
+    private final TenantSsoProviderRepository tenantSsoProviderRepository;
     private final UserAccountRepository userAccountRepository;
     private final UserRoleAssignmentRepository userRoleAssignmentRepository;
     private final RoleRepository roleRepository;
@@ -102,6 +105,7 @@ public class SystemManagementService {
         SystemCapabilityRepository systemCapabilityRepository,
         TenantCapabilityGrantRepository tenantCapabilityGrantRepository,
         TenantModelAssignmentRepository tenantModelAssignmentRepository,
+        TenantSsoProviderRepository tenantSsoProviderRepository,
         UserAccountRepository userAccountRepository,
         UserRoleAssignmentRepository userRoleAssignmentRepository,
         RoleRepository roleRepository,
@@ -123,6 +127,7 @@ public class SystemManagementService {
         this.systemCapabilityRepository = systemCapabilityRepository;
         this.tenantCapabilityGrantRepository = tenantCapabilityGrantRepository;
         this.tenantModelAssignmentRepository = tenantModelAssignmentRepository;
+        this.tenantSsoProviderRepository = tenantSsoProviderRepository;
         this.userAccountRepository = userAccountRepository;
         this.userRoleAssignmentRepository = userRoleAssignmentRepository;
         this.roleRepository = roleRepository;
@@ -303,6 +308,53 @@ public class SystemManagementService {
             userRoleAssignmentRepository.deleteByUserIdAndRoleAndTenantId(membership.getUserId(), "business", tenantId);
         }
         log.info("系统管理更新租户管理员状态成功 tenantId={} membershipId={} status={} requestId={}", tenantId, membershipId, status, RequestIds.current());
+    }
+
+    @Transactional(readOnly = true)
+    public List<SystemManagementApi.TenantSsoProviderRow> listTenantSsoProviders(UUID tenantId) {
+        ensureTenantExists(tenantId);
+        return tenantSsoProviderRepository.findByTenantIdOrderByNameAsc(tenantId).stream()
+            .map(this::toTenantSsoProviderRow)
+            .toList();
+    }
+
+    @Transactional
+    public SystemManagementApi.TenantSsoProviderRow saveTenantSsoProvider(UUID tenantId, SystemManagementApi.SaveTenantSsoProviderRequest request) {
+        ensureTenantExists(tenantId);
+        String providerType = normalizeRequired(request.providerType(), "SYSTEM_TENANT_SSO_TYPE_REQUIRED", "请选择企业认证方式");
+        if (!"oidc".equals(providerType) && !"basic".equals(providerType)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_TENANT_SSO_TYPE_INVALID", "企业认证方式只能是 OAuth2/OIDC 或 Basic");
+        }
+        String status = firstNonBlank(request.status(), "enabled");
+        if (!"enabled".equals(status) && !"disabled".equals(status)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_TENANT_SSO_STATUS_INVALID", "企业认证状态只能是 enabled 或 disabled");
+        }
+
+        TenantSsoProviderEntity provider = tenantSsoProviderRepository.findByTenantIdAndProviderType(tenantId, providerType)
+            .orElse(null);
+        if ("disabled".equals(status)) {
+            if (provider == null) {
+                return new SystemManagementApi.TenantSsoProviderRow(null, tenantId, providerType, "", "disabled", "", "", false, "", "", "", false, "", "");
+            }
+            provider.updateStatus("disabled", clock.instant());
+            tenantSsoProviderRepository.save(provider);
+            log.info("系统管理关闭租户企业认证成功 tenantId={} providerType={} providerId={} requestId={}", tenantId, providerType, provider.getId(), RequestIds.current());
+            return toTenantSsoProviderRow(provider);
+        }
+
+        // 同一租户只允许启用一种企业认证方式，避免登录页同时暴露多套企业入口造成权限心智混乱。
+        tenantSsoProviderRepository.findByTenantIdOrderByNameAsc(tenantId).stream()
+            .filter(existing -> !providerType.equals(existing.getProviderType()))
+            .forEach(existing -> existing.updateStatus("disabled", clock.instant()));
+
+        if ("oidc".equals(providerType)) {
+            provider = upsertOidcProvider(tenantId, provider, request);
+        } else {
+            provider = upsertBasicProvider(tenantId, provider, request);
+        }
+        tenantSsoProviderRepository.save(provider);
+        log.info("系统管理保存租户企业认证成功 tenantId={} providerType={} providerId={} requestId={}", tenantId, providerType, provider.getId(), RequestIds.current());
+        return toTenantSsoProviderRow(provider);
     }
 
     @Transactional(readOnly = true)
@@ -835,6 +887,48 @@ public class SystemManagementService {
             ));
     }
 
+    private TenantSsoProviderEntity upsertOidcProvider(UUID tenantId, TenantSsoProviderEntity provider, SystemManagementApi.SaveTenantSsoProviderRequest request) {
+        String name = defaultSsoName(request.name(), "企业 OAuth2 认证");
+        String issuer = normalizeRequired(request.issuer(), "SYSTEM_TENANT_SSO_ISSUER_REQUIRED", "OIDC Issuer 不能为空");
+        String clientId = normalizeRequired(request.clientId(), "SYSTEM_TENANT_SSO_CLIENT_ID_REQUIRED", "OIDC Client ID 不能为空");
+        String authorizationEndpoint = normalizeRequired(request.authorizationEndpoint(), "SYSTEM_TENANT_SSO_AUTH_URL_REQUIRED", "OIDC 授权地址不能为空");
+        String tokenEndpoint = normalizeRequired(request.tokenEndpoint(), "SYSTEM_TENANT_SSO_TOKEN_URL_REQUIRED", "OIDC Token 地址不能为空");
+        String jwksUri = normalizeRequired(request.jwksUri(), "SYSTEM_TENANT_SSO_JWKS_URI_REQUIRED", "OIDC JWKS 地址不能为空");
+        String encryptedSecret = null;
+        if (request.clientSecret() != null && !request.clientSecret().isBlank()) {
+            encryptedSecret = fieldEncryptionService.encrypt(request.clientSecret().trim());
+        } else if (provider == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_TENANT_SSO_CLIENT_SECRET_REQUIRED", "首次启用 OIDC 时必须填写 Client Secret");
+        }
+        if (provider == null) {
+            return TenantSsoProviderEntity.createOidc(tenantId, name, issuer, clientId, encryptedSecret, authorizationEndpoint, tokenEndpoint, jwksUri, clock.instant());
+        }
+        provider.updateOidc(name, issuer, clientId, encryptedSecret, authorizationEndpoint, tokenEndpoint, jwksUri, clock.instant());
+        return provider;
+    }
+
+    private TenantSsoProviderEntity upsertBasicProvider(UUID tenantId, TenantSsoProviderEntity provider, SystemManagementApi.SaveTenantSsoProviderRequest request) {
+        String name = defaultSsoName(request.name(), "企业 Basic 单点");
+        String encryptedPassword = null;
+        if (request.basicPassword() != null && !request.basicPassword().isBlank()) {
+            encryptedPassword = fieldEncryptionService.encrypt(request.basicPassword().trim());
+        } else if (provider == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_TENANT_SSO_BASIC_PASSWORD_REQUIRED", "首次启用 Basic 单点时必须填写共享密码");
+        }
+        String allowedIpRanges = normalizeOptional(request.allowedIpRanges());
+        String allowedDomains = normalizeOptional(request.allowedDomains());
+        if (provider == null) {
+            return TenantSsoProviderEntity.createBasic(tenantId, name, encryptedPassword, allowedIpRanges, allowedDomains, clock.instant());
+        }
+        provider.updateBasic(name, encryptedPassword, allowedIpRanges, allowedDomains, clock.instant());
+        return provider;
+    }
+
+    private static String defaultSsoName(String value, String fallback) {
+        String normalized = normalizeOptional(value);
+        return normalized.isBlank() ? fallback : normalized;
+    }
+
     private void ensureModelProviderCanEnterStatus(UUID providerId, String targetStatus) {
         if ("draft".equals(targetStatus) && tenantModelAssignmentRepository.existsByProviderIdAndStatus(providerId, "enabled")) {
             log.warn("系统管理更新模型供应商失败：供应商仍被租户启用 providerId={} targetStatus={} requestId={}", providerId, targetStatus, RequestIds.current());
@@ -891,6 +985,25 @@ public class SystemManagementService {
             provider.getProviderType(),
             entity.getDefaultModel(),
             entity.getStatus()
+        );
+    }
+
+    private SystemManagementApi.TenantSsoProviderRow toTenantSsoProviderRow(TenantSsoProviderEntity entity) {
+        return new SystemManagementApi.TenantSsoProviderRow(
+            entity.getId(),
+            entity.getTenantId(),
+            entity.getProviderType(),
+            entity.getName(),
+            entity.getStatus(),
+            entity.getIssuer(),
+            entity.getClientId(),
+            entity.getEncryptedClientSecret() != null && !entity.getEncryptedClientSecret().isBlank(),
+            entity.getAuthorizationEndpoint(),
+            entity.getTokenEndpoint(),
+            entity.getJwksUri(),
+            entity.getEncryptedBasicPassword() != null && !entity.getEncryptedBasicPassword().isBlank(),
+            entity.getAllowedIpRanges(),
+            entity.getAllowedDomains()
         );
     }
 

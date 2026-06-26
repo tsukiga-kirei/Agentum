@@ -37,11 +37,13 @@ import type {
   ModelProviderPage,
   ModelProviderTestResult,
   ModelProviderTypeRow,
+  SaveTenantSsoProviderRequest,
   SystemCapabilityPage,
   SystemCapabilityRow,
   SystemSummary,
   SystemTenantPage,
   SystemTenantRow,
+  TenantSsoProviderRow,
   TenantCapabilityGrantRow,
   TenantModelAssignmentRow,
   UpdateTenantCapabilityGrantStatusRequest,
@@ -396,6 +398,10 @@ export const systemApi = {
     apiRequest<void>(`/api/system/tenants/${tenantId}/admins/${membershipId}/profile`, { method: "PATCH", token, body }),
   updateTenantAdminStatus: (tenantId: string, membershipId: string, token: string, body: UpdateTenantAdminStatusRequest) =>
     apiRequest<void>(`/api/system/tenants/${tenantId}/admins/${membershipId}/status`, { method: "PATCH", token, body }),
+  listTenantSsoProviders: (tenantId: string, token: string) =>
+    apiRequest<TenantSsoProviderRow[]>(`/api/system/tenants/${tenantId}/sso-providers`, { token }),
+  saveTenantSsoProvider: (tenantId: string, token: string, body: SaveTenantSsoProviderRequest) =>
+    apiRequest<TenantSsoProviderRow>(`/api/system/tenants/${tenantId}/sso-providers`, { method: "POST", token, body }),
   listModelProviderTypes: (token: string) => apiRequest<ModelProviderTypeRow[]>("/api/system/model-provider-types", { token }),
   listModelProviders: (token: string, page = 1, size = 10, sort = "createdAt,desc") =>
     apiRequest<ModelProviderPage>(`/api/system/model-providers?page=${page}&size=${size}&sort=${encodeURIComponent(sort)}`, { token }),

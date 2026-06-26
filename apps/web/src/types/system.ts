@@ -46,6 +46,38 @@ export type UpdateTenantAdminStatusRequest = {
   status: "active" | "disabled";
 };
 
+export type TenantSsoProviderRow = {
+  id: string | null;
+  tenantId: string;
+  providerType: "oidc" | "basic";
+  name: string;
+  status: string;
+  issuer: string | null;
+  clientId: string | null;
+  clientSecretConfigured: boolean;
+  authorizationEndpoint: string | null;
+  tokenEndpoint: string | null;
+  jwksUri: string | null;
+  basicPasswordConfigured: boolean;
+  allowedIpRanges: string | null;
+  allowedDomains: string | null;
+};
+
+export type SaveTenantSsoProviderRequest = {
+  providerType: "oidc" | "basic";
+  name?: string;
+  status: "enabled" | "disabled";
+  issuer?: string;
+  clientId?: string;
+  clientSecret?: string;
+  authorizationEndpoint?: string;
+  tokenEndpoint?: string;
+  jwksUri?: string;
+  basicPassword?: string;
+  allowedIpRanges?: string;
+  allowedDomains?: string;
+};
+
 export type ModelProviderRow = {
   id: string;
   name: string;

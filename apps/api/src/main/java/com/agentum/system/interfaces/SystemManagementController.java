@@ -119,6 +119,27 @@ public class SystemManagementController {
         return ApiResponse.success(null, RequestIds.current(request));
     }
 
+    @GetMapping("/tenants/{tenantId}/sso-providers")
+    public ApiResponse<List<SystemManagementApi.TenantSsoProviderRow>> listTenantSsoProviders(
+        @PathVariable UUID tenantId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        systemAdminAccess.assertSystemAdmin(principal);
+        return ApiResponse.success(systemManagementService.listTenantSsoProviders(tenantId), RequestIds.current(request));
+    }
+
+    @PostMapping("/tenants/{tenantId}/sso-providers")
+    public ApiResponse<SystemManagementApi.TenantSsoProviderRow> saveTenantSsoProvider(
+        @PathVariable UUID tenantId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @Valid @RequestBody SystemManagementApi.SaveTenantSsoProviderRequest body,
+        HttpServletRequest request
+    ) {
+        systemAdminAccess.assertSystemAdmin(principal);
+        return ApiResponse.success(systemManagementService.saveTenantSsoProvider(tenantId, body), RequestIds.current(request));
+    }
+
     @GetMapping("/model-providers")
     public ApiResponse<PageResponse<SystemManagementApi.ModelProviderRow>> listModelProviders(
         @AuthenticationPrincipal CurrentUserPrincipal principal,

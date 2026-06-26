@@ -11,7 +11,7 @@ import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
-// 租户 SSO 身份源配置只用于认证入口发现和 OIDC 协议参数，不承载业务角色或资源权限。
+// 租户企业认证身份源配置只用于登录入口发现和外部身份校验，不承载业务角色或资源权限。
 @Entity
 @Table(name = "tenant_sso_providers")
 public class TenantSsoProviderEntity {
@@ -31,29 +31,35 @@ public class TenantSsoProviderEntity {
     @Column(nullable = false, length = 30)
     private String status;
 
-    @Column(nullable = false, length = 500)
+    @Column(length = 500)
     private String issuer;
 
-    @Column(name = "client_id", nullable = false, length = 200)
+    @Column(name = "client_id", length = 200)
     private String clientId;
 
     @Column(name = "encrypted_client_secret", columnDefinition = "TEXT")
     private String encryptedClientSecret;
 
-    @Column(name = "authorization_endpoint", nullable = false, length = 800)
+    @Column(name = "authorization_endpoint", length = 800)
     private String authorizationEndpoint;
 
-    @Column(name = "token_endpoint", nullable = false, length = 800)
+    @Column(name = "token_endpoint", length = 800)
     private String tokenEndpoint;
 
-    @Column(name = "jwks_uri", nullable = false, length = 800)
+    @Column(name = "jwks_uri", length = 800)
     private String jwksUri;
+
+    @Column(name = "encrypted_basic_password", columnDefinition = "TEXT")
+    private String encryptedBasicPassword;
+
+    @Column(name = "allowed_ip_ranges", columnDefinition = "TEXT")
+    private String allowedIpRanges;
+
+    @Column(name = "allowed_domains", columnDefinition = "TEXT")
+    private String allowedDomains;
 
     @Column(name = "logout_endpoint", length = 800)
     private String logoutEndpoint;
-
-    @Column(name = "email_domain", length = 160)
-    private String emailDomain;
 
     @Column(name = "auto_bind_email", nullable = false)
     private boolean autoBindEmail;
@@ -80,7 +86,6 @@ public class TenantSsoProviderEntity {
         String authorizationEndpoint,
         String tokenEndpoint,
         String jwksUri,
-        String emailDomain,
         Instant now
     ) {
         TenantSsoProviderEntity entity = new TenantSsoProviderEntity();
@@ -96,12 +101,100 @@ public class TenantSsoProviderEntity {
         entity.tokenEndpoint = tokenEndpoint;
         entity.jwksUri = jwksUri;
         entity.logoutEndpoint = "";
-        entity.emailDomain = emailDomain;
         entity.autoBindEmail = true;
         entity.config = new HashMap<>();
         entity.createdAt = now;
         entity.updatedAt = now;
         return entity;
+    }
+
+    public static TenantSsoProviderEntity createBasic(
+        UUID tenantId,
+        String name,
+        String encryptedBasicPassword,
+        String allowedIpRanges,
+        String allowedDomains,
+        Instant now
+    ) {
+        TenantSsoProviderEntity entity = new TenantSsoProviderEntity();
+        entity.id = UUID.randomUUID();
+        entity.tenantId = tenantId;
+        entity.providerType = "basic";
+        entity.name = name;
+        entity.status = "enabled";
+        entity.issuer = "";
+        entity.clientId = "";
+        entity.encryptedClientSecret = "";
+        entity.authorizationEndpoint = "";
+        entity.tokenEndpoint = "";
+        entity.jwksUri = "";
+        entity.encryptedBasicPassword = encryptedBasicPassword;
+        entity.allowedIpRanges = allowedIpRanges;
+        entity.allowedDomains = allowedDomains;
+        entity.logoutEndpoint = "";
+        entity.autoBindEmail = true;
+        entity.config = new HashMap<>();
+        entity.createdAt = now;
+        entity.updatedAt = now;
+        return entity;
+    }
+
+    public void updateOidc(
+        String name,
+        String issuer,
+        String clientId,
+        String encryptedClientSecret,
+        String authorizationEndpoint,
+        String tokenEndpoint,
+        String jwksUri,
+        Instant now
+    ) {
+        this.providerType = "oidc";
+        this.name = name;
+        this.status = "enabled";
+        this.issuer = issuer;
+        this.clientId = clientId;
+        if (encryptedClientSecret != null && !encryptedClientSecret.isBlank()) {
+            this.encryptedClientSecret = encryptedClientSecret;
+        }
+        this.authorizationEndpoint = authorizationEndpoint;
+        this.tokenEndpoint = tokenEndpoint;
+        this.jwksUri = jwksUri;
+        this.encryptedBasicPassword = "";
+        this.allowedIpRanges = "";
+        this.allowedDomains = "";
+        this.autoBindEmail = true;
+        this.updatedAt = now;
+    }
+
+    public void updateBasic(
+        String name,
+        String encryptedBasicPassword,
+        String allowedIpRanges,
+        String allowedDomains,
+        Instant now
+    ) {
+        this.providerType = "basic";
+        this.name = name;
+        this.status = "enabled";
+        this.issuer = "";
+        this.clientId = "";
+        this.encryptedClientSecret = "";
+        this.authorizationEndpoint = "";
+        this.tokenEndpoint = "";
+        this.jwksUri = "";
+        if (encryptedBasicPassword != null && !encryptedBasicPassword.isBlank()) {
+            this.encryptedBasicPassword = encryptedBasicPassword;
+        }
+        this.allowedIpRanges = allowedIpRanges;
+        this.allowedDomains = allowedDomains;
+        this.autoBindEmail = true;
+        this.updatedAt = now;
+    }
+
+    public void updateStatus(String status, Instant now) {
+        this.status = status;
+        this.updatedAt = now;
     }
 
     public void forceIdForTest(UUID id) {
@@ -152,12 +245,20 @@ public class TenantSsoProviderEntity {
         return jwksUri;
     }
 
-    public String getLogoutEndpoint() {
-        return logoutEndpoint;
+    public String getEncryptedBasicPassword() {
+        return encryptedBasicPassword;
     }
 
-    public String getEmailDomain() {
-        return emailDomain;
+    public String getAllowedIpRanges() {
+        return allowedIpRanges;
+    }
+
+    public String getAllowedDomains() {
+        return allowedDomains;
+    }
+
+    public String getLogoutEndpoint() {
+        return logoutEndpoint;
     }
 
     public boolean isAutoBindEmail() {

@@ -17,6 +17,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -47,6 +48,24 @@ public class SsoAuthController {
     ) throws IOException {
         SsoAuthorizeRedirect redirect = ssoAuthService.createAuthorizeRedirect(tenantId, providerId, portal);
         response.sendRedirect(redirect.redirectUrl());
+    }
+
+    @GetMapping(value = "/api/auth/sso/basic-entry", produces = MediaType.TEXT_HTML_VALUE)
+    public String basicEntry(
+        @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization,
+        @RequestParam(defaultValue = "business") String portal,
+        HttpServletRequest request,
+        HttpServletResponse response
+    ) {
+        AuthSessionResult result = ssoAuthService.handleBasicEntry(
+            authorization,
+            portal,
+            request.getRemoteAddr(),
+            request.getHeader(HttpHeaders.ORIGIN),
+            request.getHeader(HttpHeaders.REFERER)
+        );
+        response.addHeader(HttpHeaders.SET_COOKIE, cookieService.create(result.refreshToken()));
+        return callbackPageRenderer.render(result.response());
     }
 
     @GetMapping(value = "/api/auth/sso/callback/{providerId}", produces = MediaType.TEXT_HTML_VALUE)

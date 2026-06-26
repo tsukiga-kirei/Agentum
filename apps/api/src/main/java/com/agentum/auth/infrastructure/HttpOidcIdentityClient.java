@@ -68,10 +68,12 @@ public class HttpOidcIdentityClient implements OidcIdentityClient {
             JwtDecoder decoder = JwtDecoders.fromIssuerLocation(provider.getIssuer());
             Jwt jwt = decoder.decode(idToken);
             validateClaims(provider, jwt, expectedNonce);
+            String username = firstNonBlank(jwt.getClaimAsString("preferred_username"), jwt.getClaimAsString("username"), jwt.getSubject());
             return new OidcExternalIdentity(
                 jwt.getSubject(),
+                username,
                 jwt.getClaimAsString("email"),
-                firstNonBlank(jwt.getClaimAsString("name"), jwt.getClaimAsString("preferred_username"), jwt.getSubject())
+                firstNonBlank(jwt.getClaimAsString("name"), username)
             );
         } catch (ApiException exception) {
             throw exception;

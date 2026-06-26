@@ -85,7 +85,7 @@ class SsoAuthServiceTest {
         when(providerRepository.findByIdAndTenantIdAndStatus(PROVIDER_ID, TENANT_ID, "enabled")).thenReturn(Optional.of(provider));
         when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(tenant));
         when(oidcIdentityClient.exchangeCode(provider, "oidc-code", "http://localhost:8080/api/auth/sso/callback/" + PROVIDER_ID, stateService.parseState(state).nonce()))
-            .thenReturn(new OidcExternalIdentity("external-operator", "operator@example.com", "业务用户"));
+            .thenReturn(new OidcExternalIdentity("external-operator", "operator", "operator@example.com", "业务用户"));
         when(externalIdentityRepository.findByProviderIdAndSubject(PROVIDER_ID, "external-operator")).thenReturn(Optional.of(identity));
         when(userAccountRepository.findById(user.getId())).thenReturn(Optional.of(user));
         when(roleAssignmentRepository.findByUserIdOrderByDefaultAssignmentDesc(user.getId())).thenReturn(List.of(assignment));
@@ -165,7 +165,6 @@ class SsoAuthServiceTest {
             "https://idp.example.com/oauth2/authorize",
             "https://idp.example.com/oauth2/token",
             "https://idp.example.com/oauth2/jwks",
-            "example.com",
             NOW
         );
         provider.forceIdForTest(PROVIDER_ID);

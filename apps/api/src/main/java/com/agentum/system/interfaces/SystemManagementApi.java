@@ -66,6 +66,40 @@ public final class SystemManagementApi {
     ) {
     }
 
+    public record TenantSsoProviderRow(
+        UUID id,
+        UUID tenantId,
+        String providerType,
+        String name,
+        String status,
+        String issuer,
+        String clientId,
+        boolean clientSecretConfigured,
+        String authorizationEndpoint,
+        String tokenEndpoint,
+        String jwksUri,
+        boolean basicPasswordConfigured,
+        String allowedIpRanges,
+        String allowedDomains
+    ) {
+    }
+
+    public record SaveTenantSsoProviderRequest(
+        @NotBlank @Size(max = 30) String providerType,
+        @Size(max = 160) String name,
+        @Size(max = 30) String status,
+        @Size(max = 500) String issuer,
+        @Size(max = 200) String clientId,
+        @Size(max = 2000) String clientSecret,
+        @Size(max = 800) String authorizationEndpoint,
+        @Size(max = 800) String tokenEndpoint,
+        @Size(max = 800) String jwksUri,
+        @Size(max = 2000) String basicPassword,
+        @Size(max = 1000) String allowedIpRanges,
+        @Size(max = 1000) String allowedDomains
+    ) {
+    }
+
     public record ModelProviderRow(
         UUID id,
         String name,

@@ -23,6 +23,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -145,6 +146,9 @@ public class SsoAuthService {
         }
 
         TenantSsoProviderEntity provider = loadProvider(tenantId, providerId);
+        if (!"oidc".equals(provider.getProviderType())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "AUTH_SSO_PROVIDER_TYPE_INVALID", "当前身份源不是 OAuth2/OIDC 登录方式");
+        }
         String state = stateService.createState(tenantId, providerId, portalType.code());
         SsoState parsedState = stateService.parseState(state);
         String redirectUri = callbackUri(providerId);
@@ -166,9 +170,39 @@ public class SsoAuthService {
             throw new ApiException(HttpStatus.UNAUTHORIZED, "AUTH_SSO_PROVIDER_MISMATCH", "企业 SSO 身份源不匹配，请重新登录");
         }
         TenantSsoProviderEntity provider = loadProvider(parsedState.tenantId(), providerId);
+        if (!"oidc".equals(provider.getProviderType())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "AUTH_SSO_PROVIDER_TYPE_INVALID", "当前身份源不是 OAuth2/OIDC 登录方式");
+        }
         TenantEntity tenant = tenantRepository.findByIdAndStatus(parsedState.tenantId(), ACTIVE_STATUS)
             .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "TENANT_NOT_AVAILABLE", "当前租户不可用或已停用"));
         OidcExternalIdentity externalIdentity = oidcIdentityClient.exchangeCode(provider, code, callbackUri(providerId), parsedState.nonce());
+        return issueExternalSession(provider, tenant, parsedState.portal(), externalIdentity);
+    }
+
+    @Transactional
+    public AuthSessionResult handleBasicEntry(String authorizationHeader, String portal, String remoteAddress, String origin, String referer) {
+        PortalType portalType = PortalType.fromCode(portal);
+        if (!portalType.isTenantScoped()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "AUTH_SSO_PORTAL_UNSUPPORTED", "企业 Basic 认证仅支持租户型入口");
+        }
+        BasicCredential credential = parseBasicCredential(authorizationHeader);
+        BasicPrincipal principal = parseBasicPrincipal(credential.username());
+        TenantEntity tenant = tenantRepository.findByCodeAndStatus(principal.tenantCode(), ACTIVE_STATUS)
+            .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "TENANT_NOT_AVAILABLE", "当前租户不可用或已停用"));
+        TenantSsoProviderEntity provider = providerRepository.findByTenantIdAndProviderType(tenant.getId(), "basic")
+            .filter(item -> ENABLED_STATUS.equals(item.getStatus()))
+            .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "AUTH_SSO_PROVIDER_NOT_AVAILABLE", "当前租户未启用 Basic 单点入口"));
+        verifyBasicSource(provider, remoteAddress, origin, referer);
+        verifyBasicSharedPassword(provider, credential.password());
+        return issueBasicSession(provider, tenant, portalType.code(), principal.username());
+    }
+
+    private AuthSessionResult issueExternalSession(
+        TenantSsoProviderEntity provider,
+        TenantEntity tenant,
+        String portal,
+        OidcExternalIdentity externalIdentity
+    ) {
         UserExternalIdentityEntity binding = resolveBinding(provider, externalIdentity);
         UserAccount user = userAccountRepository.findById(binding.getUserId())
             .filter(account -> ACTIVE_STATUS.equals(account.getStatus()))
@@ -176,13 +210,13 @@ public class SsoAuthService {
 
         List<UserRoleAssignmentEntity> assignments = roleAssignmentRepository.findByUserIdOrderByDefaultAssignmentDesc(user.getId());
         UserRoleAssignmentEntity activeAssignment = assignments.stream()
-            .filter(assignment -> parsedState.portal().equals(assignment.getRole()))
-            .filter(assignment -> parsedState.tenantId().equals(assignment.getTenantId()))
+            .filter(assignment -> portal.equals(assignment.getRole()))
+            .filter(assignment -> provider.getTenantId().equals(assignment.getTenantId()))
             .findFirst()
             .orElseThrow(() -> {
                 log.warn(
                     "企业 SSO 登录失败：用户没有入口权限 userId={} tenantId={} portal={} requestId={}",
-                    user.getId(), parsedState.tenantId(), parsedState.portal(), RequestIds.current()
+                    user.getId(), provider.getTenantId(), portal, RequestIds.current()
                 );
                 return new ApiException(HttpStatus.FORBIDDEN, "PERMISSION_ROLE_NOT_ALLOWED", "当前用户没有所选入口权限");
             });
@@ -194,37 +228,66 @@ public class SsoAuthService {
         List<RoleInfoResponse> roles = buildRoleInfoList(assignments);
         RoleInfoResponse activeRole = buildRoleInfo(activeAssignment, tenant);
         List<MenuItemResponse> menus = menuService.resolveMenus(activeAssignment.getRole(), activeAssignment.getTenantId(), user.getId());
-        CurrentUserPrincipal principal = new CurrentUserPrincipal(user.getId(), user.getUsername(), activeAssignment.getTenantId(), activeAssignment.getRole(), parsedState.portal(), activeAssignment.getId());
+        CurrentUserPrincipal principal = new CurrentUserPrincipal(user.getId(), user.getUsername(), activeAssignment.getTenantId(), activeAssignment.getRole(), portal, activeAssignment.getId());
         String token = authTokenService.createToken(principal);
 
         log.info(
             "企业 SSO 登录成功 userId={} tenantId={} providerId={} portal={} roleAssignmentId={} requestId={}",
-            user.getId(), parsedState.tenantId(), providerId, parsedState.portal(), activeAssignment.getId(), RequestIds.current()
+            user.getId(), provider.getTenantId(), provider.getId(), portal, activeAssignment.getId(), RequestIds.current()
         );
         LoginResponse response = new LoginResponse(token, buildUserResponse(user, activeAssignment, tenant), roles, activeRole, List.of(), menus);
         return new AuthSessionResult(response, refreshTokenService.issue(user.getId(), activeAssignment.getId()));
     }
 
+    private AuthSessionResult issueBasicSession(TenantSsoProviderEntity provider, TenantEntity tenant, String portal, String username) {
+        UserExternalIdentityEntity binding = externalIdentityRepository.findByProviderIdAndSubject(provider.getId(), username)
+            .orElseGet(() -> bindBasicByUsername(provider, username));
+        UserAccount user = userAccountRepository.findById(binding.getUserId())
+            .filter(account -> ACTIVE_STATUS.equals(account.getStatus()))
+            .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "AUTH_SSO_USER_DISABLED", "企业 Basic 对应账号不可用"));
+        binding.markLoggedIn(user.getEmail(), user.getDisplayName(), clock.instant());
+        externalIdentityRepository.save(binding);
+
+        List<UserRoleAssignmentEntity> assignments = roleAssignmentRepository.findByUserIdOrderByDefaultAssignmentDesc(user.getId());
+        UserRoleAssignmentEntity activeAssignment = assignments.stream()
+            .filter(assignment -> portal.equals(assignment.getRole()))
+            .filter(assignment -> tenant.getId().equals(assignment.getTenantId()))
+            .findFirst()
+            .orElseThrow(() -> {
+                log.warn("企业 Basic 登录失败：用户没有入口权限 userId={} tenantId={} portal={} requestId={}", user.getId(), tenant.getId(), portal, RequestIds.current());
+                return new ApiException(HttpStatus.FORBIDDEN, "PERMISSION_ROLE_NOT_ALLOWED", "当前用户没有所选入口权限");
+            });
+
+        user.markLoggedIn(clock.instant());
+        List<RoleInfoResponse> roles = buildRoleInfoList(assignments);
+        RoleInfoResponse activeRole = buildRoleInfo(activeAssignment, tenant);
+        List<MenuItemResponse> menus = menuService.resolveMenus(activeAssignment.getRole(), activeAssignment.getTenantId(), user.getId());
+        CurrentUserPrincipal principal = new CurrentUserPrincipal(user.getId(), user.getUsername(), activeAssignment.getTenantId(), activeAssignment.getRole(), portal, activeAssignment.getId());
+        LoginResponse response = new LoginResponse(
+            authTokenService.createToken(principal),
+            buildUserResponse(user, activeAssignment, tenant),
+            roles,
+            activeRole,
+            List.of(),
+            menus
+        );
+        log.info("企业 Basic 登录成功 userId={} tenantId={} providerId={} portal={} roleAssignmentId={} requestId={}", user.getId(), tenant.getId(), provider.getId(), portal, activeAssignment.getId(), RequestIds.current());
+        return new AuthSessionResult(response, refreshTokenService.issue(user.getId(), activeAssignment.getId()));
+    }
+
     private TenantSsoProviderEntity loadProvider(UUID tenantId, UUID providerId) {
         return providerRepository.findByIdAndTenantIdAndStatus(providerId, tenantId, ENABLED_STATUS)
-            .filter(provider -> "oidc".equals(provider.getProviderType()))
             .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "AUTH_SSO_PROVIDER_NOT_AVAILABLE", "当前租户未启用该企业 SSO 身份源"));
     }
 
     private UserExternalIdentityEntity resolveBinding(TenantSsoProviderEntity provider, OidcExternalIdentity externalIdentity) {
         return externalIdentityRepository.findByProviderIdAndSubject(provider.getId(), externalIdentity.subject())
-            .orElseGet(() -> bindByEmail(provider, externalIdentity));
+            .orElseGet(() -> bindByUsername(provider, externalIdentity));
     }
 
-    private UserExternalIdentityEntity bindByEmail(TenantSsoProviderEntity provider, OidcExternalIdentity externalIdentity) {
-        if (!provider.isAutoBindEmail() || externalIdentity.email() == null || externalIdentity.email().isBlank()) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "AUTH_SSO_USER_NOT_BOUND", "企业 SSO 账号尚未绑定 Agentum 用户");
-        }
-        if (provider.getEmailDomain() != null && !provider.getEmailDomain().isBlank()
-            && !externalIdentity.email().toLowerCase().endsWith("@" + provider.getEmailDomain().toLowerCase())) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "AUTH_SSO_EMAIL_DOMAIN_MISMATCH", "企业 SSO 邮箱域名不属于当前租户");
-        }
-        UserAccount user = userAccountRepository.findByEmailIgnoreCase(externalIdentity.email())
+    private UserExternalIdentityEntity bindByUsername(TenantSsoProviderEntity provider, OidcExternalIdentity externalIdentity) {
+        String username = firstNonBlank(externalIdentity.username(), externalIdentity.subject());
+        UserAccount user = userAccountRepository.findByUsername(username)
             .orElseThrow(() -> new ApiException(HttpStatus.FORBIDDEN, "AUTH_SSO_USER_NOT_BOUND", "企业 SSO 账号尚未绑定 Agentum 用户"));
         return externalIdentityRepository.save(UserExternalIdentityEntity.create(
             user.getId(),
@@ -235,6 +298,117 @@ public class SsoAuthService {
             externalIdentity.displayName(),
             clock.instant()
         ));
+    }
+
+    private UserExternalIdentityEntity bindBasicByUsername(TenantSsoProviderEntity provider, String username) {
+        UserAccount user = userAccountRepository.findByUsername(username)
+            .filter(account -> ACTIVE_STATUS.equals(account.getStatus()))
+            .orElseThrow(() -> new ApiException(HttpStatus.FORBIDDEN, "AUTH_SSO_USER_NOT_BOUND", "企业 Basic 对应的 Agentum 用户不存在或已停用"));
+        return externalIdentityRepository.save(UserExternalIdentityEntity.create(
+            user.getId(),
+            provider.getTenantId(),
+            provider.getId(),
+            username,
+            user.getEmail(),
+            user.getDisplayName(),
+            clock.instant()
+        ));
+    }
+
+    private void verifyBasicSharedPassword(TenantSsoProviderEntity provider, String password) {
+        String encrypted = provider.getEncryptedBasicPassword();
+        if (encrypted == null || encrypted.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "AUTH_SSO_BASIC_PASSWORD_MISSING", "企业 Basic 共享密码未配置");
+        }
+        String expected = fieldEncryptionService.decrypt(encrypted);
+        if (!constantTimeEquals(expected, password)) {
+            log.warn("企业 Basic 登录失败：共享密码不匹配 providerId={} requestId={}", provider.getId(), RequestIds.current());
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "AUTH_SSO_BASIC_PASSWORD_INVALID", "企业 Basic 登录凭据无效");
+        }
+    }
+
+    private void verifyBasicSource(TenantSsoProviderEntity provider, String remoteAddress, String origin, String referer) {
+        String allowedIps = provider.getAllowedIpRanges();
+        if (allowedIps != null && !allowedIps.isBlank() && !matchesCsv(allowedIps, remoteAddress)) {
+            log.warn("企业 Basic 登录失败：来源 IP 不在白名单 providerId={} remoteAddress={} requestId={}", provider.getId(), remoteAddress, RequestIds.current());
+            throw new ApiException(HttpStatus.FORBIDDEN, "AUTH_SSO_BASIC_IP_DENIED", "当前来源 IP 不允许使用企业 Basic 单点入口");
+        }
+        String allowedDomains = provider.getAllowedDomains();
+        if (allowedDomains != null && !allowedDomains.isBlank()) {
+            String sourceHost = firstNonBlank(extractHost(origin), extractHost(referer));
+            if (sourceHost == null || !matchesDomainCsv(allowedDomains, sourceHost)) {
+                log.warn("企业 Basic 登录失败：来源域名不在白名单 providerId={} sourceHost={} requestId={}", provider.getId(), sourceHost, RequestIds.current());
+                throw new ApiException(HttpStatus.FORBIDDEN, "AUTH_SSO_BASIC_DOMAIN_DENIED", "当前来源域名不允许使用企业 Basic 单点入口");
+            }
+        }
+    }
+
+    private static BasicCredential parseBasicCredential(String authorizationHeader) {
+        if (authorizationHeader == null || !authorizationHeader.regionMatches(true, 0, "Basic ", 0, 6)) {
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "AUTH_SSO_BASIC_HEADER_MISSING", "缺少企业 Basic 登录凭据");
+        }
+        String decoded;
+        try {
+            decoded = new String(Base64.getDecoder().decode(authorizationHeader.substring(6).trim()), StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException exception) {
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "AUTH_SSO_BASIC_HEADER_INVALID", "企业 Basic 登录凭据格式不正确");
+        }
+        int separator = decoded.indexOf(':');
+        if (separator <= 0) {
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "AUTH_SSO_BASIC_HEADER_INVALID", "企业 Basic 登录凭据格式不正确");
+        }
+        return new BasicCredential(decoded.substring(0, separator), decoded.substring(separator + 1));
+    }
+
+    private static BasicPrincipal parseBasicPrincipal(String username) {
+        int separator = username.indexOf('/');
+        if (separator <= 0 || separator == username.length() - 1) {
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "AUTH_SSO_BASIC_USERNAME_INVALID", "Basic 用户名格式应为 tenantCode/username");
+        }
+        return new BasicPrincipal(username.substring(0, separator), username.substring(separator + 1));
+    }
+
+    private static boolean matchesCsv(String csv, String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        for (String item : csv.split(",")) {
+            if (value.trim().equals(item.trim())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean matchesDomainCsv(String csv, String host) {
+        String normalizedHost = host.toLowerCase();
+        for (String item : csv.split(",")) {
+            String domain = item.trim().toLowerCase();
+            if (!domain.isBlank() && (normalizedHost.equals(domain) || normalizedHost.endsWith("." + domain))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String extractHost(String url) {
+        if (url == null || url.isBlank()) {
+            return null;
+        }
+        try {
+            return java.net.URI.create(url).getHost();
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
+    }
+
+    private static boolean constantTimeEquals(String expected, String actual) {
+        if (expected == null || actual == null) {
+            return false;
+        }
+        byte[] expectedBytes = expected.getBytes(StandardCharsets.UTF_8);
+        byte[] actualBytes = actual.getBytes(StandardCharsets.UTF_8);
+        return java.security.MessageDigest.isEqual(expectedBytes, actualBytes);
     }
 
     private List<RoleInfoResponse> buildRoleInfoList(List<UserRoleAssignmentEntity> assignments) {
@@ -294,5 +468,20 @@ public class SsoAuthService {
 
     private static String stripTrailingSlash(String value) {
         return value == null ? "" : value.replaceAll("/+$", "");
+    }
+
+    private static String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private record BasicCredential(String username, String password) {
+    }
+
+    private record BasicPrincipal(String tenantCode, String username) {
     }
 }
