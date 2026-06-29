@@ -1,85 +1,108 @@
 services:
   web:
-    build:
-      context: .
-      dockerfile: deploy/docker/web.Dockerfile
-    environment:
-      API_BASE_URL: http://api:8080
+    image: agentum-web:${AGENTUM_IMAGE_TAG:-latest}
+    restart: unless-stopped
     ports:
-      - "5173:80"
+      - "${WEB_HTTP_PORT:-80}:80"
     depends_on:
       - api
+    networks:
+      - agentum
 
   api:
-    build:
-      context: .
-      dockerfile: deploy/docker/api.Dockerfile
-    env_file:
-      - .env
+    image: agentum-api:${AGENTUM_IMAGE_TAG:-latest}
+    restart: unless-stopped
     environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-agentum}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-agentum}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?请在 .env 中设置 POSTGRES_PASSWORD}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-agentum}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?请在 .env 中设置 RABBITMQ_PASSWORD}
       MINIO_ENDPOINT: http://minio:9000
-    ports:
-      - "8080:8080"
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-agentum}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?请在 .env 中设置 MINIO_SECRET_KEY}
+      MINIO_BUCKET: ${MINIO_BUCKET:-agentum}
+      MINIO_OBJECT_PREFIX: ${MINIO_OBJECT_PREFIX:-deliveries/documents}
+      MINIO_AUTO_CREATE_BUCKET: ${MINIO_AUTO_CREATE_BUCKET:-true}
+      AGENTUM_AUTH_TOKEN_SECRET: ${AGENTUM_AUTH_TOKEN_SECRET:?请在 .env 中设置 AGENTUM_AUTH_TOKEN_SECRET}
+      AGENTUM_AUTH_SSO_STATE_SECRET: ${AGENTUM_AUTH_SSO_STATE_SECRET:?请在 .env 中设置 AGENTUM_AUTH_SSO_STATE_SECRET}
+      AGENTUM_FIELD_ENCRYPTION_MASTER_KEY: ${AGENTUM_FIELD_ENCRYPTION_MASTER_KEY:?请在 .env 中设置 AGENTUM_FIELD_ENCRYPTION_MASTER_KEY}
+      AGENTUM_AUTH_ACCESS_TOKEN_TTL_MINUTES: ${AGENTUM_AUTH_ACCESS_TOKEN_TTL_MINUTES:-15}
+      AGENTUM_AUTH_REFRESH_TOKEN_TTL_DAYS: ${AGENTUM_AUTH_REFRESH_TOKEN_TTL_DAYS:-30}
+      AGENTUM_AUTH_REFRESH_COOKIE_SECURE: ${AGENTUM_AUTH_REFRESH_COOKIE_SECURE:-true}
+      AGENTUM_AUTH_SSO_API_BASE_URL: ${AGENTUM_AUTH_SSO_API_BASE_URL:-http://localhost}
+      AGENTUM_AUTH_SSO_WEB_BASE_URL: ${AGENTUM_AUTH_SSO_WEB_BASE_URL:-http://localhost}
+      AGENTUM_AGENT_SUGGESTED_ITERATIONS_PER_TURN: ${AGENTUM_AGENT_SUGGESTED_ITERATIONS_PER_TURN:-4}
+      AGENTUM_AGENT_MAX_ITERATIONS_PER_TURN: ${AGENTUM_AGENT_MAX_ITERATIONS_PER_TURN:-20}
+      AGENTUM_RUNTIME_NODE_TIMEOUT_SECONDS: ${AGENTUM_RUNTIME_NODE_TIMEOUT_SECONDS:-1800}
+      AGENTUM_RUNTIME_WORKER_CONCURRENCY: ${AGENTUM_RUNTIME_WORKER_CONCURRENCY:-4}
+      AGENTUM_RUNTIME_CLUSTER_PARALLELISM: ${AGENTUM_RUNTIME_CLUSTER_PARALLELISM:-4}
+      AGENTUM_RUNTIME_STALE_THRESHOLD_SECONDS: ${AGENTUM_RUNTIME_STALE_THRESHOLD_SECONDS:-120}
     depends_on:
       - postgres
       - redis
       - rabbitmq
       - minio
-
-  document-worker:
-    build:
-      context: .
-      dockerfile: deploy/docker/document-worker.Dockerfile
-    env_file:
-      - .env
-    environment:
-      MINIO_ENDPOINT: http://minio:9000
-    depends_on:
-      - rabbitmq
-      - minio
-
-  ai-worker:
-    build:
-      context: .
-      dockerfile: deploy/docker/ai-worker.Dockerfile
-    env_file:
-      - .env
-    depends_on:
-      - rabbitmq
+    expose:
+      - "8080"
+    networks:
+      - agentum
 
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
-      POSTGRES_DB: agentum
-      POSTGRES_USER: agentum
-      POSTGRES_PASSWORD: agentum_dev_password
+      POSTGRES_DB: ${POSTGRES_DB:-agentum}
+      POSTGRES_USER: ${POSTGRES_USER:-agentum}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请在 .env 中设置 POSTGRES_PASSWORD}
     volumes:
       - agentum_postgres_data:/var/lib/postgresql/data
+    networks:
+      - agentum
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
     volumes:
       - agentum_redis_data:/data
+    networks:
+      - agentum
 
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
+    restart: unless-stopped
     environment:
-      RABBITMQ_DEFAULT_USER: agentum
-      RABBITMQ_DEFAULT_PASS: agentum_dev_password
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-agentum}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?请在 .env 中设置 RABBITMQ_PASSWORD}
     volumes:
       - agentum_rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - agentum
 
   minio:
     image: minio/minio:RELEASE.2024-10-13T13-34-11Z
+    restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: agentum
-      MINIO_ROOT_PASSWORD: agentum_dev_password
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-agentum}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:?请在 .env 中设置 MINIO_SECRET_KEY}
     volumes:
       - agentum_minio_data:/data
+    networks:
+      - agentum
 
 volumes:
   agentum_postgres_data:
   agentum_redis_data:
   agentum_rabbitmq_data:
   agentum_minio_data:
+
+networks:
+  agentum:
+    name: ${AGENTUM_DOCKER_NETWORK:-agentum}

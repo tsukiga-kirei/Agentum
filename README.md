@@ -120,6 +120,119 @@ pnpm build:web
 git diff --check
 ```
 
+## Docker 部署
+
+当前 Docker 部署按“本地构建镜像、服务器加载镜像、通过环境变量区分测试和正式”的方式组织。`docker-compose.yml` 不在服务器上构建代码，只引用已加载的镜像：
+
+```text
+agentum-api:latest
+agentum-web:latest
+```
+
+### 本地构建 Linux 镜像
+
+Mac 构建、Linux 服务器运行时，需要显式指定目标平台。常见 x86_64 服务器使用 `linux/amd64`：
+
+```bash
+docker buildx build --platform linux/amd64 \
+  -t agentum-api:latest \
+  -f deploy/docker/api.Dockerfile \
+  --load .
+
+docker buildx build --platform linux/amd64 \
+  --build-arg VITE_API_BASE_URL=/api \
+  -t agentum-web:latest \
+  -f deploy/docker/web.Dockerfile \
+  --load .
+```
+
+导出镜像文件：
+
+```bash
+mkdir -p dist/docker-images
+docker save agentum-api:latest | gzip > dist/docker-images/agentum-api-latest-linux-amd64.tar.gz
+docker save agentum-web:latest | gzip > dist/docker-images/agentum-web-latest-linux-amd64.tar.gz
+```
+
+### 服务器加载镜像
+
+把 `dist/docker-images/*.tar.gz`、`docker-compose.yml` 和 `.env.example` 上传到服务器后执行：
+
+```bash
+gzip -dc agentum-api-latest-linux-amd64.tar.gz | docker load
+gzip -dc agentum-web-latest-linux-amd64.tar.gz | docker load
+```
+
+数据库迁移脚本不需要单独上传。Flyway 迁移 SQL 已打包在 API 镜像的 jar 中，API 启动时会从 `classpath:db/migration/schema` 自动执行；生产环境不会加载 `devdata` 演示数据。
+
+### 测试部署
+
+测试部署用于验收镜像、数据库迁移、登录初始化、模型/MCP/交付配置和端到端流程。测试环境也应使用 `prod` profile，避免加载本地演示数据：
+
+```bash
+cp .env.example .env.test
+```
+
+编辑 `.env.test`，至少修改：
+
+```env
+WEB_HTTP_PORT=8088
+SPRING_PROFILES_ACTIVE=prod
+AGENTUM_DOCKER_NETWORK=agentum-test
+AGENTUM_AUTH_SSO_API_BASE_URL=http://测试服务器IP:8088
+AGENTUM_AUTH_SSO_WEB_BASE_URL=http://测试服务器IP:8088
+AGENTUM_AUTH_REFRESH_COOKIE_SECURE=false
+POSTGRES_PASSWORD=测试库强密码
+RABBITMQ_PASSWORD=测试队列强密码
+MINIO_SECRET_KEY=测试对象存储强密码
+AGENTUM_AUTH_TOKEN_SECRET=测试环境独立随机值
+AGENTUM_AUTH_SSO_STATE_SECRET=测试环境独立随机值
+AGENTUM_FIELD_ENCRYPTION_MASTER_KEY=测试环境独立随机值
+```
+
+启动：
+
+```bash
+docker compose --env-file .env.test up -d
+docker compose --env-file .env.test ps
+docker compose --env-file .env.test logs -f api
+```
+
+### 正式部署
+
+正式部署用于真实用户、真实业务数据、真实密钥和正式交付物。正式环境必须使用 HTTPS 域名和独立强随机密钥：
+
+```bash
+cp .env.example .env.prod
+```
+
+编辑 `.env.prod`，至少修改：
+
+```env
+WEB_HTTP_PORT=80
+SPRING_PROFILES_ACTIVE=prod
+AGENTUM_DOCKER_NETWORK=agentum-prod
+AGENTUM_AUTH_SSO_API_BASE_URL=https://正式域名
+AGENTUM_AUTH_SSO_WEB_BASE_URL=https://正式域名
+AGENTUM_AUTH_REFRESH_COOKIE_SECURE=true
+POSTGRES_PASSWORD=正式库强密码
+RABBITMQ_PASSWORD=正式队列强密码
+MINIO_SECRET_KEY=正式对象存储强密码
+AGENTUM_AUTH_TOKEN_SECRET=正式环境独立随机值
+AGENTUM_AUTH_SSO_STATE_SECRET=正式环境独立随机值
+AGENTUM_FIELD_ENCRYPTION_MASTER_KEY=正式环境独立随机值
+```
+
+启动：
+
+```bash
+docker compose --env-file .env.prod up -d
+docker compose --env-file .env.prod ps
+docker compose --env-file .env.prod logs -f api
+```
+
+首次正式部署使用空库启动后，访问 `/setup` 创建首个系统管理员。`AGENTUM_FIELD_ENCRYPTION_MASTER_KEY` 一旦用于加密模型密钥、SSO Secret 或外部交付凭证，就不能在未做密文迁移的情况下直接更换。
+
 ### 演示账号
 
 `local` profile 加载本地演示数据，初始密码均为 `agentum123`。

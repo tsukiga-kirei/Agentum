@@ -1,0 +1,45 @@
+spring:
+  datasource:
+    url: "${SPRING_DATASOURCE_URL:jdbc:postgresql://${POSTGRES_HOST:postgres}:${POSTGRES_PORT:5432}/${POSTGRES_DB:agentum}}"
+    username: "${SPRING_DATASOURCE_USERNAME:${POSTGRES_USER:agentum}}"
+    password: "${SPRING_DATASOURCE_PASSWORD:${POSTGRES_PASSWORD}}"
+  data:
+    redis:
+      host: "${SPRING_DATA_REDIS_HOST:${REDIS_HOST:redis}}"
+      port: "${SPRING_DATA_REDIS_PORT:${REDIS_PORT:6379}}"
+  rabbitmq:
+    host: "${SPRING_RABBITMQ_HOST:${RABBITMQ_HOST:rabbitmq}}"
+    port: "${SPRING_RABBITMQ_PORT:${RABBITMQ_PORT:5672}}"
+    username: "${SPRING_RABBITMQ_USERNAME:${RABBITMQ_USER:agentum}}"
+    password: "${SPRING_RABBITMQ_PASSWORD:${RABBITMQ_PASSWORD}}"
+  flyway:
+    # 生产只执行结构迁移，禁止加载 devdata 演示账号和演示能力。
+    locations:
+      - classpath:db/migration/schema
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+
+logging:
+  level:
+    root: INFO
+    # 生产默认不输出模型请求/响应调试链路，避免误打敏感上下文。
+    com.agentum.agent.infrastructure.OpenAiCompatibleModelChatClient: INFO
+
+agentum:
+  auth:
+    # 登录 JWT 签名密钥，生产必须通过环境变量注入，不能使用仓库默认值。
+    token-secret: "${AGENTUM_AUTH_TOKEN_SECRET}"
+    # 企业 SSO state/nonce 签名密钥，必须与 token-secret 相互独立。
+    sso-state-secret: "${AGENTUM_AUTH_SSO_STATE_SECRET}"
+    # SSO 对外地址用于生成 OIDC redirect_uri 和登录完成后的前端回跳。
+    sso-api-base-url: "${AGENTUM_AUTH_SSO_API_BASE_URL}"
+    sso-web-base-url: "${AGENTUM_AUTH_SSO_WEB_BASE_URL}"
+    token-ttl-minutes: "${AGENTUM_AUTH_ACCESS_TOKEN_TTL_MINUTES:15}"
+    refresh-token-ttl-days: "${AGENTUM_AUTH_REFRESH_TOKEN_TTL_DAYS:30}"
+    refresh-cookie-secure: "${AGENTUM_AUTH_REFRESH_COOKIE_SECURE:true}"
+  security:
+    field-encryption:
+      # 字段加密主密钥用于保护模型密钥、SSO Secret 和外部交付凭证；已有密文后不能直接更换。
+      master-key: "${AGENTUM_FIELD_ENCRYPTION_MASTER_KEY}"
