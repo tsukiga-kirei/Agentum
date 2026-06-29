@@ -7492,7 +7492,33 @@ textarea:focus-visible {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  margin-top: 6px;
+}
+
+.workflow-variable-reference-section {
+  display: grid;
+  gap: 8px;
   margin-top: 8px;
+}
+
+.workflow-variable-reference-group {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+}
+
+.workflow-variable-reference-group .workflow-variable-reference-bar {
+  margin-top: 0;
+}
+
+.workflow-variable-reference-group-label {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .workflow-file-template-variable-section {

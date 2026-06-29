@@ -71,6 +71,7 @@ import {
   extractTemplateVariableNames,
   summarizeValidationIssues,
   validateWorkflowDeliveryPlacement,
+  WORKFLOW_SYSTEM_TEMPLATE_VARIABLES,
   type WorkflowNodeValidationIssue,
 } from "./workflowNodeValidation";
 
@@ -192,6 +193,7 @@ type WorkflowImpactConfirmState = {
 };
 
 const SYSTEM_TRIGGER_ID = "trigger_manual";
+const SYSTEM_RUNTIME_VARIABLE_SOURCE_ID = "__system_runtime__";
 const workflowSelectClassNames = { popup: { root: "agent-select-dropdown agent-admin-select-dropdown" } };
 const workflowSelectSuffixIcon = <ChevronDown className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />;
 const DEFAULT_WORD_DOCUMENT_STYLE: DocumentDeliveryStyleDraft = {
@@ -459,6 +461,10 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
     () => declaredVariables.length > 0 ? declaredVariables : buildWorkflowVariables(orderedNodes, designerCatalog?.variableMetadata),
     [declaredVariables, designerCatalog?.variableMetadata, orderedNodes],
   );
+  const systemRuntimeVariables = useMemo(
+    () => buildSystemRuntimeVariables(designerCatalog?.variableMetadata),
+    [designerCatalog?.variableMetadata],
+  );
   const businessVariables = workflowVariables.filter((variable) => variable.sourceNodeId !== SYSTEM_TRIGGER_ID);
   const availableVariables = workflowVariables.filter((variable) => {
     if (!selectedNode) {
@@ -468,6 +474,10 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
 
     return sourceIndex >= 0 && sourceIndex < selectedNodeIndex;
   });
+  const availableTemplateVariables = useMemo(
+    () => [...systemRuntimeVariables, ...availableVariables],
+    [availableVariables, systemRuntimeVariables],
+  );
   const nodeValidationMap = useMemo(
     () => buildWorkflowNodeValidationMap(visibleNodes),
     [visibleNodes],
@@ -812,7 +822,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
           {selectedNode && designerCatalog ? (
             <NodeConfigPanel
               node={selectedNode}
-              availableVariables={availableVariables}
+              availableVariables={availableTemplateVariables}
               workflowVariables={workflowVariables}
               capabilities={capabilityOptions}
               capabilitiesLoading={capabilitiesLoading}
@@ -2091,7 +2101,20 @@ function VariableReferenceBar({
   variables: WorkflowVariable[];
   onPick: (variable: string) => void;
 }) {
-  return <VariableReferenceItemBar items={variables.map(variableToReferenceItem)} onPick={onPick} />;
+  const systemItems = variables.filter(isSystemRuntimeVariable).map(variableToReferenceItem);
+  const nodeItems = variables.filter((variable) => !isSystemRuntimeVariable(variable)).map(variableToReferenceItem);
+
+  if (systemItems.length === 0 && nodeItems.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="workflow-variable-reference-section">
+      <span className="workflow-variable-reference-title">可插入变量</span>
+      <VariableReferenceGroup label="系统变量" items={systemItems} onPick={onPick} />
+      <VariableReferenceGroup label="节点变量" items={nodeItems} onPick={onPick} />
+    </div>
+  );
 }
 
 function FileNameVariableBar({
@@ -2134,6 +2157,27 @@ function VariableReferenceItemBar({
           </button>
         </Tooltip>
       ))}
+    </div>
+  );
+}
+
+function VariableReferenceGroup({
+  label,
+  items,
+  onPick,
+}: {
+  label: string;
+  items: VariableReferenceItem[];
+  onPick: (variable: string) => void;
+}) {
+  if (items.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="workflow-variable-reference-group">
+      <span className="workflow-variable-reference-group-label">{label}</span>
+      <VariableReferenceItemBar items={items} onPick={onPick} />
     </div>
   );
 }
@@ -3317,6 +3361,27 @@ function buildWorkflowVariables(nodes: WorkflowEditorNode[], metadataByName: Rec
   );
 }
 
+function buildSystemRuntimeVariables(metadataByName: Record<string, WorkflowVariableTemplate> = {}): WorkflowVariable[] {
+  return [...WORKFLOW_SYSTEM_TEMPLATE_VARIABLES]
+    .filter((name) => metadataByName[name])
+    .map((name) => {
+      const metadata = metadataByName[name];
+      return {
+        name,
+        sourceNodeId: SYSTEM_RUNTIME_VARIABLE_SOURCE_ID,
+        sourceNodeName: "系统运行变量",
+        type: metadata.type,
+        sensitive: metadata.sensitive,
+        deliverable: metadata.deliverable,
+        description: metadata.description,
+      };
+    });
+}
+
+function isSystemRuntimeVariable(variable: WorkflowVariable) {
+  return variable.sourceNodeId === SYSTEM_RUNTIME_VARIABLE_SOURCE_ID;
+}
+
 function toWorkflowVariables(variables: WorkflowVariableDraft[], nodes: WorkflowEditorNode[]): WorkflowVariable[] {
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
 
@@ -3762,9 +3827,9 @@ function variableToReferenceItem(variable: WorkflowVariable): VariableReferenceI
   ].filter(Boolean).join("，");
   return {
     name: variable.name,
-    sourceLabel: `节点「${variable.sourceNodeName}」输出变量`,
+    sourceLabel: isSystemRuntimeVariable(variable) ? variable.sourceNodeName : `节点「${variable.sourceNodeName}」输出变量`,
     typeLabel: workflowVariableTypeLabel(variable.type),
-    description: [variable.description || "可引用该节点输出内容。", flags].filter(Boolean).join("；"),
+    description: [variable.description || (isSystemRuntimeVariable(variable) ? "运行时由系统自动注入。" : "可引用该节点输出内容。"), flags].filter(Boolean).join("；"),
   };
 }
 
