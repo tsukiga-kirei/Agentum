@@ -188,7 +188,7 @@ export function LoginPage() {
   }, [fetchSsoProviders, selectedTenantId, shouldSelectTenant]);
 
   useEffect(() => {
-    const expectedOrigin = new URL(API_BASE_URL).origin;
+    const expectedOrigin = new URL(API_BASE_URL || window.location.origin, window.location.origin).origin;
 
     function handleSsoMessage(event: MessageEvent) {
       if (event.origin !== expectedOrigin) {

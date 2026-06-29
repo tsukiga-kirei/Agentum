@@ -94,7 +94,17 @@ type RequestOptions = Omit<RequestInit, "body"> & {
   skipAuthRefresh?: boolean;
 };
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080";
+function normalizeApiBaseUrl(value: string | undefined): string {
+  const baseUrl = value?.trim() ?? "";
+  if (!baseUrl || baseUrl === "/") {
+    return "";
+  }
+  const withoutTrailingSlash = baseUrl.replace(/\/+$/, "");
+  // 生产同域部署由 Nginx 代理 /api，接口路径本身已经带 /api 前缀，避免配置成 /api 后请求到 /api/api。
+  return withoutTrailingSlash === "/api" ? "" : withoutTrailingSlash;
+}
+
+export const API_BASE_URL = normalizeApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
 
 export class AgentumApiError extends Error {
   readonly code: string;

@@ -140,7 +140,6 @@ docker buildx build --platform linux/amd64 \
   --load .
 
 docker buildx build --platform linux/amd64 \
-  --build-arg VITE_API_BASE_URL=/api \
   -t agentum-web:latest \
   -f deploy/docker/web.Dockerfile \
   --load .
