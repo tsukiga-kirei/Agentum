@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:15-alpine
     container_name: agentum-postgres-dev
     environment:
       POSTGRES_DB: agentum
@@ -57,4 +57,3 @@ volumes:
   agentum_redis_data:
   agentum_rabbitmq_data:
   agentum_minio_data:
-

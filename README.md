@@ -6,7 +6,7 @@
 [![Java](https://img.shields.io/badge/Java-21+-orange.svg)](https://openjdk.org/)
 [![React](https://img.shields.io/badge/React-18+-61DAFB.svg)](https://react.dev/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-6DB33F.svg)](https://spring.io/projects/spring-boot)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791.svg)](https://www.postgresql.org/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-336791.svg)](https://www.postgresql.org/)
 
 Agentum 不是把业务流程拆成大量低代码节点，也不是把一件复杂任务直接丢给一个模型临时生成 subagent。它的核心思路是：**企业先沉淀可治理的智能体、Skill、MCP 和提示词资产，再用少量业务步骤把这些能力组织起来，让多个专门智能体协作完成复杂任务。**
 
@@ -149,17 +149,28 @@ docker buildx build --platform linux/amd64 \
 
 ```bash
 mkdir -p dist/docker-images
-docker save agentum-api:latest | gzip > dist/docker-images/agentum-api-latest-linux-amd64.tar.gz
-docker save agentum-web:latest | gzip > dist/docker-images/agentum-web-latest-linux-amd64.tar.gz
+docker save agentum-api:latest -o dist/docker-images/agentum-api-latest-linux-amd64.tar
+docker save agentum-web:latest -o dist/docker-images/agentum-web-latest-linux-amd64.tar
+docker pull --platform linux/amd64 postgres:15-alpine
+docker pull --platform linux/amd64 redis:7-alpine
+docker pull --platform linux/amd64 rabbitmq:3.13-management-alpine
+docker pull --platform linux/amd64 minio/minio:RELEASE.2024-10-13T13-34-11Z
+docker save \
+  postgres:15-alpine \
+  redis:7-alpine \
+  rabbitmq:3.13-management-alpine \
+  minio/minio:RELEASE.2024-10-13T13-34-11Z \
+  -o dist/docker-images/agentum-runtime-linux-amd64.tar
 ```
 
 ### 服务器加载镜像
 
-把 `dist/docker-images/*.tar.gz`、`docker-compose.yml` 和 `.env.example` 上传到服务器后执行：
+把 `dist/docker-images/*.tar`、`docker-compose.yml` 和 `.env.example` 上传到服务器后执行：
 
 ```bash
-gzip -dc agentum-api-latest-linux-amd64.tar.gz | docker load
-gzip -dc agentum-web-latest-linux-amd64.tar.gz | docker load
+docker load -i agentum-api-latest-linux-amd64.tar
+docker load -i agentum-web-latest-linux-amd64.tar
+docker load -i agentum-runtime-linux-amd64.tar
 ```
 
 数据库迁移脚本不需要单独上传。Flyway 迁移 SQL 已打包在 API 镜像的 jar 中，API 启动时会从 `classpath:db/migration/schema` 自动执行；生产环境不会加载 `devdata` 演示数据。
