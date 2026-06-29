@@ -9,7 +9,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Value;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
@@ -34,9 +36,14 @@ public class SecurityConfiguration {
     private static final Logger log = LoggerFactory.getLogger(SecurityConfiguration.class);
 
     private final ObjectMapper objectMapper;
+    private final List<String> allowedOriginPatterns;
 
-    public SecurityConfiguration(ObjectMapper objectMapper) {
+    public SecurityConfiguration(
+        ObjectMapper objectMapper,
+        @Value("${agentum.security.cors.allowed-origin-patterns:http://localhost:*,http://127.0.0.1:*}") String allowedOriginPatterns
+    ) {
         this.objectMapper = objectMapper;
+        this.allowedOriginPatterns = parseAllowedOriginPatterns(allowedOriginPatterns);
     }
 
     @Bean
@@ -96,9 +103,9 @@ public class SecurityConfiguration {
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
-        // 当前 CORS 策略只服务本地前后端分端口调试，生产部署应由网关或域名白名单收敛。
+        // CORS 在 Spring Security 之前执行；生产部署必须显式放行前端对外地址，否则会在进入业务日志前返回 403。
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOriginPatterns(List.of("http://localhost:*", "http://127.0.0.1:*"));
+        configuration.setAllowedOriginPatterns(allowedOriginPatterns);
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Request-Id"));
         configuration.setExposedHeaders(List.of("X-Request-Id", "Content-Disposition"));
@@ -106,6 +113,17 @@ public class SecurityConfiguration {
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/api/**", configuration);
         return source;
+    }
+
+    private List<String> parseAllowedOriginPatterns(String rawValue) {
+        List<String> patterns = Arrays.stream(rawValue.split(","))
+            .map(String::trim)
+            .filter(value -> !value.isBlank())
+            .toList();
+        if (patterns.isEmpty()) {
+            return List.of("http://localhost:*", "http://127.0.0.1:*");
+        }
+        return patterns;
     }
 
     private void writeSecurityFailure(

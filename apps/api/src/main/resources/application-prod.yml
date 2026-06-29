@@ -40,6 +40,9 @@ agentum:
     refresh-token-ttl-days: "${AGENTUM_AUTH_REFRESH_TOKEN_TTL_DAYS:30}"
     refresh-cookie-secure: "${AGENTUM_AUTH_REFRESH_COOKIE_SECURE:true}"
   security:
+    cors:
+      # 前端对外访问地址。Spring CORS 会先于业务 Controller 执行，未放行会直接返回 403。
+      allowed-origin-patterns: "${AGENTUM_CORS_ALLOWED_ORIGIN_PATTERNS:${AGENTUM_AUTH_SSO_WEB_BASE_URL}}"
     field-encryption:
       # 字段加密主密钥用于保护模型密钥、SSO Secret 和外部交付凭证；已有密文后不能直接更换。
       master-key: "${AGENTUM_FIELD_ENCRYPTION_MASTER_KEY}"
