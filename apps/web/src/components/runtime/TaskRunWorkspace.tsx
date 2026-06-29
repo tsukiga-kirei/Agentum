@@ -234,6 +234,9 @@ export function TaskRunWorkspace({
     : -1;
   const currentStepIndex = streamingStepIndex >= 0 ? streamingStepIndex : backendStepIndex;
   const activeStep = preview.steps[currentStepIndex] ?? preview.steps[backendStepIndex] ?? preview.steps[0];
+  const activeTemplateVariables = activeStep?.nodeRunId
+    ? collectVariablesBeforeNode(runDetail, activeStep.nodeRunId)
+    : buildRuntimeSystemVariables(runDetail);
   const isLastStep = currentStepIndex === preview.steps.length - 1;
   const isLiveExecuting =
     stream.isStreaming
@@ -969,6 +972,7 @@ export function TaskRunWorkspace({
                 {activeStep.kind === "input" ? (
                   <UserInputPanel
                     activeStep={activeStep}
+                    templateVariables={activeTemplateVariables}
                     readOnly={runDetail.readOnly}
                     onSubmit={handleCompleteTodo}
                   />
@@ -1912,15 +1916,48 @@ function buildLiveChatMessages(
 function collectVariablesBeforeNode(run: WorkbenchRunDetail, nodeRunId: string): Record<string, unknown> {
   const targetNode = run.nodes.find((node) => node.id === nodeRunId);
   if (!targetNode) {
-    return {};
+    return buildRuntimeSystemVariables(run);
   }
+  const variables = buildRuntimeSystemVariables(run);
   return run.nodes
     .filter((node) => node.state === "completed" && node.sortOrder < targetNode.sortOrder)
     .sort((left, right) => left.sortOrder - right.sortOrder)
     .reduce<Record<string, unknown>>((variables, node) => {
       Object.assign(variables, node.outputs ?? {});
       return variables;
-    }, {});
+    }, variables);
+}
+
+function buildRuntimeSystemVariables(run: WorkbenchRunDetail): Record<string, unknown> {
+  const parts = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    weekday: "long",
+  }).formatToParts(new Date());
+  const readPart = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+  const year = readPart("year");
+  const month = readPart("month");
+  const day = readPart("day");
+  const weekday = readPart("weekday");
+  const monthPadded = month.padStart(2, "0");
+  const dayPadded = day.padStart(2, "0");
+  return {
+    runId: run.id,
+    runNumber: run.runNumber,
+    date: `${year}-${monthPadded}-${dayPadded}`,
+    dateCompact: `${year}${monthPadded}${dayPadded}`,
+    current_date: `${year}-${monthPadded}-${dayPadded}`,
+    current_date_cn: `${year} 年 ${Number(month)} 月 ${Number(day)} 日`,
+    current_weekday: weekday,
+    current_year: year,
+    current_month: month,
+    current_day: day,
+    year,
+    month: monthPadded,
+    day: dayPadded,
+  };
 }
 
 function renderRuntimeTemplate(template: string, variables: Record<string, unknown>): string {

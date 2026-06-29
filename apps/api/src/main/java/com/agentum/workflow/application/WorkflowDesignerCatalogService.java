@@ -232,13 +232,16 @@ public class WorkflowDesignerCatalogService {
     }
 
     private Map<String, WorkflowDraftApi.WorkflowVariableTemplate> variableMetadata() {
-        return Map.of(
-            "starter", new WorkflowDraftApi.WorkflowVariableTemplate("string", false, false, "流程发起人标识"),
-            "started_at", new WorkflowDraftApi.WorkflowVariableTemplate("string", false, false, "流程发起时间"),
-            "input_1", new WorkflowDraftApi.WorkflowVariableTemplate("string", false, false, "用户输入内容"),
-            "agent_response", new WorkflowDraftApi.WorkflowVariableTemplate("object", false, false, "单智能体回复内容"),
-            "cluster_result", new WorkflowDraftApi.WorkflowVariableTemplate("object", false, true, "智能体集群汇总结果"),
-            "delivery_record", new WorkflowDraftApi.WorkflowVariableTemplate("object", false, true, "交付记录")
+        Map<String, WorkflowDraftApi.WorkflowVariableTemplate> metadata = new LinkedHashMap<>();
+        metadata.put("starter", new WorkflowDraftApi.WorkflowVariableTemplate("string", false, false, "流程发起人标识"));
+        metadata.put("started_at", new WorkflowDraftApi.WorkflowVariableTemplate("string", false, false, "流程发起时间"));
+        WorkflowRuntimeSystemVariables.descriptions().forEach((name, description) ->
+            metadata.put(name, new WorkflowDraftApi.WorkflowVariableTemplate("string", false, false, description))
         );
+        metadata.put("input_1", new WorkflowDraftApi.WorkflowVariableTemplate("string", false, false, "用户输入内容"));
+        metadata.put("agent_response", new WorkflowDraftApi.WorkflowVariableTemplate("object", false, false, "单智能体回复内容"));
+        metadata.put("cluster_result", new WorkflowDraftApi.WorkflowVariableTemplate("object", false, true, "智能体集群汇总结果"));
+        metadata.put("delivery_record", new WorkflowDraftApi.WorkflowVariableTemplate("object", false, true, "交付记录"));
+        return metadata;
     }
 }

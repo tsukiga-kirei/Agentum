@@ -2,7 +2,21 @@ import type { WorkflowNodeType } from "../../types/workflow-contract";
 import { validateCustomPromptConfiguration } from "./workflowPromptDefaults";
 
 /** 运行时可注入的模板变量，不计入上游输出校验。 */
-export const WORKFLOW_SYSTEM_TEMPLATE_VARIABLES = new Set(["runNumber", "date", "dateCompact", "runId"]);
+export const WORKFLOW_SYSTEM_TEMPLATE_VARIABLES = new Set([
+  "runId",
+  "runNumber",
+  "date",
+  "dateCompact",
+  "current_date",
+  "current_date_cn",
+  "current_weekday",
+  "current_year",
+  "current_month",
+  "current_day",
+  "year",
+  "month",
+  "day",
+]);
 
 const VARIABLE_NAME_PATTERN = /^[a-z][a-z0-9_]*$/;
 

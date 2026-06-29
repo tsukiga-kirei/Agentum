@@ -13,6 +13,7 @@ type InputFieldShape = {
 
 interface UserInputPanelProps {
   activeStep: RuntimePreviewStep;
+  templateVariables?: Record<string, unknown>;
   readOnly: boolean;
   onSubmit: (payload: Record<string, unknown>) => void;
 }
@@ -26,6 +27,7 @@ function isInputFieldShape(value: unknown): value is InputFieldShape {
 
 export function UserInputPanel({
   activeStep,
+  templateVariables = {},
   readOnly,
   onSubmit,
 }: UserInputPanelProps) {
@@ -39,8 +41,8 @@ export function UserInputPanel({
         id: field.id || `field-${index}`,
         label: field.label,
         variable: field.variable || field.label,
-        placeholder: field.placeholder || `请输入${field.label}`,
-        defaultValue: field.defaultValue,
+        placeholder: renderRuntimeTemplate(field.placeholder || `请输入${field.label}`, templateVariables),
+        defaultValue: renderRuntimeTemplate(field.defaultValue ?? "", templateVariables),
         required: field.required !== false,
       }));
     }
@@ -52,7 +54,7 @@ export function UserInputPanel({
       defaultValue: field.value,
       required: true,
     }));
-  }, [activeStep.configSnapshot, activeStep.inputs]);
+  }, [activeStep.configSnapshot, activeStep.inputs, templateVariables]);
 
   useEffect(() => {
     const initial: Record<string, string> = {};
@@ -152,4 +154,29 @@ export function UserInputPanel({
       </form>
     </div>
   );
+}
+
+function renderRuntimeTemplate(template: string, variables: Record<string, unknown>): string {
+  return template.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_placeholder, variableName: string) =>
+    Object.prototype.hasOwnProperty.call(variables, variableName)
+      ? stringifyValue(variables[variableName])
+      : "",
+  );
+}
+
+function stringifyValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
 }

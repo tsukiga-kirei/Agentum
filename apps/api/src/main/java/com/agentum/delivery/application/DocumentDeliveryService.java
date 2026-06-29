@@ -7,9 +7,8 @@ import com.agentum.shared.api.RequestIds;
 import com.agentum.system.domain.SystemCapabilityEntity;
 import com.agentum.system.infrastructure.SystemCapabilityRepository;
 import com.agentum.system.infrastructure.TenantCapabilityGrantRepository;
+import com.agentum.workflow.application.WorkflowRuntimeSystemVariables;
 import java.time.Clock;
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -328,13 +327,8 @@ public class DocumentDeliveryService {
     }
 
     private Map<String, Object> enrichTemplateVariables(Map<String, Object> variables) {
-        Map<String, Object> result = new LinkedHashMap<>(variables);
-        LocalDate today = LocalDate.now(clock);
-        result.putIfAbsent("date", today.format(DateTimeFormatter.ISO_LOCAL_DATE));
-        result.putIfAbsent("dateCompact", today.format(DateTimeFormatter.BASIC_ISO_DATE));
-        result.putIfAbsent("year", String.valueOf(today.getYear()));
-        result.putIfAbsent("month", "%02d".formatted(today.getMonthValue()));
-        result.putIfAbsent("day", "%02d".formatted(today.getDayOfMonth()));
+        Map<String, Object> result = new LinkedHashMap<>(WorkflowRuntimeSystemVariables.from(clock));
+        result.putAll(variables == null ? Map.of() : variables);
         return result;
     }
 

@@ -8,6 +8,7 @@ import {
   ChevronDown,
   ClipboardCheck,
   Clock3,
+  Copy,
   FilePlus2,
   GitBranch,
   GitMerge,
@@ -124,6 +125,7 @@ export function WorkflowDraftsPage() {
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const [copyingWorkflowId, setCopyingWorkflowId] = useState("");
   const [validatingWorkflowId, setValidatingWorkflowId] = useState("");
   const [validationModal, setValidationModal] = useState<{
     workflow: WorkflowDraft;
@@ -443,6 +445,29 @@ export function WorkflowDraftsPage() {
     }
   }
 
+  async function handleCopyWorkflow(workflow: WorkflowDraft) {
+    if (!token || !user?.tenantId) {
+      messageApi.error("当前账号缺少租户上下文，无法复制流程");
+      return;
+    }
+    setCopyingWorkflowId(workflow.id);
+    try {
+      const copied = await workflowApi.copyDraft(user.tenantId, workflow.id, token);
+      messageApi.success(`已复制为“${copied.name}”`);
+      setDetailWorkflow(copied);
+      setDrawerDetail(null);
+      setWorkflows((items) => [copied, ...items.filter((item) => item.id !== copied.id)]);
+      if (activeTab !== "mine") {
+        navigate(paths.designer.mine);
+      }
+    } catch (error) {
+      console.warn("[workflow] 工作流复制失败", getWorkflowErrorContext(error, user.tenantId, { workflowId: workflow.id }));
+      messageApi.error(error instanceof AgentumApiError ? error.message : "复制流程失败");
+    } finally {
+      setCopyingWorkflowId("");
+    }
+  }
+
   async function handlePublish(workflow: WorkflowDraft) {
     if (!token || !user?.tenantId) {
       messageApi.error("当前账号缺少租户上下文，无法正式发布");
@@ -636,7 +661,9 @@ export function WorkflowDraftsPage() {
                   workflow={workflow}
                   mine={isWorkflowOwnedByCurrentUser(workflow, currentUserId)}
                   validating={validatingWorkflowId === workflow.id}
+                  copying={copyingWorkflowId === workflow.id}
                   onOpenDetail={() => setDetailWorkflow(workflow)}
+                  onCopy={() => void handleCopyWorkflow(workflow)}
                   onValidate={workflow.accessLevel === "read" ? undefined : () => void handleValidateForPublish(workflow)}
                   index={index}
                 />
@@ -783,8 +810,13 @@ export function WorkflowDraftsPage() {
               ) : (
                 <span className="workflow-drawer-footer-spacer" aria-hidden="true" />
               )}
-              {detailWorkflow.accessLevel !== "read" ? (
-                <div className="workflow-drawer-footer-actions">
+              <div className="workflow-drawer-footer-actions">
+                <button type="button" className="sys-btn sys-btn--default sys-btn--sm" disabled={copyingWorkflowId === detailWorkflow.id} onClick={() => void handleCopyWorkflow(detailWorkflow)}>
+                  <Copy size={14} aria-hidden="true" />
+                  {copyingWorkflowId === detailWorkflow.id ? "复制中" : "复制"}
+                </button>
+                {detailWorkflow.accessLevel !== "read" ? (
+                  <>
                   <button type="button" className="sys-btn sys-btn--default sys-btn--sm" disabled={submitting} onClick={() => void handleSaveDetail()}>
                     <Save size={14} aria-hidden="true" />
                     保存
@@ -810,8 +842,9 @@ export function WorkflowDraftsPage() {
                     <PanelRightOpen size={14} aria-hidden="true" />
                     进入设计
                   </button>
-                </div>
-              ) : null}
+                  </>
+                ) : null}
+              </div>
             </div>
           </>
         ) : null}
@@ -995,14 +1028,18 @@ function WorkflowDesignCard({
   workflow,
   mine,
   validating,
+  copying,
   onOpenDetail,
+  onCopy,
   onValidate,
   index,
 }: {
   workflow: WorkflowDraft;
   mine: boolean;
   validating: boolean;
+  copying: boolean;
   onOpenDetail: () => void;
+  onCopy: () => void;
   onValidate?: () => void;
   index: number;
 }) {
@@ -1049,6 +1086,10 @@ function WorkflowDesignCard({
               {validating ? "校验中" : "校验"}
             </button>
           ) : null}
+          <button type="button" disabled={copying} onClick={onCopy} className="sys-btn sys-btn--text sys-btn--sm">
+            <Copy size={14} aria-hidden="true" />
+            {copying ? "复制中" : "复制"}
+          </button>
           <button type="button" onClick={onOpenDetail} className="sys-btn sys-btn--text sys-btn--sm">
             <PanelRightOpen size={14} aria-hidden="true" />
             详情

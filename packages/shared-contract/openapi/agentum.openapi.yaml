@@ -1084,6 +1084,39 @@ paths:
                     properties:
                       data:
                         $ref: "#/components/schemas/WorkflowDraftDetail"
+  /api/tenants/{tenantId}/workflows/drafts/{workflowId}/copy:
+    post:
+      summary: 复制工作流为新草稿
+      description: 基于当前账号可读取的流程复制出一个新的草稿，复制件归当前账号所有，不复制发布版本和协作权限；保存和发布时仍按复制者重新校验节点引用能力。
+      tags:
+        - Workflow
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 复制成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/WorkflowDraftRow"
   /api/tenants/{tenantId}/workflows/drafts/{workflowId}/access:
     put:
       summary: 配置工作流读取与编辑权限

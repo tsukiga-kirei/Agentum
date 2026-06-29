@@ -40,6 +40,7 @@ import com.agentum.workflow.infrastructure.WorkflowRunRepository;
 import com.agentum.workflow.infrastructure.WorkflowVersionRepository;
 import com.agentum.workflow.infrastructure.WorkflowVariableSnapshotRepository;
 import com.agentum.workflow.infrastructure.WorkflowWaitingEventRepository;
+import com.agentum.workflow.application.WorkflowRuntimeSystemVariables;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -1791,7 +1792,7 @@ public class WorkbenchRuntimeService {
                 Map<String, Object> output = workflowRuntimeExecutor.execute(new WorkflowRuntimeExecutor.ExecutionRequest(
                     run,
                     node,
-                    currentVariables(nodeRuns),
+                    currentVariables(run, nodeRuns),
                     operatorUserId
                 )).outputs();
                 node.complete(output, now);
@@ -2223,8 +2224,8 @@ public class WorkbenchRuntimeService {
         return node.getName() + "已由运行执行器完成。";
     }
 
-    private Map<String, Object> currentVariables(List<WorkflowNodeRunEntity> nodeRuns) {
-        Map<String, Object> variables = new HashMap<>();
+    private Map<String, Object> currentVariables(WorkflowRunEntity run, List<WorkflowNodeRunEntity> nodeRuns) {
+        Map<String, Object> variables = new LinkedHashMap<>(WorkflowRuntimeSystemVariables.from(run, clock));
         for (WorkflowNodeRunEntity nodeRun : nodeRuns) {
             if ("completed".equals(nodeRun.getState())) {
                 variables.putAll(nodeRun.getOutputSnapshot());
@@ -2486,7 +2487,7 @@ public class WorkbenchRuntimeService {
                 Map<String, Object> output = workflowRuntimeExecutor.execute(new WorkflowRuntimeExecutor.ExecutionRequest(
                     run,
                     nextNode,
-                    currentVariables(nodeRuns),
+                    currentVariables(run, nodeRuns),
                     operatorUserId
                 )).outputs();
                 nextNode.complete(output, now);

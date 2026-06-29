@@ -36,7 +36,15 @@ class WorkflowDesignerCatalogServiceTest {
         assertThat(catalog.brickTemplates())
             .flatExtracting(WorkflowDraftApi.WorkflowBrickTemplate::defaultOutputVariables)
             .contains("input_1", "agent_response", "cluster_result", "delivery_record");
-        assertThat(catalog.variableMetadata()).containsKeys("starter", "input_1", "agent_response", "cluster_result", "delivery_record");
+        assertThat(catalog.variableMetadata()).containsKeys(
+            "starter",
+            "current_date_cn",
+            "current_weekday",
+            "input_1",
+            "agent_response",
+            "cluster_result",
+            "delivery_record"
+        );
         assertThat(catalog.agentRuntimeLimits().suggestedIterationsPerTurn()).isEqualTo(4);
         assertThat(catalog.agentRuntimeLimits().maxIterationsPerTurn()).isEqualTo(20);
         assertThat(catalog.brickTemplates().stream()

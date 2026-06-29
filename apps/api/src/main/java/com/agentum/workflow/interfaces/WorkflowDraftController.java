@@ -77,6 +77,17 @@ public class WorkflowDraftController {
         return ApiResponse.success(workflowDraftService.createDraft(tenantId, principal.userId(), createRequest), RequestIds.current(request));
     }
 
+    @PostMapping("/{workflowId}/copy")
+    public ApiResponse<WorkflowDraftApi.WorkflowDraftRow> copyDraft(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID workflowId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        workflowDesignAccess.assertCanDesign(principal, tenantId);
+        return ApiResponse.success(workflowDraftService.copyDraft(tenantId, principal.userId(), workflowId), RequestIds.current(request));
+    }
+
     @GetMapping("/shareable-members")
     public ApiResponse<List<WorkflowDraftApi.ShareableMemberRow>> listShareableMembers(
         @PathVariable UUID tenantId,

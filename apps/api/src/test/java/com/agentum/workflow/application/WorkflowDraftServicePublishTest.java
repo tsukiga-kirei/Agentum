@@ -17,7 +17,9 @@ import com.agentum.tenant.domain.TenantEntity;
 import com.agentum.tenant.infrastructure.TenantRepository;
 import com.agentum.workflow.domain.WorkflowDefinitionEntity;
 import com.agentum.workflow.domain.WorkflowAccessGrantEntity;
+import com.agentum.workflow.domain.WorkflowEdgeDefinitionEntity;
 import com.agentum.workflow.domain.WorkflowNodeDefinitionEntity;
+import com.agentum.workflow.domain.WorkflowVariableDefinitionEntity;
 import com.agentum.workflow.domain.WorkflowVersionEntity;
 import com.agentum.workflow.infrastructure.WorkflowDefinitionRepository;
 import com.agentum.workflow.infrastructure.WorkflowAccessGrantRepository;
@@ -195,6 +197,68 @@ class WorkflowDraftServicePublishTest {
 
         assertThat(detail.access().accessLevel()).isEqualTo("edit");
         assertThat(detail.access().canManageAccess()).isFalse();
+    }
+
+    @Test
+    void shouldCopyReadableWorkflowAsNewDraftOwnedByOperator() {
+        WorkflowDefinitionEntity source = draft();
+        UUID sourceWorkflowId = source.getId();
+        WorkflowNodeDefinitionEntity sourceNode = WorkflowNodeDefinitionEntity.create(
+            sourceWorkflowId,
+            "agent_1",
+            "agent",
+            "风险识别",
+            java.math.BigDecimal.ZERO,
+            java.math.BigDecimal.ZERO,
+            List.of("input_1"),
+            List.of("agent_response"),
+            Map.of("brickType", "agent"),
+            0,
+            NOW
+        );
+        WorkflowEdgeDefinitionEntity sourceEdge = WorkflowEdgeDefinitionEntity.create(
+            sourceWorkflowId,
+            "e_agent_delivery",
+            "agent_1",
+            "delivery_1",
+            "",
+            "",
+            0,
+            NOW
+        );
+        WorkflowVariableDefinitionEntity sourceVariable = WorkflowVariableDefinitionEntity.create(
+            sourceWorkflowId,
+            "agent_response",
+            "object",
+            "agent_1",
+            "智能体输出",
+            "{}",
+            false,
+            true,
+            0,
+            NOW
+        );
+        when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("租户", "tenant", NOW)));
+        when(workflowDefinitionRepository.findByIdAndTenantId(sourceWorkflowId, TENANT_ID)).thenReturn(Optional.of(source));
+        when(workflowAccessGrantRepository.findByWorkflowId(any())).thenReturn(List.of());
+        when(workflowNodeDefinitionRepository.findByWorkflowIdOrderBySortOrderAsc(sourceWorkflowId)).thenReturn(List.of(sourceNode));
+        when(workflowEdgeDefinitionRepository.findByWorkflowIdOrderBySortOrderAsc(sourceWorkflowId)).thenReturn(List.of(sourceEdge));
+        when(workflowVariableDefinitionRepository.findByWorkflowIdOrderBySortOrderAsc(sourceWorkflowId)).thenReturn(List.of(sourceVariable));
+        when(userAccountRepository.findAllById(any())).thenReturn(List.of());
+
+        WorkflowDraftApi.WorkflowDraftRow copied = service().copyDraft(TENANT_ID, USER_ID, sourceWorkflowId);
+
+        assertThat(copied.id()).isNotEqualTo(sourceWorkflowId);
+        assertThat(copied.name()).isEqualTo("需求评审（副本）");
+        assertThat(copied.status()).isEqualTo("draft");
+        assertThat(copied.nodeCount()).isEqualTo(1);
+        assertThat(copied.ownerId()).isEqualTo(USER_ID);
+        ArgumentCaptor<WorkflowNodeDefinitionEntity> nodeCaptor = ArgumentCaptor.forClass(WorkflowNodeDefinitionEntity.class);
+        verify(workflowNodeDefinitionRepository).save(nodeCaptor.capture());
+        assertThat(nodeCaptor.getValue().getNodeKey()).isEqualTo("agent_1");
+        assertThat(nodeCaptor.getValue().getOutputVariables()).containsExactly("agent_response");
+        verify(workflowEdgeDefinitionRepository).save(any(WorkflowEdgeDefinitionEntity.class));
+        verify(workflowVariableDefinitionRepository).save(any(WorkflowVariableDefinitionEntity.class));
     }
 
     @Test

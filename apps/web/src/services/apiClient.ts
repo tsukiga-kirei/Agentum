@@ -629,6 +629,8 @@ export const workflowApi = {
   },
   createDraft: (tenantId: string, token: string, request: CreateWorkflowDraftRequest) =>
     apiRequest<WorkflowDraftRow>(`/api/tenants/${tenantId}/workflows/drafts`, { method: "POST", token, body: request }),
+  copyDraft: (tenantId: string, workflowId: string, token: string) =>
+    apiRequest<WorkflowDraftRow>(`/api/tenants/${tenantId}/workflows/drafts/${workflowId}/copy`, { method: "POST", token }),
   getDraft: (tenantId: string, workflowId: string, token: string) =>
     apiRequest<WorkflowDraftDetail>(`/api/tenants/${tenantId}/workflows/drafts/${workflowId}`, { token }),
   updateDraft: (tenantId: string, workflowId: string, token: string, request: UpdateWorkflowDraftRequest) =>

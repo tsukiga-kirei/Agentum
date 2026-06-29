@@ -19,6 +19,7 @@ import com.agentum.workflow.infrastructure.WorkflowClusterAgentRunRepository;
 import com.agentum.workflow.infrastructure.WorkflowNodeRunRepository;
 import com.agentum.workflow.infrastructure.WorkflowRunExecutionJobRepository;
 import com.agentum.workflow.infrastructure.WorkflowRunRepository;
+import com.agentum.workflow.application.WorkflowRuntimeSystemVariables;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -180,7 +181,7 @@ public class NodeExecutionService {
                 "nodeName", node.getName()
             ));
 
-            Map<String, Object> variables = variablesBeforeNode(runId, node.getSortOrder());
+            Map<String, Object> variables = variablesBeforeNode(run, node.getSortOrder());
             Map<String, Object> outputs = dispatch(run, node, variables, command.operatorUserId());
 
             // 中断/restart 后旧 Worker 可能仍持有内存上下文；落库前必须确认本 job 仍为 DB 中的有效 running 作业。
@@ -908,9 +909,9 @@ public class NodeExecutionService {
         }
     }
 
-    private Map<String, Object> variablesBeforeNode(UUID runId, int sortOrder) {
-        Map<String, Object> variables = new HashMap<>();
-        for (WorkflowNodeRunEntity node : workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(runId)) {
+    private Map<String, Object> variablesBeforeNode(WorkflowRunEntity run, int sortOrder) {
+        Map<String, Object> variables = new LinkedHashMap<>(WorkflowRuntimeSystemVariables.from(run, clock));
+        for (WorkflowNodeRunEntity node : workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(run.getId())) {
             if ("completed".equals(node.getState()) && node.getSortOrder() < sortOrder) {
                 variables.putAll(node.getOutputSnapshot());
             }

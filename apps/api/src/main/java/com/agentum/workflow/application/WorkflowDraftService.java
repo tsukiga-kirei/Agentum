@@ -179,6 +179,91 @@ public class WorkflowDraftService {
         return toDraftRow(definition, loadUsersById(Set.of(operatorUserId)), operatorUserId, null);
     }
 
+    @Transactional
+    public WorkflowDraftApi.WorkflowDraftRow copyDraft(UUID tenantId, UUID operatorUserId, UUID sourceWorkflowId) {
+        WorkflowDefinitionEntity source = findDefinitionForRead(tenantId, sourceWorkflowId, operatorUserId);
+        Instant now = clock.instant();
+        String copyName = copyName(source.getName());
+        String copyDescription = normalizeOptional(source.getDescription());
+        WorkflowDefinitionEntity copy = WorkflowDefinitionEntity.create(tenantId, copyName, copyDescription, operatorUserId, now);
+        workflowDefinitionRepository.save(copy);
+
+        List<WorkflowNodeDefinitionEntity> sourceNodes = workflowNodeDefinitionRepository.findByWorkflowIdOrderBySortOrderAsc(source.getId());
+        List<WorkflowEdgeDefinitionEntity> sourceEdges = workflowEdgeDefinitionRepository.findByWorkflowIdOrderBySortOrderAsc(source.getId());
+        List<WorkflowVariableDefinitionEntity> sourceVariables = workflowVariableDefinitionRepository.findByWorkflowIdOrderBySortOrderAsc(source.getId());
+
+        for (int index = 0; index < sourceNodes.size(); index++) {
+            WorkflowNodeDefinitionEntity node = sourceNodes.get(index);
+            workflowNodeDefinitionRepository.save(WorkflowNodeDefinitionEntity.create(
+                copy.getId(),
+                node.getNodeKey(),
+                node.getNodeType(),
+                node.getName(),
+                node.getPositionX(),
+                node.getPositionY(),
+                node.getInputVariables(),
+                node.getOutputVariables(),
+                node.getConfig(),
+                index,
+                now
+            ));
+        }
+        for (int index = 0; index < sourceEdges.size(); index++) {
+            WorkflowEdgeDefinitionEntity edge = sourceEdges.get(index);
+            workflowEdgeDefinitionRepository.save(WorkflowEdgeDefinitionEntity.create(
+                copy.getId(),
+                edge.getEdgeKey(),
+                edge.getSourceNodeKey(),
+                edge.getTargetNodeKey(),
+                edge.getLabel(),
+                edge.getConditionExpression(),
+                index,
+                now
+            ));
+        }
+        for (int index = 0; index < sourceVariables.size(); index++) {
+            WorkflowVariableDefinitionEntity variable = sourceVariables.get(index);
+            workflowVariableDefinitionRepository.save(WorkflowVariableDefinitionEntity.create(
+                copy.getId(),
+                variable.getVariableKey(),
+                variable.getVariableType(),
+                variable.getSourceNodeKey(),
+                variable.getDescription(),
+                variable.getJsonSchema(),
+                variable.isSensitive(),
+                variable.isDeliverable(),
+                index,
+                now
+            ));
+        }
+
+        int userNodeCount = (int) sourceNodes.stream().filter(node -> !"trigger".equals(node.getNodeType())).count();
+        copy.updateGraphSummary(userNodeCount, operatorUserId, now);
+        workflowDefinitionRepository.save(copy);
+        log.info(
+            "工作流复制成功 tenantId={} operatorUserId={} sourceWorkflowId={} copyWorkflowId={} nodeCount={} requestId={}",
+            tenantId,
+            operatorUserId,
+            sourceWorkflowId,
+            copy.getId(),
+            sourceNodes.size(),
+            RequestIds.current()
+        );
+        auditService.recordOperationLog(
+            tenantId,
+            operatorUserId,
+            getOperatorName(operatorUserId),
+            "COPY_WORKFLOW",
+            "WORKFLOW_DEFINITION",
+            copy.getId().toString(),
+            copy.getName(),
+            "复制工作流草稿: " + source.getName(),
+            Map.of("sourceWorkflowId", source.getId().toString(), "copyWorkflowId", copy.getId().toString()),
+            null
+        );
+        return toDraftRow(copy, loadUsersById(Set.of(operatorUserId)), operatorUserId, null);
+    }
+
     @Transactional(readOnly = true)
     public List<WorkflowDraftApi.ShareableMemberRow> listShareableMembers(UUID tenantId, UUID operatorUserId) {
         ensureActiveTenant(tenantId);
@@ -905,6 +990,16 @@ public class WorkflowDraftService {
     private static String normalizeOptional(String value) {
         String normalized = value == null ? "" : value.trim();
         return normalized.isBlank() ? null : normalized;
+    }
+
+    private static String copyName(String sourceName) {
+        String baseName = normalizeRequired(sourceName);
+        String suffix = "（副本）";
+        if (baseName.isBlank()) {
+            return "未命名流程" + suffix;
+        }
+        int maxBaseLength = Math.max(0, 180 - suffix.length());
+        return (baseName.length() > maxBaseLength ? baseName.substring(0, maxBaseLength) : baseName) + suffix;
     }
 
     private String normalizeScope(String scope) {

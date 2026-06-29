@@ -7,10 +7,9 @@ import com.agentum.shared.api.RequestIds;
 import com.agentum.system.domain.SystemCapabilityEntity;
 import com.agentum.system.infrastructure.SystemCapabilityRepository;
 import com.agentum.system.infrastructure.TenantCapabilityGrantRepository;
+import com.agentum.workflow.application.WorkflowRuntimeSystemVariables;
 import java.net.URI;
 import java.time.Clock;
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -209,15 +208,8 @@ public class DeliveryRuntimeService {
     }
 
     private Map<String, Object> enrichRuntimeVariables(DeliveryRuntimeRequest request) {
-        Map<String, Object> result = new LinkedHashMap<>(request.variables() == null ? Map.of() : request.variables());
-        LocalDate today = LocalDate.now(clock);
-        result.putIfAbsent("date", today.format(DateTimeFormatter.ISO_LOCAL_DATE));
-        result.putIfAbsent("dateCompact", today.format(DateTimeFormatter.BASIC_ISO_DATE));
-        result.putIfAbsent("year", String.valueOf(today.getYear()));
-        result.putIfAbsent("month", "%02d".formatted(today.getMonthValue()));
-        result.putIfAbsent("day", "%02d".formatted(today.getDayOfMonth()));
-        result.putIfAbsent("runNumber", request.run().getRunNumber());
-        result.putIfAbsent("runId", request.run().getId().toString());
+        Map<String, Object> result = new LinkedHashMap<>(WorkflowRuntimeSystemVariables.from(request.run(), clock));
+        result.putAll(request.variables() == null ? Map.of() : request.variables());
         return result;
     }
 
