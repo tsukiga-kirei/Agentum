@@ -853,11 +853,6 @@ export function AssetsPage() {
         {currentAsset ? (
           <>
             <div className="sys-drawer-section sys-drawer-section-enter">
-              {currentAsset.status === "published" ? (
-                <div className="sys-hint"><ShieldCheck size={14} /> 已发布能力当前为只读查看；如需修改，请先改回草稿。</div>
-              ) : currentAsset.accessLevel === "read" ? (
-                <div className="sys-hint"><Eye size={14} /> 当前仅有读取权限，可查看内容但不能修改。</div>
-              ) : null}
               <div className="sys-field-row">
                 <div className="sys-field">
                   <label className="sys-field-label sys-field-label--required">能力名称</label>

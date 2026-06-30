@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Button, Checkbox, ConfigProvider, Form, Input, Select, Segmented, message, theme as antdTheme } from "antd";
-import { Building2, KeyRound, LayoutDashboard, Settings, Shield, User } from "lucide-react";
+import { Building2, KeyRound, LayoutDashboard, LockKeyhole, ServerCog, Settings, Shield, User } from "lucide-react";
 import { useAuthStore } from "../../stores/authStore";
 import { readLoginPrefs, saveLoginPrefs } from "../../stores/authSession";
 import { ThemeToggle } from "../../components/ThemeToggle";
 import { AgentumMark } from "../../components/brand/AgentumMark";
 import { API_BASE_URL, authApi } from "../../services/apiClient";
 import { firstAllowedSurfacePath, paths } from "../../routes/paths";
-import type { LoginResponse, PortalType } from "../../types/auth";
+import type { LoginResponse, PortalType, ThemeMode } from "../../types/auth";
 import { isDarkTheme } from "../../utils/theme";
 
 // 登录入口选项，与 docs/system-overview.md 中角色定义对齐。
@@ -18,30 +18,44 @@ const portals: Array<{
   icon: typeof LayoutDashboard;
   label: string;
   description: string;
-  color: string;
 }> = [
   {
     key: "business",
     icon: LayoutDashboard,
     label: "业务用户",
     description: "发起流程、处理待办、查看运行结果",
-    color: "#4f46e5",
   },
   {
     key: "tenant_admin",
     icon: Settings,
     label: "租户管理",
     description: "管理租户成员、角色权限和需求配置",
-    color: "#f59e0b",
   },
   {
     key: "system_admin",
     icon: Shield,
     label: "系统管理",
     description: "全局配置、模型管理和审计",
-    color: "#dc2626",
   },
 ];
+
+const portalColorsByTheme: Record<ThemeMode, Record<PortalType, string>> = {
+  light: {
+    business: "#4f46e5",
+    tenant_admin: "#d97706",
+    system_admin: "#dc2626",
+  },
+  dark: {
+    business: "#818cf8",
+    tenant_admin: "#fbbf24",
+    system_admin: "#f87171",
+  },
+  warm: {
+    business: "#4f8675",
+    tenant_admin: "#b07b24",
+    system_admin: "#b65a4a",
+  },
+};
 
 type LoginFormValues = {
   tenantId?: string;
@@ -87,6 +101,8 @@ export function LoginPage() {
   }, [bootstrapRequired, location.state, menus, navigate, user]);
 
   const currentPortal = portals.find((p) => p.key === activePortal) ?? portals[0];
+  const currentPortalColor = portalColorsByTheme[themeMode][activePortal];
+  const portalColorStyle = { "--login-portal-color": currentPortalColor } as CSSProperties;
   const shouldSelectTenant = activePortal !== "system_admin";
   const portalOptions = portals.map((portal) => {
     const Icon = portal.icon;
@@ -311,7 +327,7 @@ export function LoginPage() {
   return (
     <>
     {messageContextHolder}
-    <div className={`login-page ${isDark ? "dark" : ""}`}>
+    <div className={`login-page ${isDark ? "dark" : ""}`} style={portalColorStyle}>
       {/* 动态背景 */}
       <div className="login-bg">
         <div className="login-bg-shape login-bg-shape--1" />
@@ -356,12 +372,13 @@ export function LoginPage() {
               block
               className={`login-portal-segmented login-portal-segmented--${activePortal}`}
               options={portalOptions}
+              style={portalColorStyle}
               value={activePortal}
               onChange={(value) => handlePortalChange(value as PortalType)}
             />
 
             {/* 当前入口描述 */}
-            <div className={`login-portal-description login-portal-description--${activePortal}`}>
+            <div className={`login-portal-description login-portal-description--${activePortal}`} style={portalColorStyle}>
               <span className="login-portal-description-dot" />
               {currentPortal.description}
             </div>
@@ -375,7 +392,7 @@ export function LoginPage() {
                   colorBgContainer: "var(--color-bg-input)",
                   colorBgElevated: "var(--color-bg-card)",
                   colorBorder: "var(--color-border)",
-                  colorPrimary: currentPortal.color,
+                  colorPrimary: currentPortalColor,
                   colorText: "var(--color-text-primary)",
                   colorTextPlaceholder: "var(--color-text-tertiary)",
                   controlHeight: 48,
@@ -396,20 +413,28 @@ export function LoginPage() {
                 onFinish={handleSubmit}
                 onValuesChange={clearLoginError}
               >
-                {shouldSelectTenant ? (
-                  <Form.Item name="tenantId">
-                    <Select
-                      aria-label="选择租户"
-                      className="agent-tenant-select"
-                      classNames={{ popup: { root: "agent-select-dropdown" } }}
-                      options={tenantOptions}
-                      placeholder="请选择租户"
-                      prefix={<Building2 className="h-5 w-5 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
-                      loading={tenantsLoading}
-                      disabled={tenantsLoading}
-                    />
-                  </Form.Item>
-                ) : null}
+                <div className="login-tenant-slot">
+                  {shouldSelectTenant ? (
+                    <Form.Item name="tenantId">
+                      <Select
+                        aria-label="选择租户"
+                        className="agent-tenant-select"
+                        classNames={{ popup: { root: "agent-select-dropdown" } }}
+                        options={tenantOptions}
+                        placeholder="请选择租户"
+                        prefix={<Building2 className="h-5 w-5 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+                        loading={tenantsLoading}
+                        disabled={tenantsLoading}
+                      />
+                    </Form.Item>
+                  ) : (
+                    <div className="login-system-scope" aria-label="系统管理入口范围">
+                      <span><ServerCog aria-hidden="true" size={16} /> 平台配置</span>
+                      <span><LockKeyhole aria-hidden="true" size={16} /> 凭证治理</span>
+                      <span><Shield aria-hidden="true" size={16} /> 审计管理</span>
+                    </div>
+                  )}
+                </div>
 
                 <Form.Item name="username">
                   <Input

@@ -860,7 +860,6 @@ export function WorkflowDraftsPage() {
             </div>
             <form onSubmit={handleCreateDraft}>
               <div className="sys-modal-body">
-                <div className="sys-hint mb-4">先保存基础信息，再进入阶段积木配置变量、能力和发布规则。</div>
                 <label className="sys-field">
                   <span className="sys-field-label sys-field-label--required">工作流名称</span>
                   <div className="sys-field-input-wrap">

@@ -1461,7 +1461,6 @@ export function SystemManagementPage() {
                             <ReachabilityBadge status={resolveConnectivityStatus(m.connectivityStatus)} />
                           </CardStatusStack>
                         </div>
-                        {m.reasoningModel ? <div className="sys-hint"><BrainCircuit size={14}/> 推理模型 · 支持流程节点启用深度推理</div> : null}
                         <div className="sys-card-meta">
                           <div className="sys-meta-item"><span className="sys-meta-label">基址</span><span className="sys-meta-value">{m.baseUrl||"未配置"}</span></div>
                           <div className="sys-meta-item"><span className="sys-meta-label">默认模型</span><span className="sys-meta-value">{m.defaultModel||"未配置"}</span></div>
@@ -1598,7 +1597,6 @@ export function SystemManagementPage() {
           {tenantActiveTab === "auth" && (
             <div className="sys-drawer-section sys-drawer-section-enter" key={`tenant-sso-${tenantSsoType}-${tenantSsoProviders.map((item) => item.id).join("-")}`}>
               <div className="sys-section-header"><ShieldCheck size={18}/> 企业认证</div>
-              <div className="sys-hint"><Info size={14}/> 企业认证只负责外部身份校验；登录成功后仍按 Agentum 本地租户、入口角色和资源权限重新判权。</div>
               <div className="sys-config-group">
                 <div className="sys-form-row">
                   <span className="sys-form-label">启用状态</span>
@@ -1655,7 +1653,6 @@ export function SystemManagementPage() {
                       <div className="sys-field"><label className="sys-field-label">允许 IP</label><div className="sys-field-input-wrap"><ServerCog size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="逗号分隔，留空不限制" defaultValue={tenantSsoRef.current.allowedIpRanges || ""} onChange={(event) => { tenantSsoRef.current.allowedIpRanges = event.target.value; }} /></div></div>
                       <div className="sys-field"><label className="sys-field-label">允许域名</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如 oa.example.com，留空不限制" defaultValue={tenantSsoRef.current.allowedDomains || ""} onChange={(event) => { tenantSsoRef.current.allowedDomains = event.target.value; }} /></div></div>
                     </div>
-                    <div className="sys-hint"><Info size={14}/> Basic 单点入口：/api/auth/sso/basic-entry?portal=business。该方式不使用用户个人密码，必须由可信业务系统服务端发起。</div>
                   </>
                 )}
                 <div className="tenant-org-actionbar tenant-admin-actionbar">
@@ -1789,7 +1786,6 @@ export function SystemManagementPage() {
                   <button type="button" className="sys-modal-close" disabled={tenantAdminSubmitting} onClick={() => setTenantAdminModalOpen(false)}><X size={18}/></button>
                 </div>
                 <div className="sys-modal-body">
-                  <div className="sys-hint"><Info size={14}/> 租户管理员拥有租户管理入口。系统管理负责新增、启停和身份维护；租户管理只能修改基本联系方式。</div>
                   <div className="sys-drawer-section sys-drawer-section-enter">
                     <div className="sys-field-row">
                       <div className="sys-field"><label className="sys-field-label sys-field-label--required">管理员账号</label><div className="sys-field-input-wrap"><User size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如：tenant_admin" maxLength={50} defaultValue={tenantAdminRef.current.username || ""} onChange={(event) => { tenantAdminRef.current.username = event.target.value; }} /></div><div className="sys-field-hint">{usernameRuleMessage}</div></div>
@@ -1842,7 +1838,6 @@ export function SystemManagementPage() {
               )}
               {createTenantTab==="admin"&&(
                 <div className="sys-drawer-section sys-drawer-section-enter">
-                  <div className="sys-hint"><Info size={14}/> 必须为新租户指定一名初始租户管理员，该管理员登录后可继续在「租户管理」中添加其他成员。</div>
                   <div className="sys-field-row">
                     <div className="sys-field"><label className="sys-field-label sys-field-label--required">管理员账号</label><div className="sys-field-input-wrap"><User size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如：tenant_admin" maxLength={50} defaultValue={ctRef.current.admin_username||""} onChange={e=>{ctRef.current.admin_username=e.target.value;}}/></div><div className="sys-field-hint">{usernameRuleMessage}</div></div>
                     <div className="sys-field"><label className="sys-field-label sys-field-label--required">管理员姓名</label><div className="sys-field-input-wrap"><Type size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="显示名称" maxLength={50} defaultValue={ctRef.current.admin_displayName||""} onChange={e=>{ctRef.current.admin_displayName=e.target.value;}}/></div></div>
@@ -1877,9 +1872,7 @@ export function SystemManagementPage() {
           {selectedModelProviderType && (() => {
             const desc = modelProviderTypes.find((type) => type.code === selectedModelProviderType)?.description;
             if (!desc || desc.includes("兼容 OpenAI Chat Completions")) return null;
-            return (
-              <div className="sys-hint"><ServerCog size={14}/> {desc}</div>
-            );
+            return <div className="sys-field-hint">{desc}</div>;
           })()}
           <div className="sys-field"><label className="sys-field-label">基址 URL</label><div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder={modelProviderTypes.find((type)=>type.code===selectedModelProviderType)?.defaultBaseUrl || "https://api.example.com/v1"} maxLength={500} defaultValue={modelRef.current.baseUrl || ""} onChange={e=>{modelRef.current.baseUrl=e.target.value;}}/></div><div className="sys-field-hint">不填写时沿用供应商类型的默认基址</div></div>
           <div className="sys-field"><label className="sys-field-label sys-field-label--required">默认模型</label><div className="sys-field-input-wrap"><DatabaseZap size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="例如 qwen-max" maxLength={160} defaultValue={modelRef.current.defaultModel || ""} onChange={e=>{modelRef.current.defaultModel=e.target.value;}}/></div></div>
@@ -2035,7 +2028,6 @@ export function SystemManagementPage() {
                   </div>
                   {selectedDeliveryChannel === "document" ? (
                     <>
-                      <div className="sys-hint"><FileText size={14}/> 默认样式用于新流程起步；具体流程仍可在交付节点里按业务模板覆盖字体、字号、缩进和行距。</div>
                       <DocumentDeliveryStyleAdminSections
                         values={capRef.current}
                         onChange={(key, value) => {

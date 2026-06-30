@@ -1096,7 +1096,6 @@ export function TenantManagementPage() {
               <button className="sys-modal-close" onClick={() => { setCreateDepartmentOpen(false); setEditingDepartment(null); }}><X size={18} /></button>
             </div>
             <div className="sys-modal-body">
-              <div className="sys-hint"><Info size={14} /> 部门编码由后端自动生成，页面只维护业务名称、层级和排序。</div>
               {editingDepartment ? (
                 <div className="sys-field">
                   <label className="sys-field-label">当前状态</label>
@@ -1380,10 +1379,7 @@ export function TenantManagementPage() {
           <div className="sys-config-group tenant-drawer-option-group">
             <div className="sys-config-group-title">能力资源</div>
             {resourceOptions.length === 0 ? (
-              <div className="sys-hint">
-                <Info size={14} />
-                当前租户暂无可分配能力。请先在系统管理的租户配置中启用 MCP、Skill、提示词模板或交付能力。
-              </div>
+              <p className="sys-field-hint">当前租户暂无可分配能力。请先在系统管理的租户配置中启用 MCP、Skill、提示词模板或交付能力。</p>
             ) : (
               <div className="tenant-permission-grid">
                 {resourceOptions.map((option) => {
