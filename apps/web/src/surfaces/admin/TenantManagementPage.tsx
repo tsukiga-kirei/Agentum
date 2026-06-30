@@ -31,6 +31,7 @@ import { paths } from "../../routes/paths";
 import { AgentumApiError, organizationApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import { isValidUsername, usernameRuleMessage } from "../../utils/username";
+import { getThemedDrawerRootClassName } from "../../utils/theme";
 import type {
   CreateDepartmentRequest,
   CreateMemberRequest,
@@ -212,7 +213,7 @@ export function TenantManagementPage() {
   const user = useAuthStore((s) => s.user);
   const token = useAuthStore((s) => s.token);
   const themeMode = useAuthStore((s) => s.themeMode);
-  const drawerRootClassName = themeMode === "dark" ? "agent-admin-drawer agent-admin-drawer--dark" : "agent-admin-drawer";
+  const drawerRootClassName = getThemedDrawerRootClassName(themeMode);
   const [messageApi, messageContextHolder] = message.useMessage();
   const [organizationOverview, setOrganizationOverview] = useState<TenantOrganizationOverview | null>(null);
   const [organizationLoading, setOrganizationLoading] = useState(false);

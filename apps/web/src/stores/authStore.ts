@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { AgentumApiError, authApi, configureAuthSessionBridge } from "../services/apiClient";
 import type { AuthUser, LoginResponse, MenuItem, PortalType, RoleInfo, SsoProviderOption, TenantOption, ThemeMode } from "../types/auth";
 import { clearAuthToken, persistAuthToken, readStoredAuthToken } from "./authSession";
+import { THEME_MODES } from "../utils/theme";
 
 // 认证状态管理负责前端会话缓存，真实身份、租户和角色上下文全部以后端 auth API 为准。
 // 登录后保存完整角色列表和菜单，角色切换通过 switchRole API 完成。
@@ -330,13 +331,15 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   setThemeMode: (mode) => {
     window.localStorage.setItem(THEME_KEY, mode);
     document.documentElement.classList.toggle("dark", mode === "dark");
+    document.documentElement.classList.toggle("theme-warm", mode === "warm");
     document.documentElement.setAttribute("data-theme", mode);
     set({ themeMode: mode });
   },
 
   toggleTheme: () => {
     const current = get().themeMode;
-    const next: ThemeMode = current === "dark" ? "light" : "dark";
+    const currentIndex = THEME_MODES.indexOf(current);
+    const next = THEME_MODES[(currentIndex + 1) % THEME_MODES.length] ?? "light";
     get().setThemeMode(next);
   },
 }));
@@ -377,9 +380,10 @@ configureAuthSessionBridge({
 function restoreTheme(set: (state: Partial<AuthState & AuthActions>) => void) {
   const savedTheme = window.localStorage.getItem(THEME_KEY);
 
-  if (savedTheme === "dark" || savedTheme === "light") {
+  if (savedTheme === "dark" || savedTheme === "light" || savedTheme === "warm") {
     set({ themeMode: savedTheme });
     document.documentElement.classList.toggle("dark", savedTheme === "dark");
+    document.documentElement.classList.toggle("theme-warm", savedTheme === "warm");
     document.documentElement.setAttribute("data-theme", savedTheme);
   }
 }

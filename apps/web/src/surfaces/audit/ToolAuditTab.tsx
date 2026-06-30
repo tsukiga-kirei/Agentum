@@ -4,6 +4,7 @@ import { Search, Cpu, Sparkles, ChevronDown, AlertCircle, Clock, Activity, Sigma
 import { auditApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import type { AuditToolCall } from "../../types/audit";
+import { getThemedDrawerRootClassName } from "../../utils/theme";
 
 interface ToolAuditTabProps {
   setLoading: (loading: boolean) => void;
@@ -15,6 +16,7 @@ export function ToolAuditTab({ setLoading }: ToolAuditTabProps) {
   const user = useAuthStore((s) => s.user);
   const tenantId = activeRole?.tenantId || user?.tenantId || "";
   const themeMode = useAuthStore((s) => s.themeMode);
+  const drawerRootClassName = getThemedDrawerRootClassName(themeMode);
 
   const [logs, setLogs] = useState<AuditToolCall[]>([]);
   const [total, setTotal] = useState(0);
@@ -212,7 +214,7 @@ export function ToolAuditTab({ setLoading }: ToolAuditTabProps) {
               onChange={handlePageChange}
               showSizeChanger
               pageSizeOptions={["10", "20", "50"]}
-              className={themeMode === "dark" ? "agent-pagination--dark" : ""}
+              className="agent-admin-pagination"
             />
           </div>
         </div>
@@ -230,7 +232,7 @@ export function ToolAuditTab({ setLoading }: ToolAuditTabProps) {
             </span>
           </div>
         )}
-        rootClassName={themeMode === "dark" ? "agent-admin-drawer agent-admin-drawer--dark" : "agent-admin-drawer"}
+        rootClassName={drawerRootClassName}
       >
         {selectedLog ? (
           <div className="sys-drawer-section sys-drawer-section-enter">

@@ -2,7 +2,7 @@
 // 角色分配模型支持一个用户多角色多租户和角色切换。
 
 /** 主题模式 */
-export type ThemeMode = "light" | "dark";
+export type ThemeMode = "light" | "dark" | "warm";
 
 /** 登录入口类型：业务人员 / 租户管理员 / 系统管理员 */
 export type PortalType = "business" | "tenant_admin" | "system_admin";

@@ -9,6 +9,7 @@ import { AgentumApiError, assetApi } from "../../services/apiClient";
 import { paths } from "../../routes/paths";
 import { useAuthStore } from "../../stores/authStore";
 import type { AccessScope, AssetSummary, AssetType, CreatableAssetType, CreateMyAssetRequest, MyAssetDetail, MyAssetRow, ShareableMemberRow, SystemCapabilityAssetRow, UpdateMyAssetRequest } from "../../types/asset";
+import { getThemedDrawerRootClassName } from "../../utils/theme";
 
 type AssetTab = "overview" | "system" | "mine";
 
@@ -90,7 +91,7 @@ export function AssetsPage() {
   const user = useAuthStore((s) => s.user);
   const themeMode = useAuthStore((s) => s.themeMode);
   const [messageApi, messageContextHolder] = message.useMessage();
-  const drawerRootClassName = themeMode === "dark" ? "agent-admin-drawer agent-admin-drawer--dark" : "agent-admin-drawer";
+  const drawerRootClassName = getThemedDrawerRootClassName(themeMode);
 
   const [systemDetailOpen, setSystemDetailOpen] = useState(false);
   const [selectedSystemAsset, setSelectedSystemAsset] = useState<SystemCapabilityAssetRow | null>(null);

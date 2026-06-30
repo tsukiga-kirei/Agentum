@@ -14,7 +14,6 @@ export function OperationLogsTab({ setLoading }: OperationLogsTabProps) {
   const activeRole = useAuthStore((s) => s.activeRole);
   const user = useAuthStore((s) => s.user);
   const tenantId = activeRole?.tenantId || user?.tenantId || "";
-  const themeMode = useAuthStore((s) => s.themeMode);
 
   const [logs, setLogs] = useState<AuditOperationLog[]>([]);
   const [total, setTotal] = useState(0);
@@ -179,7 +178,7 @@ export function OperationLogsTab({ setLoading }: OperationLogsTabProps) {
               onChange={handlePageChange}
               showSizeChanger
               pageSizeOptions={["10", "20", "50"]}
-              className={themeMode === "dark" ? "agent-pagination--dark" : ""}
+              className="agent-admin-pagination"
             />
           </div>
         </div>

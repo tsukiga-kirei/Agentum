@@ -9,6 +9,7 @@ import { AgentumMark } from "../../components/brand/AgentumMark";
 import { API_BASE_URL, authApi } from "../../services/apiClient";
 import { firstAllowedSurfacePath, paths } from "../../routes/paths";
 import type { LoginResponse, PortalType } from "../../types/auth";
+import { isDarkTheme } from "../../utils/theme";
 
 // 登录入口选项，与 docs/system-overview.md 中角色定义对齐。
 // 三种入口面向不同角色，登录后进入不同默认页面。
@@ -63,7 +64,7 @@ export function LoginPage() {
   const bootstrapRequired = useAuthStore((s) => s.bootstrapRequired);
   const navigate = useNavigate();
   const location = useLocation();
-  const isDark = themeMode === "dark";
+  const isDark = isDarkTheme(themeMode);
 
   const [form] = Form.useForm<LoginFormValues>();
   const selectedTenantId = Form.useWatch("tenantId", form);
@@ -382,8 +383,8 @@ export function LoginPage() {
                 },
                 components: {
                   Select: {
-                    optionActiveBg: isDark ? "#1a2540" : "#f5f6fa",
-                    optionSelectedBg: isDark ? "rgba(79, 70, 229, 0.2)" : "#eef2ff",
+                    optionActiveBg: "var(--color-bg-hover)",
+                    optionSelectedBg: "var(--color-primary-bg)",
                   },
                 },
               }}

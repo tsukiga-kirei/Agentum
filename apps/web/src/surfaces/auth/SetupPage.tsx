@@ -6,6 +6,7 @@ import { AgentumMark } from "../../components/brand/AgentumMark";
 import { ThemeToggle } from "../../components/ThemeToggle";
 import { paths } from "../../routes/paths";
 import { useAuthStore } from "../../stores/authStore";
+import { isDarkTheme } from "../../utils/theme";
 
 type SetupFormValues = {
   username?: string;
@@ -23,7 +24,7 @@ export function SetupPage() {
   const [form] = Form.useForm<SetupFormValues>();
   const [loading, setLoading] = useState(false);
   const [messageApi, messageContextHolder] = message.useMessage();
-  const isDark = themeMode === "dark";
+  const isDark = isDarkTheme(themeMode);
 
   useEffect(() => {
     if (!bootstrapRequired) {

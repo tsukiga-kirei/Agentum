@@ -10,6 +10,7 @@ import { auditApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import type { AuditEvidence } from "../../types/audit";
 import { RunStateBadge } from "./RunStateBadge";
+import { getThemedDrawerRootClassName } from "../../utils/theme";
 
 interface RunEvidenceDrawerProps {
   runId: string | null;
@@ -32,6 +33,7 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
   const user = useAuthStore((s) => s.user);
   const tenantId = activeRole?.tenantId || user?.tenantId || "";
   const themeMode = useAuthStore((s) => s.themeMode);
+  const drawerRootClassName = getThemedDrawerRootClassName(themeMode);
 
   const [loading, setLoading] = useState(false);
   const [evidence, setEvidence] = useState<AuditEvidence | null>(null);
@@ -365,7 +367,7 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
         </div>
       }
       closable={true}
-      rootClassName={themeMode === "dark" ? "agent-admin-drawer agent-admin-drawer--dark" : "agent-admin-drawer"}
+      rootClassName={drawerRootClassName}
     >
       {/* 恢复 sys-drawer-section 整体页面级可滑动模型，事件轨迹与变量快照在下方衔接并可一直往下滚 */}
       <div className="sys-drawer-section sys-drawer-section-enter">

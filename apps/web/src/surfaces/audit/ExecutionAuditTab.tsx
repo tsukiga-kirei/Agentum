@@ -16,7 +16,6 @@ export function ExecutionAuditTab({ setLoading }: ExecutionAuditTabProps) {
   const activeRole = useAuthStore((s) => s.activeRole);
   const user = useAuthStore((s) => s.user);
   const tenantId = activeRole?.tenantId || user?.tenantId || "";
-  const themeMode = useAuthStore((s) => s.themeMode);
 
   const [runs, setRuns] = useState<AuditRunSummary[]>([]);
   const [total, setTotal] = useState(0);
@@ -165,7 +164,7 @@ export function ExecutionAuditTab({ setLoading }: ExecutionAuditTabProps) {
               onChange={handlePageChange}
               showSizeChanger
               pageSizeOptions={["10", "20", "50"]}
-              className={themeMode === "dark" ? "agent-pagination--dark" : ""}
+              className="agent-admin-pagination"
             />
           </div>
         </div>

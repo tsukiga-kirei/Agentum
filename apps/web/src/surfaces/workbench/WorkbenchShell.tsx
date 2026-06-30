@@ -48,6 +48,7 @@ import type {
   WorkbenchSummary,
   WorkbenchTaskRunRow,
 } from "../../types/workbench";
+import { getThemedDrawerRootClassName } from "../../utils/theme";
 
 type WorkbenchTab = "overview" | "create" | "tasks";
 type TaskCenterTab = "active" | "history";
@@ -119,7 +120,7 @@ export function WorkbenchShell() {
   const user = useAuthStore((s) => s.user);
   const token = useAuthStore((s) => s.token);
   const tenantId = user?.tenantId ?? null;
-  const isDarkMode = themeMode === "dark";
+  const drawerRootClassName = getThemedDrawerRootClassName(themeMode);
   const [messageApi, messageContextHolder] = message.useMessage();
 
   const activeWorkbenchTab = useMemo<WorkbenchTab>(() => {
@@ -996,7 +997,7 @@ export function WorkbenchShell() {
         )}
         <WorkflowLaunchDrawer
           workflow={workflowDrawer}
-          rootClassName={isDarkMode ? "agent-admin-drawer agent-admin-drawer--dark" : "agent-admin-drawer"}
+          rootClassName={drawerRootClassName}
           onClose={() => setWorkflowDrawer(null)}
           onLaunch={handleLaunchTask}
           launching={creatingWorkflowId === workflowDrawer?.id}

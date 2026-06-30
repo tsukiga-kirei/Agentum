@@ -39,6 +39,7 @@ import { AgentumApiError, organizationApi, systemApi } from "../../services/apiC
 import { useAuthStore } from "../../stores/authStore";
 import type { OrganizationMembership, TenantOrganizationOverview } from "../../types/organization";
 import { isValidUsername, usernameRuleMessage } from "../../utils/username";
+import { getThemedDrawerRootClassName } from "../../utils/theme";
 import type {
   CreateModelProviderRequest,
   CreateTenantAdminRequest,
@@ -401,7 +402,7 @@ export function SystemManagementPage() {
   const themeMode = useAuthStore((s) => s.themeMode);
   const fetchSsoProviders = useAuthStore((s) => s.fetchSsoProviders);
   const [messageApi, messageContextHolder] = message.useMessage();
-  const drawerRootClassName = themeMode === "dark" ? "agent-admin-drawer agent-admin-drawer--dark" : "agent-admin-drawer";
+  const drawerRootClassName = getThemedDrawerRootClassName(themeMode);
 
   const [loading, setLoading] = useState(false);
 

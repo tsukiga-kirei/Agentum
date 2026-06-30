@@ -14,6 +14,7 @@ import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { AgentumMark } from "../components/brand/AgentumMark";
 import { useAuthStore } from "../stores/authStore";
 import { surfaceFromPath, surfaceNavPath, type SurfaceKey } from "../routes/paths";
+import { isDarkTheme } from "../utils/theme";
 
 const ICON_MAP = {
   LayoutDashboard,
@@ -30,7 +31,7 @@ export function AppLayout() {
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
   const location = useLocation();
-  const isDarkMode = themeMode === "dark";
+  const isDarkMode = isDarkTheme(themeMode);
   const activeSurface = surfaceFromPath(location.pathname);
   const isRunDetail = location.pathname.includes("/workbench/runs/");
   const isWorkflowEditor = location.pathname.includes("/designer/workflows/");

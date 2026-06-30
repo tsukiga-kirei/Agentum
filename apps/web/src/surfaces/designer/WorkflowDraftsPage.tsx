@@ -43,6 +43,7 @@ import type {
   CollaborationAccessScope,
 } from "../../types/workflow-contract";
 import { parsePositiveInt, paths } from "../../routes/paths";
+import { getThemedDrawerRootClassName } from "../../utils/theme";
 
 // 工作流草稿列表是设计态入口，不等同于运行实例；发布后需要生成不可变 WorkflowVersion。
 export type WorkflowDraft = WorkflowDraftRow;
@@ -110,6 +111,7 @@ export function WorkflowDraftsPage() {
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
   const themeMode = useAuthStore((s) => s.themeMode);
+  const drawerRootClassName = getThemedDrawerRootClassName(themeMode);
   const [messageApi, messageContextHolder] = message.useMessage();
   const [workflows, setWorkflows] = useState<WorkflowDraft[]>([]);
   const [isCreating, setIsCreating] = useState(false);
@@ -162,7 +164,6 @@ export function WorkflowDraftsPage() {
 
   const currentUserId = user?.id ?? "";
   const currentScope: WorkflowListScope = activeTab === "mine" ? "mine" : activeTab === "all" ? "shared" : "all";
-  const drawerRootClassName = themeMode === "dark" ? "agent-admin-drawer agent-admin-drawer--dark" : "agent-admin-drawer";
   const shareableMemberOptions = useMemo(
     () => shareableMembers.map((member) => ({ value: member.userId, label: `${member.displayName} · ${member.username}` })),
     [shareableMembers],

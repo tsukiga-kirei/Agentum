@@ -8,6 +8,7 @@ import { mergeClusterAgents, parseClusterAgentSummariesFromOutputs } from "../..
 import { formatRuntimeErrorMessage } from "../../utils/runtimeErrors";
 import { pickBestAgentOutput } from "../../utils/agentOutputText";
 import { resolveSystemDisplayPrompt, resolveUserDisplayPrompt } from "../../utils/resolveDisplayPrompts";
+import { getThemedDrawerRootClassName } from "../../utils/theme";
 
 interface MultiAgentPanelProps {
   activeStep: RuntimePreviewStep;
@@ -48,6 +49,7 @@ export function MultiAgentPanel({
 }: MultiAgentPanelProps) {
   const [selectedAgent, setSelectedAgent] = useState<DrawerAgent | null>(null);
   const themeMode = useAuthStore((s) => s.themeMode);
+  const drawerRootClassName = getThemedDrawerRootClassName(themeMode, "multi-agent-detail-drawer");
 
   const configAgents = Array.isArray(activeStep.configSnapshot?.clusterAgents)
     ? (activeStep.configSnapshot?.clusterAgents as Array<Record<string, unknown>>)
@@ -224,7 +226,7 @@ export function MultiAgentPanel({
           width={640}
           open
           onClose={() => setSelectedAgent(null)}
-          rootClassName={themeMode === "dark" ? "agent-admin-drawer agent-admin-drawer--dark multi-agent-detail-drawer" : "agent-admin-drawer multi-agent-detail-drawer"}
+          rootClassName={drawerRootClassName}
         >
           <SingleAgentPanel
             activeStep={buildAgentDetailStep(activeStep, selectedAgent)}
