@@ -122,34 +122,34 @@ body,
 
 :root[data-theme="warm"] {
   color-scheme: light;
-  --font-sans: "Noto Sans SC", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-sans: "Noto Serif SC", "Songti SC", STSong, "Noto Sans SC", Georgia, "Times New Roman", serif;
   --font-serif: "Noto Serif SC", "Songti SC", STSong, Georgia, "Times New Roman", serif;
 
   /* 参考 AI 比赛两个 Vue 原型的纸感暖色系：减少冷灰与纯白，提升中文信息密度下的可读性。 */
   --color-bg-page: #fbfaf7;
-  --color-bg-card: rgba(255, 255, 255, 0.82);
-  --color-bg-input: rgba(255, 255, 255, 0.9);
+  --color-bg-card: rgba(255, 252, 248, 0.88);
+  --color-bg-input: #fffaf4;
   --color-bg-hover: #f3f2ef;
   --color-bg-sidebar: rgba(251, 250, 247, 0.72);
   --color-bg-sidebar-hover: rgba(255, 255, 255, 0.82);
   --color-bg-sidebar-active: rgba(217, 119, 87, 0.11);
 
-  --color-border: #d8d3ca;
-  --color-border-light: rgba(222, 219, 213, 0.78);
+  --color-border: #cfc6ba;
+  --color-border-light: rgba(207, 198, 186, 0.86);
   --color-sidebar-border: rgba(222, 219, 213, 0.76);
 
-  --color-text-primary: #2d2a27;
-  --color-text-secondary: #665f58;
-  --color-text-tertiary: #958c82;
+  --color-text-primary: #25211d;
+  --color-text-secondary: #524a43;
+  --color-text-tertiary: #7e746a;
   --color-text-sidebar: #514b45;
   --color-text-sidebar-active: #9b4d35;
   --color-sidebar-section-title: #9a928a;
   --color-sidebar-logo-text: #34302c;
 
-  --color-primary: #b75f42;
-  --color-primary-light: #d97757;
-  --color-primary-dark: #8f4933;
-  --color-primary-bg: rgba(217, 119, 87, 0.13);
+  --color-primary: #a9563e;
+  --color-primary-light: #c46246;
+  --color-primary-dark: #7f3f2d;
+  --color-primary-bg: rgba(169, 86, 62, 0.14);
   --color-primary-lighter: #e7b39f;
 
   --color-accent: #4f8675;
@@ -1153,6 +1153,25 @@ textarea:focus-visible {
 
 .agent-select-dropdown .ant-select-item-group {
   color: var(--color-text-tertiary);
+}
+
+:root[data-theme="warm"] .agent-select-dropdown {
+  border-color: #c8bcae;
+  background: #fffaf4;
+  box-shadow: 0 18px 42px rgba(33, 30, 27, 0.12);
+}
+
+:root[data-theme="warm"] .agent-select-dropdown .ant-select-item {
+  color: var(--color-text-primary);
+}
+
+:root[data-theme="warm"] .agent-select-dropdown .ant-select-item-option-active:not(.ant-select-item-option-disabled) {
+  background: #f3ece3;
+}
+
+:root[data-theme="warm"] .agent-select-dropdown .ant-select-item-option-selected:not(.ant-select-item-option-disabled) {
+  background: color-mix(in srgb, var(--color-primary) 13%, #fffaf4);
+  color: var(--color-primary-dark);
 }
 
 .agent-admin-select-dropdown {
@@ -2169,7 +2188,7 @@ textarea:focus-visible {
 
 :root[data-theme="warm"] .login-form-side {
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(250, 247, 242, 0.92)),
+    linear-gradient(180deg, rgba(255, 253, 249, 0.94), rgba(247, 241, 233, 0.94)),
     var(--color-bg-card);
 }
 
@@ -2277,8 +2296,8 @@ textarea:focus-visible {
 }
 
 :root[data-theme="warm"] .login-portal-segmented {
-  background: rgba(243, 242, 239, 0.92);
-  border-color: var(--color-border-light);
+  background: rgba(238, 231, 222, 0.78);
+  border-color: #c9beb0;
 }
 
 :root[data-theme="warm"] .login-portal-segmented .ant-segmented-item {
@@ -2295,8 +2314,11 @@ textarea:focus-visible {
 }
 
 :root[data-theme="warm"] .login-portal-segmented .ant-segmented-thumb {
-  background: color-mix(in srgb, var(--login-portal-color) 9%, #fffaf4);
-  box-shadow: 0 8px 18px rgba(33, 30, 27, 0.06);
+  border-color: color-mix(in srgb, var(--login-portal-color) 46%, #b9ac9c);
+  background: color-mix(in srgb, var(--login-portal-color) 11%, #fffaf4);
+  box-shadow:
+    0 8px 18px rgba(33, 30, 27, 0.075),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.7);
 }
 
 .login-portal-option {
@@ -2668,6 +2690,48 @@ textarea:focus-visible {
   background: var(--color-bg-input) !important;
 }
 
+:root[data-theme="warm"] .login-ant-input,
+:root[data-theme="warm"] .login-ant-input input,
+:root[data-theme="warm"] .agent-tenant-select .ant-select-selector {
+  border-color: #c8bcae !important;
+  background: #fffaf4 !important;
+  color: var(--color-text-primary) !important;
+}
+
+:root[data-theme="warm"] .login-ant-input,
+:root[data-theme="warm"] .agent-tenant-select .ant-select-selector {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.76),
+    0 8px 18px rgba(33, 30, 27, 0.035);
+}
+
+:root[data-theme="warm"] .login-ant-input:hover,
+:root[data-theme="warm"] .agent-tenant-select:hover .ant-select-selector {
+  border-color: color-mix(in srgb, var(--login-portal-color, var(--color-primary)) 48%, #b9ac9c) !important;
+  background: #fffdf9 !important;
+}
+
+:root[data-theme="warm"] .login-ant-input.ant-input-affix-wrapper-focused,
+:root[data-theme="warm"] .login-ant-input:focus,
+:root[data-theme="warm"] .login-ant-input:focus-within,
+:root[data-theme="warm"] .agent-tenant-select.ant-select-focused .ant-select-selector {
+  border-color: color-mix(in srgb, var(--login-portal-color, var(--color-primary)) 68%, #9e8f7d) !important;
+  background: #fffdf9 !important;
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--login-portal-color, var(--color-primary)) 15%, transparent),
+    0 10px 24px rgba(33, 30, 27, 0.055) !important;
+}
+
+:root[data-theme="warm"] .login-ant-input input::placeholder,
+:root[data-theme="warm"] .agent-tenant-select .ant-select-selection-placeholder {
+  color: #8a7f73 !important;
+}
+
+:root[data-theme="warm"] .login-input-icon,
+:root[data-theme="warm"] .login-ant-input .ant-input-password-icon {
+  color: #746a60;
+}
+
 .login-ant-input input::selection,
 .login-ant-input::selection {
   background: color-mix(in srgb, var(--color-primary) 20%, transparent);
@@ -2683,6 +2747,15 @@ textarea:focus-visible {
   caret-color: var(--color-text-primary);
   box-shadow: 0 0 0 1000px var(--color-bg-input) inset !important;
   transition: background-color 9999s ease-out;
+}
+
+:root[data-theme="warm"] .login-ant-input input:-webkit-autofill,
+:root[data-theme="warm"] .login-ant-input input:-webkit-autofill:hover,
+:root[data-theme="warm"] .login-ant-input input:-webkit-autofill:focus,
+:root[data-theme="warm"] .login-ant-input:-webkit-autofill,
+:root[data-theme="warm"] .login-ant-input:-webkit-autofill:hover,
+:root[data-theme="warm"] .login-ant-input:-webkit-autofill:focus {
+  box-shadow: 0 0 0 1000px #fffaf4 inset !important;
 }
 
 .login-input-icon {
@@ -2734,7 +2807,7 @@ textarea:focus-visible {
 
 .login-submit-button.ant-btn-primary {
   border-color: var(--login-portal-color) !important;
-  background: linear-gradient(135deg, var(--login-portal-color), color-mix(in srgb, var(--login-portal-color) 76%, #ffffff 24%)) !important;
+  background: var(--login-portal-color) !important;
   color: #ffffff !important;
   box-shadow: 0 10px 24px color-mix(in srgb, var(--login-portal-color) 26%, transparent) !important;
 }
@@ -2742,9 +2815,29 @@ textarea:focus-visible {
 .login-submit-button.ant-btn-primary:hover,
 .login-submit-button.ant-btn-primary:focus {
   border-color: color-mix(in srgb, var(--login-portal-color) 82%, #000000 18%) !important;
-  background: linear-gradient(135deg, color-mix(in srgb, var(--login-portal-color) 84%, #000000 16%), var(--login-portal-color)) !important;
+  background: color-mix(in srgb, var(--login-portal-color) 88%, #000000 12%) !important;
   color: #ffffff !important;
   box-shadow: 0 14px 30px color-mix(in srgb, var(--login-portal-color) 34%, transparent) !important;
+}
+
+:root[data-theme="warm"] .login-page .login-submit-button.ant-btn-primary {
+  border-color: color-mix(in srgb, var(--login-portal-color) 88%, #2a211b 12%) !important;
+  background: var(--login-portal-color) !important;
+  color: #fffdf9 !important;
+  text-shadow: 0 1px 0 rgba(42, 33, 27, 0.18);
+  box-shadow:
+    0 10px 22px color-mix(in srgb, var(--login-portal-color) 28%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18) !important;
+}
+
+:root[data-theme="warm"] .login-page .login-submit-button.ant-btn-primary:hover,
+:root[data-theme="warm"] .login-page .login-submit-button.ant-btn-primary:focus {
+  border-color: color-mix(in srgb, var(--login-portal-color) 78%, #211912 22%) !important;
+  background: color-mix(in srgb, var(--login-portal-color) 86%, #211912 14%) !important;
+  color: #fffdf9 !important;
+  box-shadow:
+    0 14px 28px color-mix(in srgb, var(--login-portal-color) 34%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14) !important;
 }
 
 .login-sso-placeholder {
@@ -2799,6 +2892,17 @@ textarea:focus-visible {
   color: var(--color-text-tertiary);
   font-size: 13px;
   text-align: center;
+}
+
+:root[data-theme="warm"] .login-subheading,
+:root[data-theme="warm"] .login-portal-description,
+:root[data-theme="warm"] .login-footer {
+  color: #756b60;
+}
+
+:root[data-theme="warm"] .login-footer {
+  font-size: 14px;
+  font-weight: 650;
 }
 
 .setup-container {

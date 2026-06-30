@@ -51,9 +51,9 @@ const portalColorsByTheme: Record<ThemeMode, Record<PortalType, string>> = {
     system_admin: "#f87171",
   },
   warm: {
-    business: "#4f8675",
-    tenant_admin: "#b07b24",
-    system_admin: "#b65a4a",
+    business: "#3f7565",
+    tenant_admin: "#9a681f",
+    system_admin: "#a64f40",
   },
 };
 
