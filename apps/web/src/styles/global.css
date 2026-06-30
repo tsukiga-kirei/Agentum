@@ -1288,7 +1288,7 @@ textarea:focus-visible {
   border-color: var(--color-primary) !important;
   color: var(--color-primary) !important;
 }
-/* ==================== 主题切换药丸（与 AuraOA 完全一致） ==================== */
+/* ==================== 主题切换药丸 ==================== */
 .theme-toggle-btn {
   width: auto !important;
   padding: 0 !important;
@@ -2419,7 +2419,7 @@ textarea:focus-visible {
   }
 }
 
-/* ==================== 系统管理页（AuraOA 风格） ==================== */
+/* ==================== 系统管理页 ==================== */
 
 /* 卡片网格：租户 / 模型 / 能力共用；列宽随容器自适应，避免底部操作按钮把整行撑出横向滚动 */
 .sys-card-grid {
@@ -2840,7 +2840,7 @@ textarea:focus-visible {
   max-width: 100%;
 }
 
-/* 自定义按钮（替代 Ant Button，与 AuraOA 风格统一） */
+/* 自定义按钮（替代 Ant Button，与 Agentum 风格统一） */
 .sys-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   height: 36px; padding: 0 18px; border: 1px solid transparent; border-radius: var(--radius-md);

@@ -1,5 +1,5 @@
 // 认证相关类型契约，与后端 auth 模块的 API 返回对齐。
-// 参照 AuraOA 的角色分配模型，支持一个用户多角色多租户和角色切换。
+// 角色分配模型支持一个用户多角色多租户和角色切换。
 
 /** 主题模式 */
 export type ThemeMode = "light" | "dark";
@@ -40,7 +40,7 @@ export type UserRole =
   | "executor"
   | "observer";
 
-/** 角色分配信息（参照 AuraOA RoleInfo），来自 user_role_assignments 表 */
+/** 角色分配信息，来自 user_role_assignments 表 */
 export type RoleInfo = {
   id: string;
   role: SystemRole;
@@ -93,7 +93,7 @@ export type AuthUser = {
   lastLoginAt: string;
 };
 
-/** 登录响应（参照 AuraOA，包含完整角色列表和菜单） */
+/** 登录响应，包含完整角色列表和菜单 */
 export type LoginResponse = {
   token: string;
   user: AuthUser;

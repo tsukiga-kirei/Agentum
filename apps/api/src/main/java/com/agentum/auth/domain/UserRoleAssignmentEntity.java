@@ -7,7 +7,7 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
 
-// 用户系统级角色分配（参照 AuraOA user_role_assignments）。
+// 用户系统级角色分配。
 // 一个用户可拥有多条记录，表达在不同租户中以不同系统角色登录。
 // system_admin 角色的 tenant_id 为 NULL。
 @Entity

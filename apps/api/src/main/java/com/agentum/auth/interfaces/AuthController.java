@@ -79,7 +79,7 @@ public class AuthController {
         return ApiResponse.success(authService.currentUser(principal), RequestIds.current(request));
     }
 
-    // 角色切换：传入 user_role_assignments 的 ID，后端校验归属后重签 token（参照 AuraOA PUT /api/auth/switch-role）。
+    // 角色切换：传入 user_role_assignments 的 ID，后端校验归属后重签 token。
     @PutMapping("/switch-role")
     public ApiResponse<SwitchRoleResponse> switchRole(
         @AuthenticationPrincipal CurrentUserPrincipal principal,

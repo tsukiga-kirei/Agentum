@@ -4,7 +4,7 @@ import type { AuthUser, LoginResponse, MenuItem, PortalType, RoleInfo, SsoProvid
 import { clearAuthToken, persistAuthToken, readStoredAuthToken } from "./authSession";
 
 // 认证状态管理负责前端会话缓存，真实身份、租户和角色上下文全部以后端 auth API 为准。
-// 参照 AuraOA，登录后保存完整角色列表和菜单，角色切换通过 switchRole API 完成。
+// 登录后保存完整角色列表和菜单，角色切换通过 switchRole API 完成。
 
 type AuthState = {
   /** 当前登录用户信息，null 表示未登录 */
@@ -58,7 +58,7 @@ type AuthActions = {
   logout: () => Promise<void>;
   /** 从本地缓存恢复会话（调用 /api/auth/me 获取完整角色和菜单上下文） */
   restoreSession: () => void;
-  /** 切换角色（参照 AuraOA switch-role） */
+  /** 切换角色 */
   switchRole: (roleId: string) => Promise<{ success: boolean; message?: string }>;
   /** 切换主题模式 */
   setThemeMode: (mode: ThemeMode) => void;

@@ -3,7 +3,7 @@ import { ChevronDown, Check, Building2, Shield, LayoutDashboard, ShieldCheck } f
 import { useAuthStore } from "../stores/authStore";
 import type { RoleInfo } from "../types/auth";
 
-// 角色切换器（参照 AuraOA），展示用户所有可用角色并支持一键切换。
+// 角色切换器，展示用户所有可用角色并支持一键切换。
 // 切换角色后后端重签 token，前端更新菜单和活跃角色，无需重新登录。
 
 const ROLE_LABELS: Record<string, { label: string; icon: typeof Shield }> = {

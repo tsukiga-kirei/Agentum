@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 平台级系统管理接口：租户状态、模型供应商注册、全局能力与租户授权。
- * 必须由 system_admin 调用；具体路由与菜单分层可对照 AuraOA，但实现保持 Spring 边界。
+ * 必须由 system_admin 调用；具体路由与菜单分层保持 Agentum 自身的 Spring 边界。
  */
 @RestController
 @RequestMapping("/api/system")

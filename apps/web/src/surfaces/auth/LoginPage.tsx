@@ -318,7 +318,7 @@ export function LoginPage() {
         <div className="login-bg-shape login-bg-shape--3" />
       </div>
 
-      {/* 右上角主题切换（与 AuraOA 一致） */}
+      {/* 右上角主题切换 */}
       <div className="login-theme-toggle">
         <ThemeToggle />
       </div>

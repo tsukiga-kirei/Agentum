@@ -1,7 +1,7 @@
 import { Moon, Sun } from "lucide-react";
 import { useAuthStore } from "../stores/authStore";
 
-// 主题切换药丸开关，完全照搬 AuraOA 的 theme-toggle-btn 实现。
+// 主题切换药丸开关，保持 Agentum 顶栏操作区的紧凑风格。
 // 结构：外层透明按钮 > 轨道 track > 滑块 thumb（内含图标）。
 // 深色模式通过 --dark 修饰类控制轨道颜色和滑块位移。
 export function ThemeToggle() {

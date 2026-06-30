@@ -1545,7 +1545,7 @@ export function SystemManagementPage() {
           </Spin>
       </SurfacePageLayout>
 
-      {/* 租户详情侧拉抽屉（AuraOA 风格页签 + 表单行） */}
+      {/* 租户详情侧拉抽屉（页签 + 表单行） */}
       <Drawer
         title={selectedTenant?.name ? `${selectedTenant.name} — 配置管理` : "租户配置管理"}
         placement="right"
@@ -1818,7 +1818,7 @@ export function SystemManagementPage() {
         </>)}
       </Drawer>
 
-      {/* 新增租户弹窗（AuraOA 分页签风格） */}
+      {/* 新增租户弹窗（分页签风格） */}
       {createTenantModalOpen && (
         <div className="sys-modal-mask" onClick={()=>setCreateTenantModalOpen(false)}>
           <div className="sys-modal" style={{maxWidth:600}} onClick={e=>e.stopPropagation()}>
