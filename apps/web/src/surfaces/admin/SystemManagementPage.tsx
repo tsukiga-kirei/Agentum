@@ -33,6 +33,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { Empty, Segmented, Spin, message, Drawer, Pagination } from "antd";
 import { SurfacePageLayout } from "../../components/workbench/SurfacePageLayout";
+import { SysModalMask } from "../../components/common/SysModalMask";
 import { DocumentDeliveryStyleAdminSections } from "../../components/document/DocumentDeliveryStyleAdminSections";
 import { paths } from "../../routes/paths";
 import { AgentumApiError, organizationApi, systemApi } from "../../services/apiClient";
@@ -1199,16 +1200,15 @@ export function SystemManagementPage() {
     <>
       {messageContextHolder}
       {deleteConfirm ? (
-        <div
-          className="sys-modal-mask agent-delete-confirm-mask"
-          onClick={() => !deleteSubmitting && setDeleteConfirm(null)}
+        <SysModalMask
+          onClose={() => !deleteSubmitting && setDeleteConfirm(null)}
+          className="agent-delete-confirm-mask"
         >
           <div
             className="sys-modal agent-delete-confirm-modal"
             role="dialog"
             aria-modal="true"
             aria-labelledby="system-delete-confirm-title"
-            onClick={(event) => event.stopPropagation()}
           >
             <div className="agent-delete-confirm-body">
               <div className="agent-delete-confirm-icon">
@@ -1238,7 +1238,7 @@ export function SystemManagementPage() {
               </button>
             </div>
           </div>
-        </div>
+        </SysModalMask>
       ) : null}
       {capabilityTestResult ? (() => {
         const testedCapability = capabilities.find((c) => c.id === capabilityTestResult.capabilityId)
@@ -1247,8 +1247,8 @@ export function SystemManagementPage() {
         const detailTitle = getCapabilityTestDetailTitle(testedCapabilityType);
         const reachability = resolveConnectivityStatus(capabilityTestResult.connectivityStatus);
         return (
-        <div className="sys-modal-mask" onClick={() => setCapabilityTestResult(null)}>
-          <div className="sys-modal" style={{ maxWidth: 640 }} onClick={(event) => event.stopPropagation()}>
+        <SysModalMask onClose={() => setCapabilityTestResult(null)}>
+          <div className="sys-modal" style={{ maxWidth: 640 }}>
             <div className="sys-modal-header">
               <span className="sys-modal-title">连通性测试结果</span>
               <button className="sys-modal-close" onClick={() => setCapabilityTestResult(null)}><X size={18}/></button>
@@ -1287,7 +1287,7 @@ export function SystemManagementPage() {
               <button className="sys-btn sys-btn--default" onClick={() => setCapabilityTestResult(null)}><X size={14}/> 关闭</button>
             </div>
           </div>
-        </div>
+        </SysModalMask>
         );
       })() : null}
       <SurfacePageLayout
@@ -1779,8 +1779,11 @@ export function SystemManagementPage() {
           )}
 
           {tenantAdminModalOpen && (
-            <div className="sys-modal-mask sys-modal-mask--over-drawer" onClick={() => !tenantAdminSubmitting && setTenantAdminModalOpen(false)}>
-              <div className="sys-modal" style={{ maxWidth: 600 }} onClick={(event) => event.stopPropagation()}>
+            <SysModalMask
+              onClose={() => !tenantAdminSubmitting && setTenantAdminModalOpen(false)}
+              className="sys-modal-mask--over-drawer"
+            >
+              <div className="sys-modal" style={{ maxWidth: 600 }}>
                 <div className="sys-modal-header">
                   <span className="sys-modal-title">{editingTenantAdmin ? "编辑租户管理员" : "新增租户管理员"}</span>
                   <button type="button" className="sys-modal-close" disabled={tenantAdminSubmitting} onClick={() => setTenantAdminModalOpen(false)}><X size={18}/></button>
@@ -1805,7 +1808,7 @@ export function SystemManagementPage() {
                   <button type="button" className="sys-btn sys-btn--primary" disabled={tenantAdminSubmitting} onClick={() => void submitTenantAdmin()}><PlusCircle size={14}/> {editingTenantAdmin ? "保存修改" : "确认新增"}</button>
                 </div>
               </div>
-            </div>
+            </SysModalMask>
           )}
 
           {/* 抽屉底部操作栏 */}
@@ -1817,8 +1820,8 @@ export function SystemManagementPage() {
 
       {/* 新增租户弹窗（分页签风格） */}
       {createTenantModalOpen && (
-        <div className="sys-modal-mask" onClick={()=>setCreateTenantModalOpen(false)}>
-          <div className="sys-modal" style={{maxWidth:600}} onClick={e=>e.stopPropagation()}>
+        <SysModalMask onClose={() => setCreateTenantModalOpen(false)}>
+          <div className="sys-modal" style={{maxWidth:600}}>
             <div className="sys-modal-header">
               <span className="sys-modal-title">新增租户及管理员</span>
               <button className="sys-modal-close" onClick={()=>setCreateTenantModalOpen(false)}><X size={18}/></button>
@@ -1854,7 +1857,7 @@ export function SystemManagementPage() {
               <button className="sys-btn sys-btn--primary" onClick={()=>void submitCreateTenant()}><PlusCircle size={14}/> 确认创建</button>
             </div>
           </div>
-        </div>
+        </SysModalMask>
       )}
 
       {/* 注册模型供应商抽屉 */}

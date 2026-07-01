@@ -1,4 +1,5 @@
 import { CircleAlert } from "lucide-react";
+import { SysModalMask } from "./SysModalMask";
 
 type SysImpactConfirmModalProps = {
   open: boolean;
@@ -29,13 +30,12 @@ export function SysImpactConfirmModal({
   const titleId = "sys-impact-confirm-title";
 
   return (
-    <div className="sys-modal-mask agent-delete-confirm-mask" onClick={onCancel}>
+    <SysModalMask onClose={onCancel} className="agent-delete-confirm-mask">
       <div
         className="sys-modal agent-delete-confirm-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        onClick={(event) => event.stopPropagation()}
       >
         <div className="agent-delete-confirm-body">
           <div className="agent-delete-confirm-icon">
@@ -59,6 +59,6 @@ export function SysImpactConfirmModal({
           </button>
         </div>
       </div>
-    </div>
+    </SysModalMask>
   );
 }

@@ -31,6 +31,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { Drawer, Pagination, Segmented, Select, message } from "antd";
 import { SurfacePageLayout } from "../../components/workbench/SurfacePageLayout";
+import { SysModalMask } from "../../components/common/SysModalMask";
 import { AgentumApiError, workflowApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import type {
@@ -852,8 +853,8 @@ export function WorkflowDraftsPage() {
       </Drawer>
 
       {isCreating ? (
-        <div className="sys-modal-mask" onClick={() => setIsCreating(false)}>
-          <section className="sys-modal" style={{ maxWidth: 560 }} aria-labelledby="create-draft-title" onClick={(event) => event.stopPropagation()}>
+        <SysModalMask onClose={() => setIsCreating(false)}>
+          <section className="sys-modal" style={{ maxWidth: 560 }} aria-labelledby="create-draft-title">
             <div className="sys-modal-header">
               <span id="create-draft-title" className="sys-modal-title">新建工作流</span>
               <button className="sys-modal-close" onClick={() => setIsCreating(false)} aria-label="关闭新建工作流弹窗"><X size={18} /></button>
@@ -882,12 +883,12 @@ export function WorkflowDraftsPage() {
               </div>
             </form>
           </section>
-        </div>
+        </SysModalMask>
       ) : null}
 
       {validationModal ? (
-        <div className="sys-modal-mask" onClick={() => setValidationModal(null)}>
-          <section className="sys-modal" style={{ maxWidth: 720 }} aria-labelledby="publish-validation-title" onClick={(event) => event.stopPropagation()}>
+        <SysModalMask onClose={() => setValidationModal(null)}>
+          <section className="sys-modal" style={{ maxWidth: 720 }} aria-labelledby="publish-validation-title">
             <div className="sys-modal-header">
               <div>
                 <div className="sys-field-label" style={{ marginBottom: 4 }}>发布校验</div>
@@ -925,12 +926,12 @@ export function WorkflowDraftsPage() {
               ) : null}
             </div>
           </section>
-        </div>
+        </SysModalMask>
       ) : null}
 
       {deleteTarget ? (
-        <div className="sys-modal-mask" onClick={() => setDeleteTarget(null)}>
-          <section className="sys-modal" style={{ maxWidth: 480 }} aria-labelledby="delete-workflow-title" onClick={(event) => event.stopPropagation()}>
+        <SysModalMask onClose={() => setDeleteTarget(null)}>
+          <section className="sys-modal" style={{ maxWidth: 480 }} aria-labelledby="delete-workflow-title">
             <div className="sys-modal-header">
               <span id="delete-workflow-title" className="sys-modal-title">删除流程</span>
               <button className="sys-modal-close" onClick={() => setDeleteTarget(null)} aria-label="关闭删除确认"><X size={18} /></button>
@@ -946,7 +947,7 @@ export function WorkflowDraftsPage() {
               <button type="button" className="sys-btn sys-btn--danger" disabled={submitting} onClick={() => void deleteWorkflow(deleteTarget)}>确认删除</button>
             </div>
           </section>
-        </div>
+        </SysModalMask>
       ) : null}
     </>
   );

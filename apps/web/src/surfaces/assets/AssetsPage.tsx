@@ -5,6 +5,7 @@ import { ArrowRight, Bot, Boxes, BrainCircuit, CheckCircle2, ChevronDown, Circle
 import type { LucideIcon } from "lucide-react";
 import { Empty, Pagination, Segmented, Select, Spin, message, Drawer } from "antd";
 import { SurfacePageLayout } from "../../components/workbench/SurfacePageLayout";
+import { SysModalMask } from "../../components/common/SysModalMask";
 import { AgentumApiError, assetApi } from "../../services/apiClient";
 import { paths } from "../../routes/paths";
 import { useAuthStore } from "../../stores/authStore";
@@ -514,8 +515,11 @@ export function AssetsPage() {
     <>
       {messageContextHolder}
       {deleteTarget ? (
-        <div className="sys-modal-mask agent-delete-confirm-mask" onClick={() => !submitting && setDeleteTarget(null)}>
-          <div className="sys-modal agent-delete-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="delete-my-asset-title" onClick={(event) => event.stopPropagation()}>
+        <SysModalMask
+          onClose={() => !submitting && setDeleteTarget(null)}
+          className="agent-delete-confirm-mask"
+        >
+          <div className="sys-modal agent-delete-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="delete-my-asset-title">
             <div className="agent-delete-confirm-body">
               <div className="agent-delete-confirm-icon">
                 <CircleAlert size={28} aria-hidden="true" />
@@ -534,7 +538,7 @@ export function AssetsPage() {
               </button>
             </div>
           </div>
-        </div>
+        </SysModalMask>
       ) : null}
       <SurfacePageLayout
         markClassName="asset-mgmt-page-mark"

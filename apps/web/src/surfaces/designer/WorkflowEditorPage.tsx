@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import { WorkbenchGlobalActions } from "../../components/workbench/SurfacePageLayout";
 import { SysImpactConfirmModal } from "../../components/common/SysImpactConfirmModal";
+import { SysModalMask } from "../../components/common/SysModalMask";
 import { DocumentDeliveryStyleSections } from "../../components/document/DocumentDeliveryStyleSections";
 import { readLineSpacingMode, readSpacingUnit, type DocumentDeliveryStyleValues, type ParagraphRule } from "../../constants/documentDeliveryStyleOptions";
 import { AgentumApiError, assetApi, workflowApi } from "../../services/apiClient";
@@ -1009,8 +1010,8 @@ function AddBrickModal({
   const hasDelivery = visibleNodes.some((node) => getBrickType(node) === "delivery");
 
   return (
-    <div className="sys-modal-mask" onClick={onClose}>
-      <section className="sys-modal" style={{ maxWidth: 720 }} aria-labelledby="add-brick-title" onClick={(event) => event.stopPropagation()}>
+    <SysModalMask onClose={onClose}>
+      <section className="sys-modal" style={{ maxWidth: 720 }} aria-labelledby="add-brick-title">
         <div className="sys-modal-header">
           <div>
             <div className="sys-field-label" style={{ marginBottom: 4 }}>添加到末尾</div>
@@ -1066,7 +1067,7 @@ function AddBrickModal({
           ) : null}
         </div>
       </section>
-    </div>
+    </SysModalMask>
   );
 }
 function NodeConfigPanel({
@@ -2250,8 +2251,8 @@ function InputFieldModal({
   const [draft, setDraft] = useState<InputFieldConfig>(field);
 
   return (
-    <div className="sys-modal-mask" onClick={onClose}>
-      <section className="sys-modal workflow-config-modal" aria-labelledby="input-field-modal-title" onClick={(event) => event.stopPropagation()}>
+    <SysModalMask onClose={onClose}>
+      <section className="sys-modal workflow-config-modal" aria-labelledby="input-field-modal-title">
         <div className="sys-modal-header">
           <div>
             <div className="sys-field-label" style={{ marginBottom: 4 }}>输入信息</div>
@@ -2305,7 +2306,7 @@ function InputFieldModal({
           <button type="button" className="sys-btn sys-btn--primary" onClick={() => onSave({ ...draft, variable: normalizeVariableName(draft.variable) || "input_value" })}>保存</button>
         </div>
       </section>
-    </div>
+    </SysModalMask>
   );
 }
 
@@ -2420,8 +2421,8 @@ function SingleAgentConfigModal({
   }
 
   return (
-    <div className="sys-modal-mask" onClick={handleCancel}>
-      <section className="sys-modal workflow-config-modal workflow-agent-modal" aria-labelledby="single-agent-modal-title" onClick={(event) => event.stopPropagation()}>
+    <SysModalMask onClose={handleCancel}>
+      <section className="sys-modal workflow-config-modal workflow-agent-modal" aria-labelledby="single-agent-modal-title">
         <div className="sys-modal-header">
           <div>
             <div className="sys-field-label" style={{ marginBottom: 4 }}>单智能体</div>
@@ -2524,7 +2525,7 @@ function SingleAgentConfigModal({
           </button>
         </div>
       </section>
-    </div>
+    </SysModalMask>
   );
 }
 
@@ -2561,8 +2562,8 @@ function ClusterAgentModal({
   });
 
   return (
-    <div className="sys-modal-mask" onClick={onClose}>
-      <section className="sys-modal workflow-config-modal workflow-agent-modal" aria-labelledby="cluster-agent-modal-title" onClick={(event) => event.stopPropagation()}>
+    <SysModalMask onClose={onClose}>
+      <section className="sys-modal workflow-config-modal workflow-agent-modal" aria-labelledby="cluster-agent-modal-title">
         <div className="sys-modal-header">
           <div>
             <div className="sys-field-label" style={{ marginBottom: 4 }}>智能体集群</div>
@@ -2682,7 +2683,7 @@ function ClusterAgentModal({
           </button>
         </div>
       </section>
-    </div>
+    </SysModalMask>
   );
 }
 

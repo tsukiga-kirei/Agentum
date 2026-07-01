@@ -29,6 +29,8 @@ import {
   X,
 } from "lucide-react";
 import { SurfacePageLayout } from "../../components/workbench/SurfacePageLayout";
+import { SysModalMask } from "../../components/common/SysModalMask";
+import { SysPasswordInput } from "../../components/common/SysPasswordInput";
 import { paths } from "../../routes/paths";
 import { AgentumApiError, organizationApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
@@ -957,8 +959,8 @@ export function TenantManagementPage() {
         </div>
 
       {createMemberOpen && (
-        <div className="sys-modal-mask" onClick={() => setCreateMemberOpen(false)}>
-          <div className="sys-modal" style={{ maxWidth: 640 }} onClick={(event) => event.stopPropagation()}>
+        <SysModalMask onClose={() => setCreateMemberOpen(false)}>
+          <div className="sys-modal" style={{ maxWidth: 640 }}>
             <div className="sys-modal-header">
               <span className="sys-modal-title">新增成员</span>
               <button className="sys-modal-close" onClick={() => setCreateMemberOpen(false)}><X size={18} /></button>
@@ -978,7 +980,13 @@ export function TenantManagementPage() {
               <div className="sys-field-row">
                 <div className="sys-field">
                   <label className="sys-field-label sys-field-label--required">初始密码</label>
-                  <div className="sys-field-input-wrap"><LockKeyhole size={16} className="sys-field-prefix" /><input className="sys-field-input" type="password" value={memberDraft.password} placeholder="至少 8 位" autoComplete="new-password" onChange={(event) => setMemberDraft((draft) => ({ ...draft, password: event.target.value }))} /></div>
+                  <SysPasswordInput
+                    prefixIcon={<LockKeyhole size={16} className="sys-field-prefix" />}
+                    value={memberDraft.password}
+                    placeholder="至少 8 位"
+                    autoComplete="new-password"
+                    onChange={(event) => setMemberDraft((draft) => ({ ...draft, password: event.target.value }))}
+                  />
                   <p className="sys-field-hint">默认密码为 agentum123，可按需要修改后再创建成员。</p>
                 </div>
                 <div className="sys-field">
@@ -1020,12 +1028,12 @@ export function TenantManagementPage() {
               <button className="sys-btn sys-btn--primary" disabled={createMemberSubmitting} onClick={() => void handleCreateMember(memberDraft)}><PlusCircle size={14} /> 创建成员</button>
             </div>
           </div>
-        </div>
+        </SysModalMask>
       )}
 
       {editMemberOpen && editingMembership && (
-        <div className="sys-modal-mask" onClick={() => setEditMemberOpen(false)}>
-          <div className="sys-modal" style={{ maxWidth: 560 }} onClick={(event) => event.stopPropagation()}>
+        <SysModalMask onClose={() => setEditMemberOpen(false)}>
+          <div className="sys-modal" style={{ maxWidth: 560 }}>
             <div className="sys-modal-header">
               <span className="sys-modal-title">编辑成员</span>
               <button className="sys-modal-close" onClick={() => setEditMemberOpen(false)}><X size={18} /></button>
@@ -1140,12 +1148,12 @@ export function TenantManagementPage() {
               <button className="sys-btn sys-btn--primary" disabled={memberEditSubmitting} onClick={() => void handleSubmitMemberEdit()}><Save size={14} /> 保存成员</button>
             </div>
           </div>
-        </div>
+        </SysModalMask>
       )}
 
       {memberImportResult && (
-        <div className="sys-modal-mask" onClick={() => setMemberImportResult(null)}>
-          <div className="sys-modal" style={{ maxWidth: 560 }} onClick={(event) => event.stopPropagation()}>
+        <SysModalMask onClose={() => setMemberImportResult(null)}>
+          <div className="sys-modal" style={{ maxWidth: 560 }}>
             <div className="sys-modal-header">
               <span className="sys-modal-title">成员导入结果</span>
               <button className="sys-modal-close" onClick={() => setMemberImportResult(null)}><X size={18} /></button>
@@ -1184,12 +1192,12 @@ export function TenantManagementPage() {
               <button className="sys-btn sys-btn--primary" onClick={() => setMemberImportResult(null)}><CheckCircle2 size={14} /> 知道了</button>
             </div>
           </div>
-        </div>
+        </SysModalMask>
       )}
 
       {createDepartmentOpen && (
-        <div className="sys-modal-mask" onClick={() => setCreateDepartmentOpen(false)}>
-          <div className="sys-modal" style={{ maxWidth: 560 }} onClick={(event) => event.stopPropagation()}>
+        <SysModalMask onClose={() => setCreateDepartmentOpen(false)}>
+          <div className="sys-modal" style={{ maxWidth: 560 }}>
             <div className="sys-modal-header">
               <span className="sys-modal-title">{editingDepartment ? "编辑部门" : "新增部门"}</span>
               <button className="sys-modal-close" onClick={() => { setCreateDepartmentOpen(false); setEditingDepartment(null); }}><X size={18} /></button>
@@ -1249,12 +1257,15 @@ export function TenantManagementPage() {
               <button className="sys-btn sys-btn--primary" disabled={departmentSubmitting} onClick={() => void handleSubmitDepartment()}><PlusCircle size={14} /> {editingDepartment ? "保存部门" : "创建部门"}</button>
             </div>
           </div>
-        </div>
+        </SysModalMask>
       )}
 
       {departmentDeleteTarget ? (
-        <div className="sys-modal-mask agent-delete-confirm-mask" onClick={() => !departmentSubmitting && setDepartmentDeleteTarget(null)}>
-          <div className="sys-modal agent-delete-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="tenant-department-delete-confirm-title" onClick={(event) => event.stopPropagation()}>
+        <SysModalMask
+          onClose={() => !departmentSubmitting && setDepartmentDeleteTarget(null)}
+          className="agent-delete-confirm-mask"
+        >
+          <div className="sys-modal agent-delete-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="tenant-department-delete-confirm-title">
             <div className="agent-delete-confirm-body">
               <div className="agent-delete-confirm-icon">
                 <AlertTriangle size={24} aria-hidden="true" />
@@ -1269,7 +1280,7 @@ export function TenantManagementPage() {
               <button type="button" className="sys-btn sys-btn--danger" disabled={departmentSubmitting} onClick={() => void handleConfirmDeleteDepartment()}>确认删除</button>
             </div>
           </div>
-        </div>
+        </SysModalMask>
       ) : null}
 
       {/* 角色编辑抽屉 */}
@@ -1335,8 +1346,11 @@ export function TenantManagementPage() {
       </Drawer>
 
       {roleDeleteTarget ? (
-        <div className="sys-modal-mask agent-delete-confirm-mask" onClick={() => !roleSubmitting && setRoleDeleteTarget(null)}>
-          <div className="sys-modal agent-delete-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="tenant-role-delete-confirm-title" onClick={(event) => event.stopPropagation()}>
+        <SysModalMask
+          onClose={() => !roleSubmitting && setRoleDeleteTarget(null)}
+          className="agent-delete-confirm-mask"
+        >
+          <div className="sys-modal agent-delete-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="tenant-role-delete-confirm-title">
             <div className="agent-delete-confirm-body">
               <div className="agent-delete-confirm-icon">
                 <AlertTriangle size={24} aria-hidden="true" />
@@ -1351,7 +1365,7 @@ export function TenantManagementPage() {
               <button type="button" className="sys-btn sys-btn--danger" disabled={roleSubmitting} onClick={() => void handleConfirmDeleteRole()}>确认删除</button>
             </div>
           </div>
-        </div>
+        </SysModalMask>
       ) : null}
 
       {/* 页签分配抽屉 */}

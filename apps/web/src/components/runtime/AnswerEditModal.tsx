@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Save, X } from "lucide-react";
+import { SysModalMask } from "../common/SysModalMask";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 
 interface AnswerEditModalProps {
@@ -29,11 +30,10 @@ export function AnswerEditModal({
   }
 
   return (
-    <div className="sys-modal-mask" onClick={onClose}>
+    <SysModalMask onClose={onClose}>
       <section
         className="sys-modal agent-answer-edit-modal"
         aria-labelledby="answer-edit-modal-title"
-        onClick={(event) => event.stopPropagation()}
       >
         <div className="sys-modal-header">
           <span id="answer-edit-modal-title" className="sys-modal-title">修改最终答案</span>
@@ -73,6 +73,6 @@ export function AnswerEditModal({
           </button>
         </div>
       </section>
-    </div>
+    </SysModalMask>
   );
 }

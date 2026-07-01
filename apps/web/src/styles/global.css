@@ -3811,6 +3811,33 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
 .sys-field-input-wrap .sys-field-input {
   padding-left: 40px;
 }
+.sys-field-input-wrap--password .sys-field-input {
+  padding-right: 40px;
+}
+.sys-field-password-toggle {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+.sys-field-password-toggle:hover {
+  color: var(--color-text-primary);
+  background: var(--color-bg-hover);
+}
+.sys-field-input-wrap--password .sys-field-input[type="password"] {
+  letter-spacing: 2px;
+}
 
 /* 弹窗内 Select 与 sys-field-input 同构：边框在外层 wrap，图标用绝对定位垂直居中 */
 .sys-field-input-wrap--select {
@@ -3906,7 +3933,6 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
   box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
 .sys-field-input::placeholder { color: var(--color-text-tertiary); }
-.sys-field-input[type="password"] { letter-spacing: 2px; }
 .sys-field-input:disabled {
   opacity: 1;
   cursor: not-allowed;

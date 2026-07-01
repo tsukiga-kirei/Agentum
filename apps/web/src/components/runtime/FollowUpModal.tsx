@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Send, X } from "lucide-react";
+import { SysModalMask } from "../common/SysModalMask";
 
 interface FollowUpModalProps {
   open: boolean;
@@ -30,11 +31,10 @@ export function FollowUpModal({
   }
 
   return (
-    <div className="sys-modal-mask" onClick={onClose}>
+    <SysModalMask onClose={onClose}>
       <section
         className="sys-modal agent-follow-up-modal"
         aria-labelledby="follow-up-modal-title"
-        onClick={(event) => event.stopPropagation()}
       >
         <div className="sys-modal-header">
           <span id="follow-up-modal-title" className="sys-modal-title">追问智能体</span>
@@ -64,6 +64,6 @@ export function FollowUpModal({
           </button>
         </div>
       </section>
-    </div>
+    </SysModalMask>
   );
 }
