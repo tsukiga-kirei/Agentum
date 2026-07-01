@@ -22,10 +22,7 @@ const AGENT_NODE_TYPES = new Set(["agent", "parallel_group"]);
 /**
  * 运行全链路审计证据链抽屉
  *
- * 布局：采用 sys-drawer-section 统一滚动模型，所有内容在一个可滚动区域内自然排列。
- * - 顶部 hero 概要卡片（参考 workflow-detail-drawer-hero 风格）
- * - 中间左右分栏：左侧节点步骤轨道 + 右侧节点详情面板
- * - 底部全景辅助：时间线 + 全局变量快照
+ * 布局：顶部 hero 概要 + 步骤看板（左右分栏独立滚动）+ 底部全景辅助折叠区。
  */
 export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
   const token = useAuthStore((s) => s.token) || "";
@@ -430,9 +427,8 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
                       </span>
                     ),
                     children: (
-                      <div className="run-evidence-body" style={{ minHeight: 460 }}>
-                        {/* 左侧流程节点步骤轨道 */}
-                        <div className="run-evidence-sidebar" style={{ overflowY: "visible", height: "auto" }}>
+                      <div className="run-evidence-body">
+                        <div className="run-evidence-sidebar">
                           <div className="run-evidence-node-list">
                             {evidence.nodeRuns.map((node) => {
                               const isActive = node.nodeKey === activeNodeKey;
@@ -460,8 +456,7 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
                           </div>
                         </div>
 
-                        {/* 右侧选定节点之下的日志和环境细节 */}
-                        <div className="run-evidence-content" style={{ overflowY: "visible", height: "auto" }}>
+                        <div className="run-evidence-content">
                           {activeNode ? (
                             <>
                               {/* 节点标题及基本元数据 */}

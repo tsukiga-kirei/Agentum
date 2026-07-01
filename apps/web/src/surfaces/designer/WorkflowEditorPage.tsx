@@ -76,6 +76,15 @@ import {
   WORKFLOW_SYSTEM_TEMPLATE_VARIABLES,
   type WorkflowNodeValidationIssue,
 } from "./workflowNodeValidation";
+import type { InputFieldConfig } from "../../types/runtime-types";
+import {
+  createInputField,
+  getInputFieldTypeLabel,
+  readInputFields,
+  validateInputFieldDraft,
+  WORKFLOW_INPUT_FIELD_TYPE_OPTIONS,
+  type WorkflowInputFieldType,
+} from "../../utils/workflowInputField";
 
 type EditorNodeData = {
   label: string;
@@ -127,15 +136,6 @@ type VariableReferenceItem = {
 
 type WorkflowBrickType = WorkflowBrickTemplate["brickType"];
 type VisibleWorkflowBrickType = Exclude<WorkflowBrickType, "trigger">;
-
-type InputFieldConfig = {
-  id: string;
-  label: string;
-  variable: string;
-  placeholder: string;
-  defaultValue: string;
-  required: boolean;
-};
 
 type ClusterAgentConfig = {
   id: string;
@@ -1356,26 +1356,39 @@ function InputFieldsManager({
   return (
     <div className="workflow-input-field-manager">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <span className="text-sm font-semibold text-[var(--color-text-primary)]">输入框</span>
-        <button type="button" onClick={() => setEditingField(createInputField(fields.length))} className="agent-button h-8 px-3 text-xs">
-          <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-          新增输入框
-        </button>
+        <span className="text-sm font-semibold text-[var(--color-text-primary)]">输入字段</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => setEditingField(createInputField(fields.length, "text"))} className="agent-button h-8 px-3 text-xs">
+            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+            新增文本框
+          </button>
+          <button type="button" onClick={() => setEditingField(createInputField(fields.length, "select"))} className="agent-button h-8 px-3 text-xs">
+            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+            新增下拉框
+          </button>
+        </div>
       </div>
       <div className="space-y-3">
         {fields.map((field, index) => (
           <article key={field.id} className="workflow-input-field-row">
             <span className="workflow-inline-card-icon">
-              <TextCursorInput className="h-4 w-4" aria-hidden="true" />
+              {field.fieldType === "select"
+                ? <ChevronDown className="h-4 w-4" aria-hidden="true" />
+                : <TextCursorInput className="h-4 w-4" aria-hidden="true" />}
             </span>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs font-medium text-[var(--color-text-tertiary)]">输入框 {index + 1}</span>
+                <span className="text-xs font-medium text-[var(--color-text-tertiary)]">{getInputFieldTypeLabel(field.fieldType)} {index + 1}</span>
                 <TinyBadge>{field.variable}</TinyBadge>
+                {field.fieldType === "select" ? <TinyBadge tone="info">选项 {field.options?.length ?? 0}</TinyBadge> : null}
                 {field.required ? <TinyBadge tone="warning">必填</TinyBadge> : <TinyBadge>选填</TinyBadge>}
               </div>
               <p className="mt-1 truncate text-sm font-semibold text-[var(--color-text-primary)]">{field.label}</p>
-              <p className="mt-1 line-clamp-1 text-xs text-[var(--color-text-secondary)]">{field.placeholder || "未设置占位提示"}</p>
+              <p className="mt-1 line-clamp-1 text-xs text-[var(--color-text-secondary)]">
+                {field.fieldType === "select"
+                  ? (field.options?.map((option) => option.label).join(" / ") || "未配置下拉选项")
+                  : (field.placeholder || "未设置占位提示")}
+              </p>
             </div>
             <div className="flex shrink-0 items-center gap-1">
               <button type="button" onClick={() => setEditingField(field)} className="agent-button h-8 px-2 text-xs">编辑</button>
@@ -1384,7 +1397,7 @@ function InputFieldsManager({
           </article>
         ))}
         {fields.length === 0 ? (
-          <p className="rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-light)] bg-[var(--color-bg-card)] px-3 py-4 text-center text-sm text-[var(--color-text-tertiary)]">暂无输入框</p>
+          <p className="rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-light)] bg-[var(--color-bg-card)] px-3 py-4 text-center text-sm text-[var(--color-text-tertiary)]">暂无输入字段</p>
         ) : null}
       </div>
       {editingField ? (
@@ -2238,6 +2251,63 @@ function PromptTemplateEditor({
   );
 }
 
+function InputFieldOptionsEditor({
+  options,
+  onChange,
+}: {
+  options: Array<{ label: string; value: string }>;
+  onChange: (options: Array<{ label: string; value: string }>) => void;
+}) {
+  function updateOption(index: number, patch: Partial<{ label: string; value: string }>) {
+    onChange(options.map((option, optionIndex) => (optionIndex === index ? { ...option, ...patch } : option)));
+  }
+
+  return (
+    <div className="sys-field">
+      <span className="sys-field-label sys-field-label--required">下拉选项</span>
+      <div className="workflow-input-field-options">
+        {options.map((option, index) => (
+          <div key={`${index}-${option.value}`} className="workflow-input-field-option-row">
+            <div className="sys-field-input-wrap">
+              <Tag size={16} className="sys-field-prefix" aria-hidden="true" />
+              <input
+                className="sys-field-input"
+                value={option.label}
+                placeholder="显示文本"
+                onChange={(event) => updateOption(index, { label: event.target.value })}
+              />
+            </div>
+            <div className="sys-field-input-wrap">
+              <Hash size={16} className="sys-field-prefix" aria-hidden="true" />
+              <input
+                className="sys-field-input"
+                value={option.value}
+                placeholder="选项值"
+                onChange={(event) => updateOption(index, { value: event.target.value })}
+              />
+            </div>
+            <IconButton
+              label="删除选项"
+              icon={Trash2}
+              tone="danger"
+              onClick={() => onChange(options.filter((_, optionIndex) => optionIndex !== index))}
+            />
+          </div>
+        ))}
+        <button
+          type="button"
+          className="agent-button h-8 px-3 text-xs"
+          onClick={() => onChange([...options, { label: `选项${options.length + 1}`, value: `option_${options.length + 1}` }])}
+        >
+          <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+          新增选项
+        </button>
+      </div>
+      <p className="sys-field-hint">至少配置一个选项；业务人员提交后，输出变量写入对应「选项值」。</p>
+    </div>
+  );
+}
+
 function InputFieldModal({
   field,
   availableVariables,
@@ -2249,7 +2319,41 @@ function InputFieldModal({
   onClose: () => void;
   onSave: (field: InputFieldConfig) => void;
 }) {
+  const { message } = App.useApp();
   const [draft, setDraft] = useState<InputFieldConfig>(field);
+  const isSelectField = draft.fieldType === "select";
+
+  function handleFieldTypeChange(fieldType: WorkflowInputFieldType) {
+    if (fieldType === "select") {
+      setDraft((current) => ({
+        ...current,
+        fieldType,
+        placeholder: current.placeholder || "请选择",
+        options: current.options?.length ? current.options : [{ label: "选项一", value: "option_1" }],
+      }));
+      return;
+    }
+
+    setDraft((current) => ({
+      ...current,
+      fieldType,
+      placeholder: current.placeholder || "请输入内容",
+      options: undefined,
+    }));
+  }
+
+  function handleSave() {
+    const nextField = {
+      ...draft,
+      variable: normalizeVariableName(draft.variable) || "input_value",
+    };
+    const validationError = validateInputFieldDraft(nextField);
+    if (validationError) {
+      message.warning(validationError);
+      return;
+    }
+    onSave(nextField);
+  }
 
   return (
     <SysModalMask onClose={onClose}>
@@ -2257,11 +2361,24 @@ function InputFieldModal({
         <div className="sys-modal-header">
           <div>
             <div className="sys-field-label" style={{ marginBottom: 4 }}>输入信息</div>
-            <span id="input-field-modal-title" className="sys-modal-title">配置输入框</span>
+            <span id="input-field-modal-title" className="sys-modal-title">
+              {isSelectField ? "配置下拉框" : "配置文本框"}
+            </span>
           </div>
-          <button className="sys-modal-close" onClick={onClose} aria-label="关闭输入框配置"><X size={18} /></button>
+          <button className="sys-modal-close" onClick={onClose} aria-label="关闭输入字段配置"><X size={18} /></button>
         </div>
         <div className="sys-modal-body">
+          <label className="sys-field">
+            <span className="sys-field-label sys-field-label--required">字段类型</span>
+            <Select
+              className="agent-admin-select w-full"
+              classNames={workflowSelectClassNames}
+              suffixIcon={workflowSelectSuffixIcon}
+              value={draft.fieldType ?? "text"}
+              options={WORKFLOW_INPUT_FIELD_TYPE_OPTIONS}
+              onChange={(value) => handleFieldTypeChange(value as WorkflowInputFieldType)}
+            />
+          </label>
           <label className="sys-field">
             <span className="sys-field-label">显示名称</span>
             <div className="sys-field-input-wrap">
@@ -2277,19 +2394,43 @@ function InputFieldModal({
             </div>
           </label>
           <label className="sys-field">
-            <span className="sys-field-label">占位提示</span>
+            <span className="sys-field-label">{isSelectField ? "占位提示" : "占位提示"}</span>
             <div className="sys-field-input-wrap">
-              <TextCursorInput size={16} className="sys-field-prefix" aria-hidden="true" />
+              {isSelectField
+                ? <ChevronDown size={16} className="sys-field-prefix" aria-hidden="true" />
+                : <TextCursorInput size={16} className="sys-field-prefix" aria-hidden="true" />}
               <input value={draft.placeholder} onChange={(event) => setDraft({ ...draft, placeholder: event.target.value })} className="sys-field-input" />
             </div>
           </label>
-          <PromptEditor
-            label="默认内容"
-            value={draft.defaultValue}
-            availableVariables={availableVariables}
-            onChange={(value) => setDraft({ ...draft, defaultValue: value })}
-            placeholder="可用 {{输出内容标识}} 引用之前步骤内容"
-          />
+          {isSelectField ? (
+            <>
+              <InputFieldOptionsEditor
+                options={draft.options ?? []}
+                onChange={(options) => setDraft({ ...draft, options })}
+              />
+              <label className="sys-field">
+                <span className="sys-field-label">默认选中</span>
+                <Select
+                  allowClear
+                  className="agent-admin-select w-full"
+                  classNames={workflowSelectClassNames}
+                  suffixIcon={workflowSelectSuffixIcon}
+                  placeholder="不预设默认选项"
+                  value={draft.defaultValue || undefined}
+                  options={(draft.options ?? []).map((option) => ({ value: option.value, label: option.label }))}
+                  onChange={(value) => setDraft({ ...draft, defaultValue: value ?? "" })}
+                />
+              </label>
+            </>
+          ) : (
+            <PromptEditor
+              label="默认内容"
+              value={draft.defaultValue ?? ""}
+              availableVariables={availableVariables}
+              onChange={(value) => setDraft({ ...draft, defaultValue: value })}
+              placeholder="可用 {{输出内容标识}} 引用之前步骤内容"
+            />
+          )}
           <label className="workflow-toggle-row">
             <span>
               <span className="block">是否必填</span>
@@ -2297,14 +2438,14 @@ function InputFieldModal({
             </span>
             <input
               type="checkbox"
-              checked={draft.required}
+              checked={draft.required !== false}
               onChange={(event) => setDraft({ ...draft, required: event.target.checked })}
             />
           </label>
         </div>
         <div className="sys-modal-footer">
           <button type="button" className="sys-btn sys-btn--default" onClick={onClose}>取消</button>
-          <button type="button" className="sys-btn sys-btn--primary" onClick={() => onSave({ ...draft, variable: normalizeVariableName(draft.variable) || "input_value" })}>保存</button>
+          <button type="button" className="sys-btn sys-btn--primary" onClick={handleSave}>保存</button>
         </div>
       </section>
     </SysModalMask>
@@ -3168,17 +3309,6 @@ function buildTemplateOutputVariables(template: WorkflowBrickTemplate, index: nu
   return template.outputPrefix ? [`${template.outputPrefix}_${index}`] : [...template.defaultOutputVariables];
 }
 
-function createInputField(index: number): InputFieldConfig {
-  return {
-    id: `field_${Date.now().toString(36)}_${index}`,
-    label: index === 0 ? "业务输入" : `输入字段 ${index + 1}`,
-    variable: `input_${index + 1}`,
-    placeholder: "请输入内容",
-    defaultValue: "",
-    required: true,
-  };
-}
-
 function createClusterAgent(index: number, nodeId: string, suggestedIterationsPerTurn: number, model?: WorkflowModelOption): ClusterAgentConfig {
   return {
     id: `cluster_agent_${Date.now().toString(36)}_${index}`,
@@ -3552,31 +3682,6 @@ function inferBrickTypeFromNodeType(nodeType: WorkflowNodeType): WorkflowBrickTy
   return "delivery";
 }
 
-function readInputFields(value: unknown, outputVariables: string[]): InputFieldConfig[] {
-  if (Array.isArray(value)) {
-    const fields = value.filter(isInputFieldConfig);
-    if (fields.length > 0) {
-      return fields.map((field) => ({
-        ...field,
-        defaultValue: readString(field.defaultValue, ""),
-        // 历史流程没有 required 字段，而旧运行态本就要求全部填写，因此缺省继续按必填解释。
-        required: field.required !== false,
-      }));
-    }
-  }
-
-  return outputVariables.length > 0
-    ? outputVariables.map((variable, index) => ({
-      id: `field_fallback_${index}`,
-      label: index === 0 ? "业务输入" : `输入字段 ${index + 1}`,
-      variable,
-      placeholder: "请输入内容",
-      defaultValue: "",
-      required: true,
-    }))
-    : [createInputField(0)];
-}
-
 function readClusterAgents(value: unknown, agentRuntimeLimits: AgentRuntimeLimits): ClusterAgentConfig[] {
   if (Array.isArray(value)) {
     const agents = value.filter(isClusterAgentConfig);
@@ -3874,15 +3979,6 @@ function appendFileNameToken(template: string, token: string): string {
 
 function normalizeWordFileNameTemplate(template: string): string {
   return template.replace(/\{\{\s*runId\s*\}\}/g, "{{runNumber}}");
-}
-
-function isInputFieldConfig(value: unknown): value is InputFieldConfig {
-  return typeof value === "object"
-    && value !== null
-    && typeof (value as InputFieldConfig).id === "string"
-    && typeof (value as InputFieldConfig).label === "string"
-    && typeof (value as InputFieldConfig).variable === "string"
-    && typeof (value as InputFieldConfig).placeholder === "string";
 }
 
 function isClusterAgentConfig(value: unknown): value is ClusterAgentConfig {

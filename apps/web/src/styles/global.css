@@ -8527,6 +8527,18 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
   grid-template-columns: 36px minmax(0, 1fr) auto;
 }
 
+.workflow-input-field-options {
+  display: grid;
+  gap: 10px;
+}
+
+.workflow-input-field-option-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
 .workflow-inline-card-icon {
   width: 32px;
   height: 32px;
@@ -8880,6 +8892,10 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
   .workflow-input-field-row,
   .workflow-cluster-agent-row,
   .workflow-agent-summary-row {
+    grid-template-columns: 1fr;
+  }
+
+  .workflow-input-field-option-row {
     grid-template-columns: 1fr;
   }
 
@@ -9334,9 +9350,13 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
   letter-spacing: 0.02em;
 }
 
-/* 主面板区域：左右分栏 */
+/* 主面板区域：左右分栏，分别独立滚动 */
 .run-evidence-body {
   display: flex;
+  align-items: stretch;
+  min-height: 420px;
+  max-height: min(560px, calc(100vh - 300px));
+  overflow: hidden;
 }
 
 /* 左侧节点步骤轨道 */
@@ -9346,6 +9366,8 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
   padding: 20px;
   border-right: 1px solid var(--color-border-light);
   background: color-mix(in srgb, var(--color-bg-hover) 20%, var(--color-bg-card));
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .run-evidence-sidebar-title {
@@ -9467,7 +9489,10 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
 .run-evidence-content {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   padding: 20px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 /* 节点标题区域 */

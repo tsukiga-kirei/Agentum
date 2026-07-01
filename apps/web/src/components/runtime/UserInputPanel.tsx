@@ -1,28 +1,13 @@
 import React, { useState, useEffect, useMemo } from "react";
-import type { RuntimePreviewStep } from "../../types/runtime-types";
+import type { InputFieldConfig, RuntimePreviewStep } from "../../types/runtime-types";
 import { AlertCircle, FileText } from "lucide-react";
-
-type InputFieldShape = {
-  id: string;
-  label: string;
-  variable: string;
-  placeholder: string;
-  defaultValue?: string;
-  required: boolean;
-};
+import { isInputFieldConfig, normalizeInputField, normalizeInputFieldOptions } from "../../utils/workflowInputField";
 
 interface UserInputPanelProps {
   activeStep: RuntimePreviewStep;
   templateVariables?: Record<string, unknown>;
   readOnly: boolean;
   onSubmit: (payload: Record<string, unknown>) => void;
-}
-
-function isInputFieldShape(value: unknown): value is InputFieldShape {
-  return typeof value === "object"
-    && value !== null
-    && typeof (value as InputFieldShape).label === "string"
-    && typeof (value as InputFieldShape).variable === "string";
 }
 
 export function UserInputPanel({
@@ -34,25 +19,30 @@ export function UserInputPanel({
   const [formValues, setFormValues] = useState<Record<string, string>>({});
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const fieldConfigs = useMemo((): InputFieldShape[] => {
+  const fieldConfigs = useMemo((): InputFieldConfig[] => {
     const configs = activeStep.configSnapshot?.inputFields;
     if (Array.isArray(configs)) {
-      return configs.filter(isInputFieldShape).map((field, index) => ({
-        id: field.id || `field-${index}`,
-        label: field.label,
-        variable: field.variable || field.label,
-        placeholder: renderRuntimeTemplate(field.placeholder || `请输入${field.label}`, templateVariables),
-        defaultValue: renderRuntimeTemplate(field.defaultValue ?? "", templateVariables),
-        required: field.required !== false,
-      }));
+      return configs
+        .filter(isInputFieldConfig)
+        .map((field, index) => {
+          const normalized = normalizeInputField({
+            ...field,
+            id: field.id || `field-${index}`,
+            variable: field.variable || field.label,
+            defaultValue: renderRuntimeTemplate(field.defaultValue ?? "", templateVariables),
+            placeholder: renderRuntimeTemplate(field.placeholder || (field.fieldType === "select" ? "请选择" : `请输入${field.label}`), templateVariables),
+          });
+          return normalized;
+        });
     }
-    return (activeStep.inputs || []).map((field, index) => ({
+    return (activeStep.inputs || []).map((field, index) => normalizeInputField({
       id: `field-${index}`,
       label: field.label,
       variable: field.label,
       placeholder: `请输入${field.label}`,
       defaultValue: field.value,
       required: true,
+      fieldType: "text",
     }));
   }, [activeStep.configSnapshot, activeStep.inputs, templateVariables]);
 
@@ -74,9 +64,9 @@ export function UserInputPanel({
   function handleFormSubmit(e: React.FormEvent) {
     e.preventDefault();
 
-    const emptyField = fieldConfigs.find((field) => field.required && !formValues[field.id]?.trim());
+    const emptyField = fieldConfigs.find((field) => field.required !== false && !formValues[field.id]?.trim());
     if (emptyField) {
-      setErrorMsg(`请填写「${emptyField.label}」`);
+      setErrorMsg(emptyField.fieldType === "select" ? `请选择「${emptyField.label}」` : `请填写「${emptyField.label}」`);
       return;
     }
 
@@ -108,25 +98,43 @@ export function UserInputPanel({
             {fieldConfigs.map((field) => {
               const val = formValues[field.id] || "";
               const isLargeText =
-                field.label.includes("描述")
-                || field.label.includes("材料")
-                || field.label.includes("内容")
-                || field.placeholder.length > 20;
+                field.fieldType !== "select"
+                && (
+                  field.label.includes("描述")
+                  || field.label.includes("材料")
+                  || field.label.includes("内容")
+                  || (field.placeholder?.length ?? 0) > 20
+                );
+              const options = normalizeInputFieldOptions(field.options);
 
               return (
                 <div key={field.id} className="flex flex-col gap-2">
                   <label className="text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1">
                     {field.label}
-                    {field.required ? <span className="text-rose-500">*</span> : <span className="text-xs font-normal text-slate-400">（选填）</span>}
+                    {field.required !== false
+                      ? <span className="text-rose-500">*</span>
+                      : <span className="text-xs font-normal text-slate-400">（选填）</span>}
                   </label>
 
-                  {isLargeText ? (
+                  {field.fieldType === "select" ? (
+                    <select
+                      value={val}
+                      disabled={readOnly || activeStep.state !== "waiting"}
+                      onChange={(event) => handleInputChange(field.id, event.target.value)}
+                      className="sys-input w-full p-3.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/20 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="">{field.placeholder || "请选择"}</option>
+                      {options.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  ) : isLargeText ? (
                     <textarea
                       rows={6}
                       value={val}
                       disabled={readOnly || activeStep.state !== "waiting"}
                       placeholder={field.placeholder}
-                      onChange={(e) => handleInputChange(field.id, e.target.value)}
+                      onChange={(event) => handleInputChange(field.id, event.target.value)}
                       className="sys-input w-full p-3.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/20 text-sm leading-relaxed focus:ring-1 focus:ring-blue-500 focus:border-blue-500 resize-y min-h-[140px]"
                     />
                   ) : (
@@ -135,7 +143,7 @@ export function UserInputPanel({
                       value={val}
                       disabled={readOnly || activeStep.state !== "waiting"}
                       placeholder={field.placeholder}
-                      onChange={(e) => handleInputChange(field.id, e.target.value)}
+                      onChange={(event) => handleInputChange(field.id, event.target.value)}
                       className="sys-input w-full p-3.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/20 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                     />
                   )}

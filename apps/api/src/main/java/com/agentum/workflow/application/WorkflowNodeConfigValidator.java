@@ -157,10 +157,39 @@ public class WorkflowNodeConfigValidator {
                 continue;
             }
             fieldVariables.add(variable);
+            validateInputFieldOptions(field, node, issues);
         }
         Set<String> declaredOutputs = variableSet(node.outputVariables());
         if (!fieldVariables.equals(declaredOutputs)) {
             issues.add(issue("WORKFLOW_VALIDATION_INPUT_OUTPUT_MISMATCH", "节点[" + node.name() + "]的输入字段变量必须与节点输出变量保持一致", node));
+        }
+    }
+
+    private void validateInputFieldOptions(
+        Map<String, Object> field,
+        WorkflowDraftApi.WorkflowNodeRow node,
+        List<WorkflowDraftApi.WorkflowValidationIssue> issues
+    ) {
+        String fieldType = rawString(field.get("fieldType"));
+        if (!"select".equals(fieldType)) {
+            return;
+        }
+
+        String fieldLabel = rawString(field.get("label"));
+        if (fieldLabel.isBlank()) {
+            fieldLabel = rawString(field.get("variable"));
+        }
+
+        List<Map<String, Object>> options = extractMapList(field, "options");
+        long validOptionCount = options.stream()
+            .filter(option -> !rawString(option.get("label")).isBlank() && !rawString(option.get("value")).isBlank())
+            .count();
+        if (validOptionCount == 0) {
+            issues.add(issue(
+                "WORKFLOW_VALIDATION_INPUT_FIELD_OPTIONS_REQUIRED",
+                "节点[" + node.name() + "]的下拉字段「" + fieldLabel + "」至少需要配置一个有效选项",
+                node
+            ));
         }
     }
 

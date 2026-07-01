@@ -166,6 +166,34 @@ class WorkflowNodeConfigValidatorTest {
     }
 
     @Test
+    void shouldRejectSelectInputFieldWithoutOptions() {
+        WorkflowDraftApi.WorkflowNodeRow node = new WorkflowDraftApi.WorkflowNodeRow(
+            "input_1",
+            "user_input",
+            "资料输入",
+            0,
+            0,
+            List.of("starter"),
+            List.of("company_type"),
+            Map.of(
+                "inputFields", List.of(Map.of(
+                    "id", "field_1",
+                    "label", "企业类型",
+                    "variable", "company_type",
+                    "fieldType", "select",
+                    "placeholder", "请选择企业类型",
+                    "options", List.of()
+                ))
+            )
+        );
+
+        List<WorkflowDraftApi.WorkflowValidationIssue> issues = validator().validateCapabilityReferences(TENANT_ID, USER_ID, List.of(node));
+
+        assertThat(issues).extracting(WorkflowDraftApi.WorkflowValidationIssue::code)
+            .containsExactly("WORKFLOW_VALIDATION_INPUT_FIELD_OPTIONS_REQUIRED");
+    }
+
+    @Test
     void shouldRejectInputNodeWhenInputFieldsDoNotMatchOutputs() {
         WorkflowDraftApi.WorkflowNodeRow node = new WorkflowDraftApi.WorkflowNodeRow(
             "input_1",
