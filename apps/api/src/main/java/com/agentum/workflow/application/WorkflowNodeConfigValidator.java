@@ -180,9 +180,10 @@ public class WorkflowNodeConfigValidator {
             fieldLabel = rawString(field.get("variable"));
         }
 
+        String placeholder = rawString(field.get("placeholder"));
         List<Map<String, Object>> options = extractMapList(field, "options");
         long validOptionCount = options.stream()
-            .filter(option -> !rawString(option.get("label")).isBlank() && !rawString(option.get("value")).isBlank())
+            .filter(option -> isValidSelectOption(option, placeholder))
             .count();
         if (validOptionCount == 0) {
             issues.add(issue(
@@ -191,6 +192,25 @@ public class WorkflowNodeConfigValidator {
                 node
             ));
         }
+    }
+
+    private boolean isValidSelectOption(Map<String, Object> option, String placeholder) {
+        String label = rawString(option.get("label"));
+        String value = rawString(option.get("value"));
+        if (label.isBlank() || value.isBlank()) {
+            return false;
+        }
+        return !isPlaceholderLikeSelectOption(label, value, placeholder);
+    }
+
+    private boolean isPlaceholderLikeSelectOption(String label, String value, String placeholder) {
+        if (!placeholder.isBlank() && (placeholder.equals(label) || placeholder.equals(value))) {
+            return true;
+        }
+        return "请选择".equals(label)
+            || "请选择".equals(value)
+            || "__placeholder__".equals(value)
+            || "placeholder".equals(value);
     }
 
     private void validateClusterNodeConfig(

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { Select } from "antd";
 import type { InputFieldConfig, RuntimePreviewStep } from "../../types/runtime-types";
-import { AlertCircle, FileText } from "lucide-react";
+import { AlertCircle, ChevronDown, FileText } from "lucide-react";
 import { isInputFieldConfig, normalizeInputField, normalizeInputFieldOptions } from "../../utils/workflowInputField";
 
 interface UserInputPanelProps {
@@ -9,6 +10,9 @@ interface UserInputPanelProps {
   readOnly: boolean;
   onSubmit: (payload: Record<string, unknown>) => void;
 }
+
+const runtimeSelectClassNames = { popup: { root: "agent-select-dropdown agent-admin-select-dropdown workbench-user-input-select-dropdown" } };
+const runtimeSelectSuffixIcon = <ChevronDown className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />;
 
 export function UserInputPanel({
   activeStep,
@@ -50,7 +54,13 @@ export function UserInputPanel({
     const initial: Record<string, string> = {};
     fieldConfigs.forEach((field) => {
       const matched = activeStep.inputs?.find((item) => item.label === field.label);
-      initial[field.id] = matched?.value || field.defaultValue || "";
+      const candidateValue = matched?.value || field.defaultValue || "";
+      if (field.fieldType === "select") {
+        const options = normalizeInputFieldOptions(field.options, field.placeholder);
+        initial[field.id] = candidateValue && options.some((option) => option.value === candidateValue) ? candidateValue : "";
+        return;
+      }
+      initial[field.id] = candidateValue;
     });
     setFormValues(initial);
     setErrorMsg(null);
@@ -105,7 +115,7 @@ export function UserInputPanel({
                   || field.label.includes("内容")
                   || (field.placeholder?.length ?? 0) > 20
                 );
-              const options = normalizeInputFieldOptions(field.options);
+              const options = normalizeInputFieldOptions(field.options, field.placeholder);
 
               return (
                 <div key={field.id} className="flex flex-col gap-2">
@@ -117,17 +127,16 @@ export function UserInputPanel({
                   </label>
 
                   {field.fieldType === "select" ? (
-                    <select
-                      value={val}
+                    <Select
+                      value={val || undefined}
                       disabled={readOnly || activeStep.state !== "waiting"}
-                      onChange={(event) => handleInputChange(field.id, event.target.value)}
-                      className="sys-input w-full p-3.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/20 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                    >
-                      <option value="">{field.placeholder || "请选择"}</option>
-                      {options.map((option) => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
+                      onChange={(value) => handleInputChange(field.id, value)}
+                      className="agent-admin-select workbench-user-input-select w-full"
+                      classNames={runtimeSelectClassNames}
+                      suffixIcon={runtimeSelectSuffixIcon}
+                      placeholder={field.placeholder || "请选择"}
+                      options={options.map((option) => ({ value: option.value, label: option.label }))}
+                    />
                   ) : isLargeText ? (
                     <textarea
                       rows={6}

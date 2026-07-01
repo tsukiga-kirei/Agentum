@@ -1,4 +1,5 @@
 import type { WorkflowNodeType } from "../../types/workflow-contract";
+import { normalizeInputFieldOptions } from "../../utils/workflowInputField";
 import { validateCustomPromptConfiguration } from "./workflowPromptDefaults";
 
 /** 运行时可注入的模板变量，不计入上游输出校验。 */
@@ -265,14 +266,7 @@ function validateInputNode(node: ValidatableWorkflowNode): WorkflowNodeValidatio
 
     const fieldType = readString(field.fieldType, "text");
     if (fieldType === "select") {
-      const options = Array.isArray(field.options) ? field.options : [];
-      const validOptions = options.filter((option) => {
-        if (typeof option !== "object" || option === null) {
-          return false;
-        }
-        return Boolean(readString((option as Record<string, unknown>).label))
-          && Boolean(readString((option as Record<string, unknown>).value));
-      });
+      const validOptions = normalizeInputFieldOptions(field.options, readString(field.placeholder));
       if (validOptions.length === 0) {
         const fieldLabel = readString(field.label, variable || "未命名字段");
         issues.push(issue("WORKFLOW_NODE_INPUT_FIELD_OPTIONS_REQUIRED", `下拉字段「${fieldLabel}」至少需要配置一个有效选项`));

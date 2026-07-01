@@ -7,11 +7,12 @@ export const WORKFLOW_INPUT_FIELD_TYPE_OPTIONS: Array<{ value: WorkflowInputFiel
   { value: "select", label: "下拉选择" },
 ];
 
-export function normalizeInputFieldOptions(value: unknown): Array<{ label: string; value: string }> {
+export function normalizeInputFieldOptions(value: unknown, placeholder?: string): Array<{ label: string; value: string }> {
   if (!Array.isArray(value)) {
     return [];
   }
 
+  const placeholderText = (placeholder ?? "").trim();
   return value
     .map((item) => {
       if (typeof item !== "object" || item === null) {
@@ -19,7 +20,7 @@ export function normalizeInputFieldOptions(value: unknown): Array<{ label: strin
       }
       const label = String((item as { label?: unknown }).label ?? "").trim();
       const optionValue = String((item as { value?: unknown }).value ?? "").trim();
-      if (!label || !optionValue) {
+      if (!label || !optionValue || isPlaceholderLikeOption(label, optionValue, placeholderText)) {
         return null;
       }
       return { label, value: optionValue };
@@ -29,14 +30,15 @@ export function normalizeInputFieldOptions(value: unknown): Array<{ label: strin
 
 export function normalizeInputField(field: InputFieldConfig): InputFieldConfig {
   const fieldType: WorkflowInputFieldType = field.fieldType === "select" ? "select" : "text";
+  const placeholder = field.placeholder ?? (fieldType === "select" ? "请选择" : "请输入内容");
 
   return {
     ...field,
-    placeholder: field.placeholder ?? (fieldType === "select" ? "请选择" : "请输入内容"),
+    placeholder,
     defaultValue: field.defaultValue ?? "",
     required: field.required !== false,
     fieldType,
-    options: fieldType === "select" ? normalizeInputFieldOptions(field.options) : undefined,
+    options: fieldType === "select" ? normalizeInputFieldOptions(field.options, placeholder) : undefined,
   };
 }
 
@@ -82,7 +84,7 @@ export function createInputField(
     defaultValue: "",
     required: true,
     fieldType,
-    options: isSelect ? [{ label: "选项一", value: "option_1" }] : undefined,
+    options: isSelect ? [createInputFieldOption(0)] : undefined,
   });
 }
 
@@ -96,4 +98,24 @@ export function validateInputFieldDraft(field: InputFieldConfig): string | null 
     return "下拉框至少需要配置一个有效选项（显示文本与选项值均不能为空）";
   }
   return null;
+}
+
+export function createInputFieldOption(index: number): { label: string; value: string } {
+  const label = `选项 ${index + 1}`;
+  return { label, value: label };
+}
+
+export function shouldSyncInputFieldOptionValue(option: { label: string; value: string }, index: number): boolean {
+  const defaultLabel = `选项 ${index + 1}`;
+  return option.value === option.label
+    || option.value === defaultLabel
+    || option.value === `选项${index + 1}`
+    || /^option_\d+$/.test(option.value);
+}
+
+function isPlaceholderLikeOption(label: string, value: string, placeholder: string): boolean {
+  if (placeholder && (label === placeholder || value === placeholder)) {
+    return true;
+  }
+  return label === "请选择" || value === "请选择" || value === "__placeholder__" || value === "placeholder";
 }

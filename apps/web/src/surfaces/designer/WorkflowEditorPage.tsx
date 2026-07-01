@@ -78,9 +78,13 @@ import {
 } from "./workflowNodeValidation";
 import type { InputFieldConfig } from "../../types/runtime-types";
 import {
+  createInputFieldOption,
   createInputField,
   getInputFieldTypeLabel,
+  normalizeInputField,
+  normalizeInputFieldOptions,
   readInputFields,
+  shouldSyncInputFieldOptionValue,
   validateInputFieldDraft,
   WORKFLOW_INPUT_FIELD_TYPE_OPTIONS,
   type WorkflowInputFieldType,
@@ -2259,13 +2263,26 @@ function InputFieldOptionsEditor({
   onChange: (options: Array<{ label: string; value: string }>) => void;
 }) {
   function updateOption(index: number, patch: Partial<{ label: string; value: string }>) {
-    onChange(options.map((option, optionIndex) => (optionIndex === index ? { ...option, ...patch } : option)));
+    onChange(options.map((option, optionIndex) => {
+      if (optionIndex !== index) {
+        return option;
+      }
+      if (patch.label !== undefined && patch.value === undefined && shouldSyncInputFieldOptionValue(option, index)) {
+        return { ...option, label: patch.label, value: patch.label };
+      }
+      return { ...option, ...patch };
+    }));
   }
 
   return (
     <div className="sys-field">
       <span className="sys-field-label sys-field-label--required">下拉选项</span>
       <div className="workflow-input-field-options">
+        <div className="workflow-input-field-option-row workflow-input-field-option-row--header" aria-hidden="true">
+          <span>业务人员看到</span>
+          <span>提交后写入变量</span>
+          <span />
+        </div>
         {options.map((option, index) => (
           <div key={`${index}-${option.value}`} className="workflow-input-field-option-row">
             <div className="sys-field-input-wrap">
@@ -2273,7 +2290,7 @@ function InputFieldOptionsEditor({
               <input
                 className="sys-field-input"
                 value={option.label}
-                placeholder="显示文本"
+                placeholder="显示文本，例如 2026"
                 onChange={(event) => updateOption(index, { label: event.target.value })}
               />
             </div>
@@ -2282,7 +2299,7 @@ function InputFieldOptionsEditor({
               <input
                 className="sys-field-input"
                 value={option.value}
-                placeholder="选项值"
+                placeholder="提交值，例如 2026"
                 onChange={(event) => updateOption(index, { value: event.target.value })}
               />
             </div>
@@ -2297,13 +2314,13 @@ function InputFieldOptionsEditor({
         <button
           type="button"
           className="agent-button h-8 px-3 text-xs"
-          onClick={() => onChange([...options, { label: `选项${options.length + 1}`, value: `option_${options.length + 1}` }])}
+          onClick={() => onChange([...options, createInputFieldOption(options.length)])}
         >
           <Plus className="h-3.5 w-3.5" aria-hidden="true" />
           新增选项
         </button>
       </div>
-      <p className="sys-field-hint">至少配置一个选项；业务人员提交后，输出变量写入对应「选项值」。</p>
+      <p className="sys-field-hint">占位提示只用于未选择时展示；业务人员提交后，输出变量写入右侧「提交值」。</p>
     </div>
   );
 }
@@ -2320,7 +2337,7 @@ function InputFieldModal({
   onSave: (field: InputFieldConfig) => void;
 }) {
   const { message } = App.useApp();
-  const [draft, setDraft] = useState<InputFieldConfig>(field);
+  const [draft, setDraft] = useState<InputFieldConfig>(() => normalizeInputField(field));
   const isSelectField = draft.fieldType === "select";
 
   function handleFieldTypeChange(fieldType: WorkflowInputFieldType) {
@@ -2329,7 +2346,7 @@ function InputFieldModal({
         ...current,
         fieldType,
         placeholder: current.placeholder || "请选择",
-        options: current.options?.length ? current.options : [{ label: "选项一", value: "option_1" }],
+        options: current.options?.length ? current.options : [createInputFieldOption(0)],
       }));
       return;
     }
@@ -2342,11 +2359,27 @@ function InputFieldModal({
     }));
   }
 
+  function commitSelectOptions(options: Array<{ label: string; value: string }>) {
+    const normalizedOptions = normalizeInputFieldOptions(options, draft.placeholder);
+    setDraft((current) => ({
+      ...current,
+      options,
+      defaultValue: current.defaultValue && normalizedOptions.some((option) => option.value === current.defaultValue)
+        ? current.defaultValue
+        : "",
+    }));
+  }
+
   function handleSave() {
-    const nextField = {
+    const normalizedOptions = normalizeInputFieldOptions(draft.options, draft.placeholder);
+    const nextField = normalizeInputField({
       ...draft,
       variable: normalizeVariableName(draft.variable) || "input_value",
-    };
+      options: isSelectField ? normalizedOptions : undefined,
+      defaultValue: draft.defaultValue && normalizedOptions.some((option) => option.value === draft.defaultValue)
+        ? draft.defaultValue
+        : "",
+    });
     const validationError = validateInputFieldDraft(nextField);
     if (validationError) {
       message.warning(validationError);
@@ -2406,7 +2439,7 @@ function InputFieldModal({
             <>
               <InputFieldOptionsEditor
                 options={draft.options ?? []}
-                onChange={(options) => setDraft({ ...draft, options })}
+                onChange={commitSelectOptions}
               />
               <label className="sys-field">
                 <span className="sys-field-label">默认选中</span>
@@ -2417,7 +2450,7 @@ function InputFieldModal({
                   suffixIcon={workflowSelectSuffixIcon}
                   placeholder="不预设默认选项"
                   value={draft.defaultValue || undefined}
-                  options={(draft.options ?? []).map((option) => ({ value: option.value, label: option.label }))}
+                  options={normalizeInputFieldOptions(draft.options, draft.placeholder).map((option) => ({ value: option.value, label: option.label }))}
                   onChange={(value) => setDraft({ ...draft, defaultValue: value ?? "" })}
                 />
               </label>
@@ -2431,7 +2464,7 @@ function InputFieldModal({
               placeholder="可用 {{输出内容标识}} 引用之前步骤内容"
             />
           )}
-          <label className="workflow-toggle-row">
+          <label className="workflow-toggle-row workflow-input-required-toggle">
             <span>
               <span className="block">是否必填</span>
               <span className="mt-1 block text-xs font-normal text-[var(--color-text-tertiary)]">开启后，业务人员必须填写此项才能提交。</span>
