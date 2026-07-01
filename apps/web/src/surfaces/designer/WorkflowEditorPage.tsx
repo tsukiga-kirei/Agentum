@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { App, Select, Tooltip } from "antd";
+import { App, Drawer, Select, Tooltip } from "antd";
 import {
   AlertTriangle,
   ArrowDown,
@@ -37,6 +37,7 @@ import { DocumentDeliveryStyleSections } from "../../components/document/Documen
 import { readLineSpacingMode, readSpacingUnit, type DocumentDeliveryStyleValues, type ParagraphRule } from "../../constants/documentDeliveryStyleOptions";
 import { AgentumApiError, assetApi, workflowApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
+import { getThemedDrawerRootClassName } from "../../utils/theme";
 import type { AssetType, MyAssetRow, SystemCapabilityAssetRow } from "../../types/asset";
 import type {
   AgentRuntimeLimits,
@@ -2376,6 +2377,8 @@ function buildSingleAgentNodePatch(draft: SingleAgentConfigDraft): Partial<Edito
   };
 }
 
+const WORKFLOW_AGENT_DRAWER_WIDTH = 760;
+
 function SingleAgentConfigModal({
   node,
   availableVariables,
@@ -2400,6 +2403,8 @@ function SingleAgentConfigModal({
   onConfigChange: (config: Record<string, unknown>, patch: Partial<EditorNodeData>) => void;
 }) {
   const { message } = App.useApp();
+  const themeMode = useAuthStore((state) => state.themeMode);
+  const drawerRootClassName = getThemedDrawerRootClassName(themeMode, "workflow-agent-drawer");
   const initialDraftRef = useRef(buildSingleAgentConfigDraft(node, agentRuntimeLimits, modelOptions));
   const [draft, setDraftState] = useState<SingleAgentConfigDraft>(initialDraftRef.current);
   const onConfigChangeRef = useRef(onConfigChange);
@@ -2421,33 +2426,35 @@ function SingleAgentConfigModal({
   }
 
   return (
-    <SysModalMask onClose={handleCancel}>
-      <section className="sys-modal workflow-config-modal workflow-agent-modal" aria-labelledby="single-agent-modal-title">
-        <div className="sys-modal-header">
-          <div>
-            <div className="sys-field-label" style={{ marginBottom: 4 }}>单智能体</div>
-            <span id="single-agent-modal-title" className="sys-modal-title">配置智能体</span>
-          </div>
-          <button className="sys-modal-close" onClick={handleCancel} aria-label="关闭智能体配置"><X size={18} /></button>
+    <Drawer
+      title="配置智能体"
+      placement="right"
+      width={WORKFLOW_AGENT_DRAWER_WIDTH}
+      open
+      destroyOnClose
+      onClose={handleCancel}
+      rootClassName={drawerRootClassName}
+    >
+      <div className="sys-drawer-section sys-drawer-section-enter workflow-agent-drawer-body">
+        <p className="workflow-agent-drawer-kicker">单智能体</p>
+        <div className="workflow-modal-section grid gap-4 md:grid-cols-2">
+          <CapabilitySelectField
+            label="智能体模板"
+            icon={Bot}
+            value={draft.agentAssetId}
+            emptyValue="custom"
+            emptyLabel="自定义智能体"
+            options={agentAssets}
+            onChange={(value) => setDraft({ ...draft, agentAssetId: value })}
+          />
+          <ModelAndReasoningFields
+            modelOptions={modelOptions}
+            modelProviderId={draft.modelProviderId}
+            enableThinking={draft.enableThinking}
+            onChange={(patch) => setDraft({ ...draft, ...patch })}
+          />
         </div>
-        <div className="sys-modal-body workflow-agent-modal-body">
-          <div className="workflow-modal-section grid gap-4 lg:grid-cols-2">
-            <CapabilitySelectField
-              label="智能体模板"
-              icon={Bot}
-              value={draft.agentAssetId}
-              emptyValue="custom"
-              emptyLabel="自定义智能体"
-              options={agentAssets}
-              onChange={(value) => setDraft({ ...draft, agentAssetId: value })}
-            />
-            <ModelAndReasoningFields
-              modelOptions={modelOptions}
-              modelProviderId={draft.modelProviderId}
-              enableThinking={draft.enableThinking}
-              onChange={(patch) => setDraft({ ...draft, ...patch })}
-            />
-          </div>
+        <div className="workflow-agent-drawer-prompts">
           <PromptTemplateEditor
             label="系统提示词"
             templateLabel="系统提示词模板"
@@ -2470,41 +2477,43 @@ function SingleAgentConfigModal({
             onTemplateChange={(value) => setDraft({ ...draft, userPromptTemplateId: value })}
             onChange={(value) => setDraft({ ...draft, userPrompt: value })}
           />
-          <div className="workflow-modal-section workflow-modal-section--spacious grid gap-4 lg:grid-cols-2">
-            <CapabilityMultiSelectField
-              label="MCP"
-              icon={ServerCog}
-              options={mcpAssets}
-              selectedIds={draft.mcpIds}
-              placeholder="选择 MCP"
-              onChange={(values) => setDraft({ ...draft, mcpIds: values })}
-            />
-            <CapabilityMultiSelectField
-              label="Skill"
-              icon={BrainCircuit}
-              options={skillAssets}
-              selectedIds={draft.skillIds}
-              placeholder="选择 Skill"
-              onChange={(values) => setDraft({ ...draft, skillIds: values })}
-            />
-          </div>
-          <MaxTokensField
-            value={draft.maxTokens}
-            onChange={(value) => setDraft({ ...draft, maxTokens: value })}
+        </div>
+        <div className="workflow-modal-section workflow-modal-section--spacious grid gap-4 md:grid-cols-2">
+          <CapabilityMultiSelectField
+            label="MCP"
+            icon={ServerCog}
+            options={mcpAssets}
+            selectedIds={draft.mcpIds}
+            placeholder="选择 MCP"
+            onChange={(values) => setDraft({ ...draft, mcpIds: values })}
           />
-          <MaxAgentIterationsPerTurnField
-            value={draft.maxAgentIterationsPerTurn}
-            maximum={agentRuntimeLimits.maxIterationsPerTurn}
-            onChange={(value) => setDraft({ ...draft, maxAgentIterationsPerTurn: value })}
-          />
-          <AgentInteractionOptions
-            allowUserEdit={draft.allowUserEdit}
-            allowQuestion={draft.allowQuestion}
-            onChange={(patch) => setDraft({ ...draft, ...patch })}
+          <CapabilityMultiSelectField
+            label="Skill"
+            icon={BrainCircuit}
+            options={skillAssets}
+            selectedIds={draft.skillIds}
+            placeholder="选择 Skill"
+            onChange={(values) => setDraft({ ...draft, skillIds: values })}
           />
         </div>
-        <div className="sys-modal-footer">
-          <p className="mr-auto text-xs text-[var(--color-text-tertiary)]">修改会即时同步到当前节点，请再点顶部「保存流程」写入草稿。</p>
+        <MaxTokensField
+          value={draft.maxTokens}
+          onChange={(value) => setDraft({ ...draft, maxTokens: value })}
+        />
+        <MaxAgentIterationsPerTurnField
+          value={draft.maxAgentIterationsPerTurn}
+          maximum={agentRuntimeLimits.maxIterationsPerTurn}
+          onChange={(value) => setDraft({ ...draft, maxAgentIterationsPerTurn: value })}
+        />
+        <AgentInteractionOptions
+          allowUserEdit={draft.allowUserEdit}
+          allowQuestion={draft.allowQuestion}
+          onChange={(patch) => setDraft({ ...draft, ...patch })}
+        />
+      </div>
+      <div className="sys-drawer-footer">
+        <p className="workflow-agent-drawer-footer-hint">修改会即时同步到当前节点，请再点顶部「保存流程」写入草稿。</p>
+        <div className="sys-drawer-footer-right">
           <button type="button" className="sys-btn sys-btn--default" onClick={handleCancel}>取消</button>
           <button
             type="button"
@@ -2524,8 +2533,8 @@ function SingleAgentConfigModal({
             完成
           </button>
         </div>
-      </section>
-    </SysModalMask>
+      </div>
+    </Drawer>
   );
 }
 
@@ -2553,6 +2562,8 @@ function ClusterAgentModal({
   onSave: (agent: ClusterAgentConfig) => void;
 }) {
   const { message } = App.useApp();
+  const themeMode = useAuthStore((state) => state.themeMode);
+  const drawerRootClassName = getThemedDrawerRootClassName(themeMode, "workflow-agent-drawer");
   const initialModel = modelOptions.find((model) => model.providerId === agent.modelProviderId) ?? modelOptions[0];
   const [draft, setDraft] = useState<ClusterAgentConfig>({
     ...agent,
@@ -2562,46 +2573,48 @@ function ClusterAgentModal({
   });
 
   return (
-    <SysModalMask onClose={onClose}>
-      <section className="sys-modal workflow-config-modal workflow-agent-modal" aria-labelledby="cluster-agent-modal-title">
-        <div className="sys-modal-header">
-          <div>
-            <div className="sys-field-label" style={{ marginBottom: 4 }}>智能体集群</div>
-            <span id="cluster-agent-modal-title" className="sys-modal-title">配置集群智能体</span>
-          </div>
-          <button className="sys-modal-close" onClick={onClose} aria-label="关闭智能体配置"><X size={18} /></button>
+    <Drawer
+      title="配置集群智能体"
+      placement="right"
+      width={WORKFLOW_AGENT_DRAWER_WIDTH}
+      open
+      destroyOnClose
+      onClose={onClose}
+      rootClassName={drawerRootClassName}
+    >
+      <div className="sys-drawer-section sys-drawer-section-enter workflow-agent-drawer-body">
+        <p className="workflow-agent-drawer-kicker">智能体集群</p>
+        <div className="workflow-modal-section grid gap-4 md:grid-cols-2">
+          <label className="sys-field">
+            <span className="sys-field-label">智能体名称</span>
+            <div className="sys-field-input-wrap">
+              <Tag size={16} className="sys-field-prefix" aria-hidden="true" />
+              <input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} className="sys-field-input" />
+            </div>
+          </label>
+          <OutcomeVariableField
+            label="输出内容标识"
+            value={draft.output}
+            placeholder="agent_output"
+            onChange={(value) => setDraft({ ...draft, output: normalizeVariableName(value) })}
+          />
+          <CapabilitySelectField
+            label="智能体模板"
+            icon={Bot}
+            value={draft.agentAssetId || "custom"}
+            emptyValue="custom"
+            emptyLabel="自定义智能体"
+            options={agentAssets}
+            onChange={(value) => setDraft({ ...draft, agentAssetId: value })}
+          />
+          <ModelAndReasoningFields
+            modelOptions={modelOptions}
+            modelProviderId={draft.modelProviderId}
+            enableThinking={draft.enableThinking}
+            onChange={(patch) => setDraft({ ...draft, ...patch })}
+          />
         </div>
-        <div className="sys-modal-body workflow-agent-modal-body">
-          <div className="workflow-modal-section grid gap-4 lg:grid-cols-2">
-            <label className="sys-field">
-              <span className="sys-field-label">智能体名称</span>
-              <div className="sys-field-input-wrap">
-                <Tag size={16} className="sys-field-prefix" aria-hidden="true" />
-                <input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} className="sys-field-input" />
-              </div>
-            </label>
-            <OutcomeVariableField
-              label="输出内容标识"
-              value={draft.output}
-              placeholder="agent_output"
-              onChange={(value) => setDraft({ ...draft, output: normalizeVariableName(value) })}
-            />
-            <CapabilitySelectField
-              label="智能体模板"
-              icon={Bot}
-              value={draft.agentAssetId || "custom"}
-              emptyValue="custom"
-              emptyLabel="自定义智能体"
-              options={agentAssets}
-              onChange={(value) => setDraft({ ...draft, agentAssetId: value })}
-            />
-            <ModelAndReasoningFields
-              modelOptions={modelOptions}
-              modelProviderId={draft.modelProviderId}
-              enableThinking={draft.enableThinking}
-              onChange={(patch) => setDraft({ ...draft, ...patch })}
-            />
-          </div>
+        <div className="workflow-agent-drawer-prompts">
           <PromptTemplateEditor
             label="系统提示词"
             templateLabel="系统提示词模板"
@@ -2624,40 +2637,42 @@ function ClusterAgentModal({
             onTemplateChange={(value) => setDraft({ ...draft, userPromptTemplateId: value })}
             onChange={(value) => setDraft({ ...draft, userPrompt: value })}
           />
-          <div className="workflow-modal-section workflow-modal-section--spacious grid gap-4 lg:grid-cols-2">
-            <CapabilityMultiSelectField
-              label="Skill"
-              icon={BrainCircuit}
-              options={skillAssets}
-              selectedIds={draft.skillIds}
-              placeholder="选择 Skill"
-              onChange={(values) => setDraft({ ...draft, skillIds: values })}
-            />
-            <CapabilityMultiSelectField
-              label="MCP"
-              icon={ServerCog}
-              options={mcpAssets}
-              selectedIds={draft.mcpIds}
-              placeholder="选择 MCP"
-              onChange={(values) => setDraft({ ...draft, mcpIds: values })}
-            />
-          </div>
-          <MaxTokensField
-            value={draft.maxTokens}
-            onChange={(value) => setDraft({ ...draft, maxTokens: value })}
+        </div>
+        <div className="workflow-modal-section workflow-modal-section--spacious grid gap-4 md:grid-cols-2">
+          <CapabilityMultiSelectField
+            label="Skill"
+            icon={BrainCircuit}
+            options={skillAssets}
+            selectedIds={draft.skillIds}
+            placeholder="选择 Skill"
+            onChange={(values) => setDraft({ ...draft, skillIds: values })}
           />
-          <MaxAgentIterationsPerTurnField
-            value={draft.maxAgentIterationsPerTurn}
-            maximum={agentRuntimeLimits.maxIterationsPerTurn}
-            onChange={(value) => setDraft({ ...draft, maxAgentIterationsPerTurn: value })}
-          />
-          <AgentInteractionOptions
-            allowUserEdit={draft.allowUserEdit}
-            allowQuestion={draft.allowQuestion}
-            onChange={(patch) => setDraft({ ...draft, ...patch })}
+          <CapabilityMultiSelectField
+            label="MCP"
+            icon={ServerCog}
+            options={mcpAssets}
+            selectedIds={draft.mcpIds}
+            placeholder="选择 MCP"
+            onChange={(values) => setDraft({ ...draft, mcpIds: values })}
           />
         </div>
-        <div className="sys-modal-footer">
+        <MaxTokensField
+          value={draft.maxTokens}
+          onChange={(value) => setDraft({ ...draft, maxTokens: value })}
+        />
+        <MaxAgentIterationsPerTurnField
+          value={draft.maxAgentIterationsPerTurn}
+          maximum={agentRuntimeLimits.maxIterationsPerTurn}
+          onChange={(value) => setDraft({ ...draft, maxAgentIterationsPerTurn: value })}
+        />
+        <AgentInteractionOptions
+          allowUserEdit={draft.allowUserEdit}
+          allowQuestion={draft.allowQuestion}
+          onChange={(patch) => setDraft({ ...draft, ...patch })}
+        />
+      </div>
+      <div className="sys-drawer-footer">
+        <div className="sys-drawer-footer-right">
           <button type="button" className="sys-btn sys-btn--default" onClick={onClose}>取消</button>
           <button
             type="button"
@@ -2682,8 +2697,8 @@ function ClusterAgentModal({
             保存
           </button>
         </div>
-      </section>
-    </SysModalMask>
+      </div>
+    </Drawer>
   );
 }
 

@@ -8789,6 +8789,53 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
   resize: vertical;
 }
 
+/* 流程设计器：单/多智能体配置抽屉，提示词区域需要更宽的编辑空间 */
+.workflow-agent-drawer .workflow-agent-drawer-body {
+  display: grid;
+  gap: 20px;
+}
+
+.workflow-agent-drawer-kicker {
+  margin: 0 0 -4px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+}
+
+.workflow-agent-drawer-prompts {
+  display: grid;
+  gap: 16px;
+}
+
+.workflow-agent-drawer .workflow-prompt-section {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.workflow-agent-drawer .workflow-prompt-textarea {
+  min-height: 220px;
+  max-height: none;
+  resize: vertical;
+}
+
+.workflow-agent-drawer .workflow-variable-reference-section {
+  margin-top: 4px;
+}
+
+.workflow-agent-drawer-footer-hint {
+  flex: 1 1 220px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-text-tertiary);
+}
+
+.workflow-agent-drawer .sys-drawer-footer {
+  align-items: flex-start;
+}
+
 .workflow-modal-section {
   min-width: 0;
 }
