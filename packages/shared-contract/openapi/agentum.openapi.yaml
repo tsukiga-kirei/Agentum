@@ -1334,6 +1334,80 @@ paths:
           description: 当前账号不能管理该租户
         "409":
           description: 用户名已存在
+  /api/admin/tenants/{tenantId}/organization/members/import-template:
+    get:
+      summary: 下载成员导入模板
+      description: 下载租户成员 Excel 导入模板，列顺序为姓名、用户名、部门、角色、邮箱。
+      tags:
+        - Organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Excel 模板文件
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+        "401":
+          description: 未登录或令牌无效
+        "403":
+          description: 当前账号不能管理该租户
+  /api/admin/tenants/{tenantId}/organization/members/import:
+    post:
+      summary: 批量导入租户成员
+      description: 上传 Excel 后按行创建成员。姓名、用户名必填；部门为空使用默认部门，填写时按部门名称匹配；角色为空不分配，填写时按角色名称匹配；邮箱可选但不能重复。
+      tags:
+        - Organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+              required:
+                - file
+      responses:
+        "200":
+          description: 导入结果摘要
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/MemberImportResult"
+        "400":
+          description: 文件为空、文件格式错误或行数据不合法
+        "401":
+          description: 未登录或令牌无效
+        "403":
+          description: 当前账号不能管理该租户
+        "413":
+          description: 文件超过大小限制
   /api/admin/tenants/{tenantId}/organization/principals/{principalType}/{principalId}/grant-usage:
     get:
       summary: 查询组织主体在页签与能力分配中的引用计数
@@ -3347,6 +3421,34 @@ components:
         - password
         - displayName
         - roleId
+    MemberImportResult:
+      type: object
+      properties:
+        total:
+          type: integer
+          format: int32
+        success:
+          type: integer
+          format: int32
+        failedRows:
+          type: array
+          items:
+            $ref: "#/components/schemas/MemberImportFailedRow"
+      required:
+        - total
+        - success
+        - failedRows
+    MemberImportFailedRow:
+      type: object
+      properties:
+        rowNumber:
+          type: integer
+          format: int32
+        reason:
+          type: string
+      required:
+        - rowNumber
+        - reason
     CreateDepartmentRequest:
       type: object
       properties:

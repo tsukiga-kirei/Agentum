@@ -52,6 +52,17 @@ export type TenantOrganizationOverview = {
   memberships: OrganizationMembership[];
 };
 
+export type MemberImportFailedRow = {
+  rowNumber: number;
+  reason: string;
+};
+
+export type MemberImportResult = {
+  total: number;
+  success: number;
+  failedRows: MemberImportFailedRow[];
+};
+
 /** 组织主体在页签/能力分配中的引用行数，用于停用前预检查。 */
 export type PrincipalGrantUsage = {
   principalType: string;

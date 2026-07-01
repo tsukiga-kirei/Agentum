@@ -4512,6 +4512,12 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
   overflow-x: auto;
   overflow-y: auto;
 }
+.tenant-import-result-list {
+  max-height: 280px;
+  overflow: auto;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+}
 .tenant-member-table-card .agent-admin-pagination-wrap {
   flex-shrink: 0;
   padding: 18px 16px 16px;

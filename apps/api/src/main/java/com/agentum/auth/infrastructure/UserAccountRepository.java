@@ -13,7 +13,11 @@ public interface UserAccountRepository extends JpaRepository<UserAccount, UUID> 
 
     boolean existsByUsername(String username);
 
+    boolean existsByEmailIgnoreCase(String email);
+
     long count();
 
     boolean existsByUsernameAndIdNot(String username, UUID id);
+
+    boolean existsByEmailIgnoreCaseAndIdNot(String email, UUID id);
 }

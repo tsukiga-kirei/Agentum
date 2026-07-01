@@ -10,6 +10,7 @@ import {
   ClipboardList,
   Code2,
   Database,
+  Download,
   Edit,
   Info,
   LockKeyhole,
@@ -20,6 +21,7 @@ import {
   ShieldCheck,
   Tag,
   Type,
+  Upload,
   UserPlus,
   UserRoundCog,
   UsersRound,
@@ -39,6 +41,7 @@ import type {
   CreateResourceGrantRequest,
   CreateTenantRoleRequest,
   GrantPrincipal,
+  MemberImportResult,
   OrganizationDepartment,
   OrganizationMembership,
   OrganizationRole,
@@ -220,6 +223,8 @@ export function TenantManagementPage() {
   const [organizationError, setOrganizationError] = useState("");
   const [createMemberOpen, setCreateMemberOpen] = useState(false);
   const [createMemberSubmitting, setCreateMemberSubmitting] = useState(false);
+  const [memberImporting, setMemberImporting] = useState(false);
+  const [memberImportResult, setMemberImportResult] = useState<MemberImportResult | null>(null);
   const [memberDraft, setMemberDraft] = useState<CreateMemberRequest>(emptyMemberForm);
   const [createDepartmentOpen, setCreateDepartmentOpen] = useState(false);
   const [departmentDraft, setDepartmentDraft] = useState<CreateDepartmentRequest>(emptyDepartmentForm);
@@ -405,6 +410,53 @@ export function TenantManagementPage() {
       messageApi.error(error instanceof AgentumApiError ? error.message : "新增成员失败，请稍后重试");
     } finally {
       setCreateMemberSubmitting(false);
+    }
+  }
+
+  async function handleDownloadMemberImportTemplate() {
+    if (!token || !user?.tenantId) {
+      messageApi.error("当前账号缺少租户上下文，无法下载模板");
+      return;
+    }
+
+    try {
+      const file = await organizationApi.downloadMemberImportTemplate(user.tenantId, token);
+      const url = URL.createObjectURL(file.blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = file.fileName || "成员导入模板.xlsx";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.warn("[tenant-management] 成员导入模板下载失败", getTenantManagementErrorContext(error, user.tenantId));
+      messageApi.error(error instanceof AgentumApiError ? error.message : "模板下载失败，请稍后重试");
+    }
+  }
+
+  async function handleImportMembers(file: File) {
+    if (!token || !user?.tenantId) {
+      messageApi.error("当前账号缺少租户上下文，无法导入成员");
+      return;
+    }
+
+    setMemberImporting(true);
+    try {
+      const result = await organizationApi.importMembers(user.tenantId, token, file);
+      setMemberImportResult(result);
+      messageApi.success(`导入完成：成功 ${result.success} 条，失败 ${result.failedRows.length} 条`);
+      try {
+        setOrganizationOverview(await organizationApi.overview(user.tenantId, token));
+      } catch (refreshError) {
+        console.warn("[tenant-management] 成员导入后刷新组织概览失败", getTenantManagementErrorContext(refreshError, user.tenantId));
+        messageApi.warning("导入已完成，但列表刷新失败，请稍后手动刷新页面");
+      }
+    } catch (error) {
+      console.warn("[tenant-management] 成员导入失败", getTenantManagementErrorContext(error, user.tenantId, { fileName: file.name }));
+      messageApi.error(error instanceof AgentumApiError ? error.message : "成员导入失败，请检查文件后重试");
+    } finally {
+      setMemberImporting(false);
     }
   }
 
@@ -870,6 +922,9 @@ export function TenantManagementPage() {
             error={organizationError}
             hasTenantContext={Boolean(user?.tenantId)}
             onCreateMember={() => { setMemberDraft(emptyMemberForm); setCreateMemberOpen(true); }}
+            onImportMembers={(file) => void handleImportMembers(file)}
+            onDownloadImportTemplate={() => void handleDownloadMemberImportTemplate()}
+            importLoading={memberImporting}
             onCreateDepartment={() => { setEditingDepartment(null); setDepartmentDraft(emptyDepartmentForm); setCreateDepartmentOpen(true); }}
             onEditDepartment={openEditDepartmentModal}
             membershipUpdatingId={membershipUpdatingId}
@@ -1083,6 +1138,50 @@ export function TenantManagementPage() {
             <div className="sys-modal-footer">
               <button className="sys-btn sys-btn--default" onClick={() => setEditMemberOpen(false)}><X size={14} /> 取消</button>
               <button className="sys-btn sys-btn--primary" disabled={memberEditSubmitting} onClick={() => void handleSubmitMemberEdit()}><Save size={14} /> 保存成员</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {memberImportResult && (
+        <div className="sys-modal-mask" onClick={() => setMemberImportResult(null)}>
+          <div className="sys-modal" style={{ maxWidth: 560 }} onClick={(event) => event.stopPropagation()}>
+            <div className="sys-modal-header">
+              <span className="sys-modal-title">成员导入结果</span>
+              <button className="sys-modal-close" onClick={() => setMemberImportResult(null)}><X size={18} /></button>
+            </div>
+            <div className="sys-modal-body">
+              <div className="sys-config-group">
+                <div className="sys-config-group-title">导入汇总</div>
+                <div className="sys-info-tags">
+                  <span className="sys-info-tag">总计 {memberImportResult.total} 条</span>
+                  <span className="sys-info-tag sys-info-tag--success">成功 {memberImportResult.success} 条</span>
+                  <span className="sys-info-tag sys-info-tag--danger">失败 {memberImportResult.failedRows.length} 条</span>
+                </div>
+              </div>
+              {memberImportResult.failedRows.length > 0 ? (
+                <div className="tenant-import-result-list">
+                  <table className="tenant-member-table">
+                    <thead>
+                      <tr>
+                        <th>行号</th>
+                        <th>失败原因</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {memberImportResult.failedRows.map((row) => (
+                        <tr key={`${row.rowNumber}-${row.reason}`}>
+                          <td>第 {row.rowNumber} 行</td>
+                          <td>{row.reason}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+            </div>
+            <div className="sys-modal-footer">
+              <button className="sys-btn sys-btn--primary" onClick={() => setMemberImportResult(null)}><CheckCircle2 size={14} /> 知道了</button>
             </div>
           </div>
         </div>
@@ -1421,6 +1520,9 @@ function OrganizationPanel({
   error,
   hasTenantContext,
   onCreateMember,
+  onImportMembers,
+  onDownloadImportTemplate,
+  importLoading,
   onCreateDepartment,
   onEditDepartment,
   membershipUpdatingId,
@@ -1431,6 +1533,9 @@ function OrganizationPanel({
   error: string;
   hasTenantContext: boolean;
   onCreateMember: () => void;
+  onImportMembers: (file: File) => void;
+  onDownloadImportTemplate: () => void;
+  importLoading: boolean;
   onCreateDepartment: () => void;
   onEditDepartment: (department: OrganizationDepartment) => void;
   membershipUpdatingId: string | null;
@@ -1438,6 +1543,7 @@ function OrganizationPanel({
 }) {
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<string>("all");
   const [memberKeyword, setMemberKeyword] = useState("");
+  const importFileInputRef = useRef<HTMLInputElement | null>(null);
   const [expandedDepartmentIds, setExpandedDepartmentIds] = useState<Set<string>>(() => new Set());
 
   const departmentTreeState = useMemo(() => {
@@ -1622,6 +1728,19 @@ function OrganizationPanel({
                 <p>当前筛选 {visibleMemberships.length} 人</p>
               </div>
               <div className="tenant-member-toolbar-actions">
+                <input
+                  ref={importFileInputRef}
+                  type="file"
+                  accept=".xlsx,.xls"
+                  className="hidden"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = "";
+                    if (file) {
+                      onImportMembers(file);
+                    }
+                  }}
+                />
                 <div className="tenant-member-search">
                   <Search size={15} />
                   <input
@@ -1630,6 +1749,18 @@ function OrganizationPanel({
                     onChange={(event) => setMemberKeyword(event.target.value)}
                   />
                 </div>
+                <button
+                  className="sys-btn sys-btn--default sys-btn--sm"
+                  onClick={() => importFileInputRef.current?.click()}
+                  disabled={!overview || importLoading}
+                >
+                  <Upload size={13} />
+                  {importLoading ? "导入中" : "导入成员"}
+                </button>
+                <button className="sys-btn sys-btn--default sys-btn--sm" onClick={onDownloadImportTemplate} disabled={!overview}>
+                  <Download size={13} />
+                  下载模板
+                </button>
                 <button className="sys-btn sys-btn--primary sys-btn--sm" onClick={onCreateMember} disabled={!overview}>
                   <UserPlus size={13} />
                   新增成员

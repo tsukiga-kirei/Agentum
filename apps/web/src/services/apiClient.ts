@@ -8,6 +8,7 @@ import type {
   CreateResourceGrantRequest,
   CreateTenantRoleRequest,
   CreateTenantOrgRoleRequest,
+  MemberImportResult,
   PageResponse,
   PageGrant,
   PrincipalGrantUsage,
@@ -281,6 +282,55 @@ async function apiFileRequest(path: string, options: RequestOptions = {}): Promi
   };
 }
 
+async function apiUploadRequest<T>(path: string, formData: FormData, options: RequestOptions = {}): Promise<T> {
+  const headers = new Headers(options.headers);
+
+  if (options.token) {
+    headers.set("Authorization", `Bearer ${options.token}`);
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
+      method: options.method ?? "POST",
+      credentials: "include",
+      headers,
+      body: formData,
+    });
+  } catch (error) {
+    console.error("[api] 上传请求异常", { path, message: error instanceof Error ? error.message : "unknown" });
+    throw error;
+  }
+
+  let envelope: ApiEnvelope<T>;
+  try {
+    envelope = (await response.json()) as ApiEnvelope<T>;
+  } catch (error) {
+    console.error("[api] 上传响应解析失败", { path, status: response.status, message: error instanceof Error ? error.message : "unknown" });
+    throw new AgentumApiError("后端响应格式不正确，请稍后重试", "SYSTEM_RESPONSE_INVALID", response.headers.get("X-Request-Id") ?? "req_unknown");
+  }
+
+  if (!response.ok || !envelope.success) {
+    if (response.status === 401 && options.token && !options.skipAuthRefresh && canRefreshSession(path)) {
+      const accessToken = await resolveAccessTokenAfterUnauthorized(options.token);
+      return apiUploadRequest<T>(path, formData, { ...options, token: accessToken, skipAuthRefresh: true });
+    }
+    console.warn("[api] 上传请求失败", { path, status: response.status, code: envelope.error?.code, requestId: envelope.requestId });
+    throw new AgentumApiError(
+      envelope.error?.message ?? "上传失败，请稍后重试",
+      envelope.error?.code ?? "SYSTEM_UPLOAD_FAILED",
+      envelope.requestId,
+      envelope.error?.details,
+    );
+  }
+
+  if (envelope.data === null) {
+    return undefined as T;
+  }
+  return envelope.data;
+}
+
 function resolveFileName(contentDisposition: string | null): string {
   if (!contentDisposition) {
     return "";
@@ -338,6 +388,13 @@ export const organizationApi = {
     apiRequest<void>(`/api/admin/tenants/${tenantId}/organization/page-grants/${grantId}`, { method: "DELETE", token }),
   createMember: (tenantId: string, token: string, request: CreateMemberRequest) =>
     apiRequest<TenantOrganizationOverview>(`/api/admin/tenants/${tenantId}/organization/members`, { method: "POST", token, body: request }),
+  downloadMemberImportTemplate: (tenantId: string, token: string) =>
+    apiFileRequest(`/api/admin/tenants/${tenantId}/organization/members/import-template`, { token }),
+  importMembers: (tenantId: string, token: string, file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return apiUploadRequest<MemberImportResult>(`/api/admin/tenants/${tenantId}/organization/members/import`, formData, { token });
+  },
   createDepartment: (tenantId: string, token: string, request: CreateDepartmentRequest) =>
     apiRequest<TenantOrganizationOverview>(`/api/admin/tenants/${tenantId}/organization/departments`, { method: "POST", token, body: request }),
   updateDepartment: (tenantId: string, departmentId: string, token: string, request: UpdateDepartmentRequest) =>

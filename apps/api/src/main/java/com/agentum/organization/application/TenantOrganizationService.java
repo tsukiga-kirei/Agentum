@@ -21,6 +21,8 @@ import com.agentum.organization.interfaces.CreateTenantRoleRequest;
 import com.agentum.organization.interfaces.DepartmentResponse;
 import com.agentum.organization.interfaces.GrantPrincipalRequest;
 import com.agentum.organization.interfaces.GrantPrincipalResponse;
+import com.agentum.organization.interfaces.MemberImportFailedRowResponse;
+import com.agentum.organization.interfaces.MemberImportResultResponse;
 import com.agentum.organization.interfaces.MemberResponse;
 import com.agentum.organization.interfaces.MembershipResponse;
 import com.agentum.organization.interfaces.MembershipRoleResponse;
@@ -65,6 +67,9 @@ import com.agentum.tenant.infrastructure.TenantRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -74,7 +79,15 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.DataFormatter;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.slf4j.Logger;
@@ -95,6 +108,9 @@ public class TenantOrganizationService {
     private static final Set<String> ALLOWED_RESOURCE_TYPES = Set.of("mcp", "skill", "prompt_template", "delivery");
     private static final Set<String> ALLOWED_RESOURCE_ACTIONS = Set.of("use", "view", "execute", "manage");
     private static final Set<String> ALLOWED_PRINCIPAL_TYPES = Set.of("role", "department", "user");
+    private static final long MEMBER_IMPORT_MAX_BYTES = 5L * 1024L * 1024L;
+    private static final String DEFAULT_MEMBER_PASSWORD = "agentum123";
+    private static final Pattern BASIC_EMAIL_PATTERN = Pattern.compile("^[A-Za-z0-9._%+\\-]+@[A-Za-z0-9.\\-]+\\.[A-Za-z]{2,}$");
 
     private final TenantRepository tenantRepository;
     private final UserAccountRepository userAccountRepository;
@@ -158,6 +174,12 @@ public class TenantOrganizationService {
             log.warn("成员创建失败：用户名已存在 tenantId={} operatorUserId={} username={} requestId={}", tenantId, operatorUserId, username, RequestIds.current());
             throw new ApiException(HttpStatus.CONFLICT, "ORG_USER_USERNAME_EXISTS", "用户名已存在，请换一个用户名");
         }
+        String email = normalizeOptional(request.email());
+        validateEmailIfPresent(email, "ORG_USER_EMAIL_INVALID");
+        if (!email.isBlank() && userAccountRepository.existsByEmailIgnoreCase(email)) {
+            log.warn("成员创建失败：邮箱已存在 tenantId={} operatorUserId={} username={} requestId={}", tenantId, operatorUserId, username, RequestIds.current());
+            throw new ApiException(HttpStatus.CONFLICT, "ORG_USER_EMAIL_EXISTS", "邮箱已存在，请换一个邮箱");
+        }
 
         UUID roleId = request.roleId();
 
@@ -188,7 +210,7 @@ public class TenantOrganizationService {
             username,
             passwordEncoder.encode(request.password()),
             normalizeRequired(request.displayName()),
-            normalizeOptional(request.email())
+            email
         );
         userAccountRepository.save(user);
 
@@ -212,6 +234,135 @@ public class TenantOrganizationService {
         );
 
         return getOverview(tenantId);
+    }
+
+    public byte[] buildMemberImportTemplate() {
+        try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            Sheet sheet = workbook.createSheet("成员导入模板");
+            Row header = sheet.createRow(0);
+            List<String> headers = List.of("姓名", "用户名", "部门", "角色", "邮箱");
+            for (int index = 0; index < headers.size(); index++) {
+                header.createCell(index).setCellValue(headers.get(index));
+                sheet.setColumnWidth(index, 18 * 256);
+            }
+            Row example = sheet.createRow(1);
+            example.createCell(0).setCellValue("张三");
+            example.createCell(1).setCellValue("zhangsan");
+            example.createCell(2).setCellValue("研发部");
+            example.createCell(3).setCellValue("开发工程师");
+            example.createCell(4).setCellValue("zhangsan@example.com");
+            workbook.write(output);
+            return output.toByteArray();
+        } catch (IOException exception) {
+            log.error("成员导入模板生成失败 requestId={}", RequestIds.current(), exception);
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "ORG_MEMBER_IMPORT_TEMPLATE_FAILED", "成员导入模板生成失败");
+        }
+    }
+
+    @Transactional
+    public MemberImportResultResponse importMembers(UUID tenantId, UUID operatorUserId, InputStream inputStream, long fileSize) {
+        ensureActiveTenant(tenantId);
+        if (fileSize <= 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_MEMBER_IMPORT_FILE_EMPTY", "请上传 Excel 文件");
+        }
+        if (fileSize > MEMBER_IMPORT_MAX_BYTES) {
+            throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "ORG_MEMBER_IMPORT_FILE_TOO_LARGE", "导入文件不能超过 5MB");
+        }
+
+        List<MemberImportRow> rows = parseMemberImportRows(inputStream);
+        if (rows.isEmpty()) {
+            return new MemberImportResultResponse(0, 0, List.of());
+        }
+
+        List<DepartmentEntity> departments = departmentRepository.findByTenantIdAndStatusOrderBySortOrderAscNameAsc(tenantId, ACTIVE_STATUS);
+        List<RoleEntity> roles = roleRepository.findByTenantIdAndStatusOrderByNameAsc(tenantId, ACTIVE_STATUS)
+            .stream()
+            .filter(role -> !"tenant_admin".equals(role.getCode()))
+            .toList();
+        DepartmentEntity defaultDepartment = resolveDefaultDepartment(tenantId, departments);
+        if (departments.stream().noneMatch(department -> department.getId().equals(defaultDepartment.getId()))) {
+            departments = new ArrayList<>(departments);
+            departments.add(defaultDepartment);
+        }
+
+        Map<String, Long> usernameCounts = rows.stream()
+            .filter(row -> !row.username().isBlank())
+            .collect(Collectors.groupingBy(MemberImportRow::username, Collectors.counting()));
+        Map<String, Long> emailCounts = rows.stream()
+            .filter(row -> !row.email().isBlank())
+            .collect(Collectors.groupingBy(row -> row.email().toLowerCase(), Collectors.counting()));
+        List<MemberImportFailedRowResponse> failedRows = new ArrayList<>();
+        int successCount = 0;
+
+        for (MemberImportRow row : rows) {
+            List<String> errors = new ArrayList<>();
+            if (row.displayName().isBlank()) {
+                errors.add("姓名不能为空");
+            }
+            if (row.username().isBlank()) {
+                errors.add("用户名不能为空");
+            } else if (!UsernameValidator.isValid(row.username())) {
+                errors.add(UsernameValidator.RULE_MESSAGE);
+            } else if (usernameCounts.getOrDefault(row.username(), 0L) > 1) {
+                errors.add("用户名在导入文件中重复");
+            } else if (userAccountRepository.existsByUsername(row.username())) {
+                errors.add("用户名已存在");
+            }
+
+            if (!row.email().isBlank()) {
+                String normalizedEmail = row.email().toLowerCase();
+                if (!BASIC_EMAIL_PATTERN.matcher(row.email()).matches()) {
+                    errors.add("邮箱格式不正确");
+                } else if (emailCounts.getOrDefault(normalizedEmail, 0L) > 1) {
+                    errors.add("邮箱在导入文件中重复");
+                } else if (userAccountRepository.existsByEmailIgnoreCase(row.email())) {
+                    errors.add("邮箱已存在");
+                }
+            }
+
+            DepartmentEntity department = row.departmentName().isBlank()
+                ? defaultDepartment
+                : matchDepartmentByName(departments, row.departmentName()).orElse(null);
+            if (department == null) {
+                errors.add("未找到匹配部门");
+            }
+
+            List<RoleEntity> matchedRoles = matchRolesByNames(roles, row.roleNames());
+            if (matchedRoles.size() != row.roleNames().size()) {
+                errors.add("未找到匹配角色");
+            }
+
+            if (!errors.isEmpty()) {
+                failedRows.add(new MemberImportFailedRowResponse(row.rowNumber(), String.join("；", errors)));
+                continue;
+            }
+
+            UserAccount user = UserAccount.create(
+                row.username(),
+                passwordEncoder.encode(DEFAULT_MEMBER_PASSWORD),
+                row.displayName(),
+                row.email()
+            );
+            userAccountRepository.save(user);
+            UserMembershipEntity membership = UserMembershipEntity.create(tenantId, user.getId(), department.getId());
+            userMembershipRepository.save(membership);
+            for (RoleEntity role : matchedRoles) {
+                userMembershipRoleRepository.save(UserMembershipRoleEntity.create(membership.getId(), role.getId()));
+                ensureLoginAssignment(user.getId(), tenantId, role, membership.isDefaultMembership());
+            }
+            successCount++;
+        }
+
+        log.info(
+            "成员批量导入完成 tenantId={} operatorUserId={} total={} success={} failed={} requestId={}",
+            tenantId,
+            operatorUserId,
+            rows.size(),
+            successCount,
+            failedRows.size(),
+            RequestIds.current()
+        );
+        return new MemberImportResultResponse(rows.size(), successCount, failedRows);
     }
 
     @Transactional
@@ -543,9 +694,15 @@ public class TenantOrganizationService {
             log.warn("成员基本信息更新失败：用户名已存在 tenantId={} operatorUserId={} membershipId={} username={} requestId={}", tenantId, operatorUserId, membershipId, username, RequestIds.current());
             throw new ApiException(HttpStatus.CONFLICT, "ORG_USER_USERNAME_EXISTS", "用户名已存在，请换一个用户名");
         }
+        String email = normalizeOptional(request.email());
+        validateEmailIfPresent(email, "ORG_USER_EMAIL_INVALID");
+        if (!email.isBlank() && userAccountRepository.existsByEmailIgnoreCaseAndIdNot(email, account.getId())) {
+            log.warn("成员基本信息更新失败：邮箱已存在 tenantId={} operatorUserId={} membershipId={} requestId={}", tenantId, operatorUserId, membershipId, RequestIds.current());
+            throw new ApiException(HttpStatus.CONFLICT, "ORG_USER_EMAIL_EXISTS", "邮箱已存在，请换一个邮箱");
+        }
 
         // 租户管理员只能维护人员展示信息和登录名；密码、状态与租户权限分别走独立动作，便于审计和后续安全策略拆分。
-        account.updateProfile(username, normalizeRequired(request.displayName()), normalizeOptional(request.email()));
+        account.updateProfile(username, normalizeRequired(request.displayName()), email);
         userAccountRepository.save(account);
         log.info("成员基本信息更新成功 tenantId={} operatorUserId={} membershipId={} userId={} requestId={}", tenantId, operatorUserId, membershipId, account.getId(), RequestIds.current());
         return getOverview(tenantId);
@@ -1230,6 +1387,94 @@ public class TenantOrganizationService {
         return value == null ? "" : value.trim();
     }
 
+    private static void validateEmailIfPresent(String email, String errorCode) {
+        if (!email.isBlank() && !BASIC_EMAIL_PATTERN.matcher(email).matches()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, errorCode, "邮箱格式不正确");
+        }
+    }
+
+    private List<MemberImportRow> parseMemberImportRows(InputStream inputStream) {
+        try (Workbook workbook = WorkbookFactory.create(inputStream)) {
+            if (workbook.getNumberOfSheets() == 0) {
+                return List.of();
+            }
+            Sheet sheet = workbook.getSheetAt(0);
+            DataFormatter formatter = new DataFormatter();
+            List<MemberImportRow> rows = new ArrayList<>();
+            for (int rowIndex = 1; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
+                Row row = sheet.getRow(rowIndex);
+                if (row == null) {
+                    continue;
+                }
+                String displayName = readCell(formatter, row, 0);
+                String username = readCell(formatter, row, 1);
+                String departmentName = readCell(formatter, row, 2);
+                String roleText = readCell(formatter, row, 3);
+                String email = readCell(formatter, row, 4);
+                if (displayName.isBlank() && username.isBlank() && departmentName.isBlank() && roleText.isBlank() && email.isBlank()) {
+                    continue;
+                }
+                rows.add(new MemberImportRow(rowIndex + 1, displayName, username, departmentName, splitRoleNames(roleText), email));
+            }
+            return rows;
+        } catch (IOException | RuntimeException exception) {
+            log.warn("成员导入文件解析失败 requestId={}", RequestIds.current(), exception);
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_MEMBER_IMPORT_FILE_INVALID", "无法解析 Excel 文件，请使用模板重新填写");
+        }
+    }
+
+    private static String readCell(DataFormatter formatter, Row row, int cellIndex) {
+        Cell cell = row.getCell(cellIndex);
+        return cell == null ? "" : formatter.formatCellValue(cell).trim();
+    }
+
+    private static List<String> splitRoleNames(String roleText) {
+        if (roleText == null || roleText.isBlank()) {
+            return List.of();
+        }
+        return Pattern.compile("[,，;；]")
+            .splitAsStream(roleText)
+            .map(TenantOrganizationService::normalizeOptional)
+            .filter(value -> !value.isBlank())
+            .distinct()
+            .toList();
+    }
+
+    private DepartmentEntity resolveDefaultDepartment(UUID tenantId, List<DepartmentEntity> departments) {
+        Optional<DepartmentEntity> existing = departments.stream()
+            .filter(department -> "default".equalsIgnoreCase(normalizeOptional(department.getCode())) || "默认部门".equals(department.getName()))
+            .findFirst();
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+        DepartmentEntity department = DepartmentEntity.create(tenantId, null, "默认部门", generateDepartmentCode(tenantId, "默认部门"), 0);
+        departmentRepository.save(department);
+        log.info("成员导入自动创建默认部门 tenantId={} departmentId={} requestId={}", tenantId, department.getId(), RequestIds.current());
+        return department;
+    }
+
+    private Optional<DepartmentEntity> matchDepartmentByName(List<DepartmentEntity> departments, String departmentName) {
+        String keyword = normalizeOptional(departmentName);
+        return departments.stream()
+            .filter(department -> department.getName().contains(keyword) || keyword.contains(department.getName()))
+            .findFirst();
+    }
+
+    private List<RoleEntity> matchRolesByNames(List<RoleEntity> roles, List<String> roleNames) {
+        List<RoleEntity> matchedRoles = new ArrayList<>();
+        for (String roleName : roleNames) {
+            Optional<RoleEntity> matched = roles.stream()
+                .filter(role -> role.getName().contains(roleName) || roleName.contains(role.getName()))
+                .findFirst();
+            matched.ifPresent(role -> {
+                if (matchedRoles.stream().noneMatch(existing -> existing.getId().equals(role.getId()))) {
+                    matchedRoles.add(role);
+                }
+            });
+        }
+        return matchedRoles;
+    }
+
     private TenantOrgRoleResponse toTenantOrgRoleResponse(TenantOrgRoleEntity role) {
         return new TenantOrgRoleResponse(
             role.getId().toString(),
@@ -1782,6 +2027,9 @@ public class TenantOrganizationService {
     }
 
     private record NormalizedResource(String type, UUID id) {
+    }
+
+    private record MemberImportRow(int rowNumber, String displayName, String username, String departmentName, List<String> roleNames, String email) {
     }
 
     private interface PrincipalNameResolver {

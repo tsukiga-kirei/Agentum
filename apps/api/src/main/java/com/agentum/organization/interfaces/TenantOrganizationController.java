@@ -3,13 +3,20 @@ package com.agentum.organization.interfaces;
 import com.agentum.auth.application.CurrentUserPrincipal;
 import com.agentum.organization.application.TenantOrganizationAccess;
 import com.agentum.organization.application.TenantOrganizationService;
+import com.agentum.shared.api.ApiException;
 import com.agentum.shared.api.ApiResponse;
 import com.agentum.shared.api.RequestIds;
 import com.agentum.shared.pagination.PageResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.io.IOException;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -21,6 +28,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/admin/tenants/{tenantId}/organization")
@@ -54,6 +62,38 @@ public class TenantOrganizationController {
         tenantOrganizationAccess.assertCanManageTenant(principal, tenantId);
         // 成员写入需要同时保留目标租户和操作者，便于后续审计日志与权限事件串联。
         return ApiResponse.success(tenantOrganizationService.createMember(tenantId, principal.userId(), createMemberRequest), RequestIds.current(request));
+    }
+
+    @GetMapping("/members/import-template")
+    public ResponseEntity<byte[]> downloadMemberImportTemplate(
+        @PathVariable UUID tenantId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal
+    ) {
+        tenantOrganizationAccess.assertCanManageTenant(principal, tenantId);
+        byte[] content = tenantOrganizationService.buildMemberImportTemplate();
+        return ResponseEntity.ok()
+            .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename("成员导入模板.xlsx", java.nio.charset.StandardCharsets.UTF_8).build().toString())
+            .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+            .body(content);
+    }
+
+    @PostMapping(value = "/members/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<MemberImportResultResponse> importMembers(
+        @PathVariable UUID tenantId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @RequestParam("file") MultipartFile file,
+        HttpServletRequest request
+    ) {
+        tenantOrganizationAccess.assertCanManageTenant(principal, tenantId);
+        // 批量导入是租户内成员写入动作；每行仍由 service 按当前租户校验部门、角色、用户名和邮箱边界。
+        try {
+            return ApiResponse.success(
+                tenantOrganizationService.importMembers(tenantId, principal.userId(), file.getInputStream(), file.getSize()),
+                RequestIds.current(request)
+            );
+        } catch (IOException exception) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_MEMBER_IMPORT_FILE_READ_FAILED", "导入文件读取失败，请重新上传");
+        }
     }
 
     @PostMapping("/departments")
