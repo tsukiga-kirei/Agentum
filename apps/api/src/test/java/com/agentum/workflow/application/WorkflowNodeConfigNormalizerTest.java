@@ -53,7 +53,7 @@ class WorkflowNodeConfigNormalizerTest {
     }
 
     @Test
-    void shouldNormalizeLegacyClusterExecutionMode() {
+    void shouldFillClusterAgentPromptsWithoutRewritingExecutionMode() {
         WorkflowDraftApi.WorkflowNodeDraft node = new WorkflowDraftApi.WorkflowNodeDraft(
             "cluster_1",
             "parallel_group",
@@ -63,7 +63,7 @@ class WorkflowNodeConfigNormalizerTest {
             List.of("input_1"),
             List.of("agent_1_output"),
             Map.of(
-                "executionMode", "sequential",
+                "executionMode", "relay",
                 "clusterAgents", List.of(Map.of(
                     "id", "agent_1",
                     "name", "子智能体 1",

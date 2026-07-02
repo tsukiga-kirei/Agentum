@@ -37,6 +37,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -438,10 +440,13 @@ public class NodeExecutionService {
             intentDecision = routingResult.decision();
             resultSlots = routingResult.selectedSlots();
             if (resultSlots.isEmpty()) {
+                if (!intentDecision.fixedReply().isBlank()) {
+                    return fixedIntentReplyResult(variables, node.getConfigSnapshot(), intentDecision);
+                }
                 throw new ApiException(
                     HttpStatus.BAD_REQUEST,
                     "CLUSTER_INTENT_NO_MATCH",
-                    "意图分派未命中任何可执行子智能体，请检查意图提示词、置信度阈值或其他意图处理策略"
+                    "意图分派未命中任何可执行子智能体，请检查意图配置或其他情况处理策略"
                 );
             }
             failures = executeClusterParallel(run, node, resultSlots, variables, outputsByIndex, operatorUserId);
@@ -488,6 +493,7 @@ public class NodeExecutionService {
 
             Map<String, Object> summaryEntry = new LinkedHashMap<>();
             summaryEntry.put("name", slot.name());
+            summaryEntry.put("outputVariable", outputVarName);
             summaryEntry.put("status", "completed");
             summaryEntry.put("final_answer", displayText);
             summaryEntry.put("summary", summarizeText(displayText));
@@ -496,9 +502,11 @@ public class NodeExecutionService {
             summaries.add(summaryEntry);
         }
         result.put("clusterAgents", summaries);
-        String finalAnswer = clusterFinalAnswer(summaries);
+        String finalAnswer = ClusterOutputSupport.finalAnswer(node.getConfigSnapshot(), result, summaries);
+        String clusterOutputVariable = ClusterOutputSupport.outputVariable(node.getConfigSnapshot());
         result.put("final_answer", finalAnswer);
         result.put("agent_response", finalAnswer);
+        result.put(clusterOutputVariable, finalAnswer);
         result.put(ClusterIntentRoutingSupport.DEFAULT_INTENT_OUTPUT_VARIABLE, finalAnswer);
         if (intentDecision != null) {
             result.put("intentRouting", intentRoutingSummary(intentDecision));
@@ -518,8 +526,9 @@ public class NodeExecutionService {
         Map<String, Object> variables,
         UUID operatorUserId
     ) {
+        Map<String, Object> nodeConfig = node.getConfigSnapshot();
         List<Map<String, Object>> agentConfigs = slots.stream().map(ClusterAgentSlot::config).toList();
-        List<ClusterIntentRoutingSupport.IntentRoute> routes = ClusterIntentRoutingSupport.intentRoutes(agentConfigs);
+        List<ClusterIntentRoutingSupport.IntentRoute> routes = ClusterIntentRoutingSupport.intentRoutes(nodeConfig, agentConfigs);
         emit(run.getId(), node.getId(), "cluster_intent", Map.of(
             "eventType", "started",
             "routeCount", routes.size()
@@ -529,7 +538,7 @@ public class NodeExecutionService {
             new AgentRuntimeRequest(
                 run,
                 node,
-                ClusterIntentRoutingSupport.classifierConfig(node.getConfigSnapshot(), agentConfigs, routes),
+                ClusterIntentRoutingSupport.classifierConfig(nodeConfig, agentConfigs, routes),
                 variables,
                 Map.of(),
                 operatorUserId
@@ -537,20 +546,23 @@ public class NodeExecutionService {
             intentClassifierEventSink(run.getId(), node.getId())
         ).outputs();
         ClusterIntentRoutingSupport.IntentDecision decision = ClusterIntentRoutingSupport.decide(
-            node.getConfigSnapshot(),
+            nodeConfig,
             routes,
+            agentConfigs,
             classifierOutput
         );
-        List<ClusterAgentSlot> selectedSlots = slots.stream()
-            .filter(slot -> decision.selectedAgentIndexes().contains(slot.index()))
+        Map<Integer, ClusterAgentSlot> slotByIndex = slots.stream()
+            .collect(Collectors.toMap(ClusterAgentSlot::index, Function.identity(), (left, right) -> left, LinkedHashMap::new));
+        List<ClusterAgentSlot> selectedSlots = decision.selectedAgentIndexes().stream()
+            .map(slotByIndex::get)
+            .filter(slot -> slot != null)
             .toList();
         emit(run.getId(), node.getId(), "cluster_intent", Map.of(
             "eventType", "completed",
             "requestedCodes", decision.requestedCodes(),
             "selectedCodes", decision.selectedCodes(),
-            "confidence", decision.confidence(),
-            "threshold", decision.threshold(),
             "reason", decision.reason(),
+            "fallbackMode", decision.fallbackMode(),
             "usedFallback", decision.usedFallback()
         ));
         return new IntentRoutingResult(decision, selectedSlots);
@@ -1106,35 +1118,30 @@ public class NodeExecutionService {
         return stringValue(output.get("summary"), "已完成");
     }
 
-    private static String clusterFinalAnswer(List<Map<String, Object>> summaries) {
-        if (summaries == null || summaries.isEmpty()) {
-            return "智能体集群未生成子智能体结论。";
-        }
-        StringBuilder result = new StringBuilder("## 智能体集群结论\n");
-        for (Map<String, Object> summary : summaries) {
-            String body = stringValue(summary.get("final_answer"), "");
-            if (body.isBlank()) {
-                body = stringValue(summary.get("summary"), "已完成");
-            }
-            result.append("\n### ")
-                .append(stringValue(summary.get("name"), "子智能体"))
-                .append("\n")
-                .append(body)
-                .append("\n");
-        }
-        return result.toString();
-    }
-
     private static Map<String, Object> intentRoutingSummary(ClusterIntentRoutingSupport.IntentDecision decision) {
         Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("requestedCodes", decision.requestedCodes());
         summary.put("selectedCodes", decision.selectedCodes());
-        summary.put("confidence", decision.confidence());
-        summary.put("threshold", decision.threshold());
         summary.put("reason", decision.reason());
         summary.put("slots", decision.slots());
         summary.put("usedFallback", decision.usedFallback());
+        summary.put("fallbackMode", decision.fallbackMode());
         return summary;
+    }
+
+    private static Map<String, Object> fixedIntentReplyResult(
+        Map<String, Object> variables,
+        Map<String, Object> nodeConfig,
+        ClusterIntentRoutingSupport.IntentDecision decision
+    ) {
+        Map<String, Object> result = new LinkedHashMap<>(variables);
+        result.put("final_answer", decision.fixedReply());
+        result.put("agent_response", decision.fixedReply());
+        result.put(ClusterOutputSupport.outputVariable(nodeConfig), decision.fixedReply());
+        result.put(ClusterIntentRoutingSupport.DEFAULT_INTENT_OUTPUT_VARIABLE, decision.fixedReply());
+        result.put("intentRouting", intentRoutingSummary(decision));
+        result.put("summary", "意图分派已按其他情况返回固定话术。");
+        return result;
     }
 
     private static String stringValue(Object value, String fallback) {

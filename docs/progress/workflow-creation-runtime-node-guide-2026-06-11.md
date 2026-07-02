@@ -52,7 +52,7 @@
 本轮修复的两个创建问题：
 
 - 多个输入节点不再都沿用模板里的 `input_1`，而是按节点序号同步字段变量，例如 `input_1`、`input_2`。
-- 多个智能体集群节点不再重复使用 `agent_1_output`、`agent_2_output`，而是按节点 ID 生成唯一子智能体输出，例如 `cluster_mabc_2_agent_1_output`。
+- 新建智能体集群的子智能体输出变量使用可读短名，例如 `cluster_4_agent_1_output`、`cluster_4_agent_2_output`，避免把节点随机串暴露给流程设计者。
 
 ### 2.3 保存草稿
 
@@ -210,7 +210,7 @@
       "userPrompt": "...",
       "skillIds": [],
       "mcpIds": [],
-      "output": "cluster_xxx_agent_1_output",
+      "output": "cluster_4_agent_1_output",
       "allowQuestion": true,
       "allowUserEdit": true
     }
@@ -221,15 +221,18 @@
 约束：
 
 - `clusterAgents` 不能为空。
-- `executionMode` 支持 `collaborative`、`relay`、`intent`；历史快照中的 `parallel` / `sequential` 兼容映射。
+- `executionMode` 支持 `collaborative`、`relay`、`intent`；历史 `parallel` / `sequential` 数据由迁移脚本清洗，不再作为运行态兼容值。
+- 意图分派通过 `intentRoutes` 配置“意图名称 / 命中说明 / 目标子智能体”，运行时只执行命中的子智能体；多个命中按意图清单顺序写入集群输出模板，未命中可中止、转交指定智能体或返回固定话术。
 - 每个子智能体的 `output` 必须是合法变量名。
 - 每个子智能体的 `output` 不能重复。
-- 子智能体输出集合必须与节点 `outputVariables` 完全一致。
+- 协同 / 接力模式下，节点 `outputVariables` 包含最终输出变量和子智能体输出变量；意图分派模式下，下游只声明最终输出变量，避免引用未命中的子智能体变量。
+- 集群输出模板只能引用本节点子智能体输出变量，用来组合多个子智能体结果；上游变量应在子智能体提示词或意图判断内容中使用。
 - 子智能体引用的能力、提示词模板按当前编辑者重新校验。
 
 运行态输出：
 
-- 每个子智能体的输出变量，例如 `cluster_xxx_agent_1_output`。
+- 每个子智能体的输出变量，例如 `cluster_4_agent_1_output`。
+- 可配置的最终输出变量，默认 `cluster_result`。
 - `clusterAgents` 汇总列表。
 - `final_answer` 集群汇总正文。
 - `agent_response` 集群汇总正文。

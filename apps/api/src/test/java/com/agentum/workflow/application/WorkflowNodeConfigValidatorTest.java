@@ -280,7 +280,7 @@ class WorkflowNodeConfigValidatorTest {
             List.of("company_name"),
             List.of("cluster_result"),
             Map.of(
-                "executionMode", "parallel",
+                "executionMode", "collaborative",
                 "clusterAgents", List.of(
                     Map.of(
                         "name", "资料核验",
@@ -310,9 +310,11 @@ class WorkflowNodeConfigValidatorTest {
             0,
             0,
             List.of("company_name"),
-            List.of("cluster_1_agent_1_output"),
+            List.of("cluster_result", "agent_1_output"),
             Map.of(
-                "executionMode", "parallel",
+                "executionMode", "collaborative",
+                "clusterOutputVariable", "cluster_result",
+                "mergeRule", "{{agent_1_output}}",
                 "clusterAgents", List.of(
                     Map.of(
                         "name", "资料核验",
@@ -321,7 +323,7 @@ class WorkflowNodeConfigValidatorTest {
                         "systemPrompt", WorkflowPromptDefaults.DEFAULT_SYSTEM_PROMPT,
                         "userPrompt", WorkflowPromptDefaults.DEFAULT_CLUSTER_USER_PROMPT,
                         "maxAgentIterationsPerTurn", 4,
-                        "output", "cluster_1_agent_1_output"
+                        "output", "agent_1_output"
                     )
                 )
             )
@@ -330,6 +332,40 @@ class WorkflowNodeConfigValidatorTest {
         List<WorkflowDraftApi.WorkflowValidationIssue> issues = validator().validateCapabilityReferences(TENANT_ID, USER_ID, List.of(node));
 
         assertThat(issues).isEmpty();
+    }
+
+    @Test
+    void shouldRejectLegacyClusterExecutionModeAfterMigration() {
+        WorkflowDraftApi.WorkflowNodeRow node = new WorkflowDraftApi.WorkflowNodeRow(
+            "cluster_1",
+            "parallel_group",
+            "智能体集群",
+            0,
+            0,
+            List.of("company_name"),
+            List.of("cluster_result", "agent_1_output"),
+            Map.of(
+                "executionMode", "parallel",
+                "clusterOutputVariable", "cluster_result",
+                "mergeRule", "{{agent_1_output}}",
+                "clusterAgents", List.of(
+                    Map.of(
+                        "name", "资料核验",
+                        "systemPromptTemplateId", "none",
+                        "userPromptTemplateId", "none",
+                        "systemPrompt", WorkflowPromptDefaults.DEFAULT_SYSTEM_PROMPT,
+                        "userPrompt", WorkflowPromptDefaults.DEFAULT_CLUSTER_USER_PROMPT,
+                        "maxAgentIterationsPerTurn", 4,
+                        "output", "agent_1_output"
+                    )
+                )
+            )
+        );
+
+        List<WorkflowDraftApi.WorkflowValidationIssue> issues = validator().validateCapabilityReferences(TENANT_ID, USER_ID, List.of(node));
+
+        assertThat(issues).extracting(WorkflowDraftApi.WorkflowValidationIssue::code)
+            .containsExactly("WORKFLOW_VALIDATION_EXECUTION_MODE_INVALID");
     }
 
     @Test
@@ -344,13 +380,12 @@ class WorkflowNodeConfigValidatorTest {
             List.of("cluster_result"),
             Map.of(
                 "executionMode", "intent",
-                "intentSystemPrompt", WorkflowPromptDefaults.DEFAULT_INTENT_SYSTEM_PROMPT,
-                "intentUserPrompt", WorkflowPromptDefaults.DEFAULT_INTENT_USER_PROMPT,
-                "intentSelectionMode", "single",
-                "intentFallbackMode", "fallback_intent",
-                "fallbackIntentCode", "other",
-                "intentConfidenceThreshold", 0.65,
-                "intentMaxAgentIterationsPerTurn", 1,
+                "intentSelectionMode", "multiple",
+                "intentFallbackMode", "agent",
+                "fallbackAgentId", "other",
+                "intentRoutes", List.of(
+                    Map.of("intentCode", "monthly_report", "intentName", "月报", "intentDescription", "处理月报生成", "agentId", "monthly_report")
+                ),
                 "clusterAgents", List.of(
                     intentAgent("月报智能体", "monthly_report", "处理月报生成", "monthly_output"),
                     intentAgent("其他处理智能体", "other", "处理无法归类的需求", "other_output")
@@ -364,7 +399,7 @@ class WorkflowNodeConfigValidatorTest {
     }
 
     @Test
-    void shouldRejectIntentClusterWhenFallbackRouteIsMissing() {
+    void shouldRejectIntentClusterWhenFallbackAgentIsMissing() {
         WorkflowDraftApi.WorkflowNodeRow node = new WorkflowDraftApi.WorkflowNodeRow(
             "cluster_1",
             "parallel_group",
@@ -375,12 +410,12 @@ class WorkflowNodeConfigValidatorTest {
             List.of("monthly_output"),
             Map.of(
                 "executionMode", "intent",
-                "intentSystemPrompt", WorkflowPromptDefaults.DEFAULT_INTENT_SYSTEM_PROMPT,
-                "intentUserPrompt", WorkflowPromptDefaults.DEFAULT_INTENT_USER_PROMPT,
-                "intentSelectionMode", "single",
-                "intentFallbackMode", "fallback_intent",
-                "fallbackIntentCode", "other",
-                "intentConfidenceThreshold", 0.65,
+                "intentSelectionMode", "multiple",
+                "intentFallbackMode", "agent",
+                "fallbackAgentId", "other",
+                "intentRoutes", List.of(
+                    Map.of("intentCode", "monthly_report", "intentName", "月报", "intentDescription", "处理月报生成", "agentId", "monthly_report")
+                ),
                 "clusterAgents", List.of(
                     intentAgent("月报智能体", "monthly_report", "处理月报生成", "monthly_output")
                 )
@@ -392,7 +427,7 @@ class WorkflowNodeConfigValidatorTest {
         assertThat(issues).extracting(WorkflowDraftApi.WorkflowValidationIssue::code)
             .contains(
                 "WORKFLOW_VALIDATION_CLUSTER_INTENT_OUTPUT_INVALID",
-                "WORKFLOW_VALIDATION_CLUSTER_INTENT_FALLBACK_CODE_MISSING"
+                "WORKFLOW_VALIDATION_CLUSTER_INTENT_FALLBACK_AGENT_MISSING"
             );
     }
 
@@ -406,17 +441,18 @@ class WorkflowNodeConfigValidatorTest {
     }
 
     private Map<String, Object> intentAgent(String name, String intentCode, String intentDescription, String output) {
-        return Map.of(
-            "name", name,
-            "intentCode", intentCode,
-            "intentName", name,
-            "intentDescription", intentDescription,
-            "systemPromptTemplateId", "none",
-            "userPromptTemplateId", "none",
-            "systemPrompt", WorkflowPromptDefaults.DEFAULT_SYSTEM_PROMPT,
-            "userPrompt", WorkflowPromptDefaults.DEFAULT_CLUSTER_USER_PROMPT,
-            "maxAgentIterationsPerTurn", 4,
-            "output", output
+        return Map.ofEntries(
+            Map.entry("id", intentCode),
+            Map.entry("name", name),
+            Map.entry("intentCode", intentCode),
+            Map.entry("intentName", name),
+            Map.entry("intentDescription", intentDescription),
+            Map.entry("systemPromptTemplateId", "none"),
+            Map.entry("userPromptTemplateId", "none"),
+            Map.entry("systemPrompt", WorkflowPromptDefaults.DEFAULT_SYSTEM_PROMPT),
+            Map.entry("userPrompt", WorkflowPromptDefaults.DEFAULT_CLUSTER_USER_PROMPT),
+            Map.entry("maxAgentIterationsPerTurn", 4),
+            Map.entry("output", output)
         );
     }
 

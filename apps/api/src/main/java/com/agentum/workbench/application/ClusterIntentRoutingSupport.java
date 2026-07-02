@@ -1,14 +1,16 @@
 package com.agentum.workbench.application;
 
+import com.agentum.shared.api.ApiException;
+import com.agentum.workflow.application.WorkflowPromptDefaults;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.agentum.workflow.application.WorkflowPromptDefaults;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.springframework.http.HttpStatus;
 
 /**
  * 智能体集群意图分派的本地支撑逻辑。
@@ -24,10 +26,9 @@ final class ClusterIntentRoutingSupport {
     static final String SELECTION_SINGLE = "single";
     static final String SELECTION_MULTIPLE = "multiple";
     static final String FALLBACK_FAIL = "fail";
-    static final String FALLBACK_INTENT = "fallback_intent";
-    static final String DEFAULT_FALLBACK_INTENT_CODE = "other";
+    static final String FALLBACK_AGENT = "agent";
+    static final String FALLBACK_FIXED_REPLY = "fixed_reply";
     static final String DEFAULT_INTENT_OUTPUT_VARIABLE = "cluster_result";
-    static final double DEFAULT_CONFIDENCE_THRESHOLD = 0.65d;
     static final int DEFAULT_INTENT_ITERATIONS = 1;
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
@@ -37,14 +38,21 @@ final class ClusterIntentRoutingSupport {
     static String normalizeExecutionMode(Object value) {
         String mode = rawString(value);
         return switch (mode) {
-            case "sequential" -> MODE_RELAY;
-            case "parallel", "" -> MODE_COLLABORATIVE;
             case MODE_COLLABORATIVE, MODE_RELAY, MODE_INTENT -> mode;
-            default -> MODE_COLLABORATIVE;
+            case "" -> MODE_COLLABORATIVE;
+            default -> throw new ApiException(
+                HttpStatus.BAD_REQUEST,
+                "WORKFLOW_CLUSTER_EXECUTION_MODE_INVALID",
+                "智能体集群执行方式不合法，仅支持协同处理、接力处理或意图分派"
+            );
         };
     }
 
-    static List<IntentRoute> intentRoutes(List<Map<String, Object>> agentConfigs) {
+    static List<IntentRoute> intentRoutes(Map<String, Object> nodeConfig, List<Map<String, Object>> agentConfigs) {
+        List<IntentRoute> configuredRoutes = configuredIntentRoutes(nodeConfig, agentConfigs);
+        if (!configuredRoutes.isEmpty()) {
+            return configuredRoutes;
+        }
         List<IntentRoute> routes = new ArrayList<>();
         for (int index = 0; index < agentConfigs.size(); index++) {
             Map<String, Object> agent = agentConfigs.get(index);
@@ -57,6 +65,10 @@ final class ClusterIntentRoutingSupport {
             routes.add(new IntentRoute(code, name, description, index));
         }
         return routes;
+    }
+
+    static List<IntentRoute> intentRoutes(List<Map<String, Object>> agentConfigs) {
+        return intentRoutes(Map.of(), agentConfigs);
     }
 
     static Map<String, Object> classifierConfig(
@@ -73,7 +85,7 @@ final class ClusterIntentRoutingSupport {
         config.put("modelProviderId", firstNonBlank(rawString(nodeConfig.get("intentModelProviderId")), rawString(firstAgent.get("modelProviderId"))));
         config.put("modelName", firstNonBlank(rawString(nodeConfig.get("intentModelName")), rawString(firstAgent.get("modelName"))));
         config.put("enableThinking", booleanValue(nodeConfig.get("intentEnableThinking")));
-        config.put("maxAgentIterationsPerTurn", positiveInteger(nodeConfig.get("intentMaxAgentIterationsPerTurn"), DEFAULT_INTENT_ITERATIONS));
+        config.put("maxAgentIterationsPerTurn", DEFAULT_INTENT_ITERATIONS);
         config.put("output", "intent_router_result");
         config.put("outputVariable", "intent_router_result");
         config.put("skills", List.of());
@@ -83,7 +95,12 @@ final class ClusterIntentRoutingSupport {
         return config;
     }
 
-    static IntentDecision decide(Map<String, Object> nodeConfig, List<IntentRoute> routes, Map<String, Object> classifierOutput) {
+    static IntentDecision decide(
+        Map<String, Object> nodeConfig,
+        List<IntentRoute> routes,
+        List<Map<String, Object>> agentConfigs,
+        Map<String, Object> classifierOutput
+    ) {
         String rawAnswer = firstNonBlank(
             rawString(classifierOutput.get("final_answer")),
             rawString(classifierOutput.get("agent_response")),
@@ -91,14 +108,11 @@ final class ClusterIntentRoutingSupport {
         );
         Map<String, Object> payload = parseJsonPayload(rawAnswer);
         List<String> requestedCodes = requestedIntentCodes(payload);
-        double confidence = confidence(payload);
         String reason = firstNonBlank(rawString(payload.get("reason")), "模型未返回命中原因");
         Map<String, Object> slots = mapValue(payload.get("slots"));
 
         String selectionMode = selectionMode(nodeConfig);
-        double threshold = confidenceThreshold(nodeConfig);
         String fallbackMode = fallbackMode(nodeConfig);
-        String fallbackIntentCode = fallbackIntentCode(nodeConfig);
 
         Map<String, IntentRoute> routeByCode = new LinkedHashMap<>();
         for (IntentRoute route : routes) {
@@ -107,67 +121,60 @@ final class ClusterIntentRoutingSupport {
 
         Set<String> selectedCodes = new LinkedHashSet<>();
         boolean usedFallback = false;
-        if (confidence >= threshold) {
-            for (String requestedCode : requestedCodes) {
-                if (routeByCode.containsKey(requestedCode)) {
-                    selectedCodes.add(requestedCode);
-                }
-                if (SELECTION_SINGLE.equals(selectionMode) && !selectedCodes.isEmpty()) {
-                    break;
-                }
+        for (String requestedCode : requestedCodes) {
+            if (routeByCode.containsKey(requestedCode)) {
+                selectedCodes.add(requestedCode);
+            }
+            if (SELECTION_SINGLE.equals(selectionMode) && !selectedCodes.isEmpty()) {
+                break;
             }
         }
 
-        if (selectedCodes.isEmpty() && FALLBACK_INTENT.equals(fallbackMode) && routeByCode.containsKey(fallbackIntentCode)) {
-            selectedCodes.add(fallbackIntentCode);
-            usedFallback = true;
-        }
-
-        Set<Integer> selectedIndexes = new LinkedHashSet<>();
-        for (String selectedCode : selectedCodes) {
-            IntentRoute route = routeByCode.get(selectedCode);
-            if (route != null) {
+        List<Integer> selectedIndexes = new ArrayList<>();
+        for (IntentRoute route : routes) {
+            if (selectedCodes.contains(route.code()) && !selectedIndexes.contains(route.agentIndex())) {
                 selectedIndexes.add(route.agentIndex());
+            }
+        }
+        String fixedReply = "";
+        if (selectedIndexes.isEmpty()) {
+            if (FALLBACK_AGENT.equals(fallbackMode)) {
+                int fallbackAgentIndex = agentIndexById(agentConfigs, rawString(nodeConfig.get("fallbackAgentId")));
+                if (fallbackAgentIndex >= 0) {
+                    selectedIndexes.add(fallbackAgentIndex);
+                    usedFallback = true;
+                }
+            } else if (FALLBACK_FIXED_REPLY.equals(fallbackMode)) {
+                fixedReply = firstNonBlank(rawString(nodeConfig.get("fallbackReply")), "暂时无法判断该需求应该交给哪个智能体处理，请补充更明确的信息。");
+                usedFallback = true;
             }
         }
 
         return new IntentDecision(
             List.copyOf(requestedCodes),
             List.copyOf(selectedCodes),
-            Set.copyOf(selectedIndexes),
-            confidence,
-            threshold,
+            List.copyOf(selectedIndexes),
             reason,
             slots,
             rawAnswer,
-            usedFallback
+            usedFallback,
+            fallbackMode,
+            fixedReply
         );
     }
 
     static String selectionMode(Map<String, Object> nodeConfig) {
         String value = rawString(nodeConfig.get("intentSelectionMode"));
-        return SELECTION_MULTIPLE.equals(value) ? SELECTION_MULTIPLE : SELECTION_SINGLE;
+        return SELECTION_SINGLE.equals(value) ? SELECTION_SINGLE : SELECTION_MULTIPLE;
     }
 
     static String fallbackMode(Map<String, Object> nodeConfig) {
         String value = rawString(nodeConfig.get("intentFallbackMode"));
-        return FALLBACK_INTENT.equals(value) ? FALLBACK_INTENT : FALLBACK_FAIL;
-    }
-
-    static String fallbackIntentCode(Map<String, Object> nodeConfig) {
-        return firstNonBlank(rawString(nodeConfig.get("fallbackIntentCode")), DEFAULT_FALLBACK_INTENT_CODE);
-    }
-
-    static double confidenceThreshold(Map<String, Object> nodeConfig) {
-        Object value = nodeConfig.get("intentConfidenceThreshold");
-        if (value instanceof Number number) {
-            return clampConfidence(number.doubleValue());
-        }
-        try {
-            return value == null ? DEFAULT_CONFIDENCE_THRESHOLD : clampConfidence(Double.parseDouble(String.valueOf(value).trim()));
-        } catch (NumberFormatException exception) {
-            return DEFAULT_CONFIDENCE_THRESHOLD;
-        }
+        return switch (value) {
+            case FALLBACK_AGENT -> FALLBACK_AGENT;
+            case FALLBACK_FIXED_REPLY -> FALLBACK_FIXED_REPLY;
+            default -> FALLBACK_FAIL;
+        };
     }
 
     private static String classifierSystemPrompt(Map<String, Object> nodeConfig) {
@@ -179,8 +186,11 @@ final class ClusterIntentRoutingSupport {
 
     private static String classifierUserPrompt(Map<String, Object> nodeConfig, List<IntentRoute> routes) {
         String configuredPrompt = firstNonBlank(
+            rawString(nodeConfig.get("intentInputTemplate")),
             rawString(nodeConfig.get("intentUserPrompt")),
-            WorkflowPromptDefaults.DEFAULT_INTENT_USER_PROMPT
+            SELECTION_SINGLE.equals(selectionMode(nodeConfig))
+                ? WorkflowPromptDefaults.DEFAULT_INTENT_SINGLE_USER_PROMPT
+                : WorkflowPromptDefaults.DEFAULT_INTENT_MULTIPLE_USER_PROMPT
         );
         StringBuilder prompt = new StringBuilder(configuredPrompt.trim());
         prompt.append("\n\n候选意图如下，只能从这些 intentCode 中选择：\n");
@@ -193,8 +203,58 @@ final class ClusterIntentRoutingSupport {
                 .append(route.description())
                 .append("\n");
         }
-        prompt.append("\n如果没有任何候选意图匹配，请返回空数组或 fallback 配置中的意图代码，不要自行创造新代码。");
+        if (SELECTION_SINGLE.equals(selectionMode(nodeConfig))) {
+            prompt.append("\n本节点是单意图模式：只能返回一个最匹配的 intentCode。");
+        } else {
+            prompt.append("\n本节点是多意图模式：如果多个候选意图都明确匹配，可以按匹配程度返回多个 intentCode；平台会按上方顺序执行并拼接结果。");
+        }
+        prompt.append("\n如果没有任何候选意图匹配，请返回空数组，不要自行创造新代码。");
         return prompt.toString();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<IntentRoute> configuredIntentRoutes(Map<String, Object> nodeConfig, List<Map<String, Object>> agentConfigs) {
+        Object rawRoutes = nodeConfig.get("intentRoutes");
+        if (!(rawRoutes instanceof List<?> list)) {
+            return List.of();
+        }
+        List<IntentRoute> routes = new ArrayList<>();
+        Set<String> seenCodes = new LinkedHashSet<>();
+        for (Object rawRoute : list) {
+            if (!(rawRoute instanceof Map<?, ?> rawMap)) {
+                continue;
+            }
+            Map<String, Object> route = new LinkedHashMap<>((Map<String, Object>) rawMap);
+            String code = rawString(route.get("intentCode"));
+            if (code.isBlank() || !seenCodes.add(code)) {
+                continue;
+            }
+            int agentIndex = agentIndexById(agentConfigs, rawString(route.get("agentId")));
+            if (agentIndex < 0) {
+                agentIndex = integerValue(route.get("agentIndex"), -1);
+            }
+            if (agentIndex < 0 || agentIndex >= agentConfigs.size()) {
+                continue;
+            }
+            Map<String, Object> agent = agentConfigs.get(agentIndex);
+            String agentName = rawString(agent.get("name"));
+            String name = firstNonBlank(rawString(route.get("intentName")), agentName, "意图 " + (routes.size() + 1));
+            String description = firstNonBlank(rawString(route.get("intentDescription")), rawString(route.get("description")), name);
+            routes.add(new IntentRoute(code, name, description, agentIndex));
+        }
+        return routes;
+    }
+
+    private static int agentIndexById(List<Map<String, Object>> agentConfigs, String agentId) {
+        if (agentId.isBlank()) {
+            return -1;
+        }
+        for (int index = 0; index < agentConfigs.size(); index++) {
+            if (agentId.equals(rawString(agentConfigs.get(index).get("id")))) {
+                return index;
+            }
+        }
+        return -1;
     }
 
     private static List<String> requestedIntentCodes(Map<String, Object> payload) {
@@ -222,18 +282,6 @@ final class ClusterIntentRoutingSupport {
         return result;
     }
 
-    private static double confidence(Map<String, Object> payload) {
-        Object value = payload.get("confidence");
-        if (value instanceof Number number) {
-            return clampConfidence(number.doubleValue());
-        }
-        try {
-            return value == null ? 0d : clampConfidence(Double.parseDouble(String.valueOf(value).trim()));
-        } catch (NumberFormatException exception) {
-            return 0d;
-        }
-    }
-
     private static Map<String, Object> parseJsonPayload(String rawAnswer) {
         String json = extractJsonObject(rawAnswer);
         if (json.isBlank()) {
@@ -249,6 +297,7 @@ final class ClusterIntentRoutingSupport {
 
     private static String extractJsonObject(String value) {
         String text = value == null ? "" : value.trim();
+        text = text.replaceFirst("^(\\uFEFF|\\.\\.\\.|…)+", "").trim();
         if (text.startsWith("```")) {
             text = text.replaceFirst("^```[a-zA-Z0-9_-]*\\s*", "").replaceFirst("\\s*```$", "").trim();
         }
@@ -279,11 +328,15 @@ final class ClusterIntentRoutingSupport {
         }
     }
 
-    private static double clampConfidence(double value) {
-        if (!Double.isFinite(value)) {
-            return 0d;
+    private static int integerValue(Object value, int fallback) {
+        if (value instanceof Number number) {
+            return number.intValue();
         }
-        return Math.max(0d, Math.min(1d, value));
+        try {
+            return value == null ? fallback : Integer.parseInt(String.valueOf(value).trim());
+        } catch (NumberFormatException exception) {
+            return fallback;
+        }
     }
 
     private static boolean booleanValue(Object value) {
@@ -309,13 +362,13 @@ final class ClusterIntentRoutingSupport {
     record IntentDecision(
         List<String> requestedCodes,
         List<String> selectedCodes,
-        Set<Integer> selectedAgentIndexes,
-        double confidence,
-        double threshold,
+        List<Integer> selectedAgentIndexes,
         String reason,
         Map<String, Object> slots,
         String rawAnswer,
-        boolean usedFallback
+        boolean usedFallback,
+        String fallbackMode,
+        String fixedReply
     ) {
     }
 }

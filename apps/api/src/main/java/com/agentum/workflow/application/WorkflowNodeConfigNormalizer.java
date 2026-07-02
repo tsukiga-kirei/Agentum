@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 保存前补齐空白的自定义提示词，兼容旧草稿；新建节点创建时已写入 {@link WorkflowPromptDefaults} 默认值。
+ * 保存前补齐空白的自定义提示词；新建节点创建时已写入 {@link WorkflowPromptDefaults} 默认值。
  */
 public final class WorkflowNodeConfigNormalizer {
 
@@ -68,14 +68,12 @@ public final class WorkflowNodeConfigNormalizer {
         }
         if ("parallel_group".equals(nodeType)) {
             normalized.put("executionMode", normalizeClusterExecutionMode(normalized.get("executionMode")));
+            normalized.putIfAbsent("clusterOutputVariable", "cluster_result");
             if ("intent".equals(normalized.get("executionMode"))) {
-                normalized.putIfAbsent("intentSelectionMode", "single");
+                normalized.putIfAbsent("intentSelectionMode", "multiple");
                 normalized.putIfAbsent("intentFallbackMode", "fail");
-                normalized.putIfAbsent("fallbackIntentCode", "other");
-                normalized.putIfAbsent("intentConfidenceThreshold", 0.65);
-                normalized.putIfAbsent("intentSystemPrompt", WorkflowPromptDefaults.DEFAULT_INTENT_SYSTEM_PROMPT);
-                normalized.putIfAbsent("intentUserPrompt", WorkflowPromptDefaults.DEFAULT_INTENT_USER_PROMPT);
-                normalized.putIfAbsent("intentMaxAgentIterationsPerTurn", 1);
+                normalized.putIfAbsent("intentRoutes", List.of());
+                normalized.putIfAbsent("intentInputTemplate", "");
             }
             Object rawAgents = normalized.get("clusterAgents");
             if (rawAgents instanceof List<?> agents) {
@@ -88,6 +86,9 @@ public final class WorkflowNodeConfigNormalizer {
                     }
                 }
                 normalized.put("clusterAgents", nextAgents);
+                if (rawString(normalized.get("mergeRule")).isBlank()) {
+                    normalized.put("mergeRule", defaultClusterMergeRule(nextAgents));
+                }
             }
         }
         return normalized;
@@ -124,14 +125,40 @@ public final class WorkflowNodeConfigNormalizer {
     private static String normalizeClusterExecutionMode(Object value) {
         String mode = rawString(value);
         return switch (mode) {
-            case "sequential" -> "relay";
-            case "parallel", "" -> "collaborative";
             case "collaborative", "relay", "intent" -> mode;
+            case "" -> "collaborative";
             default -> mode;
         };
     }
 
     private static String rawString(Object value) {
         return value == null ? "" : String.valueOf(value).trim();
+    }
+
+    private static String defaultClusterMergeRule(List<Map<String, Object>> agents) {
+        if (agents == null || agents.isEmpty()) {
+            return "## 智能体集群结论";
+        }
+        StringBuilder builder = new StringBuilder("## 智能体集群结论\n");
+        for (int index = 0; index < agents.size(); index++) {
+            Map<String, Object> agent = agents.get(index);
+            String name = firstNonBlank(rawString(agent.get("name")), "子智能体 " + (index + 1));
+            String output = firstNonBlank(rawString(agent.get("output")), "agent_" + (index + 1) + "_output");
+            builder.append("\n### ")
+                .append(name)
+                .append("\n{{")
+                .append(output)
+                .append("}}\n");
+        }
+        return builder.toString().trim();
+    }
+
+    private static String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return "";
     }
 }

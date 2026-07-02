@@ -54,8 +54,6 @@ import type {
 import { WorkflowDraft } from "./WorkflowDraftsPage";
 import {
   DEFAULT_CLUSTER_USER_PROMPT,
-  DEFAULT_INTENT_SYSTEM_PROMPT,
-  DEFAULT_INTENT_USER_PROMPT,
   DEFAULT_SYSTEM_PROMPT,
   DEFAULT_USER_PROMPT,
   formatWorkflowSaveError,
@@ -143,8 +141,16 @@ type VariableReferenceItem = {
 type WorkflowBrickType = WorkflowBrickTemplate["brickType"];
 type VisibleWorkflowBrickType = Exclude<WorkflowBrickType, "trigger">;
 type ClusterExecutionMode = "collaborative" | "relay" | "intent";
+type IntentFallbackMode = "fail" | "agent" | "fixed_reply";
 type IntentSelectionMode = "single" | "multiple";
-type IntentFallbackMode = "fail" | "fallback_intent";
+
+type IntentRouteConfig = {
+  id: string;
+  intentCode: string;
+  intentName: string;
+  intentDescription: string;
+  agentId: string;
+};
 
 type ClusterAgentConfig = {
   id: string;
@@ -1546,8 +1552,16 @@ function AgentClusterBrickConfig({
 }) {
   const config = node.data.rawConfig ?? {};
   const [editingAgent, setEditingAgent] = useState<ClusterAgentConfig | null>(null);
+  const [intentDrawerOpen, setIntentDrawerOpen] = useState(false);
+  const themeMode = useAuthStore((state) => state.themeMode);
+  const drawerRootClassName = getThemedDrawerRootClassName(themeMode, "workflow-agent-drawer");
   const agents = readClusterAgents(config.clusterAgents, agentRuntimeLimits);
+  const intentRoutes = readIntentRoutes(config.intentRoutes, agents);
+  const fallbackMode = readIntentFallbackMode(config.intentFallbackMode);
+  const intentSelectionMode = readIntentSelectionMode(config.intentSelectionMode);
   const executionMode = readClusterExecutionMode(config.executionMode);
+  const clusterOutputVariable = readClusterOutputVariable(config.clusterOutputVariable);
+  const mergeRule = readString(config.mergeRule, buildDefaultClusterMergeRule(agents));
   const agentAssets = filterCapabilities(capabilityState.capabilities, "agent_template");
   const promptAssets = filterCapabilities(capabilityState.capabilities, "prompt_template");
   const mcpAssets = filterCapabilities(capabilityState.capabilities, "mcp");
@@ -1557,25 +1571,24 @@ function AgentClusterBrickConfig({
 
   function commitAgents(nextAgents: ClusterAgentConfig[]) {
     onUpdateConfig({ clusterAgents: nextAgents });
-    onUpdateNode({ toolCount: nextAgents.length, outputVariables: buildClusterOutputVariables(executionMode, nextAgents) });
+    onUpdateNode({ toolCount: nextAgents.length, outputVariables: buildClusterOutputVariables(executionMode, nextAgents, clusterOutputVariable) });
   }
 
   function handleExecutionModeChange(value: string) {
     const nextMode = readClusterExecutionMode(value);
     onUpdateConfig({
       executionMode: nextMode,
-      intentSystemPrompt: readString(config.intentSystemPrompt, DEFAULT_INTENT_SYSTEM_PROMPT),
-      intentUserPrompt: readString(config.intentUserPrompt, DEFAULT_INTENT_USER_PROMPT),
-      intentSelectionMode: readString(config.intentSelectionMode, "single"),
+      intentSelectionMode,
       intentFallbackMode: readString(config.intentFallbackMode, "fail"),
-      fallbackIntentCode: normalizeIntentCode(readString(config.fallbackIntentCode, "other")),
-      intentConfidenceThreshold: readNumber(config.intentConfidenceThreshold, 0.65),
+      intentRoutes: readIntentRoutes(config.intentRoutes, agents),
+      intentInputTemplate: readString(config.intentInputTemplate, ""),
+      clusterOutputVariable,
+      mergeRule,
       intentModelProviderId: readString(config.intentModelProviderId, intentModel?.providerId ?? ""),
       intentModelName: readString(config.intentModelName, intentModel?.modelName ?? ""),
       intentEnableThinking: readBoolean(config.intentEnableThinking, false),
-      intentMaxAgentIterationsPerTurn: readPositiveInt(config.intentMaxAgentIterationsPerTurn, 1),
     });
-    onUpdateNode({ outputVariables: buildClusterOutputVariables(nextMode, agents) });
+    onUpdateNode({ outputVariables: buildClusterOutputVariables(nextMode, agents, clusterOutputVariable) });
   }
 
   function moveAgent(agentId: string, direction: -1 | 1) {
@@ -1616,81 +1629,27 @@ function AgentClusterBrickConfig({
           onChange={handleExecutionModeChange}
         />
         {executionMode === "intent" ? (
-          <div className="mt-4 space-y-4 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-4">
-            <div className="grid gap-4 md:grid-cols-2">
-              <SelectLikeField
-                label="命中策略"
-                icon={BrainCircuit}
-                value={readString(config.intentSelectionMode, "single")}
-                options={[
-                  { value: "single", label: "单意图命中" },
-                  { value: "multiple", label: "多意图命中" },
-                ]}
-                onChange={(value) => onUpdateConfig({ intentSelectionMode: value as IntentSelectionMode })}
-              />
-              <SelectLikeField
-                label="未命中处理"
-                icon={AlertTriangle}
-                value={readString(config.intentFallbackMode, "fail")}
-                options={[
-                  { value: "fail", label: "中止并提示" },
-                  { value: "fallback_intent", label: "转交其他意图" },
-                ]}
-                onChange={(value) => onUpdateConfig({ intentFallbackMode: value as IntentFallbackMode })}
-              />
-              <TextInputField
-                label="其他意图代码"
-                icon={Tag}
-                value={normalizeIntentCode(readString(config.fallbackIntentCode, "other"))}
-                placeholder="other"
-                onChange={(value) => onUpdateConfig({ fallbackIntentCode: normalizeIntentCode(value) })}
-              />
-              <label className="sys-field">
-                <span className="sys-field-label">置信度阈值</span>
-                <div className="sys-field-input-wrap">
-                  <Hash size={16} className="sys-field-prefix" aria-hidden="true" />
-                  <input
-                    className="sys-field-input"
-                    type="number"
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    value={String(readNumber(config.intentConfidenceThreshold, 0.65))}
-                    onChange={(event) => onUpdateConfig({ intentConfidenceThreshold: Math.max(0, Math.min(1, Number.parseFloat(event.target.value) || 0)) })}
-                  />
-                </div>
-              </label>
-              <ModelAndReasoningFields
-                modelOptions={modelOptions}
-                modelProviderId={readString(config.intentModelProviderId, intentModel?.providerId ?? "")}
-                enableThinking={readBoolean(config.intentEnableThinking, false)}
-                onChange={(patch) => onUpdateConfig({
-                  intentModelProviderId: patch.modelProviderId,
-                  intentModelName: patch.modelName,
-                  intentEnableThinking: patch.enableThinking,
-                })}
-              />
-              <MaxAgentIterationsPerTurnField
-                value={readPositiveInt(config.intentMaxAgentIterationsPerTurn, 1)}
-                maximum={agentRuntimeLimits.maxIterationsPerTurn}
-                onChange={(value) => onUpdateConfig({ intentMaxAgentIterationsPerTurn: value })}
-              />
-            </div>
-            <PromptEditor
-              label="意图识别系统提示词"
-              value={readString(config.intentSystemPrompt, DEFAULT_INTENT_SYSTEM_PROMPT)}
-              availableVariables={availableVariables}
-              onChange={(value) => onUpdateConfig({ intentSystemPrompt: value })}
-              showVariableBar={false}
-            />
-            <PromptEditor
-              label="意图识别用户提示词"
-              value={readString(config.intentUserPrompt, DEFAULT_INTENT_USER_PROMPT)}
-              availableVariables={availableVariables}
-              onChange={(value) => onUpdateConfig({ intentUserPrompt: value })}
-            />
-          </div>
+          <IntentRoutingSummary
+            routes={intentRoutes}
+            agents={agents}
+            selectionMode={intentSelectionMode}
+            fallbackMode={fallbackMode}
+            fallbackAgentId={readString(config.fallbackAgentId, "")}
+            fallbackReply={readString(config.fallbackReply, "")}
+            onOpen={() => setIntentDrawerOpen(true)}
+          />
         ) : null}
+          <ClusterOutputConfig
+          executionMode={executionMode}
+          agents={agents}
+          outputVariable={clusterOutputVariable}
+          mergeRule={mergeRule}
+          onChange={(patch) => {
+            const nextOutputVariable = readClusterOutputVariable(patch.clusterOutputVariable ?? clusterOutputVariable);
+            onUpdateConfig(patch);
+            onUpdateNode({ outputVariables: buildClusterOutputVariables(executionMode, agents, nextOutputVariable) });
+          }}
+        />
         <div className="workflow-cluster-agent-list">
           {agents.map((agent, index) => {
             const variableIssues = clusterAgentVariableIssues(agent, index, agents, executionMode, availableVariables);
@@ -1703,7 +1662,7 @@ function AgentClusterBrickConfig({
                 <p className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{agent.name}</p>
                 <div className="mt-1 flex flex-wrap gap-1.5">
                   <TinyBadge>智能体 {index + 1}</TinyBadge>
-                  {executionMode === "intent" ? <TinyBadge tone="info">{agent.intentCode || "未配置意图"}</TinyBadge> : <TinyBadge>{agent.output}</TinyBadge>}
+                  {executionMode === "intent" ? <TinyBadge tone="info">意图 {intentRoutes.filter((route) => route.agentId === agent.id).length}</TinyBadge> : <TinyBadge>{agent.output}</TinyBadge>}
                   <TinyBadge tone="info">Skill {agent.skillIds.length}</TinyBadge>
                   <TinyBadge tone="info">MCP {agent.mcpIds.length}</TinyBadge>
                   {variableIssues.length > 0 ? <TinyBadge tone="warning">变量需处理</TinyBadge> : null}
@@ -1740,23 +1699,412 @@ function AgentClusterBrickConfig({
           skillAssets={skillAssets}
           agentRuntimeLimits={agentRuntimeLimits}
           modelOptions={modelOptions}
-          showIntentFields={executionMode === "intent"}
           onClose={() => setEditingAgent(null)}
           onSave={(agent) => {
             const exists = agents.some((item) => item.id === agent.id);
             const usedOutputs = new Set(agents.filter((item) => item.id !== agent.id).map((item) => item.output).filter(Boolean));
-            const usedIntentCodes = new Set(agents.filter((item) => item.id !== agent.id).map((item) => item.intentCode).filter(Boolean));
             const normalizedAgent = {
               ...agent,
               output: uniqueVariableName(agent.output || createClusterAgentOutputVariable(node.id, agents.length), usedOutputs),
-              intentCode: uniqueVariableName(normalizeIntentCode(agent.intentCode) || `intent_${agents.length + 1}`, usedIntentCodes),
             };
             commitAgents(exists ? agents.map((item) => item.id === agent.id ? normalizedAgent : item) : [...agents, normalizedAgent]);
             setEditingAgent(null);
           }}
         />
       ) : null}
+      {intentDrawerOpen ? (
+        <IntentRoutingDrawer
+          routes={intentRoutes}
+          agents={agents}
+          availableVariables={availableVariables}
+          selectionMode={intentSelectionMode}
+          fallbackMode={fallbackMode}
+          fallbackAgentId={readString(config.fallbackAgentId, "")}
+          fallbackReply={readString(config.fallbackReply, "")}
+          intentInputTemplate={readString(config.intentInputTemplate, "")}
+          rootClassName={drawerRootClassName}
+          onClose={() => setIntentDrawerOpen(false)}
+          onSave={(next) => {
+            onUpdateConfig({
+              intentRoutes: next.routes,
+              intentSelectionMode: next.selectionMode,
+              intentInputTemplate: next.intentInputTemplate,
+              intentFallbackMode: next.fallbackMode,
+              fallbackAgentId: next.fallbackAgentId,
+              fallbackReply: next.fallbackReply,
+              intentModelProviderId: readString(config.intentModelProviderId, intentModel?.providerId ?? ""),
+              intentModelName: readString(config.intentModelName, intentModel?.modelName ?? ""),
+              intentEnableThinking: false,
+            });
+            setIntentDrawerOpen(false);
+          }}
+        />
+      ) : null}
     </PanelGroup>
+  );
+}
+
+function IntentRoutingSummary({
+  routes,
+  agents,
+  selectionMode,
+  fallbackMode,
+  fallbackAgentId,
+  fallbackReply,
+  onOpen,
+}: {
+  routes: IntentRouteConfig[];
+  agents: ClusterAgentConfig[];
+  selectionMode: IntentSelectionMode;
+  fallbackMode: IntentFallbackMode;
+  fallbackAgentId: string;
+  fallbackReply: string;
+  onOpen: () => void;
+}) {
+  const fallbackAgent = agents.find((agent) => agent.id === fallbackAgentId);
+  const fallbackText = fallbackMode === "agent"
+    ? `其他情况转交：${fallbackAgent?.name ?? "未选择智能体"}`
+    : fallbackMode === "fixed_reply"
+      ? `其他情况回复：${fallbackReply || "未填写话术"}`
+      : "其他情况：中止并提示";
+
+  return (
+    <section className="workflow-intent-summary">
+      <div className="workflow-intent-summary-head">
+        <div>
+          <p className="text-sm font-semibold text-[var(--color-text-primary)]">意图路由</p>
+          <p className="mt-1 text-xs leading-5 text-[var(--color-text-tertiary)]">运行时只执行命中的智能体；{selectionMode === "single" ? "只取一个最匹配意图。" : "多个意图命中时按下方顺序写入输出模板。"}</p>
+        </div>
+        <button type="button" className="agent-button agent-button-primary h-8 px-3 text-xs" onClick={onOpen}>
+          <Settings2 className="h-3.5 w-3.5" aria-hidden="true" />
+          配置意图
+        </button>
+      </div>
+      <div className="workflow-intent-route-list">
+        {routes.length > 0 ? routes.map((route, index) => {
+          const agent = agents.find((item) => item.id === route.agentId);
+          return (
+            <div key={route.id} className="workflow-intent-route-row">
+              <span className="workflow-intent-route-index">{index}</span>
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-medium text-[var(--color-text-primary)]">{route.intentName || route.intentCode}</span>
+                <span className="mt-0.5 block truncate text-xs text-[var(--color-text-tertiary)]">到 {agent?.name ?? "未选择智能体"} · {route.intentDescription || "未填写命中说明"}</span>
+              </span>
+            </div>
+          );
+        }) : (
+          <p className="rounded bg-[var(--color-bg-card)] px-3 py-3 text-sm text-[var(--color-text-tertiary)] ring-1 ring-[var(--color-border-light)]">还没有配置意图。</p>
+        )}
+      </div>
+      <p className="workflow-intent-fallback">{fallbackText}</p>
+    </section>
+  );
+}
+
+function ClusterOutputConfig({
+  executionMode,
+  agents,
+  outputVariable,
+  mergeRule,
+  onChange,
+}: {
+  executionMode: ClusterExecutionMode;
+  agents: ClusterAgentConfig[];
+  outputVariable: string;
+  mergeRule: string;
+  onChange: (patch: Record<string, unknown>) => void;
+}) {
+  const childVariables = agents
+    .map((agent): WorkflowVariable | null => {
+      if (!agent.output) {
+        return null;
+      }
+      return {
+        name: agent.output,
+        sourceNodeId: agent.id,
+        sourceNodeName: `子智能体「${agent.name}」`,
+        type: "string",
+        sensitive: false,
+        deliverable: false,
+        description: executionMode === "intent"
+          ? "意图命中该子智能体时写入；未命中时在输出模板中按空值处理"
+          : "子智能体完成后写入的文本结果",
+      };
+    })
+    .filter((item): item is WorkflowVariable => item !== null);
+
+  return (
+    <section className="workflow-intent-summary">
+      <div className="workflow-intent-summary-head">
+        <div>
+          <p className="text-sm font-semibold text-[var(--color-text-primary)]">输出配置</p>
+          <p className="mt-1 text-xs leading-5 text-[var(--color-text-tertiary)]">
+            默认把子智能体结果拼成最终输出；意图未命中的子智能体变量会按空值处理。
+          </p>
+        </div>
+      </div>
+      <div className="grid gap-4">
+        <OutcomeVariableField
+          label="最终输出变量"
+          value={outputVariable}
+          placeholder="cluster_result"
+          onChange={(value) => onChange({ clusterOutputVariable: normalizeVariableName(value) || "cluster_result" })}
+        />
+        <PromptEditor
+          label="输出内容模板"
+          value={mergeRule}
+          availableVariables={childVariables}
+          placeholder={buildDefaultClusterMergeRule(agents)}
+          onChange={(value) => onChange({ mergeRule: value })}
+        />
+      </div>
+    </section>
+  );
+}
+
+function IntentRoutingDrawer({
+  routes,
+  agents,
+  availableVariables,
+  selectionMode,
+  fallbackMode,
+  fallbackAgentId,
+  fallbackReply,
+  intentInputTemplate,
+  rootClassName,
+  onClose,
+  onSave,
+}: {
+  routes: IntentRouteConfig[];
+  agents: ClusterAgentConfig[];
+  availableVariables: WorkflowVariable[];
+  selectionMode: IntentSelectionMode;
+  fallbackMode: IntentFallbackMode;
+  fallbackAgentId: string;
+  fallbackReply: string;
+  intentInputTemplate: string;
+  rootClassName: string;
+  onClose: () => void;
+  onSave: (next: {
+    routes: IntentRouteConfig[];
+    selectionMode: IntentSelectionMode;
+    intentInputTemplate: string;
+    fallbackMode: IntentFallbackMode;
+    fallbackAgentId: string;
+    fallbackReply: string;
+  }) => void;
+}) {
+  const { message } = App.useApp();
+  const [draftRoutes, setDraftRoutes] = useState<IntentRouteConfig[]>(routes);
+  const [draftSelectionMode, setDraftSelectionMode] = useState<IntentSelectionMode>(selectionMode);
+  const [draftIntentInputTemplate, setDraftIntentInputTemplate] = useState(intentInputTemplate);
+  const [draftFallbackMode, setDraftFallbackMode] = useState<IntentFallbackMode>(fallbackMode);
+  const [draftFallbackAgentId, setDraftFallbackAgentId] = useState(fallbackAgentId);
+  const [draftFallbackReply, setDraftFallbackReply] = useState(fallbackReply);
+  const agentOptions = agents.map((agent) => ({ value: agent.id, label: agent.name }));
+
+  function updateRoute(routeId: string, patch: Partial<IntentRouteConfig>) {
+    setDraftRoutes((current) => current.map((route) => route.id === routeId ? { ...route, ...patch } : route));
+  }
+
+  function addRoute() {
+    const nextIndex = draftRoutes.length + 1;
+    setDraftRoutes((current) => [
+      ...current,
+      {
+        id: `intent_route_${Date.now().toString(36)}_${nextIndex}`,
+        intentCode: uniqueVariableName(`intent_${nextIndex}`, new Set(current.map((route) => route.intentCode))),
+        intentName: `意图 ${nextIndex}`,
+        intentDescription: "",
+        agentId: agents[0]?.id ?? "",
+      },
+    ]);
+  }
+
+  function moveRoute(routeId: string, direction: -1 | 1) {
+    const index = draftRoutes.findIndex((route) => route.id === routeId);
+    const nextIndex = index + direction;
+    if (index < 0 || nextIndex < 0 || nextIndex >= draftRoutes.length) {
+      return;
+    }
+    const nextRoutes = [...draftRoutes];
+    [nextRoutes[index], nextRoutes[nextIndex]] = [nextRoutes[nextIndex], nextRoutes[index]];
+    setDraftRoutes(nextRoutes);
+  }
+
+  return (
+    <Drawer
+      title="配置意图路由"
+      placement="right"
+      width={WORKFLOW_AGENT_DRAWER_WIDTH}
+      open
+      destroyOnClose
+      onClose={onClose}
+      rootClassName={rootClassName}
+    >
+      <div className="sys-drawer-section sys-drawer-section-enter workflow-agent-drawer-body">
+        <p className="workflow-agent-drawer-kicker">意图分派</p>
+        <div className="workflow-modal-section grid gap-4 md:grid-cols-2">
+          <SelectLikeField
+            label="命中数量"
+            icon={ListChecks}
+            value={draftSelectionMode}
+            options={[
+              { value: "single", label: "单意图（只执行一个智能体）" },
+              { value: "multiple", label: "多意图（可执行多个智能体）" },
+            ]}
+            onChange={(value) => setDraftSelectionMode(readIntentSelectionMode(value))}
+          />
+          <div className="md:col-span-2">
+            <PromptEditor
+              label="意图判断内容"
+              value={draftIntentInputTemplate}
+              availableVariables={availableVariables}
+              placeholder="例如：请根据 {{input_1}} 判断本次需要执行哪些报告智能体。"
+              onChange={setDraftIntentInputTemplate}
+            />
+          </div>
+        </div>
+        <div className="workflow-intent-drawer-toolbar">
+          <button type="button" className="agent-button agent-button-primary h-8 px-3 text-xs" onClick={addRoute}>
+            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+            新增意图
+          </button>
+        </div>
+        <div className="workflow-intent-drawer-list">
+          {draftRoutes.map((route, index) => (
+            <article key={route.id} className="workflow-intent-editor-card">
+              <div className="workflow-intent-editor-card-head">
+                <span className="workflow-intent-route-index">{index}</span>
+                <div className="flex items-center gap-1">
+                  <IconButton label="上移意图" icon={ArrowUp} disabled={index === 0} onClick={() => moveRoute(route.id, -1)} />
+                  <IconButton label="下移意图" icon={ArrowDown} disabled={index === draftRoutes.length - 1} onClick={() => moveRoute(route.id, 1)} />
+                  <IconButton label="删除意图" icon={Trash2} tone="danger" onClick={() => setDraftRoutes((current) => current.filter((item) => item.id !== route.id))} />
+                </div>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <TextInputField
+                  label="意图名称"
+                  icon={Type}
+                  value={route.intentName}
+                  placeholder="月报生成"
+                  onChange={(value) => updateRoute(route.id, { intentName: value })}
+                />
+                <label className="sys-field md:col-span-2">
+                  <span className="sys-field-label">目标智能体</span>
+                  <Select
+                    className="agent-admin-select w-full"
+                    classNames={workflowSelectClassNames}
+                    prefix={<Bot className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+                    suffixIcon={workflowSelectSuffixIcon}
+                    value={route.agentId || undefined}
+                    placeholder="选择命中后要执行的智能体"
+                    options={agentOptions}
+                    onChange={(value) => updateRoute(route.id, { agentId: value })}
+                  />
+                </label>
+                <div className="md:col-span-2">
+                  <PromptEditor
+                    label="什么时候归类为这个意图"
+                    value={route.intentDescription}
+                    availableVariables={availableVariables}
+                    placeholder="例如：{{input_1}} 中要求生成某个月份的经营月报、月度金融业务分析或月度监管材料。"
+                    onChange={(value) => updateRoute(route.id, { intentDescription: value })}
+                  />
+                </div>
+              </div>
+            </article>
+          ))}
+          {draftRoutes.length === 0 ? (
+            <p className="rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-light)] px-3 py-5 text-center text-sm text-[var(--color-text-tertiary)]">还没有意图，先新增一个。</p>
+          ) : null}
+        </div>
+        <div className="workflow-modal-section grid gap-4 md:grid-cols-2">
+          <SelectLikeField
+            label="其他情况"
+            icon={AlertTriangle}
+            value={draftFallbackMode}
+            options={[
+              { value: "fail", label: "中止并提示" },
+              { value: "agent", label: "转交一个智能体" },
+              { value: "fixed_reply", label: "回复固定话术" },
+            ]}
+            onChange={(value) => setDraftFallbackMode(readIntentFallbackMode(value))}
+          />
+          {draftFallbackMode === "agent" ? (
+            <label className="sys-field">
+              <span className="sys-field-label">其他情况智能体</span>
+              <Select
+                className="agent-admin-select w-full"
+                classNames={workflowSelectClassNames}
+                prefix={<Bot className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+                suffixIcon={workflowSelectSuffixIcon}
+                value={draftFallbackAgentId || undefined}
+                placeholder="选择智能体"
+                options={agentOptions}
+                onChange={setDraftFallbackAgentId}
+              />
+            </label>
+          ) : null}
+          {draftFallbackMode === "fixed_reply" ? (
+            <label className="sys-field md:col-span-2">
+              <span className="sys-field-label">固定话术</span>
+              <textarea
+                value={draftFallbackReply}
+                onChange={(event) => setDraftFallbackReply(event.target.value)}
+                className="sys-field-textarea"
+                placeholder="暂时无法判断该需求应该交给哪个智能体处理，请补充更明确的信息。"
+              />
+            </label>
+          ) : null}
+        </div>
+      </div>
+      <div className="sys-drawer-footer">
+        <div className="sys-drawer-footer-right">
+          <button type="button" className="sys-btn sys-btn--default" onClick={onClose}>取消</button>
+          <button
+            type="button"
+            className="sys-btn sys-btn--primary"
+            onClick={() => {
+              const normalizedRoutes = draftRoutes.map((route, index) => ({
+                ...route,
+                intentCode: normalizeIntentCode(route.intentCode) || `intent_${index + 1}`,
+                intentName: route.intentName.trim() || `意图 ${index + 1}`,
+                intentDescription: route.intentDescription.trim(),
+              }));
+              const duplicateCode = normalizedRoutes.find((route, index) => normalizedRoutes.some((item, itemIndex) => itemIndex !== index && item.intentCode === route.intentCode));
+              if (duplicateCode) {
+                message.error(`存在重复的意图代码：${duplicateCode.intentCode}`);
+                return;
+              }
+              const invalidRoute = normalizedRoutes.find((route) => !route.agentId || !route.intentDescription);
+              if (invalidRoute) {
+                message.error("每个意图都需要选择目标智能体，并说明什么时候命中");
+                return;
+              }
+              if (draftFallbackMode === "agent" && !draftFallbackAgentId) {
+                message.error("其他情况需要选择目标智能体");
+                return;
+              }
+              if (draftFallbackMode === "fixed_reply" && !draftFallbackReply.trim()) {
+                message.error("其他情况固定话术不能为空");
+                return;
+              }
+              onSave({
+                routes: normalizedRoutes,
+                selectionMode: draftSelectionMode,
+                intentInputTemplate: draftIntentInputTemplate.trim(),
+                fallbackMode: draftFallbackMode,
+                fallbackAgentId: draftFallbackMode === "agent" ? draftFallbackAgentId : "",
+                fallbackReply: draftFallbackMode === "fixed_reply" ? draftFallbackReply.trim() : "",
+              });
+            }}
+          >
+            保存
+          </button>
+        </div>
+      </div>
+    </Drawer>
   );
 }
 
@@ -2854,7 +3202,6 @@ function ClusterAgentModal({
   skillAssets,
   agentRuntimeLimits,
   modelOptions,
-  showIntentFields,
   onClose,
   onSave,
 }: {
@@ -2866,7 +3213,6 @@ function ClusterAgentModal({
   skillAssets: WorkflowCapabilityOption[];
   agentRuntimeLimits: AgentRuntimeLimits;
   modelOptions: WorkflowModelOption[];
-  showIntentFields: boolean;
   onClose: () => void;
   onSave: (agent: ClusterAgentConfig) => void;
 }) {
@@ -2923,33 +3269,6 @@ function ClusterAgentModal({
             onChange={(patch) => setDraft({ ...draft, ...patch })}
           />
         </div>
-        {showIntentFields ? (
-          <div className="workflow-modal-section grid gap-4 md:grid-cols-2">
-            <TextInputField
-              label="意图代码"
-              icon={Tag}
-              value={draft.intentCode}
-              placeholder="monthly_report"
-              onChange={(value) => setDraft({ ...draft, intentCode: normalizeIntentCode(value) })}
-            />
-            <TextInputField
-              label="意图名称"
-              icon={Type}
-              value={draft.intentName}
-              placeholder="月报生成"
-              onChange={(value) => setDraft({ ...draft, intentName: value })}
-            />
-            <label className="sys-field md:col-span-2">
-              <span className="sys-field-label">意图说明</span>
-              <textarea
-                value={draft.intentDescription}
-                onChange={(event) => setDraft({ ...draft, intentDescription: event.target.value })}
-                className="sys-field-textarea"
-                placeholder="说明什么输入应该命中这个智能体，分类器会把它作为候选意图描述。"
-              />
-            </label>
-          </div>
-        ) : null}
         <div className="workflow-agent-drawer-prompts">
           <PromptTemplateEditor
             label="系统提示词"
@@ -3458,20 +3777,19 @@ function createNodeFromTemplate(template: WorkflowBrickTemplate, index: number, 
       ...agent,
       userPrompt: readString(agent.userPrompt, "") || DEFAULT_CLUSTER_USER_PROMPT,
       systemPrompt: readString(agent.systemPrompt, "") || DEFAULT_SYSTEM_PROMPT,
-      output: createClusterAgentOutputVariable(id, agentIndex),
+      output: createClusterAgentOutputVariable(index, agentIndex),
       intentCode: normalizeIntentCode(readString(agent.intentCode, `intent_${agentIndex + 1}`)),
       intentName: readString(agent.intentName, readString(agent.name, `意图 ${agentIndex + 1}`)),
       intentDescription: readString(agent.intentDescription, "描述这个子智能体适合处理的用户意图。"),
       }));
     rawConfig.clusterAgents = clusterAgents;
-    rawConfig.executionMode = executionMode;
-    rawConfig.intentSystemPrompt = readString(rawConfig.intentSystemPrompt, DEFAULT_INTENT_SYSTEM_PROMPT);
-    rawConfig.intentUserPrompt = readString(rawConfig.intentUserPrompt, DEFAULT_INTENT_USER_PROMPT);
-    rawConfig.intentSelectionMode = readString(rawConfig.intentSelectionMode, "single");
+    rawConfig.executionMode = normalizeClusterExecutionModeForConfig(rawConfig.executionMode);
+    rawConfig.intentSelectionMode = readString(rawConfig.intentSelectionMode, "multiple");
     rawConfig.intentFallbackMode = readString(rawConfig.intentFallbackMode, "fail");
-    rawConfig.fallbackIntentCode = normalizeIntentCode(readString(rawConfig.fallbackIntentCode, "other"));
-    rawConfig.intentConfidenceThreshold = readNumber(rawConfig.intentConfidenceThreshold, 0.65);
-    outputVariables = buildClusterOutputVariables(executionMode, clusterAgents);
+    rawConfig.intentRoutes = readIntentRoutes(rawConfig.intentRoutes, clusterAgents);
+    rawConfig.clusterOutputVariable = readClusterOutputVariable(rawConfig.clusterOutputVariable);
+    rawConfig.mergeRule = readString(rawConfig.mergeRule, buildDefaultClusterMergeRule(clusterAgents));
+    outputVariables = buildClusterOutputVariables(executionMode, clusterAgents, readClusterOutputVariable(rawConfig.clusterOutputVariable));
   }
 
   if (brickType === "delivery") {
@@ -3542,27 +3860,90 @@ function createClusterAgent(index: number, nodeId: string, suggestedIterationsPe
   };
 }
 
-function createClusterAgentOutputVariable(nodeId: string, agentIndex: number) {
-  const nodePrefix = normalizeVariableName(nodeId) || "cluster";
-  return `${nodePrefix}_agent_${agentIndex + 1}_output`;
+function createClusterAgentOutputVariable(clusterKey: number | string, agentIndex: number) {
+  const parsedIndex = typeof clusterKey === "number"
+    ? clusterKey
+    : Number(clusterKey.match(/_(\d+)$/)?.[1] ?? 1);
+  return `cluster_${Math.max(1, Number.isFinite(parsedIndex) ? parsedIndex : 1)}_agent_${agentIndex + 1}_output`;
 }
 
 function readClusterExecutionMode(value: unknown): ClusterExecutionMode {
   const mode = readString(value, "collaborative");
-  if (mode === "sequential") return "relay";
-  if (mode === "parallel") return "collaborative";
-  return mode === "relay" || mode === "intent" ? mode : "collaborative";
+  return mode === "collaborative" || mode === "relay" || mode === "intent" ? mode : "collaborative";
 }
 
-function buildClusterOutputVariables(mode: ClusterExecutionMode, agents: ClusterAgentConfig[]) {
+function normalizeClusterExecutionModeForConfig(value: unknown): string {
+  const mode = readString(value, "");
+  return mode || "collaborative";
+}
+
+function readClusterOutputVariable(value: unknown) {
+  return normalizeVariableName(readString(value, "cluster_result")) || "cluster_result";
+}
+
+function buildClusterOutputVariables(mode: ClusterExecutionMode, agents: ClusterAgentConfig[], outputVariable: string) {
+  const clusterOutput = readClusterOutputVariable(outputVariable);
   if (mode === "intent") {
-    return ["cluster_result"];
+    return [clusterOutput];
   }
-  return agents.map((agent) => agent.output).filter(Boolean);
+  return [clusterOutput, ...agents.map((agent) => agent.output).filter(Boolean)]
+    .filter((value, index, values) => values.indexOf(value) === index);
+}
+
+function buildDefaultClusterMergeRule(agents: ClusterAgentConfig[]) {
+  if (agents.length === 0) {
+    return "## 智能体集群结论";
+  }
+  return [
+    "## 智能体集群结论",
+    ...agents.map((agent, index) => {
+      const output = agent.output || `agent_${index + 1}_output`;
+      return `\n### ${agent.name || `子智能体 ${index + 1}`}\n{{${output}}}`;
+    }),
+  ].join("\n");
 }
 
 function normalizeIntentCode(value: string) {
   return normalizeVariableName(value);
+}
+
+function readIntentSelectionMode(value: unknown): IntentSelectionMode {
+  return value === "single" ? "single" : "multiple";
+}
+
+function readIntentFallbackMode(value: unknown): IntentFallbackMode {
+  return value === "agent" || value === "fixed_reply" ? value : "fail";
+}
+
+function readIntentRoutes(value: unknown, agents: ClusterAgentConfig[]): IntentRouteConfig[] {
+  if (Array.isArray(value)) {
+    const routes = value
+      .filter(isRecord)
+      .map((route, index) => {
+        const agentId = readString(route.agentId, "");
+        const agent = agents.find((item) => item.id === agentId);
+        return {
+          id: readString(route.id, `intent_route_${index + 1}`),
+          intentCode: normalizeIntentCode(readString(route.intentCode, `intent_${index + 1}`)),
+          intentName: readString(route.intentName, readString(agent?.name, `意图 ${index + 1}`)),
+          intentDescription: readString(route.intentDescription, readString(route.description, "")),
+          agentId,
+        };
+      })
+      .filter((route) => route.intentCode);
+    if (routes.length > 0) {
+      return routes;
+    }
+  }
+  return agents
+    .map((agent, index) => ({
+      id: `intent_route_${agent.id}`,
+      intentCode: normalizeIntentCode(readString(agent.intentCode, `intent_${index + 1}`)),
+      intentName: readString(agent.intentName, readString(agent.name, `意图 ${index + 1}`)),
+      intentDescription: readString(agent.intentDescription, ""),
+      agentId: agent.id,
+    }))
+    .filter((route) => route.intentCode && route.intentDescription);
 }
 
 function clusterAgentAvailableVariables(
@@ -3646,7 +4027,7 @@ function toEditorNode(node: WorkflowNodeDraft, agentRuntimeLimits: AgentRuntimeL
     config.maxAgentIterationsPerTurn = readAgentIterationsPerTurn(config.maxAgentIterationsPerTurn, agentRuntimeLimits);
   }
   if (node.nodeType === "parallel_group" && Array.isArray(config.clusterAgents)) {
-    config.executionMode = readClusterExecutionMode(config.executionMode);
+    config.executionMode = normalizeClusterExecutionModeForConfig(config.executionMode);
     config.clusterAgents = config.clusterAgents.map((agent) => isRecord(agent)
       ? {
         ...agent,

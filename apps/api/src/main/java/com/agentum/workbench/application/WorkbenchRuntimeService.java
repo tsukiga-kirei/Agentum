@@ -783,7 +783,7 @@ public class WorkbenchRuntimeService {
 
             String executionMode = stringValue(nextConfig.get("executionMode"));
             for (WorkflowClusterAgentRunEntity row : clusterAgentRunRepository.findByNodeRunIdOrderByAgentIndexAsc(node.getId())) {
-                boolean shouldDelete = "sequential".equals(executionMode) ? row.getAgentIndex() >= agentIndex : row.getAgentIndex() == agentIndex;
+                boolean shouldDelete = "relay".equals(executionMode) ? row.getAgentIndex() >= agentIndex : row.getAgentIndex() == agentIndex;
                 if (shouldDelete) {
                     clusterAgentRunRepository.delete(row);
                 }
@@ -961,6 +961,7 @@ public class WorkbenchRuntimeService {
             Map<String, Object> summary = new LinkedHashMap<>();
             summary.put("agentIndex", row.getAgentIndex());
             summary.put("name", row.getName());
+            summary.put("outputVariable", clusterAgentOutputVariable(node.getConfigSnapshot(), row.getAgentIndex()));
             summary.put("status", row.isSucceeded() ? "completed" : row.getStatus());
             if (row.isSucceeded()) {
                 String body = row.getOutput() == null ? "" : stringValue(row.getOutput().get("final_answer"));
@@ -977,10 +978,12 @@ public class WorkbenchRuntimeService {
         }
 
         Map<String, Object> outputs = new LinkedHashMap<>(node.getOutputSnapshot() == null ? Map.of() : node.getOutputSnapshot());
-        String finalAnswer = clusterFinalAnswer(summaries);
+        String finalAnswer = ClusterOutputSupport.finalAnswer(node.getConfigSnapshot(), outputs, summaries);
         outputs.put("clusterAgents", summaries);
         outputs.put("final_answer", finalAnswer);
         outputs.put("agent_response", finalAnswer);
+        outputs.put(ClusterOutputSupport.outputVariable(node.getConfigSnapshot()), finalAnswer);
+        outputs.put(ClusterIntentRoutingSupport.DEFAULT_INTENT_OUTPUT_VARIABLE, finalAnswer);
         outputs.put("summary", "智能体集群已完成 " + summaries.stream().filter(item -> "completed".equals(item.get("status"))).count() + " 个子智能体。");
         node.patchOutputSnapshot(outputs, now);
         workflowNodeRunRepository.save(node);
@@ -1552,24 +1555,19 @@ public class WorkbenchRuntimeService {
         return normalized.substring(0, 157) + "...";
     }
 
-    private static String clusterFinalAnswer(List<Map<String, Object>> summaries) {
-        if (summaries == null || summaries.isEmpty()) {
-            return "智能体集群未生成子智能体结论。";
+    private static String clusterAgentOutputVariable(Map<String, Object> config, int agentIndex) {
+        if (config == null) {
+            return "";
         }
-        StringBuilder result = new StringBuilder("## 智能体集群结论\n");
-        for (Map<String, Object> summary : summaries) {
-            String body = firstNonBlank(
-                stringValue(summary.get("final_answer")),
-                stringValue(summary.get("summary")),
-                "已完成"
-            );
-            result.append("\n### ")
-                .append(firstNonBlank(stringValue(summary.get("name")), "子智能体"))
-                .append("\n")
-                .append(body)
-                .append("\n");
+        Object rawAgents = config.get("clusterAgents");
+        if (!(rawAgents instanceof List<?> agents) || agentIndex < 0 || agentIndex >= agents.size()) {
+            return "";
         }
-        return result.toString().trim();
+        Object rawAgent = agents.get(agentIndex);
+        if (!(rawAgent instanceof Map<?, ?> agent)) {
+            return "";
+        }
+        return stringValue(agent.get("output"));
     }
 
     @SuppressWarnings("unchecked")

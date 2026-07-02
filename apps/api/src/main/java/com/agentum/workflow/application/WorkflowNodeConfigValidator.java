@@ -14,6 +14,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Component;
 
@@ -26,10 +28,11 @@ public class WorkflowNodeConfigValidator {
 
     private static final Set<String> SENTINEL_VALUES = Set.of("custom", "none", "");
     private static final String ACTIVE_STATUS = "active";
-    /** 智能体集群支持的执行方式枚举；parallel/sequential 为旧草稿兼容值。 */
-    private static final Set<String> CLUSTER_EXECUTION_MODES = Set.of("parallel", "sequential", "collaborative", "relay", "intent");
+    /** 智能体集群支持的执行方式枚举，历史 parallel/sequential 由数据库迁移统一清洗。 */
+    private static final Set<String> CLUSTER_EXECUTION_MODES = Set.of("collaborative", "relay", "intent");
     private static final Set<String> INTENT_SELECTION_MODES = Set.of("single", "multiple");
-    private static final Set<String> INTENT_FALLBACK_MODES = Set.of("fail", "fallback_intent");
+    private static final Set<String> INTENT_FALLBACK_MODES = Set.of("fail", "agent", "fixed_reply");
+    private static final Pattern TEMPLATE_VARIABLE_PATTERN = Pattern.compile("\\{\\{\\s*([a-zA-Z0-9_]+)\\s*}}");
 
     private final SystemCapabilityRepository systemCapabilityRepository;
     private final TenantCapabilityGrantRepository tenantCapabilityGrantRepository;
@@ -242,50 +245,48 @@ public class WorkflowNodeConfigValidator {
             if (!agentOutputs.add(output)) {
                 issues.add(issue("WORKFLOW_VALIDATION_CLUSTER_AGENT_OUTPUT_DUPLICATED", "节点[" + node.name() + "]存在重复的子智能体输出变量：" + output, node));
             }
-            if ("intent".equals(executionMode)) {
-                String intentCode = rawString(agent.get("intentCode"));
-                if (isInvalidVariableName(intentCode)) {
-                    issues.add(issue(
-                        "WORKFLOW_VALIDATION_CLUSTER_INTENT_CODE_INVALID",
-                        "节点[" + node.name() + "]的第 " + (index + 1) + " 个子智能体必须配置合法意图代码",
-                        node
-                    ));
-                } else if (!intentCodes.add(intentCode)) {
-                    issues.add(issue(
-                        "WORKFLOW_VALIDATION_CLUSTER_INTENT_CODE_DUPLICATED",
-                        "节点[" + node.name() + "]存在重复的意图代码：" + intentCode,
-                        node
-                    ));
-                }
-            }
         }
         Set<String> declaredOutputs = variableSet(node.outputVariables());
+        String clusterOutputVariable = rawString(config.getOrDefault("clusterOutputVariable", "cluster_result"));
+        if (isInvalidVariableName(clusterOutputVariable)) {
+            issues.add(issue("WORKFLOW_VALIDATION_CLUSTER_OUTPUT_VARIABLE_INVALID", "节点[" + node.name() + "]的最终输出变量名不合法：" + clusterOutputVariable, node));
+        }
+        Set<String> invalidMergeVariables = extractTemplateVariables(rawString(config.get("mergeRule"))).stream()
+            .filter(variable -> !agentOutputs.contains(variable))
+            .collect(Collectors.toCollection(LinkedHashSet::new));
+        if (!invalidMergeVariables.isEmpty()) {
+            issues.add(issue(
+                "WORKFLOW_VALIDATION_CLUSTER_MERGE_VARIABLE_INVALID",
+                "节点[" + node.name() + "]的集群输出模板只能引用子智能体输出变量：" + String.join("、", invalidMergeVariables),
+                node
+            ));
+        }
         if ("intent".equals(executionMode)) {
-            validateIntentRoutingConfig(config, node, intentCodes, declaredOutputs, issues);
-        } else if (!agentOutputs.equals(declaredOutputs)) {
-            issues.add(issue("WORKFLOW_VALIDATION_CLUSTER_OUTPUT_MISMATCH", "节点[" + node.name() + "]的子智能体输出必须与节点输出变量保持一致", node));
+            validateIntentRoutingConfig(config, node, agents, declaredOutputs, issues);
+        } else {
+            Set<String> expectedOutputs = new LinkedHashSet<>();
+            expectedOutputs.add(clusterOutputVariable);
+            expectedOutputs.addAll(agentOutputs);
+            if (!expectedOutputs.equals(declaredOutputs)) {
+                issues.add(issue("WORKFLOW_VALIDATION_CLUSTER_OUTPUT_MISMATCH", "节点[" + node.name() + "]的最终输出和子智能体输出必须与节点输出变量保持一致", node));
+            }
         }
     }
 
     private void validateIntentRoutingConfig(
         Map<String, Object> config,
         WorkflowDraftApi.WorkflowNodeRow node,
-        Set<String> intentCodes,
+        List<Map<String, Object>> agents,
         Set<String> declaredOutputs,
         List<WorkflowDraftApi.WorkflowValidationIssue> issues
     ) {
-        if (!Set.of("cluster_result").equals(declaredOutputs)) {
+        String clusterOutputVariable = rawString(config.getOrDefault("clusterOutputVariable", "cluster_result"));
+        if (!Set.of(clusterOutputVariable).equals(declaredOutputs)) {
             issues.add(issue(
                 "WORKFLOW_VALIDATION_CLUSTER_INTENT_OUTPUT_INVALID",
-                "节点[" + node.name() + "]使用意图分派时，下游输出必须统一为 cluster_result，避免引用未命中的子智能体变量",
+                "节点[" + node.name() + "]使用意图分派时，下游输出必须统一为 " + clusterOutputVariable + "，避免引用未命中的子智能体变量",
                 node
             ));
-        }
-        if (rawString(config.get("intentSystemPrompt")).isBlank()) {
-            issues.add(issue("WORKFLOW_VALIDATION_CLUSTER_INTENT_SYSTEM_PROMPT_REQUIRED", "节点[" + node.name() + "]必须配置意图识别系统提示词", node));
-        }
-        if (rawString(config.get("intentUserPrompt")).isBlank()) {
-            issues.add(issue("WORKFLOW_VALIDATION_CLUSTER_INTENT_USER_PROMPT_REQUIRED", "节点[" + node.name() + "]必须配置意图识别用户提示词", node));
         }
         String selectionMode = rawString(config.get("intentSelectionMode"));
         if (!selectionMode.isBlank() && !INTENT_SELECTION_MODES.contains(selectionMode)) {
@@ -295,25 +296,40 @@ public class WorkflowNodeConfigValidator {
         if (!fallbackMode.isBlank() && !INTENT_FALLBACK_MODES.contains(fallbackMode)) {
             issues.add(issue("WORKFLOW_VALIDATION_CLUSTER_INTENT_FALLBACK_MODE_INVALID", "节点[" + node.name() + "]的未命中处理方式不合法", node));
         }
-        double threshold = parseConfidence(config.get("intentConfidenceThreshold"));
-        if (threshold < 0d || threshold > 1d) {
-            issues.add(issue("WORKFLOW_VALIDATION_CLUSTER_INTENT_CONFIDENCE_INVALID", "节点[" + node.name() + "]的置信度阈值必须在 0 到 1 之间", node));
+
+        Set<String> agentIds = agents.stream()
+            .map(agent -> rawString(agent.get("id")))
+            .filter(value -> !value.isBlank())
+            .collect(Collectors.toCollection(LinkedHashSet::new));
+        List<Map<String, Object>> routes = extractMapList(config, "intentRoutes");
+        if (routes.isEmpty()) {
+            issues.add(issue("WORKFLOW_VALIDATION_CLUSTER_INTENT_ROUTES_REQUIRED", "节点[" + node.name() + "]至少需要配置一个意图", node));
         }
-        if ("fallback_intent".equals(fallbackMode)) {
-            String fallbackIntentCode = rawString(config.get("fallbackIntentCode"));
-            if (isInvalidVariableName(fallbackIntentCode)) {
-                issues.add(issue("WORKFLOW_VALIDATION_CLUSTER_INTENT_FALLBACK_CODE_INVALID", "节点[" + node.name() + "]的兜底意图代码不合法", node));
-            } else if (!intentCodes.contains(fallbackIntentCode)) {
-                issues.add(issue("WORKFLOW_VALIDATION_CLUSTER_INTENT_FALLBACK_CODE_MISSING", "节点[" + node.name() + "]的兜底意图没有绑定任何子智能体", node));
+        Set<String> intentCodes = new LinkedHashSet<>();
+        for (int index = 0; index < routes.size(); index++) {
+            Map<String, Object> route = routes.get(index);
+            String intentCode = rawString(route.get("intentCode"));
+            if (isInvalidVariableName(intentCode)) {
+                issues.add(issue("WORKFLOW_VALIDATION_CLUSTER_INTENT_CODE_INVALID", "节点[" + node.name() + "]的第 " + (index + 1) + " 个意图代码不合法", node));
+            } else if (!intentCodes.add(intentCode)) {
+                issues.add(issue("WORKFLOW_VALIDATION_CLUSTER_INTENT_CODE_DUPLICATED", "节点[" + node.name() + "]存在重复的意图代码：" + intentCode, node));
+            }
+            if (rawString(route.get("intentDescription")).isBlank()) {
+                issues.add(issue("WORKFLOW_VALIDATION_CLUSTER_INTENT_DESCRIPTION_REQUIRED", "节点[" + node.name() + "]的第 " + (index + 1) + " 个意图必须说明什么时候命中", node));
+            }
+            String agentId = rawString(route.get("agentId"));
+            if (agentId.isBlank() || !agentIds.contains(agentId)) {
+                issues.add(issue("WORKFLOW_VALIDATION_CLUSTER_INTENT_AGENT_MISSING", "节点[" + node.name() + "]的第 " + (index + 1) + " 个意图必须选择目标智能体", node));
             }
         }
-        Object rawIterations = config.get("intentMaxAgentIterationsPerTurn");
-        if (rawIterations != null) {
-            int value = parsePositiveInteger(rawIterations);
-            int maximum = Math.max(1, agentRuntimeProperties.getMaxIterationsPerTurn());
-            if (value < 1 || value > maximum) {
-                issues.add(issue("WORKFLOW_VALIDATION_CLUSTER_INTENT_ITERATIONS_INVALID", "节点[" + node.name() + "]的意图识别最大推理次数必须在 1 到 " + maximum + " 之间", node));
+
+        if ("agent".equals(fallbackMode)) {
+            String fallbackAgentId = rawString(config.get("fallbackAgentId"));
+            if (fallbackAgentId.isBlank() || !agentIds.contains(fallbackAgentId)) {
+                issues.add(issue("WORKFLOW_VALIDATION_CLUSTER_INTENT_FALLBACK_AGENT_MISSING", "节点[" + node.name() + "]的其他情况必须选择目标智能体", node));
             }
+        } else if ("fixed_reply".equals(fallbackMode) && rawString(config.get("fallbackReply")).isBlank()) {
+            issues.add(issue("WORKFLOW_VALIDATION_CLUSTER_INTENT_FALLBACK_REPLY_REQUIRED", "节点[" + node.name() + "]的其他情况固定回复不能为空", node));
         }
     }
 
@@ -485,22 +501,10 @@ public class WorkflowNodeConfigValidator {
         }
     }
 
-    private static double parseConfidence(Object value) {
-        if (value instanceof Number number) {
-            return number.doubleValue();
-        }
-        try {
-            return value == null ? -1d : Double.parseDouble(value.toString());
-        } catch (NumberFormatException exception) {
-            return -1d;
-        }
-    }
-
     private static String normalizeClusterExecutionMode(String value) {
         return switch (value) {
-            case "sequential" -> "relay";
-            case "parallel", "" -> "collaborative";
             case "collaborative", "relay", "intent" -> value;
+            case "" -> "collaborative";
             default -> value;
         };
     }
@@ -525,6 +529,15 @@ public class WorkflowNodeConfigValidator {
 
     private static boolean isInvalidVariableName(String value) {
         return value == null || !value.matches("^[a-z][a-z0-9_]*$");
+    }
+
+    private static Set<String> extractTemplateVariables(String text) {
+        Set<String> variables = new LinkedHashSet<>();
+        Matcher matcher = TEMPLATE_VARIABLE_PATTERN.matcher(text == null ? "" : text);
+        while (matcher.find()) {
+            variables.add(matcher.group(1));
+        }
+        return variables;
     }
 
     private static Set<String> variableSet(List<String> variables) {

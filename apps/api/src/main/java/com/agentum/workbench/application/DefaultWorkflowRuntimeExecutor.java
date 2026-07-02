@@ -104,7 +104,7 @@ public class DefaultWorkflowRuntimeExecutor implements WorkflowRuntimeExecutor {
             variables.putAll(agentOutput);
             summaries.add(clusterSummary(agentConfig, agentOutput));
         }
-        return clusterResult(variables, summaries);
+        return clusterResult(request.nodeRun().getConfigSnapshot(), variables, summaries);
     }
 
     private Map<String, Object> executeCollaborativeGroup(ExecutionRequest request, List<Map<String, Object>> agentConfigs) {
@@ -115,43 +115,45 @@ public class DefaultWorkflowRuntimeExecutor implements WorkflowRuntimeExecutor {
             variables.putAll(agentOutput);
             summaries.add(clusterSummary(agentConfig, agentOutput));
         }
-        return clusterResult(variables, summaries);
+        return clusterResult(request.nodeRun().getConfigSnapshot(), variables, summaries);
     }
 
     private Map<String, Object> executeIntentGroup(ExecutionRequest request, List<Map<String, Object>> agentConfigs) {
-        List<ClusterIntentRoutingSupport.IntentRoute> routes = ClusterIntentRoutingSupport.intentRoutes(agentConfigs);
+        Map<String, Object> nodeConfig = request.nodeRun().getConfigSnapshot();
+        List<ClusterIntentRoutingSupport.IntentRoute> routes = ClusterIntentRoutingSupport.intentRoutes(nodeConfig, agentConfigs);
         Map<String, Object> classifierOutput = agentRuntimeService.execute(new AgentRuntimeRequest(
             request.run(),
             request.nodeRun(),
-            ClusterIntentRoutingSupport.classifierConfig(request.nodeRun().getConfigSnapshot(), agentConfigs, routes),
+            ClusterIntentRoutingSupport.classifierConfig(nodeConfig, agentConfigs, routes),
             request.variables(),
             Map.of(),
             request.operatorUserId()
         )).outputs();
         ClusterIntentRoutingSupport.IntentDecision decision = ClusterIntentRoutingSupport.decide(
-            request.nodeRun().getConfigSnapshot(),
+            nodeConfig,
             routes,
+            agentConfigs,
             classifierOutput
         );
         if (decision.selectedAgentIndexes().isEmpty()) {
+            if (!decision.fixedReply().isBlank()) {
+                return fixedIntentReplyResult(request.variables(), nodeConfig, decision);
+            }
             throw new ApiException(
                 HttpStatus.BAD_REQUEST,
                 "CLUSTER_INTENT_NO_MATCH",
-                "意图分派未命中任何可执行子智能体，请检查意图提示词、置信度阈值或其他意图处理策略"
+                "意图分派未命中任何可执行子智能体，请检查意图配置或其他情况处理策略"
             );
         }
         Map<String, Object> variables = new LinkedHashMap<>(request.variables());
         List<Map<String, Object>> summaries = new ArrayList<>();
-        for (int index = 0; index < agentConfigs.size(); index++) {
-            if (!decision.selectedAgentIndexes().contains(index)) {
-                continue;
-            }
+        for (int index : decision.selectedAgentIndexes()) {
             Map<String, Object> agentConfig = agentConfigs.get(index);
             Map<String, Object> agentOutput = executeClusterAgent(request, agentConfig, request.variables());
             variables.putAll(agentOutput);
             summaries.add(clusterSummary(agentConfig, agentOutput));
         }
-        Map<String, Object> result = clusterResult(variables, summaries);
+        Map<String, Object> result = clusterResult(nodeConfig, variables, summaries);
         result.put("intentRouting", intentRoutingSummary(decision));
         return result;
     }
@@ -174,17 +176,19 @@ public class DefaultWorkflowRuntimeExecutor implements WorkflowRuntimeExecutor {
         );
         return Map.of(
             "name", stringValue(agentConfig.get("name"), "子智能体"),
+            "outputVariable", stringValue(agentConfig.get("output"), ""),
             "status", "completed",
             "final_answer", displayText,
             "summary", summarizeText(displayText)
         );
     }
 
-    private Map<String, Object> clusterResult(Map<String, Object> variables, List<Map<String, Object>> summaries) {
+    private Map<String, Object> clusterResult(Map<String, Object> nodeConfig, Map<String, Object> variables, List<Map<String, Object>> summaries) {
         variables.put("clusterAgents", summaries);
-        String finalAnswer = clusterFinalAnswer(summaries);
+        String finalAnswer = ClusterOutputSupport.finalAnswer(nodeConfig, variables, summaries);
         variables.put("final_answer", finalAnswer);
         variables.put("agent_response", finalAnswer);
+        variables.put(ClusterOutputSupport.outputVariable(nodeConfig), finalAnswer);
         variables.put(ClusterIntentRoutingSupport.DEFAULT_INTENT_OUTPUT_VARIABLE, finalAnswer);
         variables.put("summary", "智能体集群已完成 " + summaries.size() + " 个子智能体。");
         return variables;
@@ -194,31 +198,22 @@ public class DefaultWorkflowRuntimeExecutor implements WorkflowRuntimeExecutor {
         Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("requestedCodes", decision.requestedCodes());
         summary.put("selectedCodes", decision.selectedCodes());
-        summary.put("confidence", decision.confidence());
-        summary.put("threshold", decision.threshold());
         summary.put("reason", decision.reason());
         summary.put("slots", decision.slots());
         summary.put("usedFallback", decision.usedFallback());
+        summary.put("fallbackMode", decision.fallbackMode());
         return summary;
     }
 
-    private static String clusterFinalAnswer(List<Map<String, Object>> summaries) {
-        if (summaries == null || summaries.isEmpty()) {
-            return "智能体集群未生成子智能体结论。";
-        }
-        StringBuilder result = new StringBuilder("## 智能体集群结论\n");
-        for (Map<String, Object> summary : summaries) {
-            String body = stringValue(summary.get("final_answer"), "");
-            if (body.isBlank()) {
-                body = stringValue(summary.get("summary"), "已完成");
-            }
-            result.append("\n### ")
-                .append(stringValue(summary.get("name"), "子智能体"))
-                .append("\n")
-                .append(body)
-                .append("\n");
-        }
-        return result.toString();
+    private Map<String, Object> fixedIntentReplyResult(Map<String, Object> variables, Map<String, Object> nodeConfig, ClusterIntentRoutingSupport.IntentDecision decision) {
+        Map<String, Object> result = new LinkedHashMap<>(variables);
+        result.put("final_answer", decision.fixedReply());
+        result.put("agent_response", decision.fixedReply());
+        result.put(ClusterOutputSupport.outputVariable(nodeConfig), decision.fixedReply());
+        result.put(ClusterIntentRoutingSupport.DEFAULT_INTENT_OUTPUT_VARIABLE, decision.fixedReply());
+        result.put("intentRouting", intentRoutingSummary(decision));
+        result.put("summary", "意图分派已按其他情况返回固定话术。");
+        return result;
     }
 
     private static String summarizeText(String content) {

@@ -45,7 +45,7 @@
   "additionalProperties": false,
   "allOf": [
     {
-      "$comment": "智能体集群节点：执行方式支持协同处理（collaborative）、接力处理（relay）与意图分派（intent）；parallel/sequential 为旧快照兼容值。",
+      "$comment": "智能体集群节点：执行方式支持协同处理（collaborative）、接力处理（relay）与意图分派（intent）。意图分派通过 intentRoutes 绑定意图与目标子智能体，运行态只执行命中的子智能体。clusterOutputVariable 声明最终输出，mergeRule 只组合子智能体输出。历史 parallel/sequential 由数据库迁移清洗，不再作为契约值。",
       "if": {
         "properties": {
           "nodeType": { "const": "parallel_group" }
@@ -58,8 +58,50 @@
             "properties": {
               "executionMode": {
                 "type": "string",
-                "enum": ["collaborative", "relay", "intent", "parallel", "sequential"],
+                "enum": ["collaborative", "relay", "intent"],
                 "default": "collaborative"
+              },
+              "clusterOutputVariable": {
+                "type": "string",
+                "default": "cluster_result"
+              },
+              "mergeRule": {
+                "type": "string"
+              },
+              "intentSelectionMode": {
+                "type": "string",
+                "enum": ["single", "multiple"],
+                "default": "multiple"
+              },
+              "intentInputTemplate": {
+                "type": "string"
+              },
+              "intentFallbackMode": {
+                "type": "string",
+                "enum": ["fail", "agent", "fixed_reply"],
+                "default": "fail"
+              },
+              "fallbackAgentId": {
+                "type": "string"
+              },
+              "fallbackReply": {
+                "type": "string"
+              },
+              "intentRoutes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["intentCode", "intentName", "intentDescription", "agentId"],
+                  "properties": {
+                    "id": { "type": "string" },
+                    "intentCode": { "type": "string" },
+                    "intentName": { "type": "string" },
+                    "intentDescription": { "type": "string" },
+                    "agentId": { "type": "string" }
+                  },
+                  "additionalProperties": true
+                },
+                "default": []
               }
             }
           }

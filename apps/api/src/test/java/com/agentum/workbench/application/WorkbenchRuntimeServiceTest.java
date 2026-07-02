@@ -1016,7 +1016,7 @@ class WorkbenchRuntimeServiceTest {
 
     private Map<String, Object> clusterConfigWithFollowUpHistory() {
         return new LinkedHashMap<>(Map.of(
-            "executionMode", "parallel",
+            "executionMode", "collaborative",
             "clusterAgents", List.of(
                 new LinkedHashMap<>(Map.of(
                     "name", "子智能体 1",
@@ -1057,7 +1057,7 @@ class WorkbenchRuntimeServiceTest {
             name,
             Map.of(),
             Map.of(),
-            nodeType.equals("parallel_group") ? Map.of("executionMode", "parallel") : Map.of(),
+            nodeType.equals("parallel_group") ? Map.of("executionMode", "collaborative") : Map.of(),
             sortOrder,
             now
         );

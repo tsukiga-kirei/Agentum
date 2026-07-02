@@ -8694,6 +8694,84 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
   font-weight: 700;
 }
 
+.workflow-intent-summary {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-bg-card) 88%, var(--color-bg-hover) 12%);
+  padding: 14px;
+}
+
+.workflow-intent-summary-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.workflow-intent-route-list,
+.workflow-intent-drawer-list {
+  display: grid;
+  gap: 8px;
+}
+
+.workflow-intent-route-row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  border: 1px solid color-mix(in srgb, var(--color-border-light) 80%, transparent);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-card);
+  padding: 10px;
+}
+
+.workflow-intent-route-index {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-primary-bg) 82%, var(--color-bg-card) 18%);
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.workflow-intent-fallback {
+  margin: 0;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-bg-hover) 78%, var(--color-bg-card) 22%);
+  padding: 8px 10px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.workflow-intent-drawer-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.workflow-intent-editor-card {
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-bg-card) 92%, var(--color-bg-hover) 8%);
+  padding: 14px;
+}
+
+.workflow-intent-editor-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .workflow-variable-reference-bar {
   display: flex;
   flex-wrap: wrap;
