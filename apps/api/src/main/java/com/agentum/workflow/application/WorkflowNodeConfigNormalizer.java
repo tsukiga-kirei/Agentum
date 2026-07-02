@@ -67,6 +67,16 @@ public final class WorkflowNodeConfigNormalizer {
             return normalized;
         }
         if ("parallel_group".equals(nodeType)) {
+            normalized.put("executionMode", normalizeClusterExecutionMode(normalized.get("executionMode")));
+            if ("intent".equals(normalized.get("executionMode"))) {
+                normalized.putIfAbsent("intentSelectionMode", "single");
+                normalized.putIfAbsent("intentFallbackMode", "fail");
+                normalized.putIfAbsent("fallbackIntentCode", "other");
+                normalized.putIfAbsent("intentConfidenceThreshold", 0.65);
+                normalized.putIfAbsent("intentSystemPrompt", WorkflowPromptDefaults.DEFAULT_INTENT_SYSTEM_PROMPT);
+                normalized.putIfAbsent("intentUserPrompt", WorkflowPromptDefaults.DEFAULT_INTENT_USER_PROMPT);
+                normalized.putIfAbsent("intentMaxAgentIterationsPerTurn", 1);
+            }
             Object rawAgents = normalized.get("clusterAgents");
             if (rawAgents instanceof List<?> agents) {
                 List<Map<String, Object>> nextAgents = new ArrayList<>();
@@ -109,6 +119,16 @@ public final class WorkflowNodeConfigNormalizer {
     private static boolean isUnsetTemplate(Object value) {
         String templateId = rawString(value);
         return templateId.isBlank() || "none".equals(templateId);
+    }
+
+    private static String normalizeClusterExecutionMode(Object value) {
+        String mode = rawString(value);
+        return switch (mode) {
+            case "sequential" -> "relay";
+            case "parallel", "" -> "collaborative";
+            case "collaborative", "relay", "intent" -> mode;
+            default -> mode;
+        };
     }
 
     private static String rawString(Object value) {

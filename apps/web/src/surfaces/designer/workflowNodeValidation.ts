@@ -37,6 +37,7 @@ export type ValidatableWorkflowNode = {
 };
 
 type VisibleBrickType = "input" | "agent" | "cluster" | "delivery";
+type ClusterExecutionMode = "collaborative" | "relay" | "intent";
 
 function readString(value: unknown, fallback = ""): string {
   if (typeof value === "string") {
@@ -88,6 +89,24 @@ function issue(code: string, message: string): WorkflowNodeValidationIssue {
 
 function isSentinelId(value: string): boolean {
   return value === "" || value === "none" || value === "custom";
+}
+
+function readNumber(value: unknown, fallback: number): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+  return fallback;
+}
+
+function normalizeClusterExecutionMode(value: unknown): ClusterExecutionMode {
+  const mode = readString(value, "collaborative");
+  if (mode === "sequential") return "relay";
+  if (mode === "parallel") return "collaborative";
+  return mode === "relay" || mode === "intent" ? mode : "collaborative";
 }
 
 export function extractTemplateVariableNames(text: string): string[] {
@@ -313,7 +332,9 @@ function validateClusterNode(node: ValidatableWorkflowNode): WorkflowNodeValidat
     return issues;
   }
 
+  const executionMode = normalizeClusterExecutionMode(node.data.rawConfig?.executionMode);
   const agentOutputs = new Set<string>();
+  const intentCodes = new Set<string>();
   agents.forEach((agent, index) => {
     const agentName = readString(agent.name, `子智能体 ${index + 1}`);
     issues.push(...validateAgentConfig(agent, `子智能体「${agentName}」`));
@@ -328,20 +349,134 @@ function validateClusterNode(node: ValidatableWorkflowNode): WorkflowNodeValidat
       return;
     }
     agentOutputs.add(output);
+
+    if (executionMode === "intent") {
+      const intentCode = readString(agent.intentCode);
+      if (!VARIABLE_NAME_PATTERN.test(intentCode)) {
+        issues.push(issue("WORKFLOW_NODE_CLUSTER_INTENT_CODE_INVALID", `子智能体「${agentName}」必须配置合法意图代码`));
+      } else if (intentCodes.has(intentCode)) {
+        issues.push(issue("WORKFLOW_NODE_CLUSTER_INTENT_CODE_DUPLICATED", `存在重复的意图代码：${intentCode}`));
+      }
+      intentCodes.add(intentCode);
+    }
   });
 
   const declaredOutputs = new Set(node.data.outputVariables.filter(Boolean));
-  if (agentOutputs.size !== declaredOutputs.size
+  if (executionMode === "intent") {
+    if (declaredOutputs.size !== 1 || !declaredOutputs.has("cluster_result")) {
+      issues.push(issue("WORKFLOW_NODE_CLUSTER_INTENT_OUTPUT_INVALID", "意图分派模式下，下游输出必须统一为 cluster_result"));
+    }
+    const systemPrompt = readString(node.data.rawConfig?.intentSystemPrompt);
+    const userPrompt = readString(node.data.rawConfig?.intentUserPrompt);
+    if (!systemPrompt) {
+      issues.push(issue("WORKFLOW_NODE_CLUSTER_INTENT_SYSTEM_PROMPT_REQUIRED", "必须配置意图识别系统提示词"));
+    }
+    if (!userPrompt) {
+      issues.push(issue("WORKFLOW_NODE_CLUSTER_INTENT_USER_PROMPT_REQUIRED", "必须配置意图识别用户提示词"));
+    }
+    const selectionMode = readString(node.data.rawConfig?.intentSelectionMode, "single");
+    if (selectionMode !== "single" && selectionMode !== "multiple") {
+      issues.push(issue("WORKFLOW_NODE_CLUSTER_INTENT_SELECTION_MODE_INVALID", "意图命中策略不合法"));
+    }
+    const fallbackMode = readString(node.data.rawConfig?.intentFallbackMode, "fail");
+    if (fallbackMode !== "fail" && fallbackMode !== "fallback_intent") {
+      issues.push(issue("WORKFLOW_NODE_CLUSTER_INTENT_FALLBACK_MODE_INVALID", "未命中处理方式不合法"));
+    }
+    const threshold = readNumber(node.data.rawConfig?.intentConfidenceThreshold, -1);
+    if (threshold < 0 || threshold > 1) {
+      issues.push(issue("WORKFLOW_NODE_CLUSTER_INTENT_CONFIDENCE_INVALID", "置信度阈值必须在 0 到 1 之间"));
+    }
+    if (fallbackMode === "fallback_intent") {
+      const fallbackIntentCode = readString(node.data.rawConfig?.fallbackIntentCode, "other");
+      if (!VARIABLE_NAME_PATTERN.test(fallbackIntentCode)) {
+        issues.push(issue("WORKFLOW_NODE_CLUSTER_INTENT_FALLBACK_CODE_INVALID", "其他意图代码不合法"));
+      } else if (!intentCodes.has(fallbackIntentCode)) {
+        issues.push(issue("WORKFLOW_NODE_CLUSTER_INTENT_FALLBACK_CODE_MISSING", "其他意图没有绑定任何子智能体"));
+      }
+    }
+  } else if (agentOutputs.size !== declaredOutputs.size
     || [...agentOutputs].some((name) => !declaredOutputs.has(name))) {
     issues.push(issue("WORKFLOW_NODE_CLUSTER_OUTPUT_MISMATCH", "子智能体输出必须与节点输出变量保持一致"));
   }
 
-  const executionMode = readString(node.data.rawConfig?.executionMode, "parallel");
-  if (executionMode !== "parallel" && executionMode !== "sequential") {
-    issues.push(issue("WORKFLOW_NODE_CLUSTER_EXECUTION_MODE_INVALID", "执行方式仅支持并行或顺序"));
+  const rawExecutionMode = readString(node.data.rawConfig?.executionMode, "collaborative");
+  if (!["parallel", "sequential", "collaborative", "relay", "intent"].includes(rawExecutionMode)) {
+    issues.push(issue("WORKFLOW_NODE_CLUSTER_EXECUTION_MODE_INVALID", "执行方式仅支持协同处理、接力处理或意图分派"));
   }
 
   return issues;
+}
+
+function findClusterTemplateVariableIssues(
+  config: Record<string, unknown> | undefined,
+  upstreamVariables: Set<string>,
+): WorkflowNodeValidationIssue[] {
+  const source = config ?? {};
+  const agents = readMapList(source.clusterAgents);
+  const mode = normalizeClusterExecutionMode(source.executionMode);
+  const issues: WorkflowNodeValidationIssue[] = [];
+
+  const mergeRule = readString(source.mergeRule);
+  if (mergeRule) {
+    const unresolved = extractTemplateVariableNames(mergeRule)
+      .filter((name) => !WORKFLOW_SYSTEM_TEMPLATE_VARIABLES.has(name) && !upstreamVariables.has(name));
+    if (unresolved.length > 0) {
+      issues.push(issue("WORKFLOW_NODE_TEMPLATE_VARIABLE_UNRESOLVED", `集群拼接规则引用了当前不可用的变量：${[...new Set(unresolved)].join("、")}`));
+    }
+  }
+
+  if (mode === "intent") {
+    const intentUnresolved = collectTemplateUnresolvedVariables(
+      [
+        { key: "intentSystemPrompt", label: "意图识别系统提示词", text: readString(source.intentSystemPrompt) },
+        { key: "intentUserPrompt", label: "意图识别用户提示词", text: readString(source.intentUserPrompt) },
+      ],
+      upstreamVariables,
+    );
+    if (intentUnresolved.length > 0) {
+      issues.push(issue("WORKFLOW_NODE_TEMPLATE_VARIABLE_UNRESOLVED", `意图识别提示词引用了当前不可用的变量：${intentUnresolved.join("、")}`));
+    }
+  }
+
+  agents.forEach((agent, index) => {
+    const agentName = readString(agent.name, `子智能体 ${index + 1}`);
+    const available = new Set(upstreamVariables);
+    if (mode === "relay") {
+      agents.slice(0, index).forEach((previous) => {
+        const output = readString(previous.output);
+        if (output) {
+          available.add(output);
+        }
+      });
+    }
+    const unresolved = collectTemplateUnresolvedVariables(
+      [
+        { key: `clusterAgents.${index}.systemPrompt`, label: "系统提示词", text: readString(agent.systemPrompt) },
+        { key: `clusterAgents.${index}.userPrompt`, label: "用户提示词", text: readString(agent.userPrompt) },
+      ],
+      available,
+    );
+    if (unresolved.length > 0) {
+      issues.push(issue("WORKFLOW_NODE_TEMPLATE_VARIABLE_UNRESOLVED", `子智能体「${agentName}」引用了当前执行顺序下不可用的变量：${unresolved.join("、")}`));
+    }
+  });
+
+  return issues;
+}
+
+function collectTemplateUnresolvedVariables(
+  fields: TemplateTextField[],
+  availableVariables: Set<string>,
+): string[] {
+  const unresolved = new Set<string>();
+  fields.forEach((field) => {
+    extractTemplateVariableNames(field.text).forEach((name) => {
+      if (!WORKFLOW_SYSTEM_TEMPLATE_VARIABLES.has(name) && !availableVariables.has(name)) {
+        unresolved.add(`${name}（见于：${field.label}）`);
+      }
+    });
+  });
+  return [...unresolved];
 }
 
 function isWordDeliveryConfig(config: Record<string, unknown>): boolean {
@@ -397,7 +532,7 @@ export function validateWorkflowNode(
   }
   if (brickType === "cluster") {
     const issues = validateClusterNode(node);
-    issues.push(...findUnresolvedTemplateVariableIssues(node.data.rawConfig, brickType, upstreamVariables, "集群配置"));
+    issues.push(...findClusterTemplateVariableIssues(node.data.rawConfig, upstreamVariables));
     return issues;
   }
   return validateDeliveryNode(node, upstreamVariables);

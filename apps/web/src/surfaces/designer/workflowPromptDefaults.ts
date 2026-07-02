@@ -5,6 +5,13 @@ import type { WorkflowNodeDraft } from "../../types/workflow-contract";
 export const DEFAULT_SYSTEM_PROMPT = "请配置这个智能体的角色、任务边界和输出要求。";
 export const DEFAULT_USER_PROMPT = "请基于已产生的可引用内容完成本步骤任务。";
 export const DEFAULT_CLUSTER_USER_PROMPT = "请基于已产生的可引用内容完成本智能体任务。";
+export const DEFAULT_INTENT_SYSTEM_PROMPT = [
+  "你是多智能体节点的意图分派器。你的任务是把用户或上游变量表达的需求归类到设计时提供的候选意图。",
+  "只能选择候选意图中的 intentCode，禁止返回 agentId、工具名、流程节点 ID 或任何未在候选列表中的代码。",
+  "只输出一个 JSON 对象，不要输出 Markdown、解释文本或代码块。",
+  'JSON 格式：{"intentCodes":["候选意图代码"],"confidence":0.0到1.0,"reason":"一句中文原因","slots":{}}',
+].join("\n");
+export const DEFAULT_INTENT_USER_PROMPT = "请根据上游输入和候选意图，判断本次应该交给哪个子智能体处理。";
 
 export type CustomPromptDraft = {
   systemPromptTemplateId?: string;
@@ -52,6 +59,7 @@ export function normalizeWorkflowNodeConfig(
   if (nodeType === "parallel_group" && Array.isArray(config.clusterAgents)) {
     return {
       ...config,
+      executionMode: normalizeClusterExecutionMode(config.executionMode),
       clusterAgents: config.clusterAgents.map((agent) => (
         typeof agent === "object" && agent !== null
           ? normalizeAgentPromptConfig(agent as Record<string, unknown>, DEFAULT_CLUSTER_USER_PROMPT)
@@ -60,6 +68,13 @@ export function normalizeWorkflowNodeConfig(
     };
   }
   return config;
+}
+
+function normalizeClusterExecutionMode(value: unknown): string {
+  const mode = typeof value === "string" ? value.trim() : "";
+  if (mode === "sequential") return "relay";
+  if (mode === "" || mode === "parallel") return "collaborative";
+  return mode;
 }
 
 /** 保存成功后以本次提交的配置覆盖服务端回读结果，避免提示词等字段在回写时丢失。 */

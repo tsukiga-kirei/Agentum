@@ -126,7 +126,7 @@ flowchart TB
 ```text
 trigger      -> 本地生成占位输出
 agent        -> AgentRuntimeService 暴露 Skill / MCP / final_answer 工具，由模型自主调用
-parallel_group -> 逐个 clusterAgents 子配置：每个子智能体同样进入 Agent 工具调用循环
+parallel_group -> 按协同处理、接力处理或意图分派执行 clusterAgents；每个被执行的子智能体同样进入 Agent 工具调用循环
 delivery     -> DeliveryRuntimeService
 condition    -> 本地记录表达式
 merge        -> 本地透传/合并变量
@@ -525,7 +525,7 @@ SSE 事件目前包括：
 - 用户输入 / 人工审核暂停恢复
 - 异步执行内核：RabbitMQ 节点作业 + Redis Stream 进度回放 + 执行租约 + 超时回收（仅 async 模式，原 `@Async` 路径已删除）
 - 中断/恢复语义：主动中断清空数据后「重新执行」、被动失败保留已成功子智能体后「恢复进度」
-- 智能体集群 `parallel` 真并发 / `sequential` 顺序执行，子智能体结果逐个落库
+- 智能体集群支持 `collaborative` 协同处理、`relay` 接力处理与 `intent` 意图分派；旧快照中的 `parallel` / `sequential` 会兼容映射。意图分派先运行受控分类器，只接受设计时白名单 `intentCode`，再执行命中的子智能体；低置信度、未命中和 fallback 结果写入节点输出与进度事件。
 - 模型瞬时错误（429/5xx 类）有限次自动重试（attempt ≤ 3）
 
 ### 13.2 尚未实现

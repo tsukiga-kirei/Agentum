@@ -170,10 +170,21 @@ public class WorkflowDesignerCatalogService {
             "cluster_result",
             List.of(),
             List.of("cluster_result"),
-            Map.of(
-                "brickType", "cluster",
-                "clusterAgents", List.of(clusterAgent(1, limits, defaultModel), clusterAgent(2, limits, defaultModel)),
-                "mergeRule", "按业务顺序合并多个智能体输出，冲突内容保留来源并交给用户审查。"
+            Map.ofEntries(
+                Map.entry("executionMode", "collaborative"),
+                Map.entry("brickType", "cluster"),
+                Map.entry("clusterAgents", List.of(clusterAgent(1, limits, defaultModel), clusterAgent(2, limits, defaultModel))),
+                Map.entry("mergeRule", "按业务顺序合并多个智能体输出，冲突内容保留来源并交给用户审查。"),
+                Map.entry("intentSelectionMode", "single"),
+                Map.entry("intentFallbackMode", "fail"),
+                Map.entry("fallbackIntentCode", "other"),
+                Map.entry("intentConfidenceThreshold", 0.65),
+                Map.entry("intentSystemPrompt", WorkflowPromptDefaults.DEFAULT_INTENT_SYSTEM_PROMPT),
+                Map.entry("intentUserPrompt", WorkflowPromptDefaults.DEFAULT_INTENT_USER_PROMPT),
+                Map.entry("intentModelProviderId", defaultModel == null ? "" : defaultModel.providerId().toString()),
+                Map.entry("intentModelName", defaultModel == null ? "" : defaultModel.modelName()),
+                Map.entry("intentEnableThinking", false),
+                Map.entry("intentMaxAgentIterationsPerTurn", 1)
             ),
             "待配置",
             "追问确认",
@@ -227,6 +238,9 @@ public class WorkflowDesignerCatalogService {
         agent.put("modelName", defaultModel == null ? "" : defaultModel.modelName());
         agent.put("enableThinking", false);
         agent.put("output", "agent_" + index + "_output");
+        agent.put("intentCode", "intent_" + index);
+        agent.put("intentName", "意图 " + index);
+        agent.put("intentDescription", "描述这个子智能体适合处理的用户意图。");
         agent.put("maxAgentIterationsPerTurn", limits.suggestedIterationsPerTurn());
         return agent;
     }

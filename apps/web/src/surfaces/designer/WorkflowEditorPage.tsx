@@ -54,6 +54,8 @@ import type {
 import { WorkflowDraft } from "./WorkflowDraftsPage";
 import {
   DEFAULT_CLUSTER_USER_PROMPT,
+  DEFAULT_INTENT_SYSTEM_PROMPT,
+  DEFAULT_INTENT_USER_PROMPT,
   DEFAULT_SYSTEM_PROMPT,
   DEFAULT_USER_PROMPT,
   formatWorkflowSaveError,
@@ -140,6 +142,9 @@ type VariableReferenceItem = {
 
 type WorkflowBrickType = WorkflowBrickTemplate["brickType"];
 type VisibleWorkflowBrickType = Exclude<WorkflowBrickType, "trigger">;
+type ClusterExecutionMode = "collaborative" | "relay" | "intent";
+type IntentSelectionMode = "single" | "multiple";
+type IntentFallbackMode = "fail" | "fallback_intent";
 
 type ClusterAgentConfig = {
   id: string;
@@ -160,6 +165,9 @@ type ClusterAgentConfig = {
   modelProviderId: string;
   modelName: string;
   enableThinking: boolean;
+  intentCode: string;
+  intentName: string;
+  intentDescription: string;
 };
 
 type WorkflowCapabilityOption = {
@@ -319,7 +327,7 @@ const brickDefinitions: Record<VisibleWorkflowBrickType, {
   },
   cluster: {
     label: "智能体集群节点",
-    description: "编排多个智能体并行执行并汇总成果",
+    description: "编排多个智能体协同、接力或按意图分派",
     icon: Layers3,
     nodeType: "parallel_group",
     accentClass: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300",
@@ -1539,14 +1547,50 @@ function AgentClusterBrickConfig({
   const config = node.data.rawConfig ?? {};
   const [editingAgent, setEditingAgent] = useState<ClusterAgentConfig | null>(null);
   const agents = readClusterAgents(config.clusterAgents, agentRuntimeLimits);
+  const executionMode = readClusterExecutionMode(config.executionMode);
   const agentAssets = filterCapabilities(capabilityState.capabilities, "agent_template");
   const promptAssets = filterCapabilities(capabilityState.capabilities, "prompt_template");
   const mcpAssets = filterCapabilities(capabilityState.capabilities, "mcp");
   const skillAssets = filterCapabilities(capabilityState.capabilities, "skill");
+  const intentModel = modelOptions.find((model) => model.providerId === readString(config.intentModelProviderId, ""))
+    ?? modelOptions[0];
 
   function commitAgents(nextAgents: ClusterAgentConfig[]) {
     onUpdateConfig({ clusterAgents: nextAgents });
-    onUpdateNode({ toolCount: nextAgents.length, outputVariables: nextAgents.map((agent) => agent.output).filter(Boolean) });
+    onUpdateNode({ toolCount: nextAgents.length, outputVariables: buildClusterOutputVariables(executionMode, nextAgents) });
+  }
+
+  function handleExecutionModeChange(value: string) {
+    const nextMode = readClusterExecutionMode(value);
+    onUpdateConfig({
+      executionMode: nextMode,
+      intentSystemPrompt: readString(config.intentSystemPrompt, DEFAULT_INTENT_SYSTEM_PROMPT),
+      intentUserPrompt: readString(config.intentUserPrompt, DEFAULT_INTENT_USER_PROMPT),
+      intentSelectionMode: readString(config.intentSelectionMode, "single"),
+      intentFallbackMode: readString(config.intentFallbackMode, "fail"),
+      fallbackIntentCode: normalizeIntentCode(readString(config.fallbackIntentCode, "other")),
+      intentConfidenceThreshold: readNumber(config.intentConfidenceThreshold, 0.65),
+      intentModelProviderId: readString(config.intentModelProviderId, intentModel?.providerId ?? ""),
+      intentModelName: readString(config.intentModelName, intentModel?.modelName ?? ""),
+      intentEnableThinking: readBoolean(config.intentEnableThinking, false),
+      intentMaxAgentIterationsPerTurn: readPositiveInt(config.intentMaxAgentIterationsPerTurn, 1),
+    });
+    onUpdateNode({ outputVariables: buildClusterOutputVariables(nextMode, agents) });
+  }
+
+  function moveAgent(agentId: string, direction: -1 | 1) {
+    const index = agents.findIndex((item) => item.id === agentId);
+    const nextIndex = index + direction;
+    if (index < 0 || nextIndex < 0 || nextIndex >= agents.length) {
+      return;
+    }
+    const nextAgents = [...agents];
+    [nextAgents[index], nextAgents[nextIndex]] = [nextAgents[nextIndex], nextAgents[index]];
+    commitAgents(nextAgents);
+  }
+
+  function agentVariables(agent: ClusterAgentConfig) {
+    return clusterAgentAvailableVariables(availableVariables, agents, agent.id, executionMode);
   }
 
   return (
@@ -1563,15 +1607,94 @@ function AgentClusterBrickConfig({
         <SelectLikeField
           label="执行方式"
           icon={Layers3}
-          value={readString(config.executionMode, "parallel")}
+          value={executionMode}
           options={[
-            { value: "parallel", label: "并行执行" },
-            { value: "sequential", label: "顺序执行" },
+            { value: "collaborative", label: "协同处理（全部子智能体独立产出）" },
+            { value: "relay", label: "接力处理（按顺序传递上一步输出）" },
+            { value: "intent", label: "意图分派（先分类，再执行命中智能体）" },
           ]}
-          onChange={(value) => onUpdateConfig({ executionMode: value })}
+          onChange={handleExecutionModeChange}
         />
+        {executionMode === "intent" ? (
+          <div className="mt-4 space-y-4 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <SelectLikeField
+                label="命中策略"
+                icon={BrainCircuit}
+                value={readString(config.intentSelectionMode, "single")}
+                options={[
+                  { value: "single", label: "单意图命中" },
+                  { value: "multiple", label: "多意图命中" },
+                ]}
+                onChange={(value) => onUpdateConfig({ intentSelectionMode: value as IntentSelectionMode })}
+              />
+              <SelectLikeField
+                label="未命中处理"
+                icon={AlertTriangle}
+                value={readString(config.intentFallbackMode, "fail")}
+                options={[
+                  { value: "fail", label: "中止并提示" },
+                  { value: "fallback_intent", label: "转交其他意图" },
+                ]}
+                onChange={(value) => onUpdateConfig({ intentFallbackMode: value as IntentFallbackMode })}
+              />
+              <TextInputField
+                label="其他意图代码"
+                icon={Tag}
+                value={normalizeIntentCode(readString(config.fallbackIntentCode, "other"))}
+                placeholder="other"
+                onChange={(value) => onUpdateConfig({ fallbackIntentCode: normalizeIntentCode(value) })}
+              />
+              <label className="sys-field">
+                <span className="sys-field-label">置信度阈值</span>
+                <div className="sys-field-input-wrap">
+                  <Hash size={16} className="sys-field-prefix" aria-hidden="true" />
+                  <input
+                    className="sys-field-input"
+                    type="number"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={String(readNumber(config.intentConfidenceThreshold, 0.65))}
+                    onChange={(event) => onUpdateConfig({ intentConfidenceThreshold: Math.max(0, Math.min(1, Number.parseFloat(event.target.value) || 0)) })}
+                  />
+                </div>
+              </label>
+              <ModelAndReasoningFields
+                modelOptions={modelOptions}
+                modelProviderId={readString(config.intentModelProviderId, intentModel?.providerId ?? "")}
+                enableThinking={readBoolean(config.intentEnableThinking, false)}
+                onChange={(patch) => onUpdateConfig({
+                  intentModelProviderId: patch.modelProviderId,
+                  intentModelName: patch.modelName,
+                  intentEnableThinking: patch.enableThinking,
+                })}
+              />
+              <MaxAgentIterationsPerTurnField
+                value={readPositiveInt(config.intentMaxAgentIterationsPerTurn, 1)}
+                maximum={agentRuntimeLimits.maxIterationsPerTurn}
+                onChange={(value) => onUpdateConfig({ intentMaxAgentIterationsPerTurn: value })}
+              />
+            </div>
+            <PromptEditor
+              label="意图识别系统提示词"
+              value={readString(config.intentSystemPrompt, DEFAULT_INTENT_SYSTEM_PROMPT)}
+              availableVariables={availableVariables}
+              onChange={(value) => onUpdateConfig({ intentSystemPrompt: value })}
+              showVariableBar={false}
+            />
+            <PromptEditor
+              label="意图识别用户提示词"
+              value={readString(config.intentUserPrompt, DEFAULT_INTENT_USER_PROMPT)}
+              availableVariables={availableVariables}
+              onChange={(value) => onUpdateConfig({ intentUserPrompt: value })}
+            />
+          </div>
+        ) : null}
         <div className="workflow-cluster-agent-list">
-          {agents.map((agent, index) => (
+          {agents.map((agent, index) => {
+            const variableIssues = clusterAgentVariableIssues(agent, index, agents, executionMode, availableVariables);
+            return (
             <article key={agent.id} className="workflow-cluster-agent-row">
               <div className="workflow-cluster-agent-index">
                 <Bot className="h-4 w-4" aria-hidden="true" />
@@ -1580,21 +1703,28 @@ function AgentClusterBrickConfig({
                 <p className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{agent.name}</p>
                 <div className="mt-1 flex flex-wrap gap-1.5">
                   <TinyBadge>智能体 {index + 1}</TinyBadge>
-                  <TinyBadge>{agent.output}</TinyBadge>
+                  {executionMode === "intent" ? <TinyBadge tone="info">{agent.intentCode || "未配置意图"}</TinyBadge> : <TinyBadge>{agent.output}</TinyBadge>}
                   <TinyBadge tone="info">Skill {agent.skillIds.length}</TinyBadge>
                   <TinyBadge tone="info">MCP {agent.mcpIds.length}</TinyBadge>
+                  {variableIssues.length > 0 ? <TinyBadge tone="warning">变量需处理</TinyBadge> : null}
                   <AgentInteractionFeatureBadges
                     allowUserEdit={agent.allowUserEdit}
                     allowQuestion={agent.allowQuestion}
                   />
                 </div>
+                {variableIssues.length > 0 ? (
+                  <p className="mt-2 text-[11px] leading-4 text-amber-700 dark:text-amber-300">{variableIssues.join("；")}</p>
+                ) : null}
               </div>
               <div className="flex shrink-0 items-center gap-1">
+                <IconButton label="上移智能体" icon={ArrowUp} disabled={index === 0} onClick={() => moveAgent(agent.id, -1)} />
+                <IconButton label="下移智能体" icon={ArrowDown} disabled={index === agents.length - 1} onClick={() => moveAgent(agent.id, 1)} />
                 <button type="button" onClick={() => setEditingAgent(agent)} className="agent-button h-8 px-2 text-xs">编辑</button>
                 <IconButton label="删除智能体" icon={Trash2} tone="danger" onClick={() => commitAgents(agents.filter((item) => item.id !== agent.id))} />
               </div>
             </article>
-          ))}
+            );
+          })}
           {agents.length === 0 ? (
             <p className="rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-light)] bg-[var(--color-bg-card)] px-3 py-4 text-center text-sm text-[var(--color-text-tertiary)]">暂无智能体</p>
           ) : null}
@@ -1603,20 +1733,23 @@ function AgentClusterBrickConfig({
       {editingAgent ? (
         <ClusterAgentModal
           agent={editingAgent}
-          availableVariables={availableVariables}
+          availableVariables={agentVariables(editingAgent)}
           agentAssets={agentAssets}
           promptAssets={promptAssets}
           mcpAssets={mcpAssets}
           skillAssets={skillAssets}
           agentRuntimeLimits={agentRuntimeLimits}
           modelOptions={modelOptions}
+          showIntentFields={executionMode === "intent"}
           onClose={() => setEditingAgent(null)}
           onSave={(agent) => {
             const exists = agents.some((item) => item.id === agent.id);
             const usedOutputs = new Set(agents.filter((item) => item.id !== agent.id).map((item) => item.output).filter(Boolean));
+            const usedIntentCodes = new Set(agents.filter((item) => item.id !== agent.id).map((item) => item.intentCode).filter(Boolean));
             const normalizedAgent = {
               ...agent,
               output: uniqueVariableName(agent.output || createClusterAgentOutputVariable(node.id, agents.length), usedOutputs),
+              intentCode: uniqueVariableName(normalizeIntentCode(agent.intentCode) || `intent_${agents.length + 1}`, usedIntentCodes),
             };
             commitAgents(exists ? agents.map((item) => item.id === agent.id ? normalizedAgent : item) : [...agents, normalizedAgent]);
             setEditingAgent(null);
@@ -2721,6 +2854,7 @@ function ClusterAgentModal({
   skillAssets,
   agentRuntimeLimits,
   modelOptions,
+  showIntentFields,
   onClose,
   onSave,
 }: {
@@ -2732,6 +2866,7 @@ function ClusterAgentModal({
   skillAssets: WorkflowCapabilityOption[];
   agentRuntimeLimits: AgentRuntimeLimits;
   modelOptions: WorkflowModelOption[];
+  showIntentFields: boolean;
   onClose: () => void;
   onSave: (agent: ClusterAgentConfig) => void;
 }) {
@@ -2788,6 +2923,33 @@ function ClusterAgentModal({
             onChange={(patch) => setDraft({ ...draft, ...patch })}
           />
         </div>
+        {showIntentFields ? (
+          <div className="workflow-modal-section grid gap-4 md:grid-cols-2">
+            <TextInputField
+              label="意图代码"
+              icon={Tag}
+              value={draft.intentCode}
+              placeholder="monthly_report"
+              onChange={(value) => setDraft({ ...draft, intentCode: normalizeIntentCode(value) })}
+            />
+            <TextInputField
+              label="意图名称"
+              icon={Type}
+              value={draft.intentName}
+              placeholder="月报生成"
+              onChange={(value) => setDraft({ ...draft, intentName: value })}
+            />
+            <label className="sys-field md:col-span-2">
+              <span className="sys-field-label">意图说明</span>
+              <textarea
+                value={draft.intentDescription}
+                onChange={(event) => setDraft({ ...draft, intentDescription: event.target.value })}
+                className="sys-field-textarea"
+                placeholder="说明什么输入应该命中这个智能体，分类器会把它作为候选意图描述。"
+              />
+            </label>
+          </div>
+        ) : null}
         <div className="workflow-agent-drawer-prompts">
           <PromptTemplateEditor
             label="系统提示词"
@@ -2863,6 +3025,9 @@ function ClusterAgentModal({
               onSave({
                 ...draft,
                 output: normalizeVariableName(draft.output) || "agent_output",
+                intentCode: normalizeIntentCode(draft.intentCode),
+                intentName: draft.intentName.trim(),
+                intentDescription: draft.intentDescription.trim(),
                 systemPrompt: draft.systemPrompt.trim(),
                 userPrompt: draft.userPrompt.trim(),
               });
@@ -3286,6 +3451,7 @@ function createNodeFromTemplate(template: WorkflowBrickTemplate, index: number, 
 
   if (brickType === "cluster") {
     // 后端目录已为每个子智能体写入建议循环次数；创建节点时原样继承，不在前端再定义默认值。
+    const executionMode = readClusterExecutionMode(rawConfig.executionMode);
     const clusterAgents = (Array.isArray(rawConfig.clusterAgents) ? rawConfig.clusterAgents : [])
       .filter(isClusterAgentConfig)
       .map((agent, agentIndex) => ({
@@ -3293,10 +3459,19 @@ function createNodeFromTemplate(template: WorkflowBrickTemplate, index: number, 
       userPrompt: readString(agent.userPrompt, "") || DEFAULT_CLUSTER_USER_PROMPT,
       systemPrompt: readString(agent.systemPrompt, "") || DEFAULT_SYSTEM_PROMPT,
       output: createClusterAgentOutputVariable(id, agentIndex),
+      intentCode: normalizeIntentCode(readString(agent.intentCode, `intent_${agentIndex + 1}`)),
+      intentName: readString(agent.intentName, readString(agent.name, `意图 ${agentIndex + 1}`)),
+      intentDescription: readString(agent.intentDescription, "描述这个子智能体适合处理的用户意图。"),
       }));
     rawConfig.clusterAgents = clusterAgents;
-    rawConfig.executionMode = readString(rawConfig.executionMode, "parallel");
-    outputVariables = clusterAgents.map((agent) => agent.output);
+    rawConfig.executionMode = executionMode;
+    rawConfig.intentSystemPrompt = readString(rawConfig.intentSystemPrompt, DEFAULT_INTENT_SYSTEM_PROMPT);
+    rawConfig.intentUserPrompt = readString(rawConfig.intentUserPrompt, DEFAULT_INTENT_USER_PROMPT);
+    rawConfig.intentSelectionMode = readString(rawConfig.intentSelectionMode, "single");
+    rawConfig.intentFallbackMode = readString(rawConfig.intentFallbackMode, "fail");
+    rawConfig.fallbackIntentCode = normalizeIntentCode(readString(rawConfig.fallbackIntentCode, "other"));
+    rawConfig.intentConfidenceThreshold = readNumber(rawConfig.intentConfidenceThreshold, 0.65);
+    outputVariables = buildClusterOutputVariables(executionMode, clusterAgents);
   }
 
   if (brickType === "delivery") {
@@ -3361,12 +3536,87 @@ function createClusterAgent(index: number, nodeId: string, suggestedIterationsPe
     modelProviderId: model?.providerId ?? "",
     modelName: model?.modelName ?? "",
     enableThinking: false,
+    intentCode: `intent_${index + 1}`,
+    intentName: `意图 ${index + 1}`,
+    intentDescription: "描述这个子智能体适合处理的用户意图。",
   };
 }
 
 function createClusterAgentOutputVariable(nodeId: string, agentIndex: number) {
   const nodePrefix = normalizeVariableName(nodeId) || "cluster";
   return `${nodePrefix}_agent_${agentIndex + 1}_output`;
+}
+
+function readClusterExecutionMode(value: unknown): ClusterExecutionMode {
+  const mode = readString(value, "collaborative");
+  if (mode === "sequential") return "relay";
+  if (mode === "parallel") return "collaborative";
+  return mode === "relay" || mode === "intent" ? mode : "collaborative";
+}
+
+function buildClusterOutputVariables(mode: ClusterExecutionMode, agents: ClusterAgentConfig[]) {
+  if (mode === "intent") {
+    return ["cluster_result"];
+  }
+  return agents.map((agent) => agent.output).filter(Boolean);
+}
+
+function normalizeIntentCode(value: string) {
+  return normalizeVariableName(value);
+}
+
+function clusterAgentAvailableVariables(
+  upstreamVariables: WorkflowVariable[],
+  agents: ClusterAgentConfig[],
+  agentId: string,
+  executionMode: ClusterExecutionMode,
+): WorkflowVariable[] {
+  if (executionMode !== "relay") {
+    return upstreamVariables;
+  }
+  const agentIndex = agents.findIndex((agent) => agent.id === agentId);
+  if (agentIndex <= 0) {
+    return upstreamVariables;
+  }
+  const relayVariables = agents.slice(0, agentIndex)
+    .map((agent) => agent.output)
+    .filter(Boolean)
+    .map((name): WorkflowVariable => ({
+      name,
+      sourceNodeId: agentId,
+      sourceNodeName: "前序子智能体",
+      type: "string",
+      sensitive: false,
+      deliverable: false,
+      description: "接力处理模式下由前序子智能体产生的输出",
+    }));
+  return [...upstreamVariables, ...relayVariables];
+}
+
+function clusterAgentVariableIssues(
+  agent: ClusterAgentConfig,
+  agentIndex: number,
+  agents: ClusterAgentConfig[],
+  executionMode: ClusterExecutionMode,
+  upstreamVariables: WorkflowVariable[],
+): string[] {
+  const available = new Set(upstreamVariables.map((variable) => variable.name));
+  if (executionMode === "relay") {
+    agents.slice(0, agentIndex).forEach((item) => {
+      if (item.output) {
+        available.add(item.output);
+      }
+    });
+  }
+  const unresolved = new Set<string>();
+  [agent.systemPrompt, agent.userPrompt].forEach((text) => {
+    extractTemplateVariableNames(text).forEach((name) => {
+      if (!WORKFLOW_SYSTEM_TEMPLATE_VARIABLES.has(name) && !available.has(name)) {
+        unresolved.add(name);
+      }
+    });
+  });
+  return [...unresolved].map((name) => `提示词引用的 {{${name}}} 在当前执行顺序下不可用`);
 }
 
 function uniqueVariableName(value: string, existingVariables: Set<string>) {
@@ -3396,6 +3646,7 @@ function toEditorNode(node: WorkflowNodeDraft, agentRuntimeLimits: AgentRuntimeL
     config.maxAgentIterationsPerTurn = readAgentIterationsPerTurn(config.maxAgentIterationsPerTurn, agentRuntimeLimits);
   }
   if (node.nodeType === "parallel_group" && Array.isArray(config.clusterAgents)) {
+    config.executionMode = readClusterExecutionMode(config.executionMode);
     config.clusterAgents = config.clusterAgents.map((agent) => isRecord(agent)
       ? {
         ...agent,
@@ -3719,7 +3970,7 @@ function readClusterAgents(value: unknown, agentRuntimeLimits: AgentRuntimeLimit
   if (Array.isArray(value)) {
     const agents = value.filter(isClusterAgentConfig);
     if (agents.length > 0) {
-      return agents.map((agent) => ({
+      return agents.map((agent, index) => ({
         ...agent,
         agentAssetId: readString(agent.agentAssetId, "custom"),
         promptTemplateId: readString(agent.promptTemplateId, "none"),
@@ -3736,6 +3987,9 @@ function readClusterAgents(value: unknown, agentRuntimeLimits: AgentRuntimeLimit
         modelProviderId: readString(agent.modelProviderId, ""),
         modelName: readString(agent.modelName, ""),
         enableThinking: readBoolean(agent.enableThinking, false),
+        intentCode: normalizeIntentCode(readString(agent.intentCode, `intent_${index + 1}`)),
+        intentName: readString(agent.intentName, readString(agent.name, `意图 ${index + 1}`)),
+        intentDescription: readString(agent.intentDescription, "描述这个子智能体适合处理的用户意图。"),
       }));
     }
   }

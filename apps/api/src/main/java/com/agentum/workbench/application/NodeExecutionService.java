@@ -384,7 +384,7 @@ public class NodeExecutionService {
     }
 
     // ------------------------------------------------------------------
-    // 智能体集群节点（parallel / sequential）
+    // 智能体集群节点（协同处理 / 接力处理 / 意图分派）
     // ------------------------------------------------------------------
 
     @SuppressWarnings("unchecked")
@@ -429,9 +429,23 @@ public class NodeExecutionService {
             ));
         }
 
-        String executionMode = stringValue(node.getConfigSnapshot().get("executionMode"), "parallel");
+        String executionMode = ClusterIntentRoutingSupport.normalizeExecutionMode(node.getConfigSnapshot().get("executionMode"));
+        List<ClusterAgentSlot> resultSlots = slots;
         List<ClusterAgentOutcome> failures;
-        if ("sequential".equals(executionMode)) {
+        ClusterIntentRoutingSupport.IntentDecision intentDecision = null;
+        if (ClusterIntentRoutingSupport.MODE_INTENT.equals(executionMode)) {
+            IntentRoutingResult routingResult = routeClusterByIntent(run, node, slots, variables, operatorUserId);
+            intentDecision = routingResult.decision();
+            resultSlots = routingResult.selectedSlots();
+            if (resultSlots.isEmpty()) {
+                throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "CLUSTER_INTENT_NO_MATCH",
+                    "意图分派未命中任何可执行子智能体，请检查意图提示词、置信度阈值或其他意图处理策略"
+                );
+            }
+            failures = executeClusterParallel(run, node, resultSlots, variables, outputsByIndex, operatorUserId);
+        } else if (ClusterIntentRoutingSupport.MODE_RELAY.equals(executionMode)) {
             failures = executeClusterSequential(run, node, slots, variables, outputsByIndex, operatorUserId);
         } else {
             failures = executeClusterParallel(run, node, slots, variables, outputsByIndex, operatorUserId);
@@ -459,7 +473,7 @@ public class NodeExecutionService {
 
         Map<String, Object> result = new LinkedHashMap<>(variables);
         List<Map<String, Object>> summaries = new ArrayList<>();
-        for (ClusterAgentSlot slot : slots) {
+        for (ClusterAgentSlot slot : resultSlots) {
             Map<String, Object> output = outputsByIndex.get(slot.index());
             if (output == null) {
                 continue;
@@ -485,12 +499,65 @@ public class NodeExecutionService {
         String finalAnswer = clusterFinalAnswer(summaries);
         result.put("final_answer", finalAnswer);
         result.put("agent_response", finalAnswer);
+        result.put(ClusterIntentRoutingSupport.DEFAULT_INTENT_OUTPUT_VARIABLE, finalAnswer);
+        if (intentDecision != null) {
+            result.put("intentRouting", intentRoutingSummary(intentDecision));
+        }
         result.put("summary", "智能体集群已完成 " + summaries.size() + " 个子智能体。");
         return result;
     }
 
     /**
-     * 顺序执行：子智能体按下标依次运行，后续子智能体可使用前序输出变量；
+     * 意图分派先用受控分类器得到 intentCode，再按设计时映射筛选子智能体。
+     * 分类器不会继承任何 Skill/MCP，模型输出也只接受白名单 intentCode，避免运行时动态选择未授权能力。
+     */
+    private IntentRoutingResult routeClusterByIntent(
+        WorkflowRunEntity run,
+        WorkflowNodeRunEntity node,
+        List<ClusterAgentSlot> slots,
+        Map<String, Object> variables,
+        UUID operatorUserId
+    ) {
+        List<Map<String, Object>> agentConfigs = slots.stream().map(ClusterAgentSlot::config).toList();
+        List<ClusterIntentRoutingSupport.IntentRoute> routes = ClusterIntentRoutingSupport.intentRoutes(agentConfigs);
+        emit(run.getId(), node.getId(), "cluster_intent", Map.of(
+            "eventType", "started",
+            "routeCount", routes.size()
+        ));
+
+        Map<String, Object> classifierOutput = agentRuntimeService.executeStreaming(
+            new AgentRuntimeRequest(
+                run,
+                node,
+                ClusterIntentRoutingSupport.classifierConfig(node.getConfigSnapshot(), agentConfigs, routes),
+                variables,
+                Map.of(),
+                operatorUserId
+            ),
+            intentClassifierEventSink(run.getId(), node.getId())
+        ).outputs();
+        ClusterIntentRoutingSupport.IntentDecision decision = ClusterIntentRoutingSupport.decide(
+            node.getConfigSnapshot(),
+            routes,
+            classifierOutput
+        );
+        List<ClusterAgentSlot> selectedSlots = slots.stream()
+            .filter(slot -> decision.selectedAgentIndexes().contains(slot.index()))
+            .toList();
+        emit(run.getId(), node.getId(), "cluster_intent", Map.of(
+            "eventType", "completed",
+            "requestedCodes", decision.requestedCodes(),
+            "selectedCodes", decision.selectedCodes(),
+            "confidence", decision.confidence(),
+            "threshold", decision.threshold(),
+            "reason", decision.reason(),
+            "usedFallback", decision.usedFallback()
+        ));
+        return new IntentRoutingResult(decision, selectedSlots);
+    }
+
+    /**
+     * 接力处理：子智能体按下标依次运行，后续子智能体可使用前序输出变量；
      * 任一失败立即停止后续执行（链式依赖下继续执行无意义）。
      */
     private List<ClusterAgentOutcome> executeClusterSequential(
@@ -522,7 +589,7 @@ public class NodeExecutionService {
     }
 
     /**
-     * 并行执行：子智能体彼此独立，仅依赖上游变量；并发度受 cluster-parallelism 配置限制。
+     * 协同处理：子智能体彼此独立，仅依赖上游变量；并发度受 cluster-parallelism 配置限制。
      * 单个失败不影响其他子智能体收尾，结果逐个落库后统一判定节点失败。
      */
     private List<ClusterAgentOutcome> executeClusterParallel(
@@ -744,6 +811,90 @@ public class NodeExecutionService {
                 emit(runId, nodeRunId, "cluster_agent", Map.of(
                     "agentIndex", slot.index(),
                     "agentName", slot.name(),
+                    "eventType", "failed",
+                    "errorCode", code,
+                    "errorMessage", message
+                ));
+            }
+        };
+    }
+
+    private AgentRuntimeService.AgentRuntimeEventSink intentClassifierEventSink(UUID runId, UUID nodeRunId) {
+        return new AgentRuntimeService.AgentRuntimeEventSink() {
+            private final StringBuilder accumulated = new StringBuilder();
+
+            @Override
+            public void onPhase(String phase, String message) {
+                emit(runId, nodeRunId, "cluster_intent", Map.of(
+                    "eventType", "phase",
+                    "phase", phase,
+                    "message", message
+                ));
+            }
+
+            @Override
+            public void onToolCall(String toolName, String toolType, String status, String result, long durationMs) {
+                // 意图分类器不注入 Skill/MCP；如果未来扩展工具，这里仍保留脱敏事件，便于审计异常配置。
+                emit(runId, nodeRunId, "cluster_intent", Map.of(
+                    "eventType", "tool_call",
+                    "toolName", toolName,
+                    "toolType", toolType,
+                    "toolStatus", status,
+                    "result", toolResultForEvent(result),
+                    "durationMs", durationMs
+                ));
+            }
+
+            @Override
+            public void onToken(String deltaContent, String accumulatedContent) {
+                emitStreaming("final_answer", deltaContent, accumulatedContent);
+            }
+
+            @Override
+            public void onModelContent(String deltaContent, String accumulatedContent) {
+                emitStreaming("model_content", deltaContent, accumulatedContent);
+            }
+
+            @Override
+            public void onFinalAnswerContent(String deltaContent, String accumulatedContent) {
+                emitStreaming("final_answer", deltaContent, accumulatedContent);
+            }
+
+            @Override
+            public void onReasoningContent(String deltaContent, String accumulatedContent) {
+                emitStreaming("reasoning", deltaContent, accumulatedContent);
+            }
+
+            private void emitStreaming(String streamKind, String deltaContent, String accumulatedContent) {
+                if (accumulatedContent != null && !accumulatedContent.isBlank()) {
+                    accumulated.setLength(0);
+                    accumulated.append(accumulatedContent);
+                } else if (deltaContent != null && !deltaContent.isBlank()) {
+                    accumulated.append(deltaContent);
+                }
+                emit(runId, nodeRunId, "cluster_intent", Map.of(
+                    "eventType", "streaming",
+                    "streamKind", streamKind,
+                    "deltaContent", deltaContent == null ? "" : deltaContent,
+                    "accumulatedContent", accumulated.toString()
+                ));
+            }
+
+            @Override
+            public void onCompleted(String answer) {
+                accumulated.setLength(0);
+                accumulated.append(answer == null ? "" : answer);
+                emit(runId, nodeRunId, "cluster_intent", Map.of(
+                    "eventType", "streaming",
+                    "streamKind", "final_answer",
+                    "deltaContent", "",
+                    "accumulatedContent", accumulated.toString()
+                ));
+            }
+
+            @Override
+            public void onFailed(String code, String message) {
+                emit(runId, nodeRunId, "cluster_intent", Map.of(
                     "eventType", "failed",
                     "errorCode", code,
                     "errorMessage", message
@@ -974,6 +1125,18 @@ public class NodeExecutionService {
         return result.toString();
     }
 
+    private static Map<String, Object> intentRoutingSummary(ClusterIntentRoutingSupport.IntentDecision decision) {
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("requestedCodes", decision.requestedCodes());
+        summary.put("selectedCodes", decision.selectedCodes());
+        summary.put("confidence", decision.confidence());
+        summary.put("threshold", decision.threshold());
+        summary.put("reason", decision.reason());
+        summary.put("slots", decision.slots());
+        summary.put("usedFallback", decision.usedFallback());
+        return summary;
+    }
+
     private static String stringValue(Object value, String fallback) {
         String text = value == null ? "" : value.toString().trim();
         return text.isBlank() ? fallback : text;
@@ -996,6 +1159,12 @@ public class NodeExecutionService {
     }
 
     private record ClusterAgentSlot(int index, String name, Map<String, Object> config) {
+    }
+
+    private record IntentRoutingResult(
+        ClusterIntentRoutingSupport.IntentDecision decision,
+        List<ClusterAgentSlot> selectedSlots
+    ) {
     }
 
     private record ClusterAgentOutcome(

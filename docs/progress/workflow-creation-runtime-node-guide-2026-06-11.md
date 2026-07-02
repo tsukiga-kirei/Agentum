@@ -191,14 +191,14 @@
 
 节点类型：`parallel_group`
 
-用途：多个子智能体并行或顺序执行，再汇总输出。
+用途：多个子智能体协同处理、接力处理或按意图分派后汇总输出。
 
 核心配置：
 
 ```json
 {
   "brickType": "cluster",
-  "executionMode": "parallel",
+  "executionMode": "collaborative",
   "clusterAgents": [
     {
       "id": "cluster_agent_1",
@@ -221,7 +221,7 @@
 约束：
 
 - `clusterAgents` 不能为空。
-- `executionMode` 只支持 `parallel` 或 `sequential`。
+- `executionMode` 支持 `collaborative`、`relay`、`intent`；历史快照中的 `parallel` / `sequential` 兼容映射。
 - 每个子智能体的 `output` 必须是合法变量名。
 - 每个子智能体的 `output` 不能重复。
 - 子智能体输出集合必须与节点 `outputVariables` 完全一致。

@@ -332,12 +332,91 @@ class WorkflowNodeConfigValidatorTest {
         assertThat(issues).isEmpty();
     }
 
+    @Test
+    void shouldAcceptIntentClusterWhenRoutesAndOutputAreConfigured() {
+        WorkflowDraftApi.WorkflowNodeRow node = new WorkflowDraftApi.WorkflowNodeRow(
+            "cluster_1",
+            "parallel_group",
+            "智能体集群",
+            0,
+            0,
+            List.of("company_name"),
+            List.of("cluster_result"),
+            Map.of(
+                "executionMode", "intent",
+                "intentSystemPrompt", WorkflowPromptDefaults.DEFAULT_INTENT_SYSTEM_PROMPT,
+                "intentUserPrompt", WorkflowPromptDefaults.DEFAULT_INTENT_USER_PROMPT,
+                "intentSelectionMode", "single",
+                "intentFallbackMode", "fallback_intent",
+                "fallbackIntentCode", "other",
+                "intentConfidenceThreshold", 0.65,
+                "intentMaxAgentIterationsPerTurn", 1,
+                "clusterAgents", List.of(
+                    intentAgent("月报智能体", "monthly_report", "处理月报生成", "monthly_output"),
+                    intentAgent("其他处理智能体", "other", "处理无法归类的需求", "other_output")
+                )
+            )
+        );
+
+        List<WorkflowDraftApi.WorkflowValidationIssue> issues = validator().validateCapabilityReferences(TENANT_ID, USER_ID, List.of(node));
+
+        assertThat(issues).isEmpty();
+    }
+
+    @Test
+    void shouldRejectIntentClusterWhenFallbackRouteIsMissing() {
+        WorkflowDraftApi.WorkflowNodeRow node = new WorkflowDraftApi.WorkflowNodeRow(
+            "cluster_1",
+            "parallel_group",
+            "智能体集群",
+            0,
+            0,
+            List.of("company_name"),
+            List.of("monthly_output"),
+            Map.of(
+                "executionMode", "intent",
+                "intentSystemPrompt", WorkflowPromptDefaults.DEFAULT_INTENT_SYSTEM_PROMPT,
+                "intentUserPrompt", WorkflowPromptDefaults.DEFAULT_INTENT_USER_PROMPT,
+                "intentSelectionMode", "single",
+                "intentFallbackMode", "fallback_intent",
+                "fallbackIntentCode", "other",
+                "intentConfidenceThreshold", 0.65,
+                "clusterAgents", List.of(
+                    intentAgent("月报智能体", "monthly_report", "处理月报生成", "monthly_output")
+                )
+            )
+        );
+
+        List<WorkflowDraftApi.WorkflowValidationIssue> issues = validator().validateCapabilityReferences(TENANT_ID, USER_ID, List.of(node));
+
+        assertThat(issues).extracting(WorkflowDraftApi.WorkflowValidationIssue::code)
+            .contains(
+                "WORKFLOW_VALIDATION_CLUSTER_INTENT_OUTPUT_INVALID",
+                "WORKFLOW_VALIDATION_CLUSTER_INTENT_FALLBACK_CODE_MISSING"
+            );
+    }
+
     private WorkflowNodeConfigValidator validator() {
         return new WorkflowNodeConfigValidator(
             systemCapabilityRepository,
             tenantCapabilityGrantRepository,
             assetManagementService,
             runtimeProperties()
+        );
+    }
+
+    private Map<String, Object> intentAgent(String name, String intentCode, String intentDescription, String output) {
+        return Map.of(
+            "name", name,
+            "intentCode", intentCode,
+            "intentName", name,
+            "intentDescription", intentDescription,
+            "systemPromptTemplateId", "none",
+            "userPromptTemplateId", "none",
+            "systemPrompt", WorkflowPromptDefaults.DEFAULT_SYSTEM_PROMPT,
+            "userPrompt", WorkflowPromptDefaults.DEFAULT_CLUSTER_USER_PROMPT,
+            "maxAgentIterationsPerTurn", 4,
+            "output", output
         );
     }
 

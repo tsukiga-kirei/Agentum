@@ -10,7 +10,7 @@
 > - 已落地组件：`com.agentum.runtime` 包（命令发布/消费、`RunExecutionLeaseService` 租约、`RunProgressStreamWriter` / `RunStreamRelayService` Redis Stream 进度回放、`StaleExecutionReaper`、`RedisRunCancellationGuard` 取消/超时信号）与 Worker 侧 `NodeExecutionService`。
 > - 新增数据表：`workflow_run_execution_jobs`（执行作业，幂等/重试/回收判定）、`workflow_cluster_agent_runs`（子智能体结果逐个落库，支撑部分恢复）。
 > - 交互语义：主动中断 → 节点 `canceled` + 数据清空 + 「重新执行」（`POST .../nodes/{nodeRunId}/restart`）；被动失败（模型错误/超时/失联）→ 节点 `failed` + 保留已成功子智能体 + 「恢复进度」（`.../recover`）。
-> - 集群节点 `config.executionMode` 支持 `parallel`（真并发，受 `cluster-parallelism` 限流）与 `sequential`（顺序链式变量）。
+> - 集群节点 `config.executionMode` 支持 `collaborative`（协同处理，受 `cluster-parallelism` 限流）、`relay`（接力处理，后续子智能体可引用前序输出）与 `intent`（意图分派，先分类再执行命中子智能体）；旧快照中的 `parallel` / `sequential` 会兼容映射。
 > - 节点执行超时通过环境变量 `AGENTUM_RUNTIME_NODE_TIMEOUT_SECONDS`（默认 1800s）控制。
 > - 文中提到的 `inline` 模式与 `runtime.execution.mode` 开关为历史迁移方案，未予保留，仅作设计过程记录。
 

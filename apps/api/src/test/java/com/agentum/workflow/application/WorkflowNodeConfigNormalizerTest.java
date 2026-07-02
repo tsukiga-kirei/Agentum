@@ -51,4 +51,37 @@ class WorkflowNodeConfigNormalizerTest {
         assertThat(normalized.config().get("output")).isEqualTo("agent");
         assertThat(normalized.config().get("outputVariable")).isEqualTo("agent");
     }
+
+    @Test
+    void shouldNormalizeLegacyClusterExecutionMode() {
+        WorkflowDraftApi.WorkflowNodeDraft node = new WorkflowDraftApi.WorkflowNodeDraft(
+            "cluster_1",
+            "parallel_group",
+            "智能体集群",
+            0,
+            0,
+            List.of("input_1"),
+            List.of("agent_1_output"),
+            Map.of(
+                "executionMode", "sequential",
+                "clusterAgents", List.of(Map.of(
+                    "id", "agent_1",
+                    "name", "子智能体 1",
+                    "output", "agent_1_output",
+                    "systemPromptTemplateId", "none",
+                    "userPromptTemplateId", "none",
+                    "systemPrompt", "",
+                    "userPrompt", ""
+                ))
+            )
+        );
+
+        WorkflowDraftApi.WorkflowNodeDraft normalized = WorkflowNodeConfigNormalizer.normalizeNode(node);
+
+        assertThat(normalized.config().get("executionMode")).isEqualTo("relay");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> agents = (List<Map<String, Object>>) normalized.config().get("clusterAgents");
+        assertThat(agents.getFirst().get("systemPrompt")).isEqualTo(WorkflowPromptDefaults.DEFAULT_SYSTEM_PROMPT);
+        assertThat(agents.getFirst().get("userPrompt")).isEqualTo(WorkflowPromptDefaults.DEFAULT_CLUSTER_USER_PROMPT);
+    }
 }

@@ -45,7 +45,7 @@
   "additionalProperties": false,
   "allOf": [
     {
-      "$comment": "智能体集群节点：执行方式仅支持并行（parallel，默认）与顺序（sequential），枚举保留扩展空间。",
+      "$comment": "智能体集群节点：执行方式支持协同处理（collaborative）、接力处理（relay）与意图分派（intent）；parallel/sequential 为旧快照兼容值。",
       "if": {
         "properties": {
           "nodeType": { "const": "parallel_group" }
@@ -58,8 +58,8 @@
             "properties": {
               "executionMode": {
                 "type": "string",
-                "enum": ["parallel", "sequential"],
-                "default": "parallel"
+                "enum": ["collaborative", "relay", "intent", "parallel", "sequential"],
+                "default": "collaborative"
               }
             }
           }

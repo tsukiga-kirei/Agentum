@@ -4,11 +4,13 @@ import com.agentum.agent.application.AgentRuntimeRequest;
 import com.agentum.agent.application.AgentRuntimeService;
 import com.agentum.delivery.application.DeliveryRuntimeRequest;
 import com.agentum.delivery.application.DeliveryRuntimeService;
+import com.agentum.shared.api.ApiException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 /**
@@ -78,30 +80,162 @@ public class DefaultWorkflowRuntimeExecutor implements WorkflowRuntimeExecutor {
             output.put("summary", "智能体集群未配置子智能体，已透传上游变量。");
             return output;
         }
+        List<Map<String, Object>> agentConfigs = new ArrayList<>();
+        for (Object rawAgent : agents) {
+            if (rawAgent instanceof Map<?, ?> rawMap) {
+                agentConfigs.add(new LinkedHashMap<>((Map<String, Object>) rawMap));
+            }
+        }
+        String executionMode = ClusterIntentRoutingSupport.normalizeExecutionMode(request.nodeRun().getConfigSnapshot().get("executionMode"));
+        if (ClusterIntentRoutingSupport.MODE_INTENT.equals(executionMode)) {
+            return executeIntentGroup(request, agentConfigs);
+        }
+        if (ClusterIntentRoutingSupport.MODE_RELAY.equals(executionMode)) {
+            return executeRelayGroup(request, agentConfigs);
+        }
+        return executeCollaborativeGroup(request, agentConfigs);
+    }
+
+    private Map<String, Object> executeRelayGroup(ExecutionRequest request, List<Map<String, Object>> agentConfigs) {
         Map<String, Object> variables = new LinkedHashMap<>(request.variables());
         List<Map<String, Object>> summaries = new ArrayList<>();
-        for (Object rawAgent : agents) {
-            if (!(rawAgent instanceof Map<?, ?> rawMap)) {
+        for (Map<String, Object> agentConfig : agentConfigs) {
+            Map<String, Object> agentOutput = executeClusterAgent(request, agentConfig, variables);
+            variables.putAll(agentOutput);
+            summaries.add(clusterSummary(agentConfig, agentOutput));
+        }
+        return clusterResult(variables, summaries);
+    }
+
+    private Map<String, Object> executeCollaborativeGroup(ExecutionRequest request, List<Map<String, Object>> agentConfigs) {
+        Map<String, Object> variables = new LinkedHashMap<>(request.variables());
+        List<Map<String, Object>> summaries = new ArrayList<>();
+        for (Map<String, Object> agentConfig : agentConfigs) {
+            Map<String, Object> agentOutput = executeClusterAgent(request, agentConfig, request.variables());
+            variables.putAll(agentOutput);
+            summaries.add(clusterSummary(agentConfig, agentOutput));
+        }
+        return clusterResult(variables, summaries);
+    }
+
+    private Map<String, Object> executeIntentGroup(ExecutionRequest request, List<Map<String, Object>> agentConfigs) {
+        List<ClusterIntentRoutingSupport.IntentRoute> routes = ClusterIntentRoutingSupport.intentRoutes(agentConfigs);
+        Map<String, Object> classifierOutput = agentRuntimeService.execute(new AgentRuntimeRequest(
+            request.run(),
+            request.nodeRun(),
+            ClusterIntentRoutingSupport.classifierConfig(request.nodeRun().getConfigSnapshot(), agentConfigs, routes),
+            request.variables(),
+            Map.of(),
+            request.operatorUserId()
+        )).outputs();
+        ClusterIntentRoutingSupport.IntentDecision decision = ClusterIntentRoutingSupport.decide(
+            request.nodeRun().getConfigSnapshot(),
+            routes,
+            classifierOutput
+        );
+        if (decision.selectedAgentIndexes().isEmpty()) {
+            throw new ApiException(
+                HttpStatus.BAD_REQUEST,
+                "CLUSTER_INTENT_NO_MATCH",
+                "意图分派未命中任何可执行子智能体，请检查意图提示词、置信度阈值或其他意图处理策略"
+            );
+        }
+        Map<String, Object> variables = new LinkedHashMap<>(request.variables());
+        List<Map<String, Object>> summaries = new ArrayList<>();
+        for (int index = 0; index < agentConfigs.size(); index++) {
+            if (!decision.selectedAgentIndexes().contains(index)) {
                 continue;
             }
-            Map<String, Object> agentConfig = new LinkedHashMap<>((Map<String, Object>) rawMap);
-            Map<String, Object> agentOutput = agentRuntimeService.execute(new AgentRuntimeRequest(
-                request.run(),
-                request.nodeRun(),
-                agentConfig,
-                variables,
-                Map.of(),
-                request.operatorUserId()
-            )).outputs();
+            Map<String, Object> agentConfig = agentConfigs.get(index);
+            Map<String, Object> agentOutput = executeClusterAgent(request, agentConfig, request.variables());
             variables.putAll(agentOutput);
-            summaries.add(Map.of(
-                "name", stringValue(agentConfig.get("name"), "子智能体"),
-                "summary", stringValue(agentOutput.get("summary"), "已完成")
-            ));
+            summaries.add(clusterSummary(agentConfig, agentOutput));
         }
+        Map<String, Object> result = clusterResult(variables, summaries);
+        result.put("intentRouting", intentRoutingSummary(decision));
+        return result;
+    }
+
+    private Map<String, Object> executeClusterAgent(ExecutionRequest request, Map<String, Object> agentConfig, Map<String, Object> variables) {
+        return agentRuntimeService.execute(new AgentRuntimeRequest(
+            request.run(),
+            request.nodeRun(),
+            agentConfig,
+            variables,
+            Map.of(),
+            request.operatorUserId()
+        )).outputs();
+    }
+
+    private Map<String, Object> clusterSummary(Map<String, Object> agentConfig, Map<String, Object> agentOutput) {
+        String displayText = firstNonBlank(
+            stringValue(agentOutput.get("final_answer"), ""),
+            stringValue(agentOutput.get("summary"), "已完成")
+        );
+        return Map.of(
+            "name", stringValue(agentConfig.get("name"), "子智能体"),
+            "status", "completed",
+            "final_answer", displayText,
+            "summary", summarizeText(displayText)
+        );
+    }
+
+    private Map<String, Object> clusterResult(Map<String, Object> variables, List<Map<String, Object>> summaries) {
         variables.put("clusterAgents", summaries);
+        String finalAnswer = clusterFinalAnswer(summaries);
+        variables.put("final_answer", finalAnswer);
+        variables.put("agent_response", finalAnswer);
+        variables.put(ClusterIntentRoutingSupport.DEFAULT_INTENT_OUTPUT_VARIABLE, finalAnswer);
         variables.put("summary", "智能体集群已完成 " + summaries.size() + " 个子智能体。");
         return variables;
+    }
+
+    private Map<String, Object> intentRoutingSummary(ClusterIntentRoutingSupport.IntentDecision decision) {
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("requestedCodes", decision.requestedCodes());
+        summary.put("selectedCodes", decision.selectedCodes());
+        summary.put("confidence", decision.confidence());
+        summary.put("threshold", decision.threshold());
+        summary.put("reason", decision.reason());
+        summary.put("slots", decision.slots());
+        summary.put("usedFallback", decision.usedFallback());
+        return summary;
+    }
+
+    private static String clusterFinalAnswer(List<Map<String, Object>> summaries) {
+        if (summaries == null || summaries.isEmpty()) {
+            return "智能体集群未生成子智能体结论。";
+        }
+        StringBuilder result = new StringBuilder("## 智能体集群结论\n");
+        for (Map<String, Object> summary : summaries) {
+            String body = stringValue(summary.get("final_answer"), "");
+            if (body.isBlank()) {
+                body = stringValue(summary.get("summary"), "已完成");
+            }
+            result.append("\n### ")
+                .append(stringValue(summary.get("name"), "子智能体"))
+                .append("\n")
+                .append(body)
+                .append("\n");
+        }
+        return result.toString();
+    }
+
+    private static String summarizeText(String content) {
+        String normalized = content == null ? "" : content.replaceAll("\\s+", " ").trim();
+        if (normalized.isBlank()) {
+            return "智能体已完成模型调用。";
+        }
+        return normalized.length() > 120 ? normalized.substring(0, 120) + "..." : normalized;
+    }
+
+    private static String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return "";
     }
 
     private Map<String, Object> conditionOutput(ExecutionRequest request) {
