@@ -9045,10 +9045,195 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
   resize: vertical;
 }
 
-/* 流程设计器：单/多智能体配置抽屉，提示词区域需要更宽的编辑空间 */
-.workflow-agent-drawer .workflow-agent-drawer-body {
+/* 流程设计器：单/多智能体配置抽屉，左右分栏独立滚动 */
+.workflow-agent-drawer .sys-drawer-section.workflow-agent-drawer-shell {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  padding: 16px 20px;
+}
+
+.workflow-agent-config-split {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--color-border-light) 88%, var(--color-primary) 12%);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-card);
+}
+
+.workflow-agent-config-sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  min-height: 0;
+  padding: 16px 14px;
+  border-right: 1px solid var(--color-border-light);
+  background: color-mix(in srgb, var(--color-bg-hover) 24%, var(--color-bg-card));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.workflow-agent-config-sidebar-title {
+  margin: 0 0 10px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.workflow-agent-config-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.workflow-agent-config-nav-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  padding: 10px 12px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.workflow-agent-config-nav-item:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.workflow-agent-config-nav-item.is-active {
+  border-color: color-mix(in srgb, var(--color-primary) 32%, var(--color-border-light));
+  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-bg-card));
+  color: var(--color-primary);
+  box-shadow: 0 2px 8px rgb(59 130 246 / 0.05);
+}
+
+.workflow-agent-config-nav-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border-light);
+}
+
+.workflow-agent-config-nav-item.is-active .workflow-agent-config-nav-icon {
+  border-color: color-mix(in srgb, var(--color-primary) 36%, var(--color-border-light));
+  color: var(--color-primary);
+}
+
+.workflow-agent-config-nav-label {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.35;
+}
+
+.workflow-agent-config-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.workflow-agent-config-content-header {
+  flex-shrink: 0;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.workflow-agent-config-content-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.workflow-agent-config-content-body {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 16px 20px 20px;
+}
+
+.workflow-agent-runtime-panel {
   display: grid;
-  gap: 20px;
+  gap: 16px;
+}
+
+.workflow-agent-limits-row {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.sys-field--compact .sys-field-label {
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+
+.sys-field--compact .sys-field-hint {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.workflow-agent-capsule-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.workflow-agent-capsule-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  border: 1px solid var(--color-border-light);
+  border-radius: 999px;
+  background: var(--color-bg-hover);
+  padding: 0 14px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.workflow-agent-capsule-toggle:hover {
+  border-color: color-mix(in srgb, var(--color-primary) 34%, var(--color-border-light));
+  color: var(--color-text-primary);
+}
+
+.workflow-agent-capsule-toggle.is-active {
+  border-color: color-mix(in srgb, var(--color-primary) 52%, var(--color-border-light));
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-bg-card));
+  color: var(--color-primary);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 18%, transparent);
 }
 
 .workflow-agent-drawer-kicker {
@@ -9061,35 +9246,40 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
 
 .workflow-agent-drawer-prompts {
   display: grid;
-  gap: 16px;
+  gap: 12px;
+}
+
+.workflow-agent-drawer-prompt-single {
+  min-height: 100%;
+}
+
+.workflow-agent-drawer-prompt-single .workflow-prompt-section {
+  padding: 0;
 }
 
 .workflow-agent-drawer .workflow-prompt-section {
   display: grid;
-  gap: 14px;
-  padding: 16px;
+  gap: 10px;
+  padding: 12px;
 }
 
 .workflow-agent-drawer .workflow-prompt-textarea {
-  min-height: 220px;
+  min-height: 160px;
   max-height: none;
   resize: vertical;
 }
 
-.workflow-agent-drawer .workflow-variable-reference-section {
-  margin-top: 4px;
+.workflow-agent-drawer-prompt-single .workflow-prompt-textarea--drawer-single {
+  min-height: 200px;
 }
 
-.workflow-agent-drawer-footer-hint {
-  flex: 1 1 220px;
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--color-text-tertiary);
+.workflow-agent-drawer .workflow-variable-reference-section {
+  margin-top: 0;
+  margin-bottom: 10px;
 }
 
 .workflow-agent-drawer .sys-drawer-footer {
-  align-items: flex-start;
+  align-items: center;
 }
 
 .workflow-modal-section {
@@ -9150,6 +9340,21 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
 
   .workflow-cluster-agent-index {
     display: none;
+  }
+
+  .workflow-agent-config-split {
+    flex-direction: column;
+  }
+
+  .workflow-agent-config-sidebar {
+    width: 100%;
+    max-height: 180px;
+    border-right: 0;
+    border-bottom: 1px solid var(--color-border-light);
+  }
+
+  .workflow-agent-limits-row {
+    grid-template-columns: 1fr;
   }
 }
 

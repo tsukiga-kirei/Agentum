@@ -38,6 +38,7 @@ import { readLineSpacingMode, readSpacingUnit, type DocumentDeliveryStyleValues,
 import { AgentumApiError, assetApi, workflowApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import { getThemedDrawerRootClassName } from "../../utils/theme";
+import { formatTemplateVariable, insertTemplateToken } from "../../utils/templateTextInsertion";
 import type { AssetType, MyAssetRow, SystemCapabilityAssetRow } from "../../types/asset";
 import type {
   AgentRuntimeLimits,
@@ -2013,8 +2014,8 @@ function IntentRoutingDrawer({
     >
       <div className="sys-drawer-section sys-drawer-section-enter workflow-agent-drawer-body">
         <p className="workflow-agent-drawer-kicker">意图分派</p>
-        <div className="workflow-modal-section grid gap-4 md:grid-cols-2">
-          <ModelAndReasoningFields
+        <div className="workflow-modal-section grid gap-3 md:grid-cols-2">
+          <ModelSelectField
             modelOptions={modelOptions}
             modelProviderId={draftIntentModel.modelProviderId}
             enableThinking={draftIntentModel.enableThinking}
@@ -2030,6 +2031,17 @@ function IntentRoutingDrawer({
             ]}
             onChange={(value) => setDraftSelectionMode(readIntentSelectionMode(value))}
           />
+          <div className="md:col-span-2">
+            <AgentBehaviorCapsules
+              allowUserEdit={false}
+              allowQuestion={false}
+              enableThinking={draftIntentModel.enableThinking}
+              showThinking={(modelOptions.find((model) => model.providerId === draftIntentModel.modelProviderId) ?? modelOptions[0])?.reasoningModel}
+              showAllowUserEdit={false}
+              showAllowQuestion={false}
+              onChange={(patch) => setDraftIntentModel({ ...draftIntentModel, ...patch })}
+            />
+          </div>
           <div className="md:col-span-2">
             <PromptEditor
               label="待判断内容"
@@ -2868,14 +2880,11 @@ function DeliveryCapabilityConfigDrawer({
                     <h4 className="text-sm font-semibold text-[var(--color-text-primary)]">Word 文档交付</h4>
                     <p className="mt-1 text-xs text-[var(--color-text-secondary)]">交付正文模板会作为最终 Markdown，运行时将模板和变量拼接后转换为 docx 文件。</p>
                   </div>
-                  <FileNameVariableBar
-                    items={WORD_FILE_NAME_VARIABLES}
-                    onPick={(variable) => onConfigChange({ fileNameTemplate: appendFileNameToken(fileNameTemplate, `{{${variable}}}`) })}
-                  />
-                  <TextInputField
+                  <VariableTemplateInputField
                     label="文件名模板"
                     icon={FileText}
                     value={fileNameTemplate}
+                    variableItems={WORD_FILE_NAME_VARIABLES}
                     placeholder="交付文档-{{runNumber}}-{{dateCompact}}.docx"
                     onChange={(value) => onConfigChange({ fileNameTemplate: value })}
                   />
@@ -3108,6 +3117,7 @@ function PromptEditor({
   onChange,
   placeholder,
   showVariableBar = true,
+  textareaClassName = "",
 }: {
   label: string;
   value: string;
@@ -3115,22 +3125,74 @@ function PromptEditor({
   onChange: (value: string) => void;
   placeholder?: string;
   showVariableBar?: boolean;
+  textareaClassName?: string;
 }) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleVariablePick = useCallback((variable: string) => {
+    insertTemplateToken(textareaRef.current, value, formatTemplateVariable(variable), onChange);
+  }, [onChange, value]);
+
   return (
     <label className="sys-field">
       <span className="sys-field-label">{label}</span>
-      <textarea
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="sys-field-textarea workflow-prompt-textarea"
-        placeholder={placeholder ?? "可以使用 {{输出内容标识}} 引用之前步骤内容"}
-      />
       {showVariableBar ? (
         <VariableReferenceBar
           variables={availableVariables}
-          onPick={(variable) => onChange(`${value}${value.endsWith(" ") || value.length === 0 ? "" : " "}{{${variable}}}`)}
+          onPick={handleVariablePick}
         />
       ) : null}
+      <textarea
+        ref={textareaRef}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className={`sys-field-textarea workflow-prompt-textarea ${textareaClassName}`.trim()}
+        placeholder={placeholder ?? "可以使用 {{输出内容标识}} 引用之前步骤内容"}
+      />
+    </label>
+  );
+}
+
+function VariableTemplateInputField({
+  label,
+  icon: Icon,
+  value,
+  placeholder,
+  maxLength = 160,
+  variableItems,
+  onChange,
+}: {
+  label: string;
+  icon?: WorkflowIcon;
+  value: string;
+  placeholder?: string;
+  maxLength?: number;
+  variableItems: VariableReferenceItem[];
+  onChange: (value: string) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleVariablePick = useCallback((variable: string) => {
+    insertTemplateToken(inputRef.current, value, formatTemplateVariable(variable), onChange);
+  }, [onChange, value]);
+
+  return (
+    <label className="sys-field">
+      <span className="sys-field-label">{label}</span>
+      {variableItems.length > 0 ? (
+        <FileNameVariableBar items={variableItems} onPick={handleVariablePick} />
+      ) : null}
+      <div className="sys-field-input-wrap">
+        {Icon ? <Icon size={16} className="sys-field-prefix" aria-hidden="true" /> : null}
+        <input
+          ref={inputRef}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className="sys-field-input"
+          placeholder={placeholder}
+          maxLength={maxLength}
+        />
+      </div>
     </label>
   );
 }
@@ -3272,6 +3334,7 @@ function PromptTemplateEditor({
         value={value}
         availableVariables={availableVariables}
         onChange={onChange}
+        textareaClassName="workflow-prompt-textarea--drawer-single"
       />
     </div>
   );
@@ -3573,7 +3636,23 @@ function buildSingleAgentNodePatch(draft: SingleAgentConfigDraft): Partial<Edito
   };
 }
 
-const WORKFLOW_AGENT_DRAWER_WIDTH = 760;
+const WORKFLOW_AGENT_DRAWER_WIDTH = 1000;
+
+type AgentConfigSectionId = "basic" | "systemPrompt" | "userPrompt" | "capabilities" | "runtime";
+
+type AgentConfigSectionDef = {
+  id: AgentConfigSectionId;
+  title: string;
+  icon: WorkflowIcon;
+};
+
+const AGENT_CONFIG_SECTIONS: AgentConfigSectionDef[] = [
+  { id: "basic", title: "基础配置", icon: Bot },
+  { id: "systemPrompt", title: "系统提示词", icon: FileText },
+  { id: "userPrompt", title: "用户提示词", icon: TextCursorInput },
+  { id: "capabilities", title: "能力与工具", icon: ServerCog },
+  { id: "runtime", title: "运行策略", icon: Settings2 },
+];
 
 function SingleAgentConfigModal({
   node,
@@ -3603,6 +3682,7 @@ function SingleAgentConfigModal({
   const drawerRootClassName = getThemedDrawerRootClassName(themeMode, "workflow-agent-drawer");
   const initialDraftRef = useRef(buildSingleAgentConfigDraft(node, agentRuntimeLimits, modelOptions));
   const [draft, setDraftState] = useState<SingleAgentConfigDraft>(initialDraftRef.current);
+  const [activeSection, setActiveSection] = useState<AgentConfigSectionId>("basic");
   const onConfigChangeRef = useRef(onConfigChange);
   onConfigChangeRef.current = onConfigChange;
 
@@ -3631,84 +3711,106 @@ function SingleAgentConfigModal({
       onClose={handleCancel}
       rootClassName={drawerRootClassName}
     >
-      <div className="sys-drawer-section sys-drawer-section-enter workflow-agent-drawer-body">
-        <p className="workflow-agent-drawer-kicker">单智能体</p>
-        <div className="workflow-modal-section grid gap-4 md:grid-cols-2">
-          <CapabilitySelectField
-            label="智能体模板"
-            icon={Bot}
-            value={draft.agentAssetId}
-            emptyValue="custom"
-            emptyLabel="自定义智能体"
-            options={agentAssets}
-            onChange={(value) => setDraft({ ...draft, agentAssetId: value })}
-          />
-          <ModelAndReasoningFields
-            modelOptions={modelOptions}
-            modelProviderId={draft.modelProviderId}
-            enableThinking={draft.enableThinking}
-            onChange={(patch) => setDraft({ ...draft, ...patch })}
-          />
-        </div>
-        <div className="workflow-agent-drawer-prompts">
-          <PromptTemplateEditor
-            label="系统提示词"
-            templateLabel="系统提示词模板"
-            templateValue={draft.systemPromptTemplateId}
-            templateEmptyLabel="系统提示词自定义"
-            promptAssets={promptAssets}
-            value={draft.systemPrompt}
-            availableVariables={availableVariables}
-            onTemplateChange={(value) => setDraft({ ...draft, systemPromptTemplateId: value })}
-            onChange={(value) => setDraft({ ...draft, systemPrompt: value })}
-          />
-          <PromptTemplateEditor
-            label="用户提示词"
-            templateLabel="用户提示词模板"
-            templateValue={draft.userPromptTemplateId}
-            templateEmptyLabel="用户提示词自定义"
-            promptAssets={promptAssets}
-            value={draft.userPrompt}
-            availableVariables={availableVariables}
-            onTemplateChange={(value) => setDraft({ ...draft, userPromptTemplateId: value })}
-            onChange={(value) => setDraft({ ...draft, userPrompt: value })}
-          />
-        </div>
-        <div className="workflow-modal-section workflow-modal-section--spacious grid gap-4 md:grid-cols-2">
-          <CapabilityMultiSelectField
-            label="MCP"
-            icon={ServerCog}
-            options={mcpAssets}
-            selectedIds={draft.mcpIds}
-            placeholder="选择 MCP"
-            onChange={(values) => setDraft({ ...draft, mcpIds: values })}
-          />
-          <CapabilityMultiSelectField
-            label="Skill"
-            icon={BrainCircuit}
-            options={skillAssets}
-            selectedIds={draft.skillIds}
-            placeholder="选择 Skill"
-            onChange={(values) => setDraft({ ...draft, skillIds: values })}
-          />
-        </div>
-        <MaxTokensField
-          value={draft.maxTokens}
-          onChange={(value) => setDraft({ ...draft, maxTokens: value })}
-        />
-        <MaxAgentIterationsPerTurnField
-          value={draft.maxAgentIterationsPerTurn}
-          maximum={agentRuntimeLimits.maxIterationsPerTurn}
-          onChange={(value) => setDraft({ ...draft, maxAgentIterationsPerTurn: value })}
-        />
-        <AgentInteractionOptions
-          allowUserEdit={draft.allowUserEdit}
-          allowQuestion={draft.allowQuestion}
-          onChange={(patch) => setDraft({ ...draft, ...patch })}
-        />
+      <div className="sys-drawer-section sys-drawer-section-enter workflow-agent-drawer-shell">
+        <AgentConfigSplitPanel
+          sections={AGENT_CONFIG_SECTIONS}
+          activeSection={activeSection}
+          onSectionChange={setActiveSection}
+        >
+          {activeSection === "basic" ? (
+            <div className="workflow-modal-section grid gap-4 md:grid-cols-2">
+              <CapabilitySelectField
+                label="智能体模板"
+                icon={Bot}
+                value={draft.agentAssetId}
+                emptyValue="custom"
+                emptyLabel="自定义智能体"
+                options={agentAssets}
+                onChange={(value) => setDraft({ ...draft, agentAssetId: value })}
+              />
+              <ModelSelectField
+                modelOptions={modelOptions}
+                modelProviderId={draft.modelProviderId}
+                enableThinking={draft.enableThinking}
+                onChange={(patch) => setDraft({ ...draft, ...patch })}
+              />
+            </div>
+          ) : null}
+
+          {activeSection === "systemPrompt" ? (
+            <div className="workflow-agent-drawer-prompt-single">
+              <PromptTemplateEditor
+                label="系统提示词"
+                templateLabel="系统提示词模板"
+                templateValue={draft.systemPromptTemplateId}
+                templateEmptyLabel="系统提示词自定义"
+                promptAssets={promptAssets}
+                value={draft.systemPrompt}
+                availableVariables={availableVariables}
+                onTemplateChange={(value) => setDraft({ ...draft, systemPromptTemplateId: value })}
+                onChange={(value) => setDraft({ ...draft, systemPrompt: value })}
+              />
+            </div>
+          ) : null}
+
+          {activeSection === "userPrompt" ? (
+            <div className="workflow-agent-drawer-prompt-single">
+              <PromptTemplateEditor
+                label="用户提示词"
+                templateLabel="用户提示词模板"
+                templateValue={draft.userPromptTemplateId}
+                templateEmptyLabel="用户提示词自定义"
+                promptAssets={promptAssets}
+                value={draft.userPrompt}
+                availableVariables={availableVariables}
+                onTemplateChange={(value) => setDraft({ ...draft, userPromptTemplateId: value })}
+                onChange={(value) => setDraft({ ...draft, userPrompt: value })}
+              />
+            </div>
+          ) : null}
+
+          {activeSection === "capabilities" ? (
+            <div className="workflow-modal-section grid gap-4 md:grid-cols-2">
+              <CapabilityMultiSelectField
+                label="MCP"
+                icon={ServerCog}
+                options={mcpAssets}
+                selectedIds={draft.mcpIds}
+                placeholder="选择 MCP"
+                onChange={(values) => setDraft({ ...draft, mcpIds: values })}
+              />
+              <CapabilityMultiSelectField
+                label="Skill"
+                icon={BrainCircuit}
+                options={skillAssets}
+                selectedIds={draft.skillIds}
+                placeholder="选择 Skill"
+                onChange={(values) => setDraft({ ...draft, skillIds: values })}
+              />
+            </div>
+          ) : null}
+
+          {activeSection === "runtime" ? (
+            <div className="workflow-agent-runtime-panel">
+              <AgentRuntimeLimitsRow
+                maxTokens={draft.maxTokens}
+                maxAgentIterationsPerTurn={draft.maxAgentIterationsPerTurn}
+                maximumIterations={agentRuntimeLimits.maxIterationsPerTurn}
+                onMaxTokensChange={(value) => setDraft({ ...draft, maxTokens: value })}
+                onMaxIterationsChange={(value) => setDraft({ ...draft, maxAgentIterationsPerTurn: value })}
+              />
+              <AgentBehaviorCapsules
+                allowUserEdit={draft.allowUserEdit}
+                allowQuestion={draft.allowQuestion}
+                enableThinking={draft.enableThinking}
+                showThinking={(modelOptions.find((model) => model.providerId === draft.modelProviderId) ?? modelOptions[0])?.reasoningModel}
+                onChange={(patch) => setDraft({ ...draft, ...patch })}
+              />
+            </div>
+          ) : null}
+        </AgentConfigSplitPanel>
       </div>
       <div className="sys-drawer-footer">
-        <p className="workflow-agent-drawer-footer-hint">修改会即时同步到当前节点，请再点顶部「保存流程」写入草稿。</p>
         <div className="sys-drawer-footer-right">
           <button type="button" className="sys-btn sys-btn--default" onClick={handleCancel}>取消</button>
           <button
@@ -3767,6 +3869,7 @@ function ClusterAgentModal({
     modelName: initialModel?.modelName ?? "",
     enableThinking: initialModel?.reasoningModel ? agent.enableThinking : false,
   });
+  const [activeSection, setActiveSection] = useState<AgentConfigSectionId>("basic");
 
   return (
     <Drawer
@@ -3778,94 +3881,117 @@ function ClusterAgentModal({
       onClose={onClose}
       rootClassName={drawerRootClassName}
     >
-      <div className="sys-drawer-section sys-drawer-section-enter workflow-agent-drawer-body">
-        <p className="workflow-agent-drawer-kicker">智能体集群</p>
-        <div className="workflow-modal-section grid gap-4 md:grid-cols-2">
-          <label className="sys-field">
-            <span className="sys-field-label">智能体名称</span>
-            <div className="sys-field-input-wrap">
-              <Tag size={16} className="sys-field-prefix" aria-hidden="true" />
-              <input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} className="sys-field-input" />
+      <div className="sys-drawer-section sys-drawer-section-enter workflow-agent-drawer-shell">
+        <AgentConfigSplitPanel
+          sections={AGENT_CONFIG_SECTIONS}
+          activeSection={activeSection}
+          onSectionChange={setActiveSection}
+        >
+          {activeSection === "basic" ? (
+            <div className="workflow-modal-section grid gap-4 md:grid-cols-2">
+              <label className="sys-field">
+                <span className="sys-field-label">智能体名称</span>
+                <div className="sys-field-input-wrap">
+                  <Tag size={16} className="sys-field-prefix" aria-hidden="true" />
+                  <input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} className="sys-field-input" />
+                </div>
+              </label>
+              <OutcomeVariableField
+                label="输出内容标识"
+                value={draft.output}
+                placeholder="agent_output"
+                onChange={(value) => setDraft({ ...draft, output: normalizeVariableName(value) })}
+              />
+              <CapabilitySelectField
+                label="智能体模板"
+                icon={Bot}
+                value={draft.agentAssetId || "custom"}
+                emptyValue="custom"
+                emptyLabel="自定义智能体"
+                options={agentAssets}
+                onChange={(value) => setDraft({ ...draft, agentAssetId: value })}
+              />
+              <ModelSelectField
+                modelOptions={modelOptions}
+                modelProviderId={draft.modelProviderId}
+                enableThinking={draft.enableThinking}
+                onChange={(patch) => setDraft({ ...draft, ...patch })}
+              />
             </div>
-          </label>
-          <OutcomeVariableField
-            label="输出内容标识"
-            value={draft.output}
-            placeholder="agent_output"
-            onChange={(value) => setDraft({ ...draft, output: normalizeVariableName(value) })}
-          />
-          <CapabilitySelectField
-            label="智能体模板"
-            icon={Bot}
-            value={draft.agentAssetId || "custom"}
-            emptyValue="custom"
-            emptyLabel="自定义智能体"
-            options={agentAssets}
-            onChange={(value) => setDraft({ ...draft, agentAssetId: value })}
-          />
-          <ModelAndReasoningFields
-            modelOptions={modelOptions}
-            modelProviderId={draft.modelProviderId}
-            enableThinking={draft.enableThinking}
-            onChange={(patch) => setDraft({ ...draft, ...patch })}
-          />
-        </div>
-        <div className="workflow-agent-drawer-prompts">
-          <PromptTemplateEditor
-            label="系统提示词"
-            templateLabel="系统提示词模板"
-            templateValue={draft.systemPromptTemplateId || draft.promptTemplateId || "none"}
-            templateEmptyLabel="系统提示词自定义"
-            promptAssets={promptAssets}
-            value={draft.systemPrompt}
-            availableVariables={availableVariables}
-            onTemplateChange={(value) => setDraft({ ...draft, systemPromptTemplateId: value, promptTemplateId: value })}
-            onChange={(value) => setDraft({ ...draft, systemPrompt: value })}
-          />
-          <PromptTemplateEditor
-            label="用户提示词"
-            templateLabel="用户提示词模板"
-            templateValue={draft.userPromptTemplateId || "none"}
-            templateEmptyLabel="用户提示词自定义"
-            promptAssets={promptAssets}
-            value={draft.userPrompt}
-            availableVariables={availableVariables}
-            onTemplateChange={(value) => setDraft({ ...draft, userPromptTemplateId: value })}
-            onChange={(value) => setDraft({ ...draft, userPrompt: value })}
-          />
-        </div>
-        <div className="workflow-modal-section workflow-modal-section--spacious grid gap-4 md:grid-cols-2">
-          <CapabilityMultiSelectField
-            label="Skill"
-            icon={BrainCircuit}
-            options={skillAssets}
-            selectedIds={draft.skillIds}
-            placeholder="选择 Skill"
-            onChange={(values) => setDraft({ ...draft, skillIds: values })}
-          />
-          <CapabilityMultiSelectField
-            label="MCP"
-            icon={ServerCog}
-            options={mcpAssets}
-            selectedIds={draft.mcpIds}
-            placeholder="选择 MCP"
-            onChange={(values) => setDraft({ ...draft, mcpIds: values })}
-          />
-        </div>
-        <MaxTokensField
-          value={draft.maxTokens}
-          onChange={(value) => setDraft({ ...draft, maxTokens: value })}
-        />
-        <MaxAgentIterationsPerTurnField
-          value={draft.maxAgentIterationsPerTurn}
-          maximum={agentRuntimeLimits.maxIterationsPerTurn}
-          onChange={(value) => setDraft({ ...draft, maxAgentIterationsPerTurn: value })}
-        />
-        <AgentInteractionOptions
-          allowUserEdit={draft.allowUserEdit}
-          allowQuestion={draft.allowQuestion}
-          onChange={(patch) => setDraft({ ...draft, ...patch })}
-        />
+          ) : null}
+
+          {activeSection === "systemPrompt" ? (
+            <div className="workflow-agent-drawer-prompt-single">
+              <PromptTemplateEditor
+                label="系统提示词"
+                templateLabel="系统提示词模板"
+                templateValue={draft.systemPromptTemplateId || draft.promptTemplateId || "none"}
+                templateEmptyLabel="系统提示词自定义"
+                promptAssets={promptAssets}
+                value={draft.systemPrompt}
+                availableVariables={availableVariables}
+                onTemplateChange={(value) => setDraft({ ...draft, systemPromptTemplateId: value, promptTemplateId: value })}
+                onChange={(value) => setDraft({ ...draft, systemPrompt: value })}
+              />
+            </div>
+          ) : null}
+
+          {activeSection === "userPrompt" ? (
+            <div className="workflow-agent-drawer-prompt-single">
+              <PromptTemplateEditor
+                label="用户提示词"
+                templateLabel="用户提示词模板"
+                templateValue={draft.userPromptTemplateId || "none"}
+                templateEmptyLabel="用户提示词自定义"
+                promptAssets={promptAssets}
+                value={draft.userPrompt}
+                availableVariables={availableVariables}
+                onTemplateChange={(value) => setDraft({ ...draft, userPromptTemplateId: value })}
+                onChange={(value) => setDraft({ ...draft, userPrompt: value })}
+              />
+            </div>
+          ) : null}
+
+          {activeSection === "capabilities" ? (
+            <div className="workflow-modal-section grid gap-4 md:grid-cols-2">
+              <CapabilityMultiSelectField
+                label="Skill"
+                icon={BrainCircuit}
+                options={skillAssets}
+                selectedIds={draft.skillIds}
+                placeholder="选择 Skill"
+                onChange={(values) => setDraft({ ...draft, skillIds: values })}
+              />
+              <CapabilityMultiSelectField
+                label="MCP"
+                icon={ServerCog}
+                options={mcpAssets}
+                selectedIds={draft.mcpIds}
+                placeholder="选择 MCP"
+                onChange={(values) => setDraft({ ...draft, mcpIds: values })}
+              />
+            </div>
+          ) : null}
+
+          {activeSection === "runtime" ? (
+            <div className="workflow-agent-runtime-panel">
+              <AgentRuntimeLimitsRow
+                maxTokens={draft.maxTokens}
+                maxAgentIterationsPerTurn={draft.maxAgentIterationsPerTurn}
+                maximumIterations={agentRuntimeLimits.maxIterationsPerTurn}
+                onMaxTokensChange={(value) => setDraft({ ...draft, maxTokens: value })}
+                onMaxIterationsChange={(value) => setDraft({ ...draft, maxAgentIterationsPerTurn: value })}
+              />
+              <AgentBehaviorCapsules
+                allowUserEdit={draft.allowUserEdit}
+                allowQuestion={draft.allowQuestion}
+                enableThinking={draft.enableThinking}
+                showThinking={(modelOptions.find((model) => model.providerId === draft.modelProviderId) ?? modelOptions[0])?.reasoningModel}
+                onChange={(patch) => setDraft({ ...draft, ...patch })}
+              />
+            </div>
+          ) : null}
+        </AgentConfigSplitPanel>
       </div>
       <div className="sys-drawer-footer">
         <div className="sys-drawer-footer-right">
@@ -3901,17 +4027,139 @@ function ClusterAgentModal({
   );
 }
 
-function MaxTokensField({
-  value,
+function AgentConfigSplitPanel({
+  sections,
+  activeSection,
+  onSectionChange,
+  children,
+}: {
+  sections: AgentConfigSectionDef[];
+  activeSection: AgentConfigSectionId;
+  onSectionChange: (section: AgentConfigSectionId) => void;
+  children: ReactNode;
+}) {
+  const active = sections.find((section) => section.id === activeSection) ?? sections[0];
+
+  return (
+    <div className="workflow-agent-config-split">
+      <aside className="workflow-agent-config-sidebar">
+        <p className="workflow-agent-config-sidebar-title">配置分类</p>
+        <nav className="workflow-agent-config-nav" aria-label="智能体配置分类">
+          {sections.map((section) => {
+            const Icon = section.icon;
+            const isActive = section.id === activeSection;
+            return (
+              <button
+                key={section.id}
+                type="button"
+                className={`workflow-agent-config-nav-item ${isActive ? "is-active" : ""}`}
+                aria-current={isActive ? "page" : undefined}
+                onClick={() => onSectionChange(section.id)}
+              >
+                <span className="workflow-agent-config-nav-icon" aria-hidden="true">
+                  <Icon size={15} />
+                </span>
+                <span className="workflow-agent-config-nav-label">{section.title}</span>
+              </button>
+            );
+          })}
+        </nav>
+      </aside>
+      <div className="workflow-agent-config-content">
+        <header className="workflow-agent-config-content-header">
+          <h3 className="workflow-agent-config-content-title">{active.title}</h3>
+        </header>
+        <div className="workflow-agent-config-content-body">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AgentConfigCapsuleToggle({
+  label,
+  checked,
   onChange,
 }: {
-  value?: number;
-  onChange: (value: number | undefined) => void;
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
 }) {
   return (
-    <div className="workflow-modal-section">
-      <label className="sys-field">
-        <span className="sys-field-label">最大输出 Token（可选）</span>
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      className={`workflow-agent-capsule-toggle ${checked ? "is-active" : ""}`}
+      onClick={() => onChange(!checked)}
+    >
+      {label}
+    </button>
+  );
+}
+
+function AgentBehaviorCapsules({
+  allowUserEdit,
+  allowQuestion,
+  enableThinking,
+  showThinking,
+  showAllowUserEdit = true,
+  showAllowQuestion = true,
+  onChange,
+}: {
+  allowUserEdit: boolean;
+  allowQuestion: boolean;
+  enableThinking?: boolean;
+  showThinking?: boolean;
+  showAllowUserEdit?: boolean;
+  showAllowQuestion?: boolean;
+  onChange: (patch: Partial<{ allowUserEdit: boolean; allowQuestion: boolean; enableThinking: boolean }>) => void;
+}) {
+  return (
+    <div className="workflow-agent-capsule-row">
+      {showThinking ? (
+        <AgentConfigCapsuleToggle
+          label="深度推理"
+          checked={!!enableThinking}
+          onChange={(checked) => onChange({ enableThinking: checked })}
+        />
+      ) : null}
+      {showAllowUserEdit ? (
+        <AgentConfigCapsuleToggle
+          label="允许修改"
+          checked={allowUserEdit}
+          onChange={(checked) => onChange({ allowUserEdit: checked })}
+        />
+      ) : null}
+      {showAllowQuestion ? (
+        <AgentConfigCapsuleToggle
+          label="允许追问"
+          checked={allowQuestion}
+          onChange={(checked) => onChange({ allowQuestion: checked })}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function AgentRuntimeLimitsRow({
+  maxTokens,
+  maxAgentIterationsPerTurn,
+  maximumIterations,
+  onMaxTokensChange,
+  onMaxIterationsChange,
+}: {
+  maxTokens?: number;
+  maxAgentIterationsPerTurn: number;
+  maximumIterations: number;
+  onMaxTokensChange: (value: number | undefined) => void;
+  onMaxIterationsChange: (value: number) => void;
+}) {
+  return (
+    <div className="workflow-agent-limits-row">
+      <label className="sys-field sys-field--compact">
+        <span className="sys-field-label">最大输出 Token</span>
         <div className="sys-field-input-wrap">
           <Hash size={16} className="sys-field-prefix" aria-hidden="true" />
           <input
@@ -3920,26 +4168,47 @@ function MaxTokensField({
             min={256}
             max={131072}
             step={256}
-            placeholder="留空则沿用模型供应商配置"
-            value={value ?? ""}
+            placeholder="沿用供应商默认"
+            value={maxTokens ?? ""}
             onChange={(event) => {
               const raw = event.target.value.trim();
               if (!raw) {
-                onChange(undefined);
+                onMaxTokensChange(undefined);
                 return;
               }
               const parsed = Number.parseInt(raw, 10);
-              onChange(Number.isFinite(parsed) ? parsed : undefined);
+              onMaxTokensChange(Number.isFinite(parsed) ? parsed : undefined);
             }}
           />
         </div>
-        <span className="sys-field-hint">节点级覆盖供应商默认值；长报告建议 8192 或以上。</span>
+        <span className="sys-field-hint">可选；长报告建议 8192+</span>
+      </label>
+      <label className="sys-field sys-field--compact">
+        <span className="sys-field-label">单轮推理次数</span>
+        <div className="sys-field-input-wrap">
+          <ListChecks size={16} className="sys-field-prefix" aria-hidden="true" />
+          <input
+            className="sys-field-input"
+            type="number"
+            min={1}
+            max={maximumIterations}
+            step={1}
+            value={maxAgentIterationsPerTurn}
+            onChange={(event) => {
+              const parsed = Number.parseInt(event.target.value, 10);
+              if (Number.isFinite(parsed)) {
+                onMaxIterationsChange(Math.min(maximumIterations, Math.max(1, parsed)));
+              }
+            }}
+          />
+        </div>
+        <span className="sys-field-hint">1～{maximumIterations} 次，达上限后汇总答案</span>
       </label>
     </div>
   );
 }
 
-function ModelAndReasoningFields({
+function ModelSelectField({
   modelOptions,
   modelProviderId,
   enableThinking,
@@ -3953,80 +4222,23 @@ function ModelAndReasoningFields({
   const selectedModel = modelOptions.find((model) => model.providerId === modelProviderId) ?? modelOptions[0];
 
   return (
-    <>
-      <SelectLikeField
-        label="运行模型"
-        icon={DatabaseZap}
-        value={selectedModel?.providerId ?? ""}
-        options={modelOptions.map((model) => ({
-          value: model.providerId,
-          label: `${model.providerName} · ${model.modelName}${model.reasoningModel ? " · 推理模型" : ""}`,
-        }))}
-        onChange={(providerId) => {
-          const model = modelOptions.find((item) => item.providerId === providerId);
-          onChange({
-            modelProviderId: providerId,
-            modelName: model?.modelName ?? "",
-            enableThinking: model?.reasoningModel ? enableThinking : false,
-          });
-        }}
-      />
-      {selectedModel?.reasoningModel ? (
-        <div className="sys-field">
-          <span className="sys-field-label">推理模式</span>
-          <label className="workflow-toggle-row workflow-toggle-row--field">
-            <span>
-              <strong className="block text-sm">启用深度推理</strong>
-            </span>
-            <input
-              type="checkbox"
-              checked={enableThinking}
-              onChange={(event) => onChange({
-                modelProviderId: selectedModel.providerId,
-                modelName: selectedModel.modelName,
-                enableThinking: event.target.checked,
-              })}
-            />
-          </label>
-        </div>
-      ) : null}
-    </>
-  );
-}
-
-function MaxAgentIterationsPerTurnField({
-  value,
-  maximum,
-  onChange,
-}: {
-  value: number;
-  maximum: number;
-  onChange: (value: number) => void;
-}) {
-  return (
-    <div className="workflow-modal-section">
-      <label className="sys-field">
-        <span className="sys-field-label">单轮最大推理次数</span>
-        <div className="sys-field-input-wrap">
-          <ListChecks size={16} className="sys-field-prefix" aria-hidden="true" />
-          <input
-            className="sys-field-input"
-            type="number"
-            min={1}
-            max={maximum}
-            step={1}
-            value={value}
-            onChange={(event) => {
-              const parsed = Number.parseInt(event.target.value, 10);
-              if (Number.isFinite(parsed)) {
-                onChange(Math.min(maximum, Math.max(1, parsed)));
-              }
-            }}
-          />
-        </div>
-        <span className="sys-field-hint">允许 1～{maximum} 次；首次执行和每次追问都会重新计数，达到上限后系统会进行一次无工具的答案汇总。</span>
-      </label>
-    </div>
+    <SelectLikeField
+      label="运行模型"
+      icon={DatabaseZap}
+      value={selectedModel?.providerId ?? ""}
+      options={modelOptions.map((model) => ({
+        value: model.providerId,
+        label: `${model.providerName} · ${model.modelName}${model.reasoningModel ? " · 推理模型" : ""}`,
+      }))}
+      onChange={(providerId) => {
+        const model = modelOptions.find((item) => item.providerId === providerId);
+        onChange({
+          modelProviderId: providerId,
+          modelName: model?.modelName ?? "",
+          enableThinking: model?.reasoningModel ? enableThinking : false,
+        });
+      }}
+    />
   );
 }
 
@@ -4113,24 +4325,11 @@ function AgentInteractionOptions({
   onChange: (patch: Partial<{ allowUserEdit: boolean; allowQuestion: boolean }>) => void;
 }) {
   return (
-    <div className="workflow-modal-section grid gap-3 lg:grid-cols-2">
-      <label className="workflow-toggle-row">
-        <span>允许修改</span>
-        <input
-          type="checkbox"
-          checked={allowUserEdit}
-          onChange={(event) => onChange({ allowUserEdit: event.target.checked })}
-        />
-      </label>
-      <label className="workflow-toggle-row">
-        <span>允许追问</span>
-        <input
-          type="checkbox"
-          checked={allowQuestion}
-          onChange={(event) => onChange({ allowQuestion: event.target.checked })}
-        />
-      </label>
-    </div>
+    <AgentBehaviorCapsules
+      allowUserEdit={allowUserEdit}
+      allowQuestion={allowQuestion}
+      onChange={onChange}
+    />
   );
 }
 
@@ -5339,17 +5538,6 @@ function workflowVariableTypeLabel(type: WorkflowVariable["type"]): string {
     decision: "决策",
     file: "文件",
   })[type];
-}
-
-function appendFileNameToken(template: string, token: string): string {
-  if (template.includes(token)) {
-    return template;
-  }
-  const current = template.trim() || "交付文档.docx";
-  const hasDocxSuffix = current.toLowerCase().endsWith(".docx");
-  const base = hasDocxSuffix ? current.slice(0, -5) : current;
-  const separator = base.endsWith("-") || base.endsWith("_") || base.endsWith(" ") ? "" : "-";
-  return `${base}${separator}${token}${hasDocxSuffix ? ".docx" : ""}`;
 }
 
 function normalizeWordFileNameTemplate(template: string): string {
