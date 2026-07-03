@@ -1957,7 +1957,7 @@ function IntentRoutingDrawer({
           />
           <div className="md:col-span-2">
             <PromptEditor
-              label="意图判断内容"
+              label="待判断内容"
               value={draftIntentInputTemplate}
               availableVariables={availableVariables}
               placeholder="例如：请根据 {{input_1}} 判断本次需要执行哪些报告智能体。"
@@ -2005,7 +2005,7 @@ function IntentRoutingDrawer({
                 </label>
                 <div className="md:col-span-2">
                   <PromptEditor
-                    label="什么时候归类为这个意图"
+                    label="命中条件"
                     value={route.intentDescription}
                     availableVariables={availableVariables}
                     placeholder="例如：{{input_1}} 中要求生成某个月份的经营月报、月度金融业务分析或月度监管材料。"
@@ -2072,6 +2072,10 @@ function IntentRoutingDrawer({
                 intentName: route.intentName.trim() || `意图 ${index + 1}`,
                 intentDescription: route.intentDescription.trim(),
               }));
+              if (!draftIntentInputTemplate.trim()) {
+                message.error("请先填写待判断内容，并引用需要用于意图判断的上游变量");
+                return;
+              }
               const duplicateCode = normalizedRoutes.find((route, index) => normalizedRoutes.some((item, itemIndex) => itemIndex !== index && item.intentCode === route.intentCode));
               if (duplicateCode) {
                 message.error(`存在重复的意图代码：${duplicateCode.intentCode}`);

@@ -165,7 +165,7 @@ export function collectRuntimeTemplateTextFields(
 
   if (brickType === "cluster") {
     push("mergeRule", "拼接规则", source.mergeRule);
-    push("intentInputTemplate", "意图判断内容", source.intentInputTemplate);
+    push("intentInputTemplate", "待判断内容", source.intentInputTemplate);
     readMapList(source.intentRoutes).forEach((route, index) => {
       push(`intentRoutes.${index}.intentDescription`, `意图 ${index + 1}命中说明`, route.intentDescription);
     });
@@ -353,6 +353,9 @@ function validateClusterNode(node: ValidatableWorkflowNode): WorkflowNodeValidat
     if (declaredOutputs.size !== 1 || !declaredOutputs.has(clusterOutputVariable)) {
       issues.push(issue("WORKFLOW_NODE_CLUSTER_INTENT_OUTPUT_INVALID", `意图分派模式下，下游输出必须统一为 ${clusterOutputVariable}`));
     }
+    if (!readString(node.data.rawConfig?.intentInputTemplate)) {
+      issues.push(issue("WORKFLOW_NODE_CLUSTER_INTENT_INPUT_REQUIRED", "意图分派模式下必须配置待判断内容"));
+    }
     const selectionMode = readString(node.data.rawConfig?.intentSelectionMode, "multiple");
     if (selectionMode !== "single" && selectionMode !== "multiple") {
       issues.push(issue("WORKFLOW_NODE_CLUSTER_INTENT_SELECTION_MODE_INVALID", "意图命中策略不合法"));
@@ -423,7 +426,7 @@ function findClusterTemplateVariableIssues(
   }
 
   const intentFields = [
-    { key: "intentInputTemplate", label: "意图判断内容", text: readString(source.intentInputTemplate) },
+    { key: "intentInputTemplate", label: "待判断内容", text: readString(source.intentInputTemplate) },
     ...readMapList(source.intentRoutes).map((route, index) => ({
       key: `intentRoutes.${index}.intentDescription`,
       label: `意图 ${index + 1}命中说明`,

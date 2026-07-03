@@ -296,6 +296,9 @@ public class WorkflowNodeConfigValidator {
         if (!fallbackMode.isBlank() && !INTENT_FALLBACK_MODES.contains(fallbackMode)) {
             issues.add(issue("WORKFLOW_VALIDATION_CLUSTER_INTENT_FALLBACK_MODE_INVALID", "节点[" + node.name() + "]的未命中处理方式不合法", node));
         }
+        if (rawString(config.get("intentInputTemplate")).isBlank()) {
+            issues.add(issue("WORKFLOW_VALIDATION_CLUSTER_INTENT_INPUT_REQUIRED", "节点[" + node.name() + "]使用意图分派时必须配置待判断内容", node));
+        }
 
         Set<String> agentIds = agents.stream()
             .map(agent -> rawString(agent.get("id")))

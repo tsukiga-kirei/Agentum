@@ -381,6 +381,7 @@ class WorkflowNodeConfigValidatorTest {
             Map.of(
                 "executionMode", "intent",
                 "intentSelectionMode", "multiple",
+                "intentInputTemplate", "请根据 {{company_name}} 判断要执行哪些报告智能体。",
                 "intentFallbackMode", "agent",
                 "fallbackAgentId", "other",
                 "intentRoutes", List.of(
@@ -411,6 +412,7 @@ class WorkflowNodeConfigValidatorTest {
             Map.of(
                 "executionMode", "intent",
                 "intentSelectionMode", "multiple",
+                "intentInputTemplate", "请根据 {{company_name}} 判断要执行哪些报告智能体。",
                 "intentFallbackMode", "agent",
                 "fallbackAgentId", "other",
                 "intentRoutes", List.of(
@@ -429,6 +431,35 @@ class WorkflowNodeConfigValidatorTest {
                 "WORKFLOW_VALIDATION_CLUSTER_INTENT_OUTPUT_INVALID",
                 "WORKFLOW_VALIDATION_CLUSTER_INTENT_FALLBACK_AGENT_MISSING"
             );
+    }
+
+    @Test
+    void shouldRejectIntentClusterWhenInputTemplateIsMissing() {
+        WorkflowDraftApi.WorkflowNodeRow node = new WorkflowDraftApi.WorkflowNodeRow(
+            "cluster_1",
+            "parallel_group",
+            "智能体集群",
+            0,
+            0,
+            List.of("company_name"),
+            List.of("cluster_result"),
+            Map.of(
+                "executionMode", "intent",
+                "intentSelectionMode", "multiple",
+                "intentFallbackMode", "fail",
+                "intentRoutes", List.of(
+                    Map.of("intentCode", "monthly_report", "intentName", "月报", "intentDescription", "处理月报生成", "agentId", "monthly_report")
+                ),
+                "clusterAgents", List.of(
+                    intentAgent("月报智能体", "monthly_report", "处理月报生成", "monthly_output")
+                )
+            )
+        );
+
+        List<WorkflowDraftApi.WorkflowValidationIssue> issues = validator().validateCapabilityReferences(TENANT_ID, USER_ID, List.of(node));
+
+        assertThat(issues).extracting(WorkflowDraftApi.WorkflowValidationIssue::code)
+            .contains("WORKFLOW_VALIDATION_CLUSTER_INTENT_INPUT_REQUIRED");
     }
 
     private WorkflowNodeConfigValidator validator() {
