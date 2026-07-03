@@ -476,6 +476,9 @@ public class DeliveryRuntimeService {
         String type = firstNonBlank(stringValue(rule.get("type")), "always");
         return switch (type) {
             case "cluster_agent_matched" -> hasMeaningfulValue(variables.get(stringValue(rule.get("variableName"))));
+            case "input_field_equals" -> stringValue(variables.get(stringValue(rule.get("variableName"))))
+                .equals(stringValue(rule.get("expectedValue")));
+            case "agent_output_exists" -> hasMeaningfulValue(variables.get(stringValue(rule.get("variableName"))));
             default -> true;
         };
     }

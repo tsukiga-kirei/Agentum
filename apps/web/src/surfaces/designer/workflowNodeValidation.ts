@@ -568,8 +568,16 @@ function validateDeliveryNode(
           if (!readString(triggerRule.clusterNodeId) || !readString(triggerRule.agentId) || !readString(triggerRule.variableName)) {
             issues.push(issue("WORKFLOW_NODE_DELIVERY_TRIGGER_AGENT_REQUIRED", `${itemName}的触发规则必须选择智能体集群中的子智能体`));
           }
+        } else if (triggerType === "input_field_equals") {
+          if (!readString(triggerRule.inputNodeId) || !readString(triggerRule.variableName) || !readString(triggerRule.expectedValue)) {
+            issues.push(issue("WORKFLOW_NODE_DELIVERY_TRIGGER_INPUT_REQUIRED", `${itemName}的触发规则必须选择输入字段并填写固定值`));
+          }
+        } else if (triggerType === "agent_output_exists") {
+          if (!readString(triggerRule.agentNodeId) || !readString(triggerRule.variableName)) {
+            issues.push(issue("WORKFLOW_NODE_DELIVERY_TRIGGER_AGENT_OUTPUT_REQUIRED", `${itemName}的触发规则必须选择单智能体输出`));
+          }
         } else if (triggerType !== "always") {
-          issues.push(issue("WORKFLOW_NODE_DELIVERY_TRIGGER_INVALID", `${itemName}的触发规则只支持始终触发或命中集群子智能体`));
+          issues.push(issue("WORKFLOW_NODE_DELIVERY_TRIGGER_INVALID", `${itemName}的触发规则不合法`));
         }
       }
     });

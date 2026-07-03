@@ -256,6 +256,121 @@ class DeliveryRuntimeServiceTest {
             .containsExactly("tenant_summary", "risk_summary");
     }
 
+    @Test
+    void shouldExecuteDeliveryItemWhenInputFieldEqualsExpectedValue() {
+        DeliveryRuntimeRequest request = buildRequest(Map.of(
+            "deliveryMode", "direct",
+            "deliveryType", "direct",
+            "deliveryConfigMode", "multiple",
+            "deliveryExecutionPolicy", "conditional",
+            "deliveryItems", List.of(
+                Map.of(
+                    "id", "rent_report",
+                    "name", "租赁报告",
+                    "enabled", true,
+                    "triggerRule", Map.of(
+                        "type", "input_field_equals",
+                        "inputNodeId", "input_form",
+                        "variableName", "business_type",
+                        "expectedValue", "租赁"
+                    ),
+                    "config", Map.of(
+                        "deliveryMode", "direct",
+                        "deliveryType", "direct",
+                        "deliveryContent", "# 租赁报告\n\n{{business_type}}"
+                    )
+                ),
+                Map.of(
+                    "id", "loan_report",
+                    "name", "授信报告",
+                    "enabled", true,
+                    "triggerRule", Map.of(
+                        "type", "input_field_equals",
+                        "inputNodeId", "input_form",
+                        "variableName", "business_type",
+                        "expectedValue", "授信"
+                    ),
+                    "config", Map.of(
+                        "deliveryMode", "direct",
+                        "deliveryType", "direct",
+                        "deliveryContent", "# 授信报告\n\n{{business_type}}"
+                    )
+                )
+            )
+        ), Map.of("business_type", "租赁"));
+
+        DeliveryRuntimeResult result = service.execute(request);
+
+        assertThat(result.outputs())
+            .containsEntry("deliveryStatus", "success")
+            .containsEntry("summary", "已执行 1 个交付项");
+        assertThat(result.outputs().get("deliveryRecords"))
+            .isInstanceOf(List.class)
+            .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.LIST)
+            .hasSize(1)
+            .first()
+            .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.MAP)
+            .containsEntry("itemId", "rent_report");
+    }
+
+    @Test
+    void shouldExecuteDeliveryItemWhenAgentOutputExists() {
+        DeliveryRuntimeRequest request = buildRequest(Map.of(
+            "deliveryMode", "direct",
+            "deliveryType", "direct",
+            "deliveryConfigMode", "multiple",
+            "deliveryExecutionPolicy", "conditional",
+            "deliveryItems", List.of(
+                Map.of(
+                    "id", "risk_report",
+                    "name", "风险报告",
+                    "enabled", true,
+                    "triggerRule", Map.of(
+                        "type", "agent_output_exists",
+                        "agentNodeId", "risk_agent",
+                        "variableName", "risk_agent_output"
+                    ),
+                    "config", Map.of(
+                        "deliveryMode", "direct",
+                        "deliveryType", "direct",
+                        "deliveryContent", "# 风险报告\n\n{{risk_agent_output}}"
+                    )
+                ),
+                Map.of(
+                    "id", "empty_report",
+                    "name", "空输出报告",
+                    "enabled", true,
+                    "triggerRule", Map.of(
+                        "type", "agent_output_exists",
+                        "agentNodeId", "empty_agent",
+                        "variableName", "empty_agent_output"
+                    ),
+                    "config", Map.of(
+                        "deliveryMode", "direct",
+                        "deliveryType", "direct",
+                        "deliveryContent", "# 空输出报告"
+                    )
+                )
+            )
+        ), Map.of(
+            "risk_agent_output", "发现一项需复核风险。",
+            "empty_agent_output", ""
+        ));
+
+        DeliveryRuntimeResult result = service.execute(request);
+
+        assertThat(result.outputs())
+            .containsEntry("deliveryStatus", "success")
+            .containsEntry("summary", "已执行 1 个交付项");
+        assertThat(result.outputs().get("deliveryRecords"))
+            .isInstanceOf(List.class)
+            .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.LIST)
+            .hasSize(1)
+            .first()
+            .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.MAP)
+            .containsEntry("itemId", "risk_report");
+    }
+
     private static DeliveryRuntimeRequest buildRequest(Map<String, Object> config, Map<String, Object> variables) {
         WorkflowRunEntity run = WorkflowRunEntity.create(
             TENANT_ID,

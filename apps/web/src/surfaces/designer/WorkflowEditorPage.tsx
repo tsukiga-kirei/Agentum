@@ -197,13 +197,16 @@ type WorkflowCapabilityState = {
 type DocumentDeliveryStyleDraft = DocumentDeliveryStyleValues;
 type DeliveryConfigMode = "single" | "multiple";
 type DeliveryExecutionPolicy = "all" | "conditional";
-type DeliveryTriggerType = "always" | "cluster_agent_matched";
+type DeliveryTriggerType = "always" | "cluster_agent_matched" | "input_field_equals" | "agent_output_exists";
 
 type DeliveryTriggerRuleDraft = {
   type: DeliveryTriggerType;
   clusterNodeId: string;
   agentId: string;
+  inputNodeId: string;
+  agentNodeId: string;
   variableName: string;
+  expectedValue: string;
 };
 
 type DeliveryItemDraft = {
@@ -221,6 +224,23 @@ type ClusterAgentTriggerOption = {
   clusterName: string;
   agentId: string;
   agentName: string;
+  variableName: string;
+};
+
+type InputFieldTriggerOption = {
+  value: string;
+  label: string;
+  inputNodeId: string;
+  inputNodeName: string;
+  fieldLabel: string;
+  variableName: string;
+};
+
+type AgentOutputTriggerOption = {
+  value: string;
+  label: string;
+  agentNodeId: string;
+  agentNodeName: string;
   variableName: string;
 };
 
@@ -2184,6 +2204,8 @@ const STALE_WORD_DELIVERY_FIELDS = {
 const DELIVERY_TRIGGER_OPTIONS = [
   { value: "always", label: "始终触发" },
   { value: "cluster_agent_matched", label: "命中智能体集群子智能体" },
+  { value: "input_field_equals", label: "输入字段等于固定值" },
+  { value: "agent_output_exists", label: "单智能体有输出内容" },
 ];
 
 function DeliveryBrickConfig({
@@ -2222,6 +2244,8 @@ function DeliveryBrickConfig({
     : "# 交付文档\n\n请在这里编写最终 Markdown 交付正文。";
   const deliveryItems = readDeliveryItems(config.deliveryItems, deliveryMode);
   const clusterAgentTriggerOptions = buildClusterAgentTriggerOptions(workflowNodes);
+  const inputFieldTriggerOptions = buildInputFieldTriggerOptions(workflowNodes);
+  const agentOutputTriggerOptions = buildAgentOutputTriggerOptions(workflowNodes);
   const [editingTarget, setEditingTarget] = useState<"single" | string | null>(null);
   const drawerRootClassName = getThemedDrawerRootClassName(themeMode, "workflow-agent-drawer");
 
@@ -2515,6 +2539,8 @@ function DeliveryBrickConfig({
         workflowVariables={workflowVariables}
         deliveryAssets={deliveryAssets}
         clusterAgentTriggerOptions={clusterAgentTriggerOptions}
+        inputFieldTriggerOptions={inputFieldTriggerOptions}
+        agentOutputTriggerOptions={agentOutputTriggerOptions}
         defaultDirectTemplate={defaultDirectTemplate}
         defaultMarkdownTemplate={defaultMarkdownTemplate}
         onCapabilityChange={handleSingleCapabilityChange}
@@ -2534,6 +2560,8 @@ function DeliveryBrickConfig({
           workflowVariables={workflowVariables}
           deliveryAssets={deliveryAssets}
           clusterAgentTriggerOptions={clusterAgentTriggerOptions}
+          inputFieldTriggerOptions={inputFieldTriggerOptions}
+          agentOutputTriggerOptions={agentOutputTriggerOptions}
           defaultDirectTemplate={defaultDirectTemplate}
           defaultMarkdownTemplate={defaultMarkdownTemplate}
           showDeliveryModeSelector
@@ -2565,6 +2593,8 @@ function DeliveryCapabilityConfigDrawer({
   workflowVariables,
   deliveryAssets,
   clusterAgentTriggerOptions,
+  inputFieldTriggerOptions,
+  agentOutputTriggerOptions,
   defaultDirectTemplate,
   defaultMarkdownTemplate,
   showDeliveryModeSelector = false,
@@ -2587,6 +2617,8 @@ function DeliveryCapabilityConfigDrawer({
   workflowVariables: WorkflowVariable[];
   deliveryAssets: WorkflowCapabilityOption[];
   clusterAgentTriggerOptions: ClusterAgentTriggerOption[];
+  inputFieldTriggerOptions: InputFieldTriggerOption[];
+  agentOutputTriggerOptions: AgentOutputTriggerOption[];
   defaultDirectTemplate: string;
   defaultMarkdownTemplate: string;
   showDeliveryModeSelector?: boolean;
@@ -2633,6 +2665,13 @@ function DeliveryCapabilityConfigDrawer({
 
   function updateTriggerRule(patch: Partial<DeliveryTriggerRuleDraft>) {
     onTriggerRuleChange?.({ ...effectiveTriggerRule, ...patch });
+  }
+
+  function handleTriggerTypeChange(value: string) {
+    updateTriggerRule({
+      ...defaultDeliveryTriggerRule(),
+      type: readDeliveryTriggerType(value),
+    });
   }
 
   useEffect(() => {
@@ -2692,7 +2731,7 @@ function DeliveryCapabilityConfigDrawer({
               icon={ListChecks}
               value={effectiveTriggerRule.type}
               options={DELIVERY_TRIGGER_OPTIONS}
-              onChange={(value) => updateTriggerRule({ type: readDeliveryTriggerType(value) })}
+              onChange={handleTriggerTypeChange}
             />
             {effectiveTriggerRule.type === "cluster_agent_matched" ? (
               <SelectLikeField
@@ -2717,9 +2756,76 @@ function DeliveryCapabilityConfigDrawer({
                 }}
               />
             ) : null}
+            {effectiveTriggerRule.type === "input_field_equals" ? (
+              <>
+                <SelectLikeField
+                  label="输入节点字段"
+                  icon={TextCursorInput}
+                  value={effectiveTriggerRule.inputNodeId && effectiveTriggerRule.variableName
+                    ? `${effectiveTriggerRule.inputNodeId}::${effectiveTriggerRule.variableName}`
+                    : ""}
+                  options={inputFieldTriggerOptions.map((option) => ({
+                    value: option.value,
+                    label: option.label,
+                  }))}
+                  onChange={(value) => {
+                    const option = inputFieldTriggerOptions.find((item) => item.value === value);
+                    if (!option) {
+                      updateTriggerRule({ inputNodeId: "", variableName: "" });
+                      return;
+                    }
+                    updateTriggerRule({
+                      inputNodeId: option.inputNodeId,
+                      variableName: option.variableName,
+                    });
+                  }}
+                />
+                <TextInputField
+                  label="固定值"
+                  icon={Hash}
+                  value={effectiveTriggerRule.expectedValue}
+                  placeholder="输入字段等于这个值时触发"
+                  onChange={(value) => updateTriggerRule({ expectedValue: value })}
+                />
+              </>
+            ) : null}
+            {effectiveTriggerRule.type === "agent_output_exists" ? (
+              <SelectLikeField
+                label="单智能体输出"
+                icon={Bot}
+                value={effectiveTriggerRule.agentNodeId && effectiveTriggerRule.variableName
+                  ? `${effectiveTriggerRule.agentNodeId}::${effectiveTriggerRule.variableName}`
+                  : ""}
+                options={agentOutputTriggerOptions.map((option) => ({
+                  value: option.value,
+                  label: option.label,
+                }))}
+                onChange={(value) => {
+                  const option = agentOutputTriggerOptions.find((item) => item.value === value);
+                  if (!option) {
+                    updateTriggerRule({ agentNodeId: "", variableName: "" });
+                    return;
+                  }
+                  updateTriggerRule({
+                    agentNodeId: option.agentNodeId,
+                    variableName: option.variableName,
+                  });
+                }}
+              />
+            ) : null}
             {effectiveTriggerRule.type === "cluster_agent_matched" && clusterAgentTriggerOptions.length === 0 ? (
               <p className="workflow-capability-state workflow-capability-state--warning">
                 当前流程还没有可用于触发的智能体集群子智能体。请先在上游添加智能体集群，并配置子智能体输出。
+              </p>
+            ) : null}
+            {effectiveTriggerRule.type === "input_field_equals" && inputFieldTriggerOptions.length === 0 ? (
+              <p className="workflow-capability-state workflow-capability-state--warning">
+                当前流程还没有可用于触发的输入节点字段。请先在上游添加输入节点，并配置输入字段。
+              </p>
+            ) : null}
+            {effectiveTriggerRule.type === "agent_output_exists" && agentOutputTriggerOptions.length === 0 ? (
+              <p className="workflow-capability-state workflow-capability-state--warning">
+                当前流程还没有可用于触发的单智能体输出。请先在上游添加单智能体节点，并配置输出变量。
               </p>
             ) : null}
           </div>
@@ -4183,7 +4289,7 @@ function readDeliveryExecutionPolicy(value: unknown): DeliveryExecutionPolicy {
 
 function readDeliveryTriggerType(value: unknown): DeliveryTriggerType {
   const text = readString(value, "always");
-  if (text === "cluster_agent_matched") {
+  if (text === "cluster_agent_matched" || text === "input_field_equals" || text === "agent_output_exists") {
     return text;
   }
   return "always";
@@ -4194,7 +4300,10 @@ function defaultDeliveryTriggerRule(): DeliveryTriggerRuleDraft {
     type: "always",
     clusterNodeId: "",
     agentId: "",
+    inputNodeId: "",
+    agentNodeId: "",
     variableName: "",
+    expectedValue: "",
   };
 }
 
@@ -4204,7 +4313,10 @@ function readDeliveryTriggerRule(value: unknown): DeliveryTriggerRuleDraft {
     type: readDeliveryTriggerType(record.type),
     clusterNodeId: readString(record.clusterNodeId, ""),
     agentId: readString(record.agentId, ""),
+    inputNodeId: readString(record.inputNodeId, ""),
+    agentNodeId: readString(record.agentNodeId, ""),
     variableName: readString(record.variableName, ""),
+    expectedValue: readString(record.expectedValue, ""),
   };
 }
 
@@ -4245,6 +4357,10 @@ function describeDeliveryTrigger(rule: DeliveryTriggerRuleDraft) {
   switch (rule.type) {
     case "cluster_agent_matched":
       return rule.variableName ? `命中子智能体输出 {{${rule.variableName}}} 时触发` : "命中指定集群子智能体时触发";
+    case "input_field_equals":
+      return rule.variableName ? `{{${rule.variableName}}} = ${rule.expectedValue || "固定值"} 时触发` : "输入字段等于固定值时触发";
+    case "agent_output_exists":
+      return rule.variableName ? `单智能体输出 {{${rule.variableName}}} 存在时触发` : "单智能体有输出内容时触发";
     default:
       return "始终触发";
   }
@@ -4279,6 +4395,51 @@ function buildClusterAgentTriggerOptions(nodes: WorkflowEditorNode[]): ClusterAg
         })
         .filter((item): item is ClusterAgentTriggerOption => item !== null);
     });
+}
+
+function buildInputFieldTriggerOptions(nodes: WorkflowEditorNode[]): InputFieldTriggerOption[] {
+  return nodes
+    .filter((node) => node.data.nodeType === "user_input")
+    .flatMap((node) => {
+      const fields = readInputFields(node.data.rawConfig?.inputFields, node.data.outputVariables);
+      return fields
+        .map((field): InputFieldTriggerOption | null => {
+          const variableName = normalizeVariableName(field.variable);
+          if (!variableName) {
+            return null;
+          }
+          const fieldLabel = readString(field.label, variableName);
+          return {
+            value: `${node.id}::${variableName}`,
+            label: `${node.data.label} / ${fieldLabel} · {{${variableName}}}`,
+            inputNodeId: node.id,
+            inputNodeName: node.data.label,
+            fieldLabel,
+            variableName,
+          };
+        })
+        .filter((item): item is InputFieldTriggerOption => item !== null);
+    });
+}
+
+function buildAgentOutputTriggerOptions(nodes: WorkflowEditorNode[]): AgentOutputTriggerOption[] {
+  return nodes
+    .filter((node) => node.data.nodeType === "agent")
+    .flatMap((node) => node.data.outputVariables
+      .map((variable): AgentOutputTriggerOption | null => {
+        const variableName = normalizeVariableName(variable);
+        if (!variableName) {
+          return null;
+        }
+        return {
+          value: `${node.id}::${variableName}`,
+          label: `${node.data.label} · {{${variableName}}}`,
+          agentNodeId: node.id,
+          agentNodeName: node.data.label,
+          variableName,
+        };
+      })
+      .filter((item): item is AgentOutputTriggerOption => item !== null));
 }
 
 function findCapabilityName(options: WorkflowCapabilityOption[], id: string, fallback: string) {

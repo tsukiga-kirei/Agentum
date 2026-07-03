@@ -69,6 +69,12 @@ function triggerMatched(item: Record<string, unknown>, variables: Record<string,
   if (type === "cluster_agent_matched") {
     return hasValue(variables[variableName]);
   }
+  if (type === "input_field_equals") {
+    return stringifyValue(variables[variableName]).trim() === stringifyValue(rule.expectedValue).trim();
+  }
+  if (type === "agent_output_exists") {
+    return hasValue(variables[variableName]);
+  }
   return true;
 }
 

@@ -129,12 +129,15 @@ function inferDeliveryMode(config: Record<string, unknown>, parentDeliveryMode: 
 function normalizeDeliveryTriggerRule(value: unknown): Record<string, unknown> {
   const source = typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
   const type = typeof source.type === "string" && source.type.trim() ? source.type.trim() : "always";
-  const normalizedType = type === "cluster_agent_matched" ? "cluster_agent_matched" : "always";
+  const normalizedType = ["cluster_agent_matched", "input_field_equals", "agent_output_exists"].includes(type) ? type : "always";
   return {
     type: normalizedType,
     clusterNodeId: typeof source.clusterNodeId === "string" ? source.clusterNodeId.trim() : "",
     agentId: typeof source.agentId === "string" ? source.agentId.trim() : "",
+    inputNodeId: typeof source.inputNodeId === "string" ? source.inputNodeId.trim() : "",
+    agentNodeId: typeof source.agentNodeId === "string" ? source.agentNodeId.trim() : "",
     variableName: typeof source.variableName === "string" ? source.variableName.trim() : "",
+    expectedValue: typeof source.expectedValue === "string" ? source.expectedValue.trim() : "",
   };
 }
 

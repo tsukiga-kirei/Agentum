@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 保存前补齐空白的自定义提示词；新建节点创建时已写入 {@link WorkflowPromptDefaults} 默认值。
@@ -159,14 +160,17 @@ public final class WorkflowNodeConfigNormalizer {
             ? new LinkedHashMap<>((Map<String, Object>) rawMap)
             : new LinkedHashMap<>();
         String type = rawString(source.get("type"));
-        if (!"cluster_agent_matched".equals(type)) {
+        if (!Set.of("cluster_agent_matched", "input_field_equals", "agent_output_exists").contains(type)) {
             type = "always";
         }
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("type", type);
         result.put("clusterNodeId", rawString(source.get("clusterNodeId")));
         result.put("agentId", rawString(source.get("agentId")));
+        result.put("inputNodeId", rawString(source.get("inputNodeId")));
+        result.put("agentNodeId", rawString(source.get("agentNodeId")));
         result.put("variableName", rawString(source.get("variableName")));
+        result.put("expectedValue", rawString(source.get("expectedValue")));
         return result;
     }
 

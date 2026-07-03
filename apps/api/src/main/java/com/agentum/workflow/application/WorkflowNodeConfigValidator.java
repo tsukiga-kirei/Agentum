@@ -58,6 +58,8 @@ public class WorkflowNodeConfigValidator {
     ) {
         // 加载租户能力池：已启用的系统能力授权
         Map<UUID, SystemCapabilityEntity> poolCapabilities = loadTenantCapabilityPool(tenantId);
+        Map<String, WorkflowDraftApi.WorkflowNodeRow> nodesById = nodes.stream()
+            .collect(Collectors.toMap(WorkflowDraftApi.WorkflowNodeRow::nodeId, Function.identity(), (left, right) -> left));
         List<WorkflowDraftApi.WorkflowValidationIssue> issues = new ArrayList<>();
 
         for (WorkflowDraftApi.WorkflowNodeRow node : nodes) {
@@ -108,7 +110,7 @@ public class WorkflowNodeConfigValidator {
             } else if ("delivery".equals(nodeType)) {
                 String deliveryMode = rawString(config.get("deliveryMode"));
                 if ("multiple".equalsIgnoreCase(rawString(config.get("deliveryConfigMode")))) {
-                    validateMultipleDeliveryConfig(tenantId, operatorUserId, config, node, poolCapabilities, issues);
+                    validateMultipleDeliveryConfig(tenantId, operatorUserId, config, node, nodesById, poolCapabilities, issues);
                 } else if ("direct".equalsIgnoreCase(deliveryMode) || "direct".equalsIgnoreCase(rawString(config.get("deliveryType")))) {
                     validateDirectDeliveryConfig(config, node, "节点[" + node.name() + "]", issues);
                 } else {
@@ -125,6 +127,7 @@ public class WorkflowNodeConfigValidator {
         UUID operatorUserId,
         Map<String, Object> config,
         WorkflowDraftApi.WorkflowNodeRow node,
+        Map<String, WorkflowDraftApi.WorkflowNodeRow> nodesById,
         Map<UUID, SystemCapabilityEntity> poolCapabilities,
         List<WorkflowDraftApi.WorkflowValidationIssue> issues
     ) {
@@ -156,7 +159,7 @@ public class WorkflowNodeConfigValidator {
                 issues
             );
             if ("conditional".equals(executionPolicy)) {
-                validateDeliveryTrigger(item, node, itemName, issues);
+                validateDeliveryTrigger(item, node, itemName, nodesById, issues);
             }
         }
     }
@@ -242,6 +245,7 @@ public class WorkflowNodeConfigValidator {
         Map<String, Object> item,
         WorkflowDraftApi.WorkflowNodeRow node,
         String itemName,
+        Map<String, WorkflowDraftApi.WorkflowNodeRow> nodesById,
         List<WorkflowDraftApi.WorkflowValidationIssue> issues
     ) {
         Map<String, Object> rule = extractNestedConfig(item, "triggerRule");
@@ -261,7 +265,49 @@ public class WorkflowNodeConfigValidator {
             }
             return;
         }
-        issues.add(issue("WORKFLOW_VALIDATION_DELIVERY_TRIGGER_INVALID", "交付项「" + itemName + "」的触发规则只支持始终触发或命中集群子智能体", node));
+        if ("input_field_equals".equals(type)) {
+            String inputNodeId = rawString(rule.get("inputNodeId"));
+            String variableName = rawString(rule.get("variableName"));
+            if (inputNodeId.isBlank() || variableName.isBlank() || rawString(rule.get("expectedValue")).isBlank()) {
+                issues.add(issue(
+                    "WORKFLOW_VALIDATION_DELIVERY_TRIGGER_INPUT_REQUIRED",
+                    "交付项「" + itemName + "」的触发规则必须选择输入节点字段并填写固定值",
+                    node
+                ));
+                return;
+            }
+            WorkflowDraftApi.WorkflowNodeRow inputNode = nodesById.get(inputNodeId);
+            if (inputNode == null || !"user_input".equals(inputNode.nodeType()) || !inputNode.outputVariables().contains(variableName)) {
+                issues.add(issue(
+                    "WORKFLOW_VALIDATION_DELIVERY_TRIGGER_INPUT_INVALID",
+                    "交付项「" + itemName + "」的触发规则绑定的输入字段不存在",
+                    node
+                ));
+            }
+            return;
+        }
+        if ("agent_output_exists".equals(type)) {
+            String agentNodeId = rawString(rule.get("agentNodeId"));
+            String variableName = rawString(rule.get("variableName"));
+            if (agentNodeId.isBlank() || variableName.isBlank()) {
+                issues.add(issue(
+                    "WORKFLOW_VALIDATION_DELIVERY_TRIGGER_AGENT_OUTPUT_REQUIRED",
+                    "交付项「" + itemName + "」的触发规则必须选择单智能体输出",
+                    node
+                ));
+                return;
+            }
+            WorkflowDraftApi.WorkflowNodeRow agentNode = nodesById.get(agentNodeId);
+            if (agentNode == null || !"agent".equals(agentNode.nodeType()) || !agentNode.outputVariables().contains(variableName)) {
+                issues.add(issue(
+                    "WORKFLOW_VALIDATION_DELIVERY_TRIGGER_AGENT_OUTPUT_INVALID",
+                    "交付项「" + itemName + "」的触发规则绑定的单智能体输出不存在",
+                    node
+                ));
+            }
+            return;
+        }
+        issues.add(issue("WORKFLOW_VALIDATION_DELIVERY_TRIGGER_INVALID", "交付项「" + itemName + "」的触发规则不合法", node));
     }
 
     private void validateInputNodeConfig(
