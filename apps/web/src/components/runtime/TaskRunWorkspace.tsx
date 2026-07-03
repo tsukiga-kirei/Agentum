@@ -1574,19 +1574,19 @@ function RunDeliveriesPanel({
         {list.length === 0 ? (
           <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 flex justify-between items-center text-sm">
             <div>
-              <strong className="text-slate-800 dark:text-slate-200 font-medium block">Word 文档交付</strong>
+              <strong className="text-slate-800 dark:text-slate-200 font-medium block">暂无已触发交付物</strong>
               <span className="text-slate-400 block mt-0.5 whitespace-pre-wrap">
                 {isFlowCompleted
-                  ? "暂无可下载的交付文件，请检查交付能力执行结果。"
-                  : "交付步骤执行后需先在「当前处理」确认完成，归档结果才会在此展示。"}
+                  ? "本次运行没有命中任何交付项，因此不会展示未触发的模板或通道。"
+                  : "交付步骤执行后，只会展示本次实际触发的交付物。"}
               </span>
             </div>
             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
               isFlowCompleted
-                ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400"
+                ? "bg-slate-100 text-slate-500 dark:bg-slate-850 dark:text-slate-300"
                 : "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400"
             }`}>
-              {isFlowCompleted ? "已归档" : "待确认"}
+              {isFlowCompleted ? "无交付" : "待执行"}
             </span>
           </div>
         ) : (
@@ -1752,13 +1752,39 @@ function buildRuntimePreviewFromRun(run: WorkbenchRunDetail): RuntimePreview {
     })),
     deliveries: run.nodes
       .filter((node: any) => node.nodeType === "delivery")
-      .map((node: any) => {
+      .flatMap((node: any) => {
         const outputs = isRuntimeRecord(node.outputs) ? node.outputs : {};
+        const deliveryRecords = Array.isArray(outputs.deliveryRecords) ? outputs.deliveryRecords : [];
+        if (deliveryRecords.length > 0) {
+          return deliveryRecords
+            .filter((item: unknown): item is Record<string, unknown> => isRuntimeRecord(item))
+            .map((item: Record<string, unknown>, index: number) => {
+              const deliveryResult = isRuntimeRecord(item.deliveryResult) ? item.deliveryResult : {};
+              const fileName = readConfigString(deliveryResult.fileName, "");
+              const sizeBytes = readConfigString(deliveryResult.sizeBytes, "");
+              const recordId = readConfigString(item.deliveryRecordId, "");
+              const itemName = readConfigString(item.itemName, `交付项 ${index + 1}`);
+              return {
+                name: fileName || itemName,
+                status: readConfigString(item.deliveryStatus, node.stateLabel),
+                meta: fileName && sizeBytes
+                  ? `${fileName} · ${sizeBytes} bytes`
+                  : stringifyValue(item.summary ?? "交付项已执行"),
+                recordId: recordId || undefined,
+                fileName: fileName || undefined,
+                downloadUrl: readConfigString(deliveryResult.downloadUrl, "") || undefined,
+                deliveryType: readConfigString(deliveryResult.adapter, readConfigString(item.deliveryType, "")) || undefined,
+              };
+            });
+        }
         const deliveryResult = isRuntimeRecord(outputs.deliveryResult) ? outputs.deliveryResult : {};
         const fileName = readConfigString(deliveryResult.fileName, "");
         const sizeBytes = readConfigString(deliveryResult.sizeBytes, "");
         const recordId = readConfigString(outputs.deliveryRecordId, "");
-        return {
+        if (!recordId && readConfigString(outputs.deliveryStatus, "") === "skipped") {
+          return [];
+        }
+        return [{
           name: fileName || node.name,
           status: node.stateLabel,
           meta: fileName && sizeBytes
@@ -1768,7 +1794,7 @@ function buildRuntimePreviewFromRun(run: WorkbenchRunDetail): RuntimePreview {
           fileName: fileName || undefined,
           downloadUrl: readConfigString(deliveryResult.downloadUrl, "") || undefined,
           deliveryType: readConfigString(deliveryResult.adapter, readConfigString(outputs.deliveryType, "")) || undefined,
-        };
+        }];
       }),
   };
 }

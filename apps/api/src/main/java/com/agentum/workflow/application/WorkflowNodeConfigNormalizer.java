@@ -91,7 +91,83 @@ public final class WorkflowNodeConfigNormalizer {
                 }
             }
         }
+        if ("delivery".equals(nodeType)) {
+            normalizeDeliveryConfig(normalized);
+        }
         return normalized;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void normalizeDeliveryConfig(Map<String, Object> config) {
+        String deliveryMode = rawString(config.get("deliveryMode"));
+        if (deliveryMode.isBlank()) {
+            deliveryMode = "direct";
+            config.put("deliveryMode", deliveryMode);
+        }
+        String configMode = "multiple".equals(rawString(config.get("deliveryConfigMode"))) ? "multiple" : "single";
+        config.put("deliveryConfigMode", configMode);
+        if (!"multiple".equals(configMode)) {
+            config.put("deliveryItems", List.of());
+            return;
+        }
+        config.put("deliveryExecutionPolicy", "conditional".equals(rawString(config.get("deliveryExecutionPolicy"))) ? "conditional" : "all");
+        Object rawItems = config.get("deliveryItems");
+        if (!(rawItems instanceof List<?> items)) {
+            config.put("deliveryItems", List.of());
+            return;
+        }
+        List<Map<String, Object>> normalizedItems = new ArrayList<>();
+        for (int index = 0; index < items.size(); index++) {
+            Object rawItem = items.get(index);
+            if (rawItem instanceof Map<?, ?> rawMap) {
+                Map<String, Object> item = new LinkedHashMap<>((Map<String, Object>) rawMap);
+                item.putIfAbsent("id", "delivery_item_" + (index + 1));
+                if (rawString(item.get("name")).isBlank()) {
+                    item.put("name", "交付项 " + (index + 1));
+                }
+                item.putIfAbsent("enabled", true);
+                item.put("triggerRule", normalizeDeliveryTriggerRule(item.get("triggerRule")));
+                Object rawConfig = item.get("config");
+                Map<String, Object> itemConfig = rawConfig instanceof Map<?, ?> itemConfigMap
+                    ? new LinkedHashMap<>((Map<String, Object>) itemConfigMap)
+                    : new LinkedHashMap<>();
+                if (rawString(itemConfig.get("deliveryMode")).isBlank()) {
+                    itemConfig.put("deliveryMode", inferDeliveryMode(itemConfig, deliveryMode));
+                }
+                item.put("config", itemConfig);
+                normalizedItems.add(item);
+            }
+        }
+        config.put("deliveryItems", normalizedItems);
+    }
+
+    private static String inferDeliveryMode(Map<String, Object> config, String parentDeliveryMode) {
+        String deliveryType = rawString(config.get("deliveryType"));
+        String capabilityId = rawString(config.get("deliveryCapabilityId"));
+        if ("direct".equalsIgnoreCase(deliveryType) || "none".equalsIgnoreCase(capabilityId) || "custom".equalsIgnoreCase(capabilityId)) {
+            return "direct";
+        }
+        if (!capabilityId.isBlank()) {
+            return "capability";
+        }
+        return rawString(parentDeliveryMode).isBlank() ? "direct" : parentDeliveryMode;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> normalizeDeliveryTriggerRule(Object value) {
+        Map<String, Object> source = value instanceof Map<?, ?> rawMap
+            ? new LinkedHashMap<>((Map<String, Object>) rawMap)
+            : new LinkedHashMap<>();
+        String type = rawString(source.get("type"));
+        if (!"cluster_agent_matched".equals(type)) {
+            type = "always";
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("type", type);
+        result.put("clusterNodeId", rawString(source.get("clusterNodeId")));
+        result.put("agentId", rawString(source.get("agentId")));
+        result.put("variableName", rawString(source.get("variableName")));
+        return result;
     }
 
     private static void normalizeAgentConfig(Map<String, Object> config, String defaultUserPrompt) {

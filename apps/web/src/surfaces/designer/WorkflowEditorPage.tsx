@@ -195,6 +195,34 @@ type WorkflowCapabilityState = {
 };
 
 type DocumentDeliveryStyleDraft = DocumentDeliveryStyleValues;
+type DeliveryConfigMode = "single" | "multiple";
+type DeliveryExecutionPolicy = "all" | "conditional";
+type DeliveryTriggerType = "always" | "cluster_agent_matched";
+
+type DeliveryTriggerRuleDraft = {
+  type: DeliveryTriggerType;
+  clusterNodeId: string;
+  agentId: string;
+  variableName: string;
+};
+
+type DeliveryItemDraft = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  triggerRule: DeliveryTriggerRuleDraft;
+  config: Record<string, unknown>;
+};
+
+type ClusterAgentTriggerOption = {
+  value: string;
+  label: string;
+  clusterNodeId: string;
+  clusterName: string;
+  agentId: string;
+  agentName: string;
+  variableName: string;
+};
 
 type WorkflowIcon = typeof Zap;
 
@@ -842,6 +870,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
           {selectedNode && designerCatalog ? (
             <NodeConfigPanel
               node={selectedNode}
+              workflowNodes={visibleNodes}
               availableVariables={availableTemplateVariables}
               workflowVariables={workflowVariables}
               capabilities={capabilityOptions}
@@ -1091,6 +1120,7 @@ function AddBrickModal({
 }
 function NodeConfigPanel({
   node,
+  workflowNodes,
   availableVariables,
   workflowVariables,
   capabilities,
@@ -1103,6 +1133,7 @@ function NodeConfigPanel({
   onSyncAgentConfig,
 }: {
   node: WorkflowEditorNode;
+  workflowNodes: WorkflowEditorNode[];
   availableVariables: WorkflowVariable[];
   workflowVariables: WorkflowVariable[];
   capabilities: WorkflowCapabilityOption[];
@@ -1154,7 +1185,7 @@ function NodeConfigPanel({
           ) : null}
 
           {brickType === "delivery" ? (
-            <DeliveryBrickConfig node={node} workflowVariables={availableVariables} capabilityState={capabilityState} onUpdateConfig={onUpdateConfig} />
+            <DeliveryBrickConfig node={node} workflowNodes={workflowNodes} workflowVariables={availableVariables} capabilityState={capabilityState} onUpdateConfig={onUpdateConfig} />
           ) : null}
         </div>
       </div>
@@ -2150,23 +2181,30 @@ const STALE_WORD_DELIVERY_FIELDS = {
   fileNameTemplate: "",
 } as const;
 
+const DELIVERY_TRIGGER_OPTIONS = [
+  { value: "always", label: "始终触发" },
+  { value: "cluster_agent_matched", label: "命中智能体集群子智能体" },
+];
+
 function DeliveryBrickConfig({
   node,
+  workflowNodes,
   workflowVariables,
   capabilityState,
   onUpdateConfig,
 }: {
   node: WorkflowEditorNode;
+  workflowNodes: WorkflowEditorNode[];
   workflowVariables: WorkflowVariable[];
   capabilityState: WorkflowCapabilityState;
   onUpdateConfig: (nextConfig: Record<string, unknown>) => void;
 }) {
-  const token = useAuthStore((s) => s.token);
-  const user = useAuthStore((s) => s.user);
-  const { message: messageApi } = App.useApp();
+  const themeMode = useAuthStore((state) => state.themeMode);
   const config = node.data.rawConfig ?? {};
   const deliveryMode = readString(config.deliveryMode, "direct");
-  const isDirectDelivery = deliveryMode === "direct";
+  const isDirectDelivery = deliveryMode === "direct" || readString(config.deliveryType, "") === "direct";
+  const deliveryConfigMode = readDeliveryConfigMode(config.deliveryConfigMode);
+  const deliveryExecutionPolicy = readDeliveryExecutionPolicy(config.deliveryExecutionPolicy);
   const deliveryAssets = filterCapabilities(capabilityState.capabilities, "delivery");
   const wordDeliveryAssets = deliveryAssets.filter((option) => isWordDocumentDeliveryCapability(option));
   const defaultWordDeliveryCapability = wordDeliveryAssets[0];
@@ -2175,12 +2213,6 @@ function DeliveryBrickConfig({
   const effectiveSelectedCapabilityId = selectedCapabilityId || defaultWordDeliveryCapability?.id || "";
   const selectedDeliveryCapability = deliveryAssets.find((option) => option.id === selectedCapabilityId)
     ?? deliveryAssets.find((option) => option.id === effectiveSelectedCapabilityId);
-  const isWordDelivery = !isDirectDelivery && (
-    isWordDocumentDeliveryCapability(selectedDeliveryCapability)
-    || readString(config.deliveryType, "") === "word_document"
-    || readString(config.documentKind, "") === "word"
-  );
-  const documentStyle = readDocumentDeliveryStyle(config.documentStyle, selectedDeliveryCapability?.config);
   const defaultMarkdownVariable = workflowVariables.find((variable) => variable.deliverable)?.name ?? workflowVariables[workflowVariables.length - 1]?.name ?? "";
   const defaultDirectTemplate = defaultMarkdownVariable
     ? `# 交付结果\n\n{{${defaultMarkdownVariable}}}`
@@ -2188,31 +2220,16 @@ function DeliveryBrickConfig({
   const defaultMarkdownTemplate = defaultMarkdownVariable
     ? `# 交付文档\n\n{{${defaultMarkdownVariable}}}`
     : "# 交付文档\n\n请在这里编写最终 Markdown 交付正文。";
-  const rawFileNameTemplate = readString(config.fileNameTemplate, "交付文档-{{runNumber}}.docx");
-  const fileNameTemplate = normalizeWordFileNameTemplate(rawFileNameTemplate);
-  const fileNameVariableItems = WORD_FILE_NAME_VARIABLES;
-
-  useEffect(() => {
-    if (rawFileNameTemplate !== fileNameTemplate) {
-      onUpdateConfig({ fileNameTemplate });
-    }
-  }, [rawFileNameTemplate, fileNameTemplate]);
-
-  useEffect(() => {
-    if (!isWordDelivery) {
-      return;
-    }
-    const hasStaleDirectFields = readString(config.deliveryContent, "")
-      || readString(config.deliveryTarget, "")
-      || readString(config.body, "");
-    if (!hasStaleDirectFields) {
-      return;
-    }
-    onUpdateConfig(STALE_DIRECT_DELIVERY_FIELDS);
-  }, [isWordDelivery, config.deliveryContent, config.deliveryTarget, config.body]);
+  const deliveryItems = readDeliveryItems(config.deliveryItems, deliveryMode);
+  const clusterAgentTriggerOptions = buildClusterAgentTriggerOptions(workflowNodes);
+  const [editingTarget, setEditingTarget] = useState<"single" | string | null>(null);
+  const drawerRootClassName = getThemedDrawerRootClassName(themeMode, "workflow-agent-drawer");
 
   useEffect(() => {
     if (isDirectDelivery) {
+      return;
+    }
+    if (deliveryConfigMode !== "single") {
       return;
     }
     if (!rawSelectedCapabilityId && defaultWordDeliveryCapability) {
@@ -2227,27 +2244,62 @@ function DeliveryBrickConfig({
         documentStyle: readDocumentDeliveryStyle(config.documentStyle, defaultWordDeliveryCapability.config),
       });
     }
-  }, [isDirectDelivery, rawSelectedCapabilityId, defaultWordDeliveryCapability?.id]);
+  }, [isDirectDelivery, deliveryConfigMode, rawSelectedCapabilityId, defaultWordDeliveryCapability?.id]);
+
+  function buildDirectDeliveryConfig(sourceConfig: Record<string, unknown> = config) {
+    return {
+      deliveryMode: "direct",
+      deliveryType: "direct",
+      deliveryCapabilityId: "none",
+      documentKind: "",
+      ...STALE_WORD_DELIVERY_FIELDS,
+      deliveryContent: readString(sourceConfig.deliveryContent, readString(sourceConfig.deliveryTarget, readString(sourceConfig.body, defaultDirectTemplate))),
+    };
+  }
+
+  function buildDeliveryItemConfig(sourceConfig: Record<string, unknown> = config) {
+    const sourceDeliveryMode = readString(sourceConfig.deliveryMode, deliveryMode);
+    if (sourceDeliveryMode === "direct" || readString(sourceConfig.deliveryType, "") === "direct") {
+      return buildDirectDeliveryConfig(sourceConfig);
+    }
+    const capabilityId = readString(sourceConfig.deliveryCapabilityId, "");
+    const capability = deliveryAssets.find((option) => option.id === capabilityId) ?? selectedDeliveryCapability ?? defaultWordDeliveryCapability ?? deliveryAssets[0];
+    return buildCapabilityConfig(capability, sourceConfig);
+  }
 
   function handleDeliveryModeChange(value: string) {
     if (value === "direct") {
+      const nextItems = deliveryConfigMode === "multiple"
+        ? (deliveryItems.length > 0
+          ? deliveryItems.map((item) => ({ ...item, config: buildDirectDeliveryConfig(item.config) }))
+          : [createDeliveryItemDraft(1, buildDirectDeliveryConfig({}), "交付项 1")])
+        : [];
       onUpdateConfig({
         deliveryMode: "direct",
         deliveryType: "direct",
         deliveryCapabilityId: "none",
         documentKind: "",
+        deliveryConfigMode,
+        deliveryItems: nextItems,
         ...STALE_WORD_DELIVERY_FIELDS,
         deliveryContent: readString(config.deliveryContent, defaultDirectTemplate),
       });
       return;
     }
     const capability = defaultWordDeliveryCapability ?? deliveryAssets[0];
+    const nextItems = deliveryConfigMode === "multiple"
+      ? (deliveryItems.length > 0
+        ? deliveryItems.map((item) => ({ ...item, config: buildCapabilityConfig(capability, item.config) }))
+        : [createDeliveryItemDraft(1, buildCapabilityConfig(capability, {}), "交付项 1")])
+      : [];
     if (capability && isWordDocumentDeliveryCapability(capability)) {
       onUpdateConfig({
         deliveryMode: "capability",
         deliveryCapabilityId: capability.id,
         deliveryType: "word_document",
         documentKind: "word",
+        deliveryConfigMode,
+        deliveryItems: nextItems,
         ...STALE_DIRECT_DELIVERY_FIELDS,
         fileNameTemplate: readString(config.fileNameTemplate, "交付文档-{{runNumber}}.docx"),
         markdownContent: readString(config.markdownContent, defaultMarkdownTemplate),
@@ -2260,35 +2312,309 @@ function DeliveryBrickConfig({
       deliveryCapabilityId: capability?.id ?? "",
       deliveryType: capability ? readString(capability.config?.deliveryChannel, readString(capability.config?.sourceType, "")) : "",
       documentKind: "",
+      deliveryConfigMode,
+      deliveryItems: nextItems,
     });
   }
 
-  function handleDeliveryCapabilityChange(value: string) {
-    const capability = deliveryAssets.find((option) => option.id === value);
-    if (isWordDocumentDeliveryCapability(capability)) {
-      onUpdateConfig({
+  function buildCapabilityConfig(capability?: WorkflowCapabilityOption, sourceConfig: Record<string, unknown> = config) {
+    if (capability && isWordDocumentDeliveryCapability(capability)) {
+      return {
         deliveryMode: "capability",
-        deliveryCapabilityId: value,
+        deliveryCapabilityId: capability.id,
         deliveryType: "word_document",
         documentKind: "word",
         ...STALE_DIRECT_DELIVERY_FIELDS,
-        fileNameTemplate: readString(config.fileNameTemplate, "交付文档-{{runNumber}}.docx"),
-        markdownContent: readString(config.markdownContent, defaultMarkdownTemplate),
-        documentStyle: readDocumentDeliveryStyle(config.documentStyle, capability?.config),
+        fileNameTemplate: normalizeWordFileNameTemplate(readString(sourceConfig.fileNameTemplate, "交付文档-{{runNumber}}.docx")),
+        markdownContent: readString(sourceConfig.markdownContent, defaultMarkdownTemplate),
+        documentStyle: readDocumentDeliveryStyle(sourceConfig.documentStyle, capability.config),
+      };
+    }
+    return {
+      deliveryMode: "capability",
+      deliveryCapabilityId: capability?.id ?? "",
+      deliveryType: capability ? readString(capability.config?.deliveryChannel, readString(capability.config?.sourceType, "")) : "",
+      documentKind: "",
+    };
+  }
+
+  function handleSingleCapabilityChange(value: string) {
+    const capability = deliveryAssets.find((option) => option.id === value);
+    onUpdateConfig(buildCapabilityConfig(capability));
+  }
+
+  function handleDeliveryConfigModeChange(value: string) {
+    const nextMode = value === "multiple" ? "multiple" : "single";
+    if (nextMode === "single") {
+      const firstItem = deliveryItems[0];
+      onUpdateConfig({
+        deliveryMode,
+        deliveryConfigMode: "single",
+        deliveryItems: [],
+        ...(firstItem?.config ?? {}),
       });
       return;
     }
-
+    const items = deliveryItems.length > 0
+      ? deliveryItems
+      : [createDeliveryItemDraft(1, buildDeliveryItemConfig(config), "交付项 1")];
     onUpdateConfig({
-      deliveryMode: "capability",
-      deliveryCapabilityId: value,
-      deliveryType: readString(capability?.config?.deliveryChannel, readString(capability?.config?.sourceType, "")),
-      documentKind: "",
+      deliveryMode,
+      deliveryConfigMode: "multiple",
+      deliveryExecutionPolicy: "all",
+      deliveryItems: items,
     });
   }
 
-  function updateDocumentStyle<K extends keyof DocumentDeliveryStyleDraft>(key: K, value: DocumentDeliveryStyleDraft[K]) {
+  function updateDeliveryItem(itemId: string, patch: Partial<DeliveryItemDraft>) {
+    const nextItems = deliveryItems.map((item) => item.id === itemId ? { ...item, ...patch } : item);
+    onUpdateConfig({ deliveryItems: nextItems });
+  }
+
+  function updateDeliveryItemConfig(itemId: string, patch: Record<string, unknown>) {
+    const nextItems = deliveryItems.map((item) => item.id === itemId ? { ...item, config: { ...item.config, ...patch } } : item);
+    onUpdateConfig({ deliveryItems: nextItems });
+  }
+
+  function updateDeliveryItemMode(itemId: string, value: string) {
+    const nextItems = deliveryItems.map((item) => {
+      if (item.id !== itemId) {
+        return item;
+      }
+      if (value === "direct") {
+        return { ...item, config: buildDirectDeliveryConfig(item.config) };
+      }
+      const capabilityId = readString(item.config.deliveryCapabilityId, "");
+      const capability = deliveryAssets.find((option) => option.id === capabilityId) ?? defaultWordDeliveryCapability ?? deliveryAssets[0];
+      return { ...item, config: buildCapabilityConfig(capability, item.config) };
+    });
+    onUpdateConfig({ deliveryItems: nextItems });
+  }
+
+  function addDeliveryItem() {
+    const nextItem = createDeliveryItemDraft(deliveryItems.length + 1, buildDirectDeliveryConfig({}), `交付项 ${deliveryItems.length + 1}`);
     onUpdateConfig({
+      deliveryConfigMode: "multiple",
+      deliveryExecutionPolicy: deliveryExecutionPolicy,
+      deliveryItems: [...deliveryItems, nextItem],
+    });
+    setEditingTarget(nextItem.id);
+  }
+
+  function removeDeliveryItem(itemId: string) {
+    const nextItems = deliveryItems.filter((item) => item.id !== itemId);
+    onUpdateConfig({ deliveryItems: nextItems });
+    if (editingTarget === itemId) {
+      setEditingTarget(null);
+    }
+  }
+
+  const editingItem = deliveryItems.find((item) => item.id === editingTarget) ?? null;
+
+  function renderDeliveryItemSummary(itemConfig: Record<string, unknown>) {
+    if (readString(itemConfig.deliveryMode, deliveryMode) === "direct" || readString(itemConfig.deliveryType, "") === "direct") {
+      return "直接交付 · 节点内模板";
+    }
+    const capabilityId = readString(itemConfig.deliveryCapabilityId, "");
+    const capability = deliveryAssets.find((option) => option.id === capabilityId);
+    const typeText = isWordDocumentDeliveryCapability(capability) || readString(itemConfig.deliveryType, "") === "word_document"
+      ? "Word 文档交付"
+      : capability ? "能力交付" : "未选择能力";
+    return `${typeText}${capability ? ` · ${capability.name} · ${capability.version}` : ""}`;
+  }
+
+  return (
+    <PanelGroup title="交付配置" icon={PackageCheck} className="xl:col-span-2">
+      <CapabilityStateBanner state={capabilityState} />
+      <SelectLikeField
+        label="交付项数量"
+        icon={ListChecks}
+        value={deliveryConfigMode}
+        options={[
+          { value: "single", label: "单个交付项" },
+          { value: "multiple", label: "多个交付项" },
+        ]}
+        onChange={handleDeliveryConfigModeChange}
+      />
+      {deliveryConfigMode === "single" ? (
+        <SelectLikeField
+          label="交付方式"
+          icon={PackageCheck}
+          value={deliveryMode}
+          options={[
+            { value: "direct", label: "直接交付（节点内配置，无需分配能力）" },
+            { value: "capability", label: "能力交付（Word / 邮件等系统能力）" },
+          ]}
+          onChange={handleDeliveryModeChange}
+        />
+      ) : null}
+
+      {deliveryConfigMode === "single" ? (
+        <div className="mt-4 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-secondary)] p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <h4 className="text-sm font-semibold text-[var(--color-text-primary)]">单个交付项</h4>
+              <p className="mt-1 text-xs text-[var(--color-text-secondary)]">{renderDeliveryItemSummary(config)}</p>
+            </div>
+            <button type="button" className="agent-button h-9 px-3 text-xs" onClick={() => setEditingTarget("single")}>
+              <Settings2 size={14} />
+              配置交付项
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-4 space-y-4">
+          <SelectLikeField
+            label="执行策略"
+            icon={ListChecks}
+            value={deliveryExecutionPolicy}
+            options={[
+              { value: "all", label: "全部交付项都执行" },
+              { value: "conditional", label: "按触发规则执行" },
+            ]}
+            onChange={(value) => onUpdateConfig({ deliveryExecutionPolicy: value === "conditional" ? "conditional" : "all" })}
+          />
+          <div className="space-y-3">
+            {deliveryItems.map((item, index) => (
+              <div key={item.id} className="rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-secondary)] p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-[var(--color-text-tertiary)]">#{index + 1}</span>
+                      <h4 className="text-sm font-semibold text-[var(--color-text-primary)]">{item.name}</h4>
+                      {!item.enabled ? <TinyBadge>停用</TinyBadge> : null}
+                    </div>
+                    <p className="mt-1 text-xs text-[var(--color-text-secondary)]">{renderDeliveryItemSummary(item.config)}</p>
+                    <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">{deliveryExecutionPolicy === "conditional" ? describeDeliveryTrigger(item.triggerRule) : "执行策略：全部执行"}</p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button type="button" className="agent-button h-8 px-3 text-xs" onClick={() => setEditingTarget(item.id)}>
+                      <Settings2 size={14} />
+                      配置
+                    </button>
+                    <button type="button" className="agent-icon-button h-8 w-8" title="删除交付项" onClick={() => removeDeliveryItem(item.id)}>
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+            <button type="button" className="agent-button h-9 px-3 text-xs" onClick={addDeliveryItem}>
+              <Plus size={14} />
+              添加交付项
+            </button>
+          </div>
+        </div>
+      )}
+
+      <DeliveryCapabilityConfigDrawer
+        open={editingTarget === "single"}
+        rootClassName={drawerRootClassName}
+        title="配置单个交付项"
+        config={config}
+        workflowVariables={workflowVariables}
+        deliveryAssets={deliveryAssets}
+        clusterAgentTriggerOptions={clusterAgentTriggerOptions}
+        defaultDirectTemplate={defaultDirectTemplate}
+        defaultMarkdownTemplate={defaultMarkdownTemplate}
+        onCapabilityChange={handleSingleCapabilityChange}
+        onConfigChange={onUpdateConfig}
+        onClose={() => setEditingTarget(null)}
+      />
+      {editingItem ? (
+        <DeliveryCapabilityConfigDrawer
+          open
+          rootClassName={drawerRootClassName}
+          title="配置交付项"
+          itemName={editingItem.name}
+          enabled={editingItem.enabled}
+          triggerRule={editingItem.triggerRule}
+          showTrigger={deliveryExecutionPolicy === "conditional"}
+          config={editingItem.config}
+          workflowVariables={workflowVariables}
+          deliveryAssets={deliveryAssets}
+          clusterAgentTriggerOptions={clusterAgentTriggerOptions}
+          defaultDirectTemplate={defaultDirectTemplate}
+          defaultMarkdownTemplate={defaultMarkdownTemplate}
+          showDeliveryModeSelector
+          onDeliveryModeChange={(value) => updateDeliveryItemMode(editingItem.id, value)}
+          onItemNameChange={(name) => updateDeliveryItem(editingItem.id, { name })}
+          onEnabledChange={(enabled) => updateDeliveryItem(editingItem.id, { enabled })}
+          onTriggerRuleChange={(triggerRule) => updateDeliveryItem(editingItem.id, { triggerRule })}
+          onCapabilityChange={(capabilityId) => {
+            const capability = deliveryAssets.find((option) => option.id === capabilityId);
+            updateDeliveryItemConfig(editingItem.id, buildCapabilityConfig(capability, editingItem.config));
+          }}
+          onConfigChange={(patch) => updateDeliveryItemConfig(editingItem.id, patch)}
+          onClose={() => setEditingTarget(null)}
+        />
+      ) : null}
+    </PanelGroup>
+  );
+}
+
+function DeliveryCapabilityConfigDrawer({
+  open,
+  rootClassName,
+  title,
+  itemName,
+  enabled,
+  triggerRule,
+  showTrigger = false,
+  config,
+  workflowVariables,
+  deliveryAssets,
+  clusterAgentTriggerOptions,
+  defaultDirectTemplate,
+  defaultMarkdownTemplate,
+  showDeliveryModeSelector = false,
+  onDeliveryModeChange,
+  onItemNameChange,
+  onEnabledChange,
+  onTriggerRuleChange,
+  onCapabilityChange,
+  onConfigChange,
+  onClose,
+}: {
+  open: boolean;
+  rootClassName: string;
+  title: string;
+  itemName?: string;
+  enabled?: boolean;
+  triggerRule?: DeliveryTriggerRuleDraft;
+  showTrigger?: boolean;
+  config: Record<string, unknown>;
+  workflowVariables: WorkflowVariable[];
+  deliveryAssets: WorkflowCapabilityOption[];
+  clusterAgentTriggerOptions: ClusterAgentTriggerOption[];
+  defaultDirectTemplate: string;
+  defaultMarkdownTemplate: string;
+  showDeliveryModeSelector?: boolean;
+  onDeliveryModeChange?: (value: string) => void;
+  onItemNameChange?: (name: string) => void;
+  onEnabledChange?: (enabled: boolean) => void;
+  onTriggerRuleChange?: (rule: DeliveryTriggerRuleDraft) => void;
+  onCapabilityChange?: (capabilityId: string) => void;
+  onConfigChange: (patch: Record<string, unknown>) => void;
+  onClose: () => void;
+}) {
+  const deliveryMode = readString(config.deliveryMode, "direct");
+  const isDirectDelivery = deliveryMode === "direct" || readString(config.deliveryType, "") === "direct";
+  const selectedCapabilityId = readString(config.deliveryCapabilityId, "");
+  const selectedCapability = deliveryAssets.find((option) => option.id === selectedCapabilityId);
+  const isWordDelivery = isWordDocumentDeliveryCapability(selectedCapability)
+    || readString(config.deliveryType, "") === "word_document"
+    || readString(config.documentKind, "") === "word";
+  const documentStyle = readDocumentDeliveryStyle(config.documentStyle, selectedCapability?.config);
+  const rawFileNameTemplate = readString(config.fileNameTemplate, "交付文档-{{runNumber}}.docx");
+  const fileNameTemplate = normalizeWordFileNameTemplate(rawFileNameTemplate);
+  const effectiveTriggerRule = triggerRule ?? defaultDeliveryTriggerRule();
+  const selectedClusterAgentValue = effectiveTriggerRule.clusterNodeId && effectiveTriggerRule.agentId
+    ? `${effectiveTriggerRule.clusterNodeId}::${effectiveTriggerRule.agentId}`
+    : "";
+
+  function updateDocumentStyle<K extends keyof DocumentDeliveryStyleDraft>(key: K, value: DocumentDeliveryStyleDraft[K]) {
+    onConfigChange({
       documentStyle: {
         ...documentStyle,
         [key]: value,
@@ -2297,7 +2623,7 @@ function DeliveryBrickConfig({
   }
 
   function updateDocumentStyles(updates: Partial<DocumentDeliveryStyleDraft>) {
-    onUpdateConfig({
+    onConfigChange({
       documentStyle: {
         ...documentStyle,
         ...updates,
@@ -2305,94 +2631,172 @@ function DeliveryBrickConfig({
     });
   }
 
+  function updateTriggerRule(patch: Partial<DeliveryTriggerRuleDraft>) {
+    onTriggerRuleChange?.({ ...effectiveTriggerRule, ...patch });
+  }
+
+  useEffect(() => {
+    if (isWordDelivery && rawFileNameTemplate !== fileNameTemplate) {
+      onConfigChange({ fileNameTemplate });
+    }
+  }, [isWordDelivery, rawFileNameTemplate, fileNameTemplate]);
+
   return (
-    <PanelGroup title="交付配置" icon={PackageCheck} className="xl:col-span-2">
-      <CapabilityStateBanner state={capabilityState} />
-      <SelectLikeField
-        label="交付方式"
-        icon={PackageCheck}
-        value={deliveryMode}
-        options={[
-          { value: "direct", label: "直接交付（节点内配置，无需分配能力）" },
-          { value: "capability", label: "能力交付（Word / 邮件等系统能力）" },
-        ]}
-        onChange={handleDeliveryModeChange}
-      />
-
-      {isDirectDelivery ? (
-        <div className="mt-4 space-y-4">
-          <div className="rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-4">
-            <h4 className="text-sm font-semibold text-[var(--color-text-primary)]">直接交付</h4>
-            <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
-              运行时将模板与上游变量拼接为最终交付内容，用户在交付节点核对后可复制，无需系统管理员分配交付能力。
-            </p>
-          </div>
-          <PromptEditor
-            label="交付内容模板"
-            value={readString(config.deliveryContent, defaultDirectTemplate)}
-            availableVariables={workflowVariables}
-            onChange={(value) => onUpdateConfig({ deliveryContent: value })}
-            placeholder="支持 Markdown，可用 {{输出内容标识}} 引用之前步骤内容"
+    <Drawer
+      open={open}
+      title={title}
+      width={760}
+      onClose={onClose}
+      rootClassName={`${rootClassName} workflow-delivery-drawer`}
+      styles={{
+        body: {
+          padding: 0,
+          overflow: "hidden",
+        },
+      }}
+      destroyOnClose
+    >
+      <div className="h-full max-h-[calc(100vh-56px)] overflow-y-auto px-6 py-5">
+      <div className="space-y-5 pb-4">
+        {onItemNameChange ? (
+          <TextInputField
+            label="交付项名称"
+            icon={Tag}
+            value={itemName ?? ""}
+            placeholder="例如：合同审查报告"
+            onChange={onItemNameChange}
           />
-        </div>
-      ) : (
-        <>
-          <CapabilitySelectField
-            label="交付能力"
+        ) : null}
+        {typeof enabled === "boolean" && onEnabledChange ? (
+          <label className="flex items-center justify-between rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-secondary)] px-4 py-3 text-sm">
+            <span className="font-semibold text-[var(--color-text-primary)]">启用这个交付项</span>
+            <input type="checkbox" checked={enabled} onChange={(event) => onEnabledChange(event.target.checked)} />
+          </label>
+        ) : null}
+        {showDeliveryModeSelector ? (
+          <SelectLikeField
+            label="交付方式"
             icon={PackageCheck}
-            value={effectiveSelectedCapabilityId}
-            options={deliveryAssets}
-            placeholder="请选择交付能力"
-            onChange={handleDeliveryCapabilityChange}
+            value={isDirectDelivery ? "direct" : "capability"}
+            options={[
+              { value: "direct", label: "直接交付（节点内模板）" },
+              { value: "capability", label: "能力交付（Word / 邮件等系统能力）" },
+            ]}
+            onChange={(value) => onDeliveryModeChange?.(value)}
           />
-          {!effectiveSelectedCapabilityId ? (
-            <p className="workflow-capability-state workflow-capability-state--warning">
-              当前主体还没有可用的交付能力。请先由系统管理员开放对应能力，再由租户管理员分配给当前用户、部门或角色。
-            </p>
-          ) : null}
-
-          {isWordDelivery ? (
-        <div className="mt-4 space-y-4">
-          <div className="rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-4">
-            <div className="mb-3">
-              <h4 className="text-sm font-semibold text-[var(--color-text-primary)]">Word 文档交付</h4>
-              <p className="mt-1 text-xs text-[var(--color-text-secondary)]">交付正文模板会作为最终 Markdown，运行时将模板和变量拼接后转换为 docx 文件。</p>
-            </div>
-            <FileNameVariableBar
-              items={fileNameVariableItems}
-              onPick={(variable) => onUpdateConfig({ fileNameTemplate: appendFileNameToken(fileNameTemplate, `{{${variable}}}`) })}
+        ) : null}
+        {showTrigger ? (
+          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-hover)] p-5 space-y-4">
+            <SelectLikeField
+              label="触发规则"
+              icon={ListChecks}
+              value={effectiveTriggerRule.type}
+              options={DELIVERY_TRIGGER_OPTIONS}
+              onChange={(value) => updateTriggerRule({ type: readDeliveryTriggerType(value) })}
             />
-            <TextInputField
-              label="文件名模板"
-              icon={FileText}
-              value={fileNameTemplate}
-              placeholder="交付文档-{{runNumber}}-{{dateCompact}}.docx"
-              onChange={(value) => onUpdateConfig({ fileNameTemplate: value })}
+            {effectiveTriggerRule.type === "cluster_agent_matched" ? (
+              <SelectLikeField
+                label="智能体集群子智能体"
+                icon={Bot}
+                value={selectedClusterAgentValue}
+                options={clusterAgentTriggerOptions.map((option) => ({
+                  value: option.value,
+                  label: option.label,
+                }))}
+                onChange={(value) => {
+                  const option = clusterAgentTriggerOptions.find((item) => item.value === value);
+                  if (!option) {
+                    updateTriggerRule({ clusterNodeId: "", agentId: "", variableName: "" });
+                    return;
+                  }
+                  updateTriggerRule({
+                    clusterNodeId: option.clusterNodeId,
+                    agentId: option.agentId,
+                    variableName: option.variableName,
+                  });
+                }}
+              />
+            ) : null}
+            {effectiveTriggerRule.type === "cluster_agent_matched" && clusterAgentTriggerOptions.length === 0 ? (
+              <p className="workflow-capability-state workflow-capability-state--warning">
+                当前流程还没有可用于触发的智能体集群子智能体。请先在上游添加智能体集群，并配置子智能体输出。
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+        {isDirectDelivery ? (
+          <div className="space-y-4">
+            <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-hover)] p-5">
+              <h4 className="text-sm font-semibold text-[var(--color-text-primary)]">直接交付</h4>
+              <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
+                运行时将模板与上游变量拼接为最终交付内容，用户在交付节点核对后可复制，无需系统管理员分配交付能力。
+              </p>
+            </div>
+            <PromptEditor
+              label="交付内容模板"
+              value={readString(config.deliveryContent, defaultDirectTemplate)}
+              availableVariables={workflowVariables}
+              onChange={(value) => onConfigChange({ deliveryContent: value })}
+              placeholder="支持 Markdown，可用 {{输出内容标识}} 引用之前步骤内容"
             />
           </div>
-
-          <DocumentDeliveryStyleSections
-            style={documentStyle}
-            onFieldChange={updateDocumentStyle}
-            onFieldsChange={updateDocumentStyles}
-          />
-
-          <PromptEditor
-            label="交付正文模板"
-            value={readString(config.markdownContent, defaultMarkdownTemplate)}
-            availableVariables={workflowVariables}
-            onChange={(value) => onUpdateConfig({ markdownContent: value })}
-            placeholder="最终转换为 Word 的 Markdown，可用 {{输出内容标识}} 引用之前步骤内容"
-          />
-        </div>
-      ) : (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
-          当前交付节点按 Word 文档交付设计，请选择系统内置 Word 文档交付能力。
-        </div>
-      )}
-        </>
-      )}
-    </PanelGroup>
+        ) : (
+          <div className="space-y-4">
+            <CapabilitySelectField
+              label="交付能力"
+              icon={PackageCheck}
+              value={selectedCapabilityId}
+              options={deliveryAssets}
+              placeholder="请选择交付能力"
+              onChange={(value) => onCapabilityChange?.(value)}
+            />
+            {!selectedCapabilityId ? (
+              <p className="workflow-capability-state workflow-capability-state--warning">
+                当前主体还没有可用的交付能力。请先由系统管理员开放对应能力，再由租户管理员分配给当前用户、部门或角色。
+              </p>
+            ) : null}
+            {isWordDelivery ? (
+              <>
+                <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-hover)] p-5">
+                  <div className="mb-3">
+                    <h4 className="text-sm font-semibold text-[var(--color-text-primary)]">Word 文档交付</h4>
+                    <p className="mt-1 text-xs text-[var(--color-text-secondary)]">交付正文模板会作为最终 Markdown，运行时将模板和变量拼接后转换为 docx 文件。</p>
+                  </div>
+                  <FileNameVariableBar
+                    items={WORD_FILE_NAME_VARIABLES}
+                    onPick={(variable) => onConfigChange({ fileNameTemplate: appendFileNameToken(fileNameTemplate, `{{${variable}}}`) })}
+                  />
+                  <TextInputField
+                    label="文件名模板"
+                    icon={FileText}
+                    value={fileNameTemplate}
+                    placeholder="交付文档-{{runNumber}}-{{dateCompact}}.docx"
+                    onChange={(value) => onConfigChange({ fileNameTemplate: value })}
+                  />
+                </div>
+                <DocumentDeliveryStyleSections
+                  style={documentStyle}
+                  onFieldChange={updateDocumentStyle}
+                  onFieldsChange={updateDocumentStyles}
+                />
+                <PromptEditor
+                  label="交付正文模板"
+                  value={readString(config.markdownContent, defaultMarkdownTemplate)}
+                  availableVariables={workflowVariables}
+                  onChange={(value) => onConfigChange({ markdownContent: value })}
+                  placeholder="最终转换为 Word 的 Markdown，可用 {{输出内容标识}} 引用之前步骤内容"
+                />
+              </>
+            ) : (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
+                当前交付节点按 Word 文档交付设计，请选择系统内置 Word 文档交付能力。
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      </div>
+    </Drawer>
   );
 }
 
@@ -3767,6 +4171,114 @@ function isWordDocumentDeliveryCapability(option?: WorkflowCapabilityOption | nu
     || kind === "word"
     || code.includes("word")
     || name.includes("word");
+}
+
+function readDeliveryConfigMode(value: unknown): DeliveryConfigMode {
+  return readString(value, "single") === "multiple" ? "multiple" : "single";
+}
+
+function readDeliveryExecutionPolicy(value: unknown): DeliveryExecutionPolicy {
+  return readString(value, "all") === "conditional" ? "conditional" : "all";
+}
+
+function readDeliveryTriggerType(value: unknown): DeliveryTriggerType {
+  const text = readString(value, "always");
+  if (text === "cluster_agent_matched") {
+    return text;
+  }
+  return "always";
+}
+
+function defaultDeliveryTriggerRule(): DeliveryTriggerRuleDraft {
+  return {
+    type: "always",
+    clusterNodeId: "",
+    agentId: "",
+    variableName: "",
+  };
+}
+
+function readDeliveryTriggerRule(value: unknown): DeliveryTriggerRuleDraft {
+  const record = typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  return {
+    type: readDeliveryTriggerType(record.type),
+    clusterNodeId: readString(record.clusterNodeId, ""),
+    agentId: readString(record.agentId, ""),
+    variableName: readString(record.variableName, ""),
+  };
+}
+
+function readDeliveryItems(value: unknown, parentDeliveryMode = "direct"): DeliveryItemDraft[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null)
+    .map((item, index) => {
+      const rawConfig = typeof item.config === "object" && item.config !== null && !Array.isArray(item.config)
+        ? { ...(item.config as Record<string, unknown>) }
+        : {};
+      return {
+        id: readString(item.id, `delivery_item_${index + 1}`),
+        name: readString(item.name, `交付项 ${index + 1}`),
+        enabled: readBoolean(item.enabled, true),
+        triggerRule: readDeliveryTriggerRule(item.triggerRule),
+        config: {
+          ...rawConfig,
+          deliveryMode: readString(rawConfig.deliveryMode, parentDeliveryMode),
+        },
+      };
+    });
+}
+
+function createDeliveryItemDraft(index: number, config: Record<string, unknown>, name: string): DeliveryItemDraft {
+  return {
+    id: `delivery_item_${Date.now().toString(36)}_${index}`,
+    name,
+    enabled: true,
+    triggerRule: defaultDeliveryTriggerRule(),
+    config,
+  };
+}
+
+function describeDeliveryTrigger(rule: DeliveryTriggerRuleDraft) {
+  switch (rule.type) {
+    case "cluster_agent_matched":
+      return rule.variableName ? `命中子智能体输出 {{${rule.variableName}}} 时触发` : "命中指定集群子智能体时触发";
+    default:
+      return "始终触发";
+  }
+}
+
+function buildClusterAgentTriggerOptions(nodes: WorkflowEditorNode[]): ClusterAgentTriggerOption[] {
+  return nodes
+    .filter((node) => node.data.nodeType === "parallel_group")
+    .flatMap((node) => {
+      const rawAgents = node.data.rawConfig?.clusterAgents;
+      if (!Array.isArray(rawAgents)) {
+        return [];
+      }
+      return rawAgents
+        .filter(isRecord)
+        .map((agent, index): ClusterAgentTriggerOption | null => {
+          const agentId = readString(agent.id, `agent_${index + 1}`);
+          const agentName = readString(agent.name, `子智能体 ${index + 1}`);
+          const variableName = normalizeVariableName(readString(agent.output, ""));
+          if (!variableName) {
+            return null;
+          }
+          return {
+            value: `${node.id}::${agentId}`,
+            label: `${node.data.label} / ${agentName} · {{${variableName}}}`,
+            clusterNodeId: node.id,
+            clusterName: node.data.label,
+            agentId,
+            agentName,
+            variableName,
+          };
+        })
+        .filter((item): item is ClusterAgentTriggerOption => item !== null);
+    });
 }
 
 function findCapabilityName(options: WorkflowCapabilityOption[], id: string, fallback: string) {

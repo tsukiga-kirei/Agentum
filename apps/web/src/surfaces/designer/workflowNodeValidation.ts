@@ -66,6 +66,10 @@ function readMapList(value: unknown): Array<Record<string, unknown>> {
   return value.filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null);
 }
 
+function readMap(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
 function inferBrickType(node: ValidatableWorkflowNode): VisibleBrickType {
   const configured = readString(node.data.rawConfig?.brickType);
   if (configured === "input" || configured === "agent" || configured === "cluster" || configured === "delivery") {
@@ -111,8 +115,23 @@ type TemplateTextField = {
 };
 
 function isDirectDeliveryConfig(config: Record<string, unknown>): boolean {
-  const deliveryMode = readString(config.deliveryMode, "direct");
-  return deliveryMode === "direct" || readString(config.deliveryType) === "direct";
+  return inferDeliveryMode(config, "direct") === "direct" || readString(config.deliveryType) === "direct";
+}
+
+function inferDeliveryMode(config: Record<string, unknown>, parentDeliveryMode: string): string {
+  const deliveryMode = readString(config.deliveryMode);
+  if (deliveryMode) {
+    return deliveryMode;
+  }
+  const deliveryType = readString(config.deliveryType);
+  const capabilityId = readString(config.deliveryCapabilityId);
+  if (deliveryType === "direct" || capabilityId === "none" || capabilityId === "custom") {
+    return "direct";
+  }
+  if (capabilityId) {
+    return "capability";
+  }
+  return parentDeliveryMode || "direct";
 }
 
 function isWordCapabilityDeliveryConfig(config: Record<string, unknown>): boolean {
@@ -140,6 +159,27 @@ export function collectRuntimeTemplateTextFields(
 
   if (brickType === "delivery") {
     // 交付节点会保留历史模式下的字段；校验时必须按当前生效模式扫描，避免 Word 模式下仍误读 deliveryContent。
+    if (readString(source.deliveryConfigMode, "single") === "multiple") {
+      readMapList(source.deliveryItems).forEach((item, index) => {
+        const itemName = readString(item.name, `交付项 ${index + 1}`);
+        const itemConfig = readMap(item.config);
+        if (isDirectDeliveryConfig(itemConfig)) {
+          push(`deliveryItems.${index}.config.deliveryContent`, `${itemName}交付内容`, itemConfig.deliveryContent);
+          push(`deliveryItems.${index}.config.deliveryTarget`, `${itemName}交付内容`, itemConfig.deliveryTarget);
+          push(`deliveryItems.${index}.config.body`, `${itemName}交付内容`, itemConfig.body);
+          return;
+        }
+        if (isWordCapabilityDeliveryConfig(itemConfig)) {
+          push(`deliveryItems.${index}.config.markdownContent`, `${itemName}正文模板`, itemConfig.markdownContent);
+          push(`deliveryItems.${index}.config.fileNameTemplate`, `${itemName}文件名模板`, itemConfig.fileNameTemplate);
+          return;
+        }
+        push(`deliveryItems.${index}.config.deliveryContent`, `${itemName}交付内容`, itemConfig.deliveryContent);
+        push(`deliveryItems.${index}.config.deliveryTarget`, `${itemName}交付内容`, itemConfig.deliveryTarget);
+        push(`deliveryItems.${index}.config.body`, `${itemName}交付内容`, itemConfig.body);
+      });
+      return fields;
+    }
     if (isDirectDeliveryConfig(source)) {
       push("deliveryContent", "直接交付内容", source.deliveryContent);
       push("deliveryTarget", "直接交付内容", source.deliveryTarget);
@@ -492,7 +532,48 @@ function validateDeliveryNode(
   const deliveryMode = readString(config.deliveryMode, "direct");
   const isDirect = deliveryMode === "direct" || readString(config.deliveryType) === "direct";
 
-  if (isDirect) {
+  if (readString(config.deliveryConfigMode, "single") === "multiple") {
+    const items = readMapList(config.deliveryItems);
+    if (items.length === 0) {
+      issues.push(issue("WORKFLOW_NODE_DELIVERY_ITEMS_REQUIRED", "必须至少配置一个交付项"));
+    }
+    const executionPolicy = readString(config.deliveryExecutionPolicy, "all");
+    items.forEach((item, index) => {
+      const itemName = readString(item.name, `交付项 ${index + 1}`);
+      const itemConfig = readMap(item.config);
+      const itemIsDirect = inferDeliveryMode(itemConfig, deliveryMode) === "direct" || readString(itemConfig.deliveryType) === "direct";
+      if (!itemName) {
+        issues.push(issue("WORKFLOW_NODE_DELIVERY_ITEM_NAME_REQUIRED", `第 ${index + 1} 个交付项必须填写名称`));
+      }
+      if (itemIsDirect) {
+        const deliveryContent = readString(itemConfig.deliveryContent)
+          || readString(itemConfig.deliveryTarget)
+          || readString(itemConfig.body);
+        if (!deliveryContent) {
+          issues.push(issue("WORKFLOW_NODE_DELIVERY_DIRECT_CONTENT_REQUIRED", `${itemName}必须配置直接交付内容模板`));
+        }
+      } else {
+        const capabilityId = readString(itemConfig.deliveryCapabilityId);
+        if (isSentinelId(capabilityId)) {
+          issues.push(issue("WORKFLOW_NODE_DELIVERY_CAPABILITY_REQUIRED", `${itemName}必须选择交付能力`));
+        }
+        if (isWordDeliveryConfig(itemConfig) && !readString(itemConfig.markdownContent)) {
+          issues.push(issue("WORKFLOW_NODE_DELIVERY_MARKDOWN_REQUIRED", `${itemName}必须配置 Word 交付正文模板`));
+        }
+      }
+      if (executionPolicy === "conditional") {
+        const triggerRule = readMap(item.triggerRule);
+        const triggerType = readString(triggerRule.type, "always");
+        if (triggerType === "cluster_agent_matched") {
+          if (!readString(triggerRule.clusterNodeId) || !readString(triggerRule.agentId) || !readString(triggerRule.variableName)) {
+            issues.push(issue("WORKFLOW_NODE_DELIVERY_TRIGGER_AGENT_REQUIRED", `${itemName}的触发规则必须选择智能体集群中的子智能体`));
+          }
+        } else if (triggerType !== "always") {
+          issues.push(issue("WORKFLOW_NODE_DELIVERY_TRIGGER_INVALID", `${itemName}的触发规则只支持始终触发或命中集群子智能体`));
+        }
+      }
+    });
+  } else if (isDirect) {
     const deliveryContent = readString(config.deliveryContent)
       || readString(config.deliveryTarget)
       || readString(config.body);

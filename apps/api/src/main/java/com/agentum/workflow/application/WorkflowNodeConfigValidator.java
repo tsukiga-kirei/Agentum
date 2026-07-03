@@ -107,41 +107,161 @@ public class WorkflowNodeConfigValidator {
                 }
             } else if ("delivery".equals(nodeType)) {
                 String deliveryMode = rawString(config.get("deliveryMode"));
-                if ("direct".equalsIgnoreCase(deliveryMode) || "direct".equalsIgnoreCase(rawString(config.get("deliveryType")))) {
-                    String deliveryContent = rawString(config.get("deliveryContent"));
-                    if (deliveryContent.isBlank()) {
-                        deliveryContent = rawString(config.get("deliveryTarget"));
-                    }
-                    if (deliveryContent.isBlank()) {
-                        deliveryContent = rawString(config.get("body"));
-                    }
-                    if (deliveryContent.isBlank()) {
-                        issues.add(issue(
-                            "WORKFLOW_VALIDATION_DELIVERY_DIRECT_CONTENT_REQUIRED",
-                            "节点[" + node.name() + "]必须配置直接交付内容模板",
-                            node
-                        ));
-                    }
+                if ("multiple".equalsIgnoreCase(rawString(config.get("deliveryConfigMode")))) {
+                    validateMultipleDeliveryConfig(tenantId, operatorUserId, config, node, poolCapabilities, issues);
+                } else if ("direct".equalsIgnoreCase(deliveryMode) || "direct".equalsIgnoreCase(rawString(config.get("deliveryType")))) {
+                    validateDirectDeliveryConfig(config, node, "节点[" + node.name() + "]", issues);
                 } else {
-                    String deliveryId = extractString(config, "deliveryCapabilityId");
-                    if (deliveryId == null) {
-                        issues.add(issue("WORKFLOW_VALIDATION_DELIVERY_CAPABILITY_REQUIRED", "节点[" + node.name() + "]必须选择交付能力", node));
-                    } else {
-                        validateIds(tenantId, operatorUserId, List.of(deliveryId), "delivery", "交付能力", node, poolCapabilities, issues);
-                    }
-                    String deliveryType = rawString(config.get("deliveryType"));
-                    String documentKind = rawString(config.get("documentKind"));
-                    if ("word_document".equals(deliveryType) || "word".equals(documentKind)) {
-                        String markdownContent = rawString(config.get("markdownContent"));
-                        if (markdownContent.isBlank()) {
-                            issues.add(issue("WORKFLOW_VALIDATION_DELIVERY_MARKDOWN_TEMPLATE_REQUIRED", "节点[" + node.name() + "]必须配置 Word 交付正文模板", node));
-                        }
-                    }
+                    validateSingleCapabilityDeliveryConfig(tenantId, operatorUserId, config, node, "节点[" + node.name() + "]", poolCapabilities, issues);
                 }
             }
         }
 
         return issues;
+    }
+
+    private void validateMultipleDeliveryConfig(
+        UUID tenantId,
+        UUID operatorUserId,
+        Map<String, Object> config,
+        WorkflowDraftApi.WorkflowNodeRow node,
+        Map<UUID, SystemCapabilityEntity> poolCapabilities,
+        List<WorkflowDraftApi.WorkflowValidationIssue> issues
+    ) {
+        List<Map<String, Object>> items = extractMapList(config, "deliveryItems");
+        if (items.isEmpty()) {
+            issues.add(issue("WORKFLOW_VALIDATION_DELIVERY_ITEMS_REQUIRED", "节点[" + node.name() + "]至少需要配置一个交付项", node));
+            return;
+        }
+        String executionPolicy = rawString(config.get("deliveryExecutionPolicy"));
+        if (!executionPolicy.isBlank() && !"all".equals(executionPolicy) && !"conditional".equals(executionPolicy)) {
+            issues.add(issue("WORKFLOW_VALIDATION_DELIVERY_POLICY_INVALID", "节点[" + node.name() + "]的多交付执行策略不合法", node));
+        }
+        for (int index = 0; index < items.size(); index++) {
+            Map<String, Object> item = items.get(index);
+            String itemName = rawString(item.get("name"));
+            if (itemName.isBlank()) {
+                issues.add(issue("WORKFLOW_VALIDATION_DELIVERY_ITEM_NAME_REQUIRED", "节点[" + node.name() + "]的第 " + (index + 1) + " 个交付项必须填写名称", node));
+                itemName = "交付项 " + (index + 1);
+            }
+            Map<String, Object> itemConfig = extractNestedConfig(item, "config");
+            validateDeliveryItemConfig(
+                tenantId,
+                operatorUserId,
+                itemConfig,
+                rawString(config.get("deliveryMode")),
+                node,
+                "节点[" + node.name() + "]的交付项「" + itemName + "」",
+                poolCapabilities,
+                issues
+            );
+            if ("conditional".equals(executionPolicy)) {
+                validateDeliveryTrigger(item, node, itemName, issues);
+            }
+        }
+    }
+
+    private void validateDeliveryItemConfig(
+        UUID tenantId,
+        UUID operatorUserId,
+        Map<String, Object> config,
+        String parentDeliveryMode,
+        WorkflowDraftApi.WorkflowNodeRow node,
+        String subject,
+        Map<UUID, SystemCapabilityEntity> poolCapabilities,
+        List<WorkflowDraftApi.WorkflowValidationIssue> issues
+    ) {
+        String deliveryMode = firstNonBlank(rawString(config.get("deliveryMode")), inferDeliveryMode(config, parentDeliveryMode));
+        if ("direct".equalsIgnoreCase(deliveryMode) || "direct".equalsIgnoreCase(rawString(config.get("deliveryType")))) {
+            validateDirectDeliveryConfig(config, node, subject, issues);
+            return;
+        }
+        validateSingleCapabilityDeliveryConfig(tenantId, operatorUserId, config, node, subject, poolCapabilities, issues);
+    }
+
+    private String inferDeliveryMode(Map<String, Object> config, String parentDeliveryMode) {
+        String deliveryType = rawString(config.get("deliveryType"));
+        String capabilityId = rawString(config.get("deliveryCapabilityId"));
+        if ("direct".equalsIgnoreCase(deliveryType) || SENTINEL_VALUES.contains(capabilityId)) {
+            return "direct";
+        }
+        if (!capabilityId.isBlank()) {
+            return "capability";
+        }
+        return firstNonBlank(parentDeliveryMode, "capability");
+    }
+
+    private void validateDirectDeliveryConfig(
+        Map<String, Object> config,
+        WorkflowDraftApi.WorkflowNodeRow node,
+        String subject,
+        List<WorkflowDraftApi.WorkflowValidationIssue> issues
+    ) {
+        String deliveryContent = rawString(config.get("deliveryContent"));
+        if (deliveryContent.isBlank()) {
+            deliveryContent = rawString(config.get("deliveryTarget"));
+        }
+        if (deliveryContent.isBlank()) {
+            deliveryContent = rawString(config.get("body"));
+        }
+        if (deliveryContent.isBlank()) {
+            issues.add(issue(
+                "WORKFLOW_VALIDATION_DELIVERY_DIRECT_CONTENT_REQUIRED",
+                subject + "必须配置直接交付内容模板",
+                node
+            ));
+        }
+    }
+
+    private void validateSingleCapabilityDeliveryConfig(
+        UUID tenantId,
+        UUID operatorUserId,
+        Map<String, Object> config,
+        WorkflowDraftApi.WorkflowNodeRow node,
+        String subject,
+        Map<UUID, SystemCapabilityEntity> poolCapabilities,
+        List<WorkflowDraftApi.WorkflowValidationIssue> issues
+    ) {
+        String deliveryId = extractString(config, "deliveryCapabilityId");
+        if (deliveryId == null) {
+            issues.add(issue("WORKFLOW_VALIDATION_DELIVERY_CAPABILITY_REQUIRED", subject + "必须选择交付能力", node));
+        } else {
+            validateIds(tenantId, operatorUserId, List.of(deliveryId), "delivery", "交付能力", node, poolCapabilities, issues);
+        }
+        String deliveryType = rawString(config.get("deliveryType"));
+        String documentKind = rawString(config.get("documentKind"));
+        if ("word_document".equals(deliveryType) || "word".equals(documentKind)) {
+            String markdownContent = rawString(config.get("markdownContent"));
+            if (markdownContent.isBlank()) {
+                issues.add(issue("WORKFLOW_VALIDATION_DELIVERY_MARKDOWN_TEMPLATE_REQUIRED", subject + "必须配置 Word 交付正文模板", node));
+            }
+        }
+    }
+
+    private void validateDeliveryTrigger(
+        Map<String, Object> item,
+        WorkflowDraftApi.WorkflowNodeRow node,
+        String itemName,
+        List<WorkflowDraftApi.WorkflowValidationIssue> issues
+    ) {
+        Map<String, Object> rule = extractNestedConfig(item, "triggerRule");
+        String type = rawString(rule.get("type"));
+        if (type.isBlank() || "always".equals(type)) {
+            return;
+        }
+        if ("cluster_agent_matched".equals(type)) {
+            if (rawString(rule.get("clusterNodeId")).isBlank()
+                || rawString(rule.get("agentId")).isBlank()
+                || rawString(rule.get("variableName")).isBlank()) {
+                issues.add(issue(
+                    "WORKFLOW_VALIDATION_DELIVERY_TRIGGER_AGENT_REQUIRED",
+                    "交付项「" + itemName + "」的触发规则必须选择智能体集群中的子智能体",
+                    node
+                ));
+            }
+            return;
+        }
+        issues.add(issue("WORKFLOW_VALIDATION_DELIVERY_TRIGGER_INVALID", "交付项「" + itemName + "」的触发规则只支持始终触发或命中集群子智能体", node));
     }
 
     private void validateInputNodeConfig(
@@ -594,6 +714,15 @@ public class WorkflowNodeConfigValidator {
         return result;
     }
 
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> extractNestedConfig(Map<String, Object> config, String key) {
+        Object value = config.get(key);
+        if (value instanceof Map<?, ?> map) {
+            return new java.util.LinkedHashMap<>((Map<String, Object>) map);
+        }
+        return Map.of();
+    }
+
     /**
      * 从 config 中提取单个字符串值，跳过哨兵值。
      */
@@ -604,6 +733,15 @@ public class WorkflowNodeConfigValidator {
         }
         String str = String.valueOf(value).trim();
         return str.isEmpty() || SENTINEL_VALUES.contains(str) ? null : str;
+    }
+
+    private static String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return "";
     }
 
     private static WorkflowDraftApi.WorkflowValidationIssue issue(String code, String message, WorkflowDraftApi.WorkflowNodeRow node) {

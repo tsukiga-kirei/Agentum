@@ -17,6 +17,7 @@ import com.agentum.workflow.domain.WorkflowRunEntity;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -126,6 +127,133 @@ class DeliveryRuntimeServiceTest {
             .isInstanceOf(Map.class)
             .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.MAP)
             .containsEntry("adapter", "word_document");
+    }
+
+    @Test
+    void shouldExecuteOnlyMatchedDeliveryItems() {
+        SystemCapabilityEntity capability = SystemCapabilityEntity.create(
+            "delivery",
+            "Word 文档交付",
+            "word_document_delivery",
+            "v1",
+            "",
+            "medium",
+            "active",
+            Map.of("sourceType", "builtin", "deliveryChannel", "document", "documentKind", "word"),
+            NOW
+        );
+        when(systemCapabilityRepository.findById(capability.getId())).thenReturn(Optional.of(capability));
+        when(tenantCapabilityGrantRepository.findByTenantIdAndCapabilityId(TENANT_ID, capability.getId()))
+            .thenReturn(Optional.of(TenantCapabilityGrantEntity.create(TENANT_ID, capability.getId(), "enabled", NOW)));
+        when(documentDeliveryService.generateRuntimeDocument(any(), any(), any(), any(), any(), any()))
+            .thenReturn(Map.of("adapter", "word_document", "fileName", "命中交付.docx"));
+
+        DeliveryRuntimeRequest request = buildRequest(Map.of(
+            "deliveryMode", "capability",
+            "deliveryConfigMode", "multiple",
+            "deliveryExecutionPolicy", "conditional",
+            "deliveryItems", List.of(
+                Map.of(
+                    "id", "contract_report",
+                    "name", "合同审查报告",
+                    "enabled", true,
+                    "triggerRule", Map.of(
+                        "type", "cluster_agent_matched",
+                        "clusterNodeId", "risk_cluster",
+                        "agentId", "contract_agent",
+                        "variableName", "contract_agent_output"
+                    ),
+                    "config", Map.of(
+                        "deliveryCapabilityId", capability.getId().toString(),
+                        "deliveryType", "word_document",
+                        "documentKind", "word",
+                        "markdownContent", "# 合同审查\n\n{{contract_agent_output}}",
+                        "fileNameTemplate", "合同审查.docx"
+                    )
+                ),
+                Map.of(
+                    "id", "finance_report",
+                    "name", "财务分析报告",
+                    "enabled", true,
+                    "triggerRule", Map.of(
+                        "type", "cluster_agent_matched",
+                        "clusterNodeId", "risk_cluster",
+                        "agentId", "finance_agent",
+                        "variableName", "finance_agent_output"
+                    ),
+                    "config", Map.of(
+                        "deliveryCapabilityId", capability.getId().toString(),
+                        "deliveryType", "word_document",
+                        "documentKind", "word",
+                        "markdownContent", "# 财务分析\n\n{{finance_agent_output}}",
+                        "fileNameTemplate", "财务分析.docx"
+                    )
+                )
+            )
+        ), Map.of("contract_agent_output", "合同智能体已执行"));
+
+        DeliveryRuntimeResult result = service.execute(request);
+
+        assertThat(result.outputs())
+            .containsEntry("deliveryStatus", "success")
+            .containsEntry("summary", "已执行 1 个交付项");
+        assertThat(result.outputs().get("deliveryRecords"))
+            .isInstanceOf(List.class)
+            .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.LIST)
+            .hasSize(1)
+            .first()
+            .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.MAP)
+            .containsEntry("itemId", "contract_report")
+            .containsEntry("itemName", "合同审查报告");
+    }
+
+    @Test
+    void shouldExecuteMultipleDirectDeliveryItems() {
+        DeliveryRuntimeRequest request = buildRequest(Map.of(
+            "deliveryMode", "direct",
+            "deliveryType", "direct",
+            "deliveryConfigMode", "multiple",
+            "deliveryExecutionPolicy", "all",
+            "deliveryItems", List.of(
+                Map.of(
+                    "id", "tenant_summary",
+                    "name", "租户摘要",
+                    "enabled", true,
+                    "triggerRule", Map.of("type", "always"),
+                    "config", Map.of(
+                        "deliveryMode", "direct",
+                        "deliveryType", "direct",
+                        "deliveryContent", "# 租户摘要\n\n{{tenant_summary}}"
+                    )
+                ),
+                Map.of(
+                    "id", "risk_summary",
+                    "name", "风险摘要",
+                    "enabled", true,
+                    "triggerRule", Map.of("type", "always"),
+                    "config", Map.of(
+                        "deliveryMode", "direct",
+                        "deliveryType", "direct",
+                        "deliveryContent", "# 风险摘要\n\n{{risk_summary}}"
+                    )
+                )
+            )
+        ), Map.of(
+            "tenant_summary", "租户管理分配完成。",
+            "risk_summary", "未发现高风险项。"
+        ));
+
+        DeliveryRuntimeResult result = service.execute(request);
+
+        assertThat(result.outputs())
+            .containsEntry("deliveryStatus", "success")
+            .containsEntry("summary", "已执行 2 个交付项");
+        assertThat(result.outputs().get("deliveryRecords"))
+            .isInstanceOf(List.class)
+            .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.LIST)
+            .hasSize(2)
+            .extracting(item -> String.valueOf(((Map<?, ?>) item).get("itemId")))
+            .containsExactly("tenant_summary", "risk_summary");
     }
 
     private static DeliveryRuntimeRequest buildRequest(Map<String, Object> config, Map<String, Object> variables) {

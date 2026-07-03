@@ -207,6 +207,8 @@ public class WorkflowDesignerCatalogService {
                 "brickType", "delivery",
                 "deliveryMode", "direct",
                 "deliveryType", "direct",
+                "deliveryConfigMode", "single",
+                "deliveryItems", List.of(),
                 "deliveryContent", "# 交付结果\n\n请在这里编写最终交付内容。"
             ),
             "待配置",

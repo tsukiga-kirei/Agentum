@@ -72,7 +72,70 @@ export function normalizeWorkflowNodeConfig(
       clusterAgents,
     };
   }
+  if (nodeType === "delivery") {
+    return normalizeDeliveryConfig(config);
+  }
   return config;
+}
+
+function normalizeDeliveryConfig(config: Record<string, unknown>): Record<string, unknown> {
+  const next = { ...config };
+  const deliveryMode = typeof next.deliveryMode === "string" && next.deliveryMode.trim() ? next.deliveryMode.trim() : "direct";
+  next.deliveryMode = deliveryMode;
+  const deliveryConfigMode = next.deliveryConfigMode === "multiple" ? "multiple" : "single";
+  next.deliveryConfigMode = deliveryConfigMode;
+  if (deliveryConfigMode === "multiple") {
+    next.deliveryExecutionPolicy = next.deliveryExecutionPolicy === "conditional" ? "conditional" : "all";
+    next.deliveryItems = Array.isArray(next.deliveryItems)
+      ? next.deliveryItems
+        .filter((item) => typeof item === "object" && item !== null)
+        .map((item, index) => normalizeDeliveryItem(item as Record<string, unknown>, index, deliveryMode))
+      : [];
+  } else {
+    next.deliveryItems = [];
+  }
+  return next;
+}
+
+function normalizeDeliveryItem(item: Record<string, unknown>, index: number, deliveryMode: string): Record<string, unknown> {
+  const config = typeof item.config === "object" && item.config !== null && !Array.isArray(item.config)
+    ? item.config as Record<string, unknown>
+    : {};
+  return {
+    ...item,
+    id: typeof item.id === "string" && item.id.trim() ? item.id.trim() : `delivery_item_${index + 1}`,
+    name: typeof item.name === "string" && item.name.trim() ? item.name.trim() : `交付项 ${index + 1}`,
+    enabled: item.enabled !== false,
+    triggerRule: normalizeDeliveryTriggerRule(item.triggerRule),
+    config: {
+      ...config,
+      deliveryMode: typeof config.deliveryMode === "string" && config.deliveryMode.trim() ? config.deliveryMode.trim() : inferDeliveryMode(config, deliveryMode),
+    },
+  };
+}
+
+function inferDeliveryMode(config: Record<string, unknown>, parentDeliveryMode: string): string {
+  const deliveryType = typeof config.deliveryType === "string" ? config.deliveryType.trim() : "";
+  const capabilityId = typeof config.deliveryCapabilityId === "string" ? config.deliveryCapabilityId.trim() : "";
+  if (deliveryType === "direct" || capabilityId === "none" || capabilityId === "custom") {
+    return "direct";
+  }
+  if (capabilityId) {
+    return "capability";
+  }
+  return parentDeliveryMode || "direct";
+}
+
+function normalizeDeliveryTriggerRule(value: unknown): Record<string, unknown> {
+  const source = typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  const type = typeof source.type === "string" && source.type.trim() ? source.type.trim() : "always";
+  const normalizedType = type === "cluster_agent_matched" ? "cluster_agent_matched" : "always";
+  return {
+    type: normalizedType,
+    clusterNodeId: typeof source.clusterNodeId === "string" ? source.clusterNodeId.trim() : "",
+    agentId: typeof source.agentId === "string" ? source.agentId.trim() : "",
+    variableName: typeof source.variableName === "string" ? source.variableName.trim() : "",
+  };
 }
 
 function normalizeClusterExecutionMode(value: unknown): string {
