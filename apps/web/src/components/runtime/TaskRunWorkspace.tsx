@@ -991,6 +991,7 @@ export function TaskRunWorkspace({
                   <MultiAgentPanel
                     activeStep={activeStep}
                     clusterAgents={clusterAgentsForPanel}
+                    clusterIntent={stream.clusterIntent}
                     isStreaming={isLiveExecuting}
                     streamStartedAt={stream.streamStartedAt}
                     onFollowUpAgent={(agentIndex, followUpMessage) => handleFollowUpClusterAgent(agentIndex, followUpMessage)}

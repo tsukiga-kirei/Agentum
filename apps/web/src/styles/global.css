@@ -5330,6 +5330,113 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
   transition: width 0.28s ease;
 }
 
+.multi-agent-intent-card {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 18%, var(--color-border-light));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--color-primary) 4%, var(--color-bg-card));
+}
+
+.multi-agent-intent-card--completed {
+  border-color: color-mix(in srgb, #10b981 24%, var(--color-border-light));
+  background: color-mix(in srgb, #10b981 4%, var(--color-bg-card));
+}
+
+.multi-agent-intent-card--failed {
+  border-color: color-mix(in srgb, #f43f5e 32%, var(--color-border-light));
+  background: color-mix(in srgb, #f43f5e 4%, var(--color-bg-card));
+}
+
+.multi-agent-intent-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-bg-card));
+  color: var(--color-primary);
+}
+
+.multi-agent-intent-card--completed .multi-agent-intent-icon {
+  background: color-mix(in srgb, #10b981 10%, var(--color-bg-card));
+  color: #059669;
+}
+
+.multi-agent-intent-card--failed .multi-agent-intent-icon {
+  background: color-mix(in srgb, #f43f5e 10%, var(--color-bg-card));
+  color: #e11d48;
+}
+
+.multi-agent-intent-body {
+  min-width: 0;
+}
+
+.multi-agent-intent-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.multi-agent-intent-head strong {
+  color: var(--color-text-primary);
+  font-size: 14px;
+  font-weight: 720;
+}
+
+.multi-agent-intent-head span {
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.multi-agent-intent-body p {
+  margin: 5px 0 0;
+  color: var(--color-text-secondary);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.multi-agent-intent-body code {
+  display: block;
+  max-height: 84px;
+  margin-top: 8px;
+  overflow: auto;
+  border: 1px solid color-mix(in srgb, var(--color-border-light) 75%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-bg-hover) 70%, transparent);
+  color: var(--color-text-secondary);
+  font-size: 11.5px;
+  line-height: 1.6;
+  padding: 8px 10px;
+  white-space: pre-wrap;
+}
+
+.multi-agent-intent-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.multi-agent-intent-tags span {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-bg-card) 82%, var(--color-primary));
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  font-weight: 650;
+}
+
 .multi-agent-grid {
   display: grid;
   grid-template-columns: 1fr;
@@ -5373,6 +5480,22 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
 .multi-agent-card--failed {
   border-color: color-mix(in srgb, #f43f5e 32%, var(--color-border-light));
   background: color-mix(in srgb, #f43f5e 4%, var(--color-bg-card));
+}
+
+.multi-agent-card--skipped,
+.multi-agent-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+  filter: grayscale(0.45);
+  background: color-mix(in srgb, var(--color-bg-hover) 70%, var(--color-bg-card));
+  box-shadow: none;
+}
+
+.multi-agent-card--skipped:hover,
+.multi-agent-card:disabled:hover {
+  transform: none;
+  border-color: color-mix(in srgb, var(--color-border-light) 78%, transparent);
+  box-shadow: none;
 }
 
 .multi-agent-card-glow {

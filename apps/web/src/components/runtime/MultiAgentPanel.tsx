@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect } from "react";
 import type { AgentExecutionStep, RuntimeCapabilityItem, RuntimeChatMessage, RuntimePreviewStep, RuntimeTokenUsage, RunStreamState } from "../../types/runtime-types";
-import { AlertCircle, Bot, CheckCircle2, ChevronRight, Loader2, MessageSquarePlus, PencilLine, Settings2, Sparkles, Users, Wrench } from "lucide-react";
+import { AlertCircle, Bot, BrainCircuit, CheckCircle2, ChevronRight, Loader2, MessageSquarePlus, PencilLine, Settings2, Sparkles, Users, Wrench } from "lucide-react";
 import { Drawer, message } from "antd";
 import { useAuthStore } from "../../stores/authStore";
 import { SingleAgentPanel } from "./SingleAgentPanel";
@@ -13,6 +13,7 @@ import { getThemedDrawerRootClassName } from "../../utils/theme";
 interface MultiAgentPanelProps {
   activeStep: RuntimePreviewStep;
   clusterAgents: RunStreamState["clusterAgents"];
+  clusterIntent?: RunStreamState["clusterIntent"];
   isStreaming?: boolean;
   streamStartedAt?: number | null;
   onFollowUpAgent?: (agentIndex: number, message: string) => void | Promise<void>;
@@ -22,7 +23,7 @@ interface MultiAgentPanelProps {
 type DrawerAgent = {
   index: number;
   name: string;
-  status: "pending" | "running" | "completed" | "failed";
+  status: "pending" | "running" | "completed" | "failed" | "skipped";
   streamingText: string;
   reasoningText?: string;
   outputSummary: string;
@@ -42,6 +43,7 @@ type DrawerAgent = {
 export function MultiAgentPanel({
   activeStep,
   clusterAgents,
+  clusterIntent,
   isStreaming = false,
   streamStartedAt = null,
   onFollowUpAgent,
@@ -54,6 +56,17 @@ export function MultiAgentPanel({
   const configAgents = Array.isArray(activeStep.configSnapshot?.clusterAgents)
     ? (activeStep.configSnapshot?.clusterAgents as Array<Record<string, unknown>>)
     : [];
+  const isIntentMode = readConfigString(activeStep.configSnapshot?.executionMode, "") === "intent";
+  const persistedIntent = useMemo(() => parseIntentRoutingFromOutputs(activeStep.outputs), [activeStep.outputs]);
+  const intentState = useMemo(
+    () => resolveIntentState(clusterIntent, persistedIntent, activeStep.state),
+    [clusterIntent, persistedIntent, activeStep.state],
+  );
+  const selectedAgentIndexes = useMemo(
+    () => resolveSelectedAgentIndexes(intentState, activeStep.configSnapshot, configAgents),
+    [intentState, activeStep.configSnapshot, configAgents],
+  );
+  const intentSelectionSettled = isIntentMode && intentState.status === "completed";
 
   const agents = useMemo((): DrawerAgent[] => {
     const merged = mergeClusterAgents({
@@ -71,8 +84,10 @@ export function MultiAgentPanel({
       );
       const persistedAgent = persistedAgents[agent.index] ?? persistedAgents.find((item) => String(item.name ?? "") === agent.name);
       const persistedMessages = readPersistedConversation(persistedAgent?.chatMessages, agent.name, String(activeStep.nodeRunId ?? `cluster-${agent.index}`));
+      const skippedByIntent = intentSelectionSettled && !selectedAgentIndexes.includes(agent.index);
       return {
         ...agent,
+        status: skippedByIntent ? "skipped" : agent.status,
         systemPrompt: config ? resolveSystemDisplayPrompt(config) : resolveSystemDisplayPrompt(undefined),
         userPrompt: config ? resolveUserDisplayPrompt(config) : resolveUserDisplayPrompt(undefined),
         modelName: readConfigString(
@@ -93,13 +108,17 @@ export function MultiAgentPanel({
         allowUserEdit: readAgentEditAllowed(config, activeStep.configSnapshot),
       };
     });
-  }, [configAgents, clusterAgents, activeStep.outputs, activeStep.state, isStreaming]);
+  }, [configAgents, clusterAgents, activeStep.outputs, activeStep.state, isStreaming, intentSelectionSettled, selectedAgentIndexes]);
 
   useEffect(() => {
     if (!selectedAgent) {
       return;
     }
     const fresh = agents.find((agent) => agent.index === selectedAgent.index);
+    if (fresh?.status === "skipped") {
+      setSelectedAgent(null);
+      return;
+    }
     if (fresh) {
       setSelectedAgent(fresh);
     }
@@ -107,8 +126,9 @@ export function MultiAgentPanel({
 
   const completedCount = agents.filter((a) => a.status === "completed").length;
   const runningCount = agents.filter((a) => a.status === "running").length;
+  const skippedCount = agents.filter((a) => a.status === "skipped").length;
   const totalCount = agents.length;
-  const percent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+  const percent = totalCount > 0 ? Math.round(((completedCount + skippedCount) / totalCount) * 100) : 0;
   const stepCanceled = activeStep.state === "canceled";
   const stepPending = activeStep.state === "pending" && !stepCanceled;
 
@@ -122,6 +142,7 @@ export function MultiAgentPanel({
           </div>
           <small>
             共 {totalCount} 个子智能体 · 已完成 {completedCount} · 运行中 {runningCount}
+            {isIntentMode ? ` · 跳过 ${skippedCount}` : ""}
           </small>
         </div>
         <div className="multi-agent-progress-row">
@@ -132,11 +153,50 @@ export function MultiAgentPanel({
         </div>
       </section>
 
+      {isIntentMode ? (
+        <section className={`multi-agent-intent-card multi-agent-intent-card--${intentState.status}`}>
+          <div className="multi-agent-intent-icon">
+            {intentState.status === "running" ? <Loader2 size={16} className="animate-spin" /> : intentState.status === "failed" ? <AlertCircle size={16} /> : <BrainCircuit size={16} />}
+          </div>
+          <div className="multi-agent-intent-body">
+            <div className="multi-agent-intent-head">
+              <strong>意图识别</strong>
+              <span>
+                {intentState.status === "completed"
+                  ? "已完成"
+                  : intentState.status === "failed"
+                  ? "识别失败"
+                  : intentState.status === "running"
+                  ? "识别中"
+                  : "等待识别"}
+              </span>
+            </div>
+            <p>
+              {intentState.status === "failed"
+                ? intentState.errorMessage || "意图分类器执行失败"
+                : intentState.reason
+                ? intentState.reason
+                : intentState.message || "先识别输入意图，再执行命中的子智能体。"}
+            </p>
+            {intentState.streamingText ? <code>{intentState.streamingText}</code> : null}
+            <div className="multi-agent-intent-tags">
+              {intentState.selectedCodes.length > 0 ? (
+                intentState.selectedCodes.map((code) => <span key={code}>命中 {code}</span>)
+              ) : intentState.status === "completed" ? (
+                <span>未命中任何意图</span>
+              ) : null}
+              {intentState.usedFallback ? <span>已使用其他情况策略</span> : null}
+            </div>
+          </div>
+        </section>
+      ) : null}
+
       <div className="multi-agent-grid">
         {agents.map((agent) => {
           const isRunning = agent.status === "running";
           const isCompleted = agent.status === "completed";
           const isFailed = agent.status === "failed";
+          const isSkipped = agent.status === "skipped";
           const toolCount = agent.toolCalls?.length ?? 0;
           const skillCount = agent.skillNames.length;
           const mcpCount = agent.mcpNames.length;
@@ -146,6 +206,7 @@ export function MultiAgentPanel({
               type="button"
               key={agent.index}
               onClick={() => setSelectedAgent(agent)}
+              disabled={isSkipped}
               className={`multi-agent-card ${
                 isRunning
                   ? "multi-agent-card--running"
@@ -153,6 +214,8 @@ export function MultiAgentPanel({
                   ? "multi-agent-card--completed"
                   : isFailed
                   ? "multi-agent-card--failed"
+                  : isSkipped
+                  ? "multi-agent-card--skipped"
                   : "multi-agent-card--pending"
               }`}
             >
@@ -165,6 +228,8 @@ export function MultiAgentPanel({
                     <CheckCircle2 size={15} />
                   ) : isFailed ? (
                     <AlertCircle size={15} />
+                  ) : isSkipped ? (
+                    <Bot size={15} />
                   ) : (
                     <Bot size={15} />
                   )}
@@ -180,12 +245,14 @@ export function MultiAgentPanel({
                       ? "执行完成"
                       : isFailed
                       ? "执行失败"
+                      : isSkipped
+                      ? "意图未命中"
                       : stepPending
                       ? "等待启动"
                       : "等待调度"}
                   </span>
                 </div>
-                <ChevronRight size={16} className="multi-agent-card-arrow" />
+                {!isSkipped ? <ChevronRight size={16} className="multi-agent-card-arrow" /> : null}
               </div>
               <div className="multi-agent-card-meta">
                 {agent.modelName ? (
@@ -213,7 +280,7 @@ export function MultiAgentPanel({
               </div>
               <div className="multi-agent-card-foot">
                 <span>{toolCount > 0 ? `${toolCount} 个工具调用` : "无工具调用"}</span>
-                <span>{stepCanceled ? "需重新执行" : isRunning ? "实时更新" : isCompleted ? "可查看结果" : isFailed ? "查看原因" : "等待中"}</span>
+                <span>{stepCanceled ? "需重新执行" : isRunning ? "实时更新" : isCompleted ? "可查看结果" : isFailed ? "查看原因" : isSkipped ? "不执行" : "等待中"}</span>
               </div>
             </button>
           );
@@ -266,6 +333,101 @@ function readConfigString(value: unknown, fallback: string): string {
 
 function readStepOutput(step: RuntimePreviewStep, labels: string[]): string {
   return step.outputs?.find((field) => labels.includes(field.label))?.value?.trim() ?? "";
+}
+
+function parseJsonField(value: string | undefined): unknown {
+  if (!value) {
+    return null;
+  }
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function parseIntentRoutingFromOutputs(outputs: RuntimePreviewStep["outputs"]): Partial<RunStreamState["clusterIntent"]> | null {
+  const parsed = parseJsonField(outputs?.find((field) => field.label === "intentRouting")?.value);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return null;
+  }
+  const record = parsed as Record<string, unknown>;
+  return {
+    status: "completed",
+    requestedCodes: readStringList(record.requestedCodes),
+    selectedCodes: readStringList(record.selectedCodes),
+    selectedAgentIndexes: readNumberList(record.selectedAgentIndexes),
+    reason: readConfigString(record.reason, ""),
+    fallbackMode: readConfigString(record.fallbackMode, ""),
+    usedFallback: readBoolean(record.usedFallback),
+  };
+}
+
+function resolveIntentState(
+  live: RunStreamState["clusterIntent"] | undefined,
+  persisted: Partial<RunStreamState["clusterIntent"]> | null,
+  stepState: RuntimePreviewStep["state"],
+): RunStreamState["clusterIntent"] {
+  if (live && live.status !== "idle") {
+    return live;
+  }
+  if (persisted) {
+    return {
+      status: "completed",
+      streamingText: "",
+      requestedCodes: persisted.requestedCodes ?? [],
+      selectedCodes: persisted.selectedCodes ?? [],
+      selectedAgentIndexes: persisted.selectedAgentIndexes ?? [],
+      reason: persisted.reason,
+      fallbackMode: persisted.fallbackMode,
+      usedFallback: persisted.usedFallback,
+    };
+  }
+  return {
+    status: stepState === "failed" ? "failed" : "idle",
+    streamingText: "",
+    requestedCodes: [],
+    selectedCodes: [],
+    selectedAgentIndexes: [],
+  };
+}
+
+function resolveSelectedAgentIndexes(
+  intentState: RunStreamState["clusterIntent"],
+  parentConfig: RuntimePreviewStep["configSnapshot"],
+  configAgents: Array<Record<string, unknown>>,
+): number[] {
+  if (intentState.selectedAgentIndexes.length > 0) {
+    return intentState.selectedAgentIndexes;
+  }
+  const selectedCodes = new Set(intentState.selectedCodes);
+  if (selectedCodes.size === 0) {
+    return [];
+  }
+  const routes: unknown[] = Array.isArray(parentConfig?.intentRoutes) ? parentConfig.intentRoutes : [];
+  const indexes = routes.flatMap((route: unknown) => {
+    if (!route || typeof route !== "object") {
+      return [];
+    }
+    const record = route as Record<string, unknown>;
+    if (!selectedCodes.has(readConfigString(record.intentCode, ""))) {
+      return [];
+    }
+    const agentId = readConfigString(record.agentId, "");
+    const indexById = configAgents.findIndex((agent) => readConfigString(agent.id, "") === agentId);
+    const fallbackIndex = Number(record.agentIndex);
+    const index = indexById >= 0 ? indexById : Number.isFinite(fallbackIndex) ? fallbackIndex : -1;
+    return index >= 0 ? [index] : [];
+  });
+  return Array.from(new Set(indexes));
+}
+
+function readStringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.map((item) => String(item).trim()).filter(Boolean) : [];
+}
+
+function readNumberList(value: unknown): number[] {
+  return Array.isArray(value) ? value.map(Number).filter(Number.isFinite) : [];
 }
 
 function readBoolean(value: unknown): boolean {

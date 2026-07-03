@@ -1722,6 +1722,9 @@ function AgentClusterBrickConfig({
           fallbackAgentId={readString(config.fallbackAgentId, "")}
           fallbackReply={readString(config.fallbackReply, "")}
           intentInputTemplate={readString(config.intentInputTemplate, "")}
+          modelOptions={modelOptions}
+          intentModelProviderId={readString(config.intentModelProviderId, intentModel?.providerId ?? "")}
+          intentEnableThinking={readBoolean(config.intentEnableThinking, false)}
           rootClassName={drawerRootClassName}
           onClose={() => setIntentDrawerOpen(false)}
           onSave={(next) => {
@@ -1732,9 +1735,9 @@ function AgentClusterBrickConfig({
               intentFallbackMode: next.fallbackMode,
               fallbackAgentId: next.fallbackAgentId,
               fallbackReply: next.fallbackReply,
-              intentModelProviderId: readString(config.intentModelProviderId, intentModel?.providerId ?? ""),
-              intentModelName: readString(config.intentModelName, intentModel?.modelName ?? ""),
-              intentEnableThinking: false,
+              intentModelProviderId: next.intentModelProviderId,
+              intentModelName: next.intentModelName,
+              intentEnableThinking: next.intentEnableThinking,
             });
             setIntentDrawerOpen(false);
           }}
@@ -1871,6 +1874,9 @@ function IntentRoutingDrawer({
   fallbackAgentId,
   fallbackReply,
   intentInputTemplate,
+  modelOptions,
+  intentModelProviderId,
+  intentEnableThinking,
   rootClassName,
   onClose,
   onSave,
@@ -1883,6 +1889,9 @@ function IntentRoutingDrawer({
   fallbackAgentId: string;
   fallbackReply: string;
   intentInputTemplate: string;
+  modelOptions: WorkflowModelOption[];
+  intentModelProviderId: string;
+  intentEnableThinking: boolean;
   rootClassName: string;
   onClose: () => void;
   onSave: (next: {
@@ -1892,6 +1901,9 @@ function IntentRoutingDrawer({
     fallbackMode: IntentFallbackMode;
     fallbackAgentId: string;
     fallbackReply: string;
+    intentModelProviderId: string;
+    intentModelName: string;
+    intentEnableThinking: boolean;
   }) => void;
 }) {
   const { message } = App.useApp();
@@ -1901,6 +1913,12 @@ function IntentRoutingDrawer({
   const [draftFallbackMode, setDraftFallbackMode] = useState<IntentFallbackMode>(fallbackMode);
   const [draftFallbackAgentId, setDraftFallbackAgentId] = useState(fallbackAgentId);
   const [draftFallbackReply, setDraftFallbackReply] = useState(fallbackReply);
+  const initialIntentModel = modelOptions.find((model) => model.providerId === intentModelProviderId) ?? modelOptions[0];
+  const [draftIntentModel, setDraftIntentModel] = useState({
+    modelProviderId: initialIntentModel?.providerId ?? "",
+    modelName: initialIntentModel?.modelName ?? "",
+    enableThinking: initialIntentModel?.reasoningModel ? intentEnableThinking : false,
+  });
   const agentOptions = agents.map((agent) => ({ value: agent.id, label: agent.name }));
 
   function updateRoute(routeId: string, patch: Partial<IntentRouteConfig>) {
@@ -1945,6 +1963,12 @@ function IntentRoutingDrawer({
       <div className="sys-drawer-section sys-drawer-section-enter workflow-agent-drawer-body">
         <p className="workflow-agent-drawer-kicker">意图分派</p>
         <div className="workflow-modal-section grid gap-4 md:grid-cols-2">
+          <ModelAndReasoningFields
+            modelOptions={modelOptions}
+            modelProviderId={draftIntentModel.modelProviderId}
+            enableThinking={draftIntentModel.enableThinking}
+            onChange={setDraftIntentModel}
+          />
           <SelectLikeField
             label="命中数量"
             icon={ListChecks}
@@ -2101,6 +2125,9 @@ function IntentRoutingDrawer({
                 fallbackMode: draftFallbackMode,
                 fallbackAgentId: draftFallbackMode === "agent" ? draftFallbackAgentId : "",
                 fallbackReply: draftFallbackMode === "fixed_reply" ? draftFallbackReply.trim() : "",
+                intentModelProviderId: draftIntentModel.modelProviderId,
+                intentModelName: draftIntentModel.modelName,
+                intentEnableThinking: draftIntentModel.enableThinking,
               });
             }}
           >

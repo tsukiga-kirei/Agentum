@@ -74,6 +74,13 @@ export function useRunStream(
   const [clusterAgents, setClusterAgents] = useState<
     RunStreamState["clusterAgents"]
   >([]);
+  const [clusterIntent, setClusterIntent] = useState<RunStreamState["clusterIntent"]>({
+    status: "idle",
+    streamingText: "",
+    requestedCodes: [],
+    selectedCodes: [],
+    selectedAgentIndexes: [],
+  });
   const [connectionState, setConnectionState] =
     useState<StreamConnectionState>("disconnected");
   const [error, setError] = useState<string | null>(null);
@@ -129,6 +136,13 @@ export function useRunStream(
       setExecutionSteps([]);
       setStreamStartedAt(null);
       setClusterAgents([]);
+      setClusterIntent({
+        status: "idle",
+        streamingText: "",
+        requestedCodes: [],
+        selectedCodes: [],
+        selectedAgentIndexes: [],
+      });
     }
   }, []);
 
@@ -362,6 +376,13 @@ export function useRunStream(
           setExecutionSteps([]);
           setStreamStartedAt(Date.now());
           setClusterAgents([]);
+          setClusterIntent({
+            status: "idle",
+            streamingText: "",
+            requestedCodes: [],
+            selectedCodes: [],
+            selectedAgentIndexes: [],
+          });
         } else {
           setStreamStartedAt((startedAt) => startedAt ?? Date.now());
         }
@@ -504,6 +525,77 @@ export function useRunStream(
         break;
       }
 
+      case "cluster_intent": {
+        const {
+          eventType,
+          phase,
+          message,
+          accumulatedContent,
+          streamKind,
+          requestedCodes,
+          selectedCodes,
+          selectedAgentIndexes,
+          reason,
+          fallbackMode,
+          usedFallback,
+          errorCode,
+          errorMessage,
+        } = event.data;
+
+        setClusterIntent((prev) => {
+          if (eventType === "started") {
+            return {
+              status: "running",
+              phase: "preparing",
+              message: "正在识别意图",
+              streamingText: "",
+              requestedCodes: [],
+              selectedCodes: [],
+              selectedAgentIndexes: [],
+            };
+          }
+          if (eventType === "phase") {
+            return {
+              ...prev,
+              status: "running",
+              phase,
+              message,
+            };
+          }
+          if (eventType === "streaming") {
+            return {
+              ...prev,
+              status: "running",
+              streamingText: streamKind === "reasoning" ? prev.streamingText : String(accumulatedContent ?? prev.streamingText ?? ""),
+              reasoningText: streamKind === "reasoning" ? String(accumulatedContent ?? prev.reasoningText ?? "") : prev.reasoningText,
+            };
+          }
+          if (eventType === "completed") {
+            return {
+              ...prev,
+              status: "completed",
+              requestedCodes: Array.isArray(requestedCodes) ? requestedCodes.map(String) : [],
+              selectedCodes: Array.isArray(selectedCodes) ? selectedCodes.map(String) : [],
+              selectedAgentIndexes: Array.isArray(selectedAgentIndexes)
+                ? selectedAgentIndexes.map(Number).filter(Number.isFinite)
+                : prev.selectedAgentIndexes,
+              reason: typeof reason === "string" ? reason : prev.reason,
+              fallbackMode: typeof fallbackMode === "string" ? fallbackMode : prev.fallbackMode,
+              usedFallback: Boolean(usedFallback),
+            };
+          }
+          if (eventType === "failed") {
+            return {
+              ...prev,
+              status: "failed",
+              errorMessage: formatRuntimeErrorMessage(errorCode, errorMessage),
+            };
+          }
+          return prev;
+        });
+        break;
+      }
+
       case "node_completed":
         markStepStreamTerminal();
         setIsStreaming(false);
@@ -558,6 +650,7 @@ export function useRunStream(
     executionSteps,
     streamStartedAt,
     clusterAgents,
+    clusterIntent,
     connectionState,
     error,
     lastEventAt,

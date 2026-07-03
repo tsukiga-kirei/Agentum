@@ -198,6 +198,7 @@ public class DefaultWorkflowRuntimeExecutor implements WorkflowRuntimeExecutor {
         Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("requestedCodes", decision.requestedCodes());
         summary.put("selectedCodes", decision.selectedCodes());
+        summary.put("selectedAgentIndexes", decision.selectedAgentIndexes());
         summary.put("reason", decision.reason());
         summary.put("slots", decision.slots());
         summary.put("usedFallback", decision.usedFallback());

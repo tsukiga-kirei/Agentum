@@ -258,6 +258,32 @@ export type ClusterAgentEvent = {
   timestamp: string;
 };
 
+/** 智能体集群意图分派事件 */
+export type ClusterIntentEvent = {
+  runId: string;
+  nodeRunId: string;
+  eventType: "started" | "phase" | "streaming" | "tool_call" | "completed" | "failed";
+  phase?: AgentPhase;
+  message?: string;
+  streamKind?: "reasoning" | "model_content" | "final_answer";
+  deltaContent?: string;
+  accumulatedContent?: string;
+  toolName?: string;
+  toolType?: "mcp" | "skill" | "agent";
+  toolStatus?: "started" | "completed" | "failed";
+  result?: string;
+  durationMs?: number;
+  requestedCodes?: string[];
+  selectedCodes?: string[];
+  selectedAgentIndexes?: number[];
+  reason?: string;
+  fallbackMode?: string;
+  usedFallback?: boolean;
+  errorCode?: string;
+  errorMessage?: string;
+  timestamp: string;
+};
+
 /** 节点执行完成事件 */
 export type NodeCompletedEvent = {
   runId: string;
@@ -319,6 +345,7 @@ export type StreamEvent = (
   | { type: "agent_streaming"; data: AgentStreamingEvent }
   | { type: "agent_tool_call"; data: AgentToolCallEvent }
   | { type: "cluster_agent"; data: ClusterAgentEvent }
+  | { type: "cluster_intent"; data: ClusterIntentEvent }
   | { type: "node_completed"; data: NodeCompletedEvent }
   | { type: "node_failed"; data: NodeFailedEvent }
   | { type: "run_paused"; data: RunPausedEvent }
@@ -410,6 +437,21 @@ export type RunStreamState = {
     errorMessage?: string;
     toolCalls: RuntimeCapabilityItem[];
   }>;
+  /** 智能体集群意图分派分类器实时状态 */
+  clusterIntent: {
+    status: "idle" | "running" | "completed" | "failed";
+    phase?: string;
+    message?: string;
+    streamingText: string;
+    reasoningText?: string;
+    requestedCodes: string[];
+    selectedCodes: string[];
+    selectedAgentIndexes: number[];
+    reason?: string;
+    fallbackMode?: string;
+    usedFallback?: boolean;
+    errorMessage?: string;
+  };
   /** 连接状态 */
   connectionState: StreamConnectionState;
   /** 连接错误信息 */
