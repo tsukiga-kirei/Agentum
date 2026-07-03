@@ -147,11 +147,15 @@ export type RuntimePreviewEvent = {
 
 /** 交付物预览 */
 export type RuntimeDeliveryItem = {
+  key: string;
   name: string;
   status: string;
   meta: string;
+  kind: "direct" | "document" | "other";
+  content?: string;
   recordId?: string;
   fileName?: string;
+  sizeBytes?: string;
   downloadUrl?: string;
   deliveryType?: string;
 };

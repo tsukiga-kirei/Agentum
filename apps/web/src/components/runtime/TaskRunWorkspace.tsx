@@ -21,8 +21,9 @@ import { UserInputPanel } from "./UserInputPanel";
 import { MultiAgentPanel } from "./MultiAgentPanel";
 import { DeliveryPreviewPanel } from "./DeliveryPreviewPanel";
 import { DeliveryResultPanel } from "./DeliveryResultPanel";
+import { DeliveryItemsList } from "./DeliveryItemsList";
 import { WordDocumentPreviewDrawer } from "./WordDocumentPreviewDrawer";
-import { resolveDeliveryDisplayContent } from "../../utils/deliveryContent";
+import { mapDeliveryRecordToItem, resolveDeliveryItems } from "../../utils/deliveryContent";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { AgentumApiError, workbenchApi } from "../../services/apiClient";
 import { formatRuntimeErrorMessage } from "../../utils/runtimeErrors";
@@ -40,8 +41,6 @@ import {
   RotateCcw,
   CheckCircle2,
   Send,
-  Download,
-  Eye
 } from "lucide-react";
 
 interface TaskRunWorkspaceProps {
@@ -1331,18 +1330,12 @@ function RunTracePanel({
                     </button>
                   ) : null}
                 </div>
-                <div className="bg-white dark:bg-slate-950 border border-slate-150 dark:border-slate-850 p-4 rounded-lg space-y-3">
-                  <span className="text-xs text-slate-400 font-semibold block">交付状态</span>
-                  <strong className="text-sm text-slate-800 dark:text-slate-200 block font-mono">
-                    {step.outputs?.find((f) => f.label === "summary")?.value || "交付文件已生成并归档。"}
-                  </strong>
-                  {resolveDeliveryDisplayContent(step) ? (
-                    <div className="pt-2 border-t border-slate-100 dark:border-slate-850">
-                      <span className="text-xs text-slate-400 font-semibold block mb-2">交付执行摘要</span>
-                      <MarkdownRenderer content={resolveDeliveryDisplayContent(step)} />
-                    </div>
-                  ) : null}
-                </div>
+                <DeliveryItemsList
+                  items={resolveDeliveryItems(step)}
+                  isFlowCompleted
+                  emptyTitle="暂无交付项"
+                  emptyDescription="该步骤未产生可展示的交付内容。"
+                />
               </div>
             )}
 
@@ -1503,20 +1496,8 @@ function RunDeliveriesPanel({
   token: string;
 }) {
   const list = preview.deliveries || [];
-  const deliveryStep = preview.steps.find((step) => step.kind === "delivery");
-  const deliveryDisplayContent = resolveDeliveryDisplayContent(deliveryStep);
-
-  const [copied, setCopied] = useState(false);
   const [downloadingRecordId, setDownloadingRecordId] = useState("");
   const [previewDocument, setPreviewDocument] = useState<{ recordId: string; fileName: string } | null>(null);
-
-  const handleCopy = () => {
-    if (deliveryDisplayContent) {
-      navigator.clipboard.writeText(deliveryDisplayContent);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
 
   async function handleDownloadDelivery(recordId: string) {
     setDownloadingRecordId(recordId);
@@ -1566,99 +1547,24 @@ function RunDeliveriesPanel({
         </div>
       )}
 
-      {/* Delivery Channels List */}
       <div className="bg-white dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 p-5 space-y-3">
         <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-          <Send size={16} className="text-emerald-500" /> 交付通道与方式
+          <Send size={16} className="text-emerald-500" /> 交付项内容
         </h4>
-        {list.length === 0 ? (
-          <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 flex justify-between items-center text-sm">
-            <div>
-              <strong className="text-slate-800 dark:text-slate-200 font-medium block">暂无已触发交付物</strong>
-              <span className="text-slate-400 block mt-0.5 whitespace-pre-wrap">
-                {isFlowCompleted
-                  ? "本次运行没有命中任何交付项，因此不会展示未触发的模板或通道。"
-                  : "交付步骤执行后，只会展示本次实际触发的交付物。"}
-              </span>
-            </div>
-            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-              isFlowCompleted
-                ? "bg-slate-100 text-slate-500 dark:bg-slate-850 dark:text-slate-300"
-                : "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400"
-            }`}>
-              {isFlowCompleted ? "无交付" : "待执行"}
-            </span>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {list.map((item, index) => (
-              <div 
-                key={item.recordId ?? `${item.name}-${index}`}
-                className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 flex flex-wrap justify-between items-center gap-3 text-sm"
-              >
-                <div className="min-w-0">
-                  <strong className="text-slate-800 dark:text-slate-200 font-medium block">{item.name}</strong>
-                  <span className="text-slate-400 block mt-0.5">
-                    {isFlowCompleted
-                      ? item.meta
-                      : "交付已生成，待您在「当前处理」点击「确认完成」后归档展示。"}
-                  </span>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  {item.recordId && item.fileName ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => setPreviewDocument({ recordId: item.recordId!, fileName: item.fileName! })}
-                        className="agent-button h-8 px-3 text-xs"
-                      >
-                        <Eye size={14} />
-                        预览文档
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleDownloadDelivery(item.recordId!)}
-                        disabled={downloadingRecordId === item.recordId}
-                        className="agent-button h-8 px-3 text-xs"
-                      >
-                        <Download size={14} />
-                        {downloadingRecordId === item.recordId ? "下载中" : "下载文档"}
-                      </button>
-                    </>
-                  ) : null}
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                    isFlowCompleted
-                      ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400"
-                      : "bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400"
-                  }`}>
-                    {isFlowCompleted ? item.status : "待确认"}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        <DeliveryItemsList
+          items={list}
+          isFlowCompleted={isFlowCompleted}
+          downloadingRecordId={downloadingRecordId}
+          onPreviewDocument={(recordId, fileName) => setPreviewDocument({ recordId, fileName })}
+          onDownloadDocument={(recordId) => void handleDownloadDelivery(recordId)}
+          emptyTitle="暂无已触发交付物"
+          emptyDescription={
+            isFlowCompleted
+              ? "本次运行没有命中任何交付项，因此不会展示未触发的模板或通道。"
+              : "交付步骤执行后，只会展示本次实际触发的交付物。"
+          }
+        />
       </div>
-
-      {isFlowCompleted && deliveryDisplayContent ? (
-        <div className="bg-white dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-          <header className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/10">
-            <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-              <FileText size={16} className="text-blue-500" /> 交付执行摘要
-            </h4>
-            <button
-              type="button"
-              onClick={handleCopy}
-              className="text-sm font-semibold text-blue-500 hover:text-blue-650 dark:text-blue-400 flex items-center gap-1"
-            >
-              {copied ? "已复制" : "复制摘要"}
-            </button>
-          </header>
-          <div className="p-6 overflow-y-auto max-h-[500px] prose dark:prose-invert max-w-none bg-white dark:bg-slate-950">
-            <MarkdownRenderer content={deliveryDisplayContent} />
-          </div>
-        </div>
-      ) : null}
 
       {previewDocument ? (
         <WordDocumentPreviewDrawer
@@ -1758,43 +1664,26 @@ function buildRuntimePreviewFromRun(run: WorkbenchRunDetail): RuntimePreview {
         if (deliveryRecords.length > 0) {
           return deliveryRecords
             .filter((item: unknown): item is Record<string, unknown> => isRuntimeRecord(item))
-            .map((item: Record<string, unknown>, index: number) => {
-              const deliveryResult = isRuntimeRecord(item.deliveryResult) ? item.deliveryResult : {};
-              const fileName = readConfigString(deliveryResult.fileName, "");
-              const sizeBytes = readConfigString(deliveryResult.sizeBytes, "");
-              const recordId = readConfigString(item.deliveryRecordId, "");
-              const itemName = readConfigString(item.itemName, `交付项 ${index + 1}`);
-              return {
-                name: fileName || itemName,
-                status: readConfigString(item.deliveryStatus, node.stateLabel),
-                meta: fileName && sizeBytes
-                  ? `${fileName} · ${sizeBytes} bytes`
-                  : stringifyValue(item.summary ?? "交付项已执行"),
-                recordId: recordId || undefined,
-                fileName: fileName || undefined,
-                downloadUrl: readConfigString(deliveryResult.downloadUrl, "") || undefined,
-                deliveryType: readConfigString(deliveryResult.adapter, readConfigString(item.deliveryType, "")) || undefined,
-              };
-            });
+            .map((item: Record<string, unknown>, index: number) => mapDeliveryRecordToItem(item, index));
         }
         const deliveryResult = isRuntimeRecord(outputs.deliveryResult) ? outputs.deliveryResult : {};
-        const fileName = readConfigString(deliveryResult.fileName, "");
-        const sizeBytes = readConfigString(deliveryResult.sizeBytes, "");
         const recordId = readConfigString(outputs.deliveryRecordId, "");
         if (!recordId && readConfigString(outputs.deliveryStatus, "") === "skipped") {
           return [];
         }
-        return [{
-          name: fileName || node.name,
-          status: node.stateLabel,
-          meta: fileName && sizeBytes
-            ? `${fileName} · ${sizeBytes} bytes`
-            : stringifyValue(outputs.summary ?? "交付确认后生成"),
-          recordId: recordId || undefined,
-          fileName: fileName || undefined,
-          downloadUrl: readConfigString(deliveryResult.downloadUrl, "") || undefined,
-          deliveryType: readConfigString(deliveryResult.adapter, readConfigString(outputs.deliveryType, "")) || undefined,
-        }];
+        const singleRecord: Record<string, unknown> = {
+          deliveryRecordId: recordId,
+          deliveryStatus: readConfigString(outputs.deliveryStatus, node.stateLabel),
+          deliveryResult,
+          deliveryPayload: outputs.deliveryPayload,
+          summary: outputs.summary,
+          itemName: node.name,
+        };
+        const mapped = mapDeliveryRecordToItem(singleRecord, 0);
+        if (!mapped.recordId && !mapped.content && !mapped.fileName) {
+          return [];
+        }
+        return [mapped];
       }),
   };
 }
