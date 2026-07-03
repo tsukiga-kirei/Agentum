@@ -421,16 +421,19 @@ export function TaskRunWorkspace({
     const stepRunning =
       activeStep.state === "running"
       || isLiveExecuting;
+    const isIntentMode = readConfigString(activeStep.configSnapshot?.executionMode, "") === "intent";
+    const intentClassifierSettled = stream.clusterIntent.status === "completed";
 
     return mergeClusterAgents({
       configAgents,
       outputs: activeStep.outputs,
-      streamAgents: stream.clusterAgents,
+      streamAgents: isIntentMode && !intentClassifierSettled ? [] : stream.clusterAgents,
       stepState: activeStep.state,
-      stepRunning,
+      stepRunning: stepRunning && (!isIntentMode || intentClassifierSettled),
     });
   }, [
     stream.clusterAgents,
+    stream.clusterIntent.status,
     isLiveExecuting,
     activeStep,
   ]);

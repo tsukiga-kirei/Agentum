@@ -67,14 +67,15 @@ export function MultiAgentPanel({
     [intentState, activeStep.configSnapshot, configAgents],
   );
   const intentSelectionSettled = isIntentMode && intentState.status === "completed";
+  const visibleClusterAgents = isIntentMode && !intentSelectionSettled ? [] : clusterAgents;
 
   const agents = useMemo((): DrawerAgent[] => {
     const merged = mergeClusterAgents({
       configAgents,
       outputs: activeStep.outputs,
-      streamAgents: clusterAgents,
+      streamAgents: visibleClusterAgents,
       stepState: activeStep.state,
-      stepRunning: activeStep.state === "running" || isStreaming,
+      stepRunning: (activeStep.state === "running" || isStreaming) && (!isIntentMode || intentSelectionSettled),
     });
     const persistedAgents = parseClusterAgentSummariesFromOutputs(activeStep.outputs);
 
@@ -108,7 +109,7 @@ export function MultiAgentPanel({
         allowUserEdit: readAgentEditAllowed(config, activeStep.configSnapshot),
       };
     });
-  }, [configAgents, clusterAgents, activeStep.outputs, activeStep.state, isStreaming, intentSelectionSettled, selectedAgentIndexes]);
+  }, [configAgents, visibleClusterAgents, activeStep.outputs, activeStep.state, isStreaming, isIntentMode, intentSelectionSettled, selectedAgentIndexes]);
 
   useEffect(() => {
     if (!selectedAgent) {
@@ -174,11 +175,12 @@ export function MultiAgentPanel({
             <p>
               {intentState.status === "failed"
                 ? intentState.errorMessage || "意图分类器执行失败"
-                : intentState.reason
-                ? intentState.reason
-                : intentState.message || "先识别输入意图，再执行命中的子智能体。"}
+                : intentState.status === "completed"
+                ? intentState.reason || "意图识别已完成。"
+                : intentState.status === "running"
+                ? "正在根据输入和候选意图进行识别。"
+                : "先识别输入意图，再执行命中的子智能体。"}
             </p>
-            {intentState.streamingText ? <code>{intentState.streamingText}</code> : null}
             <div className="multi-agent-intent-tags">
               {intentState.selectedCodes.length > 0 ? (
                 intentState.selectedCodes.map((code) => <span key={code}>命中 {code}</span>)
