@@ -8791,6 +8791,12 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
   font-weight: 600;
 }
 
+.workflow-toggle-row--field {
+  min-height: 54px;
+  align-self: stretch;
+  margin-top: 0;
+}
+
 .workflow-input-required-toggle {
   margin-top: 8px;
 }

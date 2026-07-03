@@ -3462,20 +3462,23 @@ function ModelAndReasoningFields({
         }}
       />
       {selectedModel?.reasoningModel ? (
-        <label className="workflow-toggle-row self-end">
-          <span>
-            <strong className="block text-sm">启用深度推理</strong>
-          </span>
-          <input
-            type="checkbox"
-            checked={enableThinking}
-            onChange={(event) => onChange({
-              modelProviderId: selectedModel.providerId,
-              modelName: selectedModel.modelName,
-              enableThinking: event.target.checked,
-            })}
-          />
-        </label>
+        <div className="sys-field">
+          <span className="sys-field-label">推理模式</span>
+          <label className="workflow-toggle-row workflow-toggle-row--field">
+            <span>
+              <strong className="block text-sm">启用深度推理</strong>
+            </span>
+            <input
+              type="checkbox"
+              checked={enableThinking}
+              onChange={(event) => onChange({
+                modelProviderId: selectedModel.providerId,
+                modelName: selectedModel.modelName,
+                enableThinking: event.target.checked,
+              })}
+            />
+          </label>
+        </div>
       ) : null}
     </>
   );

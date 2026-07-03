@@ -66,6 +66,10 @@ export function MultiAgentPanel({
     () => resolveSelectedAgentIndexes(intentState, activeStep.configSnapshot, configAgents),
     [intentState, activeStep.configSnapshot, configAgents],
   );
+  const intentRouteLabels = useMemo(
+    () => buildIntentRouteLabels(activeStep.configSnapshot),
+    [activeStep.configSnapshot],
+  );
   const intentSelectionSettled = isIntentMode && intentState.status === "completed";
   const visibleClusterAgents = isIntentMode && !intentSelectionSettled ? [] : clusterAgents;
 
@@ -183,7 +187,7 @@ export function MultiAgentPanel({
             </p>
             <div className="multi-agent-intent-tags">
               {intentState.selectedCodes.length > 0 ? (
-                intentState.selectedCodes.map((code) => <span key={code}>命中 {code}</span>)
+                intentState.selectedCodes.map((code) => <span key={code}>命中 {intentRouteLabels.get(code) ?? code}</span>)
               ) : intentState.status === "completed" ? (
                 <span>未命中任何意图</span>
               ) : null}
@@ -422,6 +426,24 @@ function resolveSelectedAgentIndexes(
     return index >= 0 ? [index] : [];
   });
   return Array.from(new Set(indexes));
+}
+
+function buildIntentRouteLabels(parentConfig: RuntimePreviewStep["configSnapshot"]): Map<string, string> {
+  const routes: unknown[] = Array.isArray(parentConfig?.intentRoutes) ? parentConfig.intentRoutes : [];
+  const labels = new Map<string, string>();
+  routes.forEach((route) => {
+    if (!route || typeof route !== "object") {
+      return;
+    }
+    const record = route as Record<string, unknown>;
+    const code = readConfigString(record.intentCode, "");
+    if (!code) {
+      return;
+    }
+    const name = readConfigString(record.intentName, code);
+    labels.set(code, name && name !== code ? `${name}（${code}）` : code);
+  });
+  return labels;
 }
 
 function readStringList(value: unknown): string[] {
