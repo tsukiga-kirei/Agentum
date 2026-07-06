@@ -645,18 +645,32 @@ export function validateWorkflowDeliveryPlacement(
   return issues;
 }
 
+export function canInsertWorkflowBrick(
+  visibleNodes: ValidatableWorkflowNode[],
+  brickType: VisibleBrickType,
+  insertAfterNodeId?: string,
+): string | null {
+  const hasDelivery = visibleNodes.some((node) => inferBrickType(node) === "delivery");
+  const insertAfterIndex = insertAfterNodeId ? visibleNodes.findIndex((node) => node.id === insertAfterNodeId) : visibleNodes.length - 1;
+  const insertAfterNode = insertAfterIndex >= 0 ? visibleNodes[insertAfterIndex] : null;
+  const insertingAtEnd = insertAfterIndex >= visibleNodes.length - 1;
+  if (brickType === "delivery" && hasDelivery) {
+    return "流程只能有一个交付节点";
+  }
+  if (insertAfterNode && inferBrickType(insertAfterNode) === "delivery") {
+    return "交付节点必须保持在流程最后一步，不能在其后添加积木";
+  }
+  if (brickType === "delivery" && !insertingAtEnd) {
+    return "交付节点必须放在流程最后一步，请先选中当前最后一步再添加";
+  }
+  return null;
+}
+
 export function canAppendWorkflowBrick(
   visibleNodes: ValidatableWorkflowNode[],
   brickType: VisibleBrickType,
 ): string | null {
-  const hasDelivery = visibleNodes.some((node) => inferBrickType(node) === "delivery");
-  if (brickType === "delivery" && hasDelivery) {
-    return "流程只能有一个交付节点";
-  }
-  if (hasDelivery) {
-    return "已存在交付节点，不能再在其后添加积木";
-  }
-  return null;
+  return canInsertWorkflowBrick(visibleNodes, brickType, visibleNodes[visibleNodes.length - 1]?.id);
 }
 
 export function canMoveWorkflowNode(

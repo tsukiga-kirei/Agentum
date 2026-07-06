@@ -66,7 +66,7 @@ import {
 import {
   applyValidatedConfigStatus,
   buildWorkflowNodeValidationMap,
-  canAppendWorkflowBrick,
+  canInsertWorkflowBrick,
   canMoveWorkflowNode,
   collectRuntimeTemplateTextFields,
   collectRuntimeTemplateVariableNames,
@@ -654,9 +654,10 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
       messageApi.error("流程设计模板尚未加载完成，暂时不能添加积木");
       return;
     }
-    const appendError = canAppendWorkflowBrick(visibleNodes, brickType);
-    if (appendError) {
-      messageApi.warning(appendError);
+    const insertAfterNodeId = selectedNodeId || visibleNodes[visibleNodes.length - 1]?.id;
+    const insertError = canInsertWorkflowBrick(visibleNodes, brickType, insertAfterNodeId);
+    if (insertError) {
+      messageApi.warning(insertError);
       return;
     }
     const template = designerCatalog.brickTemplates.find((item) => item.brickType === brickType);
@@ -664,9 +665,14 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
       messageApi.error("当前积木模板不存在，请刷新后重试");
       return;
     }
-    const previousOutputs = visibleNodes.length > 0 ? visibleNodes[visibleNodes.length - 1].data.outputVariables : [];
-    const nextNode = createNodeFromTemplate(template, visibleNodes.length + 1, previousOutputs);
-    commitVisibleNodes([...visibleNodes, nextNode], nextNode.id);
+    const insertAfterIndex = insertAfterNodeId ? visibleNodes.findIndex((node) => node.id === insertAfterNodeId) : -1;
+    const insertIndex = insertAfterIndex >= 0 ? insertAfterIndex + 1 : visibleNodes.length;
+    const previousOutputs = insertAfterIndex >= 0 ? visibleNodes[insertAfterIndex].data.outputVariables : [];
+    const existingVariables = new Set(visibleNodes.flatMap((node) => node.data.outputVariables).filter(Boolean));
+    const nextNode = uniquifyNewNodeOutputVariables(createNodeFromTemplate(template, insertIndex + 1, previousOutputs), existingVariables);
+    const nextVisibleNodes = [...visibleNodes];
+    nextVisibleNodes.splice(insertIndex, 0, nextNode);
+    commitVisibleNodes(nextVisibleNodes, nextNode.id);
     setIsAddBrickModalOpen(false);
   }
 
@@ -922,6 +928,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
         <AddBrickModal
           templates={designerCatalog?.brickTemplates ?? []}
           visibleNodes={visibleNodes}
+          insertAfterNodeId={selectedNodeId || visibleNodes[visibleNodes.length - 1]?.id}
           onClose={() => setIsAddBrickModalOpen(false)}
           onSelect={handleAddBrick}
         />
@@ -1069,22 +1076,26 @@ function WorkflowStepRow({
 function AddBrickModal({
   templates,
   visibleNodes,
+  insertAfterNodeId,
   onClose,
   onSelect,
 }: {
   templates: WorkflowBrickTemplate[];
   visibleNodes: WorkflowEditorNode[];
+  insertAfterNodeId?: string;
   onClose: () => void;
   onSelect: (brickType: VisibleWorkflowBrickType) => void;
 }) {
   const hasDelivery = visibleNodes.some((node) => getBrickType(node) === "delivery");
+  const insertAfterNode = insertAfterNodeId ? visibleNodes.find((node) => node.id === insertAfterNodeId) : null;
+  const insertLabel = insertAfterNode ? `添加到「${insertAfterNode.data.label}」后` : "添加第一个积木";
 
   return (
     <SysModalMask onClose={onClose}>
       <section className="sys-modal" style={{ maxWidth: 720 }} aria-labelledby="add-brick-title">
         <div className="sys-modal-header">
           <div>
-            <div className="sys-field-label" style={{ marginBottom: 4 }}>添加到末尾</div>
+            <div className="sys-field-label" style={{ marginBottom: 4 }}>{insertLabel}</div>
             <span id="add-brick-title" className="sys-modal-title">选择积木</span>
           </div>
           <button className="sys-modal-close" onClick={onClose} aria-label="关闭添加积木弹窗">×</button>
@@ -1097,7 +1108,7 @@ function AddBrickModal({
               if (!definition) {
                 return null;
               }
-              const disabledReason = canAppendWorkflowBrick(visibleNodes, brickType);
+              const disabledReason = canInsertWorkflowBrick(visibleNodes, brickType, insertAfterNodeId);
               const Icon = definition.icon;
 
               return (
@@ -1127,7 +1138,7 @@ function AddBrickModal({
           </div>
           {hasDelivery ? (
             <p className="mt-3 text-xs text-[var(--color-text-tertiary)]">
-              交付节点必须位于流程最后一步；已有交付节点时不能再追加其他积木。
+              交付节点必须位于流程最后一步；已有交付节点时，只能在它前面的步骤后继续插入普通积木。
             </p>
           ) : null}
           {templates.length === 0 ? (
@@ -4988,6 +4999,72 @@ function uniqueDisplayName(value: string, existingNames: Set<string>) {
     suffix += 1;
   }
   return candidate;
+}
+
+function uniquifyNewNodeOutputVariables(node: WorkflowEditorNode, existingVariables: Set<string>): WorkflowEditorNode {
+  const brickType = getBrickType(node);
+  const rawConfig = cloneRecord(node.data.rawConfig ?? {});
+  const usedVariables = new Set(existingVariables);
+
+  if (brickType === "input") {
+    const fields = readInputFields(rawConfig.inputFields, node.data.outputVariables).map((field, index) => {
+      const variable = uniqueVariableName(field.variable || node.data.outputVariables[index] || `input_${index + 1}`, usedVariables);
+      usedVariables.add(variable);
+      return { ...field, variable };
+    });
+    return {
+      ...node,
+      data: {
+        ...node.data,
+        outputVariables: fields.map((field) => field.variable).filter(Boolean),
+        rawConfig: { ...rawConfig, inputFields: fields },
+      },
+    };
+  }
+
+  if (brickType === "cluster") {
+    const executionMode = readClusterExecutionMode(rawConfig.executionMode);
+    const clusterOutputVariable = uniqueVariableName(readClusterOutputVariable(rawConfig.clusterOutputVariable), usedVariables);
+    usedVariables.add(clusterOutputVariable);
+    const clusterAgents = Array.isArray(rawConfig.clusterAgents)
+      ? rawConfig.clusterAgents
+        .filter(isClusterAgentConfig)
+        .map((agent, index) => {
+          const output = uniqueVariableName(agent.output || `agent_${index + 1}_output`, usedVariables);
+          usedVariables.add(output);
+          return { ...agent, output };
+        })
+      : [];
+    return {
+      ...node,
+      data: {
+        ...node.data,
+        outputVariables: buildClusterOutputVariables(executionMode, clusterAgents, clusterOutputVariable),
+        rawConfig: {
+          ...rawConfig,
+          clusterAgents,
+          clusterOutputVariable,
+          mergeRule: buildDefaultClusterMergeRule(clusterAgents),
+        },
+      },
+    };
+  }
+
+  const outputVariables = node.data.outputVariables.map((variable, index) => {
+    const output = uniqueVariableName(variable || `output_${index + 1}`, usedVariables);
+    usedVariables.add(output);
+    return output;
+  });
+  return {
+    ...node,
+    data: {
+      ...node.data,
+      outputVariables,
+      rawConfig: brickType === "agent" && outputVariables[0]
+        ? { ...rawConfig, output: outputVariables[0], outputVariable: outputVariables[0] }
+        : rawConfig,
+    },
+  };
 }
 
 function ensureSystemTrigger(nextNodes: WorkflowEditorNode[], catalog: WorkflowDesignerCatalog) {
