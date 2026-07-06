@@ -399,6 +399,15 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
                       启动于: {formatDate(evidence.runInfo.startedAt)}
                     </span>
                     <span className="run-evidence-hero-meta-item">
+                      <Timer size={14} />
+                      来源: {formatTriggerSourceLabel(evidence.runInfo.triggerSource)}
+                    </span>
+                    {evidence.runInfo.triggerSource === "schedule" ? (
+                      <span className="run-evidence-hero-meta-item">
+                        <CalendarScheduleText payload={evidence.runInfo.triggerPayload} />
+                      </span>
+                    ) : null}
+                    <span className="run-evidence-hero-meta-item">
                       <CheckCircle2 size={14} />
                       结束于: {formatDate(evidence.runInfo.completedAt)}
                     </span>
@@ -578,5 +587,20 @@ export function RunEvidenceDrawer({ runId, onClose }: RunEvidenceDrawerProps) {
         )}
       </div>
     </Drawer>
+  );
+}
+
+function formatTriggerSourceLabel(triggerSource?: string) {
+  return triggerSource === "schedule" ? "定时任务自动执行" : "用户手工创建";
+}
+
+function CalendarScheduleText({ payload }: { payload?: Record<string, unknown> | null }) {
+  const scheduleName = typeof payload?.scheduleName === "string" ? payload.scheduleName : "定时任务";
+  const cronExpression = typeof payload?.cronExpression === "string" ? payload.cronExpression : "";
+  return (
+    <>
+      <Timer size={14} />
+      配置: {scheduleName}{cronExpression ? ` · ${cronExpression}` : ""}
+    </>
   );
 }

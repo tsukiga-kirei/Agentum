@@ -1,6 +1,7 @@
 import type { BootstrapAdminRequest, BootstrapStatusResponse, ChangeMyPasswordRequest, LoginRequest, LoginResponse, MeResponse, PortalType, SsoProviderOption, SwitchRoleRequest, SwitchRoleResponse, TenantOption, UpdateMyProfileRequest } from "../types/auth";
 import type { AssetSummary, CreateMyAssetRequest, MyAssetDetail, MyAssetPage, MyAssetRow, ShareableMemberRow, SystemCapabilityAssetPage, UpdateMyAssetAccessRequest, UpdateMyAssetRequest } from "../types/asset";
 import type { AuditEvidence, AuditOperationLog, AuditRunSummary, AuditToolCall } from "../types/audit";
+import type { NotificationPage, NotificationUnreadCount, PublishAnnouncementRequest } from "../types/notification";
 import type {
   CreateDepartmentRequest,
   CreateMemberRequest,
@@ -76,7 +77,12 @@ import type {
 import type {
   WorkbenchAvailableWorkflowPage,
   WorkbenchAvailableWorkflowPreview,
+  CreateWorkflowScheduleRequest,
+  UpdateWorkflowScheduleRequest,
   WorkbenchRunDetail,
+  WorkflowScheduleExecutionPage,
+  WorkflowScheduleInputFieldsResponse,
+  WorkflowSchedulePage,
   WorkbenchSummary,
   WorkbenchTaskRunPage,
 } from "../types/workbench";
@@ -557,6 +563,20 @@ export const assetApi = {
     apiRequest<void>(`/api/tenants/${tenantId}/assets/mine/${assetId}`, { method: "DELETE", token }),
 };
 
+export const notificationApi = {
+  unreadCount: (token: string) => apiRequest<NotificationUnreadCount>("/api/notifications/unread-count", { token }),
+  list: (token: string, status = "all", page = 1, size = 10) => {
+    const params = new URLSearchParams({ status, page: String(page), size: String(size) });
+    return apiRequest<NotificationPage>(`/api/notifications?${params.toString()}`, { token });
+  },
+  markAllRead: (token: string) =>
+    apiRequest<NotificationUnreadCount>("/api/notifications/read-all", { method: "PATCH", token }),
+  markRead: (token: string, messageId: string) =>
+    apiRequest<void>(`/api/notifications/${messageId}/read`, { method: "PATCH", token }),
+  publishAnnouncement: (token: string, body: PublishAnnouncementRequest) =>
+    apiRequest<void>("/api/notifications/announcements", { method: "POST", token, body }),
+};
+
 export const workbenchApi = {
   // 业务工作台概览：返回真实统计、待办和最近任务运行。
   summary: (tenantId: string, token: string) =>
@@ -595,10 +615,14 @@ export const workbenchApi = {
     size = 10,
     sort = "updatedAt,desc",
     state = "",
+    triggerSource = "",
   ) => {
     const params = new URLSearchParams({ keyword, page: String(page), size: String(size), sort });
     if (state) {
       params.set("state", state);
+    }
+    if (triggerSource) {
+      params.set("triggerSource", triggerSource);
     }
     return apiRequest<WorkbenchTaskRunPage>(`/api/tenants/${tenantId}/workbench/active-runs?${params.toString()}`, { token });
   },
@@ -609,8 +633,12 @@ export const workbenchApi = {
     page = 1,
     size = 10,
     sort = "updatedAt,desc",
+    triggerSource = "",
   ) => {
     const params = new URLSearchParams({ keyword, page: String(page), size: String(size), sort });
+    if (triggerSource) {
+      params.set("triggerSource", triggerSource);
+    }
     return apiRequest<WorkbenchTaskRunPage>(`/api/tenants/${tenantId}/workbench/runs?${params.toString()}`, { token });
   },
   getRun: (tenantId: string, token: string, runId: string) =>
@@ -689,6 +717,42 @@ export const workbenchApi = {
       token,
       body: { action: "complete", comment: "提交表单数据并继续下一步", payload },
     }),
+  listSchedules: (tenantId: string, token: string, keyword = "", status = "", page = 1, size = 10, sort = "updatedAt,desc") => {
+    const params = new URLSearchParams({ keyword, status, page: String(page), size: String(size), sort });
+    return apiRequest<WorkflowSchedulePage>(`/api/tenants/${tenantId}/workbench/schedules?${params.toString()}`, { token });
+  },
+  getScheduleInputFields: (tenantId: string, token: string, workflowId: string) =>
+    apiRequest<WorkflowScheduleInputFieldsResponse>(
+      `/api/tenants/${tenantId}/workbench/schedules/workflows/${workflowId}/input-fields`,
+      { token },
+    ),
+  createSchedule: (tenantId: string, token: string, body: CreateWorkflowScheduleRequest) =>
+    apiRequest<WorkflowSchedulePage["items"][number]>(`/api/tenants/${tenantId}/workbench/schedules`, {
+      method: "POST",
+      token,
+      body,
+    }),
+  updateSchedule: (tenantId: string, token: string, scheduleId: string, body: UpdateWorkflowScheduleRequest) =>
+    apiRequest<WorkflowSchedulePage["items"][number]>(`/api/tenants/${tenantId}/workbench/schedules/${scheduleId}`, {
+      method: "PUT",
+      token,
+      body,
+    }),
+  updateScheduleStatus: (tenantId: string, token: string, scheduleId: string, status: "active" | "paused") =>
+    apiRequest<WorkflowSchedulePage["items"][number]>(`/api/tenants/${tenantId}/workbench/schedules/${scheduleId}/status`, {
+      method: "PATCH",
+      token,
+      body: { status },
+    }),
+  deleteSchedule: (tenantId: string, token: string, scheduleId: string) =>
+    apiRequest<void>(`/api/tenants/${tenantId}/workbench/schedules/${scheduleId}`, { method: "DELETE", token }),
+  listScheduleExecutions: (tenantId: string, token: string, scheduleId: string, page = 1, size = 10) => {
+    const params = new URLSearchParams({ page: String(page), size: String(size) });
+    return apiRequest<WorkflowScheduleExecutionPage>(
+      `/api/tenants/${tenantId}/workbench/schedules/${scheduleId}/executions?${params.toString()}`,
+      { token },
+    );
+  },
 };
 
 export const workflowApi = {
@@ -759,7 +823,7 @@ export const workflowApi = {
 };
 
 export const auditApi = {
-  listRuns: (tenantId: string, token: string, page: number, size: number, sort: string, keyword: string, state: string) => {
+  listRuns: (tenantId: string, token: string, page: number, size: number, sort: string, keyword: string, state: string, triggerSource = "") => {
     const params = new URLSearchParams({
       page: String(page),
       size: String(size),
@@ -767,6 +831,9 @@ export const auditApi = {
       keyword,
       state,
     });
+    if (triggerSource) {
+      params.set("triggerSource", triggerSource);
+    }
     return apiRequest<PageResponse<AuditRunSummary>>(`/api/tenants/${tenantId}/audit/runs?${params.toString()}`, { token });
   },
   getEvidence: (tenantId: string, runId: string, token: string) =>

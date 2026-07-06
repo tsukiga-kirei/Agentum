@@ -74,6 +74,7 @@ public class AuditController {
         @AuthenticationPrincipal CurrentUserPrincipal principal,
         @RequestParam(defaultValue = "") String keyword,
         @RequestParam(defaultValue = "") String state,
+        @RequestParam(defaultValue = "") String triggerSource,
         @RequestParam(defaultValue = "1") int page,
         @RequestParam(defaultValue = "20") int size,
         @RequestParam(defaultValue = "startedAt,desc") String sort,
@@ -81,7 +82,7 @@ public class AuditController {
     ) {
         assertAuditAccess(principal, tenantId);
         PageQuery pageQuery = PageQuery.of(page, size, sort);
-        PageResponse<AuditRunSummaryDto> response = auditService.getRunAuditList(tenantId, pageQuery, keyword, state);
+        PageResponse<AuditRunSummaryDto> response = auditService.getRunAuditList(tenantId, pageQuery, keyword, state, triggerSource);
         return ApiResponse.success(response, RequestIds.current(request));
     }
 

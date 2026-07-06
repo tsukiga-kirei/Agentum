@@ -63,7 +63,7 @@ public class RuntimeSseController {
         @RequestParam(defaultValue = "false") boolean replay,
         @AuthenticationPrincipal CurrentUserPrincipal principal
     ) {
-        workbenchAccess.assertCanAccessWorkbench(principal, tenantId);
+        workbenchAccess.assertCanAccessWorkbenchOrSchedule(principal, tenantId);
         log.info("用户建立 SSE 连接 tenantId={} userId={} runId={} replay={} lastEventId={} requestId={}",
             tenantId, principal.userId(), runId, replay, lastEventId, RequestIds.current());
         return runStreamRelayService.openStream(runId, lastEventId, replay);

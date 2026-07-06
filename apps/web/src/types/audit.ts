@@ -3,6 +3,8 @@ export interface AuditRunSummary {
   title: string;
   workflowName: string;
   versionNumber: number;
+  triggerSource: "manual" | "schedule" | string;
+  triggerScheduleId: string | null;
   state: string;
   startedAt: string;
   completedAt: string | null;
@@ -20,6 +22,9 @@ export interface WorkflowRunInfo {
   title: string;
   workflowName: string;
   versionNumber: number;
+  triggerSource: "manual" | "schedule" | string;
+  triggerScheduleId: string | null;
+  triggerPayload: Record<string, any>;
   state: string;
   startedAt: string;
   completedAt: string | null;

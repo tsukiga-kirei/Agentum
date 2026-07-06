@@ -2,11 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Activity,
   Bell,
+  CheckCircle2,
   GitBranch,
   IdCard,
   KeyRound,
   LayoutDashboard,
   Library,
+  Loader2,
   LogOut,
   Mail,
   PanelLeft,
@@ -17,14 +19,17 @@ import {
   UserRoundCog,
   X,
 } from "lucide-react";
-import { message, Segmented } from "antd";
+import { Drawer, Empty, Pagination, Segmented, message } from "antd";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { AgentumMark } from "../components/brand/AgentumMark";
 import { SysModalMask } from "../components/common/SysModalMask";
 import { SysPasswordInput } from "../components/common/SysPasswordInput";
+import { MarkdownRenderer } from "../components/runtime/MarkdownRenderer";
+import { AgentumApiError, notificationApi } from "../services/apiClient";
 import { useAuthStore } from "../stores/authStore";
 import { paths, surfaceFromPath, surfaceNavPath, type SurfaceKey } from "../routes/paths";
-import { isDarkTheme } from "../utils/theme";
+import { getThemedDrawerRootClassName, isDarkTheme } from "../utils/theme";
+import type { NotificationRow, NotificationStatusFilter } from "../types/notification";
 
 const ICON_MAP = {
   LayoutDashboard,
@@ -36,6 +41,8 @@ const ICON_MAP = {
 } as const;
 
 type AccountSettingsTabKey = "overview" | "profile" | "security";
+
+const NOTIFICATION_PAGE_SIZE = 8;
 
 const accountSettingsTabs: Array<{
   key: AccountSettingsTabKey;
@@ -52,11 +59,13 @@ export function AppLayout() {
   const themeMode = useAuthStore((state) => state.themeMode);
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
+  const token = useAuthStore((state) => state.token);
   const updateMyProfile = useAuthStore((state) => state.updateMyProfile);
   const changeMyPassword = useAuthStore((state) => state.changeMyPassword);
   const location = useLocation();
   const navigate = useNavigate();
   const isDarkMode = isDarkTheme(themeMode);
+  const drawerRootClassName = getThemedDrawerRootClassName(themeMode);
   const activeSurface = surfaceFromPath(location.pathname);
   const isRunDetail = location.pathname.includes("/workbench/runs/");
   const isWorkflowEditor = location.pathname.includes("/designer/workflows/");
@@ -70,12 +79,22 @@ export function AppLayout() {
   const [passwordSubmitting, setPasswordSubmitting] = useState(false);
   const [profileDraft, setProfileDraft] = useState({ displayName: user?.displayName ?? "", email: user?.email ?? "" });
   const [passwordDraft, setPasswordDraft] = useState({ currentPassword: "", newPassword: "", confirmPassword: "" });
+  const [notificationDrawerOpen, setNotificationDrawerOpen] = useState(false);
+  const [notificationStatus, setNotificationStatus] = useState<NotificationStatusFilter>("all");
+  const [notificationPage, setNotificationPage] = useState(1);
+  const [notifications, setNotifications] = useState<NotificationRow[]>([]);
+  const [notificationTotal, setNotificationTotal] = useState(0);
+  const [notificationLoading, setNotificationLoading] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [announcementDraft, setAnnouncementDraft] = useState({ title: "", contentMarkdown: "" });
+  const [announcementPublishing, setAnnouncementPublishing] = useState(false);
   const [messageApi, messageContextHolder] = message.useMessage();
   const sidebarTransitionTimer = useRef<number | null>(null);
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const isSidebarCompact = isSidebarCollapsed || isSidebarTransitioning;
   const showSidebarText = !isSidebarCompact;
   const avatarText = getAvatarText(user?.displayName || user?.username || "A");
+  const canPublishAnnouncement = user?.role === "system_admin" || user?.role === "tenant_admin";
   const accountSettingsSegmentedOptions = accountSettingsTabs.map((tab) => {
     const Icon = tab.icon;
     return {
@@ -98,6 +117,51 @@ export function AppLayout() {
   useEffect(() => {
     setProfileDraft({ displayName: user?.displayName ?? "", email: user?.email ?? "" });
   }, [user?.displayName, user?.email]);
+
+  const loadUnreadCount = useCallback(async () => {
+    if (!token) {
+      setUnreadCount(0);
+      return;
+    }
+    try {
+      const data = await notificationApi.unreadCount(token);
+      setUnreadCount(data.unreadCount);
+    } catch (error) {
+      console.warn("[notification] 未读消息数加载失败", { code: error instanceof AgentumApiError ? error.code : "unknown" });
+    }
+  }, [token]);
+
+  const loadNotifications = useCallback(async (page = notificationPage, status = notificationStatus) => {
+    if (!token) {
+      setNotifications([]);
+      setNotificationTotal(0);
+      return;
+    }
+    setNotificationLoading(true);
+    try {
+      const data = await notificationApi.list(token, status, page, NOTIFICATION_PAGE_SIZE);
+      setNotifications(data.items);
+      setNotificationTotal(data.total);
+    } catch (error) {
+      const reason = error instanceof AgentumApiError ? error.message : "消息加载失败";
+      messageApi.error(reason);
+      setNotifications([]);
+      setNotificationTotal(0);
+    } finally {
+      setNotificationLoading(false);
+    }
+  }, [messageApi, notificationPage, notificationStatus, token]);
+
+  useEffect(() => {
+    void loadUnreadCount();
+  }, [loadUnreadCount]);
+
+  useEffect(() => {
+    if (!notificationDrawerOpen) {
+      return;
+    }
+    void loadNotifications(notificationPage, notificationStatus);
+  }, [loadNotifications, notificationDrawerOpen, notificationPage, notificationStatus]);
 
   useEffect(() => {
     if (!accountMenuOpen) return;
@@ -130,6 +194,76 @@ export function AppLayout() {
     setProfileModalOpen(true);
     setAccountMenuOpen(false);
   }, [user?.displayName, user?.email]);
+
+  const openNotificationCenter = useCallback(() => {
+    setAccountMenuOpen(false);
+    setNotificationDrawerOpen(true);
+    setNotificationPage(1);
+  }, []);
+
+  async function handleMarkNotificationRead(row: NotificationRow) {
+    if (!token || !row.unread) {
+      return;
+    }
+    try {
+      await notificationApi.markRead(token, row.id);
+      setNotifications((items) => items.map((item) => item.id === row.id ? { ...item, unread: false, readAt: new Date().toISOString() } : item));
+      setUnreadCount((count) => Math.max(0, count - 1));
+    } catch (error) {
+      console.warn("[notification] 消息标记已读失败", { code: error instanceof AgentumApiError ? error.code : "unknown" });
+    }
+  }
+
+  async function handleMarkAllNotificationsRead() {
+    if (!token) {
+      return;
+    }
+    try {
+      const data = await notificationApi.markAllRead(token);
+      setUnreadCount(data.unreadCount);
+      await loadNotifications(notificationPage, notificationStatus);
+      messageApi.success("消息已全部标记为已读");
+    } catch (error) {
+      const reason = error instanceof AgentumApiError ? error.message : "全部已读失败";
+      messageApi.error(reason);
+    }
+  }
+
+  async function handlePublishAnnouncement() {
+    if (!token || !user || !canPublishAnnouncement) {
+      return;
+    }
+    const title = announcementDraft.title.trim();
+    const contentMarkdown = announcementDraft.contentMarkdown.trim();
+    if (!title) {
+      messageApi.warning("请输入公告标题");
+      return;
+    }
+    if (!contentMarkdown) {
+      messageApi.warning("请输入公告内容");
+      return;
+    }
+    setAnnouncementPublishing(true);
+    try {
+      await notificationApi.publishAnnouncement(token, {
+        scope: user.role === "system_admin" ? "global" : "tenant",
+        tenantId: user.role === "tenant_admin" ? user.tenantId : null,
+        title,
+        contentMarkdown,
+      });
+      setAnnouncementDraft({ title: "", contentMarkdown: "" });
+      messageApi.success("公告已发布");
+      setNotificationStatus("all");
+      setNotificationPage(1);
+      await loadNotifications(1, "all");
+      await loadUnreadCount();
+    } catch (error) {
+      const reason = error instanceof AgentumApiError ? error.message : "公告发布失败";
+      messageApi.error(reason);
+    } finally {
+      setAnnouncementPublishing(false);
+    }
+  }
 
   async function handleSaveProfile() {
     if (!profileDraft.displayName.trim()) {
@@ -291,7 +425,7 @@ export function AppLayout() {
                 title="账号菜单"
                 aria-label="打开账号菜单"
               >
-                <AccountAvatar avatarUrl={user?.avatar} text={avatarText} />
+                <AccountAvatarWithBadge avatarUrl={user?.avatar} text={avatarText} unreadCount={unreadCount} />
               </button>
             ) : (
               <button
@@ -300,7 +434,7 @@ export function AppLayout() {
                 onClick={() => setAccountMenuOpen((open) => !open)}
                 aria-label="打开账号菜单"
               >
-                <AccountAvatar avatarUrl={user?.avatar} text={avatarText} />
+                <AccountAvatarWithBadge avatarUrl={user?.avatar} text={avatarText} unreadCount={unreadCount} />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-[var(--color-text-primary)]">{user?.displayName ?? "未登录"}</p>
                   <p className="truncate text-xs text-[var(--color-text-tertiary)]">{user?.organization ?? ""}</p>
@@ -313,9 +447,10 @@ export function AppLayout() {
                   <UserRoundCog className="h-4 w-4" aria-hidden="true" />
                   <span>个人设置</span>
                 </button>
-                <button type="button" className="workbench-account-menu-item" onClick={() => { setAccountMenuOpen(false); messageApi.info("消息中心功能即将开放"); }}>
+                <button type="button" className="workbench-account-menu-item" onClick={openNotificationCenter}>
                   <Bell className="h-4 w-4" aria-hidden="true" />
                   <span>消息中心</span>
+                  {unreadCount > 0 ? <span className="account-menu-unread-count">{formatUnreadCount(unreadCount)}</span> : null}
                 </button>
                 <button type="button" className="workbench-account-menu-item workbench-account-menu-item--danger" onClick={() => void handleLogout()}>
                   <LogOut className="h-4 w-4" aria-hidden="true" />
@@ -463,7 +598,116 @@ export function AppLayout() {
           </div>
         </SysModalMask>
       ) : null}
+      <Drawer
+        title="消息中心"
+        width={620}
+        open={notificationDrawerOpen}
+        onClose={() => setNotificationDrawerOpen(false)}
+        rootClassName={drawerRootClassName}
+      >
+        <div className="sys-drawer-section notification-center">
+          <div className="notification-center-toolbar">
+            <Segmented<NotificationStatusFilter>
+              value={notificationStatus}
+              onChange={(value) => {
+                setNotificationStatus(value);
+                setNotificationPage(1);
+              }}
+              options={[
+                { value: "all", label: "全部" },
+                { value: "unread", label: "未读" },
+                { value: "read", label: "已读" },
+              ]}
+              className="login-portal-segmented login-portal-segmented--business notification-center-segmented"
+            />
+            <button type="button" className="sys-btn sys-btn--default sys-btn--sm" onClick={() => void handleMarkAllNotificationsRead()} disabled={unreadCount <= 0}>
+              <CheckCircle2 size={14} />
+              全部已读
+            </button>
+          </div>
+
+          {canPublishAnnouncement ? (
+            <section className="sys-config-group notification-announcement-editor" aria-label="发布公告">
+              <div className="sys-config-group-title">{user?.role === "system_admin" ? "发布系统公告" : "发布租户公告"}</div>
+              <div className="sys-field">
+                <label className="sys-field-label sys-field-label--required">标题</label>
+                <div className="sys-field-input-wrap">
+                  <Bell size={16} className="sys-field-prefix" aria-hidden="true" />
+                  <input
+                    className="sys-field-input"
+                    value={announcementDraft.title}
+                    maxLength={160}
+                    onChange={(event) => setAnnouncementDraft((draft) => ({ ...draft, title: event.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="sys-field">
+                <label className="sys-field-label sys-field-label--required">Markdown 内容</label>
+                <textarea
+                  className="sys-field-textarea notification-announcement-textarea"
+                  value={announcementDraft.contentMarkdown}
+                  rows={5}
+                  placeholder="支持 Markdown，例如 **重点**、列表和链接"
+                  onChange={(event) => setAnnouncementDraft((draft) => ({ ...draft, contentMarkdown: event.target.value }))}
+                />
+              </div>
+              <div className="sys-config-actions">
+                <button type="button" className="sys-btn sys-btn--primary" disabled={announcementPublishing} onClick={() => void handlePublishAnnouncement()}>
+                  {announcementPublishing ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Bell size={14} />}
+                  发布公告
+                </button>
+              </div>
+            </section>
+          ) : null}
+
+          {notificationLoading ? (
+            <div className="workflow-definition-empty-state">
+              <Loader2 className="h-8 w-8 animate-spin" aria-hidden="true" />
+              <p>正在加载消息</p>
+            </div>
+          ) : notifications.length === 0 ? (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={notificationStatus === "unread" ? "暂无未读消息" : "暂无消息"} />
+          ) : (
+            <div className="notification-list">
+              {notifications.map((row) => (
+                <article key={row.id} className={`notification-list-item ${row.unread ? "notification-list-item--unread" : ""}`} onClick={() => void handleMarkNotificationRead(row)}>
+                  <div className="notification-list-item-head">
+                    <div className="min-w-0">
+                      <h3>{row.title}</h3>
+                      <p>{formatNotificationCategory(row.category)} · {row.publisherName || "系统"} · {formatAccountDate(row.createdAt)}</p>
+                    </div>
+                    {row.unread ? <span className="notification-unread-dot" aria-label="未读" /> : null}
+                  </div>
+                  <MarkdownRenderer content={row.contentMarkdown} compact />
+                </article>
+              ))}
+            </div>
+          )}
+
+          {notificationTotal > NOTIFICATION_PAGE_SIZE ? (
+            <div className="agent-admin-pagination-wrap mt-4 px-0 py-4">
+              <Pagination
+                className="agent-admin-pagination"
+                current={notificationPage}
+                total={notificationTotal}
+                pageSize={NOTIFICATION_PAGE_SIZE}
+                showSizeChanger={false}
+                onChange={setNotificationPage}
+              />
+            </div>
+          ) : null}
+        </div>
+      </Drawer>
     </main>
+  );
+}
+
+function AccountAvatarWithBadge({ avatarUrl, text, unreadCount }: { avatarUrl?: string; text: string; unreadCount: number }) {
+  return (
+    <span className="account-avatar-badge-wrap">
+      <AccountAvatar avatarUrl={avatarUrl} text={text} />
+      {unreadCount > 0 ? <span className="account-avatar-unread-badge">{formatUnreadCount(unreadCount)}</span> : null}
+    </span>
   );
 }
 
@@ -485,6 +729,16 @@ function formatRoleLabel(role?: string): string {
   if (role === "tenant_admin") return "租户管理";
   if (role === "business") return "业务用户";
   return role || "-";
+}
+
+function formatUnreadCount(count: number): string {
+  return count > 99 ? "99+" : String(count);
+}
+
+function formatNotificationCategory(category: string): string {
+  if (category === "schedule_result") return "定时任务";
+  if (category === "system_notice") return "系统通知";
+  return category;
 }
 
 function formatAccountDate(value?: string): string {

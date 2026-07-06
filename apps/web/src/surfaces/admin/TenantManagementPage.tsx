@@ -4,6 +4,7 @@ import { Empty, Segmented, Select, message, Pagination, Drawer } from "antd";
 import {
   AlertTriangle,
   Building2,
+  CalendarClock,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -73,6 +74,7 @@ const tenantManagementTabs: TenantManagementTab[] = [
 
 const pagePermissionOptions = [
   { value: "workbench", label: "业务工作台", description: "待办、发起流程和运行摘要", icon: ClipboardList },
+  { value: "workbench_schedules", label: "定时任务", description: "按 cron 自动执行有权限流程", icon: CalendarClock },
   { value: "designer", label: "流程设计", description: "草稿、阶段积木和能力配置", icon: Code2 },
   { value: "assets", label: "能力资产", description: "智能体、Skill、MCP 和交付能力", icon: Database },
   { value: "audit", label: "运行审计", description: "链路、快照、工具和交付记录", icon: Eye },

@@ -105,7 +105,7 @@ public class TenantOrganizationService {
     private static final SortWhitelist TENANT_ORG_ROLE_SORT = SortWhitelist.of("updatedAt", "name", "status", "createdAt", "updatedAt");
     private static final Set<String> ALLOWED_ORG_ROLE_STATUS = Set.of("active", "disabled");
     private static final Set<String> ALLOWED_MEMBERSHIP_STATUS = Set.of("active", "disabled");
-    private static final Set<String> ALLOWED_PAGE_PERMISSIONS = Set.of("workbench", "designer", "assets", "audit");
+    private static final Set<String> ALLOWED_PAGE_PERMISSIONS = Set.of("workbench", "workbench_schedules", "designer", "assets", "audit");
     private static final Set<String> ALLOWED_RESOURCE_TYPES = Set.of("mcp", "skill", "prompt_template", "delivery");
     private static final Set<String> ALLOWED_RESOURCE_ACTIONS = Set.of("use", "view", "execute", "manage");
     private static final Set<String> ALLOWED_PRINCIPAL_TYPES = Set.of("role", "department", "user");
@@ -1625,8 +1625,10 @@ public class TenantOrganizationService {
     private static String formatPagePermissionName(String pageKey) {
         return switch (pageKey) {
             case "workbench" -> "业务工作台";
+            case "workbench_schedules" -> "定时任务";
             case "designer" -> "流程设计";
             case "assets" -> "能力资产";
+            case "audit" -> "运行审计";
             default -> pageKey;
         };
     }

@@ -54,6 +54,7 @@ public interface WorkflowRunRepository extends JpaRepository<WorkflowRunEntity, 
             or lower(run.workflowName) like lower(concat('%', :keyword, '%'))
           )
           and (:state = '' or run.state = :state)
+          and (:triggerSource = '' or run.triggerSource = :triggerSource)
         """)
     Page<WorkflowRunEntity> searchVisibleActiveRuns(
         @Param("tenantId") UUID tenantId,
@@ -61,6 +62,7 @@ public interface WorkflowRunRepository extends JpaRepository<WorkflowRunEntity, 
         @Param("tenantManager") boolean tenantManager,
         @Param("keyword") String keyword,
         @Param("state") String state,
+        @Param("triggerSource") String triggerSource,
         Pageable pageable
     );
 
@@ -76,12 +78,14 @@ public interface WorkflowRunRepository extends JpaRepository<WorkflowRunEntity, 
             or lower(run.runNumber) like lower(concat('%', :keyword, '%'))
             or lower(run.workflowName) like lower(concat('%', :keyword, '%'))
           )
+          and (:triggerSource = '' or run.triggerSource = :triggerSource)
         """)
     Page<WorkflowRunEntity> searchVisibleCompletedRuns(
         @Param("tenantId") UUID tenantId,
         @Param("operatorUserId") UUID operatorUserId,
         @Param("tenantManager") boolean tenantManager,
         @Param("keyword") String keyword,
+        @Param("triggerSource") String triggerSource,
         Pageable pageable
     );
 
@@ -93,14 +97,16 @@ public interface WorkflowRunRepository extends JpaRepository<WorkflowRunEntity, 
             :keyword = ''
             or lower(run.title) like lower(concat('%', :keyword, '%'))
             or lower(run.workflowName) like lower(concat('%', :keyword, '%'))
+            or lower(run.runNumber) like lower(concat('%', :keyword, '%'))
           )
           and (:state = '' or run.state = :state)
+          and (:triggerSource = '' or run.triggerSource = :triggerSource)
         """)
     Page<WorkflowRunEntity> searchAllRunsForAudit(
         @Param("tenantId") UUID tenantId,
         @Param("keyword") String keyword,
         @Param("state") String state,
+        @Param("triggerSource") String triggerSource,
         Pageable pageable
     );
 }
-

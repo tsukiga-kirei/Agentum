@@ -94,13 +94,15 @@ public class AuditService {
         UUID tenantId,
         PageQuery pageQuery,
         String keyword,
-        String state
+        String state,
+        String triggerSource
     ) {
         Pageable pageable = PageableFactory.from(pageQuery, RUN_SORT);
         Page<WorkflowRunEntity> page = workflowRunRepository.searchAllRunsForAudit(
             tenantId,
             keyword != null ? keyword.trim() : "",
             state != null ? state.trim() : "",
+            normalizeTriggerSource(triggerSource),
             pageable
         );
 
@@ -116,6 +118,8 @@ public class AuditService {
             entity.getTitle(),
             entity.getWorkflowName(),
             entity.getWorkflowVersionNumber(),
+            entity.getTriggerSource(),
+            entity.getTriggerScheduleId(),
             entity.getState(),
             entity.getStartedAt(),
             entity.getCompletedAt(),
@@ -280,6 +284,9 @@ public class AuditService {
                 run.getTitle(),
                 run.getWorkflowName(),
                 run.getWorkflowVersionNumber(),
+                run.getTriggerSource(),
+                run.getTriggerScheduleId(),
+                maskMap(run.getTriggerPayload(), sensitiveKeys, sensitivePlainValues),
                 run.getState(),
                 run.getStartedAt(),
                 run.getCompletedAt(),
@@ -442,6 +449,13 @@ public class AuditService {
             WorkflowRunEntity::getTitle,
             (v1, v2) -> v1
         ));
+    }
+
+    private String normalizeTriggerSource(String triggerSource) {
+        if ("manual".equals(triggerSource) || "schedule".equals(triggerSource)) {
+            return triggerSource;
+        }
+        return "";
     }
 
     // 辅助转换 Map 的脱敏逻辑

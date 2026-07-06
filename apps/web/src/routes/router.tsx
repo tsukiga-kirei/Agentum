@@ -46,6 +46,7 @@ export const appRouter = createBrowserRouter([
                   { index: true, element: <WorkbenchShell /> },
                   { path: "create", element: <WorkbenchShell /> },
                   { path: "tasks", element: <WorkbenchShell /> },
+                  { path: "schedules", element: <WorkbenchShell /> },
                   { path: "runs/:runId", element: <WorkbenchShell /> },
                 ],
               },

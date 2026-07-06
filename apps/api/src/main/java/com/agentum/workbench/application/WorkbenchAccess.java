@@ -1,6 +1,7 @@
 package com.agentum.workbench.application;
 
 import com.agentum.auth.application.CurrentUserPrincipal;
+import com.agentum.permission.application.BusinessPageAccess;
 import com.agentum.shared.api.ApiException;
 import com.agentum.shared.api.RequestIds;
 import java.util.Set;
@@ -23,11 +24,41 @@ public class WorkbenchAccess {
 
     private static final Logger log = LoggerFactory.getLogger(WorkbenchAccess.class);
     private static final Set<String> TENANT_ROLES = Set.of("business", "tenant_admin", "system_admin");
+    private static final String WORKBENCH_PAGE_KEY = "workbench";
+    private static final String SCHEDULES_PAGE_KEY = "workbench_schedules";
+
+    private final BusinessPageAccess businessPageAccess;
+
+    public WorkbenchAccess(BusinessPageAccess businessPageAccess) {
+        this.businessPageAccess = businessPageAccess;
+    }
 
     /**
      * 校验当前主体是否能进入指定租户的业务工作台。
      */
     public void assertCanAccessWorkbench(CurrentUserPrincipal principal, UUID tenantId) {
+        assertCanAccessWorkbenchPage(principal, tenantId, Set.of(WORKBENCH_PAGE_KEY), "当前账号未被分配业务工作台页签");
+    }
+
+    public void assertCanAccessSchedule(CurrentUserPrincipal principal, UUID tenantId) {
+        assertCanAccessWorkbenchPage(principal, tenantId, Set.of(SCHEDULES_PAGE_KEY), "当前账号未被分配定时任务页签");
+    }
+
+    /**
+     * 定时任务复用业务工作台下的流程选择、运行详情和交付查看能力。
+     * 这些接口属于只读或配置辅助读取，允许“业务工作台”和“定时任务”两个同级页签任一授权进入；
+     * 手工发起、待办处理、回退等业务操作仍必须走 {@link #assertCanAccessWorkbench(CurrentUserPrincipal, UUID)}。
+     */
+    public void assertCanAccessWorkbenchOrSchedule(CurrentUserPrincipal principal, UUID tenantId) {
+        assertCanAccessWorkbenchPage(
+            principal,
+            tenantId,
+            Set.of(WORKBENCH_PAGE_KEY, SCHEDULES_PAGE_KEY),
+            "当前账号未被分配业务工作台或定时任务页签"
+        );
+    }
+
+    private void assertCanAccessWorkbenchPage(CurrentUserPrincipal principal, UUID tenantId, Set<String> pageKeys, String deniedMessage) {
         if (principal == null) {
             log.warn("业务工作台访问被拒绝：未登录 tenantId={} requestId={}", tenantId, RequestIds.current());
             throw new ApiException(HttpStatus.UNAUTHORIZED, "AUTH_REQUIRED", "请先登录后再访问");
@@ -58,12 +89,28 @@ public class WorkbenchAccess {
             throw new ApiException(HttpStatus.FORBIDDEN, "WORKBENCH_ACCESS_DENIED", "当前账号不能访问该租户的业务工作台");
         }
 
+        if ("business".equals(principal.role()) && !hasAnyPageGrant(tenantId, principal.userId(), pageKeys)) {
+            log.warn(
+                "业务工作台访问被拒绝：未分配页签 userId={} tenantId={} pageKey={} requestId={}",
+                principal.userId(),
+                tenantId,
+                pageKeys,
+                RequestIds.current()
+            );
+            throw new ApiException(HttpStatus.FORBIDDEN, "WORKBENCH_PAGE_ACCESS_DENIED", deniedMessage);
+        }
+
         log.debug(
-            "业务工作台访问通过 userId={} role={} tenantId={} requestId={}",
+            "业务工作台访问通过 userId={} role={} tenantId={} pageKey={} requestId={}",
             principal.userId(),
             principal.role(),
             tenantId,
+            pageKeys,
             RequestIds.current()
         );
+    }
+
+    private boolean hasAnyPageGrant(UUID tenantId, UUID userId, Set<String> pageKeys) {
+        return pageKeys.stream().anyMatch(pageKey -> businessPageAccess.hasPageGrant(tenantId, userId, pageKey));
     }
 }

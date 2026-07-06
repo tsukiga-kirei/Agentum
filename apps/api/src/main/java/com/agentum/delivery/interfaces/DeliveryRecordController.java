@@ -48,7 +48,7 @@ public class DeliveryRecordController {
         @AuthenticationPrincipal CurrentUserPrincipal principal,
         HttpServletRequest request
     ) {
-        workbenchAccess.assertCanAccessWorkbench(principal, tenantId);
+        workbenchAccess.assertCanAccessWorkbenchOrSchedule(principal, tenantId);
         DeliveryRecordEntity record = deliveryRecordRepository.findByIdAndTenantId(recordId, tenantId)
             .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "DELIVERY_RECORD_NOT_FOUND", "交付记录不存在"));
         DocumentDeliveryFile file = documentDeliveryService.readRecordFile(record);

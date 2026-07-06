@@ -924,6 +924,31 @@ textarea:focus-visible {
   font-size: 18px;
 }
 
+.account-avatar-badge-wrap {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.account-avatar-unread-badge {
+  position: absolute;
+  right: -5px;
+  top: -5px;
+  display: inline-flex;
+  min-width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  border: 2px solid var(--color-bg-sidebar);
+  border-radius: var(--radius-full);
+  background: var(--color-danger);
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
 .workbench-account-menu {
   position: absolute;
   left: 12px;
@@ -969,6 +994,21 @@ textarea:focus-visible {
   color: var(--color-text-primary);
 }
 
+.account-menu-unread-count {
+  margin-left: auto;
+  display: inline-flex;
+  min-width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-danger) 14%, transparent);
+  color: var(--color-danger);
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .workbench-account-menu-item--danger {
   color: var(--color-danger);
 }
@@ -985,6 +1025,92 @@ textarea:focus-visible {
   width: min(680px, calc(100vw - 32px));
   max-height: min(760px, calc(100vh - 48px));
   overflow: hidden;
+}
+
+.notification-center {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.notification-center-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.notification-center-segmented.login-portal-segmented {
+  width: auto;
+}
+
+.notification-announcement-editor {
+  margin: 0;
+}
+
+.notification-announcement-textarea {
+  min-height: 120px;
+}
+
+.notification-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.notification-list-item {
+  cursor: pointer;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-card);
+  padding: 14px;
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.notification-list-item:hover,
+.notification-list-item:focus-within {
+  border-color: color-mix(in srgb, var(--color-primary) 28%, var(--color-border-light));
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+
+.notification-list-item--unread {
+  border-color: color-mix(in srgb, var(--color-primary) 36%, var(--color-border-light));
+  background: color-mix(in srgb, var(--color-primary) 4%, var(--color-bg-card));
+}
+
+.notification-list-item-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.notification-list-item-head h3 {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.notification-list-item-head p {
+  margin: 4px 0 0;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+
+.notification-unread-dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  background: var(--color-danger);
 }
 
 .account-settings-modal .sys-modal-header {

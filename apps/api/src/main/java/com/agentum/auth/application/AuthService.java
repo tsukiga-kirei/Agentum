@@ -163,7 +163,7 @@ public class AuthService {
 
         // 计算菜单和权限
         List<MenuItemResponse> menus = menuService.resolveMenus(activeAssignment.getRole(), activeAssignment.getTenantId(), user.getId());
-        List<String> permissions = List.of();
+        List<String> permissions = menuService.resolvePermissions(activeAssignment.getRole(), activeAssignment.getTenantId(), user.getId());
 
         // 签发 token
         CurrentUserPrincipal principal = buildPrincipal(user, activeAssignment, portal.code());
@@ -219,10 +219,11 @@ public class AuthService {
         List<RoleInfoResponse> roles = buildRoleInfoList(allAssignments);
         RoleInfoResponse activeRole = buildRoleInfo(activeAssignment, tenant);
         List<MenuItemResponse> menus = menuService.resolveMenus(activeAssignment.getRole(), activeAssignment.getTenantId(), user.getId());
+        List<String> permissions = menuService.resolvePermissions(activeAssignment.getRole(), activeAssignment.getTenantId(), user.getId());
 
         AuthUserResponse userResponse = buildUserResponse(user, activeAssignment, tenant);
         // 复用 LoginResponse 结构（不含 token），前端通过已有 token 识别
-        return new LoginResponse(null, userResponse, roles, activeRole, List.of(), menus);
+        return new LoginResponse(null, userResponse, roles, activeRole, permissions, menus);
     }
 
     @Transactional
@@ -313,6 +314,7 @@ public class AuthService {
 
         RoleInfoResponse activeRole = buildRoleInfo(targetAssignment, tenant);
         List<MenuItemResponse> menus = menuService.resolveMenus(targetAssignment.getRole(), targetAssignment.getTenantId(), user.getId());
+        List<String> permissions = menuService.resolvePermissions(targetAssignment.getRole(), targetAssignment.getTenantId(), user.getId());
         AuthUserResponse userResponse = buildUserResponse(user, targetAssignment, tenant);
 
         log.info(
@@ -327,7 +329,7 @@ public class AuthService {
             userResponse,
             buildRoleInfoList(roleAssignmentRepository.findByUserIdOrderByDefaultAssignmentDesc(user.getId())),
             activeRole,
-            List.of(),
+            permissions,
             menus
         );
         return new AuthSessionResult(response, refreshTokenService.issue(user.getId(), targetAssignment.getId()));
@@ -352,7 +354,7 @@ public class AuthService {
             buildUserResponse(user, assignment, tenant),
             buildRoleInfoList(assignments),
             buildRoleInfo(assignment, tenant),
-            List.of(),
+            menuService.resolvePermissions(assignment.getRole(), assignment.getTenantId(), user.getId()),
             menuService.resolveMenus(assignment.getRole(), assignment.getTenantId(), user.getId())
         );
         log.info("Access Token 刷新成功 userId={} tenantId={} roleAssignmentId={} requestId={}", user.getId(), assignment.getTenantId(), assignment.getId(), RequestIds.current());

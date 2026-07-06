@@ -64,7 +64,7 @@ public class WorkbenchController {
         @RequestParam(defaultValue = "updatedAt,desc") String sort,
         HttpServletRequest request
     ) {
-        workbenchAccess.assertCanAccessWorkbench(principal, tenantId);
+        workbenchAccess.assertCanAccessWorkbenchOrSchedule(principal, tenantId);
         return ApiResponse.success(
             workbenchRuntimeService.listLaunchableWorkflows(tenantId, principal, keyword, page, size, sort),
             RequestIds.current(request)
@@ -78,7 +78,7 @@ public class WorkbenchController {
         @AuthenticationPrincipal CurrentUserPrincipal principal,
         HttpServletRequest request
     ) {
-        workbenchAccess.assertCanAccessWorkbench(principal, tenantId);
+        workbenchAccess.assertCanAccessWorkbenchOrSchedule(principal, tenantId);
         return ApiResponse.success(
             workbenchRuntimeService.getAvailableWorkflowPreview(tenantId, principal, workflowId),
             RequestIds.current(request)
@@ -102,6 +102,7 @@ public class WorkbenchController {
         @AuthenticationPrincipal CurrentUserPrincipal principal,
         @RequestParam(defaultValue = "") String keyword,
         @RequestParam(defaultValue = "") String state,
+        @RequestParam(defaultValue = "") String triggerSource,
         @RequestParam(defaultValue = "1") int page,
         @RequestParam(defaultValue = "10") int size,
         @RequestParam(defaultValue = "updatedAt,desc") String sort,
@@ -109,7 +110,7 @@ public class WorkbenchController {
     ) {
         workbenchAccess.assertCanAccessWorkbench(principal, tenantId);
         return ApiResponse.success(
-            workbenchRuntimeService.listActiveRuns(tenantId, principal, keyword, state, page, size, sort),
+            workbenchRuntimeService.listActiveRuns(tenantId, principal, keyword, state, triggerSource, page, size, sort),
             RequestIds.current(request)
         );
     }
@@ -119,6 +120,7 @@ public class WorkbenchController {
         @PathVariable UUID tenantId,
         @AuthenticationPrincipal CurrentUserPrincipal principal,
         @RequestParam(defaultValue = "") String keyword,
+        @RequestParam(defaultValue = "") String triggerSource,
         @RequestParam(defaultValue = "1") int page,
         @RequestParam(defaultValue = "10") int size,
         @RequestParam(defaultValue = "updatedAt,desc") String sort,
@@ -126,7 +128,7 @@ public class WorkbenchController {
     ) {
         workbenchAccess.assertCanAccessWorkbench(principal, tenantId);
         return ApiResponse.success(
-            workbenchRuntimeService.listRuns(tenantId, principal, keyword, page, size, sort),
+            workbenchRuntimeService.listRuns(tenantId, principal, keyword, triggerSource, page, size, sort),
             RequestIds.current(request)
         );
     }
@@ -138,7 +140,7 @@ public class WorkbenchController {
         @AuthenticationPrincipal CurrentUserPrincipal principal,
         HttpServletRequest request
     ) {
-        workbenchAccess.assertCanAccessWorkbench(principal, tenantId);
+        workbenchAccess.assertCanAccessWorkbenchOrSchedule(principal, tenantId);
         return ApiResponse.success(workbenchRuntimeService.getRunDetail(tenantId, principal, runId), RequestIds.current(request));
     }
 

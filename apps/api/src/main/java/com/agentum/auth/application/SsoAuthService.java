@@ -228,6 +228,7 @@ public class SsoAuthService {
         List<RoleInfoResponse> roles = buildRoleInfoList(assignments);
         RoleInfoResponse activeRole = buildRoleInfo(activeAssignment, tenant);
         List<MenuItemResponse> menus = menuService.resolveMenus(activeAssignment.getRole(), activeAssignment.getTenantId(), user.getId());
+        List<String> permissions = menuService.resolvePermissions(activeAssignment.getRole(), activeAssignment.getTenantId(), user.getId());
         CurrentUserPrincipal principal = new CurrentUserPrincipal(user.getId(), user.getUsername(), activeAssignment.getTenantId(), activeAssignment.getRole(), portal, activeAssignment.getId());
         String token = authTokenService.createToken(principal);
 
@@ -235,7 +236,7 @@ public class SsoAuthService {
             "企业 SSO 登录成功 userId={} tenantId={} providerId={} portal={} roleAssignmentId={} requestId={}",
             user.getId(), provider.getTenantId(), provider.getId(), portal, activeAssignment.getId(), RequestIds.current()
         );
-        LoginResponse response = new LoginResponse(token, buildUserResponse(user, activeAssignment, tenant), roles, activeRole, List.of(), menus);
+        LoginResponse response = new LoginResponse(token, buildUserResponse(user, activeAssignment, tenant), roles, activeRole, permissions, menus);
         return new AuthSessionResult(response, refreshTokenService.issue(user.getId(), activeAssignment.getId()));
     }
 
@@ -262,13 +263,14 @@ public class SsoAuthService {
         List<RoleInfoResponse> roles = buildRoleInfoList(assignments);
         RoleInfoResponse activeRole = buildRoleInfo(activeAssignment, tenant);
         List<MenuItemResponse> menus = menuService.resolveMenus(activeAssignment.getRole(), activeAssignment.getTenantId(), user.getId());
+        List<String> permissions = menuService.resolvePermissions(activeAssignment.getRole(), activeAssignment.getTenantId(), user.getId());
         CurrentUserPrincipal principal = new CurrentUserPrincipal(user.getId(), user.getUsername(), activeAssignment.getTenantId(), activeAssignment.getRole(), portal, activeAssignment.getId());
         LoginResponse response = new LoginResponse(
             authTokenService.createToken(principal),
             buildUserResponse(user, activeAssignment, tenant),
             roles,
             activeRole,
-            List.of(),
+            permissions,
             menus
         );
         log.info("企业 Basic 登录成功 userId={} tenantId={} providerId={} portal={} roleAssignmentId={} requestId={}", user.getId(), tenant.getId(), provider.getId(), portal, activeAssignment.getId(), RequestIds.current());

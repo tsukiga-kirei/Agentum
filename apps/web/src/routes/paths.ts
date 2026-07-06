@@ -8,6 +8,7 @@ export const paths = {
     root: "/app/workbench",
     create: "/app/workbench/create",
     tasks: "/app/workbench/tasks",
+    schedules: "/app/workbench/schedules",
     run: (runId: string) => `/app/workbench/runs/${runId}`,
   },
   designer: {

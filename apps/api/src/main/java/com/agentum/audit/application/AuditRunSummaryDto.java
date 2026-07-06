@@ -11,6 +11,8 @@ public record AuditRunSummaryDto(
     String title,
     String workflowName,
     int versionNumber,
+    String triggerSource,
+    UUID triggerScheduleId,
     String state,
     Instant startedAt,
     Instant completedAt,

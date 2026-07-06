@@ -208,6 +208,114 @@ paths:
       responses:
         "200":
           description: 已退出
+  /api/notifications:
+    get:
+      summary: 查询当前用户消息
+      description: 返回系统公告、租户公告和定时任务结果消息，支持按未读/已读筛选。
+      tags:
+        - Notification
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [all, unread, read]
+            default: all
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: size
+          in: query
+          schema: { type: integer, default: 10 }
+      responses:
+        "200":
+          description: 当前用户消息分页
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/NotificationPageResponse"
+  /api/notifications/unread-count:
+    get:
+      summary: 获取当前用户未读消息数
+      tags: [Notification]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 未读消息数
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/NotificationUnreadCount"
+  /api/notifications/read-all:
+    patch:
+      summary: 将当前用户消息全部标记为已读
+      tags: [Notification]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 更新后的未读消息数
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/NotificationUnreadCount"
+  /api/notifications/{messageId}/read:
+    patch:
+      summary: 将单条消息标记为已读
+      tags: [Notification]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: messageId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: 已标记为已读
+  /api/notifications/announcements:
+    post:
+      summary: 发布公告类消息
+      description: 系统管理员发布全局公告；租户管理员仅能在当前租户上下文发布租户公告。内容为 Markdown。
+      tags: [Notification]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublishAnnouncementRequest"
+      responses:
+        "200":
+          description: 已发布的公告消息
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/NotificationRow"
   /api/auth/sso/basic-entry:
     get:
       summary: Basic 共享密钥单点入口
@@ -684,6 +792,240 @@ paths:
                     properties:
                       data:
                         $ref: "#/components/schemas/WorkbenchAvailableWorkflowPreview"
+  /api/tenants/{tenantId}/workbench/active-runs:
+    get:
+      summary: 查询当前用户未完成任务
+      description: 任务中心“我的待办”列表，支持区分手工创建与定时任务创建的运行实例。
+      tags:
+        - Workbench
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: keyword
+          in: query
+          schema: { type: string }
+        - name: state
+          in: query
+          schema: { type: string }
+        - name: triggerSource
+          in: query
+          schema:
+            type: string
+            enum: [manual, schedule]
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: size
+          in: query
+          schema: { type: integer, default: 10 }
+        - name: sort
+          in: query
+          schema: { type: string, default: "updatedAt,desc" }
+      responses:
+        "200":
+          description: 未完成任务分页列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/WorkbenchTaskRunPageResponse"
+  /api/tenants/{tenantId}/workbench/schedules:
+    get:
+      summary: 查询当前用户可见定时任务
+      tags: [Workbench]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: keyword
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string, enum: [active, paused] }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: size
+          in: query
+          schema: { type: integer, default: 10 }
+      responses:
+        "200":
+          description: 定时任务分页列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/WorkflowSchedulePageResponse"
+    post:
+      summary: 创建定时任务
+      description: 创建时校验流程发起权限、cron 表达式和输入节点必填预置值。
+      tags: [Workbench]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWorkflowScheduleRequest"
+      responses:
+        "200":
+          description: 创建后的定时任务
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/WorkflowScheduleRow"
+  /api/tenants/{tenantId}/workbench/schedules/workflows/{workflowId}/input-fields:
+    get:
+      summary: 获取流程定时任务需要预置的输入字段
+      tags: [Workbench]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: workflowId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: 输入节点字段列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/WorkflowScheduleInputFieldsResponse"
+  /api/tenants/{tenantId}/workbench/schedules/{scheduleId}:
+    put:
+      summary: 更新定时任务
+      tags: [Workbench]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: scheduleId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWorkflowScheduleRequest"
+      responses:
+        "200":
+          description: 更新后的定时任务
+    delete:
+      summary: 删除定时任务
+      tags: [Workbench]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: scheduleId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: 已删除
+  /api/tenants/{tenantId}/workbench/schedules/{scheduleId}/status:
+    patch:
+      summary: 启用或暂停定时任务
+      tags: [Workbench]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: scheduleId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWorkflowScheduleStatusRequest"
+      responses:
+        "200":
+          description: 更新后的定时任务
+  /api/tenants/{tenantId}/workbench/schedules/{scheduleId}/executions:
+    get:
+      summary: 查询定时任务执行记录
+      tags: [Workbench]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: scheduleId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: size
+          in: query
+          schema: { type: integer, default: 10 }
+      responses:
+        "200":
+          description: 定时任务执行记录分页
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/WorkflowScheduleExecutionPageResponse"
   /api/tenants/{tenantId}/workbench/runs:
     post:
       summary: 创建业务任务运行
@@ -740,6 +1082,11 @@ paths:
           schema:
             type: string
             default: all
+        - name: triggerSource
+          in: query
+          schema:
+            type: string
+            enum: [manual, schedule]
         - name: page
           in: query
           schema:
@@ -4694,6 +5041,147 @@ components:
         payload:
           type: object
           additionalProperties: true
+    NotificationUnreadCount:
+      type: object
+      properties:
+        unreadCount:
+          type: integer
+      required: [unreadCount]
+    NotificationRow:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        category: { type: string, enum: [system_notice, schedule_result] }
+        scope: { type: string, enum: [global, tenant, user] }
+        title: { type: string }
+        contentMarkdown: { type: string }
+        unread: { type: boolean }
+        publisherName: { type: string }
+        createdAt: { type: string, format: date-time }
+        readAt: { type: string, format: date-time, nullable: true }
+      required: [id, category, scope, title, contentMarkdown, unread, createdAt]
+    NotificationPageResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotificationRow"
+        page: { type: integer }
+        size: { type: integer }
+        total: { type: integer, format: int64 }
+        totalPages: { type: integer }
+      required: [items, page, size, total, totalPages]
+    PublishAnnouncementRequest:
+      type: object
+      properties:
+        scope:
+          type: string
+          enum: [global, tenant]
+        tenantId:
+          type: string
+          format: uuid
+          nullable: true
+        title:
+          type: string
+        contentMarkdown:
+          type: string
+      required: [scope, title, contentMarkdown]
+    WorkflowScheduleRow:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        workflowId: { type: string, format: uuid }
+        workflowName: { type: string }
+        workflowVersionNumber: { type: integer }
+        name: { type: string }
+        cronExpression: { type: string }
+        shortcutKey: { type: string, nullable: true }
+        shortcutLabel: { type: string, nullable: true }
+        status: { type: string, enum: [active, paused] }
+        inputPayload: { type: object, additionalProperties: true }
+        nextRunAt: { type: string, format: date-time, nullable: true }
+        lastRunAt: { type: string, format: date-time, nullable: true }
+        lastRunState: { type: string, nullable: true }
+        lastRunId: { type: string, format: uuid, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, workflowId, workflowName, workflowVersionNumber, name, cronExpression, status, inputPayload, createdAt, updatedAt]
+    WorkflowSchedulePageResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowScheduleRow"
+        page: { type: integer }
+        size: { type: integer }
+        total: { type: integer, format: int64 }
+        totalPages: { type: integer }
+      required: [items, page, size, total, totalPages]
+    WorkflowScheduleInputField:
+      type: object
+      properties:
+        nodeId: { type: string }
+        nodeName: { type: string }
+        variable: { type: string }
+        label: { type: string }
+        required: { type: boolean }
+        placeholder: { type: string, nullable: true }
+      required: [nodeId, nodeName, variable, label, required]
+    WorkflowScheduleInputFieldsResponse:
+      type: object
+      properties:
+        workflowId: { type: string, format: uuid }
+        workflowName: { type: string }
+        versionNumber: { type: integer }
+        inputFields:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowScheduleInputField"
+      required: [workflowId, workflowName, versionNumber, inputFields]
+    CreateWorkflowScheduleRequest:
+      type: object
+      properties:
+        workflowId: { type: string, format: uuid }
+        name: { type: string }
+        cronExpression: { type: string }
+        shortcutKey: { type: string, nullable: true }
+        shortcutLabel: { type: string, nullable: true }
+        status: { type: string, enum: [active, paused] }
+        inputPayload: { type: object, additionalProperties: true }
+      required: [workflowId, name, cronExpression, inputPayload]
+    UpdateWorkflowScheduleStatusRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [active, paused]
+      required: [status]
+    WorkflowScheduleExecutionRow:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        scheduleId: { type: string, format: uuid }
+        runId: { type: string, format: uuid, nullable: true }
+        status: { type: string, enum: [running, succeeded, aborted] }
+        scheduledAt: { type: string, format: date-time }
+        startedAt: { type: string, format: date-time, nullable: true }
+        completedAt: { type: string, format: date-time, nullable: true }
+        message: { type: string, nullable: true }
+      required: [id, scheduleId, status, scheduledAt]
+    WorkflowScheduleExecutionPageResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowScheduleExecutionRow"
+        page: { type: integer }
+        size: { type: integer }
+        total: { type: integer, format: int64 }
+        totalPages: { type: integer }
+      required: [items, page, size, total, totalPages]
     WorkbenchTaskRunRow:
       type: object
       properties:
@@ -4706,6 +5194,13 @@ components:
           type: string
         workflowVersionNumber:
           type: integer
+        triggerSource:
+          type: string
+          enum: [manual, schedule]
+        triggerScheduleId:
+          type: string
+          format: uuid
+          nullable: true
         state:
           type: string
         stateLabel:
@@ -4730,6 +5225,7 @@ components:
         - title
         - workflowName
         - workflowVersionNumber
+        - triggerSource
         - state
         - stateLabel
         - currentNodeName
@@ -4889,6 +5385,13 @@ components:
           type: string
         workflowVersionNumber:
           type: integer
+        triggerSource:
+          type: string
+          enum: [manual, schedule]
+        triggerScheduleId:
+          type: string
+          format: uuid
+          nullable: true
         state:
           type: string
         stateLabel:
@@ -4930,6 +5433,7 @@ components:
         - workflowId
         - workflowName
         - workflowVersionNumber
+        - triggerSource
         - state
         - stateLabel
         - progressPercent

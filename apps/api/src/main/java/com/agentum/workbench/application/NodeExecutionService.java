@@ -196,6 +196,7 @@ public class NodeExecutionService {
             }
             cancellationGuard.assertExecutable(runId);
             workbenchRuntimeService.saveNodeSuccess(runId, nodeRunId, outputs, command.operatorUserId());
+            boolean scheduledRun = workbenchRuntimeService.isScheduledRun(runId);
             WorkflowNodeRunEntity nodeAfterSave = workflowNodeRunRepository.findById(nodeRunId).orElse(null);
             if (nodeAfterSave == null || !"completed".equals(nodeAfterSave.getState())) {
                 log.info(
@@ -207,7 +208,11 @@ public class NodeExecutionService {
             finalizeJobSucceeded(command.jobId());
 
             emit(runId, nodeRunId, "node_completed", Map.of("outputs", outputs));
-            emitPostCompletionState(runId, nodeRunId);
+            if (scheduledRun) {
+                workbenchRuntimeService.continueScheduledRunAfterJob(runId, command.operatorUserId());
+            } else {
+                emitPostCompletionState(runId, nodeRunId);
+            }
             streamWriter.append(runId, "message", "[DONE]");
 
             log.info(

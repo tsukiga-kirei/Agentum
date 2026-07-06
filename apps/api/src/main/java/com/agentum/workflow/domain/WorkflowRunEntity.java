@@ -5,7 +5,11 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.UUID;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 // 运行实例只引用不可变发布版本，避免设计态草稿后续修改影响已创建任务的执行链路。
 @Entity
@@ -74,6 +78,16 @@ public class WorkflowRunEntity {
     @Column(name = "run_number", nullable = false, length = 40)
     private String runNumber;
 
+    @Column(name = "trigger_source", nullable = false, length = 30)
+    private String triggerSource;
+
+    @Column(name = "trigger_schedule_id")
+    private UUID triggerScheduleId;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "trigger_payload", nullable = false, columnDefinition = "jsonb")
+    private Map<String, Object> triggerPayload;
+
     protected WorkflowRunEntity() {
     }
 
@@ -104,9 +118,19 @@ public class WorkflowRunEntity {
         entity.progressPercent = 0;
         entity.saved = false;
         entity.runNumber = runNumber;
+        entity.triggerSource = "manual";
+        entity.triggerPayload = new LinkedHashMap<>();
         entity.startedAt = now;
         entity.updatedAt = now;
         return entity;
+    }
+
+    public void markScheduledTrigger(UUID scheduleId, Map<String, Object> payload, Instant now) {
+        this.triggerSource = "schedule";
+        this.triggerScheduleId = scheduleId;
+        this.triggerPayload = payload == null ? new LinkedHashMap<>() : new LinkedHashMap<>(payload);
+        this.saved = true;
+        this.updatedAt = now;
     }
 
     public void markSaved(Instant now) {
@@ -239,5 +263,21 @@ public class WorkflowRunEntity {
 
     public String getRunNumber() {
         return runNumber;
+    }
+
+    public String getTriggerSource() {
+        return triggerSource == null ? "manual" : triggerSource;
+    }
+
+    public UUID getTriggerScheduleId() {
+        return triggerScheduleId;
+    }
+
+    public Map<String, Object> getTriggerPayload() {
+        return triggerPayload == null ? Map.of() : triggerPayload;
+    }
+
+    public boolean isScheduledTrigger() {
+        return "schedule".equals(getTriggerSource());
     }
 }

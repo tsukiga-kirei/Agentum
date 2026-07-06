@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Empty, Pagination, message, Select } from "antd";
-import { Search, ClipboardList, Eye, Activity, ChevronDown } from "lucide-react";
+import { Search, ClipboardList, Eye, Activity, ChevronDown, CalendarClock } from "lucide-react";
 import { auditApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import type { AuditRunSummary } from "../../types/audit";
@@ -23,6 +23,7 @@ export function ExecutionAuditTab({ setLoading }: ExecutionAuditTabProps) {
   const [size, setSize] = useState(10);
   const [keyword, setKeyword] = useState("");
   const [state, setState] = useState("");
+  const [triggerSource, setTriggerSource] = useState("");
 
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
 
@@ -33,7 +34,7 @@ export function ExecutionAuditTab({ setLoading }: ExecutionAuditTabProps) {
     if (!tenantId) return;
     setLoading(true);
     try {
-      const res = await auditApi.listRuns(tenantId, token, pageVal, sizeVal, "startedAt,desc", keyword, state);
+      const res = await auditApi.listRuns(tenantId, token, pageVal, sizeVal, "startedAt,desc", keyword, state, triggerSource);
       if (res) {
         setRuns(res.items);
         setTotal(res.total);
@@ -50,7 +51,7 @@ export function ExecutionAuditTab({ setLoading }: ExecutionAuditTabProps) {
     fetchRuns(1);
     setPage(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [keyword, state, tenantId]);
+  }, [keyword, state, triggerSource, tenantId]);
 
   const handlePageChange = (p: number, s: number) => {
     setPage(p);
@@ -94,6 +95,19 @@ export function ExecutionAuditTab({ setLoading }: ExecutionAuditTabProps) {
               { value: "failed", label: <RunStateBadge state="failed" /> },
             ]}
           />
+          <Select
+            value={triggerSource}
+            onChange={(value) => setTriggerSource(value)}
+            className="agent-admin-select w-44"
+            classNames={selectClassNames}
+            suffixIcon={selectSuffixIcon}
+            prefix={<CalendarClock className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+            options={[
+              { value: "", label: "全部来源" },
+              { value: "manual", label: "手工创建" },
+              { value: "schedule", label: "定时创建" },
+            ]}
+          />
         </div>
       </div>
 
@@ -122,6 +136,9 @@ export function ExecutionAuditTab({ setLoading }: ExecutionAuditTabProps) {
                           {run.title}
                         </span>
                         <RunStateBadge state={run.state} />
+                        <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${run.triggerSource === "schedule" ? "bg-cyan-100 text-cyan-800 dark:bg-cyan-950/50 dark:text-cyan-300" : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"}`}>
+                          {run.triggerSource === "schedule" ? "定时创建" : "手工创建"}
+                        </span>
                       </div>
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-400 mt-1">
                         <span className="flex items-center gap-1">

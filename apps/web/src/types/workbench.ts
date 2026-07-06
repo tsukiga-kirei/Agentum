@@ -89,6 +89,8 @@ export type WorkbenchTaskRunRow = {
   runNumber: string;
   workflowName: string;
   workflowVersionNumber: number;
+  triggerSource: "manual" | "schedule" | string;
+  triggerScheduleId: string | null;
   state: string;
   stateLabel: string;
   currentNodeName: string;
@@ -144,6 +146,8 @@ export type WorkbenchRunDetail = {
   workflowId: string;
   workflowName: string;
   workflowVersionNumber: number;
+  triggerSource: "manual" | "schedule" | string;
+  triggerScheduleId: string | null;
   state: string;
   stateLabel: string;
   progressPercent: number;
@@ -160,3 +164,71 @@ export type WorkbenchRunDetail = {
 };
 
 export type WorkbenchTaskRunPage = PageResponse<WorkbenchTaskRunRow>;
+
+export type WorkflowScheduleRow = {
+  id: string;
+  workflowId: string;
+  workflowName: string;
+  workflowVersionNumber: number;
+  name: string;
+  cronExpression: string;
+  shortcutKey: string;
+  shortcutLabel: string;
+  status: "active" | "paused" | string;
+  inputPayload: Record<string, unknown>;
+  nextRunAt: string | null;
+  lastRunAt: string | null;
+  lastRunId: string | null;
+  lastRunState: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type WorkflowScheduleInputField = {
+  nodeId: string;
+  nodeName: string;
+  variable: string;
+  label: string;
+  placeholder: string;
+  required: boolean;
+  valueType: string;
+};
+
+export type WorkflowScheduleInputFieldsResponse = {
+  workflowId: string;
+  workflowName: string;
+  workflowVersionNumber: number;
+  inputFields: WorkflowScheduleInputField[];
+};
+
+export type WorkflowScheduleExecutionRow = {
+  id: string;
+  scheduleId: string;
+  runId: string | null;
+  status: "running" | "succeeded" | "aborted" | string;
+  scheduledAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  message: string | null;
+};
+
+export type WorkflowSchedulePage = PageResponse<WorkflowScheduleRow>;
+export type WorkflowScheduleExecutionPage = PageResponse<WorkflowScheduleExecutionRow>;
+
+export type CreateWorkflowScheduleRequest = {
+  workflowId: string;
+  name: string;
+  cronExpression: string;
+  shortcutKey?: string;
+  shortcutLabel?: string;
+  inputPayload: Record<string, unknown>;
+};
+
+export type UpdateWorkflowScheduleRequest = {
+  name: string;
+  cronExpression: string;
+  shortcutKey?: string;
+  shortcutLabel?: string;
+  status?: "active" | "paused";
+  inputPayload: Record<string, unknown>;
+};

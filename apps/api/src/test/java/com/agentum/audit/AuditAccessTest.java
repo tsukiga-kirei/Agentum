@@ -124,7 +124,7 @@ class AuditAccessTest {
     // 辅助方法，用反射或调用 Controller 里的私有方法间接调用 assertAuditAccess
     // 我们可以直接通过 listRuns 抛出的异常来验证其权限断言
     private void invokeControllerCheck(CurrentUserPrincipal principal, UUID targetTenantId) {
-        auditController.listRuns(targetTenantId, principal, "", "", 1, 20, "startedAt,desc", request);
+        auditController.listRuns(targetTenantId, principal, "", "", "", 1, 20, "startedAt,desc", request);
     }
 
     private static CurrentUserPrincipal newPrincipal(String role, UUID tenantId) {

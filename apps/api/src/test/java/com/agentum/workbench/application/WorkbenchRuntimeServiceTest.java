@@ -290,6 +290,71 @@ class WorkbenchRuntimeServiceTest {
     }
 
     @Test
+    void shouldApplyScheduledInputAndEnqueueAgentNode() {
+        WorkbenchRuntimeService service = newService();
+        WorkflowDefinitionEntity open = publishedDefinition("授信自动复核流程", DESIGNER_ID, "all");
+        WorkflowVersionEntity version = version(open, 6, scheduledSnapshotJson());
+        UserAccount operator = mock(UserAccount.class);
+        when(operator.getId()).thenReturn(OPERATOR_ID);
+        when(operator.getDisplayName()).thenReturn("业务用户");
+
+        @SuppressWarnings("unchecked")
+        List<WorkflowNodeRunEntity>[] savedNodes = new List[1];
+        WorkflowRunEntity[] savedRun = new WorkflowRunEntity[1];
+
+        stubTenant();
+        when(workflowDefinitionRepository.findByIdAndTenantId(open.getId(), TENANT_ID)).thenReturn(Optional.of(open));
+        when(workflowVersionRepository.findTopByWorkflowIdOrderByVersionNumberDesc(open.getId())).thenReturn(Optional.of(version));
+        when(workflowAccessGrantRepository.findByWorkflowId(open.getId())).thenReturn(List.of());
+        when(userAccountRepository.findAllById(any())).thenReturn(List.of(operator));
+        when(workflowRuntimeExecutor.execute(any()))
+            .thenReturn(new WorkflowRuntimeExecutor.ExecutionResult(Map.of("starter", "定时触发")));
+        when(workflowRunRepository.save(any(WorkflowRunEntity.class))).thenAnswer(invocation -> {
+            savedRun[0] = invocation.getArgument(0);
+            return savedRun[0];
+        });
+        when(workflowNodeRunRepository.saveAll(any())).thenAnswer(invocation -> {
+            savedNodes[0] = invocation.getArgument(0);
+            return savedNodes[0];
+        });
+        when(workflowNodeRunRepository.save(any(WorkflowNodeRunEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(workflowRunRepository.findByIdAndTenantId(any(UUID.class), eq(TENANT_ID)))
+            .thenAnswer(invocation -> Optional.ofNullable(savedRun[0]));
+        when(workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(any(UUID.class)))
+            .thenAnswer(invocation -> savedNodes[0] == null ? List.of() : savedNodes[0]);
+        when(workflowRunEventRepository.findByRunIdOrderByEventTimeAsc(any(UUID.class))).thenReturn(List.of());
+        when(workflowWaitingEventRepository.findByRunIdAndStatusOrderByCreatedAtDesc(any(UUID.class), eq("open")))
+            .thenReturn(List.of());
+        when(jobRepository.findByRunIdAndStatusIn(any(UUID.class), any())).thenReturn(List.of());
+        when(jobRepository.findFirstByNodeRunIdOrderByAttemptDesc(any(UUID.class))).thenReturn(Optional.empty());
+        when(jobRepository.findByIdempotencyKey(any())).thenReturn(Optional.empty());
+        when(leaseService.hasActiveLease(any(UUID.class))).thenReturn(false);
+
+        UUID scheduleId = UUID.fromString("00000000-0000-0000-0000-00000000c101");
+        WorkbenchApi.RunDetail detail = service.createScheduledRun(
+            TENANT_ID,
+            businessPrincipal(),
+            open.getId(),
+            scheduleId,
+            "每日授信复核",
+            Map.of("company_profile", "云程科技"),
+            Map.of("scheduleName", "每日授信复核", "cronExpression", "0 0 9 * * *")
+        );
+
+        assertThat(detail.triggerSource()).isEqualTo("schedule");
+        assertThat(detail.triggerScheduleId()).isEqualTo(scheduleId);
+        assertThat(detail.openTodo()).isNull();
+        assertThat(detail.state()).isEqualTo("running");
+        assertThat(detail.currentNodeName()).isEqualTo("智能体分析");
+        assertThat(detail.nodes()).extracting(WorkbenchApi.NodeRunRow::state)
+            .containsExactly("completed", "completed", "running", "pending");
+        assertThat(savedRun[0].isScheduledTrigger()).isTrue();
+        assertThat(savedRun[0].getTriggerPayload()).containsEntry("scheduleName", "每日授信复核");
+        verify(commandPublisher).publish(any(NodeExecuteCommand.class));
+        verify(workflowWaitingEventRepository, never()).save(any(WorkflowWaitingEventEntity.class));
+    }
+
+    @Test
     void shouldInterruptRunningNodeClearDataAndCancelInFlightJobs() {
         WorkbenchRuntimeService service = newService();
         WorkflowRunEntity run = ownedRun();
@@ -1165,6 +1230,61 @@ class WorkbenchRuntimeServiceTest {
                   "positionY": 360,
                   "inputVariables": ["risk_summary"],
                   "outputVariables": ["report_file"],
+                  "config": {
+                    "deliveryMode": "capability",
+                    "deliveryCapabilityId": "00000000-0000-0000-0000-00000000d001",
+                    "deliveryType": "word_document",
+                    "documentKind": "word",
+                    "markdownContent": "# 交付报告\\n\\n{{risk_summary}}"
+                  }
+                }
+              ],
+              "edges": [],
+              "variables": []
+            }
+            """;
+    }
+
+    private static String scheduledSnapshotJson() {
+        return """
+            {
+              "name": "授信自动复核流程",
+              "description": "定时填充输入后自动执行 AI 分析",
+              "nodes": [
+                {
+                  "nodeId": "trigger_schedule",
+                  "nodeType": "trigger",
+                  "name": "定时触发",
+                  "inputVariables": [],
+                  "outputVariables": ["starter"],
+                  "config": {"summary": "定时任务触发"}
+                },
+                {
+                  "nodeId": "input_company",
+                  "nodeType": "user_input",
+                  "name": "补充授信资料",
+                  "inputVariables": ["starter"],
+                  "outputVariables": ["company_profile"],
+                  "config": {
+                    "inputFields": [
+                      {"id": "company_profile", "label": "企业资料", "variable": "company_profile", "required": true}
+                    ]
+                  }
+                },
+                {
+                  "nodeId": "agent_review",
+                  "nodeType": "agent",
+                  "name": "智能体分析",
+                  "inputVariables": ["company_profile"],
+                  "outputVariables": ["risk_summary"],
+                  "config": {"summary": "生成风险摘要", "systemPrompt": "你是授信风险分析智能体"}
+                },
+                {
+                  "nodeId": "delivery_report",
+                  "nodeType": "delivery",
+                  "name": "交付报告",
+                  "inputVariables": ["risk_summary"],
+                  "outputVariables": ["delivery_record"],
                   "config": {
                     "deliveryMode": "capability",
                     "deliveryCapabilityId": "00000000-0000-0000-0000-00000000d001",

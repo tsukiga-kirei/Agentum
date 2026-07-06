@@ -83,6 +83,24 @@ class MenuServiceTest {
     }
 
     @Test
+    void shouldExposeWorkbenchMenuWhenOnlyScheduleTabIsGranted() {
+        MenuService menuService = newService();
+        UserMembershipEntity membership = UserMembershipEntity.create(TENANT_ID, USER_ID, null);
+
+        when(userMembershipRepository.findByUserIdAndTenantIdAndStatus(USER_ID, TENANT_ID, "active")).thenReturn(List.of(membership));
+        when(userMembershipRoleRepository.findByMembershipIdInAndStatus(any(), eq("active"))).thenReturn(List.of());
+        when(pageGrantRepository.findByTenantIdOrderByCreatedAtDesc(TENANT_ID)).thenReturn(List.of(
+            PageGrantEntity.create(TENANT_ID, UUID.randomUUID(), "定时任务页签", "workbench_schedules", "user", USER_ID)
+        ));
+
+        assertThat(menuService.resolveMenus("business", TENANT_ID, USER_ID))
+            .extracting("key")
+            .containsExactly("workbench");
+        assertThat(menuService.resolvePermissions("business", TENANT_ID, USER_ID))
+            .containsExactly("workbench_schedules");
+    }
+
+    @Test
     void shouldKeepSystemRoleMenusIndependentFromTenantPageGrants() {
         MenuService menuService = newService();
 

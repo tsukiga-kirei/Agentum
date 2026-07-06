@@ -342,12 +342,110 @@ public class WorkbenchRuntimeService {
         return toRunDetail(run, nodeRuns, events, openTodo, loadUsersById(Set.of(principal.userId())));
     }
 
+    /**
+     * 定时任务触发运行实例。
+     *
+     * <p>与手工发起不同，定时任务创建后立即保存，并通过 triggerPayload 固化个人配置快照。
+     * 后续推进由后端自动完成：输入节点使用预置 payload，智能体/交付节点直接入队，不再依赖前端点击。</p>
+     */
+    @Transactional
+    public WorkbenchApi.RunDetail createScheduledRun(
+        UUID tenantId,
+        CurrentUserPrincipal principal,
+        UUID workflowId,
+        UUID scheduleId,
+        String scheduleName,
+        Map<String, Object> inputPayload,
+        Map<String, Object> scheduleSnapshot
+    ) {
+        ensureActiveTenant(tenantId);
+        ensureAuthenticated(principal);
+        if (workflowId == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_WORKFLOW_ID_REQUIRED", "请选择要发起的流程");
+        }
+        WorkflowDefinitionEntity definition = workflowDefinitionRepository.findByIdAndTenantId(workflowId, tenantId)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKFLOW_DRAFT_NOT_FOUND", "流程不存在"));
+        WorkflowVersionEntity version = workflowVersionRepository.findTopByWorkflowIdOrderByVersionNumberDesc(workflowId)
+            .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "WORKFLOW_VERSION_REQUIRED", "流程尚未发布，无法发起任务"));
+        if (!definition.isLaunchEnabled()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_WORKFLOW_RECALLED", "该流程入口已被收回，暂不能发起任务");
+        }
+        AccessLevel access = resolveAccess(definition, principal.userId(), workflowAccessGrantRepository.findByWorkflowId(workflowId));
+        if (!isTenantManager(principal) && !access.canRead()) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "WORKBENCH_WORKFLOW_LAUNCH_FORBIDDEN", "当前账号没有该流程的读取或发起权限");
+        }
+
+        VersionSnapshot snapshot = readSnapshot(version);
+        List<SnapshotNode> snapshotNodes = snapshot.nodes() == null ? List.of() : snapshot.nodes();
+        Instant now = clock.instant();
+        String title = normalizeTitle((scheduleName == null || scheduleName.isBlank() ? definition.getName() : scheduleName) + "（定时执行）", definition.getName());
+        WorkflowRunEntity run = WorkflowRunEntity.create(
+            tenantId,
+            definition.getId(),
+            version.getId(),
+            version.getVersionNumber(),
+            title,
+            snapshot.name() == null || snapshot.name().isBlank() ? definition.getName() : snapshot.name(),
+            principal.userId(),
+            snapshotNodes.size(),
+            generateRunNumber(now),
+            now
+        );
+        Map<String, Object> triggerPayload = new LinkedHashMap<>(scheduleSnapshot == null ? Map.of() : scheduleSnapshot);
+        triggerPayload.put("inputPayload", inputPayload == null ? Map.of() : new LinkedHashMap<>(inputPayload));
+        run.markScheduledTrigger(scheduleId, triggerPayload, now);
+        workflowRunRepository.save(run);
+
+        List<WorkflowNodeRunEntity> nodeRuns = new ArrayList<>();
+        for (int index = 0; index < snapshotNodes.size(); index++) {
+            SnapshotNode node = snapshotNodes.get(index);
+            Map<String, Object> configSnapshot = promptContentResolver.enrichConfigSnapshot(
+                tenantId,
+                node.nodeType(),
+                enrichRuntimeNodeConfig(node)
+            );
+            nodeRuns.add(WorkflowNodeRunEntity.pending(
+                run.getId(),
+                tenantId,
+                definition.getId(),
+                version.getId(),
+                node.nodeId(),
+                node.nodeType(),
+                node.name(),
+                snapshotVariables(node.inputVariables(), "等待上游输入"),
+                Map.of(),
+                configSnapshot,
+                index,
+                now
+            ));
+        }
+        workflowNodeRunRepository.saveAll(nodeRuns);
+        workflowRunEventRepository.save(WorkflowRunEventEntity.create(
+            run.getId(),
+            tenantId,
+            "schedule_run_created",
+            "定时任务已触发",
+            "系统根据定时任务「" + (scheduleName == null ? "未命名定时任务" : scheduleName) + "」创建运行实例。",
+            null,
+            principal.userId(),
+            Map.of("workflowId", definition.getId().toString(), "version", version.getVersionNumber(), "scheduleId", scheduleId.toString()),
+            now
+        ));
+
+        NextNodeResult next = prepareNextNode(tenantId, run.getId(), principal.userId());
+        if (next.hasNext() && !next.paused() && requiresManualAdvance(next.nodeType())) {
+            enqueueExecution(tenantId, run.getId(), next.nodeRunId(), next.nodeType(), principal.userId());
+        }
+        return getRunDetail(tenantId, principal, run.getId());
+    }
+
     @Transactional(readOnly = true)
     public PageResponse<WorkbenchApi.TaskRunRow> listActiveRuns(
         UUID tenantId,
         CurrentUserPrincipal principal,
         String keyword,
         String state,
+        String triggerSource,
         int page,
         int size,
         String sort
@@ -361,6 +459,7 @@ public class WorkbenchRuntimeService {
             isTenantManager(principal),
             keyword == null ? "" : keyword.trim(),
             normalizeActiveRunStateFilter(state),
+            normalizeTriggerSourceFilter(triggerSource),
             pageable
         );
         return PageResponse.from(resultPage.map(run -> toTaskRunRow(run, Map.of(), hasOpenTodo(run.getId()))));
@@ -371,6 +470,7 @@ public class WorkbenchRuntimeService {
         UUID tenantId,
         CurrentUserPrincipal principal,
         String keyword,
+        String triggerSource,
         int page,
         int size,
         String sort
@@ -383,6 +483,7 @@ public class WorkbenchRuntimeService {
             principal.userId(),
             isTenantManager(principal),
             keyword == null ? "" : keyword.trim(),
+            normalizeTriggerSourceFilter(triggerSource),
             pageable
         );
         Set<UUID> userIds = resultPage.getContent().stream().map(WorkflowRunEntity::getCreatedBy).filter(Objects::nonNull).collect(Collectors.toSet());
@@ -1699,6 +1800,7 @@ public class WorkbenchRuntimeService {
             isTenantManager(principal),
             "",
             "",
+            "",
             PageRequest.of(0, Math.max(1, limit), Sort.by(Sort.Direction.DESC, "updatedAt"))
         );
         return page.getContent().stream().map(this::toActiveTaskRow).toList();
@@ -1711,6 +1813,7 @@ public class WorkbenchRuntimeService {
             tenantId,
             principal.userId(),
             isTenantManager(principal),
+            "",
             "",
             PageRequest.of(0, Math.max(1, limit), Sort.by(Sort.Direction.DESC, "updatedAt"))
         );
@@ -1933,6 +2036,8 @@ public class WorkbenchRuntimeService {
             run.getWorkflowId(),
             run.getWorkflowName(),
             run.getWorkflowVersionNumber(),
+            run.getTriggerSource(),
+            run.getTriggerScheduleId(),
             run.getState(),
             stateLabel(run.getState()),
             run.getProgressPercent(),
@@ -1977,6 +2082,8 @@ public class WorkbenchRuntimeService {
             run.getRunNumber(),
             run.getWorkflowName(),
             run.getWorkflowVersionNumber(),
+            run.getTriggerSource(),
+            run.getTriggerScheduleId(),
             run.getState(),
             stateLabel(run.getState()),
             run.getCurrentNodeName() == null ? "已结束" : run.getCurrentNodeName(),
@@ -2232,6 +2339,16 @@ public class WorkbenchRuntimeService {
         return variables;
     }
 
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> scheduledInputPayload(WorkflowRunEntity run) {
+        Map<String, Object> triggerPayload = run.getTriggerPayload();
+        Object rawInputPayload = triggerPayload.get("inputPayload");
+        if (rawInputPayload instanceof Map<?, ?> rawMap) {
+            return new LinkedHashMap<>((Map<String, Object>) rawMap);
+        }
+        return Map.of();
+    }
+
     private void persistVariableSnapshots(WorkflowRunEntity run, WorkflowNodeRunEntity node, Map<String, Object> output, Instant now) {
         if (output == null || output.isEmpty()) {
             return;
@@ -2347,6 +2464,16 @@ public class WorkbenchRuntimeService {
         };
     }
 
+    private String normalizeTriggerSourceFilter(String triggerSource) {
+        if (triggerSource == null || triggerSource.isBlank()) {
+            return "";
+        }
+        return switch (triggerSource.trim()) {
+            case "manual", "schedule" -> triggerSource.trim();
+            default -> "";
+        };
+    }
+
     private Map<UUID, UserAccount> loadUsersById(Collection<UUID> userIds) {
         if (userIds == null || userIds.isEmpty()) {
             return Map.of();
@@ -2439,6 +2566,25 @@ public class WorkbenchRuntimeService {
         }
 
         if (isWaitable(nextNode.getNodeType())) {
+            if (run.isScheduledTrigger() && "user_input".equals(nextNode.getNodeType())) {
+                Map<String, Object> scheduledInput = scheduledInputPayload(run);
+                validateRequiredInputFields(nextNode, scheduledInput);
+                nextNode.complete(scheduledInput, now);
+                workflowNodeRunRepository.save(nextNode);
+                persistVariableSnapshots(run, nextNode, scheduledInput, now);
+                workflowRunEventRepository.save(WorkflowRunEventEntity.create(
+                    run.getId(),
+                    run.getTenantId(),
+                    "schedule_input_applied",
+                    "定时任务输入已填充",
+                    "系统已使用定时任务配置填充「" + nextNode.getName() + "」并继续执行。",
+                    nextNode.getNodeKey(),
+                    operatorUserId,
+                    Map.of("nodeType", nextNode.getNodeType(), "scheduleId", String.valueOf(run.getTriggerScheduleId())),
+                    now
+                ));
+                return prepareNextNode(tenantId, runId, operatorUserId);
+            }
             if (!"waiting".equals(nextNode.getState())) {
                 nextNode.waitForInput(now);
                 workflowNodeRunRepository.save(nextNode);
@@ -2570,6 +2716,21 @@ public class WorkbenchRuntimeService {
         List<WorkflowNodeRunEntity> nodes = workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(runId);
         int completed = (int) nodes.stream().filter(n -> "completed".equals(n.getState())).count();
 
+        if (run.isScheduledTrigger()) {
+            workflowRunEventRepository.save(WorkflowRunEventEntity.create(
+                run.getId(),
+                run.getTenantId(),
+                "node_completed",
+                "节点已完成",
+                executionEventDescription(node, outputs),
+                node.getNodeKey(),
+                operatorUserId,
+                Map.of("nodeType", node.getNodeType(), "triggerSource", "schedule"),
+                now
+            ));
+            return false;
+        }
+
         // 智能体/多智能体/交付（含最后一步）执行完成后均停在当前节点，等待用户点击确认后再推进或完结。
         if (requiresManualAdvance(node.getNodeType())) {
             run.pauseAt(node.getNodeKey(), node.getName(), node.getNodeType(), completed, now);
@@ -2598,6 +2759,23 @@ public class WorkbenchRuntimeService {
         );
         workflowRunEventRepository.save(event);
         return false;
+    }
+
+    @Transactional(readOnly = true)
+    public boolean isScheduledRun(UUID runId) {
+        return workflowRunRepository.findById(runId).map(WorkflowRunEntity::isScheduledTrigger).orElse(false);
+    }
+
+    @Transactional
+    public void continueScheduledRunAfterJob(UUID runId, UUID operatorUserId) {
+        WorkflowRunEntity run = workflowRunRepository.findById(runId).orElse(null);
+        if (run == null || !run.isScheduledTrigger() || "completed".equals(run.getState()) || "failed".equals(run.getState())) {
+            return;
+        }
+        NextNodeResult next = prepareNextNode(run.getTenantId(), runId, operatorUserId);
+        if (next.hasNext() && !next.paused() && requiresManualAdvance(next.nodeType())) {
+            enqueueExecution(run.getTenantId(), runId, next.nodeRunId(), next.nodeType(), operatorUserId);
+        }
     }
 
     /**
