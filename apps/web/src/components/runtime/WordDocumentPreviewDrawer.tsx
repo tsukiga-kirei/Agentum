@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Drawer, Spin } from "antd";
 import { Download, FileText, RefreshCw } from "lucide-react";
 import { workbenchApi } from "../../services/apiClient";
-import "./WordDocumentPreviewDrawer.css";
+import "./DocumentPreviewDrawer.css";
 
 interface WordDocumentPreviewDrawerProps {
   open: boolean;
@@ -96,10 +96,10 @@ export function WordDocumentPreviewDrawer({
       onClose={onClose}
       size="min(960px, 92vw)"
       destroyOnHidden
-      rootClassName="agent-word-preview-drawer"
+      rootClassName="agent-document-preview-drawer"
       title={(
-        <div className="agent-word-preview-drawer__title">
-          <span className="agent-word-preview-drawer__title-icon"><FileText size={18} /></span>
+        <div className="agent-document-preview-drawer__title">
+          <span className="agent-document-preview-drawer__title-icon"><FileText size={18} /></span>
           <span className="min-w-0">
             <strong>预览文档</strong>
             <small title={fileName}>{fileName}</small>
@@ -118,16 +118,16 @@ export function WordDocumentPreviewDrawer({
         </button>
       )}
     >
-      <div className="agent-word-preview-drawer__body">
-        <div ref={containerRef} className="agent-word-preview-drawer__document" />
+      <div className="agent-document-preview-drawer__body">
+        <div ref={containerRef} className="agent-document-preview-drawer__document" />
         {loading ? (
-          <div className="agent-word-preview-drawer__state" aria-live="polite">
+          <div className="agent-document-preview-drawer__state" aria-live="polite">
             <Spin size="large" />
             <span>正在加载 Word 文档…</span>
           </div>
         ) : null}
         {!loading && errorMessage ? (
-          <div className="agent-word-preview-drawer__state agent-word-preview-drawer__state--error" role="alert">
+          <div className="agent-document-preview-drawer__state agent-document-preview-drawer__state--error" role="alert">
             <FileText size={36} />
             <strong>文档预览失败</strong>
             <span>{errorMessage}</span>

@@ -22,7 +22,7 @@ import { MultiAgentPanel } from "./MultiAgentPanel";
 import { DeliveryPreviewPanel } from "./DeliveryPreviewPanel";
 import { DeliveryResultPanel } from "./DeliveryResultPanel";
 import { DeliveryItemsList } from "./DeliveryItemsList";
-import { WordDocumentPreviewDrawer } from "./WordDocumentPreviewDrawer";
+import { DeliveryDocumentPreviewDrawer } from "./DeliveryDocumentPreviewDrawer";
 import { mapDeliveryRecordToItem, resolveDeliveryItems } from "../../utils/deliveryContent";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { AgentumApiError, workbenchApi } from "../../services/apiClient";
@@ -1497,7 +1497,7 @@ function RunDeliveriesPanel({
 }) {
   const list = preview.deliveries || [];
   const [downloadingRecordId, setDownloadingRecordId] = useState("");
-  const [previewDocument, setPreviewDocument] = useState<{ recordId: string; fileName: string } | null>(null);
+  const [previewDocument, setPreviewDocument] = useState<{ recordId: string; fileName: string; deliveryType?: string } | null>(null);
 
   async function handleDownloadDelivery(recordId: string) {
     setDownloadingRecordId(recordId);
@@ -1555,7 +1555,7 @@ function RunDeliveriesPanel({
           items={list}
           isFlowCompleted={isFlowCompleted}
           downloadingRecordId={downloadingRecordId}
-          onPreviewDocument={(recordId, fileName) => setPreviewDocument({ recordId, fileName })}
+          onPreviewDocument={(recordId, fileName, deliveryType) => setPreviewDocument({ recordId, fileName, deliveryType })}
           onDownloadDocument={(recordId) => void handleDownloadDelivery(recordId)}
           emptyTitle="暂无已触发交付物"
           emptyDescription={
@@ -1567,12 +1567,13 @@ function RunDeliveriesPanel({
       </div>
 
       {previewDocument ? (
-        <WordDocumentPreviewDrawer
+        <DeliveryDocumentPreviewDrawer
           open
           tenantId={tenantId}
           token={token}
           recordId={previewDocument.recordId}
           fileName={previewDocument.fileName}
+          deliveryType={previewDocument.deliveryType}
           downloading={downloadingRecordId === previewDocument.recordId}
           onClose={() => setPreviewDocument(null)}
           onDownload={() => void handleDownloadDelivery(previewDocument.recordId)}

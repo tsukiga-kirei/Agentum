@@ -7,7 +7,7 @@ interface DeliveryItemsListProps {
   items: RuntimeDeliveryItem[];
   isFlowCompleted?: boolean;
   downloadingRecordId?: string;
-  onPreviewDocument?: (recordId: string, fileName: string) => void;
+  onPreviewDocument?: (recordId: string, fileName: string, deliveryType?: string) => void;
   onDownloadDocument?: (recordId: string) => void;
   emptyTitle?: string;
   emptyDescription?: string;
@@ -83,7 +83,7 @@ export function DeliveryItemsList({
                   <>
                     <button
                       type="button"
-                      onClick={() => onPreviewDocument(item.recordId!, item.fileName!)}
+                      onClick={() => onPreviewDocument(item.recordId!, item.fileName!, item.deliveryType)}
                       className="agent-button h-8 px-3 text-xs"
                     >
                       <Eye size={14} />
