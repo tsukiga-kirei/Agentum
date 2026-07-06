@@ -28,6 +28,8 @@ import { MarkdownRenderer } from "./MarkdownRenderer";
 import { AgentumApiError, workbenchApi } from "../../services/apiClient";
 import { formatRuntimeErrorMessage } from "../../utils/runtimeErrors";
 import { mergeClusterAgents, parseClusterAgentSummariesFromOutputs, clusterAgentDisplayText } from "../../utils/clusterAgentsMerge";
+import { buildClusterAgentTraceSteps, buildTraceExecutionSteps } from "../../utils/agentExecutionSteps";
+import { TraceExecutionStepsSection } from "./TraceExecutionSteps";
 import { WorkbenchGlobalActions } from "../workbench/SurfacePageLayout";
 import { 
   Save, 
@@ -1170,6 +1172,16 @@ function RunTracePanel({
     ? preview.steps[selectedIdx]
     : null;
 
+  const traceExecutionSteps = useMemo(
+    () => (step?.kind === "agent" ? buildTraceExecutionSteps(step) : []),
+    [step],
+  );
+
+  const clusterAgentSummaries = useMemo(
+    () => (step?.kind === "multiAgent" ? parseClusterAgentSummariesFromOutputs(step.outputs) : []),
+    [step],
+  );
+
   // Filter events: strictly display events related to this step by matching event.nodeId === step.nodeKey
   const events = step
     ? preview.events.filter((event) => event.nodeId === step.nodeKey)
@@ -1241,29 +1253,10 @@ function RunTracePanel({
                   </div>
                 </div>
 
-                {step.capabilities && step.capabilities.length > 0 && (
-                  <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 p-4">
-                    <h5 className="text-sm font-bold text-slate-700 dark:text-slate-350 mb-3">工具与 MCP 调用记录</h5>
-                    <div className="space-y-2">
-                      {step.capabilities.map((tool) => (
-                        <div 
-                          key={tool.id}
-                          className="p-3 rounded bg-white dark:bg-slate-950 border border-slate-100 dark:border-slate-855 text-sm flex justify-between items-center"
-                        >
-                          <div>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">{tool.kind}</span>
-                            <strong className="text-sm text-slate-800 dark:text-slate-200 block mt-0.5">{tool.name}</strong>
-                          </div>
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                            tool.status === "done" ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400" : "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400"
-                          }`}>
-                            {tool.statusLabel}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                <TraceExecutionStepsSection
+                  title="工具与 MCP 调用记录"
+                  steps={traceExecutionSteps}
+                />
 
                 <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 p-4">
                   <h5 className="text-sm font-bold text-slate-700 dark:text-slate-350 mb-2">输出结论</h5>
@@ -1278,19 +1271,43 @@ function RunTracePanel({
               <div className="space-y-4">
                 <h5 className="text-sm font-bold text-slate-700 dark:text-slate-350">智能体集群执行报告</h5>
                 <div className="space-y-3">
-                  {parseClusterAgentSummariesFromOutputs(step.outputs).map((agent: Record<string, unknown>, idx: number) => (
-                    <div key={idx} className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 p-4">
-                      <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-850 pb-2 mb-3">
-                        <span className="text-sm font-bold text-slate-800 dark:text-slate-200">
-                          {stringifyValue(agent.name) || `子智能体 ${idx + 1}`}
-                        </span>
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400 font-medium">已完成</span>
+                  {clusterAgentSummaries.map((agent: Record<string, unknown>, idx: number) => {
+                    const agentName = stringifyValue(agent.name) || `子智能体 ${idx + 1}`;
+                    const agentTraceSteps = buildClusterAgentTraceSteps(agent, `${step.nodeRunId}-cluster-${idx}`);
+                    const toolStepCount = agentTraceSteps.filter((item) => item.kind === "tool").length;
+                    return (
+                      <div key={idx} className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 p-4">
+                        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-850 pb-2 mb-3">
+                          <span className="text-sm font-bold text-slate-800 dark:text-slate-200">{agentName}</span>
+                          <div className="flex items-center gap-2">
+                            {toolStepCount > 0 ? (
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400 font-medium">
+                                {toolStepCount} 次工具调用
+                              </span>
+                            ) : null}
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400 font-medium">已完成</span>
+                          </div>
+                        </div>
+                        {agentTraceSteps.length > 0 ? (
+                          <div className="mb-4">
+                            <TraceExecutionStepsSection
+                              title="工具与 MCP 调用记录"
+                              steps={agentTraceSteps}
+                              defaultExpanded={agentTraceSteps.length <= 3}
+                            />
+                          </div>
+                        ) : null}
+                        <div>
+                          <h6 className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">输出结论</h6>
+                          <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-850 dark:bg-slate-950">
+                            <MarkdownRenderer
+                              content={clusterAgentDisplayText(agent) || "已完成"}
+                            />
+                          </div>
+                        </div>
                       </div>
-                      <MarkdownRenderer
-                        content={clusterAgentDisplayText(agent) || "已完成"}
-                      />
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}

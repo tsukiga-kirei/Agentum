@@ -1,4 +1,4 @@
-import type { AgentExecutionStep, AgentPhase, RuntimeCapabilityItem, RuntimePreviewStep } from "../types/runtime-types";
+import type { AgentExecutionStep, AgentPhase, RuntimeCapabilityItem, RuntimeChatMessage, RuntimePreviewStep } from "../types/runtime-types";
 
 const PHASE_LABELS: Record<AgentPhase, string> = {
   preparing: "准备上下文",
@@ -11,6 +11,126 @@ const PHASE_LABELS: Record<AgentPhase, string> = {
 
 export function phaseStepTitle(phase: AgentPhase): string {
   return PHASE_LABELS[phase] ?? phase;
+}
+
+/** 从 assistant 消息的 processSteps 汇总工具/推理步骤，供执行历史回看。 */
+function collectChatProcessSteps(messages: RuntimeChatMessage[] | undefined, idPrefix: string): AgentExecutionStep[] {
+  if (!messages?.length) {
+    return [];
+  }
+  const steps: AgentExecutionStep[] = [];
+  messages.forEach((message, messageIndex) => {
+    if (message.role !== "assistant" || !message.processSteps?.length) {
+      return;
+    }
+    message.processSteps.forEach((step, stepIndex) => {
+      steps.push({
+        ...step,
+        id: `${idPrefix}-msg-${messageIndex}-step-${stepIndex}-${step.id}`,
+      });
+    });
+  });
+  return dedupeExecutionSteps(steps);
+}
+
+function dedupeExecutionSteps(steps: AgentExecutionStep[]): AgentExecutionStep[] {
+  const seen = new Set<string>();
+  return steps.filter((step) => {
+    const contentKey = (step.detail || step.summary || step.title).replace(/\s+/g, " ").trim();
+    const key = `${step.kind}:${step.title}:${contentKey}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function readRawProcessSteps(value: unknown, idPrefix: string): AgentExecutionStep[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item, index) => {
+    if (!item || typeof item !== "object") {
+      return [];
+    }
+    const record = item as Record<string, unknown>;
+    const kind = record.kind === "tool" || record.kind === "reasoning" || record.kind === "model_output" || record.kind === "final_answer"
+      ? record.kind
+      : "model_output";
+    const status = record.status === "running" || record.status === "error" ? record.status : "done";
+    return [{
+      id: `${idPrefix}-raw-step-${index}`,
+      kind,
+      title: String(record.title ?? (kind === "reasoning" ? "深度推理" : "执行步骤")),
+      summary: String(record.summary ?? ""),
+      status,
+      detail: String(record.detail ?? ""),
+      toolType: record.toolType === "mcp" || record.toolType === "skill" || record.toolType === "reasoning" || record.toolType === "model"
+        ? record.toolType
+        : undefined,
+    }];
+  });
+}
+
+function readPersistedToolCalls(value: unknown, idPrefix: string): AgentExecutionStep[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item, index) => {
+    if (!item || typeof item !== "object") {
+      return [];
+    }
+    const record = item as Record<string, unknown>;
+    const toolType = record.toolType === "skill" ? "skill" : record.toolType === "mcp" ? "mcp" : null;
+    if (!toolType) {
+      return [];
+    }
+    const toolName = String(record.toolName ?? record.name ?? "工具调用");
+    const status = record.status === "failed" || record.status === "error" ? "error" as const : "done" as const;
+    const detail = String(record.detail ?? record.result ?? record.summary ?? "");
+    return [{
+      id: `${idPrefix}-tool-${index}`,
+      kind: "tool" as const,
+      title: toolType === "skill" ? `读取 Skill：${toolName}` : `调用 MCP：${toolName}`,
+      summary: String(record.summary ?? (status === "error" ? "调用失败" : "调用完成")),
+      status,
+      detail,
+      toolType,
+    }];
+  });
+}
+
+/**
+ * 执行历史页：优先使用 chatMessages.processSteps（含完整 detail），否则回退到 capabilities / outputs。
+ */
+export function buildTraceExecutionSteps(step: RuntimePreviewStep): AgentExecutionStep[] {
+  const finalAnswer = readFinalAnswer(step);
+  const chatSteps = collectChatProcessSteps(step.chatMessages, step.nodeRunId);
+  if (chatSteps.length > 0) {
+    return filterUserVisibleSteps(chatSteps);
+  }
+  const capabilitySteps = buildPersistedExecutionSteps(step);
+  const modelSteps = buildModelOutputSteps(step, finalAnswer);
+  return filterUserVisibleSteps(dedupeExecutionSteps([...capabilitySteps, ...modelSteps]));
+}
+
+/** 集群子智能体持久化快照中的工具/推理步骤，供执行历史展开查看。 */
+export function buildClusterAgentTraceSteps(agent: Record<string, unknown>, idPrefix: string): AgentExecutionStep[] {
+  const fromChat = Array.isArray(agent.chatMessages)
+    ? agent.chatMessages.flatMap((item, messageIndex) => {
+        if (!item || typeof item !== "object") {
+          return [];
+        }
+        const record = item as Record<string, unknown>;
+        if (record.role !== "assistant") {
+          return [];
+        }
+        return readRawProcessSteps(record.processSteps, `${idPrefix}-chat-${messageIndex}`);
+      })
+    : [];
+  const fromToolCalls = readPersistedToolCalls(agent.toolCalls, idPrefix);
+  return filterUserVisibleSteps(dedupeExecutionSteps([...fromChat, ...fromToolCalls]));
 }
 
 export function buildPersistedExecutionSteps(step: RuntimePreviewStep): AgentExecutionStep[] {

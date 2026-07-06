@@ -203,7 +203,13 @@ export function MultiAgentPanel({
           const isCompleted = agent.status === "completed";
           const isFailed = agent.status === "failed";
           const isSkipped = agent.status === "skipped";
-          const toolCount = agent.toolCalls?.length ?? 0;
+          const toolCount = agent.toolCalls?.length
+            ?? (agent.conversationHistory ?? []).reduce(
+              (count, message) => count + (message.role === "assistant"
+                ? (message.processSteps ?? []).filter((step) => step.kind === "tool").length
+                : 0),
+              0,
+            );
           const skillCount = agent.skillNames.length;
           const mcpCount = agent.mcpNames.length;
 
@@ -603,18 +609,23 @@ function resolveClusterAgentPreview(agent: {
 
 function buildAgentExecutionSteps(agent: DrawerAgent): AgentExecutionStep[] {
   const outputText = resolveClusterAgentPreview(agent);
-  const toolSteps: AgentExecutionStep[] = (agent.toolCalls ?? [])
-    .filter((tool): tool is RuntimeCapabilityItem & { kind: "mcp" | "skill" } => tool.kind === "mcp" || tool.kind === "skill")
-    .map((tool) => ({
-      id: `cluster-tool-${agent.index}-${tool.id}`,
-      kind: "tool",
-      title: tool.kind === "skill" ? `读取 Skill：${tool.name}` : `调用 MCP：${tool.name}`,
-      summary: tool.resultSummary || tool.statusLabel,
-      status: tool.status === "error" ? "error" : tool.status === "running" ? "running" : "done",
-      durationMs: tool.durationMs,
-      detail: tool.resultSummary,
-      toolType: tool.kind,
-    }));
+  const conversationSteps = (agent.conversationHistory ?? []).flatMap((message) =>
+    message.role === "assistant" ? (message.processSteps ?? []) : [],
+  );
+  const toolSteps: AgentExecutionStep[] = conversationSteps.length > 0
+    ? conversationSteps.filter((step) => step.kind === "tool" || step.kind === "reasoning" || step.kind === "model_output")
+    : (agent.toolCalls ?? [])
+      .filter((tool): tool is RuntimeCapabilityItem & { kind: "mcp" | "skill" } => tool.kind === "mcp" || tool.kind === "skill")
+      .map((tool) => ({
+        id: `cluster-tool-${agent.index}-${tool.id}`,
+        kind: "tool",
+        title: tool.kind === "skill" ? `读取 Skill：${tool.name}` : `调用 MCP：${tool.name}`,
+        summary: tool.resultSummary || tool.statusLabel,
+        status: tool.status === "error" ? "error" : tool.status === "running" ? "running" : "done",
+        durationMs: tool.durationMs,
+        detail: tool.resultSummary,
+        toolType: tool.kind,
+      }));
   if (agent.reasoningText?.trim()) {
     toolSteps.push({
       id: `cluster-reasoning-${agent.index}`,
