@@ -8987,6 +8987,8 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
 .workflow-variable-reference-bar {
   display: flex;
   flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: flex-start;
   gap: 6px;
   margin-top: 6px;
 }
@@ -9029,6 +9031,9 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
 }
 
 .workflow-variable-reference-bar button {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
   border: 1px solid color-mix(in srgb, var(--color-border-light) 78%, var(--color-primary) 22%);
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--color-bg-card) 82%, var(--color-primary-bg) 18%);

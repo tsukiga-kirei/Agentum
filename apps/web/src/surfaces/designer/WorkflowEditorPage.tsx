@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { App, Drawer, Select, Tooltip } from "antd";
 import {
   AlertTriangle,
@@ -81,6 +81,7 @@ import {
   describeDeleteNodeVariableImpact,
   describeMoveNodeVariableImpact,
   extractTemplateVariableNames,
+  buildWorkflowSaveWarningMessage,
   summarizeValidationIssues,
   validateWorkflowDeliveryPlacement,
   WORKFLOW_SYSTEM_TEMPLATE_VARIABLES,
@@ -945,6 +946,29 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
     });
   }
 
+  function requestSaveWorkflow(nextNodes: WorkflowEditorNode[], nextEdges: WorkflowEditorEdge[]) {
+    const warningMessage = buildWorkflowSaveWarningMessage(
+      incompleteNodes,
+      nodeValidationMap,
+      deliveryPlacementIssues,
+    );
+
+    if (!warningMessage) {
+      void persistGraph(nextNodes, nextEdges);
+      return;
+    }
+
+    setImpactConfirm({
+      title: "配置尚未完成",
+      message: `${warningMessage}\n\n当前流程仍有问题，保存后发布前仍需通过发布校验。是否仍要保存草稿？`,
+      confirmLabel: "仍要保存",
+      onConfirm: () => {
+        setImpactConfirm(null);
+        void persistGraph(nextNodes, nextEdges);
+      },
+    });
+  }
+
   async function handleSaveWorkflow() {
     if (!designerCatalog) {
       messageApi.error("流程设计模板尚未加载完成，暂时不能保存流程");
@@ -957,7 +981,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
       ?? createNodeFromTemplate(designerCatalog.systemTrigger, 0, []);
     const nextNodes = [systemTrigger, ...normalizedVisibleNodes];
     const nextEdges = rebuildSequentialEdges(normalizedVisibleNodes);
-    await persistGraph(nextNodes, nextEdges);
+    requestSaveWorkflow(nextNodes, nextEdges);
   }
 
   if (loading) {
@@ -1798,35 +1822,19 @@ function AgentClusterBrickConfig({
     const newAgentId = `cluster_agent_${Date.now().toString(36)}_${agents.length + 1}`;
     const usedNames = new Set(agents.map((item) => item.name).filter(Boolean));
     const usedOutputs = new Set(agents.map((item) => item.output).filter(Boolean));
-    const usedIntentCodes = new Set(agents.map((item) => item.intentCode).filter(Boolean));
     const copiedAgent: ClusterAgentConfig = {
       ...agent,
       id: newAgentId,
       name: uniqueDisplayName(`${agent.name || "子智能体"} 副本`, usedNames),
       output: uniqueVariableName(agent.output ? `${agent.output}_copy` : createClusterAgentOutputVariable(node.id, agents.length), usedOutputs),
-      intentCode: uniqueVariableName(agent.intentCode ? `${agent.intentCode}_copy` : `intent_${agents.length + 1}`, usedIntentCodes),
-      intentName: uniqueDisplayName(`${agent.intentName || agent.name || "意图"} 副本`, new Set(agents.map((item) => item.intentName).filter(Boolean))),
+      // 复制子智能体只克隆执行配置；意图路由在「配置意图」里单独维护，避免误增意图。
+      intentCode: "",
+      intentName: "",
+      intentDescription: "",
     };
     const nextAgents = [...agents];
     nextAgents.splice(insertIndex, 0, copiedAgent);
-    const existingRoutes = readIntentRoutes(config.intentRoutes, agents);
-    const routeToCopy = existingRoutes.find((route) => route.agentId === agent.id);
-    const nextConfig: Record<string, unknown> = { clusterAgents: nextAgents };
-    if (routeToCopy) {
-      const routeInsertIndex = existingRoutes.findIndex((route) => route.id === routeToCopy.id) + 1;
-      const copiedRoute: IntentRouteConfig = {
-        ...routeToCopy,
-        id: `intent_route_${newAgentId}`,
-        agentId: newAgentId,
-        intentCode: copiedAgent.intentCode,
-        intentName: copiedAgent.intentName,
-      };
-      const nextRoutes = [...existingRoutes];
-      nextRoutes.splice(Math.max(0, routeInsertIndex), 0, copiedRoute);
-      nextConfig.intentRoutes = nextRoutes;
-    }
-    onUpdateConfig(nextConfig);
-    onUpdateNode({ toolCount: nextAgents.length, outputVariables: buildClusterOutputVariables(executionMode, nextAgents, clusterOutputVariable) });
+    commitAgents(nextAgents);
   }
 
   function agentVariables(agent: ClusterAgentConfig) {
@@ -3717,14 +3725,16 @@ function PromptEditor({
   textareaClassName?: string;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const labelId = useId();
 
   const handleVariablePick = useCallback((variable: string) => {
     insertTemplateToken(textareaRef.current, value, formatTemplateVariable(variable), onChange);
   }, [onChange, value]);
 
+  // 变量按钮与 textarea 不能共用 <label>，否则点击标签内空白会误触发第一个可标注控件（变量按钮）。
   return (
-    <label className="sys-field">
-      <span className="sys-field-label">{label}</span>
+    <div className="sys-field">
+      <span className="sys-field-label" id={labelId}>{label}</span>
       {showVariableBar ? (
         <VariableReferenceBar
           variables={availableVariables}
@@ -3733,12 +3743,13 @@ function PromptEditor({
       ) : null}
       <textarea
         ref={textareaRef}
+        aria-labelledby={labelId}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         className={`sys-field-textarea workflow-prompt-textarea ${textareaClassName}`.trim()}
         placeholder={placeholder ?? "可以使用 {{输出内容标识}} 引用之前步骤内容"}
       />
-    </label>
+    </div>
   );
 }
 
@@ -3760,14 +3771,15 @@ function VariableTemplateInputField({
   onChange: (value: string) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const labelId = useId();
 
   const handleVariablePick = useCallback((variable: string) => {
     insertTemplateToken(inputRef.current, value, formatTemplateVariable(variable), onChange);
   }, [onChange, value]);
 
   return (
-    <label className="sys-field">
-      <span className="sys-field-label">{label}</span>
+    <div className="sys-field">
+      <span className="sys-field-label" id={labelId}>{label}</span>
       {variableItems.length > 0 ? (
         <FileNameVariableBar items={variableItems} onPick={handleVariablePick} />
       ) : null}
@@ -3775,6 +3787,7 @@ function VariableTemplateInputField({
         {Icon ? <Icon size={16} className="sys-field-prefix" aria-hidden="true" /> : null}
         <input
           ref={inputRef}
+          aria-labelledby={labelId}
           value={value}
           onChange={(event) => onChange(event.target.value)}
           className="sys-field-input"
@@ -3782,7 +3795,7 @@ function VariableTemplateInputField({
           maxLength={maxLength}
         />
       </div>
-    </label>
+    </div>
   );
 }
 

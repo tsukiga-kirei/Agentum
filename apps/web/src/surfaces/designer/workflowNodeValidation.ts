@@ -896,3 +896,36 @@ export function summarizeValidationIssues(issues: WorkflowNodeValidationIssue[])
   }
   return issues.map((item) => item.message).join("；");
 }
+
+type WorkflowSaveWarningNode = {
+  id: string;
+  data: {
+    label: string;
+  };
+};
+
+/** 汇总保存前可跳过的草稿级配置提醒，供二次确认弹窗展示。 */
+export function buildWorkflowSaveWarningMessage(
+  incompleteNodes: WorkflowSaveWarningNode[],
+  nodeValidationMap: Map<string, WorkflowNodeValidationIssue[]>,
+  deliveryPlacementIssues: WorkflowNodeValidationIssue[],
+): string | null {
+  const lines: string[] = [];
+
+  if (deliveryPlacementIssues.length > 0) {
+    lines.push(summarizeValidationIssues(deliveryPlacementIssues));
+  }
+
+  incompleteNodes.forEach((node) => {
+    const issues = nodeValidationMap.get(node.id) ?? [];
+    if (issues.length > 0) {
+      lines.push(`「${node.data.label}」：${summarizeValidationIssues(issues)}`);
+    }
+  });
+
+  if (lines.length === 0) {
+    return null;
+  }
+
+  return lines.join("\n");
+}

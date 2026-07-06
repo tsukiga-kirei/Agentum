@@ -540,14 +540,7 @@ public class WorkflowDraftService {
         List<WorkflowDraftApi.WorkflowVariableDraft> variables = request.variables() == null ? List.of() : request.variables();
         validateGraph(tenantId, workflowId, nodes, edges);
         workflowVariableDeclarationValidator.validate(nodes, variables);
-        List<WorkflowDraftApi.WorkflowValidationIssue> referenceIssues = workflowNodeConfigValidator.validateCapabilityReferences(
-            tenantId,
-            operatorUserId,
-            nodes.stream().map(this::toNodeRow).toList()
-        );
-        if (!referenceIssues.isEmpty()) {
-            throwConfigValidationFailed(referenceIssues);
-        }
+        // 草稿保存只校验图结构与变量声明；节点配置完整性与能力引用留给发布前校验，避免打断设计中的半成品保存。
 
         Instant now = clock.instant();
         workflowNodeDefinitionRepository.deleteByWorkflowId(workflowId);
