@@ -8,10 +8,12 @@ import com.agentum.auth.infrastructure.UserRoleAssignmentRepository;
 import com.agentum.auth.interfaces.AuthUserResponse;
 import com.agentum.auth.interfaces.BootstrapAdminRequest;
 import com.agentum.auth.interfaces.BootstrapStatusResponse;
+import com.agentum.auth.interfaces.ChangeMyPasswordRequest;
 import com.agentum.auth.interfaces.LoginRequest;
 import com.agentum.auth.interfaces.LoginResponse;
 import com.agentum.auth.interfaces.MenuItemResponse;
 import com.agentum.auth.interfaces.RoleInfoResponse;
+import com.agentum.auth.interfaces.UpdateMyProfileRequest;
 import com.agentum.shared.api.ApiException;
 import com.agentum.shared.api.RequestIds;
 import com.agentum.tenant.domain.TenantEntity;
@@ -22,6 +24,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,6 +38,7 @@ public class AuthService {
 
     private static final Logger log = LoggerFactory.getLogger(AuthService.class);
     private static final String ACTIVE_STATUS = "active";
+    private static final Pattern BASIC_EMAIL_PATTERN = Pattern.compile("^[A-Za-z0-9._%+\\-]+@[A-Za-z0-9.\\-]+\\.[A-Za-z]{2,}$");
 
     private final UserAccountRepository userAccountRepository;
     private final TenantRepository tenantRepository;
@@ -219,6 +223,54 @@ public class AuthService {
         AuthUserResponse userResponse = buildUserResponse(user, activeAssignment, tenant);
         // 复用 LoginResponse 结构（不含 token），前端通过已有 token 识别
         return new LoginResponse(null, userResponse, roles, activeRole, List.of(), menus);
+    }
+
+    @Transactional
+    public LoginResponse updateMyProfile(CurrentUserPrincipal principal, UpdateMyProfileRequest request) {
+        UserAccount user = userAccountRepository.findById(principal.userId())
+            .filter(account -> ACTIVE_STATUS.equals(account.getStatus()))
+            .orElseThrow(() -> {
+                log.warn("个人资料更新失败：Token 中用户不可用 userId={} requestId={}", principal.userId(), RequestIds.current());
+                return new ApiException(HttpStatus.UNAUTHORIZED, "AUTH_TOKEN_INVALID", "登录状态无效，请重新登录");
+            });
+
+        String displayName = normalizeRequired(request.displayName(), "AUTH_PROFILE_DISPLAY_NAME_REQUIRED", "请输入姓名");
+        String email = normalizeOptional(request.email());
+        validateEmailIfPresent(email, "AUTH_PROFILE_EMAIL_INVALID");
+        if (!email.isBlank() && userAccountRepository.existsByEmailIgnoreCaseAndIdNot(email, user.getId())) {
+            log.warn("个人资料更新失败：邮箱已存在 userId={} requestId={}", user.getId(), RequestIds.current());
+            throw new ApiException(HttpStatus.CONFLICT, "AUTH_PROFILE_EMAIL_EXISTS", "邮箱已存在，请换一个邮箱");
+        }
+
+        // 个人设置只允许维护展示资料；用户名仍由租户管理维护，避免用户绕过成员台账治理。
+        user.updateProfile(user.getUsername(), displayName, email);
+        userAccountRepository.save(user);
+        log.info("个人资料更新成功 userId={} tenantId={} role={} requestId={}", user.getId(), principal.tenantId(), principal.role(), RequestIds.current());
+        return currentUser(principal);
+    }
+
+    @Transactional
+    public void changeMyPassword(CurrentUserPrincipal principal, ChangeMyPasswordRequest request, String rawRefreshToken) {
+        UserAccount user = userAccountRepository.findById(principal.userId())
+            .filter(account -> ACTIVE_STATUS.equals(account.getStatus()))
+            .orElseThrow(() -> {
+                log.warn("个人密码修改失败：Token 中用户不可用 userId={} requestId={}", principal.userId(), RequestIds.current());
+                return new ApiException(HttpStatus.UNAUTHORIZED, "AUTH_TOKEN_INVALID", "登录状态无效，请重新登录");
+            });
+
+        if (!passwordEncoder.matches(request.currentPassword(), user.getPasswordHash())) {
+            log.warn("个人密码修改失败：当前密码不匹配 userId={} tenantId={} requestId={}", user.getId(), principal.tenantId(), RequestIds.current());
+            throw new ApiException(HttpStatus.BAD_REQUEST, "AUTH_CURRENT_PASSWORD_INVALID", "当前密码不正确");
+        }
+        if (passwordEncoder.matches(request.newPassword(), user.getPasswordHash())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "AUTH_NEW_PASSWORD_SAME_AS_OLD", "新密码不能与当前密码相同");
+        }
+
+        // 改密属于敏感账号动作：只保存哈希并吊销当前 Refresh Token，前端收到成功后必须清理本地 Access Token 重新登录。
+        user.updatePasswordHash(passwordEncoder.encode(request.newPassword()));
+        userAccountRepository.save(user);
+        refreshTokenService.revoke(rawRefreshToken);
+        log.info("个人密码修改成功 userId={} tenantId={} role={} requestId={}", user.getId(), principal.tenantId(), principal.role(), RequestIds.current());
     }
 
     // -------------------------------------------------------------------------
@@ -461,5 +513,23 @@ public class AuthService {
 
     private static ApiException roleNotAllowed() {
         return new ApiException(HttpStatus.FORBIDDEN, "PERMISSION_ROLE_NOT_ALLOWED", "当前用户没有所选入口权限");
+    }
+
+    private static String normalizeRequired(String value, String code, String message) {
+        String normalized = normalizeOptional(value);
+        if (normalized.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, code, message);
+        }
+        return normalized;
+    }
+
+    private static String normalizeOptional(String value) {
+        return value == null ? "" : value.trim();
+    }
+
+    private static void validateEmailIfPresent(String email, String code) {
+        if (!email.isBlank() && !BASIC_EMAIL_PATTERN.matcher(email).matches()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, code, "邮箱格式不正确");
+        }
     }
 }

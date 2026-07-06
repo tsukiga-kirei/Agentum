@@ -459,9 +459,6 @@ export function LoginPage() {
                   <Form.Item name="rememberMe" valuePropName="checked" noStyle>
                     <Checkbox>记住账号</Checkbox>
                   </Form.Item>
-                  <Button type="link" className="login-forgot-button">
-                    忘记密码？
-                  </Button>
                 </div>
 
                 {/* 登录按钮 */}

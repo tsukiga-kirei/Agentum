@@ -79,6 +79,35 @@ public class AuthController {
         return ApiResponse.success(authService.currentUser(principal), RequestIds.current(request));
     }
 
+    @PutMapping("/me/profile")
+    public ApiResponse<LoginResponse> updateMyProfile(
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @Valid @RequestBody UpdateMyProfileRequest updateMyProfileRequest,
+        HttpServletRequest request
+    ) {
+        if (principal == null) {
+            log.warn("个人资料更新被拒绝：缺少认证主体 requestId={}", RequestIds.current(request));
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "AUTH_REQUIRED", "请先登录后再访问");
+        }
+        return ApiResponse.success(authService.updateMyProfile(principal, updateMyProfileRequest), RequestIds.current(request));
+    }
+
+    @PutMapping("/me/password")
+    public ApiResponse<Void> changeMyPassword(
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @Valid @RequestBody ChangeMyPasswordRequest changeMyPasswordRequest,
+        HttpServletRequest request,
+        HttpServletResponse response
+    ) {
+        if (principal == null) {
+            log.warn("个人密码修改被拒绝：缺少认证主体 requestId={}", RequestIds.current(request));
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "AUTH_REQUIRED", "请先登录后再访问");
+        }
+        authService.changeMyPassword(principal, changeMyPasswordRequest, cookieService.read(request));
+        response.addHeader(HttpHeaders.SET_COOKIE, cookieService.clear());
+        return ApiResponse.success(RequestIds.current(request));
+    }
+
     // 角色切换：传入 user_role_assignments 的 ID，后端校验归属后重签 token。
     @PutMapping("/switch-role")
     public ApiResponse<SwitchRoleResponse> switchRole(

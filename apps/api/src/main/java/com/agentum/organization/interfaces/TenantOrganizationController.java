@@ -390,6 +390,20 @@ public class TenantOrganizationController {
         );
     }
 
+    @PatchMapping("/memberships/{membershipId}/password")
+    public ApiResponse<Void> resetMemberPassword(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID membershipId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @Valid @RequestBody ResetMemberPasswordRequest resetMemberPasswordRequest,
+        HttpServletRequest request
+    ) {
+        tenantOrganizationAccess.assertCanManageTenant(principal, tenantId);
+        // 密码重置是敏感账号动作，后端只接收新密码并写入哈希，日志和响应均不回显密码内容。
+        tenantOrganizationService.resetMemberPassword(tenantId, principal.userId(), membershipId, resetMemberPasswordRequest);
+        return ApiResponse.success(null, RequestIds.current(request));
+    }
+
     @PatchMapping("/memberships/{membershipId}/department")
     public ApiResponse<TenantOrganizationOverviewResponse> updateMembershipDepartment(
         @PathVariable UUID tenantId,

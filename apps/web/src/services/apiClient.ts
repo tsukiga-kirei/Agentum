@@ -1,4 +1,4 @@
-import type { BootstrapAdminRequest, BootstrapStatusResponse, LoginRequest, LoginResponse, MeResponse, PortalType, SsoProviderOption, SwitchRoleRequest, SwitchRoleResponse, TenantOption } from "../types/auth";
+import type { BootstrapAdminRequest, BootstrapStatusResponse, ChangeMyPasswordRequest, LoginRequest, LoginResponse, MeResponse, PortalType, SsoProviderOption, SwitchRoleRequest, SwitchRoleResponse, TenantOption, UpdateMyProfileRequest } from "../types/auth";
 import type { AssetSummary, CreateMyAssetRequest, MyAssetDetail, MyAssetPage, MyAssetRow, ShareableMemberRow, SystemCapabilityAssetPage, UpdateMyAssetAccessRequest, UpdateMyAssetRequest } from "../types/asset";
 import type { AuditEvidence, AuditOperationLog, AuditRunSummary, AuditToolCall } from "../types/audit";
 import type {
@@ -12,6 +12,7 @@ import type {
   PageResponse,
   PageGrant,
   PrincipalGrantUsage,
+  ResetMemberPasswordRequest,
   ResourceGrant,
   TenantOrgRole,
   TenantOrganizationOverview,
@@ -364,6 +365,10 @@ export const authApi = {
   login: (request: LoginRequest) => apiRequest<LoginResponse>("/api/auth/login", { method: "POST", body: request }),
   refresh: () => apiRequest<LoginResponse>("/api/auth/refresh", { method: "POST", skipAuthRefresh: true }),
   me: (token: string) => apiRequest<MeResponse>("/api/auth/me", { token }),
+  updateMyProfile: (token: string, request: UpdateMyProfileRequest) =>
+    apiRequest<MeResponse>("/api/auth/me/profile", { method: "PUT", token, body: request }),
+  changeMyPassword: (token: string, request: ChangeMyPasswordRequest) =>
+    apiRequest<void>("/api/auth/me/password", { method: "PUT", token, body: request }),
   switchRole: (token: string, request: SwitchRoleRequest) =>
     apiRequest<SwitchRoleResponse>("/api/auth/switch-role", { method: "PUT", token, body: request }),
   logout: (_token?: string) => apiRequest<void>("/api/auth/logout", { method: "POST" }),
@@ -436,6 +441,12 @@ export const organizationApi = {
     }),
   updateMemberProfile: (tenantId: string, membershipId: string, token: string, request: UpdateMemberProfileRequest) =>
     apiRequest<TenantOrganizationOverview>(`/api/admin/tenants/${tenantId}/organization/memberships/${membershipId}/profile`, {
+      method: "PATCH",
+      token,
+      body: request,
+    }),
+  resetMemberPassword: (tenantId: string, membershipId: string, token: string, request: ResetMemberPasswordRequest) =>
+    apiRequest<void>(`/api/admin/tenants/${tenantId}/organization/memberships/${membershipId}/password`, {
       method: "PATCH",
       token,
       body: request,

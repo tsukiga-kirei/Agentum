@@ -13,6 +13,7 @@ import com.agentum.auth.domain.UserRoleAssignmentEntity;
 import com.agentum.auth.infrastructure.UserAccountRepository;
 import com.agentum.auth.infrastructure.UserRoleAssignmentRepository;
 import com.agentum.auth.interfaces.BootstrapAdminRequest;
+import com.agentum.auth.interfaces.ChangeMyPasswordRequest;
 import com.agentum.shared.api.ApiException;
 import com.agentum.tenant.infrastructure.TenantRepository;
 import java.time.Clock;
@@ -123,6 +124,55 @@ class AuthServiceTest {
             .isInstanceOf(ApiException.class)
             .extracting("code")
             .isEqualTo("TENANT_NOT_AVAILABLE");
+    }
+
+    @Test
+    void shouldChangePasswordAndRevokeRefreshToken() {
+        UserAccountRepository userAccountRepository = mock(UserAccountRepository.class);
+        PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
+        AuthRefreshTokenService refreshTokenService = mock(AuthRefreshTokenService.class);
+        AuthService authService = new AuthService(
+            userAccountRepository,
+            mock(TenantRepository.class),
+            mock(UserRoleAssignmentRepository.class),
+            passwordEncoder,
+            mock(AuthTokenService.class),
+            refreshTokenService,
+            mock(MenuService.class),
+            Clock.fixed(NOW, ZoneOffset.UTC)
+        );
+        UserAccount user = UserAccount.create("operator", "old-hash", "业务用户", "operator@agentum.dev");
+        CurrentUserPrincipal principal = new CurrentUserPrincipal(user.getId(), "operator", TENANT_ID, "business", "business", UUID.randomUUID());
+
+        when(userAccountRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("old-password", "old-hash")).thenReturn(true);
+        when(passwordEncoder.matches("new-password", "old-hash")).thenReturn(false);
+        when(passwordEncoder.encode("new-password")).thenReturn("new-hash");
+
+        authService.changeMyPassword(principal, new ChangeMyPasswordRequest("old-password", "new-password"), "refresh-token");
+
+        ArgumentCaptor<UserAccount> userCaptor = ArgumentCaptor.forClass(UserAccount.class);
+        verify(userAccountRepository).save(userCaptor.capture());
+        verify(refreshTokenService).revoke("refresh-token");
+        assertThat(userCaptor.getValue().getPasswordHash()).isEqualTo("new-hash");
+    }
+
+    @Test
+    void shouldRejectPasswordChangeWhenCurrentPasswordIsWrong() {
+        UserAccountRepository userAccountRepository = mock(UserAccountRepository.class);
+        PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
+        AuthService authService = newAuthService(userAccountRepository, mock(UserRoleAssignmentRepository.class), passwordEncoder);
+        UserAccount user = UserAccount.create("operator", "old-hash", "业务用户", "operator@agentum.dev");
+        CurrentUserPrincipal principal = new CurrentUserPrincipal(user.getId(), "operator", TENANT_ID, "business", "business", UUID.randomUUID());
+
+        when(userAccountRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("bad-password", "old-hash")).thenReturn(false);
+
+        assertThatThrownBy(() -> authService.changeMyPassword(principal, new ChangeMyPasswordRequest("bad-password", "new-password"), "refresh-token"))
+            .isInstanceOf(ApiException.class)
+            .extracting("code")
+            .isEqualTo("AUTH_CURRENT_PASSWORD_INVALID");
+        verify(userAccountRepository, never()).save(any());
     }
 
     private AuthService newAuthService(UserAccountRepository userAccountRepository) {

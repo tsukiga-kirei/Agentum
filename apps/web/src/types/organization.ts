@@ -182,6 +182,10 @@ export type UpdateMemberProfileRequest = {
   email?: string;
 };
 
+export type ResetMemberPasswordRequest = {
+  password: string;
+};
+
 export type UpdateMembershipDepartmentRequest = {
   departmentId?: string;
 };

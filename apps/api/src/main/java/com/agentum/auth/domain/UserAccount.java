@@ -93,4 +93,8 @@ public class UserAccount {
         this.displayName = displayName;
         this.email = email;
     }
+
+    public void updatePasswordHash(String passwordHash) {
+        this.passwordHash = passwordHash;
+    }
 }

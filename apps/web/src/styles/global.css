@@ -854,6 +854,285 @@ textarea:focus-visible {
   transform: translate(-50%, 0);
 }
 
+.workbench-account-area {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.workbench-account-avatar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--color-primary);
+  transition:
+    background-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.workbench-account-avatar-btn:hover,
+.workbench-account-avatar-btn:focus-visible {
+  background: var(--color-bg-hover);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 12%, transparent);
+}
+
+.workbench-account-expanded-btn {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: none;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  text-align: left;
+  transition:
+    background-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.workbench-account-expanded-btn:hover,
+.workbench-account-expanded-btn:focus-visible {
+  background: var(--color-bg-hover);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 8%, transparent);
+}
+
+.account-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-primary) 15%, var(--color-bg-card));
+  color: var(--color-primary);
+  font-size: 14px;
+  font-weight: 700;
+  object-fit: cover;
+}
+
+.account-avatar--large {
+  width: 48px;
+  height: 48px;
+  font-size: 18px;
+}
+
+.workbench-account-menu {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: calc(100% + 10px);
+  z-index: 80;
+  width: auto;
+  padding: 6px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-card);
+  box-shadow: var(--shadow-lg);
+}
+
+.workbench-account-menu--compact {
+  right: auto;
+  left: 10px;
+  width: 176px;
+}
+
+.workbench-account-menu-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  height: 38px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.workbench-account-menu-item:hover,
+.workbench-account-menu-item:focus-visible {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.workbench-account-menu-item--danger {
+  color: var(--color-danger);
+}
+
+.workbench-account-menu-item--danger:hover,
+.workbench-account-menu-item--danger:focus-visible {
+  background: color-mix(in srgb, var(--color-danger) 10%, var(--color-bg-hover));
+  color: var(--color-danger);
+}
+
+.account-settings-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(680px, calc(100vw - 32px));
+  max-height: min(760px, calc(100vh - 48px));
+  overflow: hidden;
+}
+
+.account-settings-modal .sys-modal-header {
+  flex-shrink: 0;
+}
+
+.account-settings-body {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 14px 24px 20px;
+}
+
+.account-settings-tabs-wrap {
+  flex-shrink: 0;
+  padding: 10px 20px 10px;
+  border-bottom: 1px solid var(--color-border-light);
+  background: transparent;
+}
+
+.account-settings-segmented-scroll {
+  padding-bottom: 0;
+}
+
+.account-settings-segmented.login-portal-segmented {
+  min-width: 0;
+  margin-bottom: 0;
+  padding: 2px;
+  border-color: var(--color-border-light);
+  background: transparent;
+}
+
+.account-settings-segmented.system-mgmt-segmented.login-portal-segmented .ant-segmented-item {
+  min-width: 148px;
+  min-height: 40px;
+}
+
+.account-settings-segmented.system-mgmt-segmented.login-portal-segmented .ant-segmented-item-label {
+  min-height: 40px;
+}
+
+.account-settings-segmented.login-portal-segmented .ant-segmented-thumb {
+  background: var(--color-bg-card);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--login-portal-color) 12%, transparent);
+}
+
+.dark .account-settings-segmented.login-portal-segmented {
+  border-color: var(--color-border-light);
+  background: transparent;
+}
+
+.dark .account-settings-segmented.login-portal-segmented .ant-segmented-thumb {
+  background: color-mix(in srgb, var(--login-portal-color) 12%, var(--color-bg-card));
+}
+
+:root[data-theme="warm"] .account-settings-segmented.login-portal-segmented {
+  border-color: var(--color-border-light);
+  background: transparent;
+}
+
+.account-settings-panel {
+  animation: sysFadeIn 0.18s ease;
+}
+
+.account-settings-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  margin-bottom: 14px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-hover);
+}
+
+.account-settings-summary strong {
+  display: block;
+  color: var(--color-text-primary);
+  font-size: 15px;
+}
+
+.account-settings-summary span:last-child {
+  display: block;
+  margin-top: 2px;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+
+.account-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.account-settings-grid .sys-readonly-field {
+  min-height: 58px;
+  align-items: flex-start;
+  justify-content: center;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.account-settings-grid .sys-readonly-field span {
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
+
+.account-settings-grid .sys-readonly-field strong {
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sys-config-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.account-settings-quick-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+@media (max-width: 720px) {
+  .account-settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .account-settings-tabs-wrap {
+    padding-inline: 14px;
+  }
+
+  .account-settings-segmented.system-mgmt-segmented.login-portal-segmented .ant-segmented-item {
+    min-width: 132px;
+  }
+
+  .account-settings-quick-actions {
+    justify-content: stretch;
+    flex-direction: column;
+  }
+}
+
 /* 业务页顶栏：介绍文案与主题/角色同一行，收起侧栏控件后不再预留独立顶栏高度 */
 .surface-page-chrome {
   gap: 12px;

@@ -127,6 +127,16 @@ export type SwitchRoleResponse = {
   menus: MenuItem[];
 };
 
+export type UpdateMyProfileRequest = {
+  displayName: string;
+  email?: string;
+};
+
+export type ChangeMyPasswordRequest = {
+  currentPassword: string;
+  newPassword: string;
+};
+
 /** 个人资料页展示的用户详细信息 */
 export type UserProfile = {
   id: string;

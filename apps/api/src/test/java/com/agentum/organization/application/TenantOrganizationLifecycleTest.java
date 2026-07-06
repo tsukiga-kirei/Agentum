@@ -3,8 +3,10 @@ package com.agentum.organization.application;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.agentum.auth.domain.UserAccount;
 import com.agentum.auth.infrastructure.UserAccountRepository;
 import com.agentum.auth.infrastructure.UserRoleAssignmentRepository;
 import com.agentum.organization.domain.DepartmentEntity;
@@ -14,6 +16,7 @@ import com.agentum.organization.infrastructure.TenantOrgRoleRepository;
 import com.agentum.organization.infrastructure.UserMembershipRepository;
 import com.agentum.organization.infrastructure.UserMembershipRoleRepository;
 import com.agentum.organization.interfaces.PrincipalGrantUsageResponse;
+import com.agentum.organization.interfaces.ResetMemberPasswordRequest;
 import com.agentum.organization.interfaces.UpdateDepartmentRequest;
 import com.agentum.organization.interfaces.UpdateMembershipStatusRequest;
 import com.agentum.permission.domain.RoleEntity;
@@ -32,6 +35,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -162,6 +166,24 @@ class TenantOrganizationLifecycleTest {
         assertThat(usage.principalId()).isEqualTo(roleId.toString());
         assertThat(usage.pageGrantRows()).isEqualTo(3L);
         assertThat(usage.resourceGrantRows()).isEqualTo(1L);
+    }
+
+    @Test
+    void shouldResetMemberPassword() {
+        TenantOrganizationService service = newService();
+        UserMembershipEntity membership = UserMembershipEntity.create(TENANT_ID, USER_ID, null);
+        UserAccount account = UserAccount.create("operator", "old-hash", "业务用户", "operator@agentum.dev");
+
+        when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", Instant.now())));
+        when(userMembershipRepository.findByIdAndTenantId(membership.getId(), TENANT_ID)).thenReturn(Optional.of(membership));
+        when(userAccountRepository.findById(USER_ID)).thenReturn(Optional.of(account));
+        when(passwordEncoder.encode("new-password")).thenReturn("new-hash");
+
+        service.resetMemberPassword(TENANT_ID, OPERATOR_USER_ID, membership.getId(), new ResetMemberPasswordRequest("new-password"));
+
+        ArgumentCaptor<UserAccount> userCaptor = ArgumentCaptor.forClass(UserAccount.class);
+        verify(userAccountRepository).save(userCaptor.capture());
+        assertThat(userCaptor.getValue().getPasswordHash()).isEqualTo("new-hash");
     }
 
     private TenantOrganizationService newService() {

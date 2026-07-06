@@ -57,6 +57,10 @@ type AuthActions = {
   createBootstrapAdmin: (request: { username: string; displayName: string; password: string; email?: string }) => Promise<{ success: boolean; message?: string }>;
   /** 退出登录 */
   logout: () => Promise<void>;
+  /** 更新当前用户个人资料 */
+  updateMyProfile: (request: { displayName: string; email?: string }) => Promise<{ success: boolean; message?: string }>;
+  /** 修改当前用户密码；成功后清理本地会话，调用方负责跳转登录页 */
+  changeMyPassword: (request: { currentPassword: string; newPassword: string }) => Promise<{ success: boolean; message?: string }>;
   /** 从本地缓存恢复会话（调用 /api/auth/me 获取完整角色和菜单上下文） */
   restoreSession: () => void;
   /** 切换角色 */
@@ -202,6 +206,57 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
 
     clearAuthToken();
     set({ user: null, token: null, roles: [], activeRole: null, permissions: [], menus: [], sessionPersist: false });
+  },
+
+  updateMyProfile: async (request) => {
+    const token = get().token;
+
+    if (!token) {
+      return { success: false, message: "请先登录" };
+    }
+
+    try {
+      const response = await authApi.updateMyProfile(token, request);
+      set({
+        user: response.user,
+        roles: response.roles,
+        activeRole: response.activeRole,
+        permissions: response.permissions,
+        menus: response.menus,
+      });
+      return { success: true };
+    } catch (error) {
+      if (error instanceof AgentumApiError) {
+        console.warn("[auth] 个人资料更新失败", { code: error.code, requestId: error.requestId });
+        return { success: false, message: error.message };
+      }
+
+      console.error("[auth] 个人资料更新请求异常", getErrorLogContext(error));
+      return { success: false, message: "个人资料保存失败，请稍后重试" };
+    }
+  },
+
+  changeMyPassword: async (request) => {
+    const token = get().token;
+
+    if (!token) {
+      return { success: false, message: "请先登录" };
+    }
+
+    try {
+      await authApi.changeMyPassword(token, request);
+      clearAuthToken();
+      set({ user: null, token: null, roles: [], activeRole: null, permissions: [], menus: [], sessionPersist: false });
+      return { success: true };
+    } catch (error) {
+      if (error instanceof AgentumApiError) {
+        console.warn("[auth] 个人密码修改失败", { code: error.code, requestId: error.requestId });
+        return { success: false, message: error.message };
+      }
+
+      console.error("[auth] 个人密码修改请求异常", getErrorLogContext(error));
+      return { success: false, message: "密码修改失败，请稍后重试" };
+    }
   },
 
   restoreSession: () => {

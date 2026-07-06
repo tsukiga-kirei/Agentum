@@ -32,6 +32,7 @@ import com.agentum.organization.interfaces.PrincipalGrantUsageResponse;
 import com.agentum.organization.interfaces.ResourceGrantItemRequest;
 import com.agentum.organization.interfaces.ResourceGrantItemResponse;
 import com.agentum.organization.interfaces.ResourceGrantResponse;
+import com.agentum.organization.interfaces.ResetMemberPasswordRequest;
 import com.agentum.organization.interfaces.RoleResponse;
 import com.agentum.organization.interfaces.TenantOrgRoleResponse;
 import com.agentum.organization.interfaces.TenantOrganizationOverviewResponse;
@@ -706,6 +707,37 @@ public class TenantOrganizationService {
         userAccountRepository.save(account);
         log.info("成员基本信息更新成功 tenantId={} operatorUserId={} membershipId={} userId={} requestId={}", tenantId, operatorUserId, membershipId, account.getId(), RequestIds.current());
         return getOverview(tenantId);
+    }
+
+    @Transactional
+    public void resetMemberPassword(
+        UUID tenantId,
+        UUID operatorUserId,
+        UUID membershipId,
+        ResetMemberPasswordRequest request
+    ) {
+        tenantRepository.findByIdAndStatus(tenantId, ACTIVE_STATUS)
+            .orElseThrow(() -> {
+                log.warn("成员密码重置失败：租户不可用 tenantId={} operatorUserId={} membershipId={} requestId={}", tenantId, operatorUserId, membershipId, RequestIds.current());
+                return new ApiException(HttpStatus.NOT_FOUND, "TENANT_NOT_FOUND", "租户不存在或已停用");
+            });
+
+        UserMembershipEntity membership = userMembershipRepository.findByIdAndTenantId(membershipId, tenantId)
+            .orElseThrow(() -> {
+                log.warn("成员密码重置失败：成员关系不存在 tenantId={} operatorUserId={} membershipId={} requestId={}", tenantId, operatorUserId, membershipId, RequestIds.current());
+                return new ApiException(HttpStatus.NOT_FOUND, "ORG_MEMBERSHIP_NOT_FOUND", "成员关系不存在");
+            });
+
+        UserAccount account = userAccountRepository.findById(membership.getUserId())
+            .orElseThrow(() -> {
+                log.warn("成员密码重置失败：账号不存在 tenantId={} operatorUserId={} membershipId={} userId={} requestId={}", tenantId, operatorUserId, membershipId, membership.getUserId(), RequestIds.current());
+                return new ApiException(HttpStatus.NOT_FOUND, "ORG_MEMBER_ACCOUNT_NOT_FOUND", "成员账号不存在");
+            });
+
+        // 管理员重置密码只处理本地账号哈希，不回显、不记录新密码；成员下次使用新密码重新登录。
+        account.updatePasswordHash(passwordEncoder.encode(request.password()));
+        userAccountRepository.save(account);
+        log.info("成员密码重置成功 tenantId={} operatorUserId={} membershipId={} userId={} requestId={}", tenantId, operatorUserId, membershipId, account.getId(), RequestIds.current());
     }
 
     private void syncTenantRoleMemberships(

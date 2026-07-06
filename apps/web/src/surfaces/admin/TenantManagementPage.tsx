@@ -13,6 +13,7 @@ import {
   Download,
   Edit,
   Info,
+  KeyRound,
   LockKeyhole,
   Plus,
   PlusCircle,
@@ -243,6 +244,8 @@ export function TenantManagementPage() {
   const [editingMembership, setEditingMembership] = useState<OrganizationMembership | null>(null);
   const [memberEditDraft, setMemberEditDraft] = useState<MemberEditDraft>({ username: "", displayName: "", email: "", departmentId: undefined, roleIds: [], status: "active" });
   const [memberEditSubmitting, setMemberEditSubmitting] = useState(false);
+  const [memberPasswordDraft, setMemberPasswordDraft] = useState("");
+  const [memberPasswordSubmitting, setMemberPasswordSubmitting] = useState(false);
   const [resourceOptions, setResourceOptions] = useState<TenantResourceOption[]>([]);
   const [authorizationLoading, setAuthorizationLoading] = useState(false);
   const [authorizationHydrated, setAuthorizationHydrated] = useState(false);
@@ -621,6 +624,7 @@ export function TenantManagementPage() {
       roleIds: membership.roles.map((role) => role.id),
       status: membership.status === "disabled" ? "disabled" : "active",
     });
+    setMemberPasswordDraft("");
     setEditMemberOpen(true);
   }
 
@@ -741,6 +745,35 @@ export function TenantManagementPage() {
     } finally {
       setMemberEditSubmitting(false);
       setMembershipUpdatingId(null);
+    }
+  }
+
+  async function handleResetMemberPassword() {
+    if (!editingMembership || !token || !user?.tenantId) {
+      messageApi.error("当前账号缺少租户上下文，无法重置密码");
+      return;
+    }
+    if (memberPasswordDraft.length < 8) {
+      messageApi.warning("新密码至少 8 位");
+      return;
+    }
+
+    setMemberPasswordSubmitting(true);
+    try {
+      // 重置密码是敏感动作：前端只提交新密码，不写入日志、URL 或本地缓存；诊断只保留成员关系 ID。
+      await organizationApi.resetMemberPassword(
+        user.tenantId,
+        editingMembership.id,
+        token,
+        { password: memberPasswordDraft }
+      );
+      setMemberPasswordDraft("");
+      messageApi.success("成员密码已重置");
+    } catch (error) {
+      console.warn("[tenant-management] 成员密码重置失败", getTenantManagementErrorContext(error, user.tenantId, { membershipId: editingMembership.id }));
+      messageApi.error(error instanceof AgentumApiError ? error.message : "成员密码重置失败，请稍后重试");
+    } finally {
+      setMemberPasswordSubmitting(false);
     }
   }
 
@@ -1141,6 +1174,29 @@ export function TenantManagementPage() {
                 {editingMembership?.tenantAdmin ? (
                   <div className="sys-field-hint">租户管理员身份和状态只能由系统管理维护；部门和业务角色可在此调整，系统会保留租户管理员身份。</div>
                 ) : null}
+              </div>
+              <div className="sys-config-group tenant-member-profile-group">
+                <div className="sys-config-group-title">账号安全</div>
+                <div className="sys-field">
+                  <label className="sys-field-label">重置密码</label>
+                  <SysPasswordInput
+                    prefixIcon={<KeyRound size={16} className="sys-field-prefix" />}
+                    value={memberPasswordDraft}
+                    placeholder="输入新密码，至少 8 位"
+                    autoComplete="new-password"
+                    onChange={(event) => setMemberPasswordDraft(event.target.value)}
+                  />
+                  <p className="sys-field-hint">重置后成员需要使用新密码登录。该动作不会修改成员角色、部门或状态。</p>
+                </div>
+                <div className="sys-config-actions">
+                  <button
+                    className="sys-btn sys-btn--default"
+                    disabled={memberPasswordSubmitting || memberPasswordDraft.length === 0}
+                    onClick={() => void handleResetMemberPassword()}
+                  >
+                    <KeyRound size={14} /> 重置密码
+                  </button>
+                </div>
               </div>
             </div>
             <div className="sys-modal-footer">
