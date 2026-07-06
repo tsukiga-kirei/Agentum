@@ -6,7 +6,9 @@ import {
   ChevronDown,
   Clock3,
   Edit3,
+  Eye,
   FileText,
+  History,
   Loader2,
   PauseCircle,
   PlayCircle,
@@ -325,6 +327,9 @@ export function WorkflowSchedulesPanel() {
       const result = await workbenchApi.triggerSchedule(tenantId, token, schedule.id);
       messageApi.success("定时任务已开始执行");
       void loadSchedules();
+      if (drawerOpen && form.scheduleId === schedule.id) {
+        void loadExecutions(schedule.id);
+      }
       if (result.runId) {
         navigate(paths.workbench.run(result.runId));
       }
@@ -563,24 +568,28 @@ export function WorkflowSchedulesPanel() {
               ) : executions.length === 0 ? (
                 <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无执行记录" />
               ) : (
-                <div className="space-y-2">
+                <div className="schedule-execution-list">
                   {executions.map((execution) => (
-                    <div className="sys-preview-item" key={execution.id}>
-                      <div className="sys-preview-item-left">
-                        <span className="sys-preview-item-icon sys-card-avatar--cap">
+                    <article className="schedule-execution-item" key={execution.id}>
+                      <div className="schedule-execution-item-main">
+                        <span className="schedule-execution-item-icon sys-card-avatar--cap">
                           {execution.status === "succeeded" ? <PlayCircle size={16} /> : execution.status === "aborted" ? <PauseCircle size={16} /> : <Loader2 size={16} className="animate-spin" />}
                         </span>
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{formatExecutionStatus(execution.status)}</p>
-                          <p className="truncate text-xs text-[var(--color-text-secondary)]">{formatDate(execution.scheduledAt)} · {execution.message || "执行中"}</p>
+                        <div className="schedule-execution-item-body">
+                          <p className="schedule-execution-item-title">{formatExecutionStatus(execution.status)}</p>
+                          <p className="schedule-execution-item-time">{formatExecutionTime(execution)}</p>
+                          <p className="schedule-execution-item-message">{execution.message?.trim() || (execution.status === "running" ? "执行中" : "—")}</p>
                         </div>
                       </div>
                       {execution.runId ? (
-                        <button type="button" className="agent-button h-7 px-2 text-xs" onClick={() => navigate(paths.workbench.run(execution.runId!))}>
-                          查看
-                        </button>
+                        <div className="schedule-execution-item-actions">
+                          <button type="button" className="sys-btn sys-btn--default sys-btn--sm" onClick={() => navigate(paths.workbench.run(execution.runId!))}>
+                            <Eye size={13} aria-hidden="true" />
+                            查看运行
+                          </button>
+                        </div>
                       ) : null}
-                    </div>
+                    </article>
                   ))}
                 </div>
               )}
@@ -642,8 +651,9 @@ function ScheduleListItem({
           {schedule.status === "active" ? "启用中" : "已暂停"}
         </span>
         {schedule.lastRunId ? (
-          <button type="button" className="agent-button h-7 px-2 text-xs" onClick={onOpenRun}>
-            记录
+          <button type="button" className="sys-btn sys-btn--default sys-btn--sm" onClick={onOpenRun}>
+            <History size={13} aria-hidden="true" />
+            上次运行
           </button>
         ) : null}
         <button type="button" className="agent-button h-7 px-2 text-xs" onClick={onOpen}>
@@ -697,4 +707,12 @@ function formatExecutionStatus(status: string) {
   if (status === "succeeded") return "执行成功";
   if (status === "aborted") return "执行中止";
   return "执行中";
+}
+
+function formatExecutionTime(execution: WorkflowScheduleExecutionRow) {
+  const triggerAt = execution.startedAt || execution.scheduledAt;
+  if (execution.completedAt && execution.completedAt !== triggerAt) {
+    return `触发：${formatDate(triggerAt)} · 结束：${formatDate(execution.completedAt)}`;
+  }
+  return `触发：${formatDate(triggerAt)}`;
 }

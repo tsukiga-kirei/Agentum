@@ -46,7 +46,7 @@ import com.agentum.runtime.execution.RuntimeExecutionProperties;
 import com.agentum.runtime.lease.RunExecutionLeaseService;
 import com.agentum.runtime.messaging.NodeExecuteCommand;
 import com.agentum.runtime.messaging.NodeExecuteCommandPublisher;
-import com.agentum.runtime.stream.RunProgressStreamWriter;
+import com.agentum.schedule.application.WorkflowScheduleService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.time.Instant;
@@ -92,6 +92,7 @@ class WorkbenchRuntimeServiceTest {
     private final RunCancellationGuard cancellationGuard = mock(RunCancellationGuard.class);
     private final RunExecutionLeaseService leaseService = mock(RunExecutionLeaseService.class);
     private final PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+    private final WorkflowScheduleService workflowScheduleService = mock(WorkflowScheduleService.class);
 
     @Test
     void shouldRejectEmptyRequiredInputAndKeepLegacyFieldsRequired() {
@@ -1154,7 +1155,8 @@ class WorkbenchRuntimeServiceTest {
             new RuntimeExecutionProperties(),
             new PromptContentResolver(mock(SystemCapabilityRepository.class), mock(TenantAssetCapabilityRepository.class)),
             leaseService,
-            transactionManager
+            transactionManager,
+            workflowScheduleService
         );
     }
 

@@ -9,7 +9,11 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface WorkflowScheduleExecutionRepository extends JpaRepository<WorkflowScheduleExecutionEntity, UUID> {
 
-    Page<WorkflowScheduleExecutionEntity> findByTenantIdAndScheduleIdOrderByScheduledAtDesc(UUID tenantId, UUID scheduleId, Pageable pageable);
+    Page<WorkflowScheduleExecutionEntity> findByTenantIdAndScheduleIdOrderByStartedAtDesc(UUID tenantId, UUID scheduleId, Pageable pageable);
 
     List<WorkflowScheduleExecutionEntity> findByStatusOrderByUpdatedAtAsc(String status, Pageable pageable);
+
+    List<WorkflowScheduleExecutionEntity> findByScheduleIdAndStatus(UUID scheduleId, String status);
+
+    List<WorkflowScheduleExecutionEntity> findByRunId(UUID runId);
 }

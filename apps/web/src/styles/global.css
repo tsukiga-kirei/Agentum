@@ -4584,6 +4584,7 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+  align-items: start;
 }
 .tenant-permission-option {
   position: relative;
@@ -4689,86 +4690,85 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
 }
 
 .tenant-permission-card-row--main {
-  min-height: 78px;
+  min-height: 68px;
 }
 
-.tenant-permission-card-toggle {
+.tenant-permission-card-foot {
   display: flex;
   align-items: center;
   gap: 6px;
   width: 100%;
-  padding: 8px 12px;
+  padding: 7px 12px;
   border: 0;
   border-top: 1px solid color-mix(in srgb, var(--color-border-light) 80%, transparent);
-  background: color-mix(in srgb, var(--color-bg-hover) 55%, transparent);
-  color: var(--color-text-secondary);
-  font-size: 12px;
+  background: color-mix(in srgb, var(--color-bg-hover) 45%, transparent);
+  color: var(--color-text-tertiary);
+  font-size: 11px;
   cursor: pointer;
   transition: background var(--transition-fast), color var(--transition-fast);
 }
 
-.tenant-permission-card-toggle:hover {
+.tenant-permission-card-foot:hover {
   background: color-mix(in srgb, var(--color-primary) 8%, var(--color-bg-hover));
-  color: var(--color-text-primary);
+  color: var(--color-text-secondary);
 }
 
-.tenant-permission-card-toggle-icon {
+.tenant-permission-card-foot-icon {
   transition: transform var(--transition-fast);
 }
 
-.tenant-permission-card-toggle-icon--expanded {
+.tenant-permission-card-foot-icon--expanded {
   transform: rotate(90deg);
 }
 
-.tenant-permission-card-toggle-tag {
-  padding: 1px 6px;
+.tenant-permission-card-foot-tag {
+  padding: 0 6px;
   border-radius: 999px;
   background: var(--color-primary-bg);
   color: var(--color-primary);
-  font-size: 11px;
+  font-size: 10px;
+  line-height: 1.7;
 }
 
-.tenant-permission-card-toggle-hint {
+.tenant-permission-card-foot-hint {
   margin-left: auto;
   color: var(--color-text-tertiary);
+}
+
+.tenant-permission-subpanel-row {
+  grid-column: 1 / -1;
+  padding: 10px 12px 12px;
+  border: 1px dashed color-mix(in srgb, var(--color-primary) 28%, var(--color-border-light));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-bg-hover) 35%, var(--color-bg-card));
+}
+
+.tenant-permission-subpanel-head {
+  margin-bottom: 8px;
+  color: var(--color-text-tertiary);
   font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
-.tenant-permission-card-subpanel {
-  border-top: 1px solid color-mix(in srgb, var(--color-border-light) 80%, transparent);
+.tenant-permission-subpanel-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 
-.tenant-permission-card-row--sub {
-  min-height: 58px;
-  padding-top: 10px;
-  padding-bottom: 10px;
-  padding-left: 10px;
+.tenant-permission-option--sub {
+  min-height: 72px;
 }
 
-.tenant-permission-card-row--disabled {
+.tenant-permission-option--disabled {
   cursor: not-allowed;
-  opacity: 0.55;
+  opacity: 0.58;
 }
 
-.tenant-permission-card-row--disabled:hover {
-  background: transparent;
-}
-
-.tenant-permission-sub-branch {
-  width: 10px;
-  margin-top: 10px;
-  margin-left: 4px;
-  border-left: 1px solid color-mix(in srgb, var(--color-primary) 35%, var(--color-border-light));
-  border-bottom: 1px solid color-mix(in srgb, var(--color-primary) 35%, var(--color-border-light));
-  border-bottom-left-radius: 4px;
-  align-self: stretch;
-  min-height: 18px;
-  flex-shrink: 0;
-}
-
-.tenant-permission-option-icon--sub {
-  width: 26px;
-  height: 26px;
+.tenant-permission-option--disabled:hover {
+  border-color: var(--color-border-light);
+  background: var(--color-bg-card);
 }
 
 .tenant-permission-card-row--checked .tenant-permission-option-check,
@@ -4912,6 +4912,83 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+}
+
+.schedule-execution-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.schedule-execution-item {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-card);
+}
+
+.schedule-execution-item-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.schedule-execution-item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-md);
+  flex-shrink: 0;
+}
+
+.schedule-execution-item-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.schedule-execution-item-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.schedule-execution-item-time {
+  margin: 0;
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  line-height: 1.45;
+}
+
+.schedule-execution-item-message {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.schedule-execution-item-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--color-border-light) 80%, transparent);
+}
+
+.schedule-execution-item-actions .sys-btn--sm {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
 }
 .tenant-pagination {
   display: flex;
@@ -10400,7 +10477,8 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
   .agent-delete-confirm-footer {
     padding: 0 20px 22px;
   }
-  .tenant-permission-grid {
+  .tenant-permission-grid,
+  .tenant-permission-subpanel-options {
     grid-template-columns: 1fr;
   }
   .tenant-pagination {

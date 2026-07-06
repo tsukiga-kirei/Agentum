@@ -59,7 +59,7 @@ public class WorkflowScheduleService {
     private static final Logger log = LoggerFactory.getLogger(WorkflowScheduleService.class);
     private static final String ACTIVE_STATUS = "active";
     private static final SortWhitelist SCHEDULE_SORT = SortWhitelist.of("updatedAt", "nextRunAt", "lastRunAt", "name");
-    private static final SortWhitelist EXECUTION_SORT = SortWhitelist.of("scheduledAt", "completedAt", "status");
+    private static final SortWhitelist EXECUTION_SORT = SortWhitelist.of("startedAt", "scheduledAt", "completedAt", "status");
 
     private final WorkflowScheduleRepository scheduleRepository;
     private final WorkflowScheduleExecutionRepository executionRepository;
@@ -264,13 +264,33 @@ public class WorkflowScheduleService {
         );
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public PageResponse<WorkflowScheduleApi.ScheduleExecutionRow> executions(UUID tenantId, CurrentUserPrincipal principal, UUID scheduleId, int page, int size) {
         ensureActiveTenant(tenantId);
         ensureAuthenticated(principal);
         WorkflowScheduleEntity schedule = requireReadableSchedule(tenantId, principal, scheduleId);
-        Pageable pageable = PageableFactory.from(PageQuery.of(page, size, "scheduledAt,desc"), EXECUTION_SORT);
-        return PageResponse.from(executionRepository.findByTenantIdAndScheduleIdOrderByScheduledAtDesc(tenantId, schedule.getId(), pageable).map(this::toExecutionRow));
+        reconcileScheduleExecutions(schedule.getId());
+        Pageable pageable = PageableFactory.from(PageQuery.of(page, size, "startedAt,desc"), EXECUTION_SORT);
+        return PageResponse.from(executionRepository.findByTenantIdAndScheduleIdOrderByStartedAtDesc(tenantId, schedule.getId(), pageable).map(this::toExecutionRow));
+    }
+
+    /**
+     * 运行被删除后，关联的定时执行记录不能继续停留在“执行中”。
+     */
+    @Transactional
+    public void abortExecutionsForDeletedRun(UUID runId) {
+        if (runId == null) {
+            return;
+        }
+        Instant now = clock.instant();
+        for (WorkflowScheduleExecutionEntity execution : executionRepository.findByRunId(runId)) {
+            if (!WorkflowScheduleExecutionEntity.STATUS_RUNNING.equals(execution.getStatus())) {
+                continue;
+            }
+            execution.abort("关联运行已删除，执行记录已中止。", now);
+            executionRepository.save(execution);
+            markScheduleState(execution.getScheduleId(), "aborted", now);
+        }
     }
 
     @Transactional
@@ -279,7 +299,7 @@ public class WorkflowScheduleService {
         ensureAuthenticated(principal);
         WorkflowScheduleEntity schedule = requireWritableSchedule(tenantId, principal, scheduleId);
         Instant now = clock.instant();
-        UUID runId = triggerOne(schedule, now).orElseThrow(() -> new ApiException(
+        UUID runId = triggerOne(schedule, now, now).orElseThrow(() -> new ApiException(
             HttpStatus.BAD_REQUEST,
             "SCHEDULE_TRIGGER_FAILED",
             "定时任务触发失败，请检查流程权限和输入配置"
@@ -314,7 +334,8 @@ public class WorkflowScheduleService {
         Instant now = clock.instant();
         List<WorkflowScheduleEntity> dueSchedules = scheduleRepository.findDueSchedules(now, PageRequest.of(0, 20));
         for (WorkflowScheduleEntity schedule : dueSchedules) {
-            triggerOne(schedule, now);
+            Instant scheduledAt = schedule.getNextRunAt() == null ? now : schedule.getNextRunAt();
+            triggerOne(schedule, now, scheduledAt);
         }
     }
 
@@ -325,12 +346,29 @@ public class WorkflowScheduleService {
             WorkflowScheduleExecutionEntity.STATUS_RUNNING,
             PageRequest.of(0, 50)
         );
+        reconcileRunningExecutionBatch(executions, now);
+    }
+
+    private void reconcileScheduleExecutions(UUID scheduleId) {
+        Instant now = clock.instant();
+        reconcileRunningExecutionBatch(
+            executionRepository.findByScheduleIdAndStatus(scheduleId, WorkflowScheduleExecutionEntity.STATUS_RUNNING),
+            now
+        );
+    }
+
+    private void reconcileRunningExecutionBatch(List<WorkflowScheduleExecutionEntity> executions, Instant now) {
         Set<UUID> runIds = executions.stream().map(WorkflowScheduleExecutionEntity::getRunId).filter(id -> id != null).collect(Collectors.toSet());
         Map<UUID, WorkflowRunEntity> runsById = workflowRunRepository.findAllById(runIds).stream()
             .collect(Collectors.toMap(WorkflowRunEntity::getId, Function.identity()));
         for (WorkflowScheduleExecutionEntity execution : executions) {
             WorkflowRunEntity run = execution.getRunId() == null ? null : runsById.get(execution.getRunId());
             if (run == null) {
+                if (execution.getRunId() != null) {
+                    execution.abort("关联运行已删除，执行记录已中止。", now);
+                    executionRepository.save(execution);
+                    markScheduleState(execution.getScheduleId(), "aborted", now);
+                }
                 continue;
             }
             if ("completed".equals(run.getState())) {
@@ -352,8 +390,8 @@ public class WorkflowScheduleService {
         }
     }
 
-    private java.util.Optional<UUID> triggerOne(WorkflowScheduleEntity schedule, Instant now) {
-        WorkflowScheduleExecutionEntity execution = WorkflowScheduleExecutionEntity.running(schedule, schedule.getNextRunAt(), now);
+    private java.util.Optional<UUID> triggerOne(WorkflowScheduleEntity schedule, Instant now, Instant executionScheduledAt) {
+        WorkflowScheduleExecutionEntity execution = WorkflowScheduleExecutionEntity.running(schedule, executionScheduledAt, now);
         executionRepository.save(execution);
         CronExpression cron = parseCron(schedule.getCronExpression());
         Instant nextRunAt = nextRunAt(cron, now.plusSeconds(1));

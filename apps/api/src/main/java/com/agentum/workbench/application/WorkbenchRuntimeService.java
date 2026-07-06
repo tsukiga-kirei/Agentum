@@ -12,6 +12,7 @@ import com.agentum.runtime.lease.RunExecutionLeaseService;
 import com.agentum.runtime.messaging.NodeExecuteCommand;
 import com.agentum.runtime.messaging.NodeExecuteCommandPublisher;
 import com.agentum.runtime.stream.RunProgressStreamWriter;
+import com.agentum.schedule.application.WorkflowScheduleService;
 import com.agentum.shared.api.ApiException;
 import com.agentum.shared.api.RequestIds;
 import com.agentum.shared.pagination.PageQuery;
@@ -52,6 +53,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.dao.DataIntegrityViolationException;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -120,6 +122,7 @@ public class WorkbenchRuntimeService {
     private final PromptContentResolver promptContentResolver;
     private final RunExecutionLeaseService leaseService;
     private final TransactionTemplate transactionTemplate;
+    private final WorkflowScheduleService workflowScheduleService;
 
     public WorkbenchRuntimeService(
         TenantRepository tenantRepository,
@@ -144,7 +147,8 @@ public class WorkbenchRuntimeService {
         RuntimeExecutionProperties runtimeProperties,
         PromptContentResolver promptContentResolver,
         RunExecutionLeaseService leaseService,
-        PlatformTransactionManager transactionManager
+        PlatformTransactionManager transactionManager,
+        @Lazy WorkflowScheduleService workflowScheduleService
     ) {
         this.tenantRepository = tenantRepository;
         this.workflowDefinitionRepository = workflowDefinitionRepository;
@@ -169,6 +173,7 @@ public class WorkbenchRuntimeService {
         this.promptContentResolver = promptContentResolver;
         this.leaseService = leaseService;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.workflowScheduleService = workflowScheduleService;
     }
 
     @Transactional(readOnly = true)
@@ -563,6 +568,7 @@ public class WorkbenchRuntimeService {
             run.getState(),
             RequestIds.current()
         );
+        workflowScheduleService.abortExecutionsForDeletedRun(runId);
         workflowRunRepository.delete(run);
     }
 

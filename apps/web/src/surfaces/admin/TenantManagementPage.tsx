@@ -1534,59 +1534,63 @@ export function TenantManagementPage() {
                 const schedulesChecked = selectedPageKeys.includes(workbenchPagePermissionGroup.sub[0].value);
                 const MainIcon = workbenchPagePermissionGroup.main.icon;
                 return (
-                  <div className={`tenant-permission-card tenant-permission-card--group ${workbenchMainChecked || schedulesChecked ? "tenant-permission-card--checked" : ""} ${workbenchSubExpanded ? "tenant-permission-card--expanded" : "tenant-permission-card--collapsed"}`}>
-                    <button
-                      type="button"
-                      className={`tenant-permission-card-row tenant-permission-card-row--main ${workbenchMainChecked ? "tenant-permission-card-row--checked" : ""}`}
-                      onClick={() => setSelectedPageKeys((keys) => toggleWorkbenchPageKey(keys, workbenchPagePermissionGroup.main.value))}
-                    >
-                      <span className="tenant-permission-option-icon"><MainIcon size={16} /></span>
-                      <span className="tenant-permission-option-text">
-                        <span>{workbenchPagePermissionGroup.main.label}</span>
-                        <small>{workbenchPagePermissionGroup.main.description}</small>
-                      </span>
-                      <CheckCircle2 size={16} className="tenant-permission-option-check" />
-                    </button>
-                    <button
-                      type="button"
-                      className="tenant-permission-card-toggle"
-                      aria-expanded={workbenchSubExpanded}
-                      onClick={() => setWorkbenchSubExpanded((expanded) => !expanded)}
-                    >
-                      <ChevronRight size={14} className={`tenant-permission-card-toggle-icon ${workbenchSubExpanded ? "tenant-permission-card-toggle-icon--expanded" : ""}`} aria-hidden="true" />
-                      <span>子能力</span>
-                      {!workbenchSubExpanded && schedulesChecked ? (
-                        <span className="tenant-permission-card-toggle-tag">已选定时任务</span>
-                      ) : null}
-                      <span className="tenant-permission-card-toggle-hint">{workbenchSubExpanded ? "收起" : "展开"}</span>
-                    </button>
+                  <>
+                    <div className={`tenant-permission-card tenant-permission-card--group ${workbenchMainChecked || schedulesChecked ? "tenant-permission-card--checked" : ""}`}>
+                      <button
+                        type="button"
+                        className={`tenant-permission-card-row tenant-permission-card-row--main ${workbenchMainChecked ? "tenant-permission-card-row--checked" : ""}`}
+                        onClick={() => setSelectedPageKeys((keys) => toggleWorkbenchPageKey(keys, workbenchPagePermissionGroup.main.value))}
+                      >
+                        <span className="tenant-permission-option-icon"><MainIcon size={16} /></span>
+                        <span className="tenant-permission-option-text">
+                          <span>{workbenchPagePermissionGroup.main.label}</span>
+                          <small>{workbenchPagePermissionGroup.main.description}</small>
+                        </span>
+                        <CheckCircle2 size={16} className="tenant-permission-option-check" />
+                      </button>
+                      <button
+                        type="button"
+                        className="tenant-permission-card-foot"
+                        aria-expanded={workbenchSubExpanded}
+                        onClick={() => setWorkbenchSubExpanded((expanded) => !expanded)}
+                      >
+                        <ChevronRight size={12} className={`tenant-permission-card-foot-icon ${workbenchSubExpanded ? "tenant-permission-card-foot-icon--expanded" : ""}`} aria-hidden="true" />
+                        <span>附加能力</span>
+                        {!workbenchSubExpanded && schedulesChecked ? (
+                          <span className="tenant-permission-card-foot-tag">已选定时任务</span>
+                        ) : null}
+                        <span className="tenant-permission-card-foot-hint">{workbenchSubExpanded ? "收起" : "展开"}</span>
+                      </button>
+                    </div>
                     {workbenchSubExpanded ? (
-                      <div className="tenant-permission-card-subpanel">
-                        {workbenchPagePermissionGroup.sub.map((option) => {
-                          const Icon = option.icon;
-                          const checked = selectedPageKeys.includes(option.value);
-                          const disabled = !workbenchMainChecked;
-                          return (
-                            <button
-                              key={option.value}
-                              type="button"
-                              disabled={disabled}
-                              className={`tenant-permission-card-row tenant-permission-card-row--sub ${checked ? "tenant-permission-card-row--checked" : ""} ${disabled ? "tenant-permission-card-row--disabled" : ""}`}
-                              onClick={() => setSelectedPageKeys((keys) => toggleWorkbenchPageKey(keys, option.value))}
-                            >
-                              <span className="tenant-permission-sub-branch" aria-hidden="true" />
-                              <span className="tenant-permission-option-icon tenant-permission-option-icon--sub"><Icon size={15} /></span>
-                              <span className="tenant-permission-option-text">
-                                <span>{option.label}</span>
-                                <small>{disabled ? "请先勾选上方的业务工作台" : option.description}</small>
-                              </span>
-                              <CheckCircle2 size={15} className="tenant-permission-option-check" />
-                            </button>
-                          );
-                        })}
+                      <div className="tenant-permission-subpanel-row">
+                        <div className="tenant-permission-subpanel-head">业务工作台附加能力</div>
+                        <div className="tenant-permission-subpanel-options">
+                          {workbenchPagePermissionGroup.sub.map((option) => {
+                            const Icon = option.icon;
+                            const checked = selectedPageKeys.includes(option.value);
+                            const disabled = !workbenchMainChecked;
+                            return (
+                              <button
+                                key={option.value}
+                                type="button"
+                                disabled={disabled}
+                                className={`tenant-permission-option tenant-permission-option--sub ${checked ? "tenant-permission-option--checked" : ""} ${disabled ? "tenant-permission-option--disabled" : ""}`}
+                                onClick={() => setSelectedPageKeys((keys) => toggleWorkbenchPageKey(keys, option.value))}
+                              >
+                                <span className="tenant-permission-option-icon"><Icon size={16} /></span>
+                                <span className="tenant-permission-option-text">
+                                  <span>{option.label}</span>
+                                  <small>{disabled ? "请先勾选业务工作台" : option.description}</small>
+                                </span>
+                                <CheckCircle2 size={16} className="tenant-permission-option-check" />
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
                     ) : null}
-                  </div>
+                  </>
                 );
               })()}
               {topLevelPagePermissionOptions.map((option) => {
