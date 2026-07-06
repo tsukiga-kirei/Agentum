@@ -87,6 +87,10 @@ import {
   WORKFLOW_SYSTEM_TEMPLATE_VARIABLES,
   type WorkflowNodeValidationIssue,
 } from "./workflowNodeValidation";
+import {
+  buildDeliveryTriggerContextVariables,
+  resolveDeliveryTriggerContextMeta,
+} from "./deliveryTriggerContext";
 import type { InputFieldConfig } from "../../types/runtime-types";
 import {
   createInputFieldOption,
@@ -2880,6 +2884,26 @@ function DeliveryCapabilityConfigDrawer({
   const selectedClusterAgentValue = effectiveTriggerRule.clusterNodeId && effectiveTriggerRule.agentId
     ? `${effectiveTriggerRule.clusterNodeId}::${effectiveTriggerRule.agentId}`
     : "";
+  const triggerContextVariables = useMemo(() => {
+    const meta = resolveDeliveryTriggerContextMeta(effectiveTriggerRule, {
+      clusterAgentOptions: clusterAgentTriggerOptions,
+      inputFieldOptions: inputFieldTriggerOptions,
+      agentOutputOptions: agentOutputTriggerOptions,
+    });
+    return buildDeliveryTriggerContextVariables(
+      workflowVariables,
+      effectiveTriggerRule,
+      showTrigger,
+      meta,
+    ) as WorkflowVariable[];
+  }, [
+    workflowVariables,
+    effectiveTriggerRule,
+    showTrigger,
+    clusterAgentTriggerOptions,
+    inputFieldTriggerOptions,
+    agentOutputTriggerOptions,
+  ]);
 
   function updateDocumentStyle<K extends keyof DocumentDeliveryStyleDraft>(key: K, value: DocumentDeliveryStyleDraft[K]) {
     onConfigChange({
@@ -3078,6 +3102,7 @@ function DeliveryCapabilityConfigDrawer({
               label="交付内容模板"
               value={readString(config.deliveryContent, defaultDirectTemplate)}
               availableVariables={workflowVariables}
+              triggerVariables={triggerContextVariables}
               onChange={(value) => onConfigChange({ deliveryContent: value })}
               placeholder="支持 Markdown，可用 {{输出内容标识}} 引用之前步骤内容"
             />
@@ -3122,6 +3147,7 @@ function DeliveryCapabilityConfigDrawer({
                   label="交付正文模板"
                   value={readString(config.markdownContent, defaultMarkdownTemplate)}
                   availableVariables={workflowVariables}
+                  triggerVariables={triggerContextVariables}
                   onChange={(value) => onConfigChange({ markdownContent: value })}
                   placeholder="最终转换为 Word 的 Markdown，可用 {{输出内容标识}} 引用之前步骤内容"
                 />
@@ -3145,6 +3171,7 @@ function DeliveryCapabilityConfigDrawer({
                 <ExcelDeliverySheetSections
                   sheets={excelSheets}
                   workflowVariables={workflowVariables}
+                  triggerVariables={triggerContextVariables}
                   onChange={(nextSheets) => onConfigChange({ excelSheets: nextSheets })}
                 />
               </>
@@ -3164,10 +3191,12 @@ function DeliveryCapabilityConfigDrawer({
 function ExcelDeliverySheetSections({
   sheets,
   workflowVariables,
+  triggerVariables = [],
   onChange,
 }: {
   sheets: ExcelSheetDraft[];
   workflowVariables: WorkflowVariable[];
+  triggerVariables?: WorkflowVariable[];
   onChange: (sheets: ExcelSheetDraft[]) => void;
 }) {
   function updateSheet(sheetId: string, patch: Partial<ExcelSheetDraft>) {
@@ -3300,6 +3329,7 @@ function ExcelDeliverySheetSections({
               label="Sheet 正文模板"
               value={sheet.bodyTemplate}
               availableVariables={workflowVariables}
+              triggerVariables={triggerVariables}
               onChange={(value) => updateSheet(sheet.id, { bodyTemplate: value })}
               placeholder="可直接写 Markdown 表格、编号列表、键值块，也可用 {{输出内容标识}} 引用模型输出"
               textareaClassName="min-h-[180px]"
@@ -3711,6 +3741,7 @@ function PromptEditor({
   label,
   value,
   availableVariables,
+  triggerVariables = [],
   onChange,
   placeholder,
   showVariableBar = true,
@@ -3719,6 +3750,7 @@ function PromptEditor({
   label: string;
   value: string;
   availableVariables: WorkflowVariable[];
+  triggerVariables?: WorkflowVariable[];
   onChange: (value: string) => void;
   placeholder?: string;
   showVariableBar?: boolean;
@@ -3738,6 +3770,7 @@ function PromptEditor({
       {showVariableBar ? (
         <VariableReferenceBar
           variables={availableVariables}
+          triggerVariables={triggerVariables}
           onPick={handleVariablePick}
         />
       ) : null}
@@ -3801,15 +3834,21 @@ function VariableTemplateInputField({
 
 function VariableReferenceBar({
   variables,
+  triggerVariables = [],
   onPick,
 }: {
   variables: WorkflowVariable[];
+  triggerVariables?: WorkflowVariable[];
   onPick: (variable: string) => void;
 }) {
   const systemItems = variables.filter(isSystemRuntimeVariable).map(variableToReferenceItem);
   const nodeItems = variables.filter((variable) => !isSystemRuntimeVariable(variable)).map(variableToReferenceItem);
+  const triggerItems = triggerVariables.map((variable) => ({
+    ...variableToReferenceItem(variable),
+    sourceLabel: variable.sourceNodeName,
+  }));
 
-  if (systemItems.length === 0 && nodeItems.length === 0) {
+  if (systemItems.length === 0 && nodeItems.length === 0 && triggerItems.length === 0) {
     return null;
   }
 
@@ -3818,6 +3857,7 @@ function VariableReferenceBar({
       <span className="workflow-variable-reference-title">可插入变量</span>
       <VariableReferenceGroup label="系统变量" items={systemItems} onPick={onPick} />
       <VariableReferenceGroup label="节点变量" items={nodeItems} onPick={onPick} />
+      <VariableReferenceGroup label="触发变量" items={triggerItems} onPick={onPick} />
     </div>
   );
 }

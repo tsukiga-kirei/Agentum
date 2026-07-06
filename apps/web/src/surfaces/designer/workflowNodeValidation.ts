@@ -1,5 +1,6 @@
 import type { WorkflowNodeType } from "../../types/workflow-contract";
 import { normalizeInputFieldOptions } from "../../utils/workflowInputField";
+import { collectDeliveryTriggerVariableNames } from "./deliveryTriggerContext";
 import { validateCustomPromptConfiguration } from "./workflowPromptDefaults";
 
 /** 运行时可注入的模板变量，不计入上游输出校验。 */
@@ -529,6 +530,39 @@ function findClusterTemplateVariableIssues(
   return issues;
 }
 
+function findDeliveryTemplateVariableIssues(
+  config: Record<string, unknown>,
+  upstreamVariables: Set<string>,
+): WorkflowNodeValidationIssue[] {
+  if (readString(config.deliveryConfigMode, "single") !== "multiple") {
+    return findUnresolvedTemplateVariableIssues(config, "delivery", upstreamVariables, "交付模板");
+  }
+
+  const executionPolicy = readString(config.deliveryExecutionPolicy, "all");
+  const issues: WorkflowNodeValidationIssue[] = [];
+  readMapList(config.deliveryItems).forEach((item, index) => {
+    const itemName = readString(item.name, `交付项 ${index + 1}`);
+    const itemConfig = readMap(item.config);
+    const itemFields = collectRuntimeTemplateTextFields(
+      { deliveryConfigMode: "multiple", deliveryItems: [{ ...item, config: itemConfig }] },
+      "delivery",
+    ).filter((field) => field.key.startsWith("deliveryItems.0."));
+    const availableVariables = new Set(upstreamVariables);
+    if (executionPolicy === "conditional") {
+      collectDeliveryTriggerVariableNames(readMap(item.triggerRule), "conditional")
+        .forEach((name) => availableVariables.add(name));
+    }
+    const unresolved = collectTemplateUnresolvedVariables(itemFields, availableVariables);
+    if (unresolved.length > 0) {
+      issues.push(issue(
+        "WORKFLOW_NODE_TEMPLATE_VARIABLE_UNRESOLVED",
+        `${itemName}交付模板引用了当前不可用的变量：${unresolved.join("；")}`,
+      ));
+    }
+  });
+  return issues;
+}
+
 function collectTemplateUnresolvedVariables(
   fields: TemplateTextField[],
   availableVariables: Set<string>,
@@ -660,7 +694,7 @@ function validateDeliveryNode(
     }
   }
 
-  issues.push(...findUnresolvedTemplateVariableIssues(config, "delivery", upstreamVariables, "交付模板"));
+  issues.push(...findDeliveryTemplateVariableIssues(config, upstreamVariables));
 
   return issues;
 }
