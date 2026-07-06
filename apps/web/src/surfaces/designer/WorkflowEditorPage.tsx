@@ -219,6 +219,57 @@ type DeliveryItemDraft = {
   config: Record<string, unknown>;
 };
 
+type ExcelCellType = "text" | "number" | "currency" | "percent" | "date" | "datetime" | "boolean";
+
+type ExcelTableStyleDraft = {
+  headerBold: boolean;
+  freezeHeader: boolean;
+  autoFilter: boolean;
+};
+
+type ExcelColumnRuleDraft = {
+  id: string;
+  match: string;
+  type: ExcelCellType;
+  format: string;
+  width: number;
+  bold: boolean;
+  backgroundColor: string;
+  horizontalAlignment: string;
+};
+
+type ExcelRowRuleDraft = {
+  id: string;
+  target: "header" | "last" | "index" | "contains";
+  index: number;
+  text: string;
+  bold: boolean;
+  backgroundColor: string;
+};
+
+type ExcelCellRuleDraft = {
+  id: string;
+  cell: string;
+  type: ExcelCellType;
+  format: string;
+  bold: boolean;
+  backgroundColor: string;
+  horizontalAlignment: string;
+  allowFormula: boolean;
+};
+
+type ExcelSheetDraft = {
+  id: string;
+  name: string;
+  startCell: string;
+  defaultCellType: ExcelCellType;
+  bodyTemplate: string;
+  tableStyle: ExcelTableStyleDraft;
+  columnRules: ExcelColumnRuleDraft[];
+  rowRules: ExcelRowRuleDraft[];
+  cellRules: ExcelCellRuleDraft[];
+};
+
 type ClusterAgentTriggerOption = {
   value: string;
   label: string;
@@ -347,6 +398,41 @@ const WORD_FILE_NAME_VARIABLES: VariableReferenceItem[] = [
     sourceLabel: "系统日期变量",
     typeLabel: "date",
   },
+];
+
+const EXCEL_FILE_NAME_VARIABLES = WORD_FILE_NAME_VARIABLES;
+
+const EXCEL_CELL_TYPE_OPTIONS: Array<{ value: ExcelCellType; label: string }> = [
+  { value: "text", label: "纯文本" },
+  { value: "number", label: "数字" },
+  { value: "currency", label: "金额" },
+  { value: "percent", label: "百分比" },
+  { value: "date", label: "日期" },
+  { value: "datetime", label: "日期时间" },
+  { value: "boolean", label: "布尔值" },
+];
+
+const EXCEL_ROW_TARGET_OPTIONS = [
+  { value: "header", label: "表头行" },
+  { value: "last", label: "最后一行" },
+  { value: "index", label: "指定行号" },
+  { value: "contains", label: "包含文本的行" },
+];
+
+const EXCEL_ALIGNMENT_OPTIONS = [
+  { value: "", label: "默认左对齐" },
+  { value: "left", label: "左对齐" },
+  { value: "center", label: "居中" },
+  { value: "right", label: "右对齐" },
+];
+
+const EXCEL_COLOR_OPTIONS = [
+  { value: "", label: "不设置底色" },
+  { value: "grey", label: "浅灰" },
+  { value: "yellow", label: "浅黄" },
+  { value: "green", label: "浅绿" },
+  { value: "blue", label: "浅蓝" },
+  { value: "red", label: "浅红" },
 ];
 
 const nodeTypeLabels: Record<WorkflowNodeType, string> = {
@@ -2261,6 +2347,7 @@ const STALE_DIRECT_DELIVERY_FIELDS = {
 const STALE_WORD_DELIVERY_FIELDS = {
   markdownContent: "",
   fileNameTemplate: "",
+  excelSheets: [],
 } as const;
 
 const DELIVERY_TRIGGER_OPTIONS = [
@@ -2291,10 +2378,13 @@ function DeliveryBrickConfig({
   const deliveryExecutionPolicy = readDeliveryExecutionPolicy(config.deliveryExecutionPolicy);
   const deliveryAssets = filterCapabilities(capabilityState.capabilities, "delivery");
   const wordDeliveryAssets = deliveryAssets.filter((option) => isWordDocumentDeliveryCapability(option));
+  const excelDeliveryAssets = deliveryAssets.filter((option) => isExcelWorkbookDeliveryCapability(option));
   const defaultWordDeliveryCapability = wordDeliveryAssets[0];
+  const defaultExcelDeliveryCapability = excelDeliveryAssets[0];
+  const defaultDocumentDeliveryCapability = defaultWordDeliveryCapability ?? defaultExcelDeliveryCapability ?? deliveryAssets[0];
   const rawSelectedCapabilityId = readString(config.deliveryCapabilityId, "");
   const selectedCapabilityId = rawSelectedCapabilityId === "none" ? "" : rawSelectedCapabilityId;
-  const effectiveSelectedCapabilityId = selectedCapabilityId || defaultWordDeliveryCapability?.id || "";
+  const effectiveSelectedCapabilityId = selectedCapabilityId || defaultDocumentDeliveryCapability?.id || "";
   const selectedDeliveryCapability = deliveryAssets.find((option) => option.id === selectedCapabilityId)
     ?? deliveryAssets.find((option) => option.id === effectiveSelectedCapabilityId);
   const defaultMarkdownVariable = workflowVariables.find((variable) => variable.deliverable)?.name ?? workflowVariables[workflowVariables.length - 1]?.name ?? "";
@@ -2304,6 +2394,9 @@ function DeliveryBrickConfig({
   const defaultMarkdownTemplate = defaultMarkdownVariable
     ? `# 交付文档\n\n{{${defaultMarkdownVariable}}}`
     : "# 交付文档\n\n请在这里编写最终 Markdown 交付正文。";
+  const defaultExcelSheetTemplate = defaultMarkdownVariable
+    ? `{{${defaultMarkdownVariable}}}`
+    : "| 项目 | 内容 |\n| --- | --- |\n| 示例 | 请替换为上游模型输出 |\n";
   const deliveryItems = readDeliveryItems(config.deliveryItems, deliveryMode);
   const clusterAgentTriggerOptions = buildClusterAgentTriggerOptions(workflowNodes);
   const inputFieldTriggerOptions = buildInputFieldTriggerOptions(workflowNodes);
@@ -2318,19 +2411,13 @@ function DeliveryBrickConfig({
     if (deliveryConfigMode !== "single") {
       return;
     }
-    if (!rawSelectedCapabilityId && defaultWordDeliveryCapability) {
+    if (!rawSelectedCapabilityId && defaultDocumentDeliveryCapability) {
+      const defaultCapabilityConfig = buildCapabilityConfig(defaultDocumentDeliveryCapability, config);
       onUpdateConfig({
-        deliveryMode: "capability",
-        deliveryCapabilityId: defaultWordDeliveryCapability.id,
-        deliveryType: "word_document",
-        documentKind: "word",
-        ...STALE_DIRECT_DELIVERY_FIELDS,
-        fileNameTemplate: readString(config.fileNameTemplate, "交付文档-{{runNumber}}.docx"),
-        markdownContent: readString(config.markdownContent, defaultMarkdownTemplate),
-        documentStyle: readDocumentDeliveryStyle(config.documentStyle, defaultWordDeliveryCapability.config),
+        ...defaultCapabilityConfig,
       });
     }
-  }, [isDirectDelivery, deliveryConfigMode, rawSelectedCapabilityId, defaultWordDeliveryCapability?.id]);
+  }, [isDirectDelivery, deliveryConfigMode, rawSelectedCapabilityId, defaultDocumentDeliveryCapability?.id]);
 
   function buildDirectDeliveryConfig(sourceConfig: Record<string, unknown> = config) {
     return {
@@ -2349,7 +2436,7 @@ function DeliveryBrickConfig({
       return buildDirectDeliveryConfig(sourceConfig);
     }
     const capabilityId = readString(sourceConfig.deliveryCapabilityId, "");
-    const capability = deliveryAssets.find((option) => option.id === capabilityId) ?? selectedDeliveryCapability ?? defaultWordDeliveryCapability ?? deliveryAssets[0];
+    const capability = deliveryAssets.find((option) => option.id === capabilityId) ?? selectedDeliveryCapability ?? defaultDocumentDeliveryCapability;
     return buildCapabilityConfig(capability, sourceConfig);
   }
 
@@ -2372,24 +2459,17 @@ function DeliveryBrickConfig({
       });
       return;
     }
-    const capability = defaultWordDeliveryCapability ?? deliveryAssets[0];
+    const capability = defaultDocumentDeliveryCapability;
     const nextItems = deliveryConfigMode === "multiple"
       ? (deliveryItems.length > 0
         ? deliveryItems.map((item) => ({ ...item, config: buildCapabilityConfig(capability, item.config) }))
         : [createDeliveryItemDraft(1, buildCapabilityConfig(capability, {}), "交付项 1")])
       : [];
-    if (capability && isWordDocumentDeliveryCapability(capability)) {
+    if (capability && (isWordDocumentDeliveryCapability(capability) || isExcelWorkbookDeliveryCapability(capability))) {
       onUpdateConfig({
-        deliveryMode: "capability",
-        deliveryCapabilityId: capability.id,
-        deliveryType: "word_document",
-        documentKind: "word",
+        ...buildCapabilityConfig(capability, config),
         deliveryConfigMode,
         deliveryItems: nextItems,
-        ...STALE_DIRECT_DELIVERY_FIELDS,
-        fileNameTemplate: readString(config.fileNameTemplate, "交付文档-{{runNumber}}.docx"),
-        markdownContent: readString(config.markdownContent, defaultMarkdownTemplate),
-        documentStyle: readDocumentDeliveryStyle(config.documentStyle, capability.config),
       });
       return;
     }
@@ -2410,10 +2490,23 @@ function DeliveryBrickConfig({
         deliveryCapabilityId: capability.id,
         deliveryType: "word_document",
         documentKind: "word",
+        excelSheets: [],
         ...STALE_DIRECT_DELIVERY_FIELDS,
         fileNameTemplate: normalizeWordFileNameTemplate(readString(sourceConfig.fileNameTemplate, "交付文档-{{runNumber}}.docx")),
         markdownContent: readString(sourceConfig.markdownContent, defaultMarkdownTemplate),
         documentStyle: readDocumentDeliveryStyle(sourceConfig.documentStyle, capability.config),
+      };
+    }
+    if (capability && isExcelWorkbookDeliveryCapability(capability)) {
+      return {
+        deliveryMode: "capability",
+        deliveryCapabilityId: capability.id,
+        deliveryType: "excel_workbook",
+        documentKind: "excel",
+        markdownContent: "",
+        ...STALE_DIRECT_DELIVERY_FIELDS,
+        fileNameTemplate: normalizeExcelFileNameTemplate(readString(sourceConfig.fileNameTemplate, "交付表格-{{runNumber}}.xlsx")),
+        excelSheets: readExcelSheets(sourceConfig.excelSheets, defaultExcelSheetTemplate),
       };
     }
     return {
@@ -2471,7 +2564,7 @@ function DeliveryBrickConfig({
         return { ...item, config: buildDirectDeliveryConfig(item.config) };
       }
       const capabilityId = readString(item.config.deliveryCapabilityId, "");
-      const capability = deliveryAssets.find((option) => option.id === capabilityId) ?? defaultWordDeliveryCapability ?? deliveryAssets[0];
+      const capability = deliveryAssets.find((option) => option.id === capabilityId) ?? defaultDocumentDeliveryCapability;
       return { ...item, config: buildCapabilityConfig(capability, item.config) };
     });
     onUpdateConfig({ deliveryItems: nextItems });
@@ -2525,7 +2618,9 @@ function DeliveryBrickConfig({
     const capability = deliveryAssets.find((option) => option.id === capabilityId);
     const typeText = isWordDocumentDeliveryCapability(capability) || readString(itemConfig.deliveryType, "") === "word_document"
       ? "Word 文档交付"
-      : capability ? "能力交付" : "未选择能力";
+      : isExcelWorkbookDeliveryCapability(capability) || readString(itemConfig.deliveryType, "") === "excel_workbook"
+        ? "Excel 工作簿交付"
+        : capability ? "能力交付" : "未选择能力";
     return `${typeText}${capability ? ` · ${capability.name} · ${capability.version}` : ""}`;
   }
 
@@ -2549,7 +2644,7 @@ function DeliveryBrickConfig({
           value={deliveryMode}
           options={[
             { value: "direct", label: "直接交付（节点内配置，无需分配能力）" },
-            { value: "capability", label: "能力交付（Word / 邮件等系统能力）" },
+            { value: "capability", label: "能力交付（Word / Excel / 邮件等系统能力）" },
           ]}
           onChange={handleDeliveryModeChange}
         />
@@ -2628,6 +2723,7 @@ function DeliveryBrickConfig({
         agentOutputTriggerOptions={agentOutputTriggerOptions}
         defaultDirectTemplate={defaultDirectTemplate}
         defaultMarkdownTemplate={defaultMarkdownTemplate}
+        defaultExcelSheetTemplate={defaultExcelSheetTemplate}
         onCapabilityChange={handleSingleCapabilityChange}
         onConfigChange={onUpdateConfig}
         onClose={() => setEditingTarget(null)}
@@ -2649,6 +2745,7 @@ function DeliveryBrickConfig({
           agentOutputTriggerOptions={agentOutputTriggerOptions}
           defaultDirectTemplate={defaultDirectTemplate}
           defaultMarkdownTemplate={defaultMarkdownTemplate}
+          defaultExcelSheetTemplate={defaultExcelSheetTemplate}
           showDeliveryModeSelector
           onDeliveryModeChange={(value) => updateDeliveryItemMode(editingItem.id, value)}
           onItemNameChange={(name) => updateDeliveryItem(editingItem.id, { name })}
@@ -2682,6 +2779,7 @@ function DeliveryCapabilityConfigDrawer({
   agentOutputTriggerOptions,
   defaultDirectTemplate,
   defaultMarkdownTemplate,
+  defaultExcelSheetTemplate,
   showDeliveryModeSelector = false,
   onDeliveryModeChange,
   onItemNameChange,
@@ -2706,6 +2804,7 @@ function DeliveryCapabilityConfigDrawer({
   agentOutputTriggerOptions: AgentOutputTriggerOption[];
   defaultDirectTemplate: string;
   defaultMarkdownTemplate: string;
+  defaultExcelSheetTemplate: string;
   showDeliveryModeSelector?: boolean;
   onDeliveryModeChange?: (value: string) => void;
   onItemNameChange?: (name: string) => void;
@@ -2722,9 +2821,13 @@ function DeliveryCapabilityConfigDrawer({
   const isWordDelivery = isWordDocumentDeliveryCapability(selectedCapability)
     || readString(config.deliveryType, "") === "word_document"
     || readString(config.documentKind, "") === "word";
+  const isExcelDelivery = isExcelWorkbookDeliveryCapability(selectedCapability)
+    || readString(config.deliveryType, "") === "excel_workbook"
+    || readString(config.documentKind, "") === "excel";
   const documentStyle = readDocumentDeliveryStyle(config.documentStyle, selectedCapability?.config);
-  const rawFileNameTemplate = readString(config.fileNameTemplate, "交付文档-{{runNumber}}.docx");
-  const fileNameTemplate = normalizeWordFileNameTemplate(rawFileNameTemplate);
+  const rawFileNameTemplate = readString(config.fileNameTemplate, isExcelDelivery ? "交付表格-{{runNumber}}.xlsx" : "交付文档-{{runNumber}}.docx");
+  const fileNameTemplate = isExcelDelivery ? normalizeExcelFileNameTemplate(rawFileNameTemplate) : normalizeWordFileNameTemplate(rawFileNameTemplate);
+  const excelSheets = readExcelSheets(config.excelSheets, defaultExcelSheetTemplate);
   const effectiveTriggerRule = triggerRule ?? defaultDeliveryTriggerRule();
   const selectedClusterAgentValue = effectiveTriggerRule.clusterNodeId && effectiveTriggerRule.agentId
     ? `${effectiveTriggerRule.clusterNodeId}::${effectiveTriggerRule.agentId}`
@@ -2760,10 +2863,10 @@ function DeliveryCapabilityConfigDrawer({
   }
 
   useEffect(() => {
-    if (isWordDelivery && rawFileNameTemplate !== fileNameTemplate) {
+    if ((isWordDelivery || isExcelDelivery) && rawFileNameTemplate !== fileNameTemplate) {
       onConfigChange({ fileNameTemplate });
     }
-  }, [isWordDelivery, rawFileNameTemplate, fileNameTemplate]);
+  }, [isWordDelivery, isExcelDelivery, rawFileNameTemplate, fileNameTemplate]);
 
   return (
     <Drawer
@@ -2804,7 +2907,7 @@ function DeliveryCapabilityConfigDrawer({
             value={isDirectDelivery ? "direct" : "capability"}
             options={[
               { value: "direct", label: "直接交付（节点内模板）" },
-              { value: "capability", label: "能力交付（Word / 邮件等系统能力）" },
+              { value: "capability", label: "能力交付（Word / Excel / 邮件等系统能力）" },
             ]}
             onChange={(value) => onDeliveryModeChange?.(value)}
           />
@@ -2975,9 +3078,31 @@ function DeliveryCapabilityConfigDrawer({
                   placeholder="最终转换为 Word 的 Markdown，可用 {{输出内容标识}} 引用之前步骤内容"
                 />
               </>
+            ) : isExcelDelivery ? (
+              <>
+                <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-hover)] p-5">
+                  <div className="mb-3">
+                    <h4 className="text-sm font-semibold text-[var(--color-text-primary)]">Excel 工作簿交付</h4>
+                    <p className="mt-1 text-xs text-[var(--color-text-secondary)]">每个 Sheet 都会先渲染正文模板，再宽容识别 Markdown 表格、列表、键值块或普通文本并写入 xlsx。</p>
+                  </div>
+                  <VariableTemplateInputField
+                    label="文件名模板"
+                    icon={FileText}
+                    value={fileNameTemplate}
+                    variableItems={EXCEL_FILE_NAME_VARIABLES}
+                    placeholder="交付表格-{{runNumber}}-{{dateCompact}}.xlsx"
+                    onChange={(value) => onConfigChange({ fileNameTemplate: value })}
+                  />
+                </div>
+                <ExcelDeliverySheetSections
+                  sheets={excelSheets}
+                  workflowVariables={workflowVariables}
+                  onChange={(nextSheets) => onConfigChange({ excelSheets: nextSheets })}
+                />
+              </>
             ) : (
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
-                当前交付节点按 Word 文档交付设计，请选择系统内置 Word 文档交付能力。
+                当前交付节点按文件交付设计，请选择系统内置 Word 文档或 Excel 工作簿交付能力。
               </div>
             )}
           </div>
@@ -2985,6 +3110,213 @@ function DeliveryCapabilityConfigDrawer({
       </div>
       </div>
     </Drawer>
+  );
+}
+
+function ExcelDeliverySheetSections({
+  sheets,
+  workflowVariables,
+  onChange,
+}: {
+  sheets: ExcelSheetDraft[];
+  workflowVariables: WorkflowVariable[];
+  onChange: (sheets: ExcelSheetDraft[]) => void;
+}) {
+  function updateSheet(sheetId: string, patch: Partial<ExcelSheetDraft>) {
+    onChange(sheets.map((sheet) => sheet.id === sheetId ? { ...sheet, ...patch } : sheet));
+  }
+
+  function updateTableStyle(sheetId: string, patch: Partial<ExcelTableStyleDraft>) {
+    onChange(sheets.map((sheet) => sheet.id === sheetId ? { ...sheet, tableStyle: { ...sheet.tableStyle, ...patch } } : sheet));
+  }
+
+  function addSheet() {
+    onChange([...sheets, createExcelSheetDraft(sheets.length + 1)]);
+  }
+
+  function removeSheet(sheetId: string) {
+    if (sheets.length <= 1) {
+      return;
+    }
+    onChange(sheets.filter((sheet) => sheet.id !== sheetId));
+  }
+
+  function updateColumnRule(sheetId: string, ruleId: string, patch: Partial<ExcelColumnRuleDraft>) {
+    onChange(sheets.map((sheet) => sheet.id === sheetId
+      ? { ...sheet, columnRules: sheet.columnRules.map((rule) => rule.id === ruleId ? { ...rule, ...patch } : rule) }
+      : sheet));
+  }
+
+  function addColumnRule(sheetId: string) {
+    onChange(sheets.map((sheet) => sheet.id === sheetId
+      ? { ...sheet, columnRules: [...sheet.columnRules, createExcelColumnRuleDraft(sheet.columnRules.length + 1)] }
+      : sheet));
+  }
+
+  function removeColumnRule(sheetId: string, ruleId: string) {
+    onChange(sheets.map((sheet) => sheet.id === sheetId
+      ? { ...sheet, columnRules: sheet.columnRules.filter((rule) => rule.id !== ruleId) }
+      : sheet));
+  }
+
+  function updateRowRule(sheetId: string, ruleId: string, patch: Partial<ExcelRowRuleDraft>) {
+    onChange(sheets.map((sheet) => sheet.id === sheetId
+      ? { ...sheet, rowRules: sheet.rowRules.map((rule) => rule.id === ruleId ? { ...rule, ...patch } : rule) }
+      : sheet));
+  }
+
+  function addRowRule(sheetId: string) {
+    onChange(sheets.map((sheet) => sheet.id === sheetId
+      ? { ...sheet, rowRules: [...sheet.rowRules, createExcelRowRuleDraft(sheet.rowRules.length + 1)] }
+      : sheet));
+  }
+
+  function removeRowRule(sheetId: string, ruleId: string) {
+    onChange(sheets.map((sheet) => sheet.id === sheetId
+      ? { ...sheet, rowRules: sheet.rowRules.filter((rule) => rule.id !== ruleId) }
+      : sheet));
+  }
+
+  function updateCellRule(sheetId: string, ruleId: string, patch: Partial<ExcelCellRuleDraft>) {
+    onChange(sheets.map((sheet) => sheet.id === sheetId
+      ? { ...sheet, cellRules: sheet.cellRules.map((rule) => rule.id === ruleId ? { ...rule, ...patch } : rule) }
+      : sheet));
+  }
+
+  function addCellRule(sheetId: string) {
+    onChange(sheets.map((sheet) => sheet.id === sheetId
+      ? { ...sheet, cellRules: [...sheet.cellRules, createExcelCellRuleDraft(sheet.cellRules.length + 1)] }
+      : sheet));
+  }
+
+  function removeCellRule(sheetId: string, ruleId: string) {
+    onChange(sheets.map((sheet) => sheet.id === sheetId
+      ? { ...sheet, cellRules: sheet.cellRules.filter((rule) => rule.id !== ruleId) }
+      : sheet));
+  }
+
+  return (
+    <div className="space-y-4">
+      {sheets.map((sheet, index) => (
+        <div key={sheet.id} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-hover)] p-5">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h4 className="text-sm font-semibold text-[var(--color-text-primary)]">Sheet {index + 1}</h4>
+              <p className="mt-1 text-xs text-[var(--color-text-secondary)]">{sheet.name}</p>
+            </div>
+            <button type="button" className="agent-icon-button h-8 w-8" title="删除 Sheet" disabled={sheets.length <= 1} onClick={() => removeSheet(sheet.id)}>
+              <Trash2 size={14} />
+            </button>
+          </div>
+          <div className="grid gap-4 md:grid-cols-3">
+            <TextInputField label="Sheet 名称" icon={FileText} value={sheet.name} placeholder="风险明细" onChange={(value) => updateSheet(sheet.id, { name: value })} />
+            <TextInputField label="起始单元格" icon={Hash} value={sheet.startCell} placeholder="A1" maxLength={12} onChange={(value) => updateSheet(sheet.id, { startCell: value })} />
+            <SelectLikeField
+              label="默认单元格类型"
+              icon={Type}
+              value={sheet.defaultCellType}
+              options={EXCEL_CELL_TYPE_OPTIONS}
+              onChange={(value) => updateSheet(sheet.id, { defaultCellType: readExcelCellType(value) })}
+            />
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <ExcelToggleField label="表头加粗" checked={sheet.tableStyle.headerBold} onChange={(checked) => updateTableStyle(sheet.id, { headerBold: checked })} />
+            <ExcelToggleField label="冻结表头" checked={sheet.tableStyle.freezeHeader} onChange={(checked) => updateTableStyle(sheet.id, { freezeHeader: checked })} />
+            <ExcelToggleField label="自动筛选" checked={sheet.tableStyle.autoFilter} onChange={(checked) => updateTableStyle(sheet.id, { autoFilter: checked })} />
+          </div>
+          <div className="mt-4">
+            <PromptEditor
+              label="Sheet 正文模板"
+              value={sheet.bodyTemplate}
+              availableVariables={workflowVariables}
+              onChange={(value) => updateSheet(sheet.id, { bodyTemplate: value })}
+              placeholder="可直接写 Markdown 表格、编号列表、键值块，也可用 {{输出内容标识}} 引用模型输出"
+              textareaClassName="min-h-[180px]"
+            />
+          </div>
+          <ExcelRuleSection title="列格式规则" onAdd={() => addColumnRule(sheet.id)}>
+            {sheet.columnRules.map((rule) => (
+              <div key={rule.id} className="grid gap-3 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-secondary)] p-3 md:grid-cols-4">
+                <TextInputField label="匹配表头" value={rule.match} placeholder="金额 / 日期 / 等级" onChange={(value) => updateColumnRule(sheet.id, rule.id, { match: value })} />
+                <SelectLikeField label="类型" value={rule.type} options={EXCEL_CELL_TYPE_OPTIONS} onChange={(value) => updateColumnRule(sheet.id, rule.id, { type: readExcelCellType(value) })} />
+                <TextInputField label="格式" value={rule.format} placeholder="#,##0.00" onChange={(value) => updateColumnRule(sheet.id, rule.id, { format: value })} />
+                <div className="flex items-end gap-2">
+                  <NumberInputField label="列宽" value={rule.width} min={0} max={80} step={1} onChange={(value) => updateColumnRule(sheet.id, rule.id, { width: value })} />
+                  <button type="button" className="agent-icon-button mb-1 h-8 w-8" title="删除列规则" onClick={() => removeColumnRule(sheet.id, rule.id)}>
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+                <SelectLikeField label="对齐" value={rule.horizontalAlignment} options={EXCEL_ALIGNMENT_OPTIONS} onChange={(value) => updateColumnRule(sheet.id, rule.id, { horizontalAlignment: value })} />
+                <SelectLikeField label="底色" value={rule.backgroundColor} options={EXCEL_COLOR_OPTIONS} onChange={(value) => updateColumnRule(sheet.id, rule.id, { backgroundColor: value })} />
+                <ExcelToggleField label="加粗" checked={rule.bold} onChange={(checked) => updateColumnRule(sheet.id, rule.id, { bold: checked })} />
+              </div>
+            ))}
+          </ExcelRuleSection>
+          <ExcelRuleSection title="行格式规则" onAdd={() => addRowRule(sheet.id)}>
+            {sheet.rowRules.map((rule) => (
+              <div key={rule.id} className="grid gap-3 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-secondary)] p-3 md:grid-cols-4">
+                <SelectLikeField label="目标行" value={rule.target} options={EXCEL_ROW_TARGET_OPTIONS} onChange={(value) => updateRowRule(sheet.id, rule.id, { target: readExcelRowTarget(value) })} />
+                <NumberInputField label="指定行号" value={rule.index} min={1} max={9999} step={1} onChange={(value) => updateRowRule(sheet.id, rule.id, { index: value })} />
+                <TextInputField label="包含文本" value={rule.text} placeholder="合计 / 小计" onChange={(value) => updateRowRule(sheet.id, rule.id, { text: value })} />
+                <div className="flex items-end gap-2">
+                  <SelectLikeField label="底色" value={rule.backgroundColor} options={EXCEL_COLOR_OPTIONS} onChange={(value) => updateRowRule(sheet.id, rule.id, { backgroundColor: value })} />
+                  <button type="button" className="agent-icon-button mb-1 h-8 w-8" title="删除行规则" onClick={() => removeRowRule(sheet.id, rule.id)}>
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+                <ExcelToggleField label="加粗" checked={rule.bold} onChange={(checked) => updateRowRule(sheet.id, rule.id, { bold: checked })} />
+              </div>
+            ))}
+          </ExcelRuleSection>
+          <ExcelRuleSection title="单元格格式规则" onAdd={() => addCellRule(sheet.id)}>
+            {sheet.cellRules.map((rule) => (
+              <div key={rule.id} className="grid gap-3 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-secondary)] p-3 md:grid-cols-4">
+                <TextInputField label="单元格" value={rule.cell} placeholder="A1" maxLength={12} onChange={(value) => updateCellRule(sheet.id, rule.id, { cell: value.toUpperCase() })} />
+                <SelectLikeField label="类型" value={rule.type} options={EXCEL_CELL_TYPE_OPTIONS} onChange={(value) => updateCellRule(sheet.id, rule.id, { type: readExcelCellType(value) })} />
+                <TextInputField label="格式" value={rule.format} placeholder="yyyy-mm-dd" onChange={(value) => updateCellRule(sheet.id, rule.id, { format: value })} />
+                <div className="flex items-end gap-2">
+                  <SelectLikeField label="底色" value={rule.backgroundColor} options={EXCEL_COLOR_OPTIONS} onChange={(value) => updateCellRule(sheet.id, rule.id, { backgroundColor: value })} />
+                  <button type="button" className="agent-icon-button mb-1 h-8 w-8" title="删除单元格规则" onClick={() => removeCellRule(sheet.id, rule.id)}>
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+                <SelectLikeField label="对齐" value={rule.horizontalAlignment} options={EXCEL_ALIGNMENT_OPTIONS} onChange={(value) => updateCellRule(sheet.id, rule.id, { horizontalAlignment: value })} />
+                <ExcelToggleField label="加粗" checked={rule.bold} onChange={(checked) => updateCellRule(sheet.id, rule.id, { bold: checked })} />
+                <ExcelToggleField label="允许公式" checked={rule.allowFormula} onChange={(checked) => updateCellRule(sheet.id, rule.id, { allowFormula: checked })} />
+              </div>
+            ))}
+          </ExcelRuleSection>
+        </div>
+      ))}
+      <button type="button" className="agent-button h-9 px-3 text-xs" onClick={addSheet}>
+        <Plus size={14} />
+        添加 Sheet
+      </button>
+    </div>
+  );
+}
+
+function ExcelRuleSection({ title, children, onAdd }: { title: string; children: ReactNode; onAdd: () => void }) {
+  return (
+    <div className="mt-4 space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <h5 className="text-xs font-semibold text-[var(--color-text-secondary)]">{title}</h5>
+        <button type="button" className="agent-button h-8 px-3 text-xs" onClick={onAdd}>
+          <Plus size={13} />
+          添加规则
+        </button>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function ExcelToggleField({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
+  return (
+    <label className="flex min-h-[42px] items-center justify-between gap-3 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-secondary)] px-3 py-2 text-xs font-semibold text-[var(--color-text-primary)]">
+      <span>{label}</span>
+      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+    </label>
   );
 }
 
@@ -4544,11 +4876,27 @@ function isWordDocumentDeliveryCapability(option?: WorkflowCapabilityOption | nu
   const kind = readString(option.config?.documentKind, "").toLowerCase();
   const code = option.code.toLowerCase();
   const name = option.name.toLowerCase();
-  return channel === "document"
+  return (channel === "document" && kind !== "excel")
     || channel === "word_document"
     || kind === "word"
     || code.includes("word")
     || name.includes("word");
+}
+
+function isExcelWorkbookDeliveryCapability(option?: WorkflowCapabilityOption | null) {
+  if (!option || option.assetType !== "delivery") {
+    return false;
+  }
+  const channel = readString(option.config?.deliveryChannel, "").toLowerCase();
+  const kind = readString(option.config?.documentKind, "").toLowerCase();
+  const code = option.code.toLowerCase();
+  const name = option.name.toLowerCase();
+  return channel === "excel"
+    || kind === "excel"
+    || code.includes("excel")
+    || code.includes("xlsx")
+    || name.includes("excel")
+    || name.includes("工作簿");
 }
 
 function readDeliveryConfigMode(value: unknown): DeliveryConfigMode {
@@ -4590,6 +4938,166 @@ function readDeliveryTriggerRule(value: unknown): DeliveryTriggerRuleDraft {
     variableName: readString(record.variableName, ""),
     expectedValue: readString(record.expectedValue, ""),
   };
+}
+
+function readExcelSheets(value: unknown, defaultBodyTemplate: string): ExcelSheetDraft[] {
+  if (!Array.isArray(value)) {
+    return [createExcelSheetDraft(1, defaultBodyTemplate)];
+  }
+  const sheets = value
+    .filter((item): item is Record<string, unknown> => isRecord(item))
+    .map((item, index) => readExcelSheet(item, index + 1, defaultBodyTemplate));
+  return sheets.length > 0 ? sheets : [createExcelSheetDraft(1, defaultBodyTemplate)];
+}
+
+function readExcelSheet(raw: Record<string, unknown>, index: number, defaultBodyTemplate: string): ExcelSheetDraft {
+  const tableStyle = isRecord(raw.tableStyle) ? raw.tableStyle : {};
+  return {
+    id: readString(raw.id, `sheet_${index}_${Date.now().toString(36)}`),
+    name: readString(raw.name, `Sheet${index}`),
+    startCell: readString(raw.startCell, "A1").toUpperCase(),
+    defaultCellType: readExcelCellType(raw.defaultCellType),
+    bodyTemplate: readString(raw.bodyTemplate, readString(raw.markdownContent, readString(raw.body, defaultBodyTemplate))),
+    tableStyle: {
+      headerBold: readBooleanLike(tableStyle.headerBold, true),
+      freezeHeader: readBooleanLike(tableStyle.freezeHeader, true),
+      autoFilter: readBooleanLike(tableStyle.autoFilter, true),
+    },
+    columnRules: readExcelColumnRules(raw.columnRules),
+    rowRules: readExcelRowRules(raw.rowRules),
+    cellRules: readExcelCellRules(raw.cellRules),
+  };
+}
+
+function createExcelSheetDraft(index: number, bodyTemplate = "| 项目 | 内容 |\n| --- | --- |\n| 示例 | 请替换为上游模型输出 |\n"): ExcelSheetDraft {
+  return {
+    id: `sheet_${Date.now().toString(36)}_${index}`,
+    name: index === 1 ? "分析结果" : `Sheet${index}`,
+    startCell: "A1",
+    defaultCellType: "text",
+    bodyTemplate,
+    tableStyle: {
+      headerBold: true,
+      freezeHeader: true,
+      autoFilter: true,
+    },
+    columnRules: [],
+    rowRules: [
+      {
+        id: `row_rule_${Date.now().toString(36)}_${index}`,
+        target: "header",
+        index: 1,
+        text: "",
+        bold: true,
+        backgroundColor: "grey",
+      },
+    ],
+    cellRules: [],
+  };
+}
+
+function readExcelColumnRules(value: unknown): ExcelColumnRuleDraft[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((item): item is Record<string, unknown> => isRecord(item))
+    .map((item, index) => ({
+      id: readString(item.id, `column_rule_${index}`),
+      match: readString(item.match, ""),
+      type: readExcelCellType(item.type),
+      format: readString(item.format, ""),
+      width: Math.max(0, Math.round(readNumberLike(item.width, 0))),
+      bold: readBooleanLike(item.bold, false),
+      backgroundColor: readString(item.backgroundColor, ""),
+      horizontalAlignment: readExcelAlignment(item.horizontalAlignment),
+    }));
+}
+
+function createExcelColumnRuleDraft(index: number): ExcelColumnRuleDraft {
+  return {
+    id: `column_rule_${Date.now().toString(36)}_${index}`,
+    match: "",
+    type: "text",
+    format: "",
+    width: 0,
+    bold: false,
+    backgroundColor: "",
+    horizontalAlignment: "",
+  };
+}
+
+function readExcelRowRules(value: unknown): ExcelRowRuleDraft[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((item): item is Record<string, unknown> => isRecord(item))
+    .map((item, index) => ({
+      id: readString(item.id, `row_rule_${index}`),
+      target: readExcelRowTarget(item.target),
+      index: Math.max(1, Math.round(readNumberLike(item.index, 1))),
+      text: readString(item.text, ""),
+      bold: readBooleanLike(item.bold, false),
+      backgroundColor: readString(item.backgroundColor, ""),
+    }));
+}
+
+function createExcelRowRuleDraft(index: number): ExcelRowRuleDraft {
+  return {
+    id: `row_rule_${Date.now().toString(36)}_${index}`,
+    target: "last",
+    index: 1,
+    text: "",
+    bold: true,
+    backgroundColor: "",
+  };
+}
+
+function readExcelCellRules(value: unknown): ExcelCellRuleDraft[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((item): item is Record<string, unknown> => isRecord(item))
+    .map((item, index) => ({
+      id: readString(item.id, `cell_rule_${index}`),
+      cell: readString(item.cell, "A1").toUpperCase(),
+      type: readExcelCellType(item.type),
+      format: readString(item.format, ""),
+      bold: readBooleanLike(item.bold, false),
+      backgroundColor: readString(item.backgroundColor, ""),
+      horizontalAlignment: readExcelAlignment(item.horizontalAlignment),
+      allowFormula: readBooleanLike(item.allowFormula, false),
+    }));
+}
+
+function createExcelCellRuleDraft(index: number): ExcelCellRuleDraft {
+  return {
+    id: `cell_rule_${Date.now().toString(36)}_${index}`,
+    cell: "A1",
+    type: "text",
+    format: "",
+    bold: true,
+    backgroundColor: "",
+    horizontalAlignment: "",
+    allowFormula: false,
+  };
+}
+
+function readExcelCellType(value: unknown): ExcelCellType {
+  const text = readString(value, "text");
+  return text === "number" || text === "currency" || text === "percent" || text === "date" || text === "datetime" || text === "boolean" ? text : "text";
+}
+
+function readExcelRowTarget(value: unknown): ExcelRowRuleDraft["target"] {
+  const text = readString(value, "header");
+  return text === "last" || text === "index" || text === "contains" ? text : "header";
+}
+
+function readExcelAlignment(value: unknown): string {
+  const text = readString(value, "");
+  return text === "left" || text === "center" || text === "right" ? text : "";
 }
 
 function readDeliveryItems(value: unknown, parentDeliveryMode = "direct"): DeliveryItemDraft[] {
@@ -5692,6 +6200,11 @@ function workflowVariableTypeLabel(type: WorkflowVariable["type"]): string {
 
 function normalizeWordFileNameTemplate(template: string): string {
   return template.replace(/\{\{\s*runId\s*\}\}/g, "{{runNumber}}");
+}
+
+function normalizeExcelFileNameTemplate(template: string): string {
+  const normalized = template.replace(/\{\{\s*runId\s*\}\}/g, "{{runNumber}}");
+  return normalized.toLowerCase().endsWith(".xlsx") ? normalized : `${normalized}.xlsx`;
 }
 
 function isClusterAgentConfig(value: unknown): value is ClusterAgentConfig {

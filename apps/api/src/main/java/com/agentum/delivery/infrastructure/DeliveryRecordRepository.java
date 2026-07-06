@@ -20,11 +20,11 @@ public interface DeliveryRecordRepository extends JpaRepository<DeliveryRecordEn
         select *
         from delivery_records
         where status = 'success'
-          and (result_snapshot ->> 'adapter') = 'word_document'
+          and (result_snapshot ->> 'adapter') in ('word_document', 'excel_workbook')
           and (result_snapshot ->> 'storageKey') is not null
           and (result_snapshot ->> 'expiresAt') <= :nowIso
         order by completed_at asc nulls first
         limit :limit
         """, nativeQuery = true)
-    List<DeliveryRecordEntity> findExpiredWordDocumentRecords(@Param("nowIso") String nowIso, @Param("limit") int limit);
+    List<DeliveryRecordEntity> findExpiredDocumentRecords(@Param("nowIso") String nowIso, @Param("limit") int limit);
 }

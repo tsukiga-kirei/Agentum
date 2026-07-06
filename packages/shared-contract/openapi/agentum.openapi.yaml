@@ -875,7 +875,7 @@ paths:
   /api/tenants/{tenantId}/delivery-records/{recordId}/download:
     get:
       summary: 下载交付记录文件
-      description: 运行态交付结果下载入口。当前仅返回系统内置 Word 文档交付生成的 docx 文件。
+      description: 运行态交付结果下载入口。当前返回系统内置 Word 文档交付生成的 docx 文件，或 Excel 工作簿交付生成的 xlsx 文件。
       tags:
         - Delivery
       security:
@@ -895,7 +895,7 @@ paths:
             format: uuid
       responses:
         "200":
-          description: docx 交付文件
+          description: 交付文件
           headers:
             Content-Disposition:
               schema:
@@ -903,6 +903,10 @@ paths:
               description: 包含 UTF-8 文件名。
           content:
             application/vnd.openxmlformats-officedocument.wordprocessingml.document:
+              schema:
+                type: string
+                format: binary
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
               schema:
                 type: string
                 format: binary
@@ -5223,6 +5227,168 @@ components:
         - markdown
         - fileName
         - style
+    ExcelWorkbookDeliveryConfig:
+      type: object
+      description: Excel 工作簿交付节点配置。每个 Sheet 使用正文模板渲染模型输出，再宽容识别 Markdown 表格、CSV/TSV/JSON 代码块、编号/项目列表、键值块和普通文本；默认单元格为纯文本，列/行/单元格规则命中后才尝试转换类型，转换失败自动回退文本。
+      properties:
+        deliveryMode:
+          type: string
+          enum: [capability]
+        deliveryCapabilityId:
+          type: string
+          format: uuid
+        deliveryType:
+          type: string
+          enum: [excel_workbook]
+        documentKind:
+          type: string
+          enum: [excel]
+        fileNameTemplate:
+          type: string
+          default: 交付表格-{{runNumber}}.xlsx
+        excelSheets:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExcelSheetTemplate"
+      required:
+        - deliveryMode
+        - deliveryCapabilityId
+        - deliveryType
+        - documentKind
+        - fileNameTemplate
+        - excelSheets
+    ExcelSheetTemplate:
+      type: object
+      properties:
+        id:
+          type: string
+          description: 前端用于列表渲染的本地标识。
+        name:
+          type: string
+          description: Sheet 页名称，后端会过滤 Excel 不支持的字符并做重名去重。
+        startCell:
+          type: string
+          default: A1
+          description: 渲染起始单元格。
+        defaultCellType:
+          type: string
+          enum: [text, number, currency, percent, date, datetime, boolean]
+          default: text
+        bodyTemplate:
+          type: string
+          description: Sheet 正文模板，可使用 {{变量名}} 引用上游模型输出或运行变量。
+        tableStyle:
+          $ref: "#/components/schemas/ExcelTableStyle"
+        columnRules:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExcelColumnRule"
+        rowRules:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExcelRowRule"
+        cellRules:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExcelCellRule"
+      required:
+        - name
+        - bodyTemplate
+    ExcelTableStyle:
+      type: object
+      properties:
+        headerBold:
+          type: boolean
+          default: true
+        freezeHeader:
+          type: boolean
+          default: true
+        autoFilter:
+          type: boolean
+          default: true
+    ExcelColumnRule:
+      type: object
+      description: 按表头文本匹配列。规则只作用于表头下方的数据单元格；类型转换失败时该单元格回退为文本。
+      properties:
+        id:
+          type: string
+        match:
+          type: string
+          description: 表头包含该文本时命中。
+        type:
+          type: string
+          enum: [text, number, currency, percent, date, datetime, boolean]
+          default: text
+        format:
+          type: string
+          description: Excel 数据格式，例如 #,##0.00 或 yyyy-mm-dd。
+        width:
+          type: integer
+          default: 0
+        bold:
+          type: boolean
+          default: false
+        backgroundColor:
+          type: string
+          enum: ['', grey, yellow, green, blue, red]
+          default: ''
+        horizontalAlignment:
+          type: string
+          enum: ['', left, center, right]
+          default: ''
+    ExcelRowRule:
+      type: object
+      description: 按表头、最后一行、指定行号或包含文本匹配行。
+      properties:
+        id:
+          type: string
+        target:
+          type: string
+          enum: [header, last, index, contains]
+          default: header
+        index:
+          type: integer
+          minimum: 1
+          default: 1
+        text:
+          type: string
+        bold:
+          type: boolean
+          default: false
+        backgroundColor:
+          type: string
+          enum: ['', grey, yellow, green, blue, red]
+          default: ''
+    ExcelCellRule:
+      type: object
+      description: 按 A1 这类绝对单元格坐标覆盖类型与样式；优先级高于列和行规则。
+      properties:
+        id:
+          type: string
+        cell:
+          type: string
+          default: A1
+        type:
+          type: string
+          enum: [text, number, currency, percent, date, datetime, boolean]
+          default: text
+        format:
+          type: string
+        bold:
+          type: boolean
+          default: false
+        backgroundColor:
+          type: string
+          enum: ['', grey, yellow, green, blue, red]
+          default: ''
+        horizontalAlignment:
+          type: string
+          enum: ['', left, center, right]
+          default: ''
+        allowFormula:
+          type: boolean
+          default: false
+          description: 默认禁止公式，避免模型输出造成公式注入；仅明确开启时允许写入公式。
     SystemCapabilityAssetRow:
       type: object
       properties:
@@ -5258,7 +5424,7 @@ components:
           format: date-time
         config:
           type: object
-          description: 脱敏后的能力配置。交付能力会包含 deliveryChannel、documentKind、defaultStyle 等识别和默认配置字段。
+          description: 脱敏后的能力配置。交付能力会包含 deliveryChannel、documentKind、defaultStyle（Word）或文件大小/保留期（Excel）等识别和默认配置字段。
       required:
         - id
         - assetType

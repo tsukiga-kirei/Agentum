@@ -260,7 +260,9 @@ function buildCapabilityFormValues(capability: SystemCapabilityRow): Record<stri
     transport: readConfigString(capability.config, "transport") || "sse",
     sseUrl: readConfigString(capability.config, "sseUrl"),
     sourceType: readConfigString(capability.config, "sourceType") || "builtin",
-    deliveryChannel: readConfigString(capability.config, "deliveryChannel") || "email",
+    deliveryChannel: readConfigString(capability.config, "deliveryChannel") === "document" && readConfigString(capability.config, "documentKind") === "excel"
+      ? "excel"
+      : readConfigString(capability.config, "deliveryChannel") || "email",
     documentChineseFont: readNestedStyleString(capability.config, "chineseFont") || "宋体",
     documentLatinFont: readNestedStyleString(capability.config, "latinFont") || "Times New Roman",
     documentNumberFont: readNestedStyleString(capability.config, "numberFont") || "Times New Roman",
@@ -892,7 +894,11 @@ export function SystemManagementPage() {
       } else {
         const deliveryChannel = d.deliveryChannel?.trim() || selectedDeliveryChannel || "email";
         config.deliveryChannel = deliveryChannel;
-        if (deliveryChannel === "document") {
+        if (deliveryChannel === "excel") {
+          config.documentKind = "excel";
+          config.maxFileSizeMb = d.documentMaxFileSizeMb?.trim() || "20";
+          config.retentionDays = d.documentRetentionDays?.trim() || "180";
+        } else if (deliveryChannel === "document") {
           config.documentKind = "word";
           config.allowNodeStyleOverride = true;
           config.maxFileSizeMb = d.documentMaxFileSizeMb?.trim() || "20";
@@ -2027,7 +2033,7 @@ export function SystemManagementPage() {
                 <>
                   <div className="sys-field">
                     <label className="sys-field-label">系统内置类型</label>
-                    <SysSelect icon={FileText} placeholder="请选择系统内置交付类型" defaultValue={capRef.current.deliveryChannel || "email"} options={[{value:"email",label:"邮件交付"},{value:"document",label:"Word 文档交付"}]} onChange={v=>{capRef.current.deliveryChannel=v;setSelectedDeliveryChannel(v);}}/>
+                    <SysSelect icon={FileText} placeholder="请选择系统内置交付类型" defaultValue={capRef.current.deliveryChannel || "email"} options={[{value:"email",label:"邮件交付"},{value:"document",label:"Word 文档交付"},{value:"excel",label:"Excel 工作簿交付"}]} onChange={v=>{capRef.current.deliveryChannel=v;setSelectedDeliveryChannel(v);}}/>
                   </div>
                   {selectedDeliveryChannel === "document" ? (
                     <>
@@ -2054,6 +2060,11 @@ export function SystemManagementPage() {
                         <div className="sys-field"><label className="sys-field-label">保留天数</label><div className="sys-field-input-wrap"><Clock size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={1} max={3650} placeholder="180" defaultValue={capRef.current.documentRetentionDays || "180"} onChange={e=>{capRef.current.documentRetentionDays=e.target.value;}}/></div><div className="sys-field-hint">运行结果会写入过期时间，后续对象清理任务按该值删除文档。</div></div>
                       </div>
                     </>
+                  ) : selectedDeliveryChannel === "excel" ? (
+                    <div className="sys-field-row">
+                      <div className="sys-field"><label className="sys-field-label">最大文件 MB</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={1} max={200} placeholder="20" defaultValue={capRef.current.documentMaxFileSizeMb || "20"} onChange={e=>{capRef.current.documentMaxFileSizeMb=e.target.value;}}/></div><div className="sys-field-hint">运行时生成 xlsx 后会按此大小拦截，超过限制则交付失败。</div></div>
+                      <div className="sys-field"><label className="sys-field-label">保留天数</label><div className="sys-field-input-wrap"><Clock size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={1} max={3650} placeholder="180" defaultValue={capRef.current.documentRetentionDays || "180"} onChange={e=>{capRef.current.documentRetentionDays=e.target.value;}}/></div><div className="sys-field-hint">运行结果会写入过期时间，后续对象清理任务按该值删除文件。</div></div>
+                    </div>
                   ) : (
                     <>
                       <div className="sys-field-row">

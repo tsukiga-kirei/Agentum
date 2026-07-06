@@ -124,11 +124,15 @@ public class DocumentDeliveryService {
         }
         Map<String, Object> result = record.getResultSnapshot() == null ? Map.of() : record.getResultSnapshot();
         String storageKey = stringValue(result.get("storageKey"));
-        if (storageKey == null) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "DELIVERY_DOCUMENT_NOT_FOUND", "交付记录没有可下载的 Word 文档");
+        if (storageKey.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "DELIVERY_DOCUMENT_NOT_FOUND", "交付记录没有可下载的文件");
         }
-        String fileName = firstNonBlank(stringValue(result.get("fileName")), record.getTitle() + ".docx");
-        return storage.read(storageKey, fileName);
+        String contentType = firstNonBlank(stringValue(result.get("contentType")), MarkdownDocxRenderer.DOCX_CONTENT_TYPE);
+        String fileName = firstNonBlank(
+            stringValue(result.get("fileName")),
+            record.getTitle() + DocumentDeliveryStorage.extensionForContentType(contentType)
+        );
+        return storage.read(storageKey, fileName, contentType);
     }
 
     private void validateDocumentCapabilityForDesigner(UUID tenantId, UUID operatorUserId, String rawCapabilityId) {
@@ -165,7 +169,7 @@ public class DocumentDeliveryService {
         Map<String, Object> config = capability.getConfig();
         String channel = stringValue(config.get("deliveryChannel"));
         String kind = stringValue(config.get("documentKind"));
-        return "document".equals(channel) || "word".equals(kind) || "word_document".equals(channel);
+        return "word_document".equals(channel) || "word".equals(kind) || ("document".equals(channel) && !"excel".equals(kind));
     }
 
     private Map<String, Object> mergedStyleConfig(Map<String, Object> capabilityConfig, Map<String, Object> nodeConfig) {

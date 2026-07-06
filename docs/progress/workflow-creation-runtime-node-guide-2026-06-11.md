@@ -242,7 +242,7 @@
 
 节点类型：`delivery`
 
-用途：生成 Word 文档、发送邮件、调用 Webhook 或其他交付结果。
+用途：生成 Word 文档、Excel 工作簿、发送邮件、调用 Webhook 或其他交付结果。
 
 核心配置：
 

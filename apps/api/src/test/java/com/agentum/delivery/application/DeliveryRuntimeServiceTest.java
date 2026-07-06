@@ -34,6 +34,7 @@ class DeliveryRuntimeServiceTest {
     private SystemCapabilityRepository systemCapabilityRepository;
     private TenantCapabilityGrantRepository tenantCapabilityGrantRepository;
     private DocumentDeliveryService documentDeliveryService;
+    private ExcelDeliveryService excelDeliveryService;
     private DeliveryContentTemplateRenderer contentTemplateRenderer;
     private DeliveryRuntimeService service;
 
@@ -43,6 +44,7 @@ class DeliveryRuntimeServiceTest {
         systemCapabilityRepository = mock(SystemCapabilityRepository.class);
         tenantCapabilityGrantRepository = mock(TenantCapabilityGrantRepository.class);
         documentDeliveryService = mock(DocumentDeliveryService.class);
+        excelDeliveryService = mock(ExcelDeliveryService.class);
         contentTemplateRenderer = new DeliveryContentTemplateRenderer();
         when(deliveryRecordRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         service = new DeliveryRuntimeService(
@@ -51,6 +53,7 @@ class DeliveryRuntimeServiceTest {
             deliveryRecordRepository,
             mock(EmailDeliveryService.class),
             documentDeliveryService,
+            excelDeliveryService,
             contentTemplateRenderer,
             Clock.fixed(NOW, ZoneOffset.UTC)
         );
@@ -127,6 +130,48 @@ class DeliveryRuntimeServiceTest {
             .isInstanceOf(Map.class)
             .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.MAP)
             .containsEntry("adapter", "word_document");
+    }
+
+    @Test
+    void shouldDispatchExcelWorkbookDeliveryCapability() {
+        SystemCapabilityEntity capability = SystemCapabilityEntity.create(
+            "delivery",
+            "Excel 工作簿交付",
+            "excel_workbook_delivery",
+            "v1",
+            "",
+            "medium",
+            "active",
+            Map.of("sourceType", "builtin", "deliveryChannel", "document", "documentKind", "excel"),
+            NOW
+        );
+        when(systemCapabilityRepository.findById(capability.getId())).thenReturn(Optional.of(capability));
+        when(tenantCapabilityGrantRepository.findByTenantIdAndCapabilityId(TENANT_ID, capability.getId()))
+            .thenReturn(Optional.of(TenantCapabilityGrantEntity.create(TENANT_ID, capability.getId(), "enabled", NOW)));
+        when(excelDeliveryService.generateRuntimeWorkbook(any(), any(), any(), any(), any(), any()))
+            .thenReturn(Map.of("adapter", "excel_workbook", "fileName", "风险明细.xlsx"));
+
+        DeliveryRuntimeRequest request = buildRequest(Map.of(
+            "deliveryMode", "capability",
+            "deliveryCapabilityId", capability.getId().toString(),
+            "deliveryType", "excel_workbook",
+            "documentKind", "excel",
+            "fileNameTemplate", "风险明细.xlsx",
+            "excelSheets", List.of(Map.of(
+                "name", "风险明细",
+                "bodyTemplate", "{{risk_table}}"
+            ))
+        ), Map.of("risk_table", "|风险|等级|\n|---|---|\n|司法|高|"));
+
+        DeliveryRuntimeResult result = service.execute(request);
+
+        assertThat(result.outputs())
+            .containsEntry("deliveryStatus", "success")
+            .containsEntry("summary", "Excel 工作簿已生成：风险明细.xlsx");
+        assertThat(result.outputs().get("deliveryResult"))
+            .isInstanceOf(Map.class)
+            .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.MAP)
+            .containsEntry("adapter", "excel_workbook");
     }
 
     @Test

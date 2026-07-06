@@ -238,6 +238,27 @@ public class WorkflowNodeConfigValidator {
             if (markdownContent.isBlank()) {
                 issues.add(issue("WORKFLOW_VALIDATION_DELIVERY_MARKDOWN_TEMPLATE_REQUIRED", subject + "必须配置 Word 交付正文模板", node));
             }
+        } else if ("excel_workbook".equals(deliveryType) || "excel".equals(documentKind)) {
+            List<Map<String, Object>> sheets = extractMapList(config, "excelSheets");
+            if (sheets.isEmpty()) {
+                issues.add(issue("WORKFLOW_VALIDATION_DELIVERY_EXCEL_SHEETS_REQUIRED", subject + "必须至少配置一个 Excel Sheet 页", node));
+                return;
+            }
+            for (int index = 0; index < sheets.size(); index++) {
+                Map<String, Object> sheet = sheets.get(index);
+                String sheetName = rawString(sheet.get("name"));
+                String template = firstNonBlank(
+                    rawString(sheet.get("bodyTemplate")),
+                    rawString(sheet.get("markdownContent")),
+                    rawString(sheet.get("body"))
+                );
+                if (sheetName.isBlank()) {
+                    issues.add(issue("WORKFLOW_VALIDATION_DELIVERY_EXCEL_SHEET_NAME_REQUIRED", subject + "的第 " + (index + 1) + " 个 Sheet 必须填写名称", node));
+                }
+                if (template.isBlank()) {
+                    issues.add(issue("WORKFLOW_VALIDATION_DELIVERY_EXCEL_SHEET_TEMPLATE_REQUIRED", subject + "的 Sheet「" + (sheetName.isBlank() ? index + 1 : sheetName) + "」必须配置正文模板", node));
+                }
+            }
         }
     }
 

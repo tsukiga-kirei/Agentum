@@ -1081,6 +1081,22 @@ public class SystemManagementService {
         }
         String deliveryChannel = stringValue(config.get("deliveryChannel"));
         if ("document".equals(deliveryChannel)) {
+            String documentKind = firstNonBlank(stringValue(config.get("documentKind")), "word");
+            if ("excel".equals(documentKind)) {
+                List<SystemManagementApi.CapabilityToolRow> tools = List.of(new SystemManagementApi.CapabilityToolRow(
+                    capability.getCode() + ".generate_xlsx",
+                    "根据 Sheet 模板与模型输出生成 Excel .xlsx 工作簿，并写入交付记录",
+                    Map.of(
+                        "type", "object",
+                        "required", List.of("sheets", "fileName"),
+                        "properties", Map.of(
+                            "sheets", Map.of("type", "array", "items", Map.of("type", "object")),
+                            "fileName", Map.of("type", "string")
+                        )
+                    )
+                ));
+                return capabilityProbeResult(capability.getId(), "success", "系统内置 Excel 工作簿交付渲染器可用", tools, clock.instant());
+            }
             List<SystemManagementApi.CapabilityToolRow> tools = List.of(new SystemManagementApi.CapabilityToolRow(
                 capability.getCode() + ".generate_docx",
                 "根据 AI Markdown 与流程节点样式配置生成 Word .docx 文档，并写入交付记录",
@@ -1097,7 +1113,7 @@ public class SystemManagementService {
             return capabilityProbeResult(capability.getId(), "success", "系统内置 Word 文档交付渲染器可用", tools, clock.instant());
         }
         if (!"email".equals(deliveryChannel)) {
-            return capabilityProbeResult(capability.getId(), "failed", "系统内置交付当前支持邮箱通道和 Word 文档通道", List.of(), clock.instant());
+            return capabilityProbeResult(capability.getId(), "failed", "系统内置交付当前支持邮箱、Word 文档和 Excel 工作簿通道", List.of(), clock.instant());
         }
         EmailDeliveryTestOutcome outcome = emailDeliveryConnectionTester.test(
             new EmailDeliveryTestRequest(capability.getId(), capability.getConfig())
@@ -1189,19 +1205,30 @@ public class SystemManagementService {
                 return result;
             }
             String deliveryChannel = firstNonBlank(stringValue(config.get("deliveryChannel")), "email");
+            if ("excel".equals(deliveryChannel)) {
+                deliveryChannel = "document";
+                config = new HashMap<>(config);
+                config.put("documentKind", "excel");
+            }
             if ("document".equals(deliveryChannel)) {
+                String documentKind = firstNonBlank(stringValue(config.get("documentKind")), "word");
+                if (!"word".equals(documentKind) && !"excel".equals(documentKind)) {
+                    throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_DELIVERY_DOCUMENT_KIND_INVALID", "文档交付类型只能是 Word 或 Excel");
+                }
                 Map<String, Object> result = new HashMap<>();
                 result.put("sourceType", "builtin");
                 result.put("deliveryChannel", "document");
-                result.put("documentKind", "word");
-                result.put("defaultStyle", sanitizeDocumentStyleConfig(config.get("defaultStyle")));
-                result.put("allowNodeStyleOverride", booleanValue(config.get("allowNodeStyleOverride")));
-                result.put("maxFileSizeMb", parsePositiveInt(config.get("maxFileSizeMb"), 20, 1, 200, "SYSTEM_DELIVERY_DOCUMENT_SIZE_INVALID", "Word 文档最大文件大小需在 1 到 200 MB 之间"));
-                result.put("retentionDays", parsePositiveInt(config.get("retentionDays"), 180, 1, 3650, "SYSTEM_DELIVERY_DOCUMENT_RETENTION_INVALID", "Word 文档保留天数需在 1 到 3650 之间"));
+                result.put("documentKind", documentKind);
+                if ("word".equals(documentKind)) {
+                    result.put("defaultStyle", sanitizeDocumentStyleConfig(config.get("defaultStyle")));
+                    result.put("allowNodeStyleOverride", booleanValue(config.get("allowNodeStyleOverride")));
+                }
+                result.put("maxFileSizeMb", parsePositiveInt(config.get("maxFileSizeMb"), 20, 1, 200, "SYSTEM_DELIVERY_DOCUMENT_SIZE_INVALID", "交付文件最大大小需在 1 到 200 MB 之间"));
+                result.put("retentionDays", parsePositiveInt(config.get("retentionDays"), 180, 1, 3650, "SYSTEM_DELIVERY_DOCUMENT_RETENTION_INVALID", "交付文件保留天数需在 1 到 3650 之间"));
                 return result;
             }
             if (!"email".equals(deliveryChannel)) {
-                throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_DELIVERY_CHANNEL_INVALID", "系统内置交付当前支持邮箱通道和 Word 文档通道");
+                throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_DELIVERY_CHANNEL_INVALID", "系统内置交付当前支持邮箱、Word 文档和 Excel 工作簿通道");
             }
             String smtpHost = requireConfig(config, "smtpHost", "SMTP 主机不能为空");
             int smtpPort = parsePort(config.get("smtpPort"));

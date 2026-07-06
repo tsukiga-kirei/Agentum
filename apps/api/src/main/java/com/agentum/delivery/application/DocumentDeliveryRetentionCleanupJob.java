@@ -39,7 +39,7 @@ public class DocumentDeliveryRetentionCleanupJob {
     @Transactional
     public void cleanupExpiredDocuments() {
         String nowIso = clock.instant().toString();
-        List<DeliveryRecordEntity> records = deliveryRecordRepository.findExpiredWordDocumentRecords(nowIso, batchSize);
+        List<DeliveryRecordEntity> records = deliveryRecordRepository.findExpiredDocumentRecords(nowIso, batchSize);
         if (records.isEmpty()) {
             return;
         }
@@ -59,7 +59,7 @@ public class DocumentDeliveryRetentionCleanupJob {
             record.expire(clock.instant());
             deliveryRecordRepository.save(record);
             log.info(
-                "过期 Word 交付文档已清理 tenantId={} recordId={} storageKey={} requestId={}",
+                "过期交付文件已清理 tenantId={} recordId={} storageKey={} requestId={}",
                 record.getTenantId(),
                 record.getId(),
                 storageKey,
@@ -67,7 +67,7 @@ public class DocumentDeliveryRetentionCleanupJob {
             );
         } catch (RuntimeException exception) {
             log.warn(
-                "过期 Word 交付文档清理失败 tenantId={} recordId={} storageKey={} requestId={}",
+                "过期交付文件清理失败 tenantId={} recordId={} storageKey={} requestId={}",
                 record.getTenantId(),
                 record.getId(),
                 storageKey,

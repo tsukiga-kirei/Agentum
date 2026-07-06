@@ -960,6 +960,48 @@ class SystemManagementServiceTest {
     }
 
     @Test
+    void shouldPersistBuiltinExcelWorkbookDeliveryConfig() {
+        SystemCapabilityRepository systemCapabilityRepository = mock(SystemCapabilityRepository.class);
+        List<SystemCapabilityEntity> savedCapabilities = new ArrayList<>();
+        when(systemCapabilityRepository.findByCodeAndVersion(any(), any())).thenReturn(Optional.empty());
+        when(systemCapabilityRepository.save(any(SystemCapabilityEntity.class))).thenAnswer(invocation -> {
+            SystemCapabilityEntity entity = invocation.getArgument(0);
+            savedCapabilities.add(entity);
+            return entity;
+        });
+        SystemManagementService service = buildService(mock(ModelProviderRepository.class), systemCapabilityRepository);
+
+        SystemManagementApi.CapabilityRow row = service.createCapability(new SystemManagementApi.CreateCapabilityRequest(
+            "delivery",
+            "Excel 工作簿交付",
+            null,
+            "v1",
+            "按 Sheet 模板导出 xlsx 文件",
+            "medium",
+            "active",
+            Map.of(
+                "sourceType", "builtin",
+                "deliveryChannel", "excel",
+                "maxFileSizeMb", "40",
+                "retentionDays", "90"
+            )
+        ));
+
+        assertThat(savedCapabilities).hasSize(1);
+        Map<String, Object> storedConfig = savedCapabilities.getFirst().getConfig();
+        assertThat(storedConfig)
+            .containsEntry("sourceType", "builtin")
+            .containsEntry("deliveryChannel", "document")
+            .containsEntry("documentKind", "excel")
+            .containsEntry("maxFileSizeMb", 40)
+            .containsEntry("retentionDays", 90)
+            .doesNotContainKeys("defaultStyle", "smtpHost", "smtpPort", "encryptedSmtpPassword");
+        assertThat(row.config())
+            .containsEntry("deliveryChannel", "document")
+            .containsEntry("documentKind", "excel");
+    }
+
+    @Test
     void shouldPersistCustomDeliveryAdapterProtocolConfig() {
         SystemCapabilityRepository systemCapabilityRepository = mock(SystemCapabilityRepository.class);
         List<SystemCapabilityEntity> savedCapabilities = new ArrayList<>();

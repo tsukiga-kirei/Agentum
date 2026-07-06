@@ -143,6 +143,15 @@ function isWordCapabilityDeliveryConfig(config: Record<string, unknown>): boolea
   return deliveryType === "word_document" || documentKind === "word";
 }
 
+function isExcelCapabilityDeliveryConfig(config: Record<string, unknown>): boolean {
+  if (isDirectDeliveryConfig(config)) {
+    return false;
+  }
+  const deliveryType = readString(config.deliveryType);
+  const documentKind = readString(config.documentKind);
+  return deliveryType === "excel_workbook" || documentKind === "excel";
+}
+
 /** 只扫描会参与运行或交付正文的模板字段，避免误扫 previewMarkdown 等设计态残留。 */
 export function collectRuntimeTemplateTextFields(
   config: Record<string, unknown> | undefined,
@@ -174,6 +183,14 @@ export function collectRuntimeTemplateTextFields(
           push(`deliveryItems.${index}.config.fileNameTemplate`, `${itemName}文件名模板`, itemConfig.fileNameTemplate);
           return;
         }
+        if (isExcelCapabilityDeliveryConfig(itemConfig)) {
+          push(`deliveryItems.${index}.config.fileNameTemplate`, `${itemName}文件名模板`, itemConfig.fileNameTemplate);
+          readMapList(itemConfig.excelSheets).forEach((sheet, sheetIndex) => {
+            const sheetName = readString(sheet.name, `Sheet ${sheetIndex + 1}`);
+            push(`deliveryItems.${index}.config.excelSheets.${sheetIndex}.bodyTemplate`, `${itemName}${sheetName}正文模板`, sheet.bodyTemplate);
+          });
+          return;
+        }
         push(`deliveryItems.${index}.config.deliveryContent`, `${itemName}交付内容`, itemConfig.deliveryContent);
         push(`deliveryItems.${index}.config.deliveryTarget`, `${itemName}交付内容`, itemConfig.deliveryTarget);
         push(`deliveryItems.${index}.config.body`, `${itemName}交付内容`, itemConfig.body);
@@ -189,6 +206,14 @@ export function collectRuntimeTemplateTextFields(
     if (isWordCapabilityDeliveryConfig(source)) {
       push("markdownContent", "交付正文模板", source.markdownContent);
       push("fileNameTemplate", "文件名模板", source.fileNameTemplate);
+      return fields;
+    }
+    if (isExcelCapabilityDeliveryConfig(source)) {
+      push("fileNameTemplate", "文件名模板", source.fileNameTemplate);
+      readMapList(source.excelSheets).forEach((sheet, index) => {
+        const sheetName = readString(sheet.name, `Sheet ${index + 1}`);
+        push(`excelSheets.${index}.bodyTemplate`, `${sheetName}正文模板`, sheet.bodyTemplate);
+      });
       return fields;
     }
     push("deliveryContent", "交付内容", source.deliveryContent);
@@ -523,6 +548,10 @@ function isWordDeliveryConfig(config: Record<string, unknown>): boolean {
   return isWordCapabilityDeliveryConfig(config);
 }
 
+function isExcelDeliveryConfig(config: Record<string, unknown>): boolean {
+  return isExcelCapabilityDeliveryConfig(config);
+}
+
 function validateDeliveryNode(
   node: ValidatableWorkflowNode,
   upstreamVariables: Set<string>,
@@ -559,6 +588,21 @@ function validateDeliveryNode(
         }
         if (isWordDeliveryConfig(itemConfig) && !readString(itemConfig.markdownContent)) {
           issues.push(issue("WORKFLOW_NODE_DELIVERY_MARKDOWN_REQUIRED", `${itemName}必须配置 Word 交付正文模板`));
+        }
+        if (isExcelDeliveryConfig(itemConfig)) {
+          const sheets = readMapList(itemConfig.excelSheets);
+          if (sheets.length === 0) {
+            issues.push(issue("WORKFLOW_NODE_DELIVERY_EXCEL_SHEETS_REQUIRED", `${itemName}必须至少配置一个 Excel Sheet 页`));
+          }
+          sheets.forEach((sheet, sheetIndex) => {
+            const sheetName = readString(sheet.name, `Sheet ${sheetIndex + 1}`);
+            if (!readString(sheet.name)) {
+              issues.push(issue("WORKFLOW_NODE_DELIVERY_EXCEL_SHEET_NAME_REQUIRED", `${itemName}的第 ${sheetIndex + 1} 个 Sheet 必须填写名称`));
+            }
+            if (!readString(sheet.bodyTemplate)) {
+              issues.push(issue("WORKFLOW_NODE_DELIVERY_EXCEL_SHEET_TEMPLATE_REQUIRED", `${itemName}的 Sheet「${sheetName}」必须配置正文模板`));
+            }
+          });
         }
       }
       if (executionPolicy === "conditional") {
@@ -598,6 +642,21 @@ function validateDeliveryNode(
       if (!markdownContent) {
         issues.push(issue("WORKFLOW_NODE_DELIVERY_MARKDOWN_REQUIRED", "必须配置 Word 交付正文模板"));
       }
+    }
+    if (isExcelDeliveryConfig(config)) {
+      const sheets = readMapList(config.excelSheets);
+      if (sheets.length === 0) {
+        issues.push(issue("WORKFLOW_NODE_DELIVERY_EXCEL_SHEETS_REQUIRED", "必须至少配置一个 Excel Sheet 页"));
+      }
+      sheets.forEach((sheet, index) => {
+        const sheetName = readString(sheet.name, `Sheet ${index + 1}`);
+        if (!readString(sheet.name)) {
+          issues.push(issue("WORKFLOW_NODE_DELIVERY_EXCEL_SHEET_NAME_REQUIRED", `第 ${index + 1} 个 Sheet 必须填写名称`));
+        }
+        if (!readString(sheet.bodyTemplate)) {
+          issues.push(issue("WORKFLOW_NODE_DELIVERY_EXCEL_SHEET_TEMPLATE_REQUIRED", `Sheet「${sheetName}」必须配置正文模板`));
+        }
+      });
     }
   }
 

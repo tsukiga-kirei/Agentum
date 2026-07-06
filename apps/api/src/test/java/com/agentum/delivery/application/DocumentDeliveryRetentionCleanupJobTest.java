@@ -35,7 +35,7 @@ class DocumentDeliveryRetentionCleanupJobTest {
             100
         );
         DeliveryRecordEntity record = expiredRecord();
-        when(repository.findExpiredWordDocumentRecords(NOW.toString(), 100)).thenReturn(List.of(record));
+        when(repository.findExpiredDocumentRecords(NOW.toString(), 100)).thenReturn(List.of(record));
 
         job.cleanupExpiredDocuments();
 

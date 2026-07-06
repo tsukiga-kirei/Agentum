@@ -40,6 +40,7 @@ public class DeliveryRuntimeService {
     private final DeliveryRecordRepository deliveryRecordRepository;
     private final EmailDeliveryService emailDeliveryService;
     private final DocumentDeliveryService documentDeliveryService;
+    private final ExcelDeliveryService excelDeliveryService;
     private final DeliveryContentTemplateRenderer contentTemplateRenderer;
     private final RestClient restClient;
     private final Clock clock;
@@ -50,6 +51,7 @@ public class DeliveryRuntimeService {
         DeliveryRecordRepository deliveryRecordRepository,
         EmailDeliveryService emailDeliveryService,
         DocumentDeliveryService documentDeliveryService,
+        ExcelDeliveryService excelDeliveryService,
         DeliveryContentTemplateRenderer contentTemplateRenderer,
         Clock clock
     ) {
@@ -58,6 +60,7 @@ public class DeliveryRuntimeService {
         this.deliveryRecordRepository = deliveryRecordRepository;
         this.emailDeliveryService = emailDeliveryService;
         this.documentDeliveryService = documentDeliveryService;
+        this.excelDeliveryService = excelDeliveryService;
         this.contentTemplateRenderer = contentTemplateRenderer;
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(8000);
@@ -313,6 +316,16 @@ public class DeliveryRuntimeService {
         UUID recordId
     ) {
         String endpointUrl = stringValue(capability.getConfig().get("endpointUrl"));
+        if (isExcelDelivery(deliveryType, capability, nodeConfig)) {
+            return excelDeliveryService.generateRuntimeWorkbook(
+                request.run().getTenantId(),
+                request.operatorUserId(),
+                recordId,
+                capability,
+                nodeConfig,
+                payload
+            );
+        }
         if (isDocumentDelivery(deliveryType, capability, nodeConfig)) {
             return documentDeliveryService.generateRuntimeDocument(
                 request.run().getTenantId(),
@@ -352,10 +365,19 @@ public class DeliveryRuntimeService {
     }
 
     private String deliverySummary(String deliveryType, Map<String, Object> result, String title) {
+        if (isExcelResult(deliveryType, result)) {
+            return "Excel 工作簿已生成：" + firstNonBlank(stringValue(result.get("fileName")), title);
+        }
         if (isDocumentResult(deliveryType, result)) {
             return "Word 文档已生成：" + firstNonBlank(stringValue(result.get("fileName")), title);
         }
         return "交付已完成：" + title;
+    }
+
+    private boolean isExcelResult(String deliveryType, Map<String, Object> result) {
+        return "excel_workbook".equals(deliveryType)
+            || "xlsx".equals(deliveryType)
+            || (result != null && "excel_workbook".equals(stringValue(result.get("adapter"))));
     }
 
     private boolean isDocumentResult(String deliveryType, Map<String, Object> result) {
@@ -363,6 +385,20 @@ public class DeliveryRuntimeService {
             || "word_document".equals(deliveryType)
             || "docx".equals(deliveryType)
             || (result != null && "word_document".equals(stringValue(result.get("adapter"))));
+    }
+
+    private boolean isExcelDelivery(String deliveryType, SystemCapabilityEntity capability, Map<String, Object> nodeConfig) {
+        String nodeType = firstNonBlank(
+            stringValue(nodeConfig.get("deliveryType")),
+            stringValue(nodeConfig.get("documentKind"))
+        );
+        String channel = stringValue(capability.getConfig().get("deliveryChannel"));
+        String kind = stringValue(capability.getConfig().get("documentKind"));
+        return "excel_workbook".equals(deliveryType)
+            || "xlsx".equals(deliveryType)
+            || "excel".equals(channel)
+            || "excel".equals(kind)
+            || "excel_workbook".equals(nodeType);
     }
 
     private boolean isDocumentDelivery(String deliveryType, SystemCapabilityEntity capability, Map<String, Object> nodeConfig) {
@@ -375,7 +411,7 @@ public class DeliveryRuntimeService {
         return "document".equals(deliveryType)
             || "word_document".equals(deliveryType)
             || "docx".equals(deliveryType)
-            || "document".equals(channel)
+            || ("document".equals(channel) && !"excel".equals(kind))
             || "word".equals(kind)
             || "word_document".equals(nodeType);
     }
