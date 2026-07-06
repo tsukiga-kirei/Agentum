@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   CheckCircle2,
   Clock3,
+  Copy,
   DatabaseZap,
   FileText,
   Hash,
@@ -1654,6 +1655,43 @@ function AgentClusterBrickConfig({
     commitAgents(nextAgents);
   }
 
+  function duplicateAgent(agent: ClusterAgentConfig) {
+    const sourceIndex = agents.findIndex((item) => item.id === agent.id);
+    const insertIndex = sourceIndex >= 0 ? sourceIndex + 1 : agents.length;
+    const newAgentId = `cluster_agent_${Date.now().toString(36)}_${agents.length + 1}`;
+    const usedNames = new Set(agents.map((item) => item.name).filter(Boolean));
+    const usedOutputs = new Set(agents.map((item) => item.output).filter(Boolean));
+    const usedIntentCodes = new Set(agents.map((item) => item.intentCode).filter(Boolean));
+    const copiedAgent: ClusterAgentConfig = {
+      ...agent,
+      id: newAgentId,
+      name: uniqueDisplayName(`${agent.name || "子智能体"} 副本`, usedNames),
+      output: uniqueVariableName(agent.output ? `${agent.output}_copy` : createClusterAgentOutputVariable(node.id, agents.length), usedOutputs),
+      intentCode: uniqueVariableName(agent.intentCode ? `${agent.intentCode}_copy` : `intent_${agents.length + 1}`, usedIntentCodes),
+      intentName: uniqueDisplayName(`${agent.intentName || agent.name || "意图"} 副本`, new Set(agents.map((item) => item.intentName).filter(Boolean))),
+    };
+    const nextAgents = [...agents];
+    nextAgents.splice(insertIndex, 0, copiedAgent);
+    const existingRoutes = readIntentRoutes(config.intentRoutes, agents);
+    const routeToCopy = existingRoutes.find((route) => route.agentId === agent.id);
+    const nextConfig: Record<string, unknown> = { clusterAgents: nextAgents };
+    if (routeToCopy) {
+      const routeInsertIndex = existingRoutes.findIndex((route) => route.id === routeToCopy.id) + 1;
+      const copiedRoute: IntentRouteConfig = {
+        ...routeToCopy,
+        id: `intent_route_${newAgentId}`,
+        agentId: newAgentId,
+        intentCode: copiedAgent.intentCode,
+        intentName: copiedAgent.intentName,
+      };
+      const nextRoutes = [...existingRoutes];
+      nextRoutes.splice(Math.max(0, routeInsertIndex), 0, copiedRoute);
+      nextConfig.intentRoutes = nextRoutes;
+    }
+    onUpdateConfig(nextConfig);
+    onUpdateNode({ toolCount: nextAgents.length, outputVariables: buildClusterOutputVariables(executionMode, nextAgents, clusterOutputVariable) });
+  }
+
   function agentVariables(agent: ClusterAgentConfig) {
     return clusterAgentAvailableVariables(availableVariables, agents, agent.id, executionMode);
   }
@@ -1730,6 +1768,7 @@ function AgentClusterBrickConfig({
               <div className="flex shrink-0 items-center gap-1">
                 <IconButton label="上移智能体" icon={ArrowUp} disabled={index === 0} onClick={() => moveAgent(agent.id, -1)} />
                 <IconButton label="下移智能体" icon={ArrowDown} disabled={index === agents.length - 1} onClick={() => moveAgent(agent.id, 1)} />
+                <IconButton label="复制智能体" icon={Copy} onClick={() => duplicateAgent(agent)} />
                 <button type="button" onClick={() => setEditingAgent(agent)} className="agent-button h-8 px-2 text-xs">编辑</button>
                 <IconButton label="删除智能体" icon={Trash2} tone="danger" onClick={() => commitAgents(agents.filter((item) => item.id !== agent.id))} />
               </div>
@@ -2437,6 +2476,26 @@ function DeliveryBrickConfig({
     setEditingTarget(nextItem.id);
   }
 
+  function duplicateDeliveryItem(item: DeliveryItemDraft) {
+    const sourceIndex = deliveryItems.findIndex((current) => current.id === item.id);
+    const insertIndex = sourceIndex >= 0 ? sourceIndex + 1 : deliveryItems.length;
+    const copiedItem: DeliveryItemDraft = {
+      id: `delivery_item_${Date.now().toString(36)}_${deliveryItems.length + 1}`,
+      name: uniqueDisplayName(`${item.name || "交付项"} 副本`, new Set(deliveryItems.map((current) => current.name).filter(Boolean))),
+      enabled: item.enabled,
+      triggerRule: { ...item.triggerRule },
+      config: cloneRecord(item.config),
+    };
+    const nextItems = [...deliveryItems];
+    nextItems.splice(insertIndex, 0, copiedItem);
+    onUpdateConfig({
+      deliveryConfigMode: "multiple",
+      deliveryExecutionPolicy,
+      deliveryItems: nextItems,
+    });
+    setEditingTarget(copiedItem.id);
+  }
+
   function removeDeliveryItem(itemId: string) {
     const nextItems = deliveryItems.filter((item) => item.id !== itemId);
     onUpdateConfig({ deliveryItems: nextItems });
@@ -2527,6 +2586,9 @@ function DeliveryBrickConfig({
                     <button type="button" className="agent-button h-8 px-3 text-xs" onClick={() => setEditingTarget(item.id)}>
                       <Settings2 size={14} />
                       配置
+                    </button>
+                    <button type="button" className="agent-icon-button h-8 w-8" title="复制交付项" onClick={() => duplicateDeliveryItem(item)}>
+                      <Copy size={14} />
                     </button>
                     <button type="button" className="agent-icon-button h-8 w-8" title="删除交付项" onClick={() => removeDeliveryItem(item.id)}>
                       <Trash2 size={14} />
@@ -4912,6 +4974,17 @@ function uniqueVariableName(value: string, existingVariables: Set<string>) {
   let suffix = 2;
   while (existingVariables.has(candidate)) {
     candidate = `${base}_${suffix}`;
+    suffix += 1;
+  }
+  return candidate;
+}
+
+function uniqueDisplayName(value: string, existingNames: Set<string>) {
+  const base = value.trim() || "副本";
+  let candidate = base;
+  let suffix = 2;
+  while (existingNames.has(candidate)) {
+    candidate = `${base} ${suffix}`;
     suffix += 1;
   }
   return candidate;
