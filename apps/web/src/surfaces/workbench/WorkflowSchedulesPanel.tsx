@@ -480,7 +480,7 @@ export function WorkflowSchedulesPanel() {
             </div>
           </div>
 
-          <div className="sys-field-row">
+          <div className="sys-field-row schedule-cron-row">
             <div className="sys-field">
               <label className="sys-field-label">快捷定时</label>
               <Select
@@ -491,6 +491,14 @@ export function WorkflowSchedulesPanel() {
                 options={cronPresets.map((preset) => ({ value: preset.key, label: preset.label }))}
                 onChange={handlePresetChange}
               />
+              <button
+                type="button"
+                className="sys-btn sys-btn--text sys-btn--sm schedule-cron-generator-toggle"
+                onClick={() => setCronGeneratorOpen((open) => !open)}
+              >
+                <Settings2 size={14} aria-hidden="true" />
+                {cronGeneratorOpen ? "收起生成器" : "打开 Cron 生成器"}
+              </button>
             </div>
             <div className="sys-field">
               <label className="sys-field-label sys-field-label--required">cron 表达式</label>
@@ -503,27 +511,21 @@ export function WorkflowSchedulesPanel() {
                   onChange={(event) => setForm((current) => ({ ...current, cronExpression: event.target.value, presetKey: "custom", presetLabel: "自定义 cron" }))}
                 />
               </div>
-              <button
-                type="button"
-                className="sys-btn sys-btn--text sys-btn--sm mt-2"
-                onClick={() => setCronGeneratorOpen((open) => !open)}
-              >
-                <Settings2 size={14} aria-hidden="true" />
-                {cronGeneratorOpen ? "收起生成器" : "打开 Cron 生成器"}
-              </button>
-              {cronGeneratorOpen ? (
-                <CronExpressionGenerator
-                  value={form.cronExpression}
-                  onChange={(cronExpression) => setForm((current) => ({
-                    ...current,
-                    cronExpression,
-                    presetKey: "custom",
-                    presetLabel: "自定义 cron",
-                  }))}
-                />
-              ) : null}
             </div>
           </div>
+          {cronGeneratorOpen ? (
+            <div className="schedule-cron-generator">
+              <CronExpressionGenerator
+                value={form.cronExpression}
+                onChange={(cronExpression) => setForm((current) => ({
+                  ...current,
+                  cronExpression,
+                  presetKey: "custom",
+                  presetLabel: "自定义 cron",
+                }))}
+              />
+            </div>
+          ) : null}
 
           {inputLoading ? (
             <div className="workflow-drawer-loading">

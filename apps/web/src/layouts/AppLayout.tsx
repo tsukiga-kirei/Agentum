@@ -1,28 +1,30 @@
-import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Activity,
   Bell,
   CheckCircle2,
+  Eye,
   GitBranch,
   IdCard,
+  Inbox,
   KeyRound,
   LayoutDashboard,
   Library,
   Loader2,
   LogOut,
   Mail,
+  Megaphone,
   PanelLeft,
+  PencilLine,
   Save,
   Settings,
   ShieldCheck,
   User,
   UserRoundCog,
-  X,
 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Drawer, Empty, Pagination, Segmented, message } from "antd";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { AgentumMark } from "../components/brand/AgentumMark";
-import { SysModalMask } from "../components/common/SysModalMask";
 import { SysPasswordInput } from "../components/common/SysPasswordInput";
 import { MarkdownRenderer } from "../components/runtime/MarkdownRenderer";
 import { AgentumApiError, notificationApi } from "../services/apiClient";
@@ -41,8 +43,11 @@ const ICON_MAP = {
 } as const;
 
 type AccountSettingsTabKey = "overview" | "profile" | "security";
+type NotificationCenterTabKey = "inbox" | "publish";
+type AnnouncementEditorMode = "edit" | "preview";
 
 const NOTIFICATION_PAGE_SIZE = 8;
+const ACCOUNT_DRAWER_WIDTH = 620;
 
 const accountSettingsTabs: Array<{
   key: AccountSettingsTabKey;
@@ -73,13 +78,14 @@ export function AppLayout() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isSidebarTransitioning, setIsSidebarTransitioning] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
-  const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [profileDrawerOpen, setProfileDrawerOpen] = useState(false);
   const [accountSettingsTab, setAccountSettingsTab] = useState<AccountSettingsTabKey>("overview");
   const [profileSubmitting, setProfileSubmitting] = useState(false);
   const [passwordSubmitting, setPasswordSubmitting] = useState(false);
   const [profileDraft, setProfileDraft] = useState({ displayName: user?.displayName ?? "", email: user?.email ?? "" });
   const [passwordDraft, setPasswordDraft] = useState({ currentPassword: "", newPassword: "", confirmPassword: "" });
   const [notificationDrawerOpen, setNotificationDrawerOpen] = useState(false);
+  const [notificationCenterTab, setNotificationCenterTab] = useState<NotificationCenterTabKey>("inbox");
   const [notificationStatus, setNotificationStatus] = useState<NotificationStatusFilter>("all");
   const [notificationPage, setNotificationPage] = useState(1);
   const [notifications, setNotifications] = useState<NotificationRow[]>([]);
@@ -87,6 +93,7 @@ export function AppLayout() {
   const [notificationLoading, setNotificationLoading] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [announcementDraft, setAnnouncementDraft] = useState({ title: "", contentMarkdown: "" });
+  const [announcementEditorMode, setAnnouncementEditorMode] = useState<AnnouncementEditorMode>("edit");
   const [announcementPublishing, setAnnouncementPublishing] = useState(false);
   const [messageApi, messageContextHolder] = message.useMessage();
   const sidebarTransitionTimer = useRef<number | null>(null);
@@ -107,6 +114,37 @@ export function AppLayout() {
       ),
     };
   });
+  const notificationCenterTabOptions = useMemo(
+    () => [
+      {
+        value: "inbox" as const,
+        label: (
+          <span className="login-portal-option">
+            <Inbox className="login-portal-option-icon" aria-hidden="true" />
+            <span>我的消息</span>
+          </span>
+        ),
+      },
+      {
+        value: "publish" as const,
+        label: (
+          <span className="login-portal-option">
+            <Megaphone className="login-portal-option-icon" aria-hidden="true" />
+            <span>发布公告</span>
+          </span>
+        ),
+      },
+    ],
+    [],
+  );
+  const notificationStatusOptions = useMemo(
+    () => [
+      { value: "all" as const, label: "全部消息" },
+      { value: "unread" as const, label: "未读消息" },
+      { value: "read" as const, label: "已读消息" },
+    ],
+    [],
+  );
 
   useEffect(() => () => {
     if (sidebarTransitionTimer.current !== null) {
@@ -157,11 +195,11 @@ export function AppLayout() {
   }, [loadUnreadCount]);
 
   useEffect(() => {
-    if (!notificationDrawerOpen) {
+    if (!notificationDrawerOpen || notificationCenterTab !== "inbox") {
       return;
     }
     void loadNotifications(notificationPage, notificationStatus);
-  }, [loadNotifications, notificationDrawerOpen, notificationPage, notificationStatus]);
+  }, [loadNotifications, notificationCenterTab, notificationDrawerOpen, notificationPage, notificationStatus]);
 
   useEffect(() => {
     if (!accountMenuOpen) return;
@@ -191,12 +229,13 @@ export function AppLayout() {
     setProfileDraft({ displayName: user?.displayName ?? "", email: user?.email ?? "" });
     setPasswordDraft({ currentPassword: "", newPassword: "", confirmPassword: "" });
     setAccountSettingsTab("overview");
-    setProfileModalOpen(true);
+    setProfileDrawerOpen(true);
     setAccountMenuOpen(false);
   }, [user?.displayName, user?.email]);
 
   const openNotificationCenter = useCallback(() => {
     setAccountMenuOpen(false);
+    setNotificationCenterTab("inbox");
     setNotificationDrawerOpen(true);
     setNotificationPage(1);
   }, []);
@@ -252,7 +291,9 @@ export function AppLayout() {
         contentMarkdown,
       });
       setAnnouncementDraft({ title: "", contentMarkdown: "" });
+      setAnnouncementEditorMode("edit");
       messageApi.success("公告已发布");
+      setNotificationCenterTab("inbox");
       setNotificationStatus("all");
       setNotificationPage(1);
       await loadNotifications(1, "all");
@@ -311,7 +352,7 @@ export function AppLayout() {
         return;
       }
       messageApi.success("密码已修改，请重新登录");
-      setProfileModalOpen(false);
+      setProfileDrawerOpen(false);
       window.setTimeout(() => navigate(paths.login, { replace: true }), 300);
     } finally {
       setPasswordSubmitting(false);
@@ -465,170 +506,227 @@ export function AppLayout() {
           <Outlet />
         </section>
       </div>
-      {profileModalOpen ? (
-        <SysModalMask onClose={() => setProfileModalOpen(false)}>
-          <div className="sys-modal account-settings-modal" style={{ maxWidth: 680 }}>
-            <div className="sys-modal-header">
-              <span className="sys-modal-title">个人设置</span>
-              <button className="sys-modal-close" onClick={() => setProfileModalOpen(false)}><X size={18} /></button>
-            </div>
-            <div className="account-settings-tabs-wrap" aria-label="个人设置功能区">
-              <div className="system-mgmt-segmented-scroll account-settings-segmented-scroll">
-                <Segmented<AccountSettingsTabKey>
-                  value={accountSettingsTab}
-                  onChange={setAccountSettingsTab}
-                  options={accountSettingsSegmentedOptions}
-                  className="login-portal-segmented login-portal-segmented--business system-mgmt-segmented account-settings-segmented"
-                />
-              </div>
-            </div>
-            <div className="sys-modal-body account-settings-body">
-              {accountSettingsTab === "overview" ? (
-                <div className="account-settings-panel">
-                  <div className="account-settings-summary">
-                    <AccountAvatar avatarUrl={user?.avatar} text={avatarText} large />
-                    <div>
-                      <strong>{user?.displayName || "未登录用户"}</strong>
-                      <span>{user?.username || "-"}</span>
-                    </div>
-                  </div>
-                  <div className="account-settings-grid">
-                    <div className="sys-readonly-field"><span>当前入口</span><strong>{formatRoleLabel(user?.role)}</strong></div>
-                    <div className="sys-readonly-field"><span>当前租户</span><strong>{user?.tenantName || "平台管理"}</strong></div>
-                    <div className="sys-readonly-field"><span>租户编码</span><strong>{user?.tenantCode || "SYSTEM"}</strong></div>
-                    <div className="sys-readonly-field"><span>最近登录</span><strong>{formatAccountDate(user?.lastLoginAt)}</strong></div>
-                  </div>
-                  <div className="account-settings-quick-actions">
-                    <button type="button" className="sys-btn sys-btn--default" onClick={() => setAccountSettingsTab("profile")}>
-                      <IdCard size={14} /> 修改资料
-                    </button>
-                    <button type="button" className="sys-btn sys-btn--default" onClick={() => setAccountSettingsTab("security")}>
-                      <KeyRound size={14} /> 修改密码
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-
-              {accountSettingsTab === "profile" ? (
-                <div className="account-settings-panel">
-                  <div className="sys-config-group">
-                    <div className="sys-config-group-title">基础资料</div>
-                    <div className="sys-field-row">
-                      <div className="sys-field">
-                        <label className="sys-field-label sys-field-label--required">姓名</label>
-                        <div className="sys-field-input-wrap">
-                          <User size={16} className="sys-field-prefix" />
-                          <input
-                            className="sys-field-input"
-                            value={profileDraft.displayName}
-                            maxLength={100}
-                            onChange={(event) => setProfileDraft((draft) => ({ ...draft, displayName: event.target.value }))}
-                          />
-                        </div>
-                      </div>
-                      <div className="sys-field">
-                        <label className="sys-field-label">邮箱</label>
-                        <div className="sys-field-input-wrap">
-                          <Mail size={16} className="sys-field-prefix" />
-                          <input
-                            className="sys-field-input"
-                            value={profileDraft.email}
-                            maxLength={255}
-                            placeholder="name@example.com"
-                            onChange={(event) => setProfileDraft((draft) => ({ ...draft, email: event.target.value }))}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                    <div className="sys-config-actions">
-                      <button className="sys-btn sys-btn--primary" disabled={profileSubmitting} onClick={() => void handleSaveProfile()}>
-                        <Save size={14} /> 保存资料
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-
-              {accountSettingsTab === "security" ? (
-                <div className="account-settings-panel">
-                  <div className="sys-config-group">
-                    <div className="sys-config-group-title">修改密码</div>
-                    <div className="sys-field">
-                      <label className="sys-field-label sys-field-label--required">当前密码</label>
-                      <SysPasswordInput
-                        prefixIcon={<KeyRound size={16} className="sys-field-prefix" />}
-                        value={passwordDraft.currentPassword}
-                        autoComplete="current-password"
-                        placeholder="请输入当前密码"
-                        onChange={(event) => setPasswordDraft((draft) => ({ ...draft, currentPassword: event.target.value }))}
-                      />
-                    </div>
-                    <div className="sys-field-row">
-                      <div className="sys-field">
-                        <label className="sys-field-label sys-field-label--required">新密码</label>
-                        <SysPasswordInput
-                          prefixIcon={<KeyRound size={16} className="sys-field-prefix" />}
-                          value={passwordDraft.newPassword}
-                          autoComplete="new-password"
-                          placeholder="至少 8 位"
-                          onChange={(event) => setPasswordDraft((draft) => ({ ...draft, newPassword: event.target.value }))}
-                        />
-                      </div>
-                      <div className="sys-field">
-                        <label className="sys-field-label sys-field-label--required">确认新密码</label>
-                        <SysPasswordInput
-                          prefixIcon={<KeyRound size={16} className="sys-field-prefix" />}
-                          value={passwordDraft.confirmPassword}
-                          autoComplete="new-password"
-                          placeholder="再次输入新密码"
-                          onChange={(event) => setPasswordDraft((draft) => ({ ...draft, confirmPassword: event.target.value }))}
-                        />
-                      </div>
-                    </div>
-                    <p className="sys-field-hint">密码修改成功后会立即退出登录，请使用新密码重新进入工作台。</p>
-                    <div className="sys-config-actions">
-                      <button className="sys-btn sys-btn--default" disabled={passwordSubmitting} onClick={() => void handleChangePassword()}>
-                        <KeyRound size={14} /> 修改密码并退出
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
+      <Drawer
+        title="个人设置"
+        width={ACCOUNT_DRAWER_WIDTH}
+        open={profileDrawerOpen}
+        onClose={() => setProfileDrawerOpen(false)}
+        rootClassName={drawerRootClassName}
+      >
+        <div className="sys-drawer-section account-settings-drawer">
+          <div className="system-mgmt-module-switch account-drawer-module-switch">
+            <div className="system-mgmt-segmented-scroll">
+              <Segmented<AccountSettingsTabKey>
+                aria-label="个人设置功能区"
+                value={accountSettingsTab}
+                onChange={setAccountSettingsTab}
+                options={accountSettingsSegmentedOptions}
+                className="login-portal-segmented login-portal-segmented--business system-mgmt-segmented"
+              />
             </div>
           </div>
-        </SysModalMask>
-      ) : null}
+          <div className="account-settings-body account-settings-body--drawer">
+            {accountSettingsTab === "overview" ? (
+              <div className="account-settings-panel">
+                <div className="account-settings-summary">
+                  <AccountAvatar avatarUrl={user?.avatar} text={avatarText} large />
+                  <div>
+                    <strong>{user?.displayName || "未登录用户"}</strong>
+                    <span>{user?.username || "-"}</span>
+                  </div>
+                </div>
+                <div className="account-settings-grid">
+                  <div className="sys-readonly-field"><span>当前入口</span><strong>{formatRoleLabel(user?.role)}</strong></div>
+                  <div className="sys-readonly-field"><span>当前租户</span><strong>{user?.tenantName || "平台管理"}</strong></div>
+                  <div className="sys-readonly-field"><span>租户编码</span><strong>{user?.tenantCode || "SYSTEM"}</strong></div>
+                  <div className="sys-readonly-field"><span>最近登录</span><strong>{formatAccountDate(user?.lastLoginAt)}</strong></div>
+                </div>
+                <div className="account-settings-quick-actions">
+                  <button type="button" className="sys-btn sys-btn--default" onClick={() => setAccountSettingsTab("profile")}>
+                    <IdCard size={14} /> 修改资料
+                  </button>
+                  <button type="button" className="sys-btn sys-btn--default" onClick={() => setAccountSettingsTab("security")}>
+                    <KeyRound size={14} /> 修改密码
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {accountSettingsTab === "profile" ? (
+              <div className="account-settings-panel">
+                <div className="sys-config-group">
+                  <div className="sys-config-group-title">基础资料</div>
+                  <div className="sys-field-row">
+                    <div className="sys-field">
+                      <label className="sys-field-label sys-field-label--required">姓名</label>
+                      <div className="sys-field-input-wrap">
+                        <User size={16} className="sys-field-prefix" />
+                        <input
+                          className="sys-field-input"
+                          value={profileDraft.displayName}
+                          maxLength={100}
+                          onChange={(event) => setProfileDraft((draft) => ({ ...draft, displayName: event.target.value }))}
+                        />
+                      </div>
+                    </div>
+                    <div className="sys-field">
+                      <label className="sys-field-label">邮箱</label>
+                      <div className="sys-field-input-wrap">
+                        <Mail size={16} className="sys-field-prefix" />
+                        <input
+                          className="sys-field-input"
+                          value={profileDraft.email}
+                          maxLength={255}
+                          placeholder="name@example.com"
+                          onChange={(event) => setProfileDraft((draft) => ({ ...draft, email: event.target.value }))}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="sys-config-actions">
+                    <button className="sys-btn sys-btn--primary" disabled={profileSubmitting} onClick={() => void handleSaveProfile()}>
+                      <Save size={14} /> 保存资料
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {accountSettingsTab === "security" ? (
+              <div className="account-settings-panel">
+                <div className="sys-config-group">
+                  <div className="sys-config-group-title">修改密码</div>
+                  <div className="sys-field">
+                    <label className="sys-field-label sys-field-label--required">当前密码</label>
+                    <SysPasswordInput
+                      prefixIcon={<KeyRound size={16} className="sys-field-prefix" />}
+                      value={passwordDraft.currentPassword}
+                      autoComplete="current-password"
+                      placeholder="请输入当前密码"
+                      onChange={(event) => setPasswordDraft((draft) => ({ ...draft, currentPassword: event.target.value }))}
+                    />
+                  </div>
+                  <div className="sys-field-row">
+                    <div className="sys-field">
+                      <label className="sys-field-label sys-field-label--required">新密码</label>
+                      <SysPasswordInput
+                        prefixIcon={<KeyRound size={16} className="sys-field-prefix" />}
+                        value={passwordDraft.newPassword}
+                        autoComplete="new-password"
+                        placeholder="至少 8 位"
+                        onChange={(event) => setPasswordDraft((draft) => ({ ...draft, newPassword: event.target.value }))}
+                      />
+                    </div>
+                    <div className="sys-field">
+                      <label className="sys-field-label sys-field-label--required">确认新密码</label>
+                      <SysPasswordInput
+                        prefixIcon={<KeyRound size={16} className="sys-field-prefix" />}
+                        value={passwordDraft.confirmPassword}
+                        autoComplete="new-password"
+                        placeholder="再次输入新密码"
+                        onChange={(event) => setPasswordDraft((draft) => ({ ...draft, confirmPassword: event.target.value }))}
+                      />
+                    </div>
+                  </div>
+                  <p className="sys-field-hint">密码修改成功后会立即退出登录，请使用新密码重新进入工作台。</p>
+                  <div className="sys-config-actions">
+                    <button className="sys-btn sys-btn--default" disabled={passwordSubmitting} onClick={() => void handleChangePassword()}>
+                      <KeyRound size={14} /> 修改密码并退出
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </Drawer>
       <Drawer
         title="消息中心"
-        width={620}
+        width={ACCOUNT_DRAWER_WIDTH}
         open={notificationDrawerOpen}
         onClose={() => setNotificationDrawerOpen(false)}
         rootClassName={drawerRootClassName}
       >
         <div className="sys-drawer-section notification-center">
-          <div className="notification-center-toolbar">
-            <Segmented<NotificationStatusFilter>
-              value={notificationStatus}
-              onChange={(value) => {
-                setNotificationStatus(value);
-                setNotificationPage(1);
-              }}
-              options={[
-                { value: "all", label: "全部" },
-                { value: "unread", label: "未读" },
-                { value: "read", label: "已读" },
-              ]}
-              className="login-portal-segmented login-portal-segmented--business notification-center-segmented"
-            />
-            <button type="button" className="sys-btn sys-btn--default sys-btn--sm" onClick={() => void handleMarkAllNotificationsRead()} disabled={unreadCount <= 0}>
-              <CheckCircle2 size={14} />
-              全部已读
-            </button>
-          </div>
-
           {canPublishAnnouncement ? (
-            <section className="sys-config-group notification-announcement-editor" aria-label="发布公告">
-              <div className="sys-config-group-title">{user?.role === "system_admin" ? "发布系统公告" : "发布租户公告"}</div>
+            <div className="system-mgmt-module-switch account-drawer-module-switch">
+              <div className="system-mgmt-segmented-scroll">
+                <Segmented<NotificationCenterTabKey>
+                  aria-label="消息中心模块"
+                  value={notificationCenterTab}
+                  onChange={(value) => {
+                    setNotificationCenterTab(value);
+                    if (value === "inbox") {
+                      setNotificationPage(1);
+                    }
+                  }}
+                  options={notificationCenterTabOptions}
+                  className="login-portal-segmented login-portal-segmented--business system-mgmt-segmented"
+                />
+              </div>
+            </div>
+          ) : null}
+
+          {notificationCenterTab === "inbox" ? (
+            <>
+              <div className="notification-center-head">
+                <div className="system-mgmt-segmented-scroll">
+                  <Segmented<NotificationStatusFilter>
+                    aria-label="消息筛选"
+                    value={notificationStatus}
+                    onChange={(value) => {
+                      setNotificationStatus(value);
+                      setNotificationPage(1);
+                    }}
+                    options={notificationStatusOptions}
+                    className="login-portal-segmented login-portal-segmented--business system-mgmt-segmented"
+                  />
+                </div>
+                <button type="button" className="sys-btn sys-btn--default sys-btn--sm notification-center-mark-all-btn" onClick={() => void handleMarkAllNotificationsRead()} disabled={unreadCount <= 0}>
+                  <CheckCircle2 size={14} />
+                  全部已读
+                </button>
+              </div>
+
+              {notificationLoading ? (
+                <div className="workflow-definition-empty-state">
+                  <Loader2 className="h-8 w-8 animate-spin" aria-hidden="true" />
+                  <p>正在加载消息</p>
+                </div>
+              ) : notifications.length === 0 ? (
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={notificationStatus === "unread" ? "暂无未读消息" : "暂无消息"} />
+              ) : (
+                <div className="notification-list">
+                  {notifications.map((row) => (
+                    <article key={row.id} className={`notification-list-item ${row.unread ? "notification-list-item--unread" : ""}`} onClick={() => void handleMarkNotificationRead(row)}>
+                      <div className="notification-list-item-head">
+                        <div className="min-w-0">
+                          <h3>{row.title}</h3>
+                          <p>{formatNotificationCategory(row.category)} · {row.publisherName || "系统"} · {formatAccountDate(row.createdAt)}</p>
+                        </div>
+                        {row.unread ? <span className="notification-unread-dot" aria-label="未读" /> : null}
+                      </div>
+                      <NotificationContent row={row} />
+                    </article>
+                  ))}
+                </div>
+              )}
+
+              {notificationTotal > NOTIFICATION_PAGE_SIZE ? (
+                <div className="agent-admin-pagination-wrap mt-4 px-0 py-4">
+                  <Pagination
+                    className="agent-admin-pagination"
+                    current={notificationPage}
+                    total={notificationTotal}
+                    pageSize={NOTIFICATION_PAGE_SIZE}
+                    showSizeChanger={false}
+                    onChange={setNotificationPage}
+                  />
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <div className="notification-announcement-editor" aria-label="发布公告">
               <div className="sys-field">
                 <label className="sys-field-label sys-field-label--required">标题</label>
                 <div className="sys-field-input-wrap">
@@ -642,64 +740,68 @@ export function AppLayout() {
                 </div>
               </div>
               <div className="sys-field">
-                <label className="sys-field-label sys-field-label--required">Markdown 内容</label>
-                <textarea
-                  className="sys-field-textarea notification-announcement-textarea"
-                  value={announcementDraft.contentMarkdown}
-                  rows={5}
-                  placeholder="支持 Markdown，例如 **重点**、列表和链接"
-                  onChange={(event) => setAnnouncementDraft((draft) => ({ ...draft, contentMarkdown: event.target.value }))}
-                />
+                <div className="notification-field-label-row">
+                  <label className="sys-field-label sys-field-label--required">内容</label>
+                  <div className="notification-editor-mode-toggle" role="group" aria-label="内容编辑模式">
+                    <button
+                      type="button"
+                      className={`notification-editor-mode-btn ${announcementEditorMode === "edit" ? "notification-editor-mode-btn--active" : ""}`}
+                      onClick={() => setAnnouncementEditorMode("edit")}
+                    >
+                      <PencilLine size={13} aria-hidden="true" />
+                      编辑
+                    </button>
+                    <button
+                      type="button"
+                      className={`notification-editor-mode-btn ${announcementEditorMode === "preview" ? "notification-editor-mode-btn--active" : ""}`}
+                      onClick={() => setAnnouncementEditorMode("preview")}
+                    >
+                      <Eye size={13} aria-hidden="true" />
+                      预览
+                    </button>
+                  </div>
+                </div>
+                {announcementEditorMode === "edit" ? (
+                  <textarea
+                    className="sys-field-textarea notification-announcement-textarea"
+                    value={announcementDraft.contentMarkdown}
+                    rows={8}
+                    placeholder="支持 Markdown，例如 **重点**、### 标题、列表和链接"
+                    onChange={(event) => setAnnouncementDraft((draft) => ({ ...draft, contentMarkdown: event.target.value }))}
+                  />
+                ) : (
+                  <div className="notification-announcement-preview">
+                    {announcementDraft.contentMarkdown.trim() ? (
+                      <MarkdownRenderer content={announcementDraft.contentMarkdown} />
+                    ) : (
+                      <p className="notification-plain-content">暂无内容，请切换至编辑模式输入公告正文。</p>
+                    )}
+                  </div>
+                )}
               </div>
-              <div className="sys-config-actions">
+              <div className="sys-config-actions notification-announcement-actions">
                 <button type="button" className="sys-btn sys-btn--primary" disabled={announcementPublishing} onClick={() => void handlePublishAnnouncement()}>
-                  {announcementPublishing ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Bell size={14} />}
+                  {announcementPublishing ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Megaphone size={14} />}
                   发布公告
                 </button>
               </div>
-            </section>
-          ) : null}
-
-          {notificationLoading ? (
-            <div className="workflow-definition-empty-state">
-              <Loader2 className="h-8 w-8 animate-spin" aria-hidden="true" />
-              <p>正在加载消息</p>
-            </div>
-          ) : notifications.length === 0 ? (
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={notificationStatus === "unread" ? "暂无未读消息" : "暂无消息"} />
-          ) : (
-            <div className="notification-list">
-              {notifications.map((row) => (
-                <article key={row.id} className={`notification-list-item ${row.unread ? "notification-list-item--unread" : ""}`} onClick={() => void handleMarkNotificationRead(row)}>
-                  <div className="notification-list-item-head">
-                    <div className="min-w-0">
-                      <h3>{row.title}</h3>
-                      <p>{formatNotificationCategory(row.category)} · {row.publisherName || "系统"} · {formatAccountDate(row.createdAt)}</p>
-                    </div>
-                    {row.unread ? <span className="notification-unread-dot" aria-label="未读" /> : null}
-                  </div>
-                  <MarkdownRenderer content={row.contentMarkdown} compact />
-                </article>
-              ))}
             </div>
           )}
-
-          {notificationTotal > NOTIFICATION_PAGE_SIZE ? (
-            <div className="agent-admin-pagination-wrap mt-4 px-0 py-4">
-              <Pagination
-                className="agent-admin-pagination"
-                current={notificationPage}
-                total={notificationTotal}
-                pageSize={NOTIFICATION_PAGE_SIZE}
-                showSizeChanger={false}
-                onChange={setNotificationPage}
-              />
-            </div>
-          ) : null}
         </div>
       </Drawer>
     </main>
   );
+}
+
+function NotificationContent({ row }: { row: NotificationRow }) {
+  if (isMarkdownNotification(row.category)) {
+    return <MarkdownRenderer content={row.contentMarkdown} compact />;
+  }
+  return <p className="notification-plain-content">{row.contentMarkdown}</p>;
+}
+
+function isMarkdownNotification(category: string): boolean {
+  return category === "system_notice";
 }
 
 function AccountAvatarWithBadge({ avatarUrl, text, unreadCount }: { avatarUrl?: string; text: string; unreadCount: number }) {

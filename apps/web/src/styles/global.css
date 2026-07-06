@@ -965,8 +965,18 @@ textarea:focus-visible {
 
 .workbench-account-menu--compact {
   right: auto;
-  left: 10px;
-  width: 176px;
+  left: 8px;
+  width: max-content;
+  min-width: 132px;
+  max-width: calc(var(--sidebar-collapsed-width) - 12px);
+  padding: 4px;
+}
+
+.workbench-account-menu--compact .workbench-account-menu-item {
+  gap: 8px;
+  height: 34px;
+  padding: 0 8px;
+  font-size: 12px;
 }
 
 .workbench-account-menu-item {
@@ -1031,26 +1041,109 @@ textarea:focus-visible {
   display: flex;
   min-height: 100%;
   flex-direction: column;
-  gap: 16px;
+  gap: 0;
 }
 
-.notification-center-toolbar {
+.account-drawer-module-switch {
+  margin-bottom: 20px;
+}
+
+.account-drawer-module-switch .system-mgmt-segmented-scroll {
+  padding-bottom: 4px;
+}
+
+.notification-center-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  margin-bottom: 20px;
 }
 
-.notification-center-segmented.login-portal-segmented {
-  width: auto;
+.notification-center-mark-all-btn {
+  flex-shrink: 0;
 }
 
 .notification-announcement-editor {
-  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.notification-announcement-actions {
+  margin-top: 4px;
+}
+
+.notification-field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.notification-field-label-row .sys-field-label {
+  margin-bottom: 0;
+}
+
+.notification-editor-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-hover);
+}
+
+.notification-editor-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 8px;
+  border: none;
+  border-radius: calc(var(--radius-md) - 2px);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  font-weight: 600;
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.notification-editor-mode-btn:hover,
+.notification-editor-mode-btn:focus-visible {
+  color: var(--color-text-secondary);
+}
+
+.notification-editor-mode-btn--active {
+  background: var(--color-bg-card);
+  color: var(--color-text-primary);
+  box-shadow: var(--shadow-sm);
 }
 
 .notification-announcement-textarea {
-  min-height: 120px;
+  min-height: 160px;
+}
+
+.notification-announcement-preview {
+  min-height: 160px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-hover);
+}
+
+.notification-plain-content {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .notification-list {
@@ -1113,64 +1206,13 @@ textarea:focus-visible {
   background: var(--color-danger);
 }
 
-.account-settings-modal .sys-modal-header {
-  flex-shrink: 0;
+.account-settings-body--drawer {
+  padding: 0;
+  overflow: visible;
 }
 
-.account-settings-body {
-  flex: 1;
-  min-height: 0;
-  max-height: none;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 14px 24px 20px;
-}
-
-.account-settings-tabs-wrap {
-  flex-shrink: 0;
-  padding: 10px 20px 10px;
-  border-bottom: 1px solid var(--color-border-light);
-  background: transparent;
-}
-
-.account-settings-segmented-scroll {
-  padding-bottom: 0;
-}
-
-.account-settings-segmented.login-portal-segmented {
-  min-width: 0;
-  margin-bottom: 0;
-  padding: 2px;
-  border-color: var(--color-border-light);
-  background: transparent;
-}
-
-.account-settings-segmented.system-mgmt-segmented.login-portal-segmented .ant-segmented-item {
-  min-width: 148px;
-  min-height: 40px;
-}
-
-.account-settings-segmented.system-mgmt-segmented.login-portal-segmented .ant-segmented-item-label {
-  min-height: 40px;
-}
-
-.account-settings-segmented.login-portal-segmented .ant-segmented-thumb {
-  background: var(--color-bg-card);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--login-portal-color) 12%, transparent);
-}
-
-.dark .account-settings-segmented.login-portal-segmented {
-  border-color: var(--color-border-light);
-  background: transparent;
-}
-
-.dark .account-settings-segmented.login-portal-segmented .ant-segmented-thumb {
-  background: color-mix(in srgb, var(--login-portal-color) 12%, var(--color-bg-card));
-}
-
-:root[data-theme="warm"] .account-settings-segmented.login-portal-segmented {
-  border-color: var(--color-border-light);
-  background: transparent;
+.account-settings-drawer {
+  gap: 0;
 }
 
 .account-settings-panel {
@@ -1245,17 +1287,18 @@ textarea:focus-visible {
     grid-template-columns: 1fr;
   }
 
-  .account-settings-tabs-wrap {
-    padding-inline: 14px;
-  }
-
-  .account-settings-segmented.system-mgmt-segmented.login-portal-segmented .ant-segmented-item {
-    min-width: 132px;
-  }
-
   .account-settings-quick-actions {
     justify-content: stretch;
     flex-direction: column;
+  }
+
+  .notification-center-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .notification-center-mark-all-btn {
+    width: 100%;
   }
 }
 
@@ -4787,7 +4830,8 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
 }
 
 .cron-generator {
-  margin-top: 10px;
+  width: 100%;
+  margin-top: 0;
   padding: 12px;
   border: 1px solid var(--color-border-light);
   border-radius: var(--radius-md);
@@ -4796,9 +4840,10 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
 
 .cron-generator-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
   margin-bottom: 10px;
 }
 
@@ -4809,11 +4854,14 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
 }
 
 .cron-generator-preview {
-  padding: 4px 8px;
+  flex: 1 1 100%;
+  padding: 6px 10px;
   border-radius: var(--radius-sm);
   background: var(--color-bg-card);
   color: var(--color-primary);
   font-size: 12px;
+  text-align: center;
+  word-break: break-all;
 }
 
 .cron-generator-tabs {
@@ -4843,50 +4891,42 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  width: 100%;
 }
 
-.cron-generator-mode {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
+.cron-generator-hint {
+  margin: 0;
   font-size: 12px;
-  color: var(--color-text-secondary);
-}
-
-.cron-generator-mode-label {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.cron-generator-mode-label small {
+  line-height: 1.5;
   color: var(--color-text-tertiary);
 }
 
-.cron-generator-inline-inputs {
-  display: flex;
-  flex-wrap: wrap;
+.cron-generator-all {
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-}
-
-.cron-generator-input {
-  width: 52px;
-  height: 28px;
-  padding: 0 8px;
+  gap: 8px;
+  align-self: flex-start;
+  padding: 6px 12px;
   border: 1px solid var(--color-border-light);
   border-radius: var(--radius-sm);
   background: var(--color-bg-card);
-  color: var(--color-text-primary);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.cron-generator-all--checked {
+  border-color: color-mix(in srgb, var(--color-primary) 55%, var(--color-border-light));
+  background: var(--color-primary-bg);
+  color: var(--color-primary);
 }
 
 .cron-generator-grid {
   display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
-  gap: 6px;
-  max-height: 220px;
-  overflow: auto;
-  padding: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 8px;
+  width: 100%;
+  padding: 10px;
   border: 1px solid var(--color-border-light);
   border-radius: var(--radius-sm);
   background: var(--color-bg-card);
@@ -4895,23 +4935,58 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
 .cron-generator-grid-item {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
+  min-height: 32px;
   padding: 4px 6px;
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
   font-size: 11px;
   color: var(--color-text-secondary);
   cursor: pointer;
+  user-select: none;
+}
+
+.cron-generator-grid-item:hover {
+  border-color: var(--color-border-light);
+  background: var(--color-bg-hover);
 }
 
 .cron-generator-grid-item--checked {
+  border-color: color-mix(in srgb, var(--color-primary) 55%, var(--color-border-light));
   background: var(--color-primary-bg);
   color: var(--color-primary);
+}
+
+.cron-generator-grid-item span {
+  white-space: nowrap;
+}
+
+.cron-generator-grid--week {
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+}
+
+.cron-generator-grid-item input:disabled + span {
+  opacity: 0.45;
 }
 
 .schedule-drawer .sys-btn--sm {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+}
+
+.schedule-cron-row {
+  align-items: start;
+}
+
+.schedule-cron-generator-toggle {
+  margin-top: 8px;
+}
+
+.schedule-cron-generator {
+  width: 100%;
+  margin-top: 12px;
 }
 
 .schedule-execution-list {
