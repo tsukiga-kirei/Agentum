@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   AlertCircle,
@@ -9,6 +9,7 @@ import {
   ClipboardCheck,
   Clock3,
   Copy,
+  Download,
   FilePlus2,
   GitBranch,
   GitMerge,
@@ -24,6 +25,7 @@ import {
   Trash2,
   Archive,
   RotateCcw,
+  Upload,
   UserRound,
   UsersRound,
   X,
@@ -37,6 +39,7 @@ import { useAuthStore } from "../../stores/authStore";
 import type {
   WorkflowDraftDetail,
   WorkflowDraftRow,
+  WorkflowExportDocument,
   WorkflowNodeDraft,
   WorkflowPublishValidationResult,
   WorkflowShareableMemberRow,
@@ -129,6 +132,9 @@ export function WorkflowDraftsPage() {
   const [total, setTotal] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [copyingWorkflowId, setCopyingWorkflowId] = useState("");
+  const [exportingWorkflowId, setExportingWorkflowId] = useState("");
+  const [importing, setImporting] = useState(false);
+  const importFileInputRef = useRef<HTMLInputElement | null>(null);
   const [validatingWorkflowId, setValidatingWorkflowId] = useState("");
   const [validationModal, setValidationModal] = useState<{
     workflow: WorkflowDraft;
@@ -470,6 +476,57 @@ export function WorkflowDraftsPage() {
     }
   }
 
+  async function handleExportWorkflow(workflow: WorkflowDraft) {
+    if (!token || !user?.tenantId) {
+      messageApi.error("当前账号缺少租户上下文，无法导出流程");
+      return;
+    }
+    setExportingWorkflowId(workflow.id);
+    try {
+      const document = await workflowApi.exportDraft(user.tenantId, workflow.id, token);
+      downloadWorkflowExport(document, workflow.name);
+      messageApi.success("流程 JSON 已导出");
+    } catch (error) {
+      console.warn("[workflow] 工作流导出失败", getWorkflowErrorContext(error, user.tenantId, { workflowId: workflow.id }));
+      messageApi.error(error instanceof AgentumApiError ? error.message : "导出流程失败");
+    } finally {
+      setExportingWorkflowId("");
+    }
+  }
+
+  async function handleImportWorkflowFile(file: File | null | undefined) {
+    if (!file) return;
+    if (!token || !user?.tenantId) {
+      messageApi.error("当前账号缺少租户上下文，无法导入流程");
+      return;
+    }
+    setImporting(true);
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text) as WorkflowExportDocument;
+      if (!isWorkflowExportDocument(parsed)) {
+        messageApi.error("请选择由 Agentum 导出的流程 JSON");
+        return;
+      }
+      const detail = await workflowApi.importDraft(user.tenantId, token, { document: parsed });
+      messageApi.success(`已导入为“${detail.draft.name}”`);
+      setDetailWorkflow(detail.draft);
+      setDrawerDetail(detail);
+      if (activeTab !== "mine") {
+        navigate(paths.designer.mine);
+      }
+      await loadDrafts(1, searchValue, pageSize, "mine", workflowStatusFilter);
+    } catch (error) {
+      console.warn("[workflow] 工作流导入失败", getWorkflowErrorContext(error, user.tenantId, { fileName: file.name }));
+      messageApi.error(error instanceof AgentumApiError ? error.message : "导入流程失败，请检查 JSON 文件");
+    } finally {
+      setImporting(false);
+      if (importFileInputRef.current) {
+        importFileInputRef.current.value = "";
+      }
+    }
+  }
+
   async function handlePublish(workflow: WorkflowDraft) {
     if (!token || !user?.tenantId) {
       messageApi.error("当前账号缺少租户上下文，无法正式发布");
@@ -648,10 +705,23 @@ export function WorkflowDraftsPage() {
                   查询
                 </button>
                 {activeTab === "mine" ? (
-                  <button type="button" className="sys-btn sys-btn--primary" onClick={() => setIsCreating(true)}>
-                    <FilePlus2 size={18} aria-hidden="true" />
-                    新建流程
-                  </button>
+                  <>
+                    <input
+                      ref={importFileInputRef}
+                      type="file"
+                      accept="application/json,.json"
+                      className="hidden"
+                      onChange={(event) => void handleImportWorkflowFile(event.target.files?.[0])}
+                    />
+                    <button type="button" className="sys-btn sys-btn--default" disabled={importing} onClick={() => importFileInputRef.current?.click()}>
+                      <Upload size={18} aria-hidden="true" />
+                      {importing ? "导入中" : "导入流程"}
+                    </button>
+                    <button type="button" className="sys-btn sys-btn--primary" onClick={() => setIsCreating(true)}>
+                      <FilePlus2 size={18} aria-hidden="true" />
+                      新建流程
+                    </button>
+                  </>
                 ) : null}
               </div>
             </div>
@@ -664,8 +734,10 @@ export function WorkflowDraftsPage() {
                   mine={isWorkflowOwnedByCurrentUser(workflow, currentUserId)}
                   validating={validatingWorkflowId === workflow.id}
                   copying={copyingWorkflowId === workflow.id}
+                  exporting={exportingWorkflowId === workflow.id}
                   onOpenDetail={() => setDetailWorkflow(workflow)}
                   onCopy={() => void handleCopyWorkflow(workflow)}
+                  onExport={() => void handleExportWorkflow(workflow)}
                   onValidate={workflow.accessLevel === "read" ? undefined : () => void handleValidateForPublish(workflow)}
                   index={index}
                 />
@@ -816,6 +888,10 @@ export function WorkflowDraftsPage() {
                 <button type="button" className="sys-btn sys-btn--default sys-btn--sm" disabled={copyingWorkflowId === detailWorkflow.id} onClick={() => void handleCopyWorkflow(detailWorkflow)}>
                   <Copy size={14} aria-hidden="true" />
                   {copyingWorkflowId === detailWorkflow.id ? "复制中" : "复制"}
+                </button>
+                <button type="button" className="sys-btn sys-btn--default sys-btn--sm" disabled={exportingWorkflowId === detailWorkflow.id} onClick={() => void handleExportWorkflow(detailWorkflow)}>
+                  <Download size={14} aria-hidden="true" />
+                  {exportingWorkflowId === detailWorkflow.id ? "导出中" : "导出"}
                 </button>
                 {detailWorkflow.accessLevel !== "read" ? (
                   <>
@@ -1030,8 +1106,10 @@ function WorkflowDesignCard({
   mine,
   validating,
   copying,
+  exporting,
   onOpenDetail,
   onCopy,
+  onExport,
   onValidate,
   index,
 }: {
@@ -1039,8 +1117,10 @@ function WorkflowDesignCard({
   mine: boolean;
   validating: boolean;
   copying: boolean;
+  exporting: boolean;
   onOpenDetail: () => void;
   onCopy: () => void;
+  onExport: () => void;
   onValidate?: () => void;
   index: number;
 }) {
@@ -1090,6 +1170,10 @@ function WorkflowDesignCard({
           <button type="button" disabled={copying} onClick={onCopy} className="sys-btn sys-btn--text sys-btn--sm">
             <Copy size={14} aria-hidden="true" />
             {copying ? "复制中" : "复制"}
+          </button>
+          <button type="button" disabled={exporting} onClick={onExport} className="sys-btn sys-btn--text sys-btn--sm">
+            <Download size={14} aria-hidden="true" />
+            {exporting ? "导出中" : "导出"}
           </button>
           <button type="button" onClick={onOpenDetail} className="sys-btn sys-btn--text sys-btn--sm">
             <PanelRightOpen size={14} aria-hidden="true" />
@@ -1326,6 +1410,35 @@ function resolveWorkflowVersionMeta(workflow: WorkflowDraft) {
     shortLabel: `v${workflow.latestVersionNumber}`,
     className: "sys-info-tag--success",
   };
+}
+
+function downloadWorkflowExport(document: WorkflowExportDocument, workflowName: string) {
+  const blob = new Blob([JSON.stringify(document, null, 2)], { type: "application/json;charset=utf-8" });
+  const url = window.URL.createObjectURL(blob);
+  const link = window.document.createElement("a");
+  link.href = url;
+  link.download = `${sanitizeFileName(workflowName || document.name || "workflow")}-${new Date().toISOString().slice(0, 10)}.json`;
+  window.document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+}
+
+function sanitizeFileName(value: string) {
+  const normalized = value.trim().replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, "-");
+  return normalized || "workflow";
+}
+
+function isWorkflowExportDocument(value: unknown): value is WorkflowExportDocument {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const document = value as Partial<WorkflowExportDocument>;
+  return document.schemaVersion === "agentum.workflow.export.v1"
+    && typeof document.name === "string"
+    && Array.isArray(document.nodes)
+    && Array.isArray(document.edges)
+    && Array.isArray(document.variables);
 }
 
 function getWorkflowErrorContext(error: unknown, tenantId?: string, extra?: Record<string, unknown>) {

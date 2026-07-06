@@ -69,6 +69,27 @@ public final class WorkflowDraftApi {
     ) {
     }
 
+    public record WorkflowExportDocument(
+        @NotBlank String schemaVersion,
+        @NotNull Instant exportedAt,
+        @NotBlank @Size(max = 180) String name,
+        @Size(max = 1000) String description,
+        UUID sourceWorkflowId,
+        UUID sourceTenantId,
+        int latestVersionNumber,
+        List<WorkflowNodeDraft> nodes,
+        List<WorkflowEdgeDraft> edges,
+        List<WorkflowVariableDraft> variables
+    ) {
+    }
+
+    public record ImportWorkflowDraftRequest(
+        @Valid @NotNull WorkflowExportDocument document,
+        @Size(max = 180) String name,
+        @Size(max = 1000) String description
+    ) {
+    }
+
     public record WorkflowDesignerCatalog(
         WorkflowBrickTemplate systemTrigger,
         List<WorkflowBrickTemplate> brickTemplates,

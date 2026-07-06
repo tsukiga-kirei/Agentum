@@ -1121,6 +1121,72 @@ paths:
                     properties:
                       data:
                         $ref: "#/components/schemas/WorkflowDraftRow"
+  /api/tenants/{tenantId}/workflows/drafts/{workflowId}/export:
+    get:
+      summary: 导出工作流草稿 JSON
+      description: 导出当前账号可读取的流程设计态 JSON，用于跨账号或跨环境共享；导出内容不包含发布版本和协作权限。
+      tags:
+        - Workflow
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 工作流导出 JSON
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/WorkflowExportDocument"
+  /api/tenants/{tenantId}/workflows/drafts/imports:
+    post:
+      summary: 导入工作流 JSON 为新草稿
+      description: 根据导出的流程 JSON 创建当前账号拥有的新草稿；导入后保存和发布仍按当前账号重新校验节点引用能力。
+      tags:
+        - Workflow
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportWorkflowDraftRequest"
+      responses:
+        "200":
+          description: 导入成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/WorkflowDraftDetail"
   /api/tenants/{tenantId}/workflows/drafts/{workflowId}/access:
     put:
       summary: 配置工作流读取与编辑权限
@@ -6117,6 +6183,66 @@ components:
         - draft
         - versionNumber
         - publishedAt
+    WorkflowExportDocument:
+      type: object
+      description: 流程设计态导出 JSON，只包含草稿图结构和变量声明，不包含发布版本、运行实例和协作权限。
+      properties:
+        schemaVersion:
+          type: string
+          enum: [agentum.workflow.export.v1]
+        exportedAt:
+          type: string
+          format: date-time
+        name:
+          type: string
+          maxLength: 180
+        description:
+          type: string
+          maxLength: 1000
+        sourceWorkflowId:
+          type: string
+          format: uuid
+          nullable: true
+        sourceTenantId:
+          type: string
+          format: uuid
+          nullable: true
+        latestVersionNumber:
+          type: integer
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowNodeDraft"
+        edges:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowEdgeDraft"
+        variables:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowVariable"
+      required:
+        - schemaVersion
+        - exportedAt
+        - name
+        - nodes
+        - edges
+        - variables
+    ImportWorkflowDraftRequest:
+      type: object
+      properties:
+        document:
+          $ref: "#/components/schemas/WorkflowExportDocument"
+        name:
+          type: string
+          maxLength: 180
+          description: 可选。指定后覆盖导出文件中的流程名称。
+        description:
+          type: string
+          maxLength: 1000
+          description: 可选。指定后覆盖导出文件中的流程说明。
+      required:
+        - document
     WorkflowValidationIssue:
       type: object
       properties:

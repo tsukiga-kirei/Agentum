@@ -57,6 +57,7 @@ public class WorkflowDraftService {
 
     private static final Logger log = LoggerFactory.getLogger(WorkflowDraftService.class);
     private static final String ACTIVE_STATUS = "active";
+    private static final String EXPORT_SCHEMA_VERSION = "agentum.workflow.export.v1";
     private static final SortWhitelist DRAFT_SORT = SortWhitelist.of("updatedAt", "name", "status", "createdAt", "updatedAt", "nodeCount");
     private static final Set<String> ALLOWED_NODE_TYPES = Set.of(
         "trigger",
@@ -262,6 +263,80 @@ public class WorkflowDraftService {
             null
         );
         return toDraftRow(copy, loadUsersById(Set.of(operatorUserId)), operatorUserId, null);
+    }
+
+    @Transactional(readOnly = true)
+    public WorkflowDraftApi.WorkflowExportDocument exportDraft(UUID tenantId, UUID operatorUserId, UUID workflowId) {
+        WorkflowDefinitionEntity definition = findDefinitionForRead(tenantId, workflowId, operatorUserId);
+        WorkflowDraftApi.WorkflowDraftDetail detail = toDetail(definition, operatorUserId);
+        log.info(
+            "工作流草稿导出成功 tenantId={} operatorUserId={} workflowId={} nodeCount={} requestId={}",
+            tenantId,
+            operatorUserId,
+            workflowId,
+            detail.nodes().size(),
+            RequestIds.current()
+        );
+        return new WorkflowDraftApi.WorkflowExportDocument(
+            EXPORT_SCHEMA_VERSION,
+            clock.instant(),
+            detail.draft().name(),
+            detail.draft().description(),
+            definition.getId(),
+            definition.getTenantId(),
+            detail.draft().latestVersionNumber(),
+            detail.nodes().stream().map(this::toNodeDraft).toList(),
+            detail.edges().stream().map(this::toEdgeDraft).toList(),
+            detail.variables().stream().map(this::toVariableDraft).toList()
+        );
+    }
+
+    @Transactional
+    public WorkflowDraftApi.WorkflowDraftDetail importDraft(
+        UUID tenantId,
+        UUID operatorUserId,
+        WorkflowDraftApi.ImportWorkflowDraftRequest request
+    ) {
+        ensureActiveTenant(tenantId);
+        WorkflowDraftApi.WorkflowExportDocument document = request.document();
+        if (document == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKFLOW_IMPORT_DOCUMENT_REQUIRED", "请上传有效的流程 JSON");
+        }
+        if (!EXPORT_SCHEMA_VERSION.equals(normalizeRequired(document.schemaVersion()))) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKFLOW_IMPORT_SCHEMA_UNSUPPORTED", "流程 JSON 版本不受支持");
+        }
+        String name = normalizeImportName(request.name(), document.name());
+        String description = normalizeOptional(request.description());
+        if (description == null) {
+            description = normalizeOptional(document.description());
+        }
+        Instant now = clock.instant();
+        WorkflowDefinitionEntity definition = WorkflowDefinitionEntity.create(tenantId, name, description, operatorUserId, now);
+        workflowDefinitionRepository.save(definition);
+
+        WorkflowDraftApi.SaveWorkflowDraftGraphRequest graphRequest = new WorkflowDraftApi.SaveWorkflowDraftGraphRequest(
+            document.nodes() == null ? List.of() : document.nodes(),
+            document.edges() == null ? List.of() : document.edges(),
+            document.variables() == null ? List.of() : document.variables()
+        );
+        WorkflowDraftApi.WorkflowDraftDetail detail = persistGraph(
+            tenantId,
+            operatorUserId,
+            definition,
+            graphRequest,
+            "IMPORT_WORKFLOW",
+            "导入工作流草稿: " + name
+        );
+        log.info(
+            "工作流草稿导入成功 tenantId={} operatorUserId={} workflowId={} sourceWorkflowId={} nodeCount={} requestId={}",
+            tenantId,
+            operatorUserId,
+            definition.getId(),
+            document.sourceWorkflowId(),
+            detail.nodes().size(),
+            RequestIds.current()
+        );
+        return detail;
     }
 
     @Transactional(readOnly = true)
@@ -533,6 +608,25 @@ public class WorkflowDraftService {
         WorkflowDraftApi.SaveWorkflowDraftGraphRequest request
     ) {
         WorkflowDefinitionEntity definition = findDefinitionForEdit(tenantId, workflowId, operatorUserId);
+        return persistGraph(
+            tenantId,
+            operatorUserId,
+            definition,
+            request,
+            "SAVE_WORKFLOW",
+            "修改了工作流图配置: " + definition.getName()
+        );
+    }
+
+    private WorkflowDraftApi.WorkflowDraftDetail persistGraph(
+        UUID tenantId,
+        UUID operatorUserId,
+        WorkflowDefinitionEntity definition,
+        WorkflowDraftApi.SaveWorkflowDraftGraphRequest request,
+        String auditAction,
+        String auditSummary
+    ) {
+        UUID workflowId = definition.getId();
         List<WorkflowDraftApi.WorkflowNodeDraft> nodes = WorkflowNodeConfigNormalizer.normalizeNodes(
             request.nodes() == null ? List.of() : request.nodes()
         );
@@ -623,11 +717,11 @@ public class WorkflowDraftService {
             tenantId,
             operatorUserId,
             getOperatorName(operatorUserId),
-            "SAVE_WORKFLOW",
+            auditAction,
             "WORKFLOW_DEFINITION",
             definition.getId().toString(),
             definition.getName(),
-            "修改了工作流图配置: " + definition.getName(),
+            auditSummary,
             Map.of("nodeCount", nodes.size(), "edgeCount", edges.size(), "variableCount", variables.size()),
             null
         );
@@ -911,6 +1005,19 @@ public class WorkflowDraftService {
         );
     }
 
+    private WorkflowDraftApi.WorkflowNodeDraft toNodeDraft(WorkflowDraftApi.WorkflowNodeRow node) {
+        return new WorkflowDraftApi.WorkflowNodeDraft(
+            node.nodeId(),
+            node.nodeType(),
+            node.name(),
+            node.positionX(),
+            node.positionY(),
+            node.inputVariables() == null ? List.of() : node.inputVariables(),
+            node.outputVariables() == null ? List.of() : node.outputVariables(),
+            node.config() == null ? Map.of() : node.config()
+        );
+    }
+
     private WorkflowDraftApi.WorkflowEdgeRow toEdgeRow(WorkflowEdgeDefinitionEntity edge) {
         return new WorkflowDraftApi.WorkflowEdgeRow(
             edge.getEdgeKey(),
@@ -918,6 +1025,16 @@ public class WorkflowDraftService {
             edge.getTargetNodeKey(),
             edge.getLabel() == null ? "" : edge.getLabel(),
             edge.getConditionExpression() == null ? "" : edge.getConditionExpression()
+        );
+    }
+
+    private WorkflowDraftApi.WorkflowEdgeDraft toEdgeDraft(WorkflowDraftApi.WorkflowEdgeRow edge) {
+        return new WorkflowDraftApi.WorkflowEdgeDraft(
+            edge.edgeId(),
+            edge.sourceNodeId(),
+            edge.targetNodeId(),
+            edge.label() == null ? "" : edge.label(),
+            edge.conditionExpression() == null ? "" : edge.conditionExpression()
         );
     }
 
@@ -930,6 +1047,18 @@ public class WorkflowDraftService {
             readJsonObject(variable.getJsonSchema()),
             variable.isSensitive(),
             variable.isDeliverable()
+        );
+    }
+
+    private WorkflowDraftApi.WorkflowVariableDraft toVariableDraft(WorkflowDraftApi.WorkflowVariableRow variable) {
+        return new WorkflowDraftApi.WorkflowVariableDraft(
+            variable.name(),
+            variable.type(),
+            variable.sourceNode(),
+            variable.description() == null ? "" : variable.description(),
+            variable.jsonSchema() == null ? Map.of() : variable.jsonSchema(),
+            variable.sensitive(),
+            variable.deliverable()
         );
     }
 
@@ -990,6 +1119,20 @@ public class WorkflowDraftService {
         String suffix = "（副本）";
         if (baseName.isBlank()) {
             return "未命名流程" + suffix;
+        }
+        int maxBaseLength = Math.max(0, 180 - suffix.length());
+        return (baseName.length() > maxBaseLength ? baseName.substring(0, maxBaseLength) : baseName) + suffix;
+    }
+
+    private static String normalizeImportName(String requestedName, String exportedName) {
+        String explicitName = normalizeRequired(requestedName);
+        if (!explicitName.isBlank()) {
+            return explicitName;
+        }
+        String baseName = normalizeRequired(exportedName);
+        String suffix = "（导入）";
+        if (baseName.isBlank()) {
+            return "导入流程";
         }
         int maxBaseLength = Math.max(0, 180 - suffix.length());
         return (baseName.length() > maxBaseLength ? baseName.substring(0, maxBaseLength) : baseName) + suffix;

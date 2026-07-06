@@ -88,6 +88,29 @@ public class WorkflowDraftController {
         return ApiResponse.success(workflowDraftService.copyDraft(tenantId, principal.userId(), workflowId), RequestIds.current(request));
     }
 
+    @GetMapping("/{workflowId}/export")
+    public ApiResponse<WorkflowDraftApi.WorkflowExportDocument> exportDraft(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID workflowId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        workflowDesignAccess.assertCanDesign(principal, tenantId);
+        return ApiResponse.success(workflowDraftService.exportDraft(tenantId, principal.userId(), workflowId), RequestIds.current(request));
+    }
+
+    @PostMapping("/imports")
+    public ApiResponse<WorkflowDraftApi.WorkflowDraftDetail> importDraft(
+        @PathVariable UUID tenantId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @Valid @RequestBody WorkflowDraftApi.ImportWorkflowDraftRequest body,
+        HttpServletRequest request
+    ) {
+        workflowDesignAccess.assertCanDesign(principal, tenantId);
+        // 导入只创建当前操作者拥有的新草稿；能力引用、变量和发布约束仍由后端保存/发布链路复核。
+        return ApiResponse.success(workflowDraftService.importDraft(tenantId, principal.userId(), body), RequestIds.current(request));
+    }
+
     @GetMapping("/shareable-members")
     public ApiResponse<List<WorkflowDraftApi.ShareableMemberRow>> listShareableMembers(
         @PathVariable UUID tenantId,

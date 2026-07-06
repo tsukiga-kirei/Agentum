@@ -58,9 +58,11 @@ import type {
 } from "../types/system";
 import type {
   CreateWorkflowDraftRequest,
+  ImportWorkflowDraftRequest,
   WorkflowDesignerCatalog,
   WorkflowDraftDetail,
   WorkflowEdgeDraft,
+  WorkflowExportDocument,
   WorkflowNodeDraft,
   WorkflowDraftRow,
   WorkflowPublishResult,
@@ -709,6 +711,10 @@ export const workflowApi = {
     apiRequest<WorkflowDraftRow>(`/api/tenants/${tenantId}/workflows/drafts`, { method: "POST", token, body: request }),
   copyDraft: (tenantId: string, workflowId: string, token: string) =>
     apiRequest<WorkflowDraftRow>(`/api/tenants/${tenantId}/workflows/drafts/${workflowId}/copy`, { method: "POST", token }),
+  exportDraft: (tenantId: string, workflowId: string, token: string) =>
+    apiRequest<WorkflowExportDocument>(`/api/tenants/${tenantId}/workflows/drafts/${workflowId}/export`, { token }),
+  importDraft: (tenantId: string, token: string, request: ImportWorkflowDraftRequest) =>
+    apiRequest<WorkflowDraftDetail>(`/api/tenants/${tenantId}/workflows/drafts/imports`, { method: "POST", token, body: request }),
   getDraft: (tenantId: string, workflowId: string, token: string) =>
     apiRequest<WorkflowDraftDetail>(`/api/tenants/${tenantId}/workflows/drafts/${workflowId}`, { token }),
   updateDraft: (tenantId: string, workflowId: string, token: string, request: UpdateWorkflowDraftRequest) =>

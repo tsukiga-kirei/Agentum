@@ -262,6 +262,95 @@ class WorkflowDraftServicePublishTest {
     }
 
     @Test
+    void shouldExportReadableWorkflowAsPortableJsonDocument() {
+        WorkflowDefinitionEntity definition = draft();
+        WorkflowNodeDefinitionEntity node = WorkflowNodeDefinitionEntity.create(
+            definition.getId(),
+            "agent_1",
+            "agent",
+            "风险识别",
+            java.math.BigDecimal.ZERO,
+            java.math.BigDecimal.ZERO,
+            List.of("company_name"),
+            List.of("risk_report"),
+            Map.of("brickType", "agent"),
+            0,
+            NOW
+        );
+        WorkflowVariableDefinitionEntity variable = WorkflowVariableDefinitionEntity.create(
+            definition.getId(),
+            "risk_report",
+            "object",
+            "agent_1",
+            "智能体输出",
+            "{}",
+            false,
+            true,
+            0,
+            NOW
+        );
+        when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("租户", "tenant", NOW)));
+        when(workflowDefinitionRepository.findByIdAndTenantId(definition.getId(), TENANT_ID)).thenReturn(Optional.of(definition));
+        when(workflowAccessGrantRepository.findByWorkflowId(definition.getId())).thenReturn(List.of());
+        when(workflowNodeDefinitionRepository.findByWorkflowIdOrderBySortOrderAsc(definition.getId())).thenReturn(List.of(node));
+        when(workflowEdgeDefinitionRepository.findByWorkflowIdOrderBySortOrderAsc(definition.getId())).thenReturn(List.of());
+        when(workflowVariableDefinitionRepository.findByWorkflowIdOrderBySortOrderAsc(definition.getId())).thenReturn(List.of(variable));
+        when(userAccountRepository.findAllById(any())).thenReturn(List.of());
+
+        WorkflowDraftApi.WorkflowExportDocument document = service().exportDraft(TENANT_ID, USER_ID, definition.getId());
+
+        assertThat(document.schemaVersion()).isEqualTo("agentum.workflow.export.v1");
+        assertThat(document.sourceWorkflowId()).isEqualTo(definition.getId());
+        assertThat(document.name()).isEqualTo("需求评审");
+        assertThat(document.nodes()).hasSize(1);
+        assertThat(document.nodes().get(0).outputVariables()).containsExactly("risk_report");
+        assertThat(document.variables()).extracting(WorkflowDraftApi.WorkflowVariableDraft::name).containsExactly("risk_report");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void shouldImportWorkflowJsonAsNewDraftOwnedByOperator() {
+        when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("租户", "tenant", NOW)));
+        when(workflowAccessGrantRepository.findByWorkflowId(any())).thenReturn(List.of());
+        when(workflowNodeDefinitionRepository.findByWorkflowIdOrderBySortOrderAsc(any())).thenReturn(List.of());
+        when(workflowEdgeDefinitionRepository.findByWorkflowIdOrderBySortOrderAsc(any())).thenReturn(List.of());
+        when(workflowVariableDefinitionRepository.findByWorkflowIdOrderBySortOrderAsc(any())).thenReturn(List.of());
+        when(userAccountRepository.findAllById(any())).thenReturn(List.of());
+        WorkflowDraftApi.WorkflowExportDocument document = new WorkflowDraftApi.WorkflowExportDocument(
+            "agentum.workflow.export.v1",
+            NOW,
+            "共享流程",
+            "来自其他设计者的流程",
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            2,
+            List.of(node("trigger_manual", "trigger", List.of("starter")), node("input_1", "user_input", List.of("company_name"))),
+            List.of(edge("e_trigger_input", "trigger_manual", "input_1")),
+            List.of(variable("starter", "string", "trigger_manual"), variable("company_name", "string", "input_1"))
+        );
+
+        WorkflowDraftApi.WorkflowDraftDetail detail = service().importDraft(
+            TENANT_ID,
+            USER_ID,
+            new WorkflowDraftApi.ImportWorkflowDraftRequest(document, null, null)
+        );
+
+        ArgumentCaptor<WorkflowDefinitionEntity> definitionCaptor = ArgumentCaptor.forClass(WorkflowDefinitionEntity.class);
+        verify(workflowDefinitionRepository, org.mockito.Mockito.atLeastOnce()).save(definitionCaptor.capture());
+        WorkflowDefinitionEntity imported = definitionCaptor.getAllValues().get(0);
+        assertThat(imported.getName()).isEqualTo("共享流程（导入）");
+        assertThat(imported.getCreatedBy()).isEqualTo(USER_ID);
+        assertThat(detail.draft().ownerId()).isEqualTo(USER_ID);
+        assertThat(detail.draft().latestVersionNumber()).isZero();
+
+        ArgumentCaptor<Iterable<WorkflowNodeDefinitionEntity>> nodeCaptor = ArgumentCaptor.forClass(Iterable.class);
+        verify(workflowNodeDefinitionRepository).saveAll(nodeCaptor.capture());
+        List<WorkflowNodeDefinitionEntity> savedNodes = new ArrayList<>();
+        nodeCaptor.getValue().forEach(savedNodes::add);
+        assertThat(savedNodes).extracting(WorkflowNodeDefinitionEntity::getNodeKey).containsExactly("trigger_manual", "input_1");
+    }
+
+    @Test
     void shouldReplaceWorkflowAccessGrantsAfterFlushWhenUpdatingAccess() {
         WorkflowDefinitionEntity definition = draft();
         WorkflowAccessGrantEntity existingReadGrant = WorkflowAccessGrantEntity.create(

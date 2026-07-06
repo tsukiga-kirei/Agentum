@@ -112,6 +112,25 @@ export type WorkflowPublishResult = {
   publishedAt: string;
 };
 
+export type WorkflowExportDocument = {
+  schemaVersion: "agentum.workflow.export.v1";
+  exportedAt: string;
+  name: string;
+  description: string;
+  sourceWorkflowId: string | null;
+  sourceTenantId: string | null;
+  latestVersionNumber: number;
+  nodes: WorkflowNodeDraft[];
+  edges: WorkflowEdgeDraft[];
+  variables: WorkflowVariableDraft[];
+};
+
+export type ImportWorkflowDraftRequest = {
+  document: WorkflowExportDocument;
+  name?: string;
+  description?: string;
+};
+
 export type FileDownloadResponse = {
   blob: Blob;
   fileName: string;
