@@ -94,7 +94,7 @@ import {
   normalizeInputField,
   normalizeInputFieldOptions,
   readInputFields,
-  shouldSyncInputFieldOptionValue,
+  syncInputFieldOptionValuesFromLabels,
   validateInputFieldDraft,
   WORKFLOW_INPUT_FIELD_TYPE_OPTIONS,
   type WorkflowInputFieldType,
@@ -3936,45 +3936,25 @@ function InputFieldOptionsEditor({
   options: Array<{ label: string; value: string }>;
   onChange: (options: Array<{ label: string; value: string }>) => void;
 }) {
-  function updateOption(index: number, patch: Partial<{ label: string; value: string }>) {
-    onChange(options.map((option, optionIndex) => {
-      if (optionIndex !== index) {
-        return option;
-      }
-      if (patch.label !== undefined && patch.value === undefined && shouldSyncInputFieldOptionValue(option, index)) {
-        return { ...option, label: patch.label, value: patch.label };
-      }
-      return { ...option, ...patch };
-    }));
+  function updateOptionLabel(index: number, label: string) {
+    onChange(options.map((option, optionIndex) => (
+      optionIndex === index ? { ...option, label } : option
+    )));
   }
 
   return (
     <div className="sys-field">
       <span className="sys-field-label sys-field-label--required">下拉选项</span>
       <div className="workflow-input-field-options">
-        <div className="workflow-input-field-option-row workflow-input-field-option-row--header" aria-hidden="true">
-          <span>业务人员看到</span>
-          <span>提交后写入变量</span>
-          <span />
-        </div>
         {options.map((option, index) => (
-          <div key={`${index}-${option.value}`} className="workflow-input-field-option-row">
+          <div key={index} className="workflow-input-field-option-row">
             <div className="sys-field-input-wrap">
               <Tag size={16} className="sys-field-prefix" aria-hidden="true" />
               <input
                 className="sys-field-input"
                 value={option.label}
                 placeholder="显示文本，例如 2026"
-                onChange={(event) => updateOption(index, { label: event.target.value })}
-              />
-            </div>
-            <div className="sys-field-input-wrap">
-              <Hash size={16} className="sys-field-prefix" aria-hidden="true" />
-              <input
-                className="sys-field-input"
-                value={option.value}
-                placeholder="提交值，例如 2026"
-                onChange={(event) => updateOption(index, { value: event.target.value })}
+                onChange={(event) => updateOptionLabel(index, event.target.value)}
               />
             </div>
             <IconButton
@@ -3994,7 +3974,7 @@ function InputFieldOptionsEditor({
           新增选项
         </button>
       </div>
-      <p className="sys-field-hint">占位提示只用于未选择时展示；业务人员提交后，输出变量写入右侧「提交值」。</p>
+      <p className="sys-field-hint">仅配置业务人员看到的选项文案；选中后写入上方「输出内容标识」对应变量，内部提交值由系统自动维护。</p>
     </div>
   );
 }
@@ -4034,10 +4014,11 @@ function InputFieldModal({
   }
 
   function commitSelectOptions(options: Array<{ label: string; value: string }>) {
-    const normalizedOptions = normalizeInputFieldOptions(options, draft.placeholder);
+    const syncedOptions = syncInputFieldOptionValuesFromLabels(options);
+    const normalizedOptions = normalizeInputFieldOptions(syncedOptions, draft.placeholder);
     setDraft((current) => ({
       ...current,
-      options,
+      options: syncedOptions,
       defaultValue: current.defaultValue && normalizedOptions.some((option) => option.value === current.defaultValue)
         ? current.defaultValue
         : "",
@@ -4045,7 +4026,10 @@ function InputFieldModal({
   }
 
   function handleSave() {
-    const normalizedOptions = normalizeInputFieldOptions(draft.options, draft.placeholder);
+    const syncedOptions = isSelectField
+      ? syncInputFieldOptionValuesFromLabels(draft.options ?? [])
+      : undefined;
+    const normalizedOptions = normalizeInputFieldOptions(syncedOptions, draft.placeholder);
     const nextField = normalizeInputField({
       ...draft,
       variable: normalizeVariableName(draft.variable) || "input_value",

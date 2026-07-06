@@ -105,12 +105,14 @@ export function createInputFieldOption(index: number): { label: string; value: s
   return { label, value: label };
 }
 
-export function shouldSyncInputFieldOptionValue(option: { label: string; value: string }, index: number): boolean {
-  const defaultLabel = `选项 ${index + 1}`;
-  return option.value === option.label
-    || option.value === defaultLabel
-    || option.value === `选项${index + 1}`
-    || /^option_\d+$/.test(option.value);
+/** 将选项展示文案同步为提交值；仅在保存/提交选项列表时调用，避免输入过程中联动导致失焦。 */
+export function syncInputFieldOptionValuesFromLabels(
+  options: Array<{ label: string; value: string }>,
+): Array<{ label: string; value: string }> {
+  return options.map((option) => {
+    const label = option.label.trim();
+    return { ...option, value: label || option.value };
+  });
 }
 
 function isPlaceholderLikeOption(label: string, value: string, placeholder: string): boolean {
