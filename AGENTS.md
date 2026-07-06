@@ -10,6 +10,7 @@
 - `docs/development-standards.md`
 - `docs/system-overview.md`
 - `docs/architecture.md`
+- `docs/project-structure.md`
 - `docs/progress/README.md`
 
 涉及前端、页面、组件、交互或样式时，还必须阅读：
@@ -80,7 +81,7 @@
 - 修改范围尽量小，避免顺手重构无关代码。
 - 不覆盖或回滚他人未说明的改动。
 - 当前产品仍处于未上线阶段，开发期不为了早期本地草稿、演示数据或旧字段长期保留兼容逻辑；当旧设计与最优产品心智冲突时，应优先删除旧路径、修正种子数据和测试，以清晰、可维护的新模型为准。
-- 新增文档时同步维护 `README.md` 中的入口索引；阶段进度类文档同步维护 `docs/progress/README.md`。
+- 新增文档时同步维护 `README.md` 中的入口索引；阶段进度类文档同步维护 `docs/progress/README.md`；目录结构变化时同步维护 `docs/project-structure.md`。
 
 ## 5. 验证要求
 

@@ -109,17 +109,22 @@ apps/api/src/main/java/com/agentum/
   organization/
   permission/
   workflow/
+  workbench/
   agent/
   asset/
   mcp/
-  modelprovider/
   delivery/
   audit/
+  schedule/
+  notification/
+  runtime/
   system/
   shared/
 ```
 
-当前第一阶段不再把知识库作为核心模块推进。如后续重新引入 RAG，应在 `asset` 或独立 `knowledge` 模块下按版本、权限和审计重新设计。
+阶段二「知识资产」落地时将按需新增独立业务包（如 `knowledge`），并同步契约与迁移；当前不在仓库中提前创建空包。
+
+当前第一阶段不再把知识库作为核心模块推进。如后续重新引入 RAG / 知识资产，应在 `asset` 或新建的 `knowledge` 包下按版本、权限和审计重新设计。
 
 `capabilities/` 存放产品运行时可版本化的能力源码和自研连接器，不等同于数据库里的资产记录：
 

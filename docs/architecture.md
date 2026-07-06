@@ -32,6 +32,47 @@ Agentum 的架构目标是支撑长期演进的企业级智能体工作流，而
 
 ## 3. 总体架构
 
+```mermaid
+flowchart TB
+  subgraph web [Web 前端]
+    UI[React 工作台]
+  end
+
+  subgraph api [API 服务]
+    direction TB
+    A1[认证与会话]
+    A2[租户 / 组织 / 权限]
+    A3[工作流定义与发布]
+    A4[工作流运行状态机]
+    A5[智能体运行时]
+    A6[能力资产管理]
+    A7[MCP / 模型 / 交付网关]
+    A8[审计日志]
+    A9[系统管理]
+  end
+
+  subgraph data [数据与消息]
+    PG[(PostgreSQL)]
+    RD[(Redis)]
+    MQ[RabbitMQ]
+    FS[MinIO]
+  end
+
+  subgraph worker [Worker]
+    W1[文档解析 / 生成]
+    W2[长耗时交付]
+  end
+
+  UI -->|REST / OpenAPI| api
+  api --> PG
+  api --> RD
+  api --> MQ
+  api --> FS
+  api --> worker
+```
+
+ASCII 版（便于纯文本阅读）：
+
 ```text
 Web 前端
   |
@@ -64,6 +105,8 @@ Worker
   |-- 外部系统推送
   |-- 长耗时交付任务
 ```
+
+下一阶段将在 `asset` 包边界内扩展**知识资产**：文档登记、分块、版本、检索与智能体引用留痕，与现有能力资产共用租户隔离和分配模型。详见 [当前进度](./progress/README.md#31-下一阶段知识资产)。
 
 第一阶段保持单体 API 服务，但内部包边界必须清楚。Worker 可以先占位，等文档生成、外部交付和长耗时模型调用变复杂后再拆。
 
@@ -173,14 +216,18 @@ com.agentum
   organization
   permission
   workflow
+  workbench
   agent
   asset
   mcp
-  modelprovider
   delivery
   audit
+  schedule
+  notification
+  runtime
   system
   shared
+  config
 ```
 
 ### 5.1 认证与租户上下文

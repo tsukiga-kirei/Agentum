@@ -14,7 +14,9 @@ Agentum 不是把业务流程拆成大量低代码节点，也不是把一件复
 
 相比直接使用大模型自己的 subagent / multi-agent 能力，Agentum 更强调企业可维护性。每个智能体不是一次对话里的临时角色，而是可登记、可发布、可分配、可审计的资产。这样即使模型能力没有强到可以独立规划全部任务，也能通过“资料核验智能体、风险分析智能体、报告撰写智能体、结论汇总智能体”等明确分工协作，把复杂任务拆给多个能力较弱但职责清晰的模型/智能体完成。
 
-当前项目已完成**阶段一：框架与基础治理**。后续重点转向稳定化、平台增强和客户侧个性化集成。
+当前项目已完成**阶段一：框架与基础治理**，并持续在运行态、交付能力和工作台体验上迭代。**下一阶段重点转向「知识资产」**：把企业文档纳入可治理、可检索、可被智能体引用的资产体系，与现有能力资产和流程设计打通。
+
+阶段进度与验收记录见 [当前进度](./docs/progress/README.md)。
 
 ## 产品亮点
 
@@ -48,18 +50,96 @@ Agentum 不是把业务流程拆成大量低代码节点，也不是把一件复
 
 这里的重点不是把每个查询、判断、拼接都变成流程节点，而是维护好每类智能体的职责、可用工具和输出约束。
 
-## 代码中的实现对应
+## 系统架构概览
 
-- `apps/api/src/main/java/com/agentum/agent/application/AgentRuntimeService.java`：智能体运行核心，负责装配模型、提示词、Skill、MCP 工具声明，并通过 ReAct / Function Calling 让模型自主选择工具和提交最终答案。
-- `apps/api/src/main/java/com/agentum/workbench/application/DefaultWorkflowRuntimeExecutor.java`：运行态节点分发入口，把 `agent`、`parallel_group`、`delivery` 等节点交给对应服务执行。
-- `apps/api/src/main/java/com/agentum/workflow/application/WorkflowDesignerCatalogService.java`：设计态积木目录，当前收敛为输入节点、单智能体节点、智能体集群节点和交付节点。
-- `apps/api/src/main/java/com/agentum/asset/application/AssetManagementService.java`：能力资产治理，区分系统能力、用户自建智能体/提示词模板、读取范围和编辑范围。
-- `apps/api/src/main/java/com/agentum/system/application/SystemManagementService.java`：系统管理能力，负责模型供应商、全局能力、租户能力池和租户模型分配。
-- `apps/api/src/main/java/com/agentum/organization/application/TenantOrganizationService.java`：租户内成员、部门、角色、页签和能力分配治理。
-- `apps/web/src/surfaces/designer/WorkflowEditorPage.tsx`：前端阶段积木编辑器，设计者在这里配置输入、智能体、智能体集群和交付。
-- `apps/web/src/surfaces/assets/AssetsPage.tsx`：能力资产页面，展示“对我开放”和“我的能力”，支撑智能体模板和提示词模板的草稿发布模型。
-- `apps/web/src/surfaces/workbench/WorkbenchShell.tsx`：业务工作台入口，承载普通用户的待办、流程发起、运行详情和交付查看。
-- `apps/web/src/surfaces/audit/AuditPage.tsx`：运行审计入口，用于查看运行、工具调用、变量快照和交付证据。
+```mermaid
+flowchart TB
+  subgraph client [前端工作台]
+    Web[React / Vite]
+  end
+
+  subgraph api [API 服务]
+    Auth[认证与会话]
+    Org[租户与组织权限]
+    WF[工作流设计 / 发布]
+    RT[运行态与智能体运行时]
+    Asset[能力资产治理]
+    GW[MCP / 模型 / 交付网关]
+    Audit[审计与留痕]
+  end
+
+  subgraph infra [基础设施]
+  PG[(PostgreSQL)]
+  Redis[(Redis)]
+  MQ[RabbitMQ]
+  OSS[MinIO]
+  end
+
+  Web -->|REST / OpenAPI| api
+  api --> PG
+  api --> Redis
+  api --> MQ
+  api --> OSS
+  RT --> GW
+```
+
+运行态一次智能体调用的典型链路：
+
+```mermaid
+sequenceDiagram
+  participant U as 业务用户
+  participant W as 工作台
+  participant API as API 服务
+  participant RT as 智能体运行时
+  participant M as 模型供应商
+  participant MCP as MCP 服务
+  participant S as Skill
+
+  U->>W: 提交输入 / 处理待办
+  W->>API: 推进运行实例
+  API->>RT: 执行单智能体 / 集群节点
+  RT->>M: Chat Completions
+  M-->>RT: 工具调用意图
+  RT->>S: 读取 Skill 文本
+  RT->>MCP: tools/call
+  MCP-->>RT: 工具结果
+  RT->>M: 继续推理
+  M-->>RT: 最终答案
+  RT-->>API: 变量快照 / 调用日志
+  API-->>W: SSE 进度与结果
+```
+
+更完整的模块边界、数据模型和部署演进见 [架构文档](./docs/architecture.md)。
+
+## 产品界面预览
+
+本地启动前后端后（默认 `http://localhost:5173`），可对照以下界面理解三类入口与核心模块：
+
+| 界面 | 说明 |
+| --- | --- |
+| 登录与租户选择 | 业务用户 / 租户管理需选租户，系统管理不绑定租户 |
+| 业务工作台 | 待办、流程发起、运行详情、定时任务与交付物 |
+| 流程设计 | 阶段积木编排、智能体配置、发布校验 |
+| 能力资产 | 智能体模板、Skill、MCP、提示词与交付能力 |
+| 运行审计 | 运行记录、模型 / MCP 调用、变量快照与交付证据 |
+| 租户管理 | 成员与部门、角色维护、页签与能力分配 |
+| 系统管理 | 租户状态、模型供应商、全局能力与租户能力池 |
+
+![登录与租户选择](./docs/images/login.png)
+
+![业务工作台](./docs/images/workbench.png)
+
+![流程设计](./docs/images/workflow-designer.png)
+
+![能力资产](./docs/images/assets.png)
+
+![运行审计](./docs/images/audit.png)
+
+![租户管理](./docs/images/tenant-management.png)
+
+![系统管理](./docs/images/system-management.png)
+
+截图由本地开发环境自动采集，仅作产品形态参考；具体菜单与数据以当前版本为准。
 
 ## 已完成的阶段一能力
 
@@ -73,6 +153,54 @@ Agentum 不是把业务流程拆成大量低代码节点，也不是把一件复
 - 智能体运行：模型调用、Skill 读取、MCP 工具调用、推理内容、Token 用量和最终答案留痕。
 - 基础交付：邮箱、Webhook、Word 文档和 Excel 工作簿生成下载。
 - 审计证据链：运行事件、变量快照、模型调用、MCP 调用和交付记录。
+
+### 近期补充（2026-07）
+
+- 智能体集群意图分派、多交付项与 Excel / Word 在线预览。
+- 流程草稿导入导出、积木插入 / 复制与配置校验增强。
+- 定时任务、通知中心、个人资料与密码修改。
+- 工具调用执行历史展示优化与角色切换顶栏收敛。
+
+## 下一阶段：知识资产
+
+阶段一已把智能体模板、Skill、MCP、提示词和交付能力纳入「能力资产」治理。下一阶段将在同一权限与版本模型下扩展**知识资产**：
+
+- 支持企业文档上传、解析、分块与版本管理。
+- 与租户能力池、资源范围和能力分配打通，控制谁可检索、引用哪些知识。
+- 在智能体节点中按流程上下文检索并引用文档片段，写入审计证据链。
+- 逐步把现有 `docs/` 产品文档作为首批知识资产样例引入，验证检索质量与引用边界。
+
+详细计划与任务拆分见 [当前进度](./docs/progress/README.md#31-下一阶段知识资产)。
+
+## 参与贡献与提交 PR
+
+欢迎通过 Pull Request 参与开发。提交前请先阅读 [开发规范](./docs/development-standards.md) 与 [AGENTS.md](./AGENTS.md)。
+
+推荐流程：
+
+1. 从 `main` 拉取最新代码，创建功能分支，例如 `feat/knowledge-asset-upload`。
+2. 按任务范围修改代码或文档，保持改动聚焦；注释、错误提示与日志默认使用中文。
+3. 根据影响范围执行验证：
+   - 前端：`pnpm lint:web`、`pnpm build:web`
+   - 后端：`./gradlew test`
+   - 文档：`git diff --check`
+4. 推送分支到远端，在 GitHub 创建 Pull Request。若已安装 [GitHub CLI](https://cli.github.com/)，可在仓库根目录执行：
+
+```bash
+git push -u origin HEAD
+gh pr create --title "简要说明本次改动" --body "$(cat <<'EOF'
+## Summary
+- 改动要点 1
+- 改动要点 2
+
+## Test plan
+- [ ] 已运行的验证命令或手工检查项
+
+EOF
+)"
+```
+
+PR 描述请说明业务背景、验证方式和剩余风险；涉及权限、租户上下文或运行态语义变更时，同步更新 `docs/progress/README.md` 或相关长期文档。
 
 ## 技术栈
 
@@ -270,10 +398,13 @@ deploy/                   部署与本地配置
 docs/                     产品、架构和进度文档
 ```
 
+根目录每个配置文件、子目录职责与完整目录树见 **[项目目录说明](./docs/project-structure.md)**。
+
 ## 文档
 
 | 文档 | 说明 |
 | --- | --- |
+| [项目目录说明](./docs/project-structure.md) | 根目录文件、子目录职责与完整目录树 |
 | [系统介绍](./docs/system-overview.md) | 产品定位、角色视角、工作流与能力资产 |
 | [架构文档](./docs/architecture.md) | 模块边界、数据模型、部署演进 |
 | [开发规范](./docs/development-standards.md) | 命名、接口、测试与 AI 协作约定 |
