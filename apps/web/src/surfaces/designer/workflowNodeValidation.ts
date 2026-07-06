@@ -602,10 +602,11 @@ function validateDeliveryNode(
     }
     const executionPolicy = readString(config.deliveryExecutionPolicy, "all");
     items.forEach((item, index) => {
-      const itemName = readString(item.name, `交付项 ${index + 1}`);
+      const rawItemName = typeof item.name === "string" ? item.name.trim() : "";
+      const itemName = rawItemName || `交付项 ${index + 1}`;
       const itemConfig = readMap(item.config);
       const itemIsDirect = inferDeliveryMode(itemConfig, deliveryMode) === "direct" || readString(itemConfig.deliveryType) === "direct";
-      if (!itemName) {
+      if (!rawItemName) {
         issues.push(issue("WORKFLOW_NODE_DELIVERY_ITEM_NAME_REQUIRED", `第 ${index + 1} 个交付项必须填写名称`));
       }
       if (itemIsDirect) {

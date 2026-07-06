@@ -1830,6 +1830,31 @@ textarea:focus-visible {
   opacity: 0.5;
 }
 
+/* 流程设计等紧凑顶栏：禁用悬停内联展开，避免挤压保存按钮导致 hover 抖动；完整角色名见 title 与下拉菜单 */
+.role-switcher--compact {
+  flex-shrink: 0;
+}
+
+.role-switcher--compact .role-switcher-pill:hover,
+.role-switcher--compact .role-switcher-pill:focus-visible,
+.role-switcher--compact.role-switcher--open .role-switcher-pill {
+  padding-right: 4px;
+}
+
+.role-switcher--compact .role-switcher-pill:hover .role-switcher-pill-text,
+.role-switcher--compact .role-switcher-pill:focus-visible .role-switcher-pill-text,
+.role-switcher--compact.role-switcher--open .role-switcher-pill-text {
+  max-width: 0;
+  opacity: 0;
+  margin: 0;
+}
+
+.role-switcher--compact .role-switcher-pill-chevron {
+  max-width: 14px;
+  opacity: 0.45;
+  margin-left: 1px;
+}
+
 .role-switcher-menu {
   position: absolute;
   right: 0;
@@ -1842,6 +1867,10 @@ textarea:focus-visible {
   border-radius: var(--radius-lg);
   background: var(--color-bg-card);
   box-shadow: var(--shadow-md);
+}
+
+.role-switcher-menu--elevated {
+  z-index: 1210;
 }
 
 .role-switcher-menu-title {
@@ -8997,6 +9026,7 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
   display: grid;
   gap: 8px;
   margin-top: 8px;
+  margin-bottom: 12px;
 }
 
 .workflow-variable-reference-group {
@@ -9363,7 +9393,7 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
 
 .workflow-agent-drawer .workflow-variable-reference-section {
   margin-top: 0;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 
 .workflow-agent-drawer .sys-drawer-footer {
@@ -9381,6 +9411,10 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
 .workflow-editor-toolbar {
   border-color: color-mix(in srgb, var(--color-border-light) 62%, transparent) !important;
   background: var(--color-bg-page);
+}
+
+.workflow-editor-toolbar .surface-page-chrome-actions {
+  flex-shrink: 0;
 }
 
 .workflow-step-sidebar {

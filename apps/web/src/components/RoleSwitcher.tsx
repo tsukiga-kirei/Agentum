@@ -20,7 +20,7 @@ function getRoleShortLabel(role: RoleInfo | null | undefined): string {
   return ROLE_LABELS[role.role]?.label ?? role.label;
 }
 
-export function RoleSwitcher() {
+export function RoleSwitcher({ compact = false }: { compact?: boolean }) {
   const roles = useAuthStore((s) => s.roles);
   const activeRole = useAuthStore((s) => s.activeRole);
   const switchRole = useAuthStore((s) => s.switchRole);
@@ -63,13 +63,14 @@ export function RoleSwitcher() {
   }
 
   return (
-    <div className={`relative ${open ? "role-switcher--open" : ""}`}>
+    <div className={`relative ${open ? "role-switcher--open" : ""} ${compact ? "role-switcher--compact" : ""}`}>
       <button
         type="button"
         onClick={() => setOpen(!open)}
         disabled={switching}
         className="role-switcher-pill role-switcher-pill--button"
         aria-label={`切换角色，当前：${fullLabel}`}
+        title={compact ? fullLabel : undefined}
         aria-expanded={open}
       >
         <span className="role-switcher-pill-icon">
@@ -84,9 +85,16 @@ export function RoleSwitcher() {
 
       {open ? (
         <>
-          {/* 点击外部关闭 */}
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="role-switcher-menu" role="menu" aria-label="切换角色">
+          {/* 点击外部关闭；紧凑顶栏需抬高层级，避免被流程设计抽屉遮挡 */}
+          <div
+            className={`fixed inset-0 ${compact ? "z-[1200]" : "z-40"}`}
+            onClick={() => setOpen(false)}
+          />
+          <div
+            className={`role-switcher-menu ${compact ? "role-switcher-menu--elevated" : ""}`}
+            role="menu"
+            aria-label="切换角色"
+          >
             <p className="role-switcher-menu-title">切换角色</p>
             <div className="role-switcher-menu-list">
               {roles.map((role) => {

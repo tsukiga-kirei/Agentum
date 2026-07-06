@@ -1032,7 +1032,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
           )}
           {saving ? "保存中" : saveSucceeded ? "已保存" : "保存流程"}
         </button>
-        <WorkbenchGlobalActions />
+        <WorkbenchGlobalActions compact />
       </div>
 
       <div className="grid min-h-0 flex-1 grid-cols-[280px_minmax(0,1fr)]">
@@ -1779,7 +1779,8 @@ function AgentClusterBrickConfig({
   const intentSelectionMode = readIntentSelectionMode(config.intentSelectionMode);
   const executionMode = readClusterExecutionMode(config.executionMode);
   const clusterOutputVariable = readClusterOutputVariable(config.clusterOutputVariable);
-  const mergeRule = readString(config.mergeRule, buildDefaultClusterMergeRule(agents));
+  const defaultMergeRule = buildDefaultClusterMergeRule(agents);
+  const mergeRule = readEditableText(config.mergeRule, defaultMergeRule);
   const agentAssets = filterCapabilities(capabilityState.capabilities, "agent_template");
   const promptAssets = filterCapabilities(capabilityState.capabilities, "prompt_template");
   const mcpAssets = filterCapabilities(capabilityState.capabilities, "mcp");
@@ -1801,7 +1802,7 @@ function AgentClusterBrickConfig({
       intentRoutes: readIntentRoutes(config.intentRoutes, agents),
       intentInputTemplate: readString(config.intentInputTemplate, ""),
       clusterOutputVariable,
-      mergeRule,
+      mergeRule: typeof config.mergeRule === "string" ? config.mergeRule : defaultMergeRule,
       intentModelProviderId: readString(config.intentModelProviderId, intentModel?.providerId ?? ""),
       intentModelName: readString(config.intentModelName, intentModel?.modelName ?? ""),
       intentEnableThinking: readBoolean(config.intentEnableThinking, false),
@@ -1883,6 +1884,7 @@ function AgentClusterBrickConfig({
           agents={agents}
           outputVariable={clusterOutputVariable}
           mergeRule={mergeRule}
+          defaultMergeRule={defaultMergeRule}
           onChange={(patch) => {
             const nextOutputVariable = readClusterOutputVariable(patch.clusterOutputVariable ?? clusterOutputVariable);
             onUpdateConfig(patch);
@@ -2049,12 +2051,14 @@ function ClusterOutputConfig({
   agents,
   outputVariable,
   mergeRule,
+  defaultMergeRule,
   onChange,
 }: {
   executionMode: ClusterExecutionMode;
   agents: ClusterAgentConfig[];
   outputVariable: string;
   mergeRule: string;
+  defaultMergeRule: string;
   onChange: (patch: Record<string, unknown>) => void;
 }) {
   const childVariables = agents
@@ -2097,7 +2101,8 @@ function ClusterOutputConfig({
           label="输出内容模板"
           value={mergeRule}
           availableVariables={childVariables}
-          placeholder={buildDefaultClusterMergeRule(agents)}
+          defaultOnBlur={defaultMergeRule}
+          placeholder={defaultMergeRule}
           onChange={(value) => onChange({ mergeRule: value })}
         />
       </div>
@@ -2734,7 +2739,7 @@ function DeliveryBrickConfig({
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-semibold text-[var(--color-text-tertiary)]">#{index + 1}</span>
-                      <h4 className="text-sm font-semibold text-[var(--color-text-primary)]">{item.name}</h4>
+                      <h4 className="text-sm font-semibold text-[var(--color-text-primary)]">{formatDeliveryItemDisplayName(item.name, index + 1)}</h4>
                       {!item.enabled ? <TinyBadge>停用</TinyBadge> : null}
                     </div>
                     <p className="mt-1 text-xs text-[var(--color-text-secondary)]">{renderDeliveryItemSummary(item.config)}</p>
@@ -2786,6 +2791,7 @@ function DeliveryBrickConfig({
           rootClassName={drawerRootClassName}
           title="配置交付项"
           itemName={editingItem.name}
+          itemNameDefault={formatDeliveryItemDisplayName("", deliveryItems.findIndex((item) => item.id === editingItem.id) + 1)}
           enabled={editingItem.enabled}
           triggerRule={editingItem.triggerRule}
           showTrigger={deliveryExecutionPolicy === "conditional"}
@@ -2820,6 +2826,7 @@ function DeliveryCapabilityConfigDrawer({
   rootClassName,
   title,
   itemName,
+  itemNameDefault,
   enabled,
   triggerRule,
   showTrigger = false,
@@ -2845,6 +2852,7 @@ function DeliveryCapabilityConfigDrawer({
   rootClassName: string;
   title: string;
   itemName?: string;
+  itemNameDefault?: string;
   enabled?: boolean;
   triggerRule?: DeliveryTriggerRuleDraft;
   showTrigger?: boolean;
@@ -2877,8 +2885,8 @@ function DeliveryCapabilityConfigDrawer({
     || readString(config.deliveryType, "") === "excel_workbook"
     || readString(config.documentKind, "") === "excel";
   const documentStyle = readDocumentDeliveryStyle(config.documentStyle, selectedCapability?.config);
-  const rawFileNameTemplate = readString(config.fileNameTemplate, isExcelDelivery ? "交付表格-{{runNumber}}.xlsx" : "交付文档-{{runNumber}}.docx");
-  const fileNameTemplate = isExcelDelivery ? normalizeExcelFileNameTemplate(rawFileNameTemplate) : normalizeWordFileNameTemplate(rawFileNameTemplate);
+  const defaultFileNameTemplate = isExcelDelivery ? "交付表格-{{runNumber}}.xlsx" : "交付文档-{{runNumber}}.docx";
+  const rawFileNameTemplate = readEditableText(config.fileNameTemplate, defaultFileNameTemplate);
   const excelSheets = readExcelSheets(config.excelSheets, defaultExcelSheetTemplate);
   const effectiveTriggerRule = triggerRule ?? defaultDeliveryTriggerRule();
   const selectedClusterAgentValue = effectiveTriggerRule.clusterNodeId && effectiveTriggerRule.agentId
@@ -2934,11 +2942,17 @@ function DeliveryCapabilityConfigDrawer({
     });
   }
 
-  useEffect(() => {
-    if ((isWordDelivery || isExcelDelivery) && rawFileNameTemplate !== fileNameTemplate) {
-      onConfigChange({ fileNameTemplate });
+  function handleFileNameTemplateBlur(value: string) {
+    if (!value.trim()) {
+      return;
     }
-  }, [isWordDelivery, isExcelDelivery, rawFileNameTemplate, fileNameTemplate]);
+    const normalized = isExcelDelivery
+      ? normalizeExcelFileNameTemplate(value)
+      : normalizeWordFileNameTemplate(value);
+    if (normalized !== value) {
+      onConfigChange({ fileNameTemplate: normalized });
+    }
+  }
 
   return (
     <Drawer
@@ -2961,8 +2975,9 @@ function DeliveryCapabilityConfigDrawer({
           <TextInputField
             label="交付项名称"
             icon={Tag}
-            value={itemName ?? ""}
-            placeholder="例如：合同审查报告"
+            value={readEditableText(itemName)}
+            placeholder={itemNameDefault}
+            defaultOnBlur={itemNameDefault}
             onChange={onItemNameChange}
           />
         ) : null}
@@ -3100,9 +3115,10 @@ function DeliveryCapabilityConfigDrawer({
             </div>
             <PromptEditor
               label="交付内容模板"
-              value={readString(config.deliveryContent, defaultDirectTemplate)}
+              value={readEditableText(config.deliveryContent, defaultDirectTemplate)}
               availableVariables={workflowVariables}
               triggerVariables={triggerContextVariables}
+              defaultOnBlur={defaultDirectTemplate}
               onChange={(value) => onConfigChange({ deliveryContent: value })}
               placeholder="支持 Markdown，可用 {{输出内容标识}} 引用之前步骤内容"
             />
@@ -3132,10 +3148,12 @@ function DeliveryCapabilityConfigDrawer({
                   <VariableTemplateInputField
                     label="文件名模板"
                     icon={FileText}
-                    value={fileNameTemplate}
+                    value={rawFileNameTemplate}
                     variableItems={WORD_FILE_NAME_VARIABLES}
                     placeholder="交付文档-{{runNumber}}-{{dateCompact}}.docx"
+                    defaultOnBlur={defaultFileNameTemplate}
                     onChange={(value) => onConfigChange({ fileNameTemplate: value })}
+                    onBlur={handleFileNameTemplateBlur}
                   />
                 </div>
                 <DocumentDeliveryStyleSections
@@ -3145,9 +3163,10 @@ function DeliveryCapabilityConfigDrawer({
                 />
                 <PromptEditor
                   label="交付正文模板"
-                  value={readString(config.markdownContent, defaultMarkdownTemplate)}
+                  value={readEditableText(config.markdownContent, defaultMarkdownTemplate)}
                   availableVariables={workflowVariables}
                   triggerVariables={triggerContextVariables}
+                  defaultOnBlur={defaultMarkdownTemplate}
                   onChange={(value) => onConfigChange({ markdownContent: value })}
                   placeholder="最终转换为 Word 的 Markdown，可用 {{输出内容标识}} 引用之前步骤内容"
                 />
@@ -3162,16 +3181,19 @@ function DeliveryCapabilityConfigDrawer({
                   <VariableTemplateInputField
                     label="文件名模板"
                     icon={FileText}
-                    value={fileNameTemplate}
+                    value={rawFileNameTemplate}
                     variableItems={EXCEL_FILE_NAME_VARIABLES}
                     placeholder="交付表格-{{runNumber}}-{{dateCompact}}.xlsx"
+                    defaultOnBlur={defaultFileNameTemplate}
                     onChange={(value) => onConfigChange({ fileNameTemplate: value })}
+                    onBlur={handleFileNameTemplateBlur}
                   />
                 </div>
                 <ExcelDeliverySheetSections
                   sheets={excelSheets}
                   workflowVariables={workflowVariables}
                   triggerVariables={triggerContextVariables}
+                  defaultBodyTemplate={defaultExcelSheetTemplate}
                   onChange={(nextSheets) => onConfigChange({ excelSheets: nextSheets })}
                 />
               </>
@@ -3192,11 +3214,13 @@ function ExcelDeliverySheetSections({
   sheets,
   workflowVariables,
   triggerVariables = [],
+  defaultBodyTemplate,
   onChange,
 }: {
   sheets: ExcelSheetDraft[];
   workflowVariables: WorkflowVariable[];
   triggerVariables?: WorkflowVariable[];
+  defaultBodyTemplate: string;
   onChange: (sheets: ExcelSheetDraft[]) => void;
 }) {
   function updateSheet(sheetId: string, patch: Partial<ExcelSheetDraft>) {
@@ -3279,14 +3303,21 @@ function ExcelDeliverySheetSections({
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
               <h4 className="text-sm font-semibold text-[var(--color-text-primary)]">Sheet {index + 1}</h4>
-              <p className="mt-1 text-xs text-[var(--color-text-secondary)]">{sheet.name}</p>
+              <p className="mt-1 text-xs text-[var(--color-text-secondary)]">{sheet.name.trim() || `Sheet${sheets.indexOf(sheet) + 1}`}</p>
             </div>
             <button type="button" className="agent-icon-button h-8 w-8" title="删除 Sheet" disabled={sheets.length <= 1} onClick={() => removeSheet(sheet.id)}>
               <Trash2 size={14} />
             </button>
           </div>
           <div className="grid gap-4 md:grid-cols-3">
-            <TextInputField label="Sheet 名称" icon={FileText} value={sheet.name} placeholder="风险明细" onChange={(value) => updateSheet(sheet.id, { name: value })} />
+            <TextInputField
+              label="Sheet 名称"
+              icon={FileText}
+              value={sheet.name}
+              placeholder={`Sheet${sheets.indexOf(sheet) + 1}`}
+              defaultOnBlur={`Sheet${sheets.indexOf(sheet) + 1}`}
+              onChange={(value) => updateSheet(sheet.id, { name: value })}
+            />
             <TextInputField label="起始单元格" icon={Hash} value={sheet.startCell} placeholder="A1" maxLength={12} onChange={(value) => updateSheet(sheet.id, { startCell: value })} />
             <SelectLikeField
               label="默认单元格类型"
@@ -3330,6 +3361,7 @@ function ExcelDeliverySheetSections({
               value={sheet.bodyTemplate}
               availableVariables={workflowVariables}
               triggerVariables={triggerVariables}
+              defaultOnBlur={defaultBodyTemplate}
               onChange={(value) => updateSheet(sheet.id, { bodyTemplate: value })}
               placeholder="可直接写 Markdown 表格、编号列表、键值块，也可用 {{输出内容标识}} 引用模型输出"
               textareaClassName="min-h-[180px]"
@@ -3677,6 +3709,7 @@ function TextInputField({
   value,
   placeholder,
   maxLength = 160,
+  defaultOnBlur,
   onChange,
 }: {
   label: string;
@@ -3684,6 +3717,7 @@ function TextInputField({
   value: string;
   placeholder?: string;
   maxLength?: number;
+  defaultOnBlur?: string;
   onChange: (value: string) => void;
 }) {
   return (
@@ -3694,6 +3728,12 @@ function TextInputField({
         <input
           value={value}
           onChange={(event) => onChange(event.target.value)}
+          onBlur={() => {
+            const nextValue = applyDefaultOnBlur(value, defaultOnBlur);
+            if (nextValue !== value) {
+              onChange(nextValue);
+            }
+          }}
           className="sys-field-input"
           placeholder={placeholder}
           maxLength={maxLength}
@@ -3744,6 +3784,7 @@ function PromptEditor({
   triggerVariables = [],
   onChange,
   placeholder,
+  defaultOnBlur,
   showVariableBar = true,
   textareaClassName = "",
 }: {
@@ -3753,6 +3794,7 @@ function PromptEditor({
   triggerVariables?: WorkflowVariable[];
   onChange: (value: string) => void;
   placeholder?: string;
+  defaultOnBlur?: string;
   showVariableBar?: boolean;
   textareaClassName?: string;
 }) {
@@ -3779,8 +3821,14 @@ function PromptEditor({
         aria-labelledby={labelId}
         value={value}
         onChange={(event) => onChange(event.target.value)}
+        onBlur={() => {
+          const nextValue = applyDefaultOnBlur(value, defaultOnBlur);
+          if (nextValue !== value) {
+            onChange(nextValue);
+          }
+        }}
         className={`sys-field-textarea workflow-prompt-textarea ${textareaClassName}`.trim()}
-        placeholder={placeholder ?? "可以使用 {{输出内容标识}} 引用之前步骤内容"}
+        placeholder={placeholder ?? defaultOnBlur ?? "可以使用 {{输出内容标识}} 引用之前步骤内容"}
       />
     </div>
   );
@@ -3792,16 +3840,20 @@ function VariableTemplateInputField({
   value,
   placeholder,
   maxLength = 160,
+  defaultOnBlur,
   variableItems,
   onChange,
+  onBlur,
 }: {
   label: string;
   icon?: WorkflowIcon;
   value: string;
   placeholder?: string;
   maxLength?: number;
+  defaultOnBlur?: string;
   variableItems: VariableReferenceItem[];
   onChange: (value: string) => void;
+  onBlur?: (value: string) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const labelId = useId();
@@ -3823,8 +3875,15 @@ function VariableTemplateInputField({
           aria-labelledby={labelId}
           value={value}
           onChange={(event) => onChange(event.target.value)}
+          onBlur={() => {
+            const nextValue = applyDefaultOnBlur(value, defaultOnBlur);
+            if (nextValue !== value) {
+              onChange(nextValue);
+            }
+            onBlur?.(nextValue);
+          }}
           className="sys-field-input"
-          placeholder={placeholder}
+          placeholder={placeholder ?? defaultOnBlur}
           maxLength={maxLength}
         />
       </div>
@@ -5175,10 +5234,10 @@ function readExcelSheet(raw: Record<string, unknown>, index: number, defaultBody
   const tableStyle = isRecord(raw.tableStyle) ? raw.tableStyle : {};
   return {
     id: readString(raw.id, `sheet_${index}_${Date.now().toString(36)}`),
-    name: readString(raw.name, `Sheet${index}`),
+    name: typeof raw.name === "string" ? raw.name : `Sheet${index}`,
     startCell: readString(raw.startCell, "A1").toUpperCase(),
     defaultCellType: readExcelCellType(raw.defaultCellType),
-    bodyTemplate: readString(raw.bodyTemplate, readString(raw.markdownContent, readString(raw.body, defaultBodyTemplate))),
+    bodyTemplate: resolveEditableText([raw.bodyTemplate, raw.markdownContent, raw.body], defaultBodyTemplate),
     tableStyle: {
       headerBold: readBooleanLike(tableStyle.headerBold, true),
       freezeHeader: readBooleanLike(tableStyle.freezeHeader, true),
@@ -5367,7 +5426,7 @@ function readDeliveryItems(value: unknown, parentDeliveryMode = "direct"): Deliv
         : {};
       return {
         id: readString(item.id, `delivery_item_${index + 1}`),
-        name: readString(item.name, `交付项 ${index + 1}`),
+        name: typeof item.name === "string" ? item.name : `交付项 ${index + 1}`,
         enabled: readBoolean(item.enabled, true),
         triggerRule: readDeliveryTriggerRule(item.triggerRule),
         config: {
@@ -6231,6 +6290,31 @@ function readPositiveInt(value: unknown, fallback: number): number {
 
 function readString(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value : fallback;
+}
+
+/** 编辑态文本：保留用户清空后的空字符串，仅在字段未设置时回退默认值。 */
+function readEditableText(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value : fallback;
+}
+
+function applyDefaultOnBlur(value: string, defaultValue: string | undefined): string {
+  if (defaultValue !== undefined && !value.trim()) {
+    return defaultValue;
+  }
+  return value;
+}
+
+function resolveEditableText(candidates: unknown[], fallback: string): string {
+  for (const value of candidates) {
+    if (typeof value === "string") {
+      return value;
+    }
+  }
+  return fallback;
+}
+
+function formatDeliveryItemDisplayName(name: string, index: number): string {
+  return name.trim() || `交付项 ${index + 1}`;
 }
 
 function readBoolean(value: unknown, fallback: boolean): boolean {

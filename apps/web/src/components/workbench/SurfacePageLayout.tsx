@@ -4,11 +4,11 @@ import { RoleSwitcher } from "../RoleSwitcher";
 import { ThemeToggle } from "../ThemeToggle";
 
 /** 工作台主内容区右上角全局操作（主题、角色），与页头介绍同一行展示。 */
-export function WorkbenchGlobalActions() {
+export function WorkbenchGlobalActions({ compact = false }: { compact?: boolean }) {
   return (
     <div className="surface-page-chrome-actions flex shrink-0 items-center gap-2">
       <ThemeToggle />
-      <RoleSwitcher />
+      <RoleSwitcher compact={compact} />
     </div>
   );
 }
