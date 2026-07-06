@@ -3,8 +3,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { App, Drawer, Select, Tooltip } from "antd";
 import {
   AlertTriangle,
+  AlignCenter,
   ArrowDown,
   ArrowUp,
+  Bold,
   Bot,
   Boxes,
   BrainCircuit,
@@ -12,18 +14,24 @@ import {
   ChevronLeft,
   CheckCircle2,
   Clock3,
+  Columns3,
   Copy,
   DatabaseZap,
   FileText,
+  Filter,
   Hash,
   Layers3,
   ListChecks,
   PackageCheck,
+  Palette,
+  Pin,
   Plus,
+  Rows3,
   Save,
   Search,
   ServerCog,
   Settings2,
+  Sigma,
   Tag,
   TextCursorInput,
   Type,
@@ -225,11 +233,17 @@ type ExcelTableStyleDraft = {
   headerBold: boolean;
   freezeHeader: boolean;
   autoFilter: boolean;
+  fontName: string;
+  fontSize: number;
+  horizontalAlignment: string;
 };
 
 type ExcelColumnRuleDraft = {
   id: string;
-  match: string;
+  target: "letter" | "name";
+  letter: string;
+  name: string;
+  applyFromRow: number;
   type: ExcelCellType;
   format: string;
   width: number;
@@ -412,11 +426,16 @@ const EXCEL_CELL_TYPE_OPTIONS: Array<{ value: ExcelCellType; label: string }> = 
   { value: "boolean", label: "布尔值" },
 ];
 
+const EXCEL_COLUMN_TARGET_OPTIONS = [
+  { value: "letter", label: "列字母 (A/B/C)" },
+  { value: "name", label: "按列名称" },
+];
+
 const EXCEL_ROW_TARGET_OPTIONS = [
   { value: "header", label: "表头行" },
   { value: "last", label: "最后一行" },
   { value: "index", label: "指定行号" },
-  { value: "contains", label: "包含文本的行" },
+  { value: "contains", label: "包含关键字的行" },
 ];
 
 const EXCEL_ALIGNMENT_OPTIONS = [
@@ -426,13 +445,34 @@ const EXCEL_ALIGNMENT_OPTIONS = [
   { value: "right", label: "右对齐" },
 ];
 
-const EXCEL_COLOR_OPTIONS = [
+const EXCEL_COLOR_OPTIONS: Array<{ value: string; label: string; color?: string }> = [
   { value: "", label: "不设置底色" },
-  { value: "grey", label: "浅灰" },
-  { value: "yellow", label: "浅黄" },
-  { value: "green", label: "浅绿" },
-  { value: "blue", label: "浅蓝" },
-  { value: "red", label: "浅红" },
+  { value: "grey", label: "浅灰", color: "#E7E6E6" },
+  { value: "yellow", label: "浅黄", color: "#FFF2CC" },
+  { value: "green", label: "浅绿", color: "#E2EFDA" },
+  { value: "blue", label: "浅蓝", color: "#DDEBF7" },
+  { value: "red", label: "浅红", color: "#FCE4D6" },
+];
+
+const EXCEL_FONT_OPTIONS = [
+  { value: "", label: "默认字体" },
+  { value: "微软雅黑", label: "微软雅黑" },
+  { value: "宋体", label: "宋体" },
+  { value: "仿宋", label: "仿宋" },
+  { value: "仿宋_GB2312", label: "仿宋_GB2312" },
+  { value: "等线", label: "等线" },
+  { value: "Arial", label: "Arial" },
+  { value: "Calibri", label: "Calibri" },
+];
+
+const EXCEL_FONT_SIZE_OPTIONS = [
+  { value: "0", label: "默认字号" },
+  { value: "9", label: "9" },
+  { value: "10", label: "10" },
+  { value: "11", label: "11" },
+  { value: "12", label: "12" },
+  { value: "14", label: "14" },
+  { value: "16", label: "16" },
 ];
 
 const nodeTypeLabels: Record<WorkflowNodeType, string> = {
@@ -3220,9 +3260,32 @@ function ExcelDeliverySheetSections({
             />
           </div>
           <div className="mt-4 grid gap-3 md:grid-cols-3">
-            <ExcelToggleField label="表头加粗" checked={sheet.tableStyle.headerBold} onChange={(checked) => updateTableStyle(sheet.id, { headerBold: checked })} />
-            <ExcelToggleField label="冻结表头" checked={sheet.tableStyle.freezeHeader} onChange={(checked) => updateTableStyle(sheet.id, { freezeHeader: checked })} />
-            <ExcelToggleField label="自动筛选" checked={sheet.tableStyle.autoFilter} onChange={(checked) => updateTableStyle(sheet.id, { autoFilter: checked })} />
+            <SelectLikeField
+              label="字体"
+              icon={Type}
+              value={sheet.tableStyle.fontName}
+              options={EXCEL_FONT_OPTIONS}
+              onChange={(value) => updateTableStyle(sheet.id, { fontName: value })}
+            />
+            <SelectLikeField
+              label="字号"
+              icon={Hash}
+              value={String(sheet.tableStyle.fontSize || 0)}
+              options={EXCEL_FONT_SIZE_OPTIONS}
+              onChange={(value) => updateTableStyle(sheet.id, { fontSize: Number(value) })}
+            />
+            <SelectLikeField
+              label="对齐方式"
+              icon={AlignCenter}
+              value={sheet.tableStyle.horizontalAlignment}
+              options={EXCEL_ALIGNMENT_OPTIONS}
+              onChange={(value) => updateTableStyle(sheet.id, { horizontalAlignment: value })}
+            />
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <ExcelToggleField label="表头加粗" icon={Bold} checked={sheet.tableStyle.headerBold} onChange={(checked) => updateTableStyle(sheet.id, { headerBold: checked })} />
+            <ExcelToggleField label="冻结表头" icon={Pin} checked={sheet.tableStyle.freezeHeader} onChange={(checked) => updateTableStyle(sheet.id, { freezeHeader: checked })} />
+            <ExcelToggleField label="自动筛选" icon={Filter} checked={sheet.tableStyle.autoFilter} onChange={(checked) => updateTableStyle(sheet.id, { autoFilter: checked })} />
           </div>
           <div className="mt-4">
             <PromptEditor
@@ -3236,54 +3299,75 @@ function ExcelDeliverySheetSections({
           </div>
           <ExcelRuleSection title="列格式规则" onAdd={() => addColumnRule(sheet.id)}>
             {sheet.columnRules.map((rule) => (
-              <div key={rule.id} className="grid gap-3 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-secondary)] p-3 md:grid-cols-4">
-                <TextInputField label="匹配表头" value={rule.match} placeholder="金额 / 日期 / 等级" onChange={(value) => updateColumnRule(sheet.id, rule.id, { match: value })} />
-                <SelectLikeField label="类型" value={rule.type} options={EXCEL_CELL_TYPE_OPTIONS} onChange={(value) => updateColumnRule(sheet.id, rule.id, { type: readExcelCellType(value) })} />
-                <TextInputField label="格式" value={rule.format} placeholder="#,##0.00" onChange={(value) => updateColumnRule(sheet.id, rule.id, { format: value })} />
-                <div className="flex items-end gap-2">
-                  <NumberInputField label="列宽" value={rule.width} min={0} max={80} step={1} onChange={(value) => updateColumnRule(sheet.id, rule.id, { width: value })} />
-                  <button type="button" className="agent-icon-button mb-1 h-8 w-8" title="删除列规则" onClick={() => removeColumnRule(sheet.id, rule.id)}>
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-                <SelectLikeField label="对齐" value={rule.horizontalAlignment} options={EXCEL_ALIGNMENT_OPTIONS} onChange={(value) => updateColumnRule(sheet.id, rule.id, { horizontalAlignment: value })} />
-                <SelectLikeField label="底色" value={rule.backgroundColor} options={EXCEL_COLOR_OPTIONS} onChange={(value) => updateColumnRule(sheet.id, rule.id, { backgroundColor: value })} />
-                <ExcelToggleField label="加粗" checked={rule.bold} onChange={(checked) => updateColumnRule(sheet.id, rule.id, { bold: checked })} />
-              </div>
+              <ExcelRuleCard key={rule.id} removeTitle="删除列规则" onRemove={() => removeColumnRule(sheet.id, rule.id)}>
+                <SelectLikeField
+                  label="目标列"
+                  icon={Columns3}
+                  value={rule.target}
+                  options={EXCEL_COLUMN_TARGET_OPTIONS}
+                  onChange={(value) => updateColumnRule(sheet.id, rule.id, { target: readExcelColumnTarget(value) })}
+                />
+                {rule.target === "letter" ? (
+                  <TextInputField
+                    label="列字母"
+                    icon={Hash}
+                    value={rule.letter}
+                    placeholder="A / B / C"
+                    maxLength={4}
+                    onChange={(value) => updateColumnRule(sheet.id, rule.id, { letter: value.toUpperCase().replace(/[^A-Z]/g, "") })}
+                  />
+                ) : (
+                  <TextInputField
+                    label="列名称"
+                    icon={Tag}
+                    value={rule.name}
+                    placeholder="合同金额"
+                    onChange={(value) => updateColumnRule(sheet.id, rule.id, { name: value })}
+                  />
+                )}
+                <NumberInputField
+                  label="应用起始行"
+                  value={rule.applyFromRow}
+                  min={1}
+                  max={9999}
+                  step={1}
+                  onChange={(value) => updateColumnRule(sheet.id, rule.id, { applyFromRow: value })}
+                />
+                <SelectLikeField label="类型" icon={Type} value={rule.type} options={EXCEL_CELL_TYPE_OPTIONS} onChange={(value) => updateColumnRule(sheet.id, rule.id, { type: readExcelCellType(value) })} />
+                <TextInputField label="格式" icon={Hash} value={rule.format} placeholder="#,##0.00" onChange={(value) => updateColumnRule(sheet.id, rule.id, { format: value })} />
+                <NumberInputField label="列宽" value={rule.width} min={0} max={80} step={1} onChange={(value) => updateColumnRule(sheet.id, rule.id, { width: value })} />
+                <SelectLikeField label="对齐" icon={AlignCenter} value={rule.horizontalAlignment} options={EXCEL_ALIGNMENT_OPTIONS} onChange={(value) => updateColumnRule(sheet.id, rule.id, { horizontalAlignment: value })} />
+                <ExcelColorSelectField label="底色" value={rule.backgroundColor} onChange={(value) => updateColumnRule(sheet.id, rule.id, { backgroundColor: value })} />
+                <ExcelToggleField label="加粗" icon={Bold} checked={rule.bold} onChange={(checked) => updateColumnRule(sheet.id, rule.id, { bold: checked })} />
+              </ExcelRuleCard>
             ))}
           </ExcelRuleSection>
           <ExcelRuleSection title="行格式规则" onAdd={() => addRowRule(sheet.id)}>
             {sheet.rowRules.map((rule) => (
-              <div key={rule.id} className="grid gap-3 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-secondary)] p-3 md:grid-cols-4">
-                <SelectLikeField label="目标行" value={rule.target} options={EXCEL_ROW_TARGET_OPTIONS} onChange={(value) => updateRowRule(sheet.id, rule.id, { target: readExcelRowTarget(value) })} />
-                <NumberInputField label="指定行号" value={rule.index} min={1} max={9999} step={1} onChange={(value) => updateRowRule(sheet.id, rule.id, { index: value })} />
-                <TextInputField label="包含文本" value={rule.text} placeholder="合计 / 小计" onChange={(value) => updateRowRule(sheet.id, rule.id, { text: value })} />
-                <div className="flex items-end gap-2">
-                  <SelectLikeField label="底色" value={rule.backgroundColor} options={EXCEL_COLOR_OPTIONS} onChange={(value) => updateRowRule(sheet.id, rule.id, { backgroundColor: value })} />
-                  <button type="button" className="agent-icon-button mb-1 h-8 w-8" title="删除行规则" onClick={() => removeRowRule(sheet.id, rule.id)}>
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-                <ExcelToggleField label="加粗" checked={rule.bold} onChange={(checked) => updateRowRule(sheet.id, rule.id, { bold: checked })} />
-              </div>
+              <ExcelRuleCard key={rule.id} removeTitle="删除行规则" onRemove={() => removeRowRule(sheet.id, rule.id)}>
+                <SelectLikeField label="目标行" icon={Rows3} value={rule.target} options={EXCEL_ROW_TARGET_OPTIONS} onChange={(value) => updateRowRule(sheet.id, rule.id, { target: readExcelRowTarget(value) })} />
+                {rule.target === "index" ? (
+                  <NumberInputField label="指定行号" value={rule.index} min={1} max={9999} step={1} onChange={(value) => updateRowRule(sheet.id, rule.id, { index: value })} />
+                ) : null}
+                {rule.target === "contains" ? (
+                  <TextInputField label="关键字" icon={Search} value={rule.text} placeholder="合计 / 小计" onChange={(value) => updateRowRule(sheet.id, rule.id, { text: value })} />
+                ) : null}
+                <ExcelColorSelectField label="底色" value={rule.backgroundColor} onChange={(value) => updateRowRule(sheet.id, rule.id, { backgroundColor: value })} />
+                <ExcelToggleField label="加粗" icon={Bold} checked={rule.bold} onChange={(checked) => updateRowRule(sheet.id, rule.id, { bold: checked })} />
+              </ExcelRuleCard>
             ))}
           </ExcelRuleSection>
           <ExcelRuleSection title="单元格格式规则" onAdd={() => addCellRule(sheet.id)}>
             {sheet.cellRules.map((rule) => (
-              <div key={rule.id} className="grid gap-3 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-secondary)] p-3 md:grid-cols-4">
-                <TextInputField label="单元格" value={rule.cell} placeholder="A1" maxLength={12} onChange={(value) => updateCellRule(sheet.id, rule.id, { cell: value.toUpperCase() })} />
-                <SelectLikeField label="类型" value={rule.type} options={EXCEL_CELL_TYPE_OPTIONS} onChange={(value) => updateCellRule(sheet.id, rule.id, { type: readExcelCellType(value) })} />
-                <TextInputField label="格式" value={rule.format} placeholder="yyyy-mm-dd" onChange={(value) => updateCellRule(sheet.id, rule.id, { format: value })} />
-                <div className="flex items-end gap-2">
-                  <SelectLikeField label="底色" value={rule.backgroundColor} options={EXCEL_COLOR_OPTIONS} onChange={(value) => updateCellRule(sheet.id, rule.id, { backgroundColor: value })} />
-                  <button type="button" className="agent-icon-button mb-1 h-8 w-8" title="删除单元格规则" onClick={() => removeCellRule(sheet.id, rule.id)}>
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-                <SelectLikeField label="对齐" value={rule.horizontalAlignment} options={EXCEL_ALIGNMENT_OPTIONS} onChange={(value) => updateCellRule(sheet.id, rule.id, { horizontalAlignment: value })} />
-                <ExcelToggleField label="加粗" checked={rule.bold} onChange={(checked) => updateCellRule(sheet.id, rule.id, { bold: checked })} />
-                <ExcelToggleField label="允许公式" checked={rule.allowFormula} onChange={(checked) => updateCellRule(sheet.id, rule.id, { allowFormula: checked })} />
-              </div>
+              <ExcelRuleCard key={rule.id} removeTitle="删除单元格规则" onRemove={() => removeCellRule(sheet.id, rule.id)}>
+                <TextInputField label="单元格" icon={Hash} value={rule.cell} placeholder="A1" maxLength={12} onChange={(value) => updateCellRule(sheet.id, rule.id, { cell: value.toUpperCase() })} />
+                <SelectLikeField label="类型" icon={Type} value={rule.type} options={EXCEL_CELL_TYPE_OPTIONS} onChange={(value) => updateCellRule(sheet.id, rule.id, { type: readExcelCellType(value) })} />
+                <TextInputField label="格式" icon={Hash} value={rule.format} placeholder="yyyy-mm-dd" onChange={(value) => updateCellRule(sheet.id, rule.id, { format: value })} />
+                <ExcelColorSelectField label="底色" value={rule.backgroundColor} onChange={(value) => updateCellRule(sheet.id, rule.id, { backgroundColor: value })} />
+                <SelectLikeField label="对齐" icon={AlignCenter} value={rule.horizontalAlignment} options={EXCEL_ALIGNMENT_OPTIONS} onChange={(value) => updateCellRule(sheet.id, rule.id, { horizontalAlignment: value })} />
+                <ExcelToggleField label="加粗" icon={Bold} checked={rule.bold} onChange={(checked) => updateCellRule(sheet.id, rule.id, { bold: checked })} />
+                <ExcelToggleField label="允许公式" icon={Sigma} checked={rule.allowFormula} onChange={(checked) => updateCellRule(sheet.id, rule.id, { allowFormula: checked })} />
+              </ExcelRuleCard>
             ))}
           </ExcelRuleSection>
         </div>
@@ -3311,12 +3395,60 @@ function ExcelRuleSection({ title, children, onAdd }: { title: string; children:
   );
 }
 
-function ExcelToggleField({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
+function ExcelRuleCard({
+  children,
+  removeTitle,
+  onRemove,
+}: {
+  children: ReactNode;
+  removeTitle: string;
+  onRemove: () => void;
+}) {
   return (
-    <label className="flex min-h-[42px] items-center justify-between gap-3 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-secondary)] px-3 py-2 text-xs font-semibold text-[var(--color-text-primary)]">
-      <span>{label}</span>
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
-    </label>
+    <div className="relative rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-secondary)] p-3 pr-12">
+      <button
+        type="button"
+        className="agent-icon-button absolute right-3 top-3 h-8 w-8"
+        title={removeTitle}
+        onClick={onRemove}
+      >
+        <Trash2 size={14} />
+      </button>
+      <div className="grid gap-3 md:grid-cols-4">{children}</div>
+    </div>
+  );
+}
+
+function ExcelToggleField({
+  label,
+  icon: Icon,
+  checked,
+  onChange,
+}: {
+  label: string;
+  icon?: WorkflowIcon;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="sys-field mb-0">
+      <span className="sys-field-label">{label}</span>
+      <div className={`sys-field-input-wrap excel-rule-toggle-wrap ${Icon ? "" : "excel-rule-toggle-wrap--no-icon"}`}>
+        {Icon ? <Icon size={16} className="sys-field-prefix" aria-hidden="true" /> : null}
+        <button
+          type="button"
+          role="switch"
+          aria-checked={checked}
+          aria-label={`${label}：${checked ? "开启" : "关闭"}`}
+          className={`excel-rule-toggle ${checked ? "is-active" : ""}`}
+          onClick={() => onChange(!checked)}
+        >
+          <span className="excel-rule-toggle-track" aria-hidden="true">
+            <span className="excel-rule-toggle-thumb" />
+          </span>
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -3412,6 +3544,58 @@ function CapabilityStateBanner({ state }: { state: WorkflowCapabilityState }) {
   }
 
   return null;
+}
+
+function ExcelColorSwatch({ color, empty = false }: { color?: string; empty?: boolean }) {
+  return (
+    <span
+      className={`excel-color-swatch${empty || !color ? " excel-color-swatch--empty" : ""}`}
+      style={color ? { backgroundColor: color } : undefined}
+      aria-hidden="true"
+    />
+  );
+}
+
+function ExcelColorSelectField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const normalizedOptions = EXCEL_COLOR_OPTIONS;
+  const effectiveOptions = value && !normalizedOptions.some((option) => option.value === value)
+    ? [{ value, label: value }, ...normalizedOptions]
+    : normalizedOptions;
+
+  const renderColorOption = (optionValue: string, optionLabel: string) => {
+    const option = effectiveOptions.find((item) => item.value === optionValue);
+    return (
+      <span className="flex min-w-0 items-center gap-2">
+        <ExcelColorSwatch color={option?.color} empty={!option?.color} />
+        <span className="truncate">{optionLabel}</span>
+      </span>
+    );
+  };
+
+  return (
+    <label className="sys-field">
+      <span className="sys-field-label">{label}</span>
+      <Select
+        className="agent-admin-select w-full"
+        classNames={workflowSelectClassNames}
+        prefix={<Palette className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+        suffixIcon={workflowSelectSuffixIcon}
+        showSearch={false}
+        value={value}
+        options={effectiveOptions.map((option) => ({ value: option.value, label: option.label }))}
+        optionRender={(option) => renderColorOption(String(option.value ?? ""), String(option.label ?? ""))}
+        onChange={onChange}
+      />
+    </label>
+  );
 }
 
 function SelectLikeField({
@@ -4962,6 +5146,9 @@ function readExcelSheet(raw: Record<string, unknown>, index: number, defaultBody
       headerBold: readBooleanLike(tableStyle.headerBold, true),
       freezeHeader: readBooleanLike(tableStyle.freezeHeader, true),
       autoFilter: readBooleanLike(tableStyle.autoFilter, true),
+      fontName: readString(tableStyle.fontName, ""),
+      fontSize: Math.max(0, Math.round(readNumberLike(tableStyle.fontSize, 0))),
+      horizontalAlignment: readExcelAlignment(tableStyle.horizontalAlignment),
     },
     columnRules: readExcelColumnRules(raw.columnRules),
     rowRules: readExcelRowRules(raw.rowRules),
@@ -4980,6 +5167,9 @@ function createExcelSheetDraft(index: number, bodyTemplate = "| 项目 | 内容 
       headerBold: true,
       freezeHeader: true,
       autoFilter: true,
+      fontName: "",
+      fontSize: 0,
+      horizontalAlignment: "",
     },
     columnRules: [],
     rowRules: [
@@ -5002,22 +5192,32 @@ function readExcelColumnRules(value: unknown): ExcelColumnRuleDraft[] {
   }
   return value
     .filter((item): item is Record<string, unknown> => isRecord(item))
-    .map((item, index) => ({
+    .map((item, index) => {
+      const target = inferExcelColumnTarget(item);
+      const rawLetter = readString(item.letter, "").toUpperCase().replace(/[^A-Z]/g, "");
+      return {
       id: readString(item.id, `column_rule_${index}`),
-      match: readString(item.match, ""),
+      target,
+      letter: rawLetter || (target === "letter" ? "A" : ""),
+      name: readString(item.name, readString(item.match, "")),
+      applyFromRow: Math.max(1, Math.round(readNumberLike(item.applyFromRow, 2))),
       type: readExcelCellType(item.type),
       format: readString(item.format, ""),
       width: Math.max(0, Math.round(readNumberLike(item.width, 0))),
       bold: readBooleanLike(item.bold, false),
       backgroundColor: readString(item.backgroundColor, ""),
       horizontalAlignment: readExcelAlignment(item.horizontalAlignment),
-    }));
+    };
+    });
 }
 
 function createExcelColumnRuleDraft(index: number): ExcelColumnRuleDraft {
   return {
     id: `column_rule_${Date.now().toString(36)}_${index}`,
-    match: "",
+    target: "letter",
+    letter: "A",
+    name: "",
+    applyFromRow: 2,
     type: "text",
     format: "",
     width: 0,
@@ -5088,6 +5288,24 @@ function createExcelCellRuleDraft(index: number): ExcelCellRuleDraft {
 function readExcelCellType(value: unknown): ExcelCellType {
   const text = readString(value, "text");
   return text === "number" || text === "currency" || text === "percent" || text === "date" || text === "datetime" || text === "boolean" ? text : "text";
+}
+
+function inferExcelColumnTarget(item: Record<string, unknown>): ExcelColumnRuleDraft["target"] {
+  const explicit = readString(item.target, "");
+  if (explicit === "name" || explicit === "letter") {
+    return explicit;
+  }
+  const hasName = Boolean(readString(item.name, readString(item.match, "")));
+  const hasLetter = Boolean(readString(item.letter, "").trim());
+  if (hasName && !hasLetter) {
+    return "name";
+  }
+  return "letter";
+}
+
+function readExcelColumnTarget(value: unknown): ExcelColumnRuleDraft["target"] {
+  const text = readString(value, "letter");
+  return text === "name" ? "name" : "letter";
 }
 
 function readExcelRowTarget(value: unknown): ExcelRowRuleDraft["target"] {

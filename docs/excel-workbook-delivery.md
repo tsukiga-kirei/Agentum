@@ -74,7 +74,9 @@ Sheet 模板
       },
       "columnRules": [
         {
-          "match": "金额",
+          "target": "letter",
+          "letter": "C",
+          "applyFromRow": 2,
           "type": "number",
           "format": "#,##0.00",
           "width": 16
@@ -109,6 +111,12 @@ Sheet 默认样式
   < 行规则
   < 单元格规则
 ```
+
+列规则支持两种定位方式：
+
+- `target: letter`：直接指定 Excel 列字母（A/B/C…），适用于列位置固定的表格。
+- `target: name`：按表格第 1 行的列名称精确匹配列。
+- `applyFromRow`：从表格第几行开始向下应用列格式（从 1 开始，默认 `2`）；例如第 1 行是表头、从第 2 行开始格式化数据时填 `2`。
 
 默认单元格类型是 `text`。只有列、行或单元格规则声明了 `number`、`currency`、`percent`、`date`、`datetime`、`boolean` 等类型时，后端才尝试转换。转换失败不会让交付失败，该单元格会按文本写入。
 

@@ -3973,6 +3973,89 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
 }
 .sys-field-hint { font-size: 11px; color: var(--color-text-tertiary); margin-top: 4px; }
 
+/* Excel 格式规则开关：与 sys-field 输入框同高，左侧图标 + 右侧滑块 */
+.excel-rule-toggle-wrap {
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-input, var(--color-bg-page));
+  padding-right: 14px;
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.excel-rule-toggle-wrap:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+.excel-rule-toggle-wrap--no-icon {
+  padding-left: 14px;
+}
+
+.excel-rule-toggle {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  line-height: 0;
+}
+
+.excel-rule-toggle:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-primary) 55%, transparent);
+  outline-offset: 2px;
+  border-radius: 999px;
+}
+
+.excel-rule-toggle-track {
+  display: inline-flex;
+  align-items: center;
+  width: 38px;
+  height: 22px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-border) 70%, var(--color-bg-hover) 30%);
+  padding: 2px;
+  transition: background-color var(--transition-fast);
+}
+
+.excel-rule-toggle.is-active .excel-rule-toggle-track {
+  background: var(--color-primary);
+}
+
+.excel-rule-toggle-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.18);
+  transition: transform var(--transition-fast);
+}
+
+.excel-rule-toggle.is-active .excel-rule-toggle-thumb {
+  transform: translateX(16px);
+}
+
+.excel-color-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 75%, transparent);
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.excel-color-swatch--empty {
+  background:
+    linear-gradient(
+      135deg,
+      transparent 46%,
+      color-mix(in srgb, var(--color-border) 80%, transparent) 46%,
+      color-mix(in srgb, var(--color-border) 80%, transparent) 54%,
+      transparent 54%
+    );
+}
+
 /* 自定义下拉选择器（替代原生 select，完全控制选项列表渲染） */
 .sys-select { position: relative; }
 .sys-select-trigger {

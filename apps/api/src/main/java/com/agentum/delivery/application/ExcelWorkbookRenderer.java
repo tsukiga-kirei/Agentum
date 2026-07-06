@@ -117,11 +117,13 @@ public class ExcelWorkbookRenderer {
         for (Map<String, Object> rule : spec.columnRules()) {
             int width = intValue(rule.get("width"), -1);
             if (width > 0) {
-                String match = stringValue(rule.get("match"));
-                if (match.isBlank()) {
+                boolean hasTarget = "letter".equals(readColumnRuleTarget(rule))
+                    ? !readColumnRuleLetter(rule).isBlank()
+                    : !readColumnRuleName(rule).isBlank();
+                if (!hasTarget) {
                     continue;
                 }
-                // 没有稳定表头时不按猜测列序设置宽度，避免把动态文本区域拉坏。
+                // 没有稳定列定位时不按猜测列序设置宽度，避免把动态文本区域拉坏。
             }
         }
         for (int column = 0; column <= Math.min(maxColumn, 30); column++) {
@@ -144,7 +146,6 @@ public class ExcelWorkbookRenderer {
         if (rows.isEmpty()) {
             return new TableRenderOutcome(startRow, startColumn, false);
         }
-        List<String> headers = block.hasHeader() ? rows.getFirst() : List.of();
         int maxColumn = startColumn;
         for (int rowOffset = 0; rowOffset < rows.size(); rowOffset++) {
             List<String> values = rows.get(rowOffset);
@@ -153,7 +154,7 @@ public class ExcelWorkbookRenderer {
             boolean last = rowOffset == rows.size() - 1;
             for (int columnOffset = 0; columnOffset < values.size(); columnOffset++) {
                 int columnIndex = startColumn + columnOffset;
-                Map<String, Object> columnRule = header ? Map.of() : matchColumnRule(headers, columnOffset, spec.columnRules());
+                Map<String, Object> columnRule = matchColumnRule(rows, rowOffset, columnOffset, spec.columnRules());
                 Map<String, Object> rowRule = matchRowRule(values, rowOffset, header, last, spec.rowRules());
                 Map<String, Object> cellRule = matchCellRule(startRow + rowOffset, columnIndex, spec.cellRules());
                 String type = firstNonBlank(stringValue(cellRule.get("type")), stringValue(columnRule.get("type")), spec.defaultCellType(), "text");
@@ -468,6 +469,10 @@ public class ExcelWorkbookRenderer {
             style.setDataFormat(dataFormat.getFormat(format));
         }
         Font font = workbook.createFont();
+        String fontName = stringValue(styleConfig.get("fontName")).trim();
+        if (!fontName.isBlank()) {
+            font.setFontName(fontName);
+        }
         font.setBold(booleanValue(styleConfig.get("bold")));
         font.setItalic(booleanValue(styleConfig.get("italic")));
         int fontSize = intValue(styleConfig.get("fontSize"), 0);
@@ -497,18 +502,67 @@ public class ExcelWorkbookRenderer {
         };
     }
 
-    private Map<String, Object> matchColumnRule(List<String> headers, int columnOffset, List<Map<String, Object>> rules) {
-        if (headers.isEmpty() || columnOffset >= headers.size()) {
-            return Map.of();
-        }
-        String header = headers.get(columnOffset);
+    private Map<String, Object> matchColumnRule(List<List<String>> rows, int rowOffset, int columnOffset, List<Map<String, Object>> rules) {
         for (Map<String, Object> rule : rules) {
-            String match = stringValue(rule.get("match"));
-            if (!match.isBlank() && header.contains(match)) {
-                return rule;
+            boolean columnMatched;
+            if ("letter".equals(readColumnRuleTarget(rule))) {
+                String letter = readColumnRuleLetter(rule);
+                if (letter.isBlank()) {
+                    continue;
+                }
+                columnMatched = columnIndex(letter) == columnOffset;
+            } else {
+                String columnName = readColumnRuleName(rule);
+                if (columnName.isBlank() || rows.isEmpty()) {
+                    continue;
+                }
+                List<String> headerCells = rows.getFirst();
+                if (columnOffset >= headerCells.size()) {
+                    continue;
+                }
+                columnMatched = columnName.equals(headerCells.get(columnOffset).trim());
             }
+            if (!columnMatched) {
+                continue;
+            }
+            int applyFromRow = readColumnApplyFromRow(rule);
+            if (rowOffset + 1 < applyFromRow) {
+                continue;
+            }
+            return rule;
         }
         return Map.of();
+    }
+
+    private int readColumnApplyFromRow(Map<String, Object> rule) {
+        return Math.max(1, intValue(rule.get("applyFromRow"), 2));
+    }
+
+    private String readColumnRuleTarget(Map<String, Object> rule) {
+        String target = stringValue(rule.get("target"));
+        if ("name".equals(target) || "letter".equals(target)) {
+            return target;
+        }
+        if (!readColumnRuleLetter(rule).isBlank()) {
+            return "letter";
+        }
+        if (!readColumnRuleName(rule).isBlank()) {
+            return "name";
+        }
+        return "letter";
+    }
+
+    private String readColumnRuleLetter(Map<String, Object> rule) {
+        return stringValue(rule.get("letter")).trim().toUpperCase(Locale.ROOT).replaceAll("[^A-Z]", "");
+    }
+
+    private String readColumnRuleName(Map<String, Object> rule) {
+        String name = stringValue(rule.get("name")).trim();
+        if (!name.isBlank()) {
+            return name;
+        }
+        // 兼容旧草稿中的 match 字段，读取时仍按精确列名处理。
+        return stringValue(rule.get("match")).trim();
     }
 
     private Map<String, Object> matchRowRule(List<String> values, int rowOffset, boolean header, boolean last, List<Map<String, Object>> rules) {

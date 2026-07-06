@@ -28,7 +28,7 @@ class ExcelWorkbookRendererTest {
             "A1",
             "text",
             Map.of("headerBold", true, "autoFilter", true),
-            List.of(Map.of("match", "金额", "type", "number", "format", "#,##0.00")),
+            List.of(Map.of("target", "name", "name", "金额", "type", "number", "format", "#,##0.00")),
             List.of(),
             List.of()
         )));
@@ -39,6 +39,77 @@ class ExcelWorkbookRendererTest {
             assertThat(sheet.getRow(1).getCell(2).getNumericCellValue()).isEqualTo(1200.50);
             assertThat(sheet.getRow(2).getCell(2).getCellType()).isEqualTo(CellType.STRING);
             assertThat(sheet.getRow(2).getCell(2).getStringCellValue()).isEqualTo("暂未披露");
+        }
+    }
+
+    @Test
+    void shouldMatchColumnRuleByLetter() throws Exception {
+        ExcelWorkbookRenderer.ExcelWorkbookRenderResult result = renderer.render(List.of(new ExcelSheetRenderSpec(
+            "明细",
+            """
+                | 风险类型 | 等级 | 金额 |
+                | --- | --- | --- |
+                | 司法风险 | 高 | 1200.50 |
+                """,
+            "A1",
+            "text",
+            Map.of(),
+            List.of(Map.of("target", "letter", "letter", "C", "type", "number", "format", "#,##0.00")),
+            List.of(),
+            List.of()
+        )));
+
+        try (Workbook workbook = WorkbookFactory.create(new ByteArrayInputStream(result.bytes()))) {
+            var sheet = workbook.getSheet("明细");
+            assertThat(sheet.getRow(1).getCell(2).getNumericCellValue()).isEqualTo(1200.50);
+        }
+    }
+
+    @Test
+    void shouldApplyColumnRuleFromConfiguredStartRow() throws Exception {
+        ExcelWorkbookRenderer.ExcelWorkbookRenderResult result = renderer.render(List.of(new ExcelSheetRenderSpec(
+            "明细",
+            """
+                | 金额 |
+                | --- |
+                | 100 |
+                | 200 |
+                """,
+            "A1",
+            "text",
+            Map.of(),
+            List.of(Map.of("target", "name", "name", "金额", "applyFromRow", 3, "type", "number")),
+            List.of(),
+            List.of()
+        )));
+
+        try (Workbook workbook = WorkbookFactory.create(new ByteArrayInputStream(result.bytes()))) {
+            var sheet = workbook.getSheet("明细");
+            assertThat(sheet.getRow(1).getCell(0).getCellType()).isEqualTo(CellType.STRING);
+            assertThat(sheet.getRow(2).getCell(0).getNumericCellValue()).isEqualTo(200.0);
+        }
+    }
+
+    @Test
+    void shouldNotMatchColumnRuleByPartialName() throws Exception {
+        ExcelWorkbookRenderer.ExcelWorkbookRenderResult result = renderer.render(List.of(new ExcelSheetRenderSpec(
+            "明细",
+            """
+                | 合同金额 |
+                | --- |
+                | 1200.50 |
+                """,
+            "A1",
+            "text",
+            Map.of(),
+            List.of(Map.of("target", "name", "name", "金额", "type", "number")),
+            List.of(),
+            List.of()
+        )));
+
+        try (Workbook workbook = WorkbookFactory.create(new ByteArrayInputStream(result.bytes()))) {
+            var sheet = workbook.getSheet("明细");
+            assertThat(sheet.getRow(1).getCell(0).getCellType()).isEqualTo(CellType.STRING);
         }
     }
 

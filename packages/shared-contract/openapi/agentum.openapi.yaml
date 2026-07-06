@@ -5306,15 +5306,55 @@ components:
         autoFilter:
           type: boolean
           default: true
+        fontName:
+          type: string
+          description: 表格默认字体，留空使用 Excel 默认字体。
+        fontSize:
+          type: integer
+          minimum: 0
+          default: 0
+          description: 表格默认字号，0 表示不覆盖。
+        horizontalAlignment:
+          type: string
+          enum: ['', left, center, right]
+          default: ''
+          description: 表格默认水平对齐。
     ExcelColumnRule:
       type: object
-      description: 按表头文本匹配列。规则只作用于表头下方的数据单元格；类型转换失败时该单元格回退为文本。
+      description: 按列字母 (A/B/C) 或列名称定位列，并通过 applyFromRow 控制从第几行开始向下应用格式；按名称时第 1 行用于匹配列名；类型转换失败时数据单元格回退为文本。
       properties:
         id:
           type: string
+        target:
+          type: string
+          enum: [letter, name]
+          default: letter
+          description: 列定位方式；letter 为 Excel 列字母，name 为按表格中的列名称匹配。
+        letter:
+          type: string
+          description: 列字母，例如 A、B、C；target=letter 时使用。
+        name:
+          type: string
+          description: 列名称，需与表格第 1 行单元格文本完全一致；target=name 时使用。
+        applyFromRow:
+          type: integer
+          minimum: 1
+          default: 2
+          description: 从表格第几行开始向下应用列格式，从 1 开始；按名称时第 1 行仅用于匹配列名。
+        nameRow:
+          type: integer
+          minimum: 1
+          deprecated: true
+          description: 旧字段，已废弃；请改用 applyFromRow。
+        headerRow:
+          type: integer
+          minimum: 1
+          deprecated: true
+          description: 旧字段，已废弃；请改用 applyFromRow。
         match:
           type: string
-          description: 表头包含该文本时命中。
+          deprecated: true
+          description: 旧字段，仅兼容读取；请改用 name。
         type:
           type: string
           enum: [text, number, currency, percent, date, datetime, boolean]

@@ -58,7 +58,7 @@ class ExcelDeliveryServiceTest {
                 "excelSheets", List.of(Map.of(
                     "name", "风险明细",
                     "bodyTemplate", "{{ risk_table }}",
-                    "columnRules", List.of(Map.of("match", "金额", "type", "number"))
+                    "columnRules", List.of(Map.of("target", "name", "name", "金额", "type", "number"))
                 ))
             ),
             Map.of("runNumber", "RUN-001", "risk_table", "|金额|\n|---|\n|1200|")
