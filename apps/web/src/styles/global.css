@@ -4930,6 +4930,31 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
   background: var(--color-bg-card);
 }
 
+.schedule-execution-item--success {
+  border-color: color-mix(in srgb, #10b981 35%, var(--color-border-light));
+  background: color-mix(in srgb, #10b981 7%, var(--color-bg-card));
+}
+
+.schedule-execution-item--danger {
+  border-color: color-mix(in srgb, #ef4444 32%, var(--color-border-light));
+  background: color-mix(in srgb, #ef4444 6%, var(--color-bg-card));
+}
+
+.schedule-execution-item--warning {
+  border-color: color-mix(in srgb, #f59e0b 35%, var(--color-border-light));
+  background: color-mix(in srgb, #f59e0b 7%, var(--color-bg-card));
+}
+
+.schedule-execution-item--info {
+  border-color: color-mix(in srgb, var(--color-primary) 35%, var(--color-border-light));
+  background: color-mix(in srgb, var(--color-primary) 7%, var(--color-bg-card));
+}
+
+.schedule-execution-item--neutral {
+  border-color: color-mix(in srgb, #64748b 30%, var(--color-border-light));
+  background: color-mix(in srgb, #64748b 6%, var(--color-bg-card));
+}
+
 .schedule-execution-item-main {
   display: flex;
   align-items: flex-start;
@@ -4945,6 +4970,33 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
   height: 34px;
   border-radius: var(--radius-md);
   flex-shrink: 0;
+  background: var(--color-bg-hover);
+  color: var(--color-primary);
+}
+
+.schedule-execution-item-icon--success {
+  background: color-mix(in srgb, #10b981 14%, var(--color-bg-card));
+  color: #059669;
+}
+
+.schedule-execution-item-icon--danger {
+  background: color-mix(in srgb, #ef4444 12%, var(--color-bg-card));
+  color: #dc2626;
+}
+
+.schedule-execution-item-icon--warning {
+  background: color-mix(in srgb, #f59e0b 14%, var(--color-bg-card));
+  color: #d97706;
+}
+
+.schedule-execution-item-icon--info {
+  background: var(--color-primary-bg);
+  color: var(--color-primary);
+}
+
+.schedule-execution-item-icon--neutral {
+  background: color-mix(in srgb, #64748b 12%, var(--color-bg-card));
+  color: #64748b;
 }
 
 .schedule-execution-item-body {
@@ -4953,6 +5005,47 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
   gap: 4px;
   min-width: 0;
   flex: 1;
+}
+
+.schedule-execution-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.schedule-execution-item-tag {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+.schedule-execution-item-tag--success {
+  background: color-mix(in srgb, #10b981 16%, var(--color-bg-card));
+  color: #047857;
+}
+
+.schedule-execution-item-tag--danger {
+  background: color-mix(in srgb, #ef4444 14%, var(--color-bg-card));
+  color: #b91c1c;
+}
+
+.schedule-execution-item-tag--warning {
+  background: color-mix(in srgb, #f59e0b 16%, var(--color-bg-card));
+  color: #b45309;
+}
+
+.schedule-execution-item-tag--info {
+  background: var(--color-primary-bg);
+  color: var(--color-primary);
+}
+
+.schedule-execution-item-tag--neutral {
+  background: color-mix(in srgb, #64748b 14%, var(--color-bg-card));
+  color: #475569;
 }
 
 .schedule-execution-item-title {

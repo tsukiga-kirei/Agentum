@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { LucideIcon } from "lucide-react";
 import { Drawer, Empty, Pagination, Select, message } from "antd";
 import {
   Activity,
+  AlertTriangle,
+  Ban,
   CalendarClock,
+  CheckCircle2,
   ChevronDown,
   Clock3,
   Edit3,
@@ -569,14 +573,20 @@ export function WorkflowSchedulesPanel() {
                 <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无执行记录" />
               ) : (
                 <div className="schedule-execution-list">
-                  {executions.map((execution) => (
-                    <article className="schedule-execution-item" key={execution.id}>
+                  {executions.map((execution) => {
+                    const presentation = resolveExecutionPresentation(execution);
+                    const StatusIcon = presentation.icon;
+                    return (
+                    <article className={`schedule-execution-item schedule-execution-item--${presentation.tone}`} key={execution.id}>
                       <div className="schedule-execution-item-main">
-                        <span className="schedule-execution-item-icon sys-card-avatar--cap">
-                          {execution.status === "succeeded" ? <PlayCircle size={16} /> : execution.status === "aborted" ? <PauseCircle size={16} /> : <Loader2 size={16} className="animate-spin" />}
+                        <span className={`schedule-execution-item-icon schedule-execution-item-icon--${presentation.tone}`}>
+                          <StatusIcon size={16} className={execution.status === "running" ? "animate-spin" : undefined} aria-hidden="true" />
                         </span>
                         <div className="schedule-execution-item-body">
-                          <p className="schedule-execution-item-title">{formatExecutionStatus(execution.status)}</p>
+                          <div className="schedule-execution-item-head">
+                            <p className="schedule-execution-item-title">{presentation.title}</p>
+                            <span className={`schedule-execution-item-tag schedule-execution-item-tag--${presentation.tone}`}>{presentation.tag}</span>
+                          </div>
                           <p className="schedule-execution-item-time">{formatExecutionTime(execution)}</p>
                           <p className="schedule-execution-item-message">{execution.message?.trim() || (execution.status === "running" ? "执行中" : "—")}</p>
                         </div>
@@ -590,7 +600,8 @@ export function WorkflowSchedulesPanel() {
                         </div>
                       ) : null}
                     </article>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -703,16 +714,40 @@ function formatLastRun(schedule: WorkflowScheduleRow) {
   return `${state} · ${formatDate(schedule.lastRunAt)}`;
 }
 
-function formatExecutionStatus(status: string) {
-  if (status === "succeeded") return "执行成功";
-  if (status === "aborted") return "执行中止";
-  return "执行中";
-}
-
 function formatExecutionTime(execution: WorkflowScheduleExecutionRow) {
   const triggerAt = execution.startedAt || execution.scheduledAt;
   if (execution.completedAt && execution.completedAt !== triggerAt) {
     return `触发：${formatDate(triggerAt)} · 结束：${formatDate(execution.completedAt)}`;
   }
   return `触发：${formatDate(triggerAt)}`;
+}
+
+type ExecutionTone = "success" | "danger" | "warning" | "info" | "neutral";
+
+function resolveExecutionPresentation(execution: WorkflowScheduleExecutionRow): {
+  tone: ExecutionTone;
+  tag: string;
+  title: string;
+  icon: LucideIcon;
+} {
+  if (execution.status === "succeeded") {
+    return { tone: "success", tag: "执行成功", title: "执行成功", icon: CheckCircle2 };
+  }
+  if (execution.status === "running") {
+    return { tone: "info", tag: "执行中", title: "执行中", icon: Loader2 };
+  }
+  const message = execution.message?.trim() ?? "";
+  if (message.includes("已删除")) {
+    return { tone: "neutral", tag: "运行已删除", title: "执行中止", icon: Ban };
+  }
+  if (message.includes("已失效")) {
+    return { tone: "warning", tag: "记录失效", title: "执行中止", icon: AlertTriangle };
+  }
+  if (message.includes("人工")) {
+    return { tone: "warning", tag: "待人工处理", title: "执行中止", icon: AlertTriangle };
+  }
+  if (message.includes("失败") || message.includes("待办")) {
+    return { tone: "danger", tag: "失败待办", title: "执行中止", icon: PauseCircle };
+  }
+  return { tone: "danger", tag: "执行中止", title: "执行中止", icon: PauseCircle };
 }

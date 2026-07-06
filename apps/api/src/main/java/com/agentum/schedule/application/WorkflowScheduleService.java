@@ -368,6 +368,11 @@ public class WorkflowScheduleService {
                     execution.abort("关联运行已删除，执行记录已中止。", now);
                     executionRepository.save(execution);
                     markScheduleState(execution.getScheduleId(), "aborted", now);
+                } else {
+                    // 触发流程尚未绑定 run 或运行已被删除后遗留的脏记录，不能长期停留在“执行中”。
+                    execution.abort("执行记录已失效，系统自动中止。", now);
+                    executionRepository.save(execution);
+                    markScheduleState(execution.getScheduleId(), "aborted", now);
                 }
                 continue;
             }
