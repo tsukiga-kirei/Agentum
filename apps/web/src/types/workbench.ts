@@ -232,3 +232,8 @@ export type UpdateWorkflowScheduleRequest = {
   status?: "active" | "paused";
   inputPayload: Record<string, unknown>;
 };
+
+export type TriggerWorkflowScheduleResponse = {
+  runId: string;
+  schedule: WorkflowScheduleRow;
+};

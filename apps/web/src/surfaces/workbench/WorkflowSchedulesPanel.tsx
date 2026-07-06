@@ -11,11 +11,14 @@ import {
   PauseCircle,
   PlayCircle,
   Search,
+  Settings2,
   Trash2,
   Workflow,
   X,
+  Zap,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { CronExpressionGenerator } from "../../components/cron/CronExpressionGenerator";
 import { AgentumApiError, workbenchApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import { paths } from "../../routes/paths";
@@ -95,6 +98,8 @@ export function WorkflowSchedulesPanel() {
   const [executions, setExecutions] = useState<WorkflowScheduleExecutionRow[]>([]);
   const [executionsLoading, setExecutionsLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [triggeringScheduleId, setTriggeringScheduleId] = useState<string | null>(null);
+  const [cronGeneratorOpen, setCronGeneratorOpen] = useState(false);
 
   const workflowOptions = useMemo(
     () => workflows.filter((workflow) => workflow.canLaunch).map((workflow) => ({
@@ -311,6 +316,27 @@ export function WorkflowSchedulesPanel() {
     }
   }
 
+  async function triggerSchedule(schedule: WorkflowScheduleRow) {
+    if (!tenantId || !token) {
+      return;
+    }
+    setTriggeringScheduleId(schedule.id);
+    try {
+      const result = await workbenchApi.triggerSchedule(tenantId, token, schedule.id);
+      messageApi.success("定时任务已开始执行");
+      void loadSchedules();
+      if (result.runId) {
+        navigate(paths.workbench.run(result.runId));
+      }
+    } catch (error) {
+      const reason = error instanceof AgentumApiError ? error.message : "定时任务执行失败";
+      console.warn("[workbench] 定时任务手动执行失败", { code: error instanceof AgentumApiError ? error.code : "unknown" });
+      messageApi.error(reason);
+    } finally {
+      setTriggeringScheduleId(null);
+    }
+  }
+
   return (
     <section className="workbench-task-center sys-fade-in" aria-label="定时任务">
       {messageContextHolder}
@@ -372,8 +398,10 @@ export function WorkflowSchedulesPanel() {
               key={schedule.id}
               schedule={schedule}
               index={index}
+              triggering={triggeringScheduleId === schedule.id}
               onOpen={() => openEditDrawer(schedule)}
               onToggle={() => void toggleSchedule(schedule)}
+              onTrigger={() => void triggerSchedule(schedule)}
               onDelete={() => void deleteSchedule(schedule)}
               onOpenRun={() => schedule.lastRunId && navigate(paths.workbench.run(schedule.lastRunId))}
             />
@@ -399,7 +427,10 @@ export function WorkflowSchedulesPanel() {
         title={form.mode === "edit" ? "编辑定时任务" : "新建定时任务"}
         width={560}
         open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
+        onClose={() => {
+          setDrawerOpen(false);
+          setCronGeneratorOpen(false);
+        }}
         rootClassName={drawerRootClassName}
       >
         <div className="sys-drawer-section schedule-drawer">
@@ -463,6 +494,25 @@ export function WorkflowSchedulesPanel() {
                   onChange={(event) => setForm((current) => ({ ...current, cronExpression: event.target.value, presetKey: "custom", presetLabel: "自定义 cron" }))}
                 />
               </div>
+              <button
+                type="button"
+                className="sys-btn sys-btn--text sys-btn--sm mt-2"
+                onClick={() => setCronGeneratorOpen((open) => !open)}
+              >
+                <Settings2 size={14} aria-hidden="true" />
+                {cronGeneratorOpen ? "收起生成器" : "打开 Cron 生成器"}
+              </button>
+              {cronGeneratorOpen ? (
+                <CronExpressionGenerator
+                  value={form.cronExpression}
+                  onChange={(cronExpression) => setForm((current) => ({
+                    ...current,
+                    cronExpression,
+                    presetKey: "custom",
+                    presetLabel: "自定义 cron",
+                  }))}
+                />
+              ) : null}
             </div>
           </div>
 
@@ -557,15 +607,19 @@ export function WorkflowSchedulesPanel() {
 function ScheduleListItem({
   schedule,
   index,
+  triggering,
   onOpen,
   onToggle,
+  onTrigger,
   onDelete,
   onOpenRun,
 }: {
   schedule: WorkflowScheduleRow;
   index: number;
+  triggering: boolean;
   onOpen: () => void;
   onToggle: () => void;
+  onTrigger: () => void;
   onDelete: () => void;
   onOpenRun: () => void;
 }) {
@@ -593,14 +647,33 @@ function ScheduleListItem({
           </button>
         ) : null}
         <button type="button" className="agent-button h-7 px-2 text-xs" onClick={onOpen}>
-          <Edit3 size={13} />
+          <Edit3 size={13} aria-hidden="true" />
           编辑
         </button>
+        <button
+          type="button"
+          className="sys-btn sys-btn--default sys-btn--sm"
+          disabled={triggering}
+          onClick={onTrigger}
+        >
+          {triggering ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <Zap size={13} aria-hidden="true" />}
+          执行
+        </button>
         <button type="button" className="sys-btn sys-btn--default sys-btn--sm" onClick={onToggle}>
-          {schedule.status === "active" ? "暂停" : "启用"}
+          {schedule.status === "active" ? (
+            <>
+              <PauseCircle size={13} aria-hidden="true" />
+              暂停
+            </>
+          ) : (
+            <>
+              <PlayCircle size={13} aria-hidden="true" />
+              启用
+            </>
+          )}
         </button>
         <button type="button" className="sys-btn sys-btn--danger sys-btn--sm" onClick={onDelete}>
-          <Trash2 size={13} />
+          <Trash2 size={13} aria-hidden="true" />
         </button>
       </div>
     </div>

@@ -106,6 +106,8 @@ public class TenantOrganizationService {
     private static final Set<String> ALLOWED_ORG_ROLE_STATUS = Set.of("active", "disabled");
     private static final Set<String> ALLOWED_MEMBERSHIP_STATUS = Set.of("active", "disabled");
     private static final Set<String> ALLOWED_PAGE_PERMISSIONS = Set.of("workbench", "workbench_schedules", "designer", "assets", "audit");
+    private static final String WORKBENCH_PAGE_KEY = "workbench";
+    private static final String WORKBENCH_SCHEDULES_PAGE_KEY = "workbench_schedules";
     private static final Set<String> ALLOWED_RESOURCE_TYPES = Set.of("mcp", "skill", "prompt_template", "delivery");
     private static final Set<String> ALLOWED_RESOURCE_ACTIONS = Set.of("use", "view", "execute", "manage");
     private static final Set<String> ALLOWED_PRINCIPAL_TYPES = Set.of("role", "department", "user");
@@ -1097,7 +1099,7 @@ public class TenantOrganizationService {
             .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "TENANT_NOT_FOUND", "租户不存在或已停用"));
         String groupName = normalizeGrantGroupName(request.groupName());
         List<NormalizedPrincipal> principals = normalizeGrantPrincipals(tenantId, request.principals(), "ORG_PAGE_GRANT_PRINCIPAL_INVALID");
-        List<String> pageKeys = normalizePageGrantKeys(request.pageKeys());
+        List<String> pageKeys = normalizePageGrantKeys(tenantId, operatorUserId, request.pageKeys());
         List<PageGrantEntity> grants = new ArrayList<>();
 
         for (NormalizedPrincipal principal : principals) {
@@ -1657,6 +1659,8 @@ public class TenantOrganizationService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_ROLE_PAGE_PERMISSION_INVALID", "包含不支持的页面权限");
         }
 
+        assertWorkbenchScheduleDependency(normalized, tenantId, operatorUserId);
+
         try {
             return objectMapper.writeValueAsString(normalized);
         } catch (JsonProcessingException exception) {
@@ -1807,7 +1811,7 @@ public class TenantOrganizationService {
         return List.copyOf(normalized.values());
     }
 
-    private List<String> normalizePageGrantKeys(List<String> pageKeys) {
+    private List<String> normalizePageGrantKeys(UUID tenantId, UUID operatorUserId, List<String> pageKeys) {
         if (pageKeys == null || pageKeys.isEmpty()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_PAGE_GRANT_PAGE_INVALID", "请选择页签");
         }
@@ -1826,7 +1830,21 @@ public class TenantOrganizationService {
         if (!invalid.isEmpty()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_PAGE_GRANT_PAGE_INVALID", "包含不支持的页签");
         }
+        assertWorkbenchScheduleDependency(normalized, tenantId, operatorUserId);
         return normalized;
+    }
+
+    private void assertWorkbenchScheduleDependency(List<String> pageKeys, UUID tenantId, UUID operatorUserId) {
+        if (pageKeys.contains(WORKBENCH_SCHEDULES_PAGE_KEY) && !pageKeys.contains(WORKBENCH_PAGE_KEY)) {
+            log.warn(
+                "页签分配缺少业务工作台依赖 tenantId={} operatorUserId={} pageKeys={} requestId={}",
+                tenantId,
+                operatorUserId,
+                pageKeys,
+                RequestIds.current()
+            );
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ORG_PAGE_GRANT_WORKBENCH_REQUIRED", "分配定时任务前必须先分配业务工作台");
+        }
     }
 
     private List<NormalizedResource> normalizeResourceGrantItems(List<ResourceGrantItemRequest> resources, Map<UUID, SystemCapabilityEntity> capabilitiesById) {

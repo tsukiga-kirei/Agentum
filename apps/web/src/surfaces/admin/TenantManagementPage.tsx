@@ -72,13 +72,64 @@ const tenantManagementTabs: TenantManagementTab[] = [
   { key: "resources", label: "资源分配", description: "分配模块入口和可用能力池", icon: UserRoundCog },
 ];
 
-const pagePermissionOptions = [
-  { value: "workbench", label: "业务工作台", description: "待办、发起流程和运行摘要", icon: ClipboardList },
-  { value: "workbench_schedules", label: "定时任务", description: "按 cron 自动执行有权限流程", icon: CalendarClock },
+const topLevelPagePermissionOptions = [
   { value: "designer", label: "流程设计", description: "草稿、阶段积木和能力配置", icon: Code2 },
   { value: "assets", label: "能力资产", description: "智能体、Skill、MCP 和交付能力", icon: Database },
   { value: "audit", label: "运行审计", description: "链路、快照、工具和交付记录", icon: Eye },
-];
+] as const;
+
+const workbenchPagePermissionGroup = {
+  main: { value: "workbench", label: "业务工作台", description: "待办、发起流程和运行摘要", icon: ClipboardList },
+  sub: [{ value: "workbench_schedules", label: "定时任务", description: "附加能力：需先开通业务工作台", icon: CalendarClock }],
+} as const;
+
+function togglePageKey(keys: string[], pageKey: string) {
+  return keys.includes(pageKey) ? keys.filter((key) => key !== pageKey) : [...keys, pageKey];
+}
+
+function toggleWorkbenchPageKey(keys: string[], pageKey: string) {
+  const workbenchKey = workbenchPagePermissionGroup.main.value;
+  const schedulesKey = workbenchPagePermissionGroup.sub[0].value;
+  if (pageKey === workbenchKey) {
+    if (keys.includes(workbenchKey)) {
+      return keys.filter((key) => key !== workbenchKey && key !== schedulesKey);
+    }
+    return [...keys, workbenchKey];
+  }
+  if (pageKey === schedulesKey) {
+    if (!keys.includes(workbenchKey)) {
+      return keys;
+    }
+    return togglePageKey(keys, schedulesKey);
+  }
+  return togglePageKey(keys, pageKey);
+}
+
+function normalizeWorkbenchPageKeys(keys: string[]) {
+  const workbenchKey = workbenchPagePermissionGroup.main.value;
+  const schedulesKey = workbenchPagePermissionGroup.sub[0].value;
+  if (keys.includes(schedulesKey) && !keys.includes(workbenchKey)) {
+    return [...keys, workbenchKey];
+  }
+  return keys;
+}
+
+function formatPageGrantTags(pages: { pageKey: string; pageName: string }[]) {
+  const pageKeys = pages.map((page) => page.pageKey);
+  const tags: string[] = [];
+  if (pageKeys.includes("workbench")) {
+    tags.push("业务工作台");
+  }
+  if (pageKeys.includes("workbench_schedules")) {
+    tags.push("定时任务");
+  }
+  pages.forEach((page) => {
+    if (page.pageKey !== "workbench" && page.pageKey !== "workbench_schedules") {
+      tags.push(page.pageName);
+    }
+  });
+  return tags;
+}
 
 const emptyMemberForm: CreateMemberRequest = {
   displayName: "",
@@ -259,6 +310,7 @@ export function TenantManagementPage() {
   const [pageGrantGroupName, setPageGrantGroupName] = useState("");
   const [pageGrantPrincipalKeys, setPageGrantPrincipalKeys] = useState<PrincipalSelectionKey[]>([]);
   const [selectedPageKeys, setSelectedPageKeys] = useState<string[]>([]);
+  const [workbenchSubExpanded, setWorkbenchSubExpanded] = useState(false);
   const [pageGrantSubmitting, setPageGrantSubmitting] = useState(false);
   const [resourceGrants, setResourceGrants] = useState<ResourceGrant[]>([]);
   const [grantModalOpen, setGrantModalOpen] = useState(false);
@@ -784,6 +836,7 @@ export function TenantManagementPage() {
     setPageGrantGroupName("");
     setPageGrantPrincipalKeys([]);
     setSelectedPageKeys([]);
+    setWorkbenchSubExpanded(false);
     setPageGrantModalOpen(true);
   }
 
@@ -791,7 +844,9 @@ export function TenantManagementPage() {
     setEditingPageGrantGroup(group);
     setPageGrantGroupName(group.groupName);
     setPageGrantPrincipalKeys(group.principals.map((principal) => `${principal.principalType}:${principal.principalId}` as PrincipalSelectionKey));
-    setSelectedPageKeys(group.pages.map((page) => page.pageKey));
+    const pageKeys = normalizeWorkbenchPageKeys(group.pages.map((page) => page.pageKey));
+    setSelectedPageKeys(pageKeys);
+    setWorkbenchSubExpanded(pageKeys.includes(workbenchPagePermissionGroup.sub[0].value));
     setPageGrantModalOpen(true);
   }
 
@@ -816,7 +871,7 @@ export function TenantManagementPage() {
           const [principalType, principalId] = principalKey.split(":") as [PrincipalType, string];
           return { principalType, principalId };
         }),
-        pageKeys: selectedPageKeys,
+        pageKeys: normalizeWorkbenchPageKeys(selectedPageKeys),
       };
       if (editingPageGrantGroup) {
         await organizationApi.updatePageGrant(tenantId, editingPageGrantGroup.id, token, request);
@@ -1472,8 +1527,69 @@ export function TenantManagementPage() {
           </div>
           <div className="sys-config-group tenant-drawer-option-group">
             <div className="sys-config-group-title">可访问页签</div>
+            <p className="tenant-permission-hint">定时任务是业务工作台的附加能力，需先勾选业务工作台后才能启用。</p>
             <div className="tenant-permission-grid">
-              {pagePermissionOptions.map((option) => {
+              {(() => {
+                const workbenchMainChecked = selectedPageKeys.includes(workbenchPagePermissionGroup.main.value);
+                const schedulesChecked = selectedPageKeys.includes(workbenchPagePermissionGroup.sub[0].value);
+                const MainIcon = workbenchPagePermissionGroup.main.icon;
+                return (
+                  <div className={`tenant-permission-card tenant-permission-card--group ${workbenchMainChecked || schedulesChecked ? "tenant-permission-card--checked" : ""} ${workbenchSubExpanded ? "tenant-permission-card--expanded" : "tenant-permission-card--collapsed"}`}>
+                    <button
+                      type="button"
+                      className={`tenant-permission-card-row tenant-permission-card-row--main ${workbenchMainChecked ? "tenant-permission-card-row--checked" : ""}`}
+                      onClick={() => setSelectedPageKeys((keys) => toggleWorkbenchPageKey(keys, workbenchPagePermissionGroup.main.value))}
+                    >
+                      <span className="tenant-permission-option-icon"><MainIcon size={16} /></span>
+                      <span className="tenant-permission-option-text">
+                        <span>{workbenchPagePermissionGroup.main.label}</span>
+                        <small>{workbenchPagePermissionGroup.main.description}</small>
+                      </span>
+                      <CheckCircle2 size={16} className="tenant-permission-option-check" />
+                    </button>
+                    <button
+                      type="button"
+                      className="tenant-permission-card-toggle"
+                      aria-expanded={workbenchSubExpanded}
+                      onClick={() => setWorkbenchSubExpanded((expanded) => !expanded)}
+                    >
+                      <ChevronRight size={14} className={`tenant-permission-card-toggle-icon ${workbenchSubExpanded ? "tenant-permission-card-toggle-icon--expanded" : ""}`} aria-hidden="true" />
+                      <span>子能力</span>
+                      {!workbenchSubExpanded && schedulesChecked ? (
+                        <span className="tenant-permission-card-toggle-tag">已选定时任务</span>
+                      ) : null}
+                      <span className="tenant-permission-card-toggle-hint">{workbenchSubExpanded ? "收起" : "展开"}</span>
+                    </button>
+                    {workbenchSubExpanded ? (
+                      <div className="tenant-permission-card-subpanel">
+                        {workbenchPagePermissionGroup.sub.map((option) => {
+                          const Icon = option.icon;
+                          const checked = selectedPageKeys.includes(option.value);
+                          const disabled = !workbenchMainChecked;
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              disabled={disabled}
+                              className={`tenant-permission-card-row tenant-permission-card-row--sub ${checked ? "tenant-permission-card-row--checked" : ""} ${disabled ? "tenant-permission-card-row--disabled" : ""}`}
+                              onClick={() => setSelectedPageKeys((keys) => toggleWorkbenchPageKey(keys, option.value))}
+                            >
+                              <span className="tenant-permission-sub-branch" aria-hidden="true" />
+                              <span className="tenant-permission-option-icon tenant-permission-option-icon--sub"><Icon size={15} /></span>
+                              <span className="tenant-permission-option-text">
+                                <span>{option.label}</span>
+                                <small>{disabled ? "请先勾选上方的业务工作台" : option.description}</small>
+                              </span>
+                              <CheckCircle2 size={15} className="tenant-permission-option-check" />
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })()}
+              {topLevelPagePermissionOptions.map((option) => {
                 const Icon = option.icon;
                 const checked = selectedPageKeys.includes(option.value);
                 return (
@@ -1481,7 +1597,7 @@ export function TenantManagementPage() {
                     key={option.value}
                     type="button"
                     className={`tenant-permission-option ${checked ? "tenant-permission-option--checked" : ""}`}
-                    onClick={() => setSelectedPageKeys((keys) => keys.includes(option.value) ? keys.filter((key) => key !== option.value) : [...keys, option.value])}
+                    onClick={() => setSelectedPageKeys((keys) => togglePageKey(keys, option.value))}
                   >
                     <span className="tenant-permission-option-icon"><Icon size={16} /></span>
                     <span className="tenant-permission-option-text">
@@ -2073,7 +2189,7 @@ function ResourceAuthorizationPanel({
                   <div className="tenant-auth-card-line">
                     <span className="tenant-auth-card-line-label">页签</span>
                     <div className="sys-info-tags">
-                      {grant.pages.map((page) => <span key={page.pageKey} className="sys-info-tag sys-info-tag--primary">{page.pageName}</span>)}
+                      {formatPageGrantTags(grant.pages).map((tag) => <span key={tag} className="sys-info-tag sys-info-tag--primary">{tag}</span>)}
                     </div>
                   </div>
                   <div className="tenant-auth-card-line">

@@ -78,6 +78,7 @@ import type {
   WorkbenchAvailableWorkflowPage,
   WorkbenchAvailableWorkflowPreview,
   CreateWorkflowScheduleRequest,
+  TriggerWorkflowScheduleResponse,
   UpdateWorkflowScheduleRequest,
   WorkbenchRunDetail,
   WorkflowScheduleExecutionPage,
@@ -746,6 +747,11 @@ export const workbenchApi = {
     }),
   deleteSchedule: (tenantId: string, token: string, scheduleId: string) =>
     apiRequest<void>(`/api/tenants/${tenantId}/workbench/schedules/${scheduleId}`, { method: "DELETE", token }),
+  triggerSchedule: (tenantId: string, token: string, scheduleId: string) =>
+    apiRequest<TriggerWorkflowScheduleResponse>(`/api/tenants/${tenantId}/workbench/schedules/${scheduleId}/trigger`, {
+      method: "POST",
+      token,
+    }),
   listScheduleExecutions: (tenantId: string, token: string, scheduleId: string, page = 1, size = 10) => {
     const params = new URLSearchParams({ page: String(page), size: String(size) });
     return apiRequest<WorkflowScheduleExecutionPage>(

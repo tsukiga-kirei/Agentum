@@ -4646,6 +4646,273 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
 .tenant-permission-option--checked .tenant-permission-option-check {
   opacity: 1;
 }
+
+.tenant-permission-hint {
+  margin: 0 0 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-tertiary);
+}
+
+.tenant-permission-card {
+  position: relative;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-card);
+  overflow: hidden;
+  transition: border-color var(--transition-fast), background var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.tenant-permission-card--checked {
+  border-color: color-mix(in srgb, var(--color-primary) 65%, var(--color-border-light));
+  background: var(--color-primary-bg);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.08);
+}
+
+.tenant-permission-card-row {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 36px 12px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.tenant-permission-card-row:hover {
+  background: color-mix(in srgb, var(--color-primary) 6%, transparent);
+}
+
+.tenant-permission-card-row--main {
+  min-height: 78px;
+}
+
+.tenant-permission-card-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--color-border-light) 80%, transparent);
+  background: color-mix(in srgb, var(--color-bg-hover) 55%, transparent);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.tenant-permission-card-toggle:hover {
+  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-bg-hover));
+  color: var(--color-text-primary);
+}
+
+.tenant-permission-card-toggle-icon {
+  transition: transform var(--transition-fast);
+}
+
+.tenant-permission-card-toggle-icon--expanded {
+  transform: rotate(90deg);
+}
+
+.tenant-permission-card-toggle-tag {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--color-primary-bg);
+  color: var(--color-primary);
+  font-size: 11px;
+}
+
+.tenant-permission-card-toggle-hint {
+  margin-left: auto;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+}
+
+.tenant-permission-card-subpanel {
+  border-top: 1px solid color-mix(in srgb, var(--color-border-light) 80%, transparent);
+}
+
+.tenant-permission-card-row--sub {
+  min-height: 58px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  padding-left: 10px;
+}
+
+.tenant-permission-card-row--disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.tenant-permission-card-row--disabled:hover {
+  background: transparent;
+}
+
+.tenant-permission-sub-branch {
+  width: 10px;
+  margin-top: 10px;
+  margin-left: 4px;
+  border-left: 1px solid color-mix(in srgb, var(--color-primary) 35%, var(--color-border-light));
+  border-bottom: 1px solid color-mix(in srgb, var(--color-primary) 35%, var(--color-border-light));
+  border-bottom-left-radius: 4px;
+  align-self: stretch;
+  min-height: 18px;
+  flex-shrink: 0;
+}
+
+.tenant-permission-option-icon--sub {
+  width: 26px;
+  height: 26px;
+}
+
+.tenant-permission-card-row--checked .tenant-permission-option-check,
+.tenant-permission-card--checked .tenant-permission-card-row--checked .tenant-permission-option-check {
+  opacity: 1;
+}
+
+.tenant-permission-card-note {
+  margin: 0 12px 12px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-bg-card));
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.cron-generator {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-hover);
+}
+
+.cron-generator-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.cron-generator-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.cron-generator-preview {
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-card);
+  color: var(--color-primary);
+  font-size: 12px;
+}
+
+.cron-generator-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.cron-generator-tab {
+  padding: 6px 10px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-card);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.cron-generator-tab--active {
+  border-color: color-mix(in srgb, var(--color-primary) 55%, var(--color-border-light));
+  background: var(--color-primary-bg);
+  color: var(--color-primary);
+}
+
+.cron-generator-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cron-generator-mode {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.cron-generator-mode-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cron-generator-mode-label small {
+  color: var(--color-text-tertiary);
+}
+
+.cron-generator-inline-inputs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.cron-generator-input {
+  width: 52px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-card);
+  color: var(--color-text-primary);
+}
+
+.cron-generator-grid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 6px;
+  max-height: 220px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-card);
+}
+
+.cron-generator-grid-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.cron-generator-grid-item--checked {
+  background: var(--color-primary-bg);
+  color: var(--color-primary);
+}
+
+.schedule-drawer .sys-btn--sm {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
 .tenant-pagination {
   display: flex;
   align-items: center;

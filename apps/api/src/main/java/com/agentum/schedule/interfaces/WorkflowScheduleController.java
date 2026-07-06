@@ -108,6 +108,17 @@ public class WorkflowScheduleController {
         return ApiResponse.success(null, RequestIds.current(request));
     }
 
+    @PostMapping("/{scheduleId}/trigger")
+    public ApiResponse<WorkflowScheduleApi.TriggerScheduleResponse> trigger(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID scheduleId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        workbenchAccess.assertCanAccessSchedule(principal, tenantId);
+        return ApiResponse.success(scheduleService.triggerNow(tenantId, principal, scheduleId), RequestIds.current(request));
+    }
+
     @GetMapping("/{scheduleId}/executions")
     public ApiResponse<PageResponse<WorkflowScheduleApi.ScheduleExecutionRow>> executions(
         @PathVariable UUID tenantId,

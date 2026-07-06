@@ -274,6 +274,42 @@ public class WorkflowScheduleService {
     }
 
     @Transactional
+    public WorkflowScheduleApi.TriggerScheduleResponse triggerNow(UUID tenantId, CurrentUserPrincipal principal, UUID scheduleId) {
+        ensureActiveTenant(tenantId);
+        ensureAuthenticated(principal);
+        WorkflowScheduleEntity schedule = requireWritableSchedule(tenantId, principal, scheduleId);
+        Instant now = clock.instant();
+        UUID runId = triggerOne(schedule, now).orElseThrow(() -> new ApiException(
+            HttpStatus.BAD_REQUEST,
+            "SCHEDULE_TRIGGER_FAILED",
+            "定时任务触发失败，请检查流程权限和输入配置"
+        ));
+        WorkflowScheduleEntity refreshed = scheduleRepository.findByIdAndTenantId(scheduleId, tenantId)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "SCHEDULE_NOT_FOUND", "定时任务不存在"));
+        auditService.recordOperationLog(
+            tenantId,
+            principal.userId(),
+            principal.username(),
+            "TRIGGER_WORKFLOW_SCHEDULE",
+            "WORKFLOW_SCHEDULE",
+            refreshed.getId().toString(),
+            refreshed.getName(),
+            "手动触发定时任务「" + refreshed.getName() + "」。",
+            Map.of("runId", runId.toString(), "triggerType", "manual"),
+            null
+        );
+        log.info(
+            "定时任务已手动触发 tenantId={} operatorUserId={} scheduleId={} runId={} requestId={}",
+            tenantId,
+            principal.userId(),
+            scheduleId,
+            runId,
+            RequestIds.current()
+        );
+        return new WorkflowScheduleApi.TriggerScheduleResponse(runId, toRow(refreshed));
+    }
+
+    @Transactional
     public void triggerDueSchedules() {
         Instant now = clock.instant();
         List<WorkflowScheduleEntity> dueSchedules = scheduleRepository.findDueSchedules(now, PageRequest.of(0, 20));
@@ -316,7 +352,7 @@ public class WorkflowScheduleService {
         }
     }
 
-    private void triggerOne(WorkflowScheduleEntity schedule, Instant now) {
+    private java.util.Optional<UUID> triggerOne(WorkflowScheduleEntity schedule, Instant now) {
         WorkflowScheduleExecutionEntity execution = WorkflowScheduleExecutionEntity.running(schedule, schedule.getNextRunAt(), now);
         executionRepository.save(execution);
         CronExpression cron = parseCron(schedule.getCronExpression());
@@ -344,11 +380,14 @@ public class WorkflowScheduleService {
             schedule.markTriggered(detail.id(), now, nextRunAt, now);
             scheduleRepository.save(schedule);
             log.info("定时任务已触发 tenantId={} scheduleId={} runId={} requestId={}", schedule.getTenantId(), schedule.getId(), detail.id(), RequestIds.current());
+            return java.util.Optional.of(detail.id());
         } catch (ApiException exception) {
             abortBeforeRun(schedule, execution, exception.getMessage(), nextRunAt, now);
+            return java.util.Optional.empty();
         } catch (RuntimeException exception) {
             log.error("定时任务触发异常 tenantId={} scheduleId={} requestId={}", schedule.getTenantId(), schedule.getId(), RequestIds.current(), exception);
             abortBeforeRun(schedule, execution, "定时任务触发失败，请联系管理员查看日志。", nextRunAt, now);
+            return java.util.Optional.empty();
         }
     }
 

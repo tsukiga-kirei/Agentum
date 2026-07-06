@@ -26,8 +26,6 @@ public class MenuService {
 
     // 阶段一已下线页签；过滤旧 page_grants 或未重启实例，避免侧栏继续展示运行审计入口。
     private static final Set<String> DEPRECATED_MENU_KEYS = Set.of();
-    private static final String WORKBENCH_MENU_KEY = "workbench";
-    private static final String WORKBENCH_SCHEDULES_PAGE_KEY = "workbench_schedules";
 
     // 系统角色 → 默认菜单映射。
     private static final Map<String, List<MenuItemResponse>> SYSTEM_ROLE_MENUS = Map.of(
@@ -72,7 +70,7 @@ public class MenuService {
 
         return SYSTEM_ROLE_MENUS.getOrDefault("business", List.of())
             .stream()
-            .filter(menu -> grantedPageKeys.contains(menu.key()) || isWorkbenchMenuVisibleByScheduleTab(menu.key(), grantedPageKeys))
+            .filter(menu -> grantedPageKeys.contains(menu.key()))
             .filter(menu -> !DEPRECATED_MENU_KEYS.contains(menu.key()))
             .toList();
     }
@@ -80,17 +78,13 @@ public class MenuService {
     /**
      * 返回当前业务角色被分配的页签键，前端据此收敛模块内页签。
      *
-     * <p>定时任务在租户管理中作为业务侧同级页签分配，当前路由承载在业务工作台模块下，
-     * 所以需要把原始页签权限返回给前端做模块内页签过滤。</p>
+     * <p>定时任务是业务工作台的附加能力，分配时必须同时包含 {@code workbench}；
+     * 前端据此在工作台模块内过滤「定时任务」子页签。</p>
      */
     public List<String> resolvePermissions(String systemRole, UUID tenantId, UUID userId) {
         if (!"business".equals(systemRole) || tenantId == null || userId == null) {
             return List.of();
         }
         return List.copyOf(businessPageAccess.resolveGrantedPageKeys(tenantId, userId));
-    }
-
-    private static boolean isWorkbenchMenuVisibleByScheduleTab(String menuKey, Set<String> grantedPageKeys) {
-        return WORKBENCH_MENU_KEY.equals(menuKey) && grantedPageKeys.contains(WORKBENCH_SCHEDULES_PAGE_KEY);
     }
 }

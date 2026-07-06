@@ -80,4 +80,10 @@ public final class WorkflowScheduleApi {
         String message
     ) {
     }
+
+    public record TriggerScheduleResponse(
+        UUID runId,
+        ScheduleRow schedule
+    ) {
+    }
 }

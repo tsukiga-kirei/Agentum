@@ -83,7 +83,7 @@ class MenuServiceTest {
     }
 
     @Test
-    void shouldExposeWorkbenchMenuWhenOnlyScheduleTabIsGranted() {
+    void shouldHideWorkbenchMenuWhenOnlyScheduleTabIsGranted() {
         MenuService menuService = newService();
         UserMembershipEntity membership = UserMembershipEntity.create(TENANT_ID, USER_ID, null);
 
@@ -93,9 +93,7 @@ class MenuServiceTest {
             PageGrantEntity.create(TENANT_ID, UUID.randomUUID(), "定时任务页签", "workbench_schedules", "user", USER_ID)
         ));
 
-        assertThat(menuService.resolveMenus("business", TENANT_ID, USER_ID))
-            .extracting("key")
-            .containsExactly("workbench");
+        assertThat(menuService.resolveMenus("business", TENANT_ID, USER_ID)).isEmpty();
         assertThat(menuService.resolvePermissions("business", TENANT_ID, USER_ID))
             .containsExactly("workbench_schedules");
     }
