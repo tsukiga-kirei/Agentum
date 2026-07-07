@@ -1,5 +1,6 @@
 package com.agentum;
 
+import com.agentum.shared.platform.AgentumTimezones;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
@@ -8,6 +9,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 public class AgentumApiApplication {
 
     public static void main(String[] args) {
+        AgentumTimezones.bootstrapFromEnvironment();
         SpringApplication.run(AgentumApiApplication.class, args);
     }
 }

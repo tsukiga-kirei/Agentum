@@ -41,6 +41,7 @@ import com.agentum.workflow.infrastructure.WorkflowRunRepository;
 import com.agentum.workflow.infrastructure.WorkflowVersionRepository;
 import com.agentum.workflow.infrastructure.WorkflowVariableSnapshotRepository;
 import com.agentum.workflow.infrastructure.WorkflowWaitingEventRepository;
+import com.agentum.shared.platform.AgentumTimezones;
 import com.agentum.workflow.application.WorkflowRuntimeSystemVariables;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -49,7 +50,6 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.time.Instant;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -2422,7 +2422,7 @@ public class WorkbenchRuntimeService {
     }
 
     private String generateRunNumber(Instant now) {
-        String datePrefix = DateTimeFormatter.ofPattern("yyyyMMdd").withZone(ZoneId.of("Asia/Shanghai")).format(now);
+        String datePrefix = DateTimeFormatter.ofPattern("yyyyMMdd").withZone(AgentumTimezones.businessZone()).format(now);
         String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
         return datePrefix + "-" + suffix;
     }

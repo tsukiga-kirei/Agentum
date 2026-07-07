@@ -13,6 +13,8 @@ services:
     image: agentum-api:${AGENTUM_IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
+      TZ: ${AGENTUM_TIMEZONE:-Asia/Shanghai}
+      AGENTUM_TIMEZONE: ${AGENTUM_TIMEZONE:-Asia/Shanghai}
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-agentum}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-agentum}

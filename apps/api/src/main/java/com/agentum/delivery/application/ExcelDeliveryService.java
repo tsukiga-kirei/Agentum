@@ -7,7 +7,7 @@ import com.agentum.shared.api.RequestIds;
 import com.agentum.system.domain.SystemCapabilityEntity;
 import java.time.Clock;
 import java.time.Instant;
-import java.time.ZoneId;
+import com.agentum.shared.platform.AgentumTimezones;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -168,7 +168,7 @@ public class ExcelDeliveryService {
     private Map<String, Object> enrichTemplateVariables(Map<String, Object> variables) {
         Map<String, Object> result = new LinkedHashMap<>(variables == null ? Map.of() : variables);
         Instant now = clock.instant();
-        var localDate = now.atZone(ZoneId.systemDefault()).toLocalDate();
+        var localDate = now.atZone(AgentumTimezones.businessZone()).toLocalDate();
         result.putIfAbsent("date", DateTimeFormatter.ISO_LOCAL_DATE.format(localDate));
         result.putIfAbsent("dateCompact", DateTimeFormatter.BASIC_ISO_DATE.format(localDate));
         return result;

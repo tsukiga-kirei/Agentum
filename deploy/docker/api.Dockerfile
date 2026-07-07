@@ -4,6 +4,9 @@ COPY . .
 RUN gradle :apps:api:bootJar --no-daemon
 
 FROM eclipse-temurin:21-jre-alpine
+RUN apk add --no-cache tzdata
+ENV TZ=Asia/Shanghai
+ENV AGENTUM_TIMEZONE=Asia/Shanghai
 WORKDIR /app
 COPY --from=builder /app/apps/api/build/libs/*.jar app.jar
 EXPOSE 8080

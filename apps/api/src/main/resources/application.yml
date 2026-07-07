@@ -13,6 +13,9 @@ server:
 # 运行态异步执行（RabbitMQ 执行 + Redis Stream 进度回放）配置。
 # 节点执行超时通过环境变量 AGENTUM_RUNTIME_NODE_TIMEOUT_SECONDS 控制，防止单节点无限占用 Worker。
 agentum:
+  platform:
+    # 平台业务时区；Docker / 本地统一通过 AGENTUM_TIMEZONE 覆盖，影响定时任务、运行变量和日志行前缀时间。
+    timezone: ${AGENTUM_TIMEZONE:Asia/Shanghai}
   storage:
     minio:
       endpoint: ${MINIO_ENDPOINT:http://localhost:9000}

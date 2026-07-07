@@ -3,14 +3,21 @@ package com.agentum.workflow.application;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.agentum.workflow.domain.WorkflowRunEntity;
+import com.agentum.shared.platform.AgentumTimezones;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Map;
 import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class WorkflowRuntimeSystemVariablesTest {
+
+    @BeforeEach
+    void useBusinessTimezone() {
+        AgentumTimezones.apply("Asia/Shanghai");
+    }
 
     @Test
     void shouldExposeChineseDateAndWeekdayInBusinessTimezone() {

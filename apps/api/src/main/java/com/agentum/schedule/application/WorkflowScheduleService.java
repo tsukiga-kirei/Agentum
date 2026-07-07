@@ -14,6 +14,7 @@ import com.agentum.schedule.infrastructure.WorkflowScheduleRepository;
 import com.agentum.schedule.interfaces.WorkflowScheduleApi;
 import com.agentum.shared.api.ApiException;
 import com.agentum.shared.api.RequestIds;
+import com.agentum.shared.platform.AgentumTimezones;
 import com.agentum.shared.pagination.PageQuery;
 import com.agentum.shared.pagination.PageResponse;
 import com.agentum.shared.pagination.PageableFactory;
@@ -34,7 +35,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.time.Instant;
-import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -594,7 +594,7 @@ public class WorkflowScheduleService {
     }
 
     private Instant nextRunAt(CronExpression cron, Instant base) {
-        ZonedDateTime next = cron.next(ZonedDateTime.ofInstant(base, ZoneId.systemDefault()));
+        ZonedDateTime next = cron.next(ZonedDateTime.ofInstant(base, AgentumTimezones.businessZone()));
         if (next == null) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "SCHEDULE_CRON_NO_NEXT", "cron 表达式无法计算下一次执行时间");
         }

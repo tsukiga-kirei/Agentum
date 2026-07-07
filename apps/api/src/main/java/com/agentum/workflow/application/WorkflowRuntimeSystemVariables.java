@@ -1,5 +1,6 @@
 package com.agentum.workflow.application;
 
+import com.agentum.shared.platform.AgentumTimezones;
 import com.agentum.workflow.domain.WorkflowRunEntity;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -13,6 +14,7 @@ import java.util.Map;
  */
 public final class WorkflowRuntimeSystemVariables {
 
+    /** 兼容旧引用；实际时区由 {@link AgentumTimezones} 通过 AGENTUM_TIMEZONE 统一配置。 */
     public static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
 
     private static final String[] WEEKDAY_NAMES = {
@@ -29,7 +31,7 @@ public final class WorkflowRuntimeSystemVariables {
     }
 
     public static Map<String, Object> from(WorkflowRunEntity run, Clock clock) {
-        LocalDate today = LocalDate.now(clock.withZone(BUSINESS_ZONE));
+        LocalDate today = LocalDate.now(clock.withZone(AgentumTimezones.businessZone()));
         Map<String, Object> variables = new LinkedHashMap<>();
         putRunVariables(variables, run);
         putDateVariables(variables, today);
@@ -37,7 +39,7 @@ public final class WorkflowRuntimeSystemVariables {
     }
 
     public static Map<String, Object> from(Clock clock) {
-        LocalDate today = LocalDate.now(clock.withZone(BUSINESS_ZONE));
+        LocalDate today = LocalDate.now(clock.withZone(AgentumTimezones.businessZone()));
         Map<String, Object> variables = new LinkedHashMap<>();
         putDateVariables(variables, today);
         return variables;
