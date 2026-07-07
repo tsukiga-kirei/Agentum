@@ -794,14 +794,8 @@ export function AppLayout() {
 }
 
 function NotificationContent({ row }: { row: NotificationRow }) {
-  if (isMarkdownNotification(row.category)) {
-    return <MarkdownRenderer content={row.contentMarkdown} compact />;
-  }
-  return <p className="notification-plain-content">{row.contentMarkdown}</p>;
-}
-
-function isMarkdownNotification(category: string): boolean {
-  return category === "system_notice";
+  // 公告与定时任务通知均写入 contentMarkdown，统一按 Markdown 渲染。
+  return <MarkdownRenderer content={row.contentMarkdown} compact />;
 }
 
 function AccountAvatarWithBadge({ avatarUrl, text, unreadCount }: { avatarUrl?: string; text: string; unreadCount: number }) {
