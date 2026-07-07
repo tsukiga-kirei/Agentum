@@ -876,15 +876,7 @@ export function WorkflowDraftsPage() {
             </div>
 
             <div className="workflow-drawer-footer">
-              {isWorkflowOwnedByCurrentUser(detailWorkflow, currentUserId) ? (
-                <button type="button" className="sys-btn sys-btn--danger sys-btn--sm workflow-drawer-footer-danger" disabled={submitting} onClick={() => setDeleteTarget(detailWorkflow)}>
-                  <Trash2 size={14} aria-hidden="true" />
-                  删除
-                </button>
-              ) : (
-                <span className="workflow-drawer-footer-spacer" aria-hidden="true" />
-              )}
-              <div className="workflow-drawer-footer-actions">
+              <div className="workflow-drawer-secondary-actions">
                 <button type="button" className="sys-btn sys-btn--default sys-btn--sm" disabled={copyingWorkflowId === detailWorkflow.id} onClick={() => void handleCopyWorkflow(detailWorkflow)}>
                   <Copy size={14} aria-hidden="true" />
                   {copyingWorkflowId === detailWorkflow.id ? "复制中" : "复制"}
@@ -895,32 +887,44 @@ export function WorkflowDraftsPage() {
                 </button>
                 {detailWorkflow.accessLevel !== "read" ? (
                   <>
-                  <button type="button" className="sys-btn sys-btn--default sys-btn--sm" disabled={submitting} onClick={() => void handleSaveDetail()}>
-                    <Save size={14} aria-hidden="true" />
-                    保存
+                    <button type="button" className="sys-btn sys-btn--default sys-btn--sm" disabled={submitting} onClick={() => void handleSaveDetail()}>
+                      <Save size={14} aria-hidden="true" />
+                      保存
+                    </button>
+                    {isWorkflowOwnedByCurrentUser(detailWorkflow, currentUserId) && detailWorkflow.latestVersionNumber > 0 ? (
+                      detailWorkflow.launchEnabled ? (
+                        <button type="button" className="sys-btn sys-btn--default sys-btn--sm" disabled={submitting} onClick={() => void handleRecallLaunch()}>
+                          <Archive size={14} aria-hidden="true" />
+                          下线
+                        </button>
+                      ) : (
+                        <button type="button" className="sys-btn sys-btn--default sys-btn--sm" disabled={submitting} onClick={() => void handleRestoreLaunch()}>
+                          <RotateCcw size={14} aria-hidden="true" />
+                          上线
+                        </button>
+                      )
+                    ) : null}
+                    <button type="button" className="sys-btn sys-btn--default sys-btn--sm" disabled={validatingWorkflowId === detailWorkflow.id || (!detailWorkflow.hasUnpublishedChanges && detailWorkflow.latestVersionNumber > 0)} onClick={() => void handleValidateForPublish(detailWorkflow)}>
+                      <ListChecks size={14} aria-hidden="true" />
+                      {validatingWorkflowId === detailWorkflow.id ? "校验中" : "发布校验"}
+                    </button>
+                  </>
+                ) : null}
+              </div>
+              <div className="workflow-drawer-primary-row">
+                {isWorkflowOwnedByCurrentUser(detailWorkflow, currentUserId) ? (
+                  <button type="button" className="sys-btn sys-btn--danger sys-btn--sm workflow-drawer-danger-action" disabled={submitting} onClick={() => setDeleteTarget(detailWorkflow)}>
+                    <Trash2 size={14} aria-hidden="true" />
+                    删除
                   </button>
-                  {isWorkflowOwnedByCurrentUser(detailWorkflow, currentUserId) && detailWorkflow.latestVersionNumber > 0 ? (
-                    detailWorkflow.launchEnabled ? (
-                      <button type="button" className="sys-btn sys-btn--default sys-btn--sm" disabled={submitting} onClick={() => void handleRecallLaunch()}>
-                        <Archive size={14} aria-hidden="true" />
-                        下线
-                      </button>
-                    ) : (
-                      <button type="button" className="sys-btn sys-btn--default sys-btn--sm" disabled={submitting} onClick={() => void handleRestoreLaunch()}>
-                        <RotateCcw size={14} aria-hidden="true" />
-                        上线
-                      </button>
-                    )
-                  ) : null}
-                  <button type="button" className="sys-btn sys-btn--default sys-btn--sm" disabled={validatingWorkflowId === detailWorkflow.id || (!detailWorkflow.hasUnpublishedChanges && detailWorkflow.latestVersionNumber > 0)} onClick={() => void handleValidateForPublish(detailWorkflow)}>
-                    <ListChecks size={14} aria-hidden="true" />
-                    {validatingWorkflowId === detailWorkflow.id ? "校验中" : "发布校验"}
-                  </button>
-                  <button type="button" className="sys-btn sys-btn--primary sys-btn--sm" onClick={() => { openWorkflowEditor(detailWorkflow); setDetailWorkflow(null); }}>
+                ) : (
+                  <span className="workflow-drawer-footer-spacer" aria-hidden="true" />
+                )}
+                {detailWorkflow.accessLevel !== "read" ? (
+                  <button type="button" className="sys-btn sys-btn--primary sys-btn--sm workflow-drawer-primary-action" onClick={() => { openWorkflowEditor(detailWorkflow); setDetailWorkflow(null); }}>
                     <PanelRightOpen size={14} aria-hidden="true" />
                     进入设计
                   </button>
-                  </>
                 ) : null}
               </div>
             </div>

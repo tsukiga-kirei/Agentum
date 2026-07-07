@@ -4,7 +4,7 @@ import { AlertCircle, Bot, BrainCircuit, CheckCircle2, ChevronRight, Loader2, Me
 import { Drawer, message } from "antd";
 import { useAuthStore } from "../../stores/authStore";
 import { SingleAgentPanel } from "./SingleAgentPanel";
-import { mergeClusterAgents, parseClusterAgentSummariesFromOutputs } from "../../utils/clusterAgentsMerge";
+import { findPersistedClusterAgent, mergeClusterAgents, parseClusterAgentSummariesFromOutputs } from "../../utils/clusterAgentsMerge";
 import { formatRuntimeErrorMessage } from "../../utils/runtimeErrors";
 import { pickBestAgentOutput } from "../../utils/agentOutputText";
 import { resolveSystemDisplayPrompt, resolveUserDisplayPrompt } from "../../utils/resolveDisplayPrompts";
@@ -89,7 +89,7 @@ export function MultiAgentPanel({
       const config = configAgents[agent.index] ?? configAgents.find(
         (item) => String(item.name || item.label || "") === agent.name
       );
-      const persistedAgent = persistedAgents[agent.index] ?? persistedAgents.find((item) => String(item.name ?? "") === agent.name);
+      const persistedAgent = findPersistedClusterAgent(persistedAgents, agent.index, agent.name);
       const persistedMessages = readPersistedConversation(
         persistedAgent?.chatMessages,
         agent.name,

@@ -64,6 +64,28 @@ function nameFromPersisted(agent: Record<string, unknown>, index: number): strin
   return `子智能体 ${index + 1}`;
 }
 
+function indexFromPersisted(agent: Record<string, unknown>): number | null {
+  const rawIndex = agent.agentIndex ?? agent.index;
+  const index = Number(rawIndex);
+  return Number.isFinite(index) ? index : null;
+}
+
+export function findPersistedClusterAgent(
+  persisted: Array<Record<string, unknown>>,
+  index: number,
+  name: string,
+): Record<string, unknown> | undefined {
+  const indexed = persisted.find((agent) => indexFromPersisted(agent) === index);
+  if (indexed) {
+    return indexed;
+  }
+  const hasExplicitIndex = persisted.some((agent) => indexFromPersisted(agent) !== null);
+  if (!hasExplicitIndex && persisted[index]) {
+    return persisted[index];
+  }
+  return persisted.find((agent) => nameFromPersisted(agent, index) === name);
+}
+
 /**
  * 合并配置、DB 增量快照与 SSE 流式状态，避免刷新后已完成子智能体显示为空。
  */
@@ -103,9 +125,7 @@ export function mergeClusterAgents(options: {
     }
 
     const live = streamAgents.find((agent) => agent.index === base.index || agent.name === base.name);
-    const persistedAgent =
-      persisted[base.index] ??
-      persisted.find((agent) => nameFromPersisted(agent, base.index) === base.name);
+    const persistedAgent = findPersistedClusterAgent(persisted, base.index, base.name);
     const persistedSummary = persistedAgent ? summaryFromPersisted(persistedAgent) : "";
 
     if (live) {

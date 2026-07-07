@@ -9037,8 +9037,8 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
 
 .workflow-drawer-footer {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: stretch;
   gap: 12px;
   margin-top: 32px;
   padding-top: 20px;
@@ -9050,27 +9050,52 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
   width: 1px;
 }
 
-.workflow-drawer-footer-danger {
+.workflow-drawer-danger-action {
   flex-shrink: 0;
+  min-width: 86px;
 }
 
-.workflow-drawer-footer-actions {
+.workflow-drawer-secondary-actions {
   display: flex;
-  flex: 1;
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
+  width: 100%;
   min-width: 0;
 }
 
+.workflow-drawer-primary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.workflow-drawer-footer .sys-btn {
+  height: 36px;
+  padding-inline: 14px;
+  border-radius: 12px;
+  font-size: 13px;
+}
+
+.workflow-drawer-primary-action {
+  flex-shrink: 0;
+  min-width: 132px;
+}
+
 @media (max-width: 520px) {
-  .workflow-drawer-footer {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  .workflow-drawer-footer-actions {
+  .workflow-drawer-secondary-actions {
     justify-content: flex-start;
+  }
+  .workflow-drawer-primary-row {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+  .workflow-drawer-primary-action,
+  .workflow-drawer-danger-action {
+    width: 100%;
   }
 }
 

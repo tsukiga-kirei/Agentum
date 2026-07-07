@@ -99,10 +99,11 @@ public class DefaultWorkflowRuntimeExecutor implements WorkflowRuntimeExecutor {
     private Map<String, Object> executeRelayGroup(ExecutionRequest request, List<Map<String, Object>> agentConfigs) {
         Map<String, Object> variables = new LinkedHashMap<>(request.variables());
         List<Map<String, Object>> summaries = new ArrayList<>();
-        for (Map<String, Object> agentConfig : agentConfigs) {
+        for (int index = 0; index < agentConfigs.size(); index++) {
+            Map<String, Object> agentConfig = agentConfigs.get(index);
             Map<String, Object> agentOutput = executeClusterAgent(request, agentConfig, variables);
             variables.putAll(agentOutput);
-            summaries.add(clusterSummary(agentConfig, agentOutput));
+            summaries.add(clusterSummary(index, agentConfig, agentOutput));
         }
         return clusterResult(request.nodeRun().getConfigSnapshot(), variables, summaries);
     }
@@ -110,10 +111,11 @@ public class DefaultWorkflowRuntimeExecutor implements WorkflowRuntimeExecutor {
     private Map<String, Object> executeCollaborativeGroup(ExecutionRequest request, List<Map<String, Object>> agentConfigs) {
         Map<String, Object> variables = new LinkedHashMap<>(request.variables());
         List<Map<String, Object>> summaries = new ArrayList<>();
-        for (Map<String, Object> agentConfig : agentConfigs) {
+        for (int index = 0; index < agentConfigs.size(); index++) {
+            Map<String, Object> agentConfig = agentConfigs.get(index);
             Map<String, Object> agentOutput = executeClusterAgent(request, agentConfig, request.variables());
             variables.putAll(agentOutput);
-            summaries.add(clusterSummary(agentConfig, agentOutput));
+            summaries.add(clusterSummary(index, agentConfig, agentOutput));
         }
         return clusterResult(request.nodeRun().getConfigSnapshot(), variables, summaries);
     }
@@ -151,7 +153,7 @@ public class DefaultWorkflowRuntimeExecutor implements WorkflowRuntimeExecutor {
             Map<String, Object> agentConfig = agentConfigs.get(index);
             Map<String, Object> agentOutput = executeClusterAgent(request, agentConfig, request.variables());
             variables.putAll(agentOutput);
-            summaries.add(clusterSummary(agentConfig, agentOutput));
+            summaries.add(clusterSummary(index, agentConfig, agentOutput));
         }
         Map<String, Object> result = clusterResult(nodeConfig, variables, summaries);
         result.put("intentRouting", intentRoutingSummary(decision));
@@ -169,12 +171,13 @@ public class DefaultWorkflowRuntimeExecutor implements WorkflowRuntimeExecutor {
         )).outputs();
     }
 
-    private Map<String, Object> clusterSummary(Map<String, Object> agentConfig, Map<String, Object> agentOutput) {
+    private Map<String, Object> clusterSummary(int agentIndex, Map<String, Object> agentConfig, Map<String, Object> agentOutput) {
         String displayText = firstNonBlank(
             stringValue(agentOutput.get("final_answer"), ""),
             stringValue(agentOutput.get("summary"), "已完成")
         );
         return Map.of(
+            "agentIndex", agentIndex,
             "name", stringValue(agentConfig.get("name"), "子智能体"),
             "outputVariable", stringValue(agentConfig.get("output"), ""),
             "status", "completed",

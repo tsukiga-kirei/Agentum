@@ -497,6 +497,7 @@ public class NodeExecutionService {
             }
 
             Map<String, Object> summaryEntry = new LinkedHashMap<>();
+            summaryEntry.put("agentIndex", slot.index());
             summaryEntry.put("name", slot.name());
             summaryEntry.put("outputVariable", outputVarName);
             summaryEntry.put("status", "completed");
