@@ -14,6 +14,7 @@ interface MultiAgentPanelProps {
   activeStep: RuntimePreviewStep;
   clusterAgents: RunStreamState["clusterAgents"];
   clusterIntent?: RunStreamState["clusterIntent"];
+  templateVariables?: Record<string, unknown>;
   isStreaming?: boolean;
   streamStartedAt?: number | null;
   onFollowUpAgent?: (agentIndex: number, message: string) => void | Promise<void>;
@@ -44,12 +45,13 @@ export function MultiAgentPanel({
   activeStep,
   clusterAgents,
   clusterIntent,
+  templateVariables = {},
   isStreaming = false,
   streamStartedAt = null,
   onFollowUpAgent,
   onSaveAgentAnswer,
 }: MultiAgentPanelProps) {
-  const [selectedAgent, setSelectedAgent] = useState<DrawerAgent | null>(null);
+  const [selectedAgentIndex, setSelectedAgentIndex] = useState<number | null>(null);
   const themeMode = useAuthStore((s) => s.themeMode);
   const drawerRootClassName = getThemedDrawerRootClassName(themeMode, "multi-agent-detail-drawer");
 
@@ -88,7 +90,12 @@ export function MultiAgentPanel({
         (item) => String(item.name || item.label || "") === agent.name
       );
       const persistedAgent = persistedAgents[agent.index] ?? persistedAgents.find((item) => String(item.name ?? "") === agent.name);
-      const persistedMessages = readPersistedConversation(persistedAgent?.chatMessages, agent.name, String(activeStep.nodeRunId ?? `cluster-${agent.index}`));
+      const persistedMessages = readPersistedConversation(
+        persistedAgent?.chatMessages,
+        agent.name,
+        String(activeStep.nodeRunId ?? `cluster-${agent.index}`),
+        templateVariables,
+      );
       const skippedByIntent = intentSelectionSettled && !selectedAgentIndexes.includes(agent.index);
       return {
         ...agent,
@@ -107,33 +114,42 @@ export function MultiAgentPanel({
         mcpNames: readNameList(config?.mcpNames ?? config?.mcpIds ?? config?.mcpServices),
         conversationHistory: persistedMessages.length > 0
           ? persistedMessages
-          : readAgentConversationHistory(config, agent.name, String(activeStep.nodeRunId ?? `cluster-${agent.index}`)),
+          : readAgentConversationHistory(config, agent.name, String(activeStep.nodeRunId ?? `cluster-${agent.index}`), templateVariables),
         tokenUsage: readTokenUsage(persistedAgent?.tokenUsage),
         allowQuestion: readAgentFollowUpAllowed(config, activeStep.configSnapshot),
         allowUserEdit: readAgentEditAllowed(config, activeStep.configSnapshot),
       };
     });
-  }, [configAgents, visibleClusterAgents, activeStep.outputs, activeStep.state, isStreaming, isIntentMode, intentSelectionSettled, selectedAgentIndexes]);
+  }, [configAgents, visibleClusterAgents, activeStep.outputs, activeStep.state, activeStep.nodeRunId, isStreaming, isIntentMode, intentSelectionSettled, selectedAgentIndexes, templateVariables]);
 
   useEffect(() => {
-    if (!selectedAgent) {
+    if (selectedAgentIndex === null) {
       return;
     }
-    const fresh = agents.find((agent) => agent.index === selectedAgent.index);
-    if (fresh?.status === "skipped") {
-      setSelectedAgent(null);
+    const fresh = agents.find((agent) => agent.index === selectedAgentIndex);
+    if (!fresh || fresh.status === "skipped") {
+      setSelectedAgentIndex(null);
       return;
     }
-    if (fresh) {
-      setSelectedAgent(fresh);
-    }
-  }, [agents, selectedAgent?.index]);
+  }, [agents, selectedAgentIndex]);
 
-  const completedCount = agents.filter((a) => a.status === "completed").length;
-  const runningCount = agents.filter((a) => a.status === "running").length;
+  useEffect(() => {
+    setSelectedAgentIndex(null);
+  }, [activeStep.nodeRunId]);
+
+  const selectedAgent = selectedAgentIndex === null ? null : agents.find((agent) => agent.index === selectedAgentIndex) ?? null;
+  const executableAgents = isIntentMode ? agents.filter((a) => a.status !== "skipped") : agents;
+  const completedCount = executableAgents.filter((a) => a.status === "completed").length;
+  const runningCount = executableAgents.filter((a) => a.status === "running").length;
   const skippedCount = agents.filter((a) => a.status === "skipped").length;
   const totalCount = agents.length;
-  const percent = totalCount > 0 ? Math.round(((completedCount + skippedCount) / totalCount) * 100) : 0;
+  const executableCount = executableAgents.length;
+  // 意图分派下“跳过”只表示未命中，不计入执行进度；进度条只回答实际执行的子智能体完成了多少。
+  const percent = executableCount > 0
+    ? Math.round((completedCount / executableCount) * 100)
+    : activeStep.state === "done"
+    ? 100
+    : 0;
   const stepCanceled = activeStep.state === "canceled";
   const stepPending = activeStep.state === "pending" && !stepCanceled;
 
@@ -143,10 +159,12 @@ export function MultiAgentPanel({
         <div className="multi-agent-overview-head">
           <div className="multi-agent-overview-title">
             <Users size={18} />
-            <h3>智能体集群进度</h3>
+            <h3>子智能体执行进度</h3>
           </div>
           <small>
-            共 {totalCount} 个子智能体 · 已完成 {completedCount} · 运行中 {runningCount}
+            共 {totalCount} 个子智能体
+            {isIntentMode ? ` · 实际执行 ${executableCount}` : ""}
+            · 已完成 {completedCount} · 运行中 {runningCount}
             {isIntentMode ? ` · 跳过 ${skippedCount}` : ""}
           </small>
         </div>
@@ -217,7 +235,7 @@ export function MultiAgentPanel({
             <button
               type="button"
               key={agent.index}
-              onClick={() => setSelectedAgent(agent)}
+              onClick={() => setSelectedAgentIndex(agent.index)}
               disabled={isSkipped}
               className={`multi-agent-card ${
                 isRunning
@@ -304,11 +322,11 @@ export function MultiAgentPanel({
           title={`${selectedAgent.name} · 详情`}
           width={640}
           open
-          onClose={() => setSelectedAgent(null)}
+          onClose={() => setSelectedAgentIndex(null)}
           rootClassName={drawerRootClassName}
         >
           <SingleAgentPanel
-            activeStep={buildAgentDetailStep(activeStep, selectedAgent)}
+            activeStep={buildAgentDetailStep(activeStep, selectedAgent, templateVariables)}
             isStreaming={!stepCanceled && selectedAgent.status === "running"}
             streamingText=""
             executionSteps={stepCanceled ? [] : buildAgentExecutionSteps(selectedAgent)}
@@ -341,6 +359,31 @@ function readConfigString(value: unknown, fallback: string): string {
   }
   const text = String(value).trim();
   return text || fallback;
+}
+
+function stringifyTemplateValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return "";
+    }
+  }
+  return String(value);
+}
+
+function renderRuntimeTemplate(template: string, variables: Record<string, unknown>): string {
+  return template.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_placeholder, variableName: string) =>
+    Object.prototype.hasOwnProperty.call(variables, variableName)
+      ? stringifyTemplateValue(variables[variableName])
+      : "",
+  );
 }
 
 function readStepOutput(step: RuntimePreviewStep, labels: string[]): string {
@@ -482,6 +525,7 @@ function readAgentConversationHistory(
   agentConfig: Record<string, unknown> | undefined,
   agentName: string,
   idPrefix: string,
+  templateVariables: Record<string, unknown>,
 ): RuntimeChatMessage[] {
   const rawHistory = Array.isArray(agentConfig?.conversationHistory) ? agentConfig.conversationHistory : [];
   return rawHistory.flatMap((item, index) => {
@@ -498,12 +542,17 @@ function readAgentConversationHistory(
       id: `${idPrefix}-agent-history-${index}`,
       role,
       author: role === "user" ? "我" : agentName,
-      content,
+      content: role === "user" ? renderRuntimeTemplate(content, templateVariables) : content,
     }];
   });
 }
 
-function readPersistedConversation(value: unknown, agentName: string, idPrefix: string): RuntimeChatMessage[] {
+function readPersistedConversation(
+  value: unknown,
+  agentName: string,
+  idPrefix: string,
+  templateVariables: Record<string, unknown>,
+): RuntimeChatMessage[] {
   if (!Array.isArray(value)) {
     return [];
   }
@@ -521,7 +570,7 @@ function readPersistedConversation(value: unknown, agentName: string, idPrefix: 
       id: `${idPrefix}-persisted-${index}`,
       role,
       author: role === "user" ? "我" : agentName,
-      content,
+      content: role === "user" ? renderRuntimeTemplate(content, templateVariables) : content,
       tokenUsage: readTokenUsage(record.tokenUsage),
       processSteps: readPersistedProcessSteps(record.processSteps, `${idPrefix}-persisted-${index}`),
     }];
@@ -651,7 +700,11 @@ function buildAgentExecutionSteps(agent: DrawerAgent): AgentExecutionStep[] {
   return toolSteps;
 }
 
-function buildAgentDetailStep(parentStep: RuntimePreviewStep, agent: DrawerAgent): RuntimePreviewStep {
+function buildAgentDetailStep(
+  parentStep: RuntimePreviewStep,
+  agent: DrawerAgent,
+  templateVariables: Record<string, unknown>,
+): RuntimePreviewStep {
   if (parentStep.state === "canceled") {
     return {
       ...parentStep,
@@ -674,7 +727,7 @@ function buildAgentDetailStep(parentStep: RuntimePreviewStep, agent: DrawerAgent
   const finalContent = agent.status === "failed" && outputText
     ? formatRuntimeErrorMessage(undefined, outputText)
     : outputText;
-  const prompt = agent.userPrompt || agent.systemPrompt || agent.name;
+  const prompt = renderRuntimeTemplate(agent.userPrompt || agent.systemPrompt || agent.name, templateVariables);
   const state: RuntimePreviewStep["state"] =
     agent.status === "completed" ? "done" : agent.status === "failed" ? "failed" : agent.status === "running" ? "running" : "pending";
   const processSteps = buildAgentExecutionSteps(agent);

@@ -6669,9 +6669,14 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
 }
 
 .multi-agent-detail-drawer .ant-drawer-body {
+  display: block !important;
   background: color-mix(in srgb, var(--color-primary) 2%, var(--color-bg-page));
+  height: 100%;
   min-height: 0;
-  overflow-y: auto;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+  padding: 24px !important;
 }
 
 .multi-agent-detail-drawer .agent-run-panel {

@@ -356,6 +356,9 @@ export function useRunStream(
   }, [connect]);
 
   const handleStreamEvent = (event: StreamEvent) => {
+    const eventNodeRunId = "nodeRunId" in event.data ? event.data.nodeRunId : undefined;
+    const eventMatchesActiveNode = () => !eventNodeRunId || activeNodeRunIdRef.current === eventNodeRunId;
+
     switch (event.type) {
       case "connected":
         // Connection established
@@ -390,6 +393,9 @@ export function useRunStream(
       }
 
       case "agent_thinking": {
+        if (!eventMatchesActiveNode()) {
+          break;
+        }
         const { phase, message } = event.data;
         setCurrentPhase(phase);
         setExecutionSteps((prev) => upsertPhaseStep(prev, phase, message));
@@ -397,6 +403,9 @@ export function useRunStream(
       }
 
       case "agent_streaming": {
+        if (!eventMatchesActiveNode()) {
+          break;
+        }
         const { accumulatedContent, streamKind } = event.data;
         setCurrentPhase("model_calling");
         setIsStreaming(true);
@@ -411,6 +420,9 @@ export function useRunStream(
       }
 
       case "agent_tool_call": {
+        if (!eventMatchesActiveNode()) {
+          break;
+        }
         const { toolName, toolType, status, result, durationMs } = event.data;
         setCurrentPhase("tool_calling");
 
@@ -440,6 +452,9 @@ export function useRunStream(
       }
 
       case "cluster_agent": {
+        if (!eventMatchesActiveNode()) {
+          break;
+        }
         const {
           agentIndex,
           agentName,
@@ -526,6 +541,9 @@ export function useRunStream(
       }
 
       case "cluster_intent": {
+        if (!eventMatchesActiveNode()) {
+          break;
+        }
         const {
           eventType,
           phase,
@@ -597,6 +615,9 @@ export function useRunStream(
       }
 
       case "node_completed":
+        if (!eventMatchesActiveNode()) {
+          break;
+        }
         markStepStreamTerminal();
         setIsStreaming(false);
         setCurrentPhase("completed");
@@ -606,6 +627,9 @@ export function useRunStream(
         break;
 
       case "node_failed": {
+        if (!eventMatchesActiveNode()) {
+          break;
+        }
         const { errorCode, errorMessage } = event.data;
         markStepStreamTerminal();
         setIsStreaming(false);

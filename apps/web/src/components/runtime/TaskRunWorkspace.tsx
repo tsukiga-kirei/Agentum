@@ -423,18 +423,20 @@ export function TaskRunWorkspace({
       activeStep.state === "running"
       || isLiveExecuting;
     const isIntentMode = readConfigString(activeStep.configSnapshot?.executionMode, "") === "intent";
-    const intentClassifierSettled = stream.clusterIntent.status === "completed";
+    const streamBelongsToActiveStep = stream.activeNodeInfo?.nodeRunId === activeStep.nodeRunId;
+    const intentClassifierSettled = streamBelongsToActiveStep && stream.clusterIntent.status === "completed";
 
     return mergeClusterAgents({
       configAgents,
       outputs: activeStep.outputs,
-      streamAgents: isIntentMode && !intentClassifierSettled ? [] : stream.clusterAgents,
+      streamAgents: !streamBelongsToActiveStep || (isIntentMode && !intentClassifierSettled) ? [] : stream.clusterAgents,
       stepState: activeStep.state,
       stepRunning: stepRunning && (!isIntentMode || intentClassifierSettled),
     });
   }, [
     stream.clusterAgents,
     stream.clusterIntent.status,
+    stream.activeNodeInfo,
     isLiveExecuting,
     activeStep,
   ]);
@@ -995,7 +997,8 @@ export function TaskRunWorkspace({
                   <MultiAgentPanel
                     activeStep={activeStep}
                     clusterAgents={clusterAgentsForPanel}
-                    clusterIntent={stream.clusterIntent}
+                    clusterIntent={stream.activeNodeInfo?.nodeRunId === activeStep.nodeRunId ? stream.clusterIntent : undefined}
+                    templateVariables={activeTemplateVariables}
                     isStreaming={isLiveExecuting}
                     streamStartedAt={stream.streamStartedAt}
                     onFollowUpAgent={(agentIndex, followUpMessage) => handleFollowUpClusterAgent(agentIndex, followUpMessage)}
