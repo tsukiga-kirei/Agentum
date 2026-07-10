@@ -54,8 +54,13 @@ public class DefaultWorkflowRuntimeExecutor implements WorkflowRuntimeExecutor {
 
     private Map<String, Object> triggerOutput(ExecutionRequest request) {
         Map<String, Object> output = new HashMap<>();
-        output.put("trigger", "手动发起");
-        output.put("summary", "手动触发节点已完成。");
+        if (request.run().isScheduledTrigger()) {
+            output.put("trigger", "定时任务触发");
+            output.put("summary", "定时任务触发节点已完成。");
+        } else {
+            output.put("trigger", "手动发起");
+            output.put("summary", "手动触发节点已完成。");
+        }
         return output;
     }
 
@@ -123,10 +128,18 @@ public class DefaultWorkflowRuntimeExecutor implements WorkflowRuntimeExecutor {
     private Map<String, Object> executeIntentGroup(ExecutionRequest request, List<Map<String, Object>> agentConfigs) {
         Map<String, Object> nodeConfig = request.nodeRun().getConfigSnapshot();
         List<ClusterIntentRoutingSupport.IntentRoute> routes = ClusterIntentRoutingSupport.intentRoutes(nodeConfig, agentConfigs);
+        Map<String, Object> classifierConfig = ClusterIntentRoutingSupport.classifierConfig(nodeConfig, agentConfigs, routes);
+        classifierConfig.put(
+            "userPrompt",
+            ClusterIntentRoutingSupport.enrichClassifierUserPrompt(
+                String.valueOf(classifierConfig.get("userPrompt")),
+                request.variables()
+            )
+        );
         Map<String, Object> classifierOutput = agentRuntimeService.execute(new AgentRuntimeRequest(
             request.run(),
             request.nodeRun(),
-            ClusterIntentRoutingSupport.classifierConfig(nodeConfig, agentConfigs, routes),
+            classifierConfig,
             request.variables(),
             Map.of(),
             request.operatorUserId()

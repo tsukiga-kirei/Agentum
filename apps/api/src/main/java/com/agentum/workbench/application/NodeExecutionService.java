@@ -19,7 +19,6 @@ import com.agentum.workflow.infrastructure.WorkflowClusterAgentRunRepository;
 import com.agentum.workflow.infrastructure.WorkflowNodeRunRepository;
 import com.agentum.workflow.infrastructure.WorkflowRunExecutionJobRepository;
 import com.agentum.workflow.infrastructure.WorkflowRunRepository;
-import com.agentum.workflow.application.WorkflowRuntimeSystemVariables;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -540,11 +539,20 @@ public class NodeExecutionService {
             "routeCount", routes.size()
         ));
 
+        Map<String, Object> classifierConfig = ClusterIntentRoutingSupport.classifierConfig(nodeConfig, agentConfigs, routes);
+        classifierConfig.put(
+            "userPrompt",
+            ClusterIntentRoutingSupport.enrichClassifierUserPrompt(
+                String.valueOf(classifierConfig.get("userPrompt")),
+                variables
+            )
+        );
+
         Map<String, Object> classifierOutput = agentRuntimeService.executeStreaming(
             new AgentRuntimeRequest(
                 run,
                 node,
-                ClusterIntentRoutingSupport.classifierConfig(nodeConfig, agentConfigs, routes),
+                classifierConfig,
                 variables,
                 Map.of(),
                 operatorUserId
@@ -1080,13 +1088,7 @@ public class NodeExecutionService {
     }
 
     private Map<String, Object> variablesBeforeNode(WorkflowRunEntity run, int sortOrder) {
-        Map<String, Object> variables = new LinkedHashMap<>(WorkflowRuntimeSystemVariables.from(run, clock));
-        for (WorkflowNodeRunEntity node : workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(run.getId())) {
-            if ("completed".equals(node.getState()) && node.getSortOrder() < sortOrder) {
-                variables.putAll(node.getOutputSnapshot());
-            }
-        }
-        return variables;
+        return workbenchRuntimeService.resolveVariablesBeforeNode(run.getId(), sortOrder);
     }
 
     private void emit(UUID runId, UUID nodeRunId, String eventName, Map<String, Object> extra) {

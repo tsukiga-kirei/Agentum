@@ -71,6 +71,33 @@ final class ClusterIntentRoutingSupport {
         return intentRoutes(Map.of(), agentConfigs);
     }
 
+    /**
+     * 为意图分类器补充可读的上游变量快照，避免仅依赖 {{变量名}} 替换时因竞态或空值覆盖导致模型看不到关键输入。
+     */
+    static String enrichClassifierUserPrompt(String userPrompt, Map<String, Object> variables) {
+        if (variables == null || variables.isEmpty()) {
+            return userPrompt == null ? "" : userPrompt.trim();
+        }
+        List<String> lines = new ArrayList<>();
+        for (Map.Entry<String, Object> entry : variables.entrySet()) {
+            String key = entry.getKey();
+            if (!WorkflowRuntimeVariableMerge.isBusinessVariableKey(key)) {
+                continue;
+            }
+            Object value = entry.getValue();
+            if (WorkflowRuntimeVariableMerge.isBlankValue(value)) {
+                continue;
+            }
+            lines.add("- " + key + ": " + WorkflowRuntimeVariableMerge.summarizeVariableValue(value));
+        }
+        StringBuilder prompt = new StringBuilder(userPrompt == null ? "" : userPrompt.trim());
+        if (!lines.isEmpty()) {
+            prompt.append("\n\n上游变量快照（供意图判断）：\n");
+            prompt.append(String.join("\n", lines));
+        }
+        return prompt.toString();
+    }
+
     static Map<String, Object> classifierConfig(
         Map<String, Object> nodeConfig,
         List<Map<String, Object>> agentConfigs,

@@ -1779,7 +1779,7 @@ function isRuntimeRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function nodeDescription(nodeType: string, config: any): string {
-  if (nodeType === "trigger") return "手动触发启动任务运行。";
+  if (nodeType === "trigger") return config?.summary || "触发节点启动任务运行。";
   if (nodeType === "user_input") return config?.placeholder || "等待业务人员补充录入字段。";
   if (nodeType === "agent") return config?.summary || "AI 智能体基于上下文模型完成推理。";
   if (nodeType === "parallel_group") return "多个子智能体并发执行获取与汇总结论。";

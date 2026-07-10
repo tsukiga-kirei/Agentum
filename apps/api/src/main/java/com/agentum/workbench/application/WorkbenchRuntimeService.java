@@ -2339,8 +2339,32 @@ public class WorkbenchRuntimeService {
         Map<String, Object> variables = new LinkedHashMap<>(WorkflowRuntimeSystemVariables.from(run, clock));
         for (WorkflowNodeRunEntity nodeRun : nodeRuns) {
             if ("completed".equals(nodeRun.getState())) {
-                variables.putAll(nodeRun.getOutputSnapshot());
+                WorkflowRuntimeVariableMerge.mergeOutputs(variables, nodeRun.getOutputSnapshot());
             }
+        }
+        if (run.isScheduledTrigger()) {
+            WorkflowRuntimeVariableMerge.mergeOutputs(variables, scheduledInputPayload(run));
+        }
+        return variables;
+    }
+
+    /**
+     * 汇总当前节点执行前可用的运行态变量（系统变量 + 已完成上游节点输出）。
+     *
+     * <p>定时任务额外回落 {@code triggerPayload.inputPayload}，防止自动连跑时中间节点空值覆盖输入字段。</p>
+     */
+    @Transactional(readOnly = true)
+    public Map<String, Object> resolveVariablesBeforeNode(UUID runId, int sortOrder) {
+        WorkflowRunEntity run = workflowRunRepository.findById(runId)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_RUN_NOT_FOUND", "任务运行不存在"));
+        Map<String, Object> variables = new LinkedHashMap<>(WorkflowRuntimeSystemVariables.from(run, clock));
+        for (WorkflowNodeRunEntity node : workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(runId)) {
+            if ("completed".equals(node.getState()) && node.getSortOrder() < sortOrder) {
+                WorkflowRuntimeVariableMerge.mergeOutputs(variables, node.getOutputSnapshot());
+            }
+        }
+        if (run.isScheduledTrigger()) {
+            WorkflowRuntimeVariableMerge.mergeOutputs(variables, scheduledInputPayload(run));
         }
         return variables;
     }
