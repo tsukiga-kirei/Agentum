@@ -181,6 +181,15 @@ public class SsoAuthService {
 
     @Transactional
     public AuthSessionResult handleBasicEntry(String authorizationHeader, String portal, String remoteAddress, String origin, String referer) {
+        return consumeBasicHandoff(prepareBasicHandoff(authorizationHeader, portal, remoteAddress, origin, referer));
+    }
+
+    /**
+     * 仅由可信业务系统服务端调用：先完成 Basic、来源白名单和入口角色前置校验，再把最小身份上下文交给一次性码服务。
+     * 浏览器消费交接码时不再校验浏览器 IP / Origin，避免把业务系统的来源白名单错误套用到最终用户网络。
+     */
+    @Transactional(readOnly = true)
+    public BasicSsoHandoff prepareBasicHandoff(String authorizationHeader, String portal, String remoteAddress, String origin, String referer) {
         PortalType portalType = PortalType.fromCode(portal);
         if (!portalType.isTenantScoped()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "AUTH_SSO_PORTAL_UNSUPPORTED", "企业 Basic 认证仅支持租户型入口");
@@ -194,7 +203,28 @@ public class SsoAuthService {
             .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "AUTH_SSO_PROVIDER_NOT_AVAILABLE", "当前租户未启用 Basic 单点入口"));
         verifyBasicSource(provider, remoteAddress, origin, referer);
         verifyBasicSharedPassword(provider, credential.password());
-        return issueBasicSession(provider, tenant, portalType.code(), principal.username());
+        verifyBasicUserAccess(tenant.getId(), principal.username(), portalType.code());
+        return new BasicSsoHandoff(tenant.getId(), provider.getId(), principal.username(), portalType.code());
+    }
+
+    @Transactional
+    public AuthSessionResult consumeBasicHandoff(BasicSsoHandoff handoff) {
+        PortalType portalType = PortalType.fromCode(handoff.portal());
+        if (!portalType.isTenantScoped()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "AUTH_SSO_PORTAL_UNSUPPORTED", "企业 Basic 认证仅支持租户型入口");
+        }
+        TenantEntity tenant = tenantRepository.findByIdAndStatus(handoff.tenantId(), ACTIVE_STATUS)
+            .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "TENANT_NOT_AVAILABLE", "当前租户不可用或已停用"));
+        TenantSsoProviderEntity provider = providerRepository.findById(handoff.providerId())
+            .filter(item -> tenant.getId().equals(item.getTenantId()))
+            .filter(item -> "basic".equals(item.getProviderType()))
+            .filter(item -> ENABLED_STATUS.equals(item.getStatus()))
+            .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "AUTH_SSO_PROVIDER_NOT_AVAILABLE", "当前租户未启用 Basic 单点入口"));
+        return issueBasicSession(provider, tenant, portalType.code(), handoff.username());
+    }
+
+    public String basicHandoffConsumeUrl(String code) {
+        return apiBaseUrl + "/api/auth/sso/basic-consume?code=" + encode(code);
     }
 
     private AuthSessionResult issueExternalSession(
@@ -275,6 +305,19 @@ public class SsoAuthService {
         );
         log.info("企业 Basic 登录成功 userId={} tenantId={} providerId={} portal={} roleAssignmentId={} requestId={}", user.getId(), tenant.getId(), provider.getId(), portal, activeAssignment.getId(), RequestIds.current());
         return new AuthSessionResult(response, refreshTokenService.issue(user.getId(), activeAssignment.getId()));
+    }
+
+    private void verifyBasicUserAccess(UUID tenantId, String username, String portal) {
+        UserAccount user = userAccountRepository.findByUsername(username)
+            .filter(account -> ACTIVE_STATUS.equals(account.getStatus()))
+            .orElseThrow(() -> new ApiException(HttpStatus.FORBIDDEN, "AUTH_SSO_USER_NOT_BOUND", "企业 Basic 对应的 Agentum 用户不存在或已停用"));
+        boolean allowed = roleAssignmentRepository.findByUserIdOrderByDefaultAssignmentDesc(user.getId())
+            .stream()
+            .anyMatch(assignment -> portal.equals(assignment.getRole()) && tenantId.equals(assignment.getTenantId()));
+        if (!allowed) {
+            log.warn("企业 Basic 换址失败：用户没有入口权限 userId={} tenantId={} portal={} requestId={}", user.getId(), tenantId, portal, RequestIds.current());
+            throw new ApiException(HttpStatus.FORBIDDEN, "PERMISSION_ROLE_NOT_ALLOWED", "当前用户没有所选入口权限");
+        }
     }
 
     private TenantSsoProviderEntity loadProvider(UUID tenantId, UUID providerId) {

@@ -1652,8 +1652,8 @@ export function SystemManagementPage() {
                   <>
                     <div className="sys-field">
                       <label className="sys-field-label">{tenantSsoProviders.find((item) => item.providerType === "basic")?.basicPasswordConfigured ? "共享密码（留空保留原值）" : "共享密码"}</label>
-                      <div className="sys-field-input-wrap"><KeyRound size={16} className="sys-field-prefix"/><input className="sys-field-input" type="password" placeholder="业务系统调用 Basic 单点入口时使用" onChange={(event) => { tenantSsoRef.current.basicPassword = event.target.value; }} /></div>
-                      <div className="sys-field-hint">业务系统访问 Agentum Basic 单点入口时，Basic username 使用 tenantCode/username，password 使用这里配置的共享密码。</div>
+                      <div className="sys-field-input-wrap"><KeyRound size={16} className="sys-field-prefix"/><input className="sys-field-input" type="password" placeholder="业务系统调用 Basic 换址入口时使用" onChange={(event) => { tenantSsoRef.current.basicPassword = event.target.value; }} /></div>
+                      <div className="sys-field-hint">业务系统服务端访问 Agentum Basic 换址入口时，Basic username 使用 tenantCode/username，password 使用这里配置的共享密码；服务端取得 302 Location 后再把该地址重定向给浏览器。</div>
                     </div>
                     <div className="sys-field-row">
                       <div className="sys-field"><label className="sys-field-label">允许 IP</label><div className="sys-field-input-wrap"><ServerCog size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="逗号分隔，留空不限制" defaultValue={tenantSsoRef.current.allowedIpRanges || ""} onChange={(event) => { tenantSsoRef.current.allowedIpRanges = event.target.value; }} /></div></div>

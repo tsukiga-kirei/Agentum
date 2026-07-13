@@ -37,6 +37,8 @@ agentum:
     token-ttl-minutes: ${AGENTUM_AUTH_ACCESS_TOKEN_TTL_MINUTES:15}
     refresh-token-ttl-days: ${AGENTUM_AUTH_REFRESH_TOKEN_TTL_DAYS:30}
     refresh-cookie-secure: ${AGENTUM_AUTH_REFRESH_COOKIE_SECURE:false}
+    # OA 等服务端 Basic 登录换取浏览器交接地址的有效期；码只可消费一次，不能承载长期会话。
+    basic-handoff-ttl-seconds: ${AGENTUM_AUTH_BASIC_HANDOFF_TTL_SECONDS:60}
   security:
     field-encryption:
       # 本地默认值仅用于免配置启动；已有密文后不要随意更换。生产必须注入独立 Secret，不能复用 token-secret。

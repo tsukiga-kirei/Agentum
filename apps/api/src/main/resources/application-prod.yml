@@ -39,6 +39,7 @@ agentum:
     token-ttl-minutes: "${AGENTUM_AUTH_ACCESS_TOKEN_TTL_MINUTES:15}"
     refresh-token-ttl-days: "${AGENTUM_AUTH_REFRESH_TOKEN_TTL_DAYS:30}"
     refresh-cookie-secure: "${AGENTUM_AUTH_REFRESH_COOKIE_SECURE:true}"
+    basic-handoff-ttl-seconds: "${AGENTUM_AUTH_BASIC_HANDOFF_TTL_SECONDS:60}"
   security:
     cors:
       # 前端对外访问地址。Spring CORS 会先于业务 Controller 执行，未放行会直接返回 403。

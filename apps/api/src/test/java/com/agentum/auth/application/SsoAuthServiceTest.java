@@ -25,6 +25,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.Base64;
 import org.junit.jupiter.api.Test;
 
 class SsoAuthServiceTest {
@@ -99,6 +100,49 @@ class SsoAuthServiceTest {
         assertThat(response.user().username()).isEqualTo("operator");
         assertThat(response.activeRole().role()).isEqualTo("business");
         verify(externalIdentityRepository).save(identity);
+    }
+
+    @Test
+    void shouldPrepareBasicHandoffOnlyForVerifiedBusinessUser() {
+        TenantRepository tenantRepository = mock(TenantRepository.class);
+        TenantSsoProviderRepository providerRepository = mock(TenantSsoProviderRepository.class);
+        UserAccountRepository userAccountRepository = mock(UserAccountRepository.class);
+        UserRoleAssignmentRepository roleAssignmentRepository = mock(UserRoleAssignmentRepository.class);
+        SsoAuthService service = buildService(
+            tenantRepository,
+            providerRepository,
+            mock(UserExternalIdentityRepository.class),
+            userAccountRepository,
+            roleAssignmentRepository,
+            mock(AuthTokenService.class),
+            mock(AuthRefreshTokenService.class),
+            mock(OidcIdentityClient.class),
+            mock(MenuService.class),
+            new SsoStateService(Clock.fixed(NOW, ZoneOffset.UTC), "sso-test-secret", Duration.ofMinutes(5))
+        );
+        TenantEntity tenant = TenantEntity.create("云程科技", "cloudway", NOW);
+        UUID tenantId = tenant.getId();
+        TenantSsoProviderEntity provider = TenantSsoProviderEntity.createBasic(
+            tenantId,
+            "OA Basic",
+            new FieldEncryptionService("test-master-key-with-enough-length").encrypt("shared-secret"),
+            "10.0.0.8",
+            "",
+            NOW
+        );
+        provider.forceIdForTest(PROVIDER_ID);
+        UserAccount user = UserAccount.create("operator", "hash", "业务用户", "operator@example.com");
+        UserRoleAssignmentEntity assignment = UserRoleAssignmentEntity.create(user.getId(), "business", tenantId, "云程科技 - 业务用户", true);
+        String credential = Base64.getEncoder().encodeToString("cloudway/operator:shared-secret".getBytes());
+
+        when(tenantRepository.findByCodeAndStatus("cloudway", "active")).thenReturn(Optional.of(tenant));
+        when(providerRepository.findByTenantIdAndProviderType(tenantId, "basic")).thenReturn(Optional.of(provider));
+        when(userAccountRepository.findByUsername("operator")).thenReturn(Optional.of(user));
+        when(roleAssignmentRepository.findByUserIdOrderByDefaultAssignmentDesc(user.getId())).thenReturn(List.of(assignment));
+
+        BasicSsoHandoff handoff = service.prepareBasicHandoff("Basic " + credential, "business", "10.0.0.8", null, null);
+
+        assertThat(handoff).isEqualTo(new BasicSsoHandoff(tenantId, PROVIDER_ID, "operator", "business"));
     }
 
     private static SsoAuthService buildService(

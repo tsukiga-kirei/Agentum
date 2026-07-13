@@ -63,6 +63,7 @@ public class SecurityConfiguration {
                 .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/auth/refresh", "/api/auth/logout").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/auth/sso/basic-entry").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/auth/sso/basic-redirection", "/api/auth/sso/basic-consume").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/auth/sso/authorize").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/auth/sso/callback/*").permitAll()
                 .requestMatchers("/actuator/health", "/actuator/info").permitAll()

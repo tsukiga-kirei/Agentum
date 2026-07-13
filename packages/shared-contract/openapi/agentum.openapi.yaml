@@ -342,6 +342,49 @@ paths:
           description: Basic 凭据缺失或共享密码错误
         "403":
           description: 来源 IP / 域名不在白名单或用户无入口权限
+  /api/auth/sso/basic-redirection:
+    get:
+      summary: Basic 服务端换取浏览器登录地址
+      description: 可信业务系统服务端使用 Basic username `tenantCode/username` 和租户共享密码调用。成功返回仅可使用一次的 Agentum 登录地址；调用方应将 Location 原样重定向给浏览器。
+      tags:
+        - Auth
+      parameters:
+        - name: portal
+          in: query
+          schema:
+            type: string
+            enum: [business, tenant_admin]
+            default: business
+      security:
+        - basicAuth: []
+      responses:
+        "302":
+          description: Location 为一次性 Agentum 登录地址
+        "401":
+          description: Basic 凭据缺失或共享密码错误
+        "403":
+          description: 来源 IP / 域名不在白名单或用户无入口权限
+  /api/auth/sso/basic-consume:
+    get:
+      summary: 消费 Basic 单点登录地址
+      description: 浏览器访问一次性地址后由 Agentum 建立 Refresh Cookie 会话并返回登录桥接 HTML。该接口不接受共享密码。
+      tags:
+        - Auth
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 登录桥接 HTML
+          content:
+            text/html:
+              schema:
+                type: string
+        "401":
+          description: 登录地址已过期或已被消费
   /api/tenants/{tenantId}/assets/summary:
     get:
       summary: 获取能力资产总览

@@ -56,10 +56,16 @@ https://agentum.example.com/api/auth/sso/callback/{providerId}
 
 Basic 方式用于业务系统已经完成用户身份确认，但不希望把用户个人密码交给 Agentum 的场景。它不是让用户在 Agentum 登录页输入业务系统密码，而是由可信业务系统服务端携带共享凭据访问 Agentum 单点入口。
 
-Agentum Basic 单点入口：
+Agentum Basic 单点入口分为两种：
 
 ```text
 https://agentum.example.com/api/auth/sso/basic-entry?portal=business
+```
+
+其中 `basic-entry` 用于浏览器已经能直接携带 Basic 请求头的受控场景。OA 等跨域业务系统应调用服务端换址入口：
+
+```text
+https://agentum.example.com/api/auth/sso/basic-redirection?portal=business
 ```
 
 `portal` 当前支持：
@@ -78,11 +84,13 @@ Basic 凭据规则：
 示例：
 
 ```bash
-curl -u 'cloudway/operator:shared-secret' \
-  'https://agentum.example.com/api/auth/sso/basic-entry?portal=business'
+curl -i -u 'cloudway/operator:shared-secret' \
+  'https://agentum.example.com/api/auth/sso/basic-redirection?portal=business'
 ```
 
-Basic 登录成功后，Agentum 会返回与 OIDC 回调一致的登录桥接页：写入 HttpOnly Refresh Cookie，并通过前端桥接写入短期 Access Token。业务系统不需要也不应该签发 Agentum 业务 Token。
+`basic-entry` 成功后，Agentum 会返回与 OIDC 回调一致的登录桥接页：写入 HttpOnly Refresh Cookie，并通过前端桥接写入短期 Access Token。
+
+`basic-redirection` 成功后只返回 `302 Location`。业务系统服务端将该 Location 原样重定向给浏览器，浏览器再访问 Agentum 的一次性地址建立 Cookie 会话。交接码默认有效 60 秒、只能消费一次，Redis 中仅保存用户、租户、身份源和入口上下文，不保存共享密码或 Token。业务系统不需要也不应该签发 Agentum 业务 Token。
 
 ## 3. Agentum 侧配置
 
@@ -137,11 +145,13 @@ tenant_sso_providers
 
 ```text
 业务系统确认当前用户身份
-  -> 业务系统服务端用 tenantCode/username + 共享密码访问 Agentum Basic 单点入口
+  -> 业务系统服务端用 tenantCode/username + 共享密码访问 Agentum Basic 换址入口
   -> Agentum 校验共享密码、来源 IP / 域名白名单
   -> Agentum 用 tenantCode 定位租户，用 username 定位本地用户
   -> Agentum 校验该用户在当前租户拥有 portal 对应的 user_role_assignments
-  -> Agentum 签发自己的 Bearer Token，并通过登录桥接页交给前端
+  -> Agentum 返回短期、一次性的浏览器登录地址
+  -> 业务系统将该地址重定向给浏览器
+  -> 浏览器访问 Agentum 域名，Agentum 签发自己的 Bearer Token、写入 Refresh Cookie，并通过登录桥接页交给前端
 ```
 
 Basic 方式不使用用户个人密码，也不自动创建用户。租户管理员仍需先在 Agentum 里维护用户、成员关系和入口角色。
@@ -194,12 +204,14 @@ GET /api/auth/sso/authorize?tenantId={tenantId}&providerId={providerId}&portal=b
 
 系统管理员入口当前不走租户 SSO。平台管理员应保留本地应急账号，后续再接入 MFA 或平台级 SSO 策略。
 
-Basic 单点入口：
+Basic 服务端换址入口：
 
 ```http
-GET /api/auth/sso/basic-entry?portal=business
+GET /api/auth/sso/basic-redirection?portal=business
 Authorization: Basic base64(tenantCode/username:shared-secret)
 ```
+
+业务系统收到 `302 Location` 后应把该地址重定向给用户浏览器；不要把 Basic 共享密码拼入 URL，也不要试图把服务端 HttpClient 获得的 Cookie 复制给浏览器。
 
 登录页在租户启用 Basic 时只提示“请从已授权业务系统进入 Agentum”；不会要求用户输入共享密码。
 
@@ -225,7 +237,7 @@ Authorization: Basic base64(tenantCode/username:shared-secret)
 - 外部身份绑定到本地用户后签发 Agentum Access Token，并通过 HttpOnly Cookie 建立可轮换的 Refresh Token 会话。
 - 回调页通过 `postMessage` 把含 Access Token 的 `LoginResponse` 交回前端，Refresh Token 只通过 Set-Cookie 写入，二者都不会出现在 URL 查询串。
 - 租户级企业认证配置支持在系统管理租户抽屉中启停，并在 OAuth2/OIDC 与 Basic 之间二选一。
-- Basic 单点入口支持共享密码、来源 IP 和来源域名限制。
+- Basic 单点入口支持共享密码、来源 IP 和来源域名限制，以及服务端换取一次性浏览器登录地址。
 
 待后续实现：
 
