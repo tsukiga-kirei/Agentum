@@ -48,6 +48,8 @@ Basic 方案适用于以下情况：
 | 允许 IP | OA 服务端或网关访问 Agentum 时呈现的来源 IP；留空表示不限制 |
 | 允许域名 | OA 请求携带的 `Origin` / `Referer` 主机；留空表示不限制 |
 
+管理页面会按当前 Agentum API 地址展示可复制的“OA 服务端换址接口”，并按当前租户编码展示可复制的 `tenantCode/<OA loginid>` 用户名格式。共享密码只在首次输入或生成时显示；保存后后端仅返回“已配置”状态，不返回密码明文或密文。如需更换，应生成或输入新密码，先复制到 OA 服务端，再保存 Agentum 配置。
+
 首次联调可以暂时不配置 IP 和域名白名单。链路验证通过后，生产环境至少配置允许 IP，并使用 HTTPS。
 
 ### 3.2 准备本地用户和入口角色
@@ -299,4 +301,3 @@ curl -i --max-redirs 0 \
 - Redis 一次性交接码：`apps/api/src/main/java/com/agentum/auth/application/BasicSsoHandoffService.java`
 - Spring Security 公开入口：`apps/api/src/main/java/com/agentum/config/SecurityConfiguration.java`
 - OpenAPI 契约：`packages/shared-contract/openapi/agentum.openapi.yaml`
-

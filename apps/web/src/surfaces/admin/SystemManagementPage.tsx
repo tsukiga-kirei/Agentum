@@ -9,6 +9,7 @@ import {
   ChevronDown,
   Clock,
   Code2,
+  Copy,
   DatabaseZap,
   Edit,
   FileText,
@@ -28,6 +29,7 @@ import {
   Type,
   User,
   Users,
+  WandSparkles,
   X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -36,7 +38,7 @@ import { SurfacePageLayout } from "../../components/workbench/SurfacePageLayout"
 import { SysModalMask } from "../../components/common/SysModalMask";
 import { DocumentDeliveryStyleAdminSections } from "../../components/document/DocumentDeliveryStyleAdminSections";
 import { paths } from "../../routes/paths";
-import { AgentumApiError, organizationApi, systemApi } from "../../services/apiClient";
+import { AgentumApiError, API_BASE_URL, organizationApi, systemApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import type { OrganizationMembership, TenantOrganizationOverview } from "../../types/organization";
 import { isValidUsername, usernameRuleMessage } from "../../utils/username";
@@ -139,6 +141,14 @@ const defaultPageState: AdminPageState = {
   total: 0,
   totalPages: 0,
 };
+
+const BASIC_SHARED_PASSWORD_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+function generateBasicSharedPassword(): string {
+  const randomBytes = new Uint8Array(32);
+  crypto.getRandomValues(randomBytes);
+  return Array.from(randomBytes, (value) => BASIC_SHARED_PASSWORD_ALPHABET[value % BASIC_SHARED_PASSWORD_ALPHABET.length]).join("");
+}
 
 const adminPaginationLocale = {
   items_per_page: "条/页",
@@ -431,10 +441,21 @@ export function SystemManagementPage() {
   const [tenantSsoProviders, setTenantSsoProviders] = useState<TenantSsoProviderRow[]>([]);
   const [tenantSsoType, setTenantSsoType] = useState<"oidc" | "basic">("oidc");
   const [tenantSsoEnabled, setTenantSsoEnabled] = useState(false);
+  const [basicSharedPasswordDraft, setBasicSharedPasswordDraft] = useState("");
   const tenantSsoRef = useRef<Record<string, string>>({});
   const [tenantOrganizationOverview, setTenantOrganizationOverview] = useState<TenantOrganizationOverview | null>(null);
   const [tenantOrganizationLoading, setTenantOrganizationLoading] = useState(false);
   const [tenantOrganizationError, setTenantOrganizationError] = useState("");
+
+  const basicRedirectionEndpoint = useMemo(() => {
+    const apiOrigin = API_BASE_URL || window.location.origin;
+    return new URL("/api/auth/sso/basic-redirection", apiOrigin).toString();
+  }, []);
+  const basicUsernameFormat = selectedTenant ? `${selectedTenant.code}/<OA loginid>` : "tenantCode/<OA loginid>";
+
+  useEffect(() => {
+    setBasicSharedPasswordDraft("");
+  }, [selectedTenant?.id]);
 
   // 新增租户 Modal（不使用 Ant Form，改用原生 ref）
   const [createTenantModalOpen, setCreateTenantModalOpen] = useState(false);
@@ -1159,17 +1180,38 @@ export function SystemManagementPage() {
       body.tokenEndpoint = d.tokenEndpoint?.trim();
       body.jwksUri = d.jwksUri?.trim();
     } else {
-      body.basicPassword = d.basicPassword?.trim();
+      body.basicPassword = basicSharedPasswordDraft.trim();
       body.allowedIpRanges = d.allowedIpRanges?.trim();
       body.allowedDomains = d.allowedDomains?.trim();
     }
     try {
       await systemApi.saveTenantSsoProvider(selectedTenant.id, token, body);
       messageApi.success(tenantSsoEnabled ? "租户企业认证配置已启用" : "租户企业认证已关闭");
+      setBasicSharedPasswordDraft("");
       void loadTenantSsoProviders(selectedTenant.id);
       void fetchSsoProviders(selectedTenant.id);
     } catch (e) {
       handleApiError(e, "保存租户企业认证配置失败");
+    }
+  };
+
+  const copyTenantSsoValue = async (value: string, successMessage: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      messageApi.success(successMessage);
+    } catch {
+      messageApi.error("复制失败，请手动选择内容复制");
+    }
+  };
+
+  const createBasicSharedPasswordDraft = () => {
+    try {
+      const password = generateBasicSharedPassword();
+      setBasicSharedPasswordDraft(password);
+      tenantSsoRef.current.basicPassword = password;
+      messageApi.success("已生成新的共享密码，请复制到 OA 并保存企业认证配置");
+    } catch {
+      messageApi.error("当前浏览器无法安全生成随机密码，请手动填写高强度密码");
     }
   };
 
@@ -1622,6 +1664,7 @@ export function SystemManagementPage() {
                     onChange={(value) => {
                       const nextType = value as "oidc" | "basic";
                       setTenantSsoType(nextType);
+                      setBasicSharedPasswordDraft("");
                       const provider = tenantSsoProviders.find((item) => item.providerType === nextType);
                       setTenantSsoEnabled(provider?.status === "enabled");
                       tenantSsoRef.current = provider ? {
@@ -1651,9 +1694,33 @@ export function SystemManagementPage() {
                 ) : (
                   <>
                     <div className="sys-field">
-                      <label className="sys-field-label">{tenantSsoProviders.find((item) => item.providerType === "basic")?.basicPasswordConfigured ? "共享密码（留空保留原值）" : "共享密码"}</label>
-                      <div className="sys-field-input-wrap"><KeyRound size={16} className="sys-field-prefix"/><input className="sys-field-input" type="password" placeholder="业务系统调用 Basic 换址入口时使用" onChange={(event) => { tenantSsoRef.current.basicPassword = event.target.value; }} /></div>
-                      <div className="sys-field-hint">业务系统服务端访问 Agentum Basic 换址入口时，Basic username 使用 tenantCode/username，password 使用这里配置的共享密码；服务端取得 302 Location 后再把该地址重定向给浏览器。</div>
+                      <label className="sys-field-label">OA 服务端换址接口</label>
+                      <div className="sys-copy-field">
+                        <div className="sys-field-input-wrap"><Globe size={16} className="sys-field-prefix"/><input className="sys-field-input" value={basicRedirectionEndpoint} readOnly /></div>
+                        <button type="button" className="sys-btn sys-btn--default sys-btn--sm sys-copy-field-button" aria-label="复制 OA 服务端换址接口" onClick={() => void copyTenantSsoValue(basicRedirectionEndpoint, "已复制 OA 服务端换址接口")}><Copy size={14}/> 复制</button>
+                      </div>
+                    </div>
+                    <div className="sys-field">
+                      <label className="sys-field-label">Basic 用户名格式</label>
+                      <div className="sys-copy-field">
+                        <div className="sys-field-input-wrap"><User size={16} className="sys-field-prefix"/><input className="sys-field-input" value={basicUsernameFormat} readOnly /></div>
+                        <button type="button" className="sys-btn sys-btn--default sys-btn--sm sys-copy-field-button" aria-label="复制 Basic 用户名格式" onClick={() => void copyTenantSsoValue(basicUsernameFormat, "已复制 Basic 用户名格式")}><Copy size={14}/> 复制</button>
+                      </div>
+                    </div>
+                    <div className="sys-field">
+                      <label className="sys-field-label">共享密码</label>
+                      <div className="sys-info-tags tenant-sso-password-status">
+                        <span className={`sys-info-tag ${tenantSsoProviders.find((item) => item.providerType === "basic")?.basicPasswordConfigured ? "sys-info-tag--success" : "sys-info-tag--warn"}`}>
+                          {tenantSsoProviders.find((item) => item.providerType === "basic")?.basicPasswordConfigured ? "已配置" : "尚未配置"}
+                        </span>
+                        <span className="sys-field-hint">已保存的密码不会回显；下方只用于首次设置或更换密码。</span>
+                      </div>
+                      <div className="sys-copy-field">
+                        <div className="sys-field-input-wrap"><KeyRound size={16} className="sys-field-prefix"/><input className="sys-field-input" type="text" value={basicSharedPasswordDraft} placeholder={tenantSsoProviders.find((item) => item.providerType === "basic")?.basicPasswordConfigured ? "如需更换，请输入或生成新密码" : "请输入或生成共享密码"} autoComplete="new-password" onChange={(event) => { setBasicSharedPasswordDraft(event.target.value); tenantSsoRef.current.basicPassword = event.target.value; }} /></div>
+                        <button type="button" className="sys-btn sys-btn--default sys-btn--sm sys-copy-field-button" disabled={!basicSharedPasswordDraft} aria-label="复制新共享密码" onClick={() => void copyTenantSsoValue(basicSharedPasswordDraft, "已复制新共享密码")}><Copy size={14}/> 复制</button>
+                      </div>
+                      <button type="button" className="sys-btn sys-btn--text sys-btn--sm tenant-sso-generate-password" onClick={createBasicSharedPasswordDraft}><WandSparkles size={14}/> 生成高强度密码</button>
+                      <div className="sys-field-hint">请先将新密码复制到 OA 服务端，再保存企业认证；保存成功后明文会从页面清除。服务端取得 302 Location 后，应将该地址重定向给浏览器。</div>
                     </div>
                     <div className="sys-field-row">
                       <div className="sys-field"><label className="sys-field-label">允许 IP</label><div className="sys-field-input-wrap"><ServerCog size={16} className="sys-field-prefix"/><input className="sys-field-input" placeholder="逗号分隔，留空不限制" defaultValue={tenantSsoRef.current.allowedIpRanges || ""} onChange={(event) => { tenantSsoRef.current.allowedIpRanges = event.target.value; }} /></div></div>

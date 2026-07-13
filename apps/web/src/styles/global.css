@@ -4571,6 +4571,36 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
 }
 .sys-field-hint { font-size: 11px; color: var(--color-text-tertiary); margin-top: 4px; }
 
+.sys-copy-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+.sys-copy-field-button {
+  min-height: var(--agent-field-height, 44px);
+  white-space: nowrap;
+}
+.tenant-sso-password-status {
+  align-items: center;
+  margin-bottom: 8px;
+}
+.tenant-sso-password-status .sys-field-hint {
+  margin-top: 0;
+}
+.tenant-sso-generate-password {
+  margin-top: 6px;
+}
+
+@media (max-width: 640px) {
+  .sys-copy-field {
+    grid-template-columns: 1fr;
+  }
+  .sys-copy-field-button {
+    width: 100%;
+  }
+}
+
 /* Excel 格式规则开关：与 sys-field 输入框同高，左侧图标 + 右侧滑块 */
 .excel-rule-toggle-wrap {
   border: 1px solid var(--color-border-light);
