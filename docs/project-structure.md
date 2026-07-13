@@ -320,6 +320,7 @@ deploy/
 | [word-document-delivery.md](./word-document-delivery.md) | Word 交付 |
 | [excel-workbook-delivery.md](./excel-workbook-delivery.md) | Excel 交付 |
 | [sso-integration.md](./sso-integration.md) | 企业 SSO |
+| [oa-basic-sso-integration.md](./oa-basic-sso-integration.md) | OA Basic 单点登录对接示例 |
 | `images/` | README 引用的产品界面截图 |
 
 ---

@@ -2,6 +2,8 @@
 
 本文说明 Agentum 企业 SSO 的设计边界、业务系统配合方式和当前实现状态。
 
+需要按 OA Java / HttpClient 模式落地 Basic 单点登录时，参见 [OA Basic 单点登录对接示例](./oa-basic-sso-integration.md)。
+
 ## 1. 设计原则
 
 Agentum 将 SSO 定位为“外部身份认证来源”，不是业务权限来源。

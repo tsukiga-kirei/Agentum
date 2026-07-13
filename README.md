@@ -415,6 +415,7 @@ docs/                     产品、架构和进度文档
 | [Word 文档交付说明](./docs/word-document-delivery.md) | 系统内置 Word 交付的配置、预览和下载 |
 | [Excel 工作簿交付说明](./docs/excel-workbook-delivery.md) | 系统内置 Excel 交付的 Sheet 模板、宽容解析和下载 |
 | [企业 SSO 对接说明](./docs/sso-integration.md) | OIDC 单点登录边界与当前实现 |
+| [OA Basic 单点登录示例](./docs/oa-basic-sso-integration.md) | OA 服务端 Basic 换取一次性浏览器地址的配置、Java 示例与联调说明 |
 | [当前进度](./docs/progress/README.md) | 阶段计划、完成状态和后续开发说明 |
 | [AGENTS.md](./AGENTS.md) | 仓库内 AI 代理开发入口 |
 
