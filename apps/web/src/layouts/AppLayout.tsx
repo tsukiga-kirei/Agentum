@@ -1,6 +1,8 @@
 import {
   Activity,
   Bell,
+  Building2,
+  Check,
   CheckCircle2,
   Eye,
   GitBranch,
@@ -13,11 +15,14 @@ import {
   LogOut,
   Mail,
   Megaphone,
+  Moon,
   PanelLeft,
   PencilLine,
   Save,
   Settings,
   ShieldCheck,
+  Sparkles,
+  Sun,
   User,
   UserRoundCog,
 } from "lucide-react";
@@ -32,6 +37,7 @@ import { useAuthStore } from "../stores/authStore";
 import { paths, surfaceFromPath, surfaceNavPath, type SurfaceKey } from "../routes/paths";
 import { getThemedDrawerRootClassName, isDarkTheme } from "../utils/theme";
 import type { NotificationRow, NotificationStatusFilter } from "../types/notification";
+import type { RoleInfo, ThemeMode } from "../types/auth";
 
 const ICON_MAP = {
   LayoutDashboard,
@@ -49,6 +55,18 @@ type AnnouncementEditorMode = "edit" | "preview";
 const NOTIFICATION_PAGE_SIZE = 8;
 const ACCOUNT_DRAWER_WIDTH = 620;
 
+const accountThemeOptions: Array<{ mode: ThemeMode; label: string; icon: typeof Sun }> = [
+  { mode: "light", label: "浅色", icon: Sun },
+  { mode: "dark", label: "深色", icon: Moon },
+  { mode: "warm", label: "暖纸", icon: Sparkles },
+];
+
+const accountRoleIcons = {
+  system_admin: Settings,
+  tenant_admin: ShieldCheck,
+  business: LayoutDashboard,
+} as const;
+
 const accountSettingsTabs: Array<{
   key: AccountSettingsTabKey;
   label: string;
@@ -62,7 +80,11 @@ const accountSettingsTabs: Array<{
 export function AppLayout() {
   const menus = useAuthStore((state) => state.menus);
   const themeMode = useAuthStore((state) => state.themeMode);
+  const setThemeMode = useAuthStore((state) => state.setThemeMode);
   const user = useAuthStore((state) => state.user);
+  const roles = useAuthStore((state) => state.roles);
+  const activeRole = useAuthStore((state) => state.activeRole);
+  const switchRole = useAuthStore((state) => state.switchRole);
   const logout = useAuthStore((state) => state.logout);
   const token = useAuthStore((state) => state.token);
   const updateMyProfile = useAuthStore((state) => state.updateMyProfile);
@@ -78,6 +100,7 @@ export function AppLayout() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isSidebarTransitioning, setIsSidebarTransitioning] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [switchingRoleId, setSwitchingRoleId] = useState<string | null>(null);
   const [profileDrawerOpen, setProfileDrawerOpen] = useState(false);
   const [accountSettingsTab, setAccountSettingsTab] = useState<AccountSettingsTabKey>("overview");
   const [profileSubmitting, setProfileSubmitting] = useState(false);
@@ -364,6 +387,22 @@ export function AppLayout() {
     await logout();
   }
 
+  async function handleSwitchRole(role: RoleInfo) {
+    if (role.id === activeRole?.id || switchingRoleId) {
+      return;
+    }
+
+    // 角色切换会重签登录上下文并刷新左侧菜单，账号菜单先保持打开，便于失败时展示明确反馈。
+    setSwitchingRoleId(role.id);
+    const result = await switchRole(role.id);
+    setSwitchingRoleId(null);
+    if (!result.success) {
+      messageApi.error(result.message ?? "角色切换失败，请稍后重试");
+      return;
+    }
+    setAccountMenuOpen(false);
+  }
+
   return (
     <main className={`min-h-screen bg-[var(--color-bg-page)] text-[var(--color-text-primary)] transition-colors duration-300 ${isDarkMode ? "dark" : ""}`}>
       {messageContextHolder}
@@ -484,6 +523,65 @@ export function AppLayout() {
             )}
             {accountMenuOpen ? (
               <div className={`workbench-account-menu ${isSidebarCompact ? "workbench-account-menu--compact" : ""}`}>
+                <section className="workbench-account-menu-section" aria-labelledby="account-theme-title">
+                  <p id="account-theme-title" className="workbench-account-menu-title">切换主题</p>
+                  <div className="workbench-account-theme-options" role="group" aria-label="切换主题">
+                    {accountThemeOptions.map((option) => {
+                      const Icon = option.icon;
+                      const active = themeMode === option.mode;
+                      return (
+                        <button
+                          key={option.mode}
+                          type="button"
+                          className={`workbench-account-theme-option ${active ? "workbench-account-theme-option--active" : ""}`}
+                          onClick={() => setThemeMode(option.mode)}
+                          aria-pressed={active}
+                        >
+                          <Icon className="h-4 w-4" aria-hidden="true" />
+                          <span>{option.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+                {roles.length > 1 ? (
+                  <section className="workbench-account-menu-section" aria-labelledby="account-role-title">
+                    <p id="account-role-title" className="workbench-account-menu-title">切换角色</p>
+                    <div className="workbench-account-role-list" role="menu" aria-label="切换角色">
+                      {roles.map((role) => {
+                        const active = role.id === activeRole?.id;
+                        const RoleIcon = accountRoleIcons[role.role] ?? LayoutDashboard;
+                        const switching = role.id === switchingRoleId;
+                        return (
+                          <button
+                            key={role.id}
+                            type="button"
+                            role="menuitemradio"
+                            aria-checked={active}
+                            className={`workbench-account-role-option ${active ? "workbench-account-role-option--active" : ""}`}
+                            disabled={active || switchingRoleId !== null}
+                            onClick={() => void handleSwitchRole(role)}
+                          >
+                            <span className="workbench-account-role-icon">
+                              {switching ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RoleIcon className="h-4 w-4" aria-hidden="true" />}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-[13px] font-semibold">{role.label}</span>
+                              {role.tenantName ? (
+                                <span className="workbench-account-role-tenant">
+                                  <Building2 className="h-3 w-3 shrink-0" aria-hidden="true" />
+                                  <span className="truncate">{role.tenantName}</span>
+                                </span>
+                              ) : null}
+                            </span>
+                            {active ? <Check className="h-4 w-4 shrink-0" aria-hidden="true" /> : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
+                ) : null}
+                <div className="workbench-account-menu-divider" />
                 <button type="button" className="workbench-account-menu-item" onClick={openProfileSettings}>
                   <UserRoundCog className="h-4 w-4" aria-hidden="true" />
                   <span>个人设置</span>

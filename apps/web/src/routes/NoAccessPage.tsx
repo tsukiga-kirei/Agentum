@@ -1,6 +1,5 @@
 import { ShieldCheck } from "lucide-react";
 import { useAuthStore } from "../stores/authStore";
-import { WorkbenchGlobalActions } from "../components/workbench/SurfacePageLayout";
 
 export function NoAccessPage() {
   const activeRole = useAuthStore((state) => state.activeRole);
@@ -13,9 +12,6 @@ export function NoAccessPage() {
   return (
     <div className="min-h-screen bg-[var(--color-bg-page)] pb-10">
       <div className="mx-auto max-w-[1400px] px-5 lg:px-6">
-        <header className="surface-page-chrome surface-page-chrome--actions-only flex justify-end pb-2 pt-4">
-          <WorkbenchGlobalActions />
-        </header>
         <section
           className="agent-card mt-16 flex min-h-[360px] items-center justify-center p-8 text-center sm:mt-20"
           aria-label="无可访问页签"

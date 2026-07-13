@@ -39,7 +39,6 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { WorkbenchGlobalActions } from "../../components/workbench/SurfacePageLayout";
 import { SysImpactConfirmModal } from "../../components/common/SysImpactConfirmModal";
 import { SysModalMask } from "../../components/common/SysModalMask";
 import { DocumentDeliveryStyleSections } from "../../components/document/DocumentDeliveryStyleSections";
@@ -1032,7 +1031,6 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
           )}
           {saving ? "保存中" : saveSucceeded ? "已保存" : "保存流程"}
         </button>
-        <WorkbenchGlobalActions compact />
       </div>
 
       <div className="grid min-h-0 flex-1 grid-cols-[280px_minmax(0,1fr)]">

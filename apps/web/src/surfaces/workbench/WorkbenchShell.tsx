@@ -36,7 +36,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { Drawer, Empty, Pagination, Segmented, Select, message } from "antd";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { SurfacePageLayout, WorkbenchGlobalActions } from "../../components/workbench/SurfacePageLayout";
+import { SurfacePageLayout } from "../../components/workbench/SurfacePageLayout";
 import { TaskRunWorkspace } from "../../components/runtime/TaskRunWorkspace";
 import { WorkflowSchedulesPanel } from "./WorkflowSchedulesPanel";
 import { useAuthStore } from "../../stores/authStore";

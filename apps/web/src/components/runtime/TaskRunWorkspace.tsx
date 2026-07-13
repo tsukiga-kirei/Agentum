@@ -30,7 +30,6 @@ import { formatRuntimeErrorMessage } from "../../utils/runtimeErrors";
 import { mergeClusterAgents, parseClusterAgentSummariesFromOutputs, clusterAgentDisplayText } from "../../utils/clusterAgentsMerge";
 import { buildClusterAgentTraceSteps, buildTraceExecutionSteps } from "../../utils/agentExecutionSteps";
 import { TraceExecutionStepsSection } from "./TraceExecutionSteps";
-import { WorkbenchGlobalActions } from "../workbench/SurfacePageLayout";
 import { 
   Save, 
   Trash2, 
@@ -900,9 +899,6 @@ export function TaskRunWorkspace({
                 <History size={14} />
                 返回列表
               </button>
-            </div>
-            <div className="border-l border-slate-200 dark:border-slate-850 pl-3 h-6 flex items-center">
-              <WorkbenchGlobalActions />
             </div>
           </div>
         </div>

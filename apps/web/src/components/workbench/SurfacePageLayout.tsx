@@ -1,17 +1,5 @@
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { RoleSwitcher } from "../RoleSwitcher";
-import { ThemeToggle } from "../ThemeToggle";
-
-/** 工作台主内容区右上角全局操作（主题、角色），与页头介绍同一行展示。 */
-export function WorkbenchGlobalActions({ compact = false }: { compact?: boolean }) {
-  return (
-    <div className="surface-page-chrome-actions flex shrink-0 items-center gap-2">
-      <ThemeToggle />
-      <RoleSwitcher compact={compact} />
-    </div>
-  );
-}
 
 export type SurfacePageLayoutProps = {
   markClassName: string;
@@ -27,7 +15,7 @@ export type SurfacePageLayoutProps = {
 };
 
 /**
- * 工作台业务页统一骨架：页头介绍与主题/角色切换同一行，避免单独顶栏占用纵向空间。
+ * 工作台业务页统一骨架：全局账号与显示偏好统一收纳在左下角人物菜单，页头只承载当前业务操作。
  */
 export function SurfacePageLayout({
   markClassName,
@@ -55,12 +43,11 @@ export function SurfacePageLayout({
                   {badge}
                 </span>
               </div>
-              <p className="agent-muted mt-1.5 max-w-2xl text-sm leading-relaxed">{description}</p>
+              <p className="agent-muted mt-1.5 text-sm leading-relaxed">{description}</p>
             </div>
           </div>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 sm:pt-0.5">
             {headerEnd}
-            <WorkbenchGlobalActions />
           </div>
         </header>
         {children}
