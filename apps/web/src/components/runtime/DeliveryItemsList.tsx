@@ -1,7 +1,9 @@
 import React, { useState } from "react";
 import type { RuntimeDeliveryItem } from "../../types/runtime-types";
 import { Copy, Download, Eye } from "lucide-react";
+import { message } from "antd";
 import { MarkdownRenderer } from "./MarkdownRenderer";
+import { copyTextToClipboard } from "../../utils/clipboard";
 
 interface DeliveryItemsListProps {
   items: RuntimeDeliveryItem[];
@@ -26,13 +28,19 @@ export function DeliveryItemsList({
 }: DeliveryItemsListProps) {
   const [copiedKey, setCopiedKey] = useState("");
 
-  const handleCopy = (item: RuntimeDeliveryItem) => {
+  const handleCopy = async (item: RuntimeDeliveryItem) => {
     if (!item.content) {
       return;
     }
-    navigator.clipboard.writeText(item.content);
-    setCopiedKey(item.key);
-    window.setTimeout(() => setCopiedKey(""), 2000);
+    try {
+      await copyTextToClipboard(item.content);
+      setCopiedKey(item.key);
+      window.setTimeout(() => setCopiedKey(""), 2000);
+    } catch (error) {
+      // 交付内容可能包含业务敏感信息，日志不得输出原始正文。
+      console.warn("[runtime] 交付内容复制失败", error);
+      message.error("复制失败，请手动选择内容复制");
+    }
   };
 
   if (items.length === 0) {
@@ -72,7 +80,7 @@ export function DeliveryItemsList({
                 {item.kind === "direct" && item.content ? (
                   <button
                     type="button"
-                    onClick={() => handleCopy(item)}
+                    onClick={() => void handleCopy(item)}
                     className="agent-button h-8 px-3 text-xs"
                   >
                     <Copy size={14} />

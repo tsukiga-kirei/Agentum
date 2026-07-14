@@ -43,6 +43,7 @@ import { useAuthStore } from "../../stores/authStore";
 import type { OrganizationMembership, TenantOrganizationOverview } from "../../types/organization";
 import { isValidUsername, usernameRuleMessage } from "../../utils/username";
 import { getThemedDrawerRootClassName } from "../../utils/theme";
+import { copyTextToClipboard } from "../../utils/clipboard";
 import type {
   CreateModelProviderRequest,
   CreateTenantAdminRequest,
@@ -1197,9 +1198,11 @@ export function SystemManagementPage() {
 
   const copyTenantSsoValue = async (value: string, successMessage: string) => {
     try {
-      await navigator.clipboard.writeText(value);
+      await copyTextToClipboard(value);
       messageApi.success(successMessage);
-    } catch {
+    } catch (error) {
+      // SSO 字段可能包含共享密码，诊断日志只记录失败原因，禁止输出待复制的原始内容。
+      console.warn("[system] 企业认证字段复制失败", error);
       messageApi.error("复制失败，请手动选择内容复制");
     }
   };
