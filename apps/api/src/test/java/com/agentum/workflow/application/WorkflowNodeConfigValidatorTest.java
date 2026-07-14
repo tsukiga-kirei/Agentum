@@ -194,6 +194,32 @@ class WorkflowNodeConfigValidatorTest {
     }
 
     @Test
+    void shouldRejectTextFieldUsingDateDefaultRule() {
+        WorkflowDraftApi.WorkflowNodeRow node = new WorkflowDraftApi.WorkflowNodeRow(
+            "input_1",
+            "user_input",
+            "资料输入",
+            0,
+            0,
+            List.of("starter"),
+            List.of("report_date"),
+            Map.of("inputFields", List.of(Map.of(
+                "id", "field_1",
+                "label", "报告日期",
+                "variable", "report_date",
+                "fieldType", "text",
+                "defaultValueSource", "system",
+                "systemDefaultValue", "current_date"
+            )))
+        );
+
+        List<WorkflowDraftApi.WorkflowValidationIssue> issues = validator().validateCapabilityReferences(TENANT_ID, USER_ID, List.of(node));
+
+        assertThat(issues).extracting(WorkflowDraftApi.WorkflowValidationIssue::code)
+            .containsExactly("WORKFLOW_VALIDATION_INPUT_SYSTEM_DEFAULT_INVALID");
+    }
+
+    @Test
     void shouldRejectSelectInputFieldWhenOnlyPlaceholderOptionExists() {
         WorkflowDraftApi.WorkflowNodeRow node = new WorkflowDraftApi.WorkflowNodeRow(
             "input_1",

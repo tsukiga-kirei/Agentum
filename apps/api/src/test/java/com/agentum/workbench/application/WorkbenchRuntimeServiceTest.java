@@ -340,7 +340,8 @@ class WorkbenchRuntimeServiceTest {
             scheduleId,
             "每日授信复核",
             Map.of("company_profile", "云程科技"),
-            Map.of("scheduleName", "每日授信复核", "cronExpression", "0 0 9 * * *")
+            Map.of("scheduleName", "每日授信复核", "cronExpression", "0 0 9 * * *"),
+            NOW
         );
 
         assertThat(detail.triggerSource()).isEqualTo("schedule");

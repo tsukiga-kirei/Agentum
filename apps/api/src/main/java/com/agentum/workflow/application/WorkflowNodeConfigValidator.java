@@ -363,6 +363,24 @@ public class WorkflowNodeConfigValidator {
         List<WorkflowDraftApi.WorkflowValidationIssue> issues
     ) {
         String fieldType = rawString(field.get("fieldType"));
+        String normalizedFieldType = fieldType.isBlank() ? "text" : fieldType;
+        if (!Set.of("text", "date", "select").contains(normalizedFieldType)) {
+            issues.add(issue("WORKFLOW_VALIDATION_INPUT_FIELD_TYPE_INVALID", "节点[" + node.name() + "]存在不支持的输入字段类型", node));
+            return;
+        }
+        if ("date".equals(normalizedFieldType)) {
+            String granularity = rawString(field.get("dateGranularity"));
+            if (!granularity.isBlank() && !Set.of("day", "month", "year").contains(granularity)) {
+                issues.add(issue("WORKFLOW_VALIDATION_INPUT_DATE_GRANULARITY_INVALID", "节点[" + node.name() + "]的日期选择级别不合法", node));
+            }
+        }
+        if ("system".equals(rawString(field.get("defaultValueSource")))) {
+            String rule = rawString(field.get("systemDefaultValue"));
+            boolean validRule = Set.of("current_date", "current_year", "current_month", "previous_month").contains(rule);
+            if (!validRule || !"date".equals(normalizedFieldType)) {
+                issues.add(issue("WORKFLOW_VALIDATION_INPUT_SYSTEM_DEFAULT_INVALID", "节点[" + node.name() + "]的系统日期默认值与字段类型不匹配", node));
+            }
+        }
         if (!"select".equals(fieldType)) {
             return;
         }

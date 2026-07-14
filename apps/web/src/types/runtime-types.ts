@@ -383,12 +383,20 @@ export type InputFieldConfig = {
   variable: string;
   placeholder: string;
   defaultValue?: string;
-  /** 字段类型，默认 text */
-  fieldType?: "text" | "textarea" | "select" | "file";
+  /** 字段类型，默认 text；日期与年月统一输出 ISO 业务值。 */
+  fieldType?: "text" | "textarea" | "select" | "date" | "file";
   /** select 类型的选项列表 */
   options?: Array<{ label: string; value: string }>;
   /** 是否必填 */
   required?: boolean;
+  /** 默认值来源；旧配置未声明时按 defaultValue 是否为空推导。 */
+  defaultValueSource?: "none" | "fixed" | "system";
+  /** 系统动态日期规则，每次运行时重新计算。 */
+  systemDefaultValue?: "current_date" | "current_year" | "current_month" | "previous_month";
+  /** 日期字段的手工选择级别，默认精确到日。 */
+  dateGranularity?: "day" | "month" | "year";
+  /** 系统动态值在人工作业中是否允许修改，默认允许。 */
+  allowManualOverride?: boolean;
 };
 
 /** 输入表单提交的 payload 结构 */

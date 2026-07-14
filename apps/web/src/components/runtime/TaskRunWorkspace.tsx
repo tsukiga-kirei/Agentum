@@ -1865,13 +1865,14 @@ function collectVariablesBeforeNode(run: WorkbenchRunDetail, nodeRunId: string):
 }
 
 function buildRuntimeSystemVariables(run: WorkbenchRunDetail): Record<string, unknown> {
+  const referenceTime = run.startedAt ? new Date(run.startedAt) : new Date();
   const parts = new Intl.DateTimeFormat("zh-CN", {
     timeZone: "Asia/Shanghai",
     year: "numeric",
     month: "numeric",
     day: "numeric",
     weekday: "long",
-  }).formatToParts(new Date());
+  }).formatToParts(referenceTime);
   const readPart = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
   const year = readPart("year");
   const month = readPart("month");
@@ -1879,6 +1880,8 @@ function buildRuntimeSystemVariables(run: WorkbenchRunDetail): Record<string, un
   const weekday = readPart("weekday");
   const monthPadded = month.padStart(2, "0");
   const dayPadded = day.padStart(2, "0");
+  const previousMonthNumber = Number(month) === 1 ? 12 : Number(month) - 1;
+  const previousMonthYear = Number(month) === 1 ? Number(year) - 1 : Number(year);
   return {
     runId: run.id,
     runNumber: run.runNumber,
@@ -1889,6 +1892,8 @@ function buildRuntimeSystemVariables(run: WorkbenchRunDetail): Record<string, un
     current_weekday: weekday,
     current_year: year,
     current_month: month,
+    current_year_month: `${year}-${monthPadded}`,
+    previous_year_month: `${previousMonthYear}-${String(previousMonthNumber).padStart(2, "0")}`,
     current_day: day,
     year,
     month: monthPadded,

@@ -101,6 +101,7 @@ import {
   syncInputFieldOptionValuesFromLabels,
   validateInputFieldDraft,
   WORKFLOW_INPUT_FIELD_TYPE_OPTIONS,
+  WORKFLOW_SYSTEM_DEFAULT_VALUE_OPTIONS,
   type WorkflowInputFieldType,
 } from "../../utils/workflowInputField";
 
@@ -2156,6 +2157,7 @@ function IntentRoutingDrawer({
   const [draftFallbackMode, setDraftFallbackMode] = useState<IntentFallbackMode>(fallbackMode);
   const [draftFallbackAgentId, setDraftFallbackAgentId] = useState(fallbackAgentId);
   const [draftFallbackReply, setDraftFallbackReply] = useState(fallbackReply);
+  const [activeSection, setActiveSection] = useState<string>("dispatch");
   const initialIntentModel = modelOptions.find((model) => model.providerId === intentModelProviderId) ?? modelOptions[0];
   const [draftIntentModel, setDraftIntentModel] = useState({
     modelProviderId: initialIntentModel?.providerId ?? "",
@@ -2163,6 +2165,18 @@ function IntentRoutingDrawer({
     enableThinking: initialIntentModel?.reasoningModel ? intentEnableThinking : false,
   });
   const agentOptions = agents.map((agent) => ({ value: agent.id, label: agent.name }));
+  const intentSections: AgentConfigSectionDef<string>[] = [
+    { id: "dispatch", title: "分派设置", icon: Settings2 },
+    ...draftRoutes.map((route, index) => ({
+      id: `route:${route.id}`,
+      title: route.intentName.trim() || `意图 ${index + 1}`,
+      icon: ListChecks,
+    })),
+    { id: "fallback", title: "兜底策略", icon: AlertTriangle },
+  ];
+  const activeRouteId = activeSection.startsWith("route:") ? activeSection.slice("route:".length) : "";
+  const activeRoute = draftRoutes.find((route) => route.id === activeRouteId);
+  const activeRouteIndex = activeRoute ? draftRoutes.findIndex((route) => route.id === activeRoute.id) : -1;
 
   function updateRoute(routeId: string, patch: Partial<IntentRouteConfig>) {
     setDraftRoutes((current) => current.map((route) => route.id === routeId ? { ...route, ...patch } : route));
@@ -2170,16 +2184,37 @@ function IntentRoutingDrawer({
 
   function addRoute() {
     const nextIndex = draftRoutes.length + 1;
-    setDraftRoutes((current) => [
-      ...current,
-      {
-        id: `intent_route_${Date.now().toString(36)}_${nextIndex}`,
-        intentCode: uniqueVariableName(`intent_${nextIndex}`, new Set(current.map((route) => route.intentCode))),
-        intentName: `意图 ${nextIndex}`,
-        intentDescription: "",
-        agentId: agents[0]?.id ?? "",
-      },
-    ]);
+    const usedAgentCount = new Map(agents.map((agent) => [agent.id, 0]));
+    draftRoutes.forEach((route) => {
+      if (usedAgentCount.has(route.agentId)) {
+        usedAgentCount.set(route.agentId, (usedAgentCount.get(route.agentId) ?? 0) + 1);
+      }
+    });
+    const suggestedAgent = agents.reduce<ClusterAgentConfig | undefined>((candidate, agent) => {
+      if (!candidate) {
+        return agent;
+      }
+      return (usedAgentCount.get(agent.id) ?? 0) < (usedAgentCount.get(candidate.id) ?? 0) ? agent : candidate;
+    }, undefined);
+    const nextRoute: IntentRouteConfig = {
+      id: `intent_route_${Date.now().toString(36)}_${nextIndex}`,
+      intentCode: uniqueVariableName(`intent_${nextIndex}`, new Set(draftRoutes.map((route) => route.intentCode))),
+      intentName: `意图 ${nextIndex}`,
+      intentDescription: "",
+      agentId: suggestedAgent?.id ?? "",
+    };
+    setDraftRoutes([...draftRoutes, nextRoute]);
+    setActiveSection(`route:${nextRoute.id}`);
+  }
+
+  function removeRoute(routeId: string) {
+    const routeIndex = draftRoutes.findIndex((route) => route.id === routeId);
+    const nextRoutes = draftRoutes.filter((route) => route.id !== routeId);
+    setDraftRoutes(nextRoutes);
+    if (activeRouteId === routeId) {
+      const nextActiveRoute = nextRoutes[Math.min(routeIndex, nextRoutes.length - 1)];
+      setActiveSection(nextActiveRoute ? `route:${nextActiveRoute.id}` : "dispatch");
+    }
   }
 
   function moveRoute(routeId: string, direction: -1 | 1) {
@@ -2203,139 +2238,158 @@ function IntentRoutingDrawer({
       onClose={onClose}
       rootClassName={rootClassName}
     >
-      <div className="sys-drawer-section sys-drawer-section-enter workflow-agent-drawer-body">
-        <p className="workflow-agent-drawer-kicker">意图分派</p>
-        <div className="workflow-modal-section grid gap-3 md:grid-cols-2">
-          <ModelSelectField
-            modelOptions={modelOptions}
-            modelProviderId={draftIntentModel.modelProviderId}
-            enableThinking={draftIntentModel.enableThinking}
-            onChange={setDraftIntentModel}
-          />
-          <SelectLikeField
-            label="命中数量"
-            icon={ListChecks}
-            value={draftSelectionMode}
-            options={[
-              { value: "single", label: "单意图（只执行一个智能体）" },
-              { value: "multiple", label: "多意图（可执行多个智能体）" },
-            ]}
-            onChange={(value) => setDraftSelectionMode(readIntentSelectionMode(value))}
-          />
-          <div className="md:col-span-2">
-            <AgentBehaviorCapsules
-              allowUserEdit={false}
-              allowQuestion={false}
-              enableThinking={draftIntentModel.enableThinking}
-              showThinking={(modelOptions.find((model) => model.providerId === draftIntentModel.modelProviderId) ?? modelOptions[0])?.reasoningModel}
-              showAllowUserEdit={false}
-              showAllowQuestion={false}
-              onChange={(patch) => setDraftIntentModel({ ...draftIntentModel, ...patch })}
-            />
-          </div>
-          <div className="md:col-span-2">
-            <PromptEditor
-              label="待判断内容"
-              value={draftIntentInputTemplate}
-              availableVariables={availableVariables}
-              placeholder="例如：请根据 {{input_1}} 判断本次需要执行哪些报告智能体。"
-              onChange={setDraftIntentInputTemplate}
-            />
-          </div>
-        </div>
-        <div className="workflow-intent-drawer-toolbar">
-          <button type="button" className="agent-button agent-button-primary h-8 px-3 text-xs" onClick={addRoute}>
-            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-            新增意图
-          </button>
-        </div>
-        <div className="workflow-intent-drawer-list">
-          {draftRoutes.map((route, index) => (
-            <article key={route.id} className="workflow-intent-editor-card">
-              <div className="workflow-intent-editor-card-head">
-                <span className="workflow-intent-route-index">{index}</span>
-                <div className="flex items-center gap-1">
-                  <IconButton label="上移意图" icon={ArrowUp} disabled={index === 0} onClick={() => moveRoute(route.id, -1)} />
-                  <IconButton label="下移意图" icon={ArrowDown} disabled={index === draftRoutes.length - 1} onClick={() => moveRoute(route.id, 1)} />
-                  <IconButton label="删除意图" icon={Trash2} tone="danger" onClick={() => setDraftRoutes((current) => current.filter((item) => item.id !== route.id))} />
+      <div className="sys-drawer-section sys-drawer-section-enter workflow-agent-drawer-shell workflow-intent-drawer-shell">
+        <AgentConfigSplitPanel
+          sections={intentSections}
+          activeSection={activeSection}
+          onSectionChange={setActiveSection}
+          sidebarTitle="意图配置"
+          navLabel="意图配置项目"
+          sidebarAction={(
+            <button type="button" className="workflow-intent-add-button" onClick={addRoute}>
+              <Plus size={15} aria-hidden="true" />
+              新增意图
+            </button>
+          )}
+        >
+          {activeSection === "dispatch" ? (
+            <div className="workflow-intent-panel-content">
+              <p className="workflow-input-field-panel-intro">
+                {draftSelectionMode === "multiple"
+                  ? "多意图模式会同时执行所有命中的智能体；左侧顺序也是意图判断和展示顺序。"
+                  : "单意图模式只执行最优命中的一个智能体；仍可配置多个候选意图供模型判断。"}
+              </p>
+              <div className="workflow-modal-section grid gap-4 md:grid-cols-2">
+                <ModelSelectField
+                  modelOptions={modelOptions}
+                  modelProviderId={draftIntentModel.modelProviderId}
+                  enableThinking={draftIntentModel.enableThinking}
+                  onChange={setDraftIntentModel}
+                />
+                <SelectLikeField
+                  label="命中数量"
+                  icon={ListChecks}
+                  value={draftSelectionMode}
+                  options={[
+                    { value: "single", label: "单意图（只执行一个智能体）" },
+                    { value: "multiple", label: "多意图（可执行多个智能体）" },
+                  ]}
+                  onChange={(value) => setDraftSelectionMode(readIntentSelectionMode(value))}
+                />
+                <div className="md:col-span-2">
+                  <AgentBehaviorCapsules
+                    allowUserEdit={false}
+                    allowQuestion={false}
+                    enableThinking={draftIntentModel.enableThinking}
+                    showThinking={(modelOptions.find((model) => model.providerId === draftIntentModel.modelProviderId) ?? modelOptions[0])?.reasoningModel}
+                    showAllowUserEdit={false}
+                    showAllowQuestion={false}
+                    onChange={(patch) => setDraftIntentModel({ ...draftIntentModel, ...patch })}
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <PromptEditor
+                    label="待判断内容"
+                    value={draftIntentInputTemplate}
+                    availableVariables={availableVariables}
+                    placeholder="例如：请根据 {{input_1}} 判断本次需要执行哪些报告智能体。"
+                    onChange={setDraftIntentInputTemplate}
+                  />
                 </div>
               </div>
-              <div className="grid gap-4 md:grid-cols-2">
+            </div>
+          ) : null}
+
+          {activeRoute ? (
+            <div className="workflow-intent-panel-content">
+              <div className="workflow-intent-editor-card-head">
+                <div className="workflow-intent-editor-position">
+                  <span className="workflow-intent-route-index">{activeRouteIndex + 1}</span>
+                  <span>第 {activeRouteIndex + 1} 个意图，共 {draftRoutes.length} 个</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <IconButton label="上移意图" icon={ArrowUp} disabled={activeRouteIndex === 0} onClick={() => moveRoute(activeRoute.id, -1)} />
+                  <IconButton label="下移意图" icon={ArrowDown} disabled={activeRouteIndex === draftRoutes.length - 1} onClick={() => moveRoute(activeRoute.id, 1)} />
+                  <IconButton label="删除意图" icon={Trash2} tone="danger" onClick={() => removeRoute(activeRoute.id)} />
+                </div>
+              </div>
+              <div className="workflow-modal-section grid gap-4">
                 <TextInputField
                   label="意图名称"
                   icon={Type}
-                  value={route.intentName}
+                  value={activeRoute.intentName}
                   placeholder="月报生成"
-                  onChange={(value) => updateRoute(route.id, { intentName: value })}
+                  onChange={(value) => updateRoute(activeRoute.id, { intentName: value })}
                 />
-                <label className="sys-field md:col-span-2">
+                <label className="sys-field">
                   <span className="sys-field-label">目标智能体</span>
                   <Select
                     className="agent-admin-select w-full"
                     classNames={workflowSelectClassNames}
                     prefix={<Bot className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
                     suffixIcon={workflowSelectSuffixIcon}
-                    value={route.agentId || undefined}
+                    value={activeRoute.agentId || undefined}
                     placeholder="选择命中后要执行的智能体"
                     options={agentOptions}
-                    onChange={(value) => updateRoute(route.id, { agentId: value })}
+                    onChange={(value) => updateRoute(activeRoute.id, { agentId: value })}
                   />
                 </label>
-                <div className="md:col-span-2">
-                  <PromptEditor
-                    label="命中条件"
-                    value={route.intentDescription}
-                    availableVariables={availableVariables}
-                    placeholder="例如：{{input_1}} 中要求生成某个月份的经营月报、月度金融业务分析或月度监管材料。"
-                    onChange={(value) => updateRoute(route.id, { intentDescription: value })}
-                  />
-                </div>
+                <PromptEditor
+                  label="命中条件"
+                  value={activeRoute.intentDescription}
+                  availableVariables={availableVariables}
+                  placeholder="例如：{{input_1}} 中要求生成某个月份的经营月报、月度金融业务分析或月度监管材料。"
+                  onChange={(value) => updateRoute(activeRoute.id, { intentDescription: value })}
+                />
               </div>
-            </article>
-          ))}
-          {draftRoutes.length === 0 ? (
-            <p className="rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-light)] px-3 py-5 text-center text-sm text-[var(--color-text-tertiary)]">还没有意图，先新增一个。</p>
+            </div>
           ) : null}
-        </div>
-        <div className="workflow-modal-section grid gap-4 md:grid-cols-2">
-          <SelectLikeField
-            label="其他情况"
-            icon={AlertTriangle}
-            value={draftFallbackMode}
-            options={[
-              { value: "fail", label: "中止并提示" },
-              { value: "agent", label: "转交一个智能体" },
-              { value: "fixed_reply", label: "回复固定话术" },
-            ]}
-            onChange={(value) => setDraftFallbackMode(readIntentFallbackMode(value))}
-          />
-          {draftFallbackMode === "agent" ? (
-            <label className="sys-field">
-              <span className="sys-field-label">其他情况智能体</span>
-              <Select
-                className="agent-admin-select w-full"
-                classNames={workflowSelectClassNames}
-                prefix={<Bot className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
-                suffixIcon={workflowSelectSuffixIcon}
-                value={draftFallbackAgentId || undefined}
-                placeholder="选择智能体"
-                options={agentOptions}
-                onChange={setDraftFallbackAgentId}
-              />
-            </label>
+
+          {activeSection === "fallback" ? (
+            <div className="workflow-intent-panel-content">
+              <p className="workflow-input-field-panel-intro">当没有任何意图命中时，按这里的策略结束流程、转交智能体或直接回复用户。</p>
+              <div className="workflow-modal-section grid gap-4 md:grid-cols-2">
+                <SelectLikeField
+                  label="其他情况"
+                  icon={AlertTriangle}
+                  value={draftFallbackMode}
+                  options={[
+                    { value: "fail", label: "中止并提示" },
+                    { value: "agent", label: "转交一个智能体" },
+                    { value: "fixed_reply", label: "回复固定话术" },
+                  ]}
+                  onChange={(value) => setDraftFallbackMode(readIntentFallbackMode(value))}
+                />
+                {draftFallbackMode === "agent" ? (
+                  <label className="sys-field">
+                    <span className="sys-field-label">其他情况智能体</span>
+                    <Select
+                      className="agent-admin-select w-full"
+                      classNames={workflowSelectClassNames}
+                      prefix={<Bot className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
+                      suffixIcon={workflowSelectSuffixIcon}
+                      value={draftFallbackAgentId || undefined}
+                      placeholder="选择智能体"
+                      options={agentOptions}
+                      onChange={setDraftFallbackAgentId}
+                    />
+                  </label>
+                ) : null}
+                {draftFallbackMode === "fixed_reply" ? (
+                  <label className="sys-field md:col-span-2">
+                    <span className="sys-field-label">固定话术</span>
+                    <textarea
+                      value={draftFallbackReply}
+                      onChange={(event) => setDraftFallbackReply(event.target.value)}
+                      className="sys-field-textarea"
+                      placeholder="暂时无法判断该需求应该交给哪个智能体处理，请补充更明确的信息。"
+                    />
+                  </label>
+                ) : null}
+              </div>
+            </div>
           ) : null}
-          {draftFallbackMode === "fixed_reply" ? (
-            <label className="sys-field md:col-span-2">
-              <span className="sys-field-label">固定话术</span>
-              <textarea
-                value={draftFallbackReply}
-                onChange={(event) => setDraftFallbackReply(event.target.value)}
-                className="sys-field-textarea"
-                placeholder="暂时无法判断该需求应该交给哪个智能体处理，请补充更明确的信息。"
-              />
-            </label>
-          ) : null}
-        </div>
+        </AgentConfigSplitPanel>
       </div>
       <div className="sys-drawer-footer">
         <div className="sys-drawer-footer-right">
@@ -2351,24 +2405,29 @@ function IntentRoutingDrawer({
                 intentDescription: route.intentDescription.trim(),
               }));
               if (!draftIntentInputTemplate.trim()) {
+                setActiveSection("dispatch");
                 message.error("请先填写待判断内容，并引用需要用于意图判断的上游变量");
                 return;
               }
               const duplicateCode = normalizedRoutes.find((route, index) => normalizedRoutes.some((item, itemIndex) => itemIndex !== index && item.intentCode === route.intentCode));
               if (duplicateCode) {
+                setActiveSection(`route:${duplicateCode.id}`);
                 message.error(`存在重复的意图代码：${duplicateCode.intentCode}`);
                 return;
               }
               const invalidRoute = normalizedRoutes.find((route) => !route.agentId || !route.intentDescription);
               if (invalidRoute) {
+                setActiveSection(`route:${invalidRoute.id}`);
                 message.error("每个意图都需要选择目标智能体，并说明什么时候命中");
                 return;
               }
               if (draftFallbackMode === "agent" && !draftFallbackAgentId) {
+                setActiveSection("fallback");
                 message.error("其他情况需要选择目标智能体");
                 return;
               }
               if (draftFallbackMode === "fixed_reply" && !draftFallbackReply.trim()) {
+                setActiveSection("fallback");
                 message.error("其他情况固定话术不能为空");
                 return;
               }
@@ -4089,6 +4148,14 @@ function InputFieldOptionsEditor({
   );
 }
 
+type InputFieldConfigSectionId = "basic" | "type" | "rules";
+
+const INPUT_FIELD_CONFIG_SECTIONS: AgentConfigSectionDef<InputFieldConfigSectionId>[] = [
+  { id: "basic", title: "基础配置", icon: Type },
+  { id: "type", title: "类型设置", icon: Clock3 },
+  { id: "rules", title: "提交规则", icon: ListChecks },
+];
+
 function InputFieldModal({
   field,
   availableVariables,
@@ -4101,8 +4168,29 @@ function InputFieldModal({
   onSave: (field: InputFieldConfig) => void;
 }) {
   const { message } = App.useApp();
+  const themeMode = useAuthStore((state) => state.themeMode);
   const [draft, setDraft] = useState<InputFieldConfig>(() => normalizeInputField(field));
+  const [activeSection, setActiveSection] = useState<InputFieldConfigSectionId>("basic");
+  const [isDrawerScrolling, setIsDrawerScrolling] = useState(false);
+  const scrollIdleTimerRef = useRef<number | null>(null);
   const isSelectField = draft.fieldType === "select";
+
+  useEffect(() => () => {
+    if (scrollIdleTimerRef.current !== null) {
+      window.clearTimeout(scrollIdleTimerRef.current);
+    }
+  }, []);
+
+  function handleDrawerScroll() {
+    setIsDrawerScrolling(true);
+    if (scrollIdleTimerRef.current !== null) {
+      window.clearTimeout(scrollIdleTimerRef.current);
+    }
+    scrollIdleTimerRef.current = window.setTimeout(() => {
+      setIsDrawerScrolling(false);
+      scrollIdleTimerRef.current = null;
+    }, 700);
+  }
 
   function handleFieldTypeChange(fieldType: WorkflowInputFieldType) {
     if (fieldType === "select") {
@@ -4118,7 +4206,10 @@ function InputFieldModal({
     setDraft((current) => ({
       ...current,
       fieldType,
-      placeholder: current.placeholder || "请输入内容",
+      placeholder: current.placeholder || (fieldType === "date" ? "请选择日期" : "请输入内容"),
+      defaultValue: fieldType === "date" || current.defaultValueSource === "system" ? "" : current.defaultValue,
+      defaultValueSource: fieldType === "date" || current.defaultValueSource === "system" ? "none" : current.defaultValueSource,
+      systemDefaultValue: "current_date",
       options: undefined,
     }));
   }
@@ -4144,9 +4235,11 @@ function InputFieldModal({
       ...draft,
       variable: normalizeVariableName(draft.variable) || "input_value",
       options: isSelectField ? normalizedOptions : undefined,
-      defaultValue: draft.defaultValue && normalizedOptions.some((option) => option.value === draft.defaultValue)
-        ? draft.defaultValue
-        : "",
+      defaultValue: isSelectField
+        ? draft.defaultValue && normalizedOptions.some((option) => option.value === draft.defaultValue)
+          ? draft.defaultValue
+          : ""
+        : draft.defaultValue ?? "",
     });
     const validationError = validateInputFieldDraft(nextField);
     if (validationError) {
@@ -4156,100 +4249,200 @@ function InputFieldModal({
     onSave(nextField);
   }
 
+  const drawerTitle = draft.fieldType === "select" ? "配置下拉框" : draft.fieldType === "date" ? "配置日期字段" : "配置文本框";
+
   return (
-    <SysModalMask onClose={onClose}>
-      <section className="sys-modal workflow-config-modal" aria-labelledby="input-field-modal-title">
-        <div className="sys-modal-header">
-          <div>
-            <div className="sys-field-label" style={{ marginBottom: 4 }}>输入信息</div>
-            <span id="input-field-modal-title" className="sys-modal-title">
-              {isSelectField ? "配置下拉框" : "配置文本框"}
-            </span>
-          </div>
-          <button className="sys-modal-close" onClick={onClose} aria-label="关闭输入字段配置"><X size={18} /></button>
-        </div>
-        <div className="sys-modal-body">
-          <label className="sys-field">
-            <span className="sys-field-label sys-field-label--required">字段类型</span>
-            <Select
-              className="agent-admin-select w-full"
-              classNames={workflowSelectClassNames}
-              suffixIcon={workflowSelectSuffixIcon}
-              value={draft.fieldType ?? "text"}
-              options={WORKFLOW_INPUT_FIELD_TYPE_OPTIONS}
-              onChange={(value) => handleFieldTypeChange(value as WorkflowInputFieldType)}
-            />
-          </label>
-          <label className="sys-field">
-            <span className="sys-field-label">显示名称</span>
-            <div className="sys-field-input-wrap">
-              <Tag size={16} className="sys-field-prefix" aria-hidden="true" />
-              <input value={draft.label} onChange={(event) => setDraft({ ...draft, label: event.target.value })} className="sys-field-input" />
-            </div>
-          </label>
-          <label className="sys-field">
-            <span className="sys-field-label">输出内容标识</span>
-            <div className="sys-field-input-wrap">
-              <Hash size={16} className="sys-field-prefix" aria-hidden="true" />
-              <input value={draft.variable} onChange={(event) => setDraft({ ...draft, variable: normalizeVariableName(event.target.value) })} className="sys-field-input" />
-            </div>
-          </label>
-          <label className="sys-field">
-            <span className="sys-field-label">{isSelectField ? "占位提示" : "占位提示"}</span>
-            <div className="sys-field-input-wrap">
-              {isSelectField
-                ? <ChevronDown size={16} className="sys-field-prefix" aria-hidden="true" />
-                : <TextCursorInput size={16} className="sys-field-prefix" aria-hidden="true" />}
-              <input value={draft.placeholder} onChange={(event) => setDraft({ ...draft, placeholder: event.target.value })} className="sys-field-input" />
-            </div>
-          </label>
-          {isSelectField ? (
-            <>
-              <InputFieldOptionsEditor
-                options={draft.options ?? []}
-                onChange={commitSelectOptions}
-              />
-              <label className="sys-field">
-                <span className="sys-field-label">默认选中</span>
-                <Select
-                  allowClear
-                  className="agent-admin-select w-full"
-                  classNames={workflowSelectClassNames}
-                  suffixIcon={workflowSelectSuffixIcon}
-                  placeholder="不预设默认选项"
-                  value={draft.defaultValue || undefined}
-                  options={normalizeInputFieldOptions(draft.options, draft.placeholder).map((option) => ({ value: option.value, label: option.label }))}
-                  onChange={(value) => setDraft({ ...draft, defaultValue: value ?? "" })}
-                />
-              </label>
-            </>
-          ) : (
-            <PromptEditor
-              label="默认内容"
-              value={draft.defaultValue ?? ""}
-              availableVariables={availableVariables}
-              onChange={(value) => setDraft({ ...draft, defaultValue: value })}
-              placeholder="可用 {{输出内容标识}} 引用之前步骤内容"
-            />
-          )}
-          <label className="workflow-toggle-row workflow-input-required-toggle">
-            <span>
-              <span className="block">是否必填</span>
-              <span className="mt-1 block text-xs font-normal text-[var(--color-text-tertiary)]">开启后，业务人员必须填写此项才能提交。</span>
-            </span>
-            <input
-              type="checkbox"
-              checked={draft.required !== false}
-              onChange={(event) => setDraft({ ...draft, required: event.target.checked })}
-            />
-          </label>
-        </div>
-        <div className="sys-modal-footer">
+    <Drawer
+      title={drawerTitle}
+      placement="right"
+      width={900}
+      open
+      destroyOnClose
+      onClose={onClose}
+      rootClassName={getThemedDrawerRootClassName(themeMode, "workflow-input-field-drawer")}
+      styles={{ body: { padding: 0, overflow: "hidden" }, footer: { padding: "14px 20px" } }}
+      footer={(
+        <div className="workflow-input-field-drawer-footer">
           <button type="button" className="sys-btn sys-btn--default" onClick={onClose}>取消</button>
           <button type="button" className="sys-btn sys-btn--primary" onClick={handleSave}>保存</button>
         </div>
-      </section>
-    </SysModalMask>
+      )}
+    >
+      <div
+        className={`workflow-input-field-drawer-shell${isDrawerScrolling ? " is-scrolling" : ""}`}
+        onScrollCapture={handleDrawerScroll}
+      >
+        <AgentConfigSplitPanel
+          sections={INPUT_FIELD_CONFIG_SECTIONS}
+          activeSection={activeSection}
+          onSectionChange={setActiveSection}
+        >
+          {activeSection === "basic" ? (
+            <div className="workflow-input-field-panel-content">
+              <p className="workflow-input-field-panel-intro">定义业务人员看到的字段名称、类型和下游引用标识。</p>
+              <div className="workflow-input-field-drawer-fields">
+                <label className="sys-field">
+                  <span className="sys-field-label sys-field-label--required">字段类型</span>
+                  <Select
+                    className="agent-admin-select w-full"
+                    classNames={workflowSelectClassNames}
+                    suffixIcon={workflowSelectSuffixIcon}
+                    value={draft.fieldType ?? "text"}
+                    options={WORKFLOW_INPUT_FIELD_TYPE_OPTIONS}
+                    onChange={(value) => handleFieldTypeChange(value as WorkflowInputFieldType)}
+                  />
+                </label>
+                <label className="sys-field">
+                  <span className="sys-field-label">显示名称</span>
+                  <div className="sys-field-input-wrap">
+                    <Tag size={16} className="sys-field-prefix" aria-hidden="true" />
+                    <input value={draft.label} onChange={(event) => setDraft({ ...draft, label: event.target.value })} className="sys-field-input" />
+                  </div>
+                </label>
+                <label className="sys-field">
+                  <span className="sys-field-label">输出内容标识</span>
+                  <div className="sys-field-input-wrap">
+                    <Hash size={16} className="sys-field-prefix" aria-hidden="true" />
+                    <input value={draft.variable} onChange={(event) => setDraft({ ...draft, variable: normalizeVariableName(event.target.value) })} className="sys-field-input" />
+                  </div>
+                </label>
+                <label className="sys-field">
+                  <span className="sys-field-label">占位提示</span>
+                  <div className="sys-field-input-wrap">
+                    {isSelectField
+                      ? <ChevronDown size={16} className="sys-field-prefix" aria-hidden="true" />
+                      : <TextCursorInput size={16} className="sys-field-prefix" aria-hidden="true" />}
+                    <input value={draft.placeholder} onChange={(event) => setDraft({ ...draft, placeholder: event.target.value })} className="sys-field-input" />
+                  </div>
+                </label>
+              </div>
+            </div>
+          ) : null}
+
+          {activeSection === "type" ? (
+            <div className="workflow-input-field-panel-content">
+              {isSelectField ? (
+                <>
+                  <p className="workflow-input-field-panel-intro">维护可选内容，并可预设一个默认选项；业务人员仍可修改。</p>
+                  <div className="workflow-input-field-drawer-fields">
+                    <InputFieldOptionsEditor options={draft.options ?? []} onChange={commitSelectOptions} />
+                    <label className="sys-field">
+                      <span className="sys-field-label">预设选项</span>
+                      <Select
+                        allowClear
+                        className="agent-admin-select w-full"
+                        classNames={workflowSelectClassNames}
+                        suffixIcon={workflowSelectSuffixIcon}
+                        placeholder="不预设，运行时由业务人员选择"
+                        value={draft.defaultValue || undefined}
+                        options={normalizeInputFieldOptions(draft.options, draft.placeholder).map((option) => ({ value: option.value, label: option.label }))}
+                        onChange={(value) => setDraft({ ...draft, defaultValue: value ?? "" })}
+                      />
+                    </label>
+                  </div>
+                </>
+              ) : null}
+
+              {draft.fieldType === "text" ? (
+                <>
+                  <p className="workflow-input-field-panel-intro">预设内容会在打开任务时自动填入，业务人员可以继续修改；留空表示不预设。</p>
+                  <PromptEditor
+                    label="预设值（可选）"
+                    value={draft.defaultValue ?? ""}
+                    availableVariables={availableVariables}
+                    onChange={(value) => setDraft({ ...draft, defaultValue: value, defaultValueSource: value ? "fixed" : "none" })}
+                    placeholder="可用 {{输出内容标识}} 引用之前步骤内容"
+                  />
+                </>
+              ) : null}
+
+              {draft.fieldType === "date" ? (
+                <>
+                  <p className="workflow-input-field-panel-intro">当前年、当前年月、上个年月和当前日期统一在日期字段内配置。</p>
+                  <div className="workflow-input-field-drawer-fields">
+                    <label className="sys-field">
+                      <span className="sys-field-label">日期取值</span>
+                      <Select
+                        className="agent-admin-select w-full"
+                        classNames={workflowSelectClassNames}
+                        suffixIcon={workflowSelectSuffixIcon}
+                        value={draft.defaultValueSource === "system" ? draft.systemDefaultValue : "manual"}
+                        options={[
+                          { value: "manual", label: "手工选择（不预设）" },
+                          ...WORKFLOW_SYSTEM_DEFAULT_VALUE_OPTIONS.map((option) => ({ value: option.value, label: `${option.label}（${option.description}）` })),
+                        ]}
+                        onChange={(value) => setDraft({
+                          ...draft,
+                          defaultValueSource: value === "manual" ? "none" : "system",
+                          systemDefaultValue: value === "manual" ? "current_date" : value as InputFieldConfig["systemDefaultValue"],
+                          dateGranularity: value === "manual"
+                            ? draft.dateGranularity
+                            : value === "current_year"
+                              ? "year"
+                              : ["current_month", "previous_month"].includes(value)
+                                ? "month"
+                                : "day",
+                          defaultValue: "",
+                        })}
+                      />
+                      <span className="sys-field-hint">定时任务会按每次计划触发时间重新计算，不会固化创建任务时的日期。</span>
+                    </label>
+                    {draft.defaultValueSource !== "system" ? (
+                      <label className="sys-field">
+                        <span className="sys-field-label">选择级别</span>
+                        <Select
+                          className="agent-admin-select w-full"
+                          classNames={workflowSelectClassNames}
+                          suffixIcon={workflowSelectSuffixIcon}
+                          value={draft.dateGranularity ?? "day"}
+                          options={[
+                            { value: "year", label: "年（YYYY）" },
+                            { value: "month", label: "年月（YYYY-MM）" },
+                            { value: "day", label: "年月日（YYYY-MM-DD）" },
+                          ]}
+                          onChange={(value) => setDraft({ ...draft, dateGranularity: value as InputFieldConfig["dateGranularity"] })}
+                        />
+                        <span className="sys-field-hint">决定人工填写时打开年份、月份或具体日期选择器。</span>
+                      </label>
+                    ) : null}
+                    {draft.defaultValueSource === "system" ? (
+                      <label className="workflow-toggle-row workflow-input-required-toggle">
+                        <span>
+                          <span className="block">允许人工修改</span>
+                          <span className="mt-1 block text-xs font-normal text-[var(--color-text-tertiary)]">开启后先自动预填，业务人员仍可调整日期。</span>
+                        </span>
+                        <input
+                          type="checkbox"
+                          checked={draft.allowManualOverride !== false}
+                          onChange={(event) => setDraft({ ...draft, allowManualOverride: event.target.checked })}
+                        />
+                      </label>
+                    ) : null}
+                  </div>
+                </>
+              ) : null}
+            </div>
+          ) : null}
+
+          {activeSection === "rules" ? (
+            <div className="workflow-input-field-panel-content">
+              <p className="workflow-input-field-panel-intro">控制业务人员是否必须提供这个字段。</p>
+              <label className="workflow-toggle-row workflow-input-required-toggle">
+                <span>
+                  <span className="block">是否必填</span>
+                  <span className="mt-1 block text-xs font-normal text-[var(--color-text-tertiary)]">开启后，业务人员必须填写此项才能提交。</span>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={draft.required !== false}
+                  onChange={(event) => setDraft({ ...draft, required: event.target.checked })}
+                />
+              </label>
+            </div>
+          ) : null}
+        </AgentConfigSplitPanel>
+      </div>
+    </Drawer>
   );
 }
 
@@ -4323,8 +4516,8 @@ const WORKFLOW_AGENT_DRAWER_WIDTH = 1000;
 
 type AgentConfigSectionId = "basic" | "systemPrompt" | "userPrompt" | "capabilities" | "runtime";
 
-type AgentConfigSectionDef = {
-  id: AgentConfigSectionId;
+type AgentConfigSectionDef<SectionId extends string = AgentConfigSectionId> = {
+  id: SectionId;
   title: string;
   icon: WorkflowIcon;
 };
@@ -4710,15 +4903,21 @@ function ClusterAgentModal({
   );
 }
 
-function AgentConfigSplitPanel({
+function AgentConfigSplitPanel<SectionId extends string,>({
   sections,
   activeSection,
   onSectionChange,
+  sidebarTitle = "配置分类",
+  navLabel = "智能体配置分类",
+  sidebarAction,
   children,
 }: {
-  sections: AgentConfigSectionDef[];
-  activeSection: AgentConfigSectionId;
-  onSectionChange: (section: AgentConfigSectionId) => void;
+  sections: AgentConfigSectionDef<SectionId>[];
+  activeSection: SectionId;
+  onSectionChange: (section: SectionId) => void;
+  sidebarTitle?: string;
+  navLabel?: string;
+  sidebarAction?: ReactNode;
   children: ReactNode;
 }) {
   const active = sections.find((section) => section.id === activeSection) ?? sections[0];
@@ -4726,8 +4925,8 @@ function AgentConfigSplitPanel({
   return (
     <div className="workflow-agent-config-split">
       <aside className="workflow-agent-config-sidebar">
-        <p className="workflow-agent-config-sidebar-title">配置分类</p>
-        <nav className="workflow-agent-config-nav" aria-label="智能体配置分类">
+        <p className="workflow-agent-config-sidebar-title">{sidebarTitle}</p>
+        <nav className="workflow-agent-config-nav" aria-label={navLabel}>
           {sections.map((section) => {
             const Icon = section.icon;
             const isActive = section.id === activeSection;
@@ -4747,6 +4946,7 @@ function AgentConfigSplitPanel({
             );
           })}
         </nav>
+        {sidebarAction ? <div className="workflow-agent-config-sidebar-action">{sidebarAction}</div> : null}
       </aside>
       <div className="workflow-agent-config-content">
         <header className="workflow-agent-config-content-header">

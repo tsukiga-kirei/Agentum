@@ -4,8 +4,16 @@ export type WorkflowInputFieldType = NonNullable<InputFieldConfig["fieldType"]>;
 
 export const WORKFLOW_INPUT_FIELD_TYPE_OPTIONS: Array<{ value: WorkflowInputFieldType; label: string }> = [
   { value: "text", label: "文本输入" },
+  { value: "date", label: "日期" },
   { value: "select", label: "下拉选择" },
 ];
+
+export const WORKFLOW_SYSTEM_DEFAULT_VALUE_OPTIONS = [
+  { value: "current_date", label: "当前日期", description: "格式：YYYY-MM-DD" },
+  { value: "current_year", label: "当前年", description: "格式：YYYY" },
+  { value: "current_month", label: "当前年月", description: "格式：YYYY-MM" },
+  { value: "previous_month", label: "上个年月", description: "格式：YYYY-MM" },
+] as const;
 
 export function normalizeInputFieldOptions(value: unknown, placeholder?: string): Array<{ label: string; value: string }> {
   if (!Array.isArray(value)) {
@@ -29,13 +37,27 @@ export function normalizeInputFieldOptions(value: unknown, placeholder?: string)
 }
 
 export function normalizeInputField(field: InputFieldConfig): InputFieldConfig {
-  const fieldType: WorkflowInputFieldType = field.fieldType === "select" ? "select" : "text";
+  const fieldType: WorkflowInputFieldType = ["select", "date"].includes(field.fieldType ?? "")
+    ? field.fieldType as WorkflowInputFieldType
+    : "text";
   const placeholder = field.placeholder ?? (fieldType === "select" ? "请选择" : "请输入内容");
+  const defaultValue = field.defaultValue ?? "";
+  const defaultValueSource = field.defaultValueSource === "system"
+    ? "system"
+    : field.defaultValueSource === "none"
+      ? "none"
+      : defaultValue
+        ? "fixed"
+        : "none";
 
   return {
     ...field,
     placeholder,
-    defaultValue: field.defaultValue ?? "",
+    defaultValue,
+    defaultValueSource,
+    systemDefaultValue: field.systemDefaultValue ?? "current_date",
+    dateGranularity: field.dateGranularity ?? "day",
+    allowManualOverride: field.allowManualOverride !== false,
     required: field.required !== false,
     fieldType,
     options: fieldType === "select" ? normalizeInputFieldOptions(field.options, placeholder) : undefined,
@@ -89,7 +111,33 @@ export function createInputField(
 }
 
 export function getInputFieldTypeLabel(fieldType?: WorkflowInputFieldType): string {
-  return fieldType === "select" ? "下拉框" : "文本框";
+  if (fieldType === "select") return "下拉框";
+  if (fieldType === "date") return "日期框";
+  return "文本框";
+}
+
+export function getSystemDefaultValueLabel(value?: InputFieldConfig["systemDefaultValue"]): string {
+  return WORKFLOW_SYSTEM_DEFAULT_VALUE_OPTIONS.find((option) => option.value === value)?.label ?? "当前日期";
+}
+
+/** 人工填写页使用后端下发的运行时变量预填，避免浏览器本地时区与业务时区不一致。 */
+export function resolveInputFieldDefaultValue(
+  field: InputFieldConfig,
+  variables: Record<string, unknown>,
+): string {
+  const normalized = normalizeInputField(field);
+  if (normalized.defaultValueSource !== "system") {
+    return normalized.defaultValue ?? "";
+  }
+  const variableName = normalized.systemDefaultValue === "previous_month"
+    ? "previous_year_month"
+    : normalized.systemDefaultValue === "current_month"
+      ? "current_year_month"
+      : normalized.systemDefaultValue === "current_year"
+        ? "current_year"
+        : "current_date";
+  const value = variables[variableName];
+  return value === null || value === undefined ? "" : String(value);
 }
 
 export function validateInputFieldDraft(field: InputFieldConfig): string | null {

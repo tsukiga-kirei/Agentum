@@ -37,7 +37,13 @@ public final class WorkflowScheduleApi {
         String label,
         String placeholder,
         boolean required,
-        String valueType
+        String valueType,
+        String fieldType,
+        String defaultValue,
+        String defaultValueSource,
+        String systemDefaultValue,
+        String dateGranularity,
+        boolean allowManualOverride
     ) {
     }
 

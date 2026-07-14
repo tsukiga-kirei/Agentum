@@ -56,6 +56,8 @@ public final class WorkflowRuntimeSystemVariables {
         descriptions.put("current_weekday", "当前星期，格式：星期一");
         descriptions.put("current_year", "当前年份");
         descriptions.put("current_month", "当前月份");
+        descriptions.put("current_year_month", "当前年月，格式：2026-06");
+        descriptions.put("previous_year_month", "上个年月，格式：2026-05");
         descriptions.put("current_day", "当前日");
         descriptions.put("year", "当前年份");
         descriptions.put("month", "当前月份，两位数字");
@@ -82,6 +84,8 @@ public final class WorkflowRuntimeSystemVariables {
         variables.put("current_weekday", weekday);
         variables.put("current_year", String.valueOf(today.getYear()));
         variables.put("current_month", String.valueOf(today.getMonthValue()));
+        variables.put("current_year_month", today.format(DateTimeFormatter.ofPattern("yyyy-MM")));
+        variables.put("previous_year_month", today.minusMonths(1).format(DateTimeFormatter.ofPattern("yyyy-MM")));
         variables.put("current_day", String.valueOf(today.getDayOfMonth()));
         variables.put("year", String.valueOf(today.getYear()));
         variables.put("month", "%02d".formatted(today.getMonthValue()));

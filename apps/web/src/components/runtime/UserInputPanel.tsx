@@ -1,8 +1,16 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Select } from "antd";
+import { DatePicker, Select } from "antd";
+import dayjs from "dayjs";
+import "dayjs/locale/zh-cn";
 import type { InputFieldConfig, RuntimePreviewStep } from "../../types/runtime-types";
-import { AlertCircle, ChevronDown, FileText } from "lucide-react";
-import { isInputFieldConfig, normalizeInputField, normalizeInputFieldOptions } from "../../utils/workflowInputField";
+import { AlertCircle, CalendarDays, ChevronDown, FileText } from "lucide-react";
+import {
+  getSystemDefaultValueLabel,
+  isInputFieldConfig,
+  normalizeInputField,
+  normalizeInputFieldOptions,
+  resolveInputFieldDefaultValue,
+} from "../../utils/workflowInputField";
 
 interface UserInputPanelProps {
   activeStep: RuntimePreviewStep;
@@ -13,6 +21,8 @@ interface UserInputPanelProps {
 
 const runtimeSelectClassNames = { popup: { root: "agent-select-dropdown agent-admin-select-dropdown workbench-user-input-select-dropdown" } };
 const runtimeSelectSuffixIcon = <ChevronDown className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />;
+
+dayjs.locale("zh-cn");
 
 export function UserInputPanel({
   activeStep,
@@ -33,7 +43,9 @@ export function UserInputPanel({
             ...field,
             id: field.id || `field-${index}`,
             variable: field.variable || field.label,
-            defaultValue: renderRuntimeTemplate(field.defaultValue ?? "", templateVariables),
+            defaultValue: field.defaultValueSource === "system"
+              ? resolveInputFieldDefaultValue(field, templateVariables)
+              : renderRuntimeTemplate(field.defaultValue ?? "", templateVariables),
             placeholder: renderRuntimeTemplate(field.placeholder || (field.fieldType === "select" ? "请选择" : `请输入${field.label}`), templateVariables),
           });
           return normalized;
@@ -54,7 +66,8 @@ export function UserInputPanel({
     const initial: Record<string, string> = {};
     fieldConfigs.forEach((field) => {
       const matched = activeStep.inputs?.find((item) => item.label === field.label);
-      const candidateValue = matched?.value || field.defaultValue || "";
+      // 运行预览里的 inputs 可能仍带设计态模板，初始化表单时必须再按本次运行变量解析，避免 {{day}} 原样展示。
+      const candidateValue = renderRuntimeTemplate(matched?.value || field.defaultValue || "", templateVariables);
       if (field.fieldType === "select") {
         const options = normalizeInputFieldOptions(field.options, field.placeholder);
         initial[field.id] = candidateValue && options.some((option) => option.value === candidateValue) ? candidateValue : "";
@@ -108,7 +121,7 @@ export function UserInputPanel({
             {fieldConfigs.map((field) => {
               const val = formValues[field.id] || "";
               const isLargeText =
-                field.fieldType !== "select"
+                field.fieldType === "text"
                 && (
                   field.label.includes("描述")
                   || field.label.includes("材料")
@@ -116,6 +129,18 @@ export function UserInputPanel({
                   || (field.placeholder?.length ?? 0) > 20
                 );
               const options = normalizeInputFieldOptions(field.options, field.placeholder);
+              const systemValueLocked = field.defaultValueSource === "system" && field.allowManualOverride === false;
+              const inputDisabled = readOnly || activeStep.state !== "waiting" || systemValueLocked;
+              const datePickerGranularity = field.defaultValueSource === "system"
+                ? field.systemDefaultValue === "current_year"
+                  ? "year"
+                  : ["current_month", "previous_month"].includes(field.systemDefaultValue ?? "")
+                    ? "month"
+                    : "day"
+                : field.dateGranularity ?? "day";
+              const datePickerMode = datePickerGranularity === "year" ? "year" : datePickerGranularity === "month" ? "month" : "date";
+              const datePickerFormat = datePickerGranularity === "year" ? "YYYY年" : datePickerGranularity === "month" ? "YYYY年MM月" : "YYYY年MM月DD日";
+              const dateStorageFormat = datePickerGranularity === "year" ? "YYYY" : datePickerGranularity === "month" ? "YYYY-MM" : "YYYY-MM-DD";
 
               return (
                 <div key={field.id} className="flex flex-col gap-2">
@@ -129,7 +154,7 @@ export function UserInputPanel({
                   {field.fieldType === "select" ? (
                     <Select
                       value={val || undefined}
-                      disabled={readOnly || activeStep.state !== "waiting"}
+                      disabled={inputDisabled}
                       onChange={(value) => handleInputChange(field.id, value)}
                       className="agent-admin-select workbench-user-input-select w-full"
                       classNames={runtimeSelectClassNames}
@@ -137,11 +162,25 @@ export function UserInputPanel({
                       placeholder={field.placeholder || "请选择"}
                       options={options.map((option) => ({ value: option.value, label: option.label }))}
                     />
+                  ) : field.fieldType === "date" ? (
+                    <DatePicker
+                      picker={datePickerMode}
+                      format={datePickerFormat}
+                      value={parsePickerValue(val)}
+                      disabled={inputDisabled}
+                      allowClear={field.required === false || field.allowManualOverride !== false}
+                      inputReadOnly
+                      placeholder={datePickerGranularity === "year" ? "请选择年份" : datePickerGranularity === "month" ? "请选择年月" : "请选择日期"}
+                      suffixIcon={<CalendarDays className="h-[18px] w-[18px]" aria-hidden="true" />}
+                      className="workbench-user-input-date-picker w-full"
+                      classNames={{ popup: { root: "workbench-user-input-date-picker-popup" } }}
+                      onChange={(value) => handleInputChange(field.id, value ? value.format(dateStorageFormat) : "")}
+                    />
                   ) : isLargeText ? (
                     <textarea
                       rows={6}
                       value={val}
-                      disabled={readOnly || activeStep.state !== "waiting"}
+                      disabled={inputDisabled}
                       placeholder={field.placeholder}
                       onChange={(event) => handleInputChange(field.id, event.target.value)}
                       className="sys-input w-full p-3.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/20 text-sm leading-relaxed focus:ring-1 focus:ring-blue-500 focus:border-blue-500 resize-y min-h-[140px]"
@@ -150,12 +189,18 @@ export function UserInputPanel({
                     <input
                       type="text"
                       value={val}
-                      disabled={readOnly || activeStep.state !== "waiting"}
+                      disabled={inputDisabled}
                       placeholder={field.placeholder}
                       onChange={(event) => handleInputChange(field.id, event.target.value)}
                       className="sys-input w-full p-3.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/20 text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                     />
                   )}
+                  {field.defaultValueSource === "system" ? (
+                    <span className="text-xs text-slate-400">
+                      系统按本次运行时间自动填写“{getSystemDefaultValueLabel(field.systemDefaultValue)}”
+                      {field.allowManualOverride === false ? "，不可修改" : "，可按需修改"}
+                    </span>
+                  ) : null}
                 </div>
               );
             })}
@@ -179,6 +224,14 @@ function renderRuntimeTemplate(template: string, variables: Record<string, unkno
       ? stringifyValue(variables[variableName])
       : "",
   );
+}
+
+function parsePickerValue(value: string) {
+  if (!value) {
+    return null;
+  }
+  const parsed = dayjs(value);
+  return parsed.isValid() ? parsed : null;
 }
 
 function stringifyValue(value: unknown): string {

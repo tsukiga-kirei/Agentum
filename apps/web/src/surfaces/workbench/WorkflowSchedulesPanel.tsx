@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { Drawer, Empty, Pagination, Select, message } from "antd";
+import { DatePicker, Drawer, Empty, Pagination, Select, message } from "antd";
+import dayjs from "dayjs";
+import "dayjs/locale/zh-cn";
 import {
   Activity,
   AlertTriangle,
@@ -79,6 +81,8 @@ const defaultForm: ScheduleFormState = {
 
 const selectClassNames = { popup: { root: "agent-select-dropdown agent-admin-select-dropdown" } };
 const selectSuffixIcon = <ChevronDown className="h-[18px] w-[18px] text-[var(--color-text-tertiary)]" aria-hidden="true" />;
+
+dayjs.locale("zh-cn");
 
 export function WorkflowSchedulesPanel() {
   const navigate = useNavigate();
@@ -173,7 +177,7 @@ export function WorkflowSchedulesPanel() {
         const nextPayload = { ...(payload ?? current.inputPayload) };
         data.inputFields.forEach((field) => {
           if (!(field.variable in nextPayload)) {
-            nextPayload[field.variable] = "";
+            nextPayload[field.variable] = field.defaultValueSource === "fixed" ? field.defaultValue : "";
           }
         });
         return { ...current, inputPayload: nextPayload };
@@ -260,7 +264,11 @@ export function WorkflowSchedulesPanel() {
       messageApi.warning("请输入定时任务名称");
       return;
     }
-    const missingField = inputFields.find((field) => field.required && !String(form.inputPayload[field.variable] ?? "").trim());
+    const missingField = inputFields.find((field) =>
+      field.required
+      && field.defaultValueSource !== "system"
+      && !String(form.inputPayload[field.variable] ?? "").trim(),
+    );
     if (missingField) {
       messageApi.warning(`请配置输入字段「${missingField.label}」`);
       return;
@@ -541,18 +549,48 @@ export function WorkflowSchedulesPanel() {
                     {field.label}
                     <span className="agent-muted ml-2 text-[11px]">{field.nodeName}</span>
                   </label>
-                  <div className="sys-field-input-wrap">
-                    <Workflow size={16} className="sys-field-prefix" aria-hidden="true" />
-                    <input
-                      className="sys-field-input"
-                      value={String(form.inputPayload[field.variable] ?? "")}
-                      placeholder={field.placeholder || field.variable}
-                      onChange={(event) => setForm((current) => ({
-                        ...current,
-                        inputPayload: { ...current.inputPayload, [field.variable]: event.target.value },
-                      }))}
-                    />
-                  </div>
+                  {field.defaultValueSource === "system" ? (
+                    <div className="schedule-system-input-value">
+                      <CalendarClock size={16} aria-hidden="true" />
+                      <span>每次运行自动取“{describeSystemDefaultValue(field.systemDefaultValue)}”</span>
+                      <small>{describeSystemDefaultValueExample(field.systemDefaultValue)}</small>
+                    </div>
+                  ) : (
+                    field.fieldType === "date" ? (
+                      <DatePicker
+                        picker={field.dateGranularity === "year" ? "year" : field.dateGranularity === "month" ? "month" : "date"}
+                        format={field.dateGranularity === "year" ? "YYYY年" : field.dateGranularity === "month" ? "YYYY年MM月" : "YYYY年MM月DD日"}
+                        value={parseSchedulePickerValue(form.inputPayload[field.variable])}
+                        inputReadOnly
+                        placeholder={field.dateGranularity === "year" ? "请选择年份" : field.dateGranularity === "month" ? "请选择年月" : "请选择日期"}
+                        className="workbench-user-input-date-picker w-full"
+                        classNames={{ popup: { root: "workbench-user-input-date-picker-popup" } }}
+                        onChange={(value) => setForm((current) => ({
+                          ...current,
+                          inputPayload: {
+                            ...current.inputPayload,
+                            [field.variable]: value
+                              ? value.format(field.dateGranularity === "year" ? "YYYY" : field.dateGranularity === "month" ? "YYYY-MM" : "YYYY-MM-DD")
+                              : "",
+                          },
+                        }))}
+                      />
+                    ) : (
+                      <div className="sys-field-input-wrap">
+                        <Workflow size={16} className="sys-field-prefix" aria-hidden="true" />
+                        <input
+                          type="text"
+                          className="sys-field-input"
+                          value={String(form.inputPayload[field.variable] ?? "")}
+                          placeholder={field.placeholder || field.variable}
+                          onChange={(event) => setForm((current) => ({
+                            ...current,
+                            inputPayload: { ...current.inputPayload, [field.variable]: event.target.value },
+                          }))}
+                        />
+                      </div>
+                    )
+                  )}
                 </div>
               ))}
             </div>
@@ -706,6 +744,26 @@ function ScheduleListItem({
 function formatDate(value?: string | null) {
   if (!value) return "—";
   return new Date(value).toLocaleString("zh-CN", { hour12: false });
+}
+
+function describeSystemDefaultValue(value: string) {
+  if (value === "current_year") return "当前年";
+  if (value === "current_month") return "当前年月";
+  if (value === "previous_month") return "上个年月";
+  return "当前日期";
+}
+
+function describeSystemDefaultValueExample(value: string) {
+  if (value === "current_year") return "按计划触发年份生成 YYYY";
+  return value === "current_date" ? "按计划触发日期生成 YYYY-MM-DD" : "按计划触发月份生成 YYYY-MM";
+}
+
+function parseSchedulePickerValue(value: unknown) {
+  if (typeof value !== "string" || !value) {
+    return null;
+  }
+  const parsed = dayjs(value);
+  return parsed.isValid() ? parsed : null;
 }
 
 function formatLastRun(schedule: WorkflowScheduleRow) {

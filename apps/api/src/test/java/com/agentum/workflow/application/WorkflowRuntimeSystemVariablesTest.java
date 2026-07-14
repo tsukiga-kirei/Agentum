@@ -44,6 +44,8 @@ class WorkflowRuntimeSystemVariablesTest {
             .containsEntry("current_date_cn", "2026 年 6 月 29 日")
             .containsEntry("current_weekday", "星期一")
             .containsEntry("current_month", "6")
+            .containsEntry("current_year_month", "2026-06")
+            .containsEntry("previous_year_month", "2026-05")
             .containsEntry("month", "06");
     }
 }

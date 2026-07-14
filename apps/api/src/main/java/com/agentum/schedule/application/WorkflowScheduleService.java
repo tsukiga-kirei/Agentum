@@ -416,7 +416,8 @@ public class WorkflowScheduleService {
                 schedule.getId(),
                 schedule.getName(),
                 schedule.getInputPayload(),
-                scheduleSnapshot
+                scheduleSnapshot,
+                executionScheduledAt
             );
             execution.bindRun(detail.id(), now);
             executionRepository.save(execution);
@@ -530,7 +531,7 @@ public class WorkflowScheduleService {
 
     private void validateRequiredInputs(WorkflowVersionEntity version, Map<String, Object> inputPayload) {
         for (WorkflowScheduleApi.InputFieldRow field : extractInputFields(readSnapshot(version))) {
-            if (!field.required()) {
+            if (!field.required() || "system".equals(field.defaultValueSource())) {
                 continue;
             }
             Object value = inputPayload.get(field.variable());
@@ -577,7 +578,16 @@ public class WorkflowScheduleService {
                     label.isBlank() ? variable : label,
                     stringValue(rawField.get("placeholder")),
                     !Boolean.FALSE.equals(rawField.get("required")),
-                    firstNonBlank(stringValue(rawField.get("valueType")), stringValue(rawField.get("type")), "text")
+                    firstNonBlank(stringValue(rawField.get("valueType")), stringValue(rawField.get("type")), "text"),
+                    firstNonBlank(stringValue(rawField.get("fieldType")), "text"),
+                    stringValue(rawField.get("defaultValue")),
+                    firstNonBlank(
+                        stringValue(rawField.get("defaultValueSource")),
+                        stringValue(rawField.get("defaultValue")).isBlank() ? "none" : "fixed"
+                    ),
+                    firstNonBlank(stringValue(rawField.get("systemDefaultValue")), "current_date"),
+                    firstNonBlank(stringValue(rawField.get("dateGranularity")), "day"),
+                    !Boolean.FALSE.equals(rawField.get("allowManualOverride"))
                 ));
             }
         }

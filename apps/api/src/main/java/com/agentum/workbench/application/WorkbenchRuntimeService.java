@@ -43,6 +43,7 @@ import com.agentum.workflow.infrastructure.WorkflowVariableSnapshotRepository;
 import com.agentum.workflow.infrastructure.WorkflowWaitingEventRepository;
 import com.agentum.shared.platform.AgentumTimezones;
 import com.agentum.workflow.application.WorkflowRuntimeSystemVariables;
+import com.agentum.workflow.application.WorkflowInputDefaultValueResolver;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -361,7 +362,8 @@ public class WorkbenchRuntimeService {
         UUID scheduleId,
         String scheduleName,
         Map<String, Object> inputPayload,
-        Map<String, Object> scheduleSnapshot
+        Map<String, Object> scheduleSnapshot,
+        Instant scheduledAt
     ) {
         ensureActiveTenant(tenantId);
         ensureAuthenticated(principal);
@@ -383,6 +385,13 @@ public class WorkbenchRuntimeService {
         VersionSnapshot snapshot = readSnapshot(version);
         List<SnapshotNode> snapshotNodes = snapshot.nodes() == null ? List.of() : snapshot.nodes();
         Instant now = clock.instant();
+        Instant inputReferenceTime = scheduledAt == null ? now : scheduledAt;
+        Map<String, Object> resolvedInputPayload = new LinkedHashMap<>(inputPayload == null ? Map.of() : inputPayload);
+        for (SnapshotNode node : snapshotNodes) {
+            if ("user_input".equals(node.nodeType())) {
+                resolvedInputPayload = WorkflowInputDefaultValueResolver.apply(node.config(), resolvedInputPayload, inputReferenceTime, true);
+            }
+        }
         String title = normalizeTitle((scheduleName == null || scheduleName.isBlank() ? definition.getName() : scheduleName) + "（定时执行）", definition.getName());
         WorkflowRunEntity run = WorkflowRunEntity.create(
             tenantId,
@@ -397,7 +406,7 @@ public class WorkbenchRuntimeService {
             now
         );
         Map<String, Object> triggerPayload = new LinkedHashMap<>(scheduleSnapshot == null ? Map.of() : scheduleSnapshot);
-        triggerPayload.put("inputPayload", inputPayload == null ? Map.of() : new LinkedHashMap<>(inputPayload));
+        triggerPayload.put("inputPayload", resolvedInputPayload);
         run.markScheduledTrigger(scheduleId, triggerPayload, now);
         workflowRunRepository.save(run);
 
@@ -1711,7 +1720,13 @@ public class WorkbenchRuntimeService {
         List<WorkflowNodeRunEntity> nodes = workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(run.getId());
         WorkflowNodeRunEntity nodeRun = workflowNodeRunRepository.findByIdAndRunId(todo.getNodeRunId(), run.getId())
             .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_NODE_RUN_NOT_FOUND", "节点运行不存在"));
-        Map<String, Object> requestPayload = request == null || request.payload() == null ? Map.of() : request.payload();
+        Map<String, Object> submittedPayload = request == null || request.payload() == null ? Map.of() : request.payload();
+        Map<String, Object> requestPayload = WorkflowInputDefaultValueResolver.apply(
+            nodeRun.getConfigSnapshot(),
+            submittedPayload,
+            run.getStartedAt() == null ? clock.instant() : run.getStartedAt(),
+            false
+        );
         validateRequiredInputFields(nodeRun, requestPayload);
         Instant now = clock.instant();
         Map<String, Object> output = new HashMap<>(requestPayload);

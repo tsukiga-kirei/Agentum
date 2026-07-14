@@ -5140,6 +5140,32 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
   margin-top: 12px;
 }
 
+.schedule-system-input-value {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 4px 10px;
+  min-height: 46px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 24%, var(--color-border-light));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-primary) 6%, var(--color-bg-card));
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.schedule-system-input-value > svg {
+  grid-row: 1 / span 2;
+  color: var(--color-primary);
+}
+
+.schedule-system-input-value small {
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  font-weight: 400;
+}
+
 .schedule-execution-list {
   display: flex;
   flex-direction: column;
@@ -8793,6 +8819,152 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
   min-width: 220px;
 }
 
+/* 业务输入日期框：输入区和挂载到 body 的日历弹层都显式接入三套主题，避免跟随系统外观变成黑色原生面板。 */
+.workbench-user-input-date-picker.ant-picker {
+  min-height: 46px;
+  border: 1px solid var(--color-border-light) !important;
+  border-radius: var(--radius-md) !important;
+  background: var(--color-bg-input) !important;
+  padding: 0 14px !important;
+  box-shadow: none !important;
+  color: var(--color-text-primary) !important;
+  font-family: var(--font-sans) !important;
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast) !important;
+}
+
+.workbench-user-input-date-picker.ant-picker:hover,
+.workbench-user-input-date-picker.ant-picker-focused {
+  border-color: var(--color-primary) !important;
+}
+
+.workbench-user-input-date-picker.ant-picker-focused {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 12%, transparent) !important;
+}
+
+.workbench-user-input-date-picker .ant-picker-input > input {
+  color: var(--color-text-primary) !important;
+  font-family: var(--font-sans) !important;
+  font-size: 14px !important;
+  font-weight: 500;
+}
+
+.workbench-user-input-date-picker .ant-picker-input > input::placeholder {
+  color: var(--color-text-tertiary) !important;
+}
+
+.workbench-user-input-date-picker .ant-picker-suffix,
+.workbench-user-input-date-picker .ant-picker-clear {
+  color: var(--color-text-tertiary) !important;
+}
+
+.workbench-user-input-date-picker .ant-picker-suffix {
+  display: inline-flex;
+  color: var(--color-primary) !important;
+}
+
+.workbench-user-input-date-picker.ant-picker-disabled {
+  border-color: var(--color-border-light) !important;
+  background: color-mix(in srgb, var(--color-bg-hover) 72%, var(--color-bg-input)) !important;
+  cursor: not-allowed;
+  opacity: 0.78;
+}
+
+.workbench-user-input-date-picker-popup.ant-picker-dropdown {
+  --ant-color-bg-elevated: var(--color-bg-card);
+  --ant-color-bg-container: var(--color-bg-card);
+  --ant-color-text: var(--color-text-primary);
+  --ant-color-text-secondary: var(--color-text-secondary);
+  --ant-color-text-tertiary: var(--color-text-tertiary);
+  --ant-color-border-secondary: var(--color-border-light);
+  --ant-color-primary: var(--color-primary);
+  color: var(--color-text-primary) !important;
+  font-family: var(--font-sans) !important;
+}
+
+.workbench-user-input-date-picker-popup .ant-picker-panel-container {
+  overflow: hidden;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg) !important;
+  background: var(--color-bg-card) !important;
+  box-shadow: var(--shadow-lg) !important;
+}
+
+.workbench-user-input-date-picker-popup :where(.ant-picker-panel, .ant-picker-date-panel, .ant-picker-month-panel) {
+  border-color: var(--color-border-light) !important;
+  background: var(--color-bg-card) !important;
+  color: var(--color-text-primary) !important;
+}
+
+.workbench-user-input-date-picker-popup .ant-picker-header {
+  border-bottom-color: var(--color-border-light) !important;
+  color: var(--color-text-primary) !important;
+}
+
+.workbench-user-input-date-picker-popup .ant-picker-header button,
+.workbench-user-input-date-picker-popup .ant-picker-header-view button {
+  color: var(--color-text-primary) !important;
+  font-family: var(--font-sans) !important;
+  font-weight: 650;
+}
+
+.workbench-user-input-date-picker-popup .ant-picker-header button:hover,
+.workbench-user-input-date-picker-popup .ant-picker-header-view button:hover {
+  color: var(--color-primary) !important;
+}
+
+.workbench-user-input-date-picker-popup .ant-picker-content th {
+  color: var(--color-text-secondary) !important;
+  font-weight: 600;
+}
+
+.workbench-user-input-date-picker-popup .ant-picker-cell {
+  color: color-mix(in srgb, var(--color-text-tertiary) 58%, transparent) !important;
+}
+
+.workbench-user-input-date-picker-popup .ant-picker-cell-in-view {
+  color: var(--color-text-primary) !important;
+}
+
+.workbench-user-input-date-picker-popup .ant-picker-cell-in-view .ant-picker-cell-inner:hover,
+.workbench-user-input-date-picker-popup .ant-picker-cell:not(.ant-picker-cell-disabled) .ant-picker-cell-inner:hover {
+  background: var(--color-bg-hover) !important;
+  color: var(--color-primary) !important;
+}
+
+.workbench-user-input-date-picker-popup .ant-picker-cell-today .ant-picker-cell-inner::before {
+  border-color: var(--color-primary) !important;
+}
+
+.workbench-user-input-date-picker-popup .ant-picker-cell-selected .ant-picker-cell-inner,
+.workbench-user-input-date-picker-popup .ant-picker-cell-range-start .ant-picker-cell-inner,
+.workbench-user-input-date-picker-popup .ant-picker-cell-range-end .ant-picker-cell-inner {
+  background: var(--color-primary) !important;
+  color: #fff !important;
+}
+
+.workbench-user-input-date-picker-popup .ant-picker-footer {
+  border-top-color: var(--color-border-light) !important;
+  background: var(--color-bg-card) !important;
+}
+
+.workbench-user-input-date-picker-popup .ant-picker-today-btn,
+.workbench-user-input-date-picker-popup .ant-picker-now-btn {
+  color: var(--color-primary) !important;
+  font-weight: 600;
+}
+
+:root[data-theme="warm"] .workbench-user-input-date-picker-popup .ant-picker-panel-container {
+  border-color: #c8bcae;
+  background: #fffaf4 !important;
+  box-shadow: 0 18px 42px rgba(33, 30, 27, 0.14) !important;
+}
+
+:root[data-theme="warm"] .workbench-user-input-date-picker-popup :where(.ant-picker-panel, .ant-picker-date-panel, .ant-picker-month-panel, .ant-picker-footer) {
+  background: #fffaf4 !important;
+}
+
 .workbench-delivery-preview-list {
   display: grid;
   gap: 10px;
@@ -10095,6 +10267,51 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
   justify-content: flex-end;
 }
 
+.workflow-intent-drawer-shell .workflow-agent-config-split {
+  width: 100%;
+}
+
+.workflow-intent-drawer-shell .workflow-agent-config-sidebar {
+  width: 230px;
+}
+
+.workflow-intent-panel-content {
+  display: grid;
+  gap: 16px;
+}
+
+.workflow-intent-editor-position {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.workflow-intent-add-button {
+  display: inline-flex;
+  width: 100%;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px dashed color-mix(in srgb, var(--color-primary) 48%, var(--color-border-light));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-primary-bg) 62%, var(--color-bg-card));
+  color: var(--color-primary);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast), transform var(--transition-fast);
+}
+
+.workflow-intent-add-button:hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary-bg);
+  transform: translateY(-1px);
+}
+
 .workflow-intent-editor-card {
   display: grid;
   gap: 14px;
@@ -10213,6 +10430,70 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
 
 .workflow-config-modal {
   max-width: 680px;
+}
+
+.workflow-input-field-drawer .ant-drawer-body {
+  overflow: hidden;
+}
+
+.workflow-input-field-drawer-shell {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  padding: 16px 20px;
+}
+
+.workflow-input-field-drawer-shell .workflow-agent-config-split {
+  width: 100%;
+}
+
+.workflow-input-field-drawer-shell .workflow-agent-config-sidebar {
+  width: 210px;
+}
+
+.workflow-input-field-drawer-shell :where(.workflow-agent-config-sidebar, .workflow-agent-config-content-body) {
+  scrollbar-color: transparent transparent;
+  scrollbar-width: thin;
+}
+
+.workflow-input-field-drawer-shell :where(.workflow-agent-config-sidebar, .workflow-agent-config-content-body)::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+
+.workflow-input-field-drawer-shell.is-scrolling :where(.workflow-agent-config-sidebar, .workflow-agent-config-content-body) {
+  scrollbar-color: var(--color-text-tertiary) transparent;
+}
+
+.workflow-input-field-drawer-shell.is-scrolling :where(.workflow-agent-config-sidebar, .workflow-agent-config-content-body)::-webkit-scrollbar-thumb {
+  background: var(--color-text-tertiary);
+}
+
+.workflow-input-field-panel-content {
+  display: grid;
+  gap: 16px;
+}
+
+.workflow-input-field-drawer-fields {
+  display: grid;
+  gap: 16px;
+}
+
+.workflow-input-field-panel-intro {
+  margin: 0;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 16%, var(--color-border-light));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-primary-bg) 58%, var(--color-bg-card));
+  padding: 10px 12px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.workflow-input-field-drawer-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .workflow-agent-modal {
@@ -10361,7 +10642,16 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
 .workflow-agent-config-nav-label {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   line-height: 1.35;
+}
+
+.workflow-agent-config-sidebar-action {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border-light);
 }
 
 .workflow-agent-config-content {

@@ -14,6 +14,8 @@ export const WORKFLOW_SYSTEM_TEMPLATE_VARIABLES = new Set([
   "current_weekday",
   "current_year",
   "current_month",
+  "current_year_month",
+  "previous_year_month",
   "current_day",
   "year",
   "month",

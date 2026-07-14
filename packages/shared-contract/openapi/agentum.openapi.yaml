@@ -5171,7 +5171,14 @@ components:
         label: { type: string }
         required: { type: boolean }
         placeholder: { type: string, nullable: true }
-      required: [nodeId, nodeName, variable, label, required]
+        valueType: { type: string }
+        fieldType: { type: string, enum: [text, select, date] }
+        defaultValue: { type: string }
+        defaultValueSource: { type: string, enum: [none, fixed, system] }
+        systemDefaultValue: { type: string, enum: [current_date, current_year, current_month, previous_month] }
+        dateGranularity: { type: string, enum: [day, month, year] }
+        allowManualOverride: { type: boolean }
+      required: [nodeId, nodeName, variable, label, required, valueType, fieldType, defaultValue, defaultValueSource, systemDefaultValue, dateGranularity, allowManualOverride]
     WorkflowScheduleInputFieldsResponse:
       type: object
       properties:
