@@ -31,6 +31,9 @@ public class AttachmentRecognitionSettingsService {
     private static final short SETTINGS_ID = 1;
     private static final Set<String> ENGINES = Set.of("local", "mineru");
     private static final Set<String> PARSE_METHODS = Set.of("auto", "txt", "ocr");
+    private static final Set<String> MINERU_BACKENDS = Set.of(
+        "pipeline", "vlm-auto-engine", "vlm-http-client", "hybrid-auto-engine", "hybrid-http-client"
+    );
     private static final Set<String> RETENTION_POLICIES = Set.of("permanent", "days");
     private static final Pattern EXTENSION = Pattern.compile("^[a-z0-9][a-z0-9_-]{0,19}$");
 
@@ -67,7 +70,11 @@ public class AttachmentRecognitionSettingsService {
         }
         String parseMethod = normalize(request.mineruParseMethod());
         if (!PARSE_METHODS.contains(parseMethod)) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "ATTACHMENT_MINERU_PARSE_METHOD_INVALID", "MinerU 解析方式只能是 auto、txt 或 ocr");
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ATTACHMENT_MINERU_PARSE_METHOD_INVALID", "MinerU 解析方式只能选择自动识别、文本解析或 OCR 识别");
+        }
+        String backend = normalize(request.mineruBackend());
+        if (!MINERU_BACKENDS.contains(backend)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ATTACHMENT_MINERU_BACKEND_INVALID", "MinerU Backend 选项无效");
         }
         String retentionPolicy = normalize(request.retentionPolicy());
         if (!RETENTION_POLICIES.contains(retentionPolicy)) {
@@ -88,7 +95,7 @@ public class AttachmentRecognitionSettingsService {
         entity.update(
             request.recognitionEnabled(), engine, request.maxFileSizeMb(), request.maxFilesPerField(),
             request.maxExtractedChars(), retentionPolicy, request.retentionDays(), extensions, endpoint, encryptedKey,
-            request.mineruBackend().trim(), parseMethod, request.mineruLanguage().trim(),
+            backend, parseMethod, request.mineruLanguage().trim(),
             request.mineruEnableFormula(), request.mineruEnableTable(), request.mineruConnectTimeoutSeconds(),
             request.mineruReadTimeoutSeconds(), clock.instant()
         );

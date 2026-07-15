@@ -4676,7 +4676,7 @@ components:
           items: { type: string }
         mineruEndpoint: { type: [string, "null"] }
         mineruApiKeyConfigured: { type: boolean }
-        mineruBackend: { type: string }
+        mineruBackend: { type: string, enum: [pipeline, vlm-auto-engine, vlm-http-client, hybrid-auto-engine, hybrid-http-client] }
         mineruParseMethod: { type: string, enum: [auto, txt, ocr] }
         mineruLanguage: { type: string }
         mineruEnableFormula: { type: boolean }
@@ -4703,7 +4703,7 @@ components:
         mineruEndpoint: { type: [string, "null"] }
         mineruApiKey: { type: string, writeOnly: true }
         clearMineruApiKey: { type: boolean }
-        mineruBackend: { type: string }
+        mineruBackend: { type: string, enum: [pipeline, vlm-auto-engine, vlm-http-client, hybrid-auto-engine, hybrid-http-client] }
         mineruParseMethod: { type: string, enum: [auto, txt, ocr] }
         mineruLanguage: { type: string }
         mineruEnableFormula: { type: boolean }

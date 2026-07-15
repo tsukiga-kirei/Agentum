@@ -1,11 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Checkbox, InputNumber, Radio, Spin, Switch, message } from "antd";
-import { FileSearch, KeyRound, PlayCircle, Save, ServerCog } from "lucide-react";
+import { Checkbox, Select, Spin, Switch, message } from "antd";
+import { ChevronDown, FileSearch, KeyRound, PlayCircle, Save, ServerCog } from "lucide-react";
 import { AgentumApiError, systemApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import type { AttachmentRecognitionSettings, UpdateAttachmentRecognitionSettingsRequest } from "../../types/system";
 
 const DEFAULT_COMPLEX_EXTENSIONS = "pdf,png,jpg,jpeg,bmp,gif,tiff,webp,docx,xlsx,txt";
+const BACKEND_OPTIONS = [
+  { value: "pipeline", label: "Pipeline（pipeline）" },
+  { value: "vlm-auto-engine", label: "VLM 自动引擎（vlm-auto-engine）" },
+  { value: "vlm-http-client", label: "VLM HTTP 客户端（vlm-http-client）" },
+  { value: "hybrid-auto-engine", label: "混合自动引擎（hybrid-auto-engine）" },
+  { value: "hybrid-http-client", label: "混合 HTTP 客户端（hybrid-http-client）" },
+];
+const selectClassNames = { popup: { root: "agent-select-dropdown agent-admin-select-dropdown" } };
 
 function parseExtensions(value: string): string[] {
   return Array.from(new Set(value
@@ -23,7 +31,7 @@ export function AttachmentRecognitionSettingsPanel() {
   const [settings, setSettings] = useState<AttachmentRecognitionSettings | null>(null);
   const [apiKey, setApiKey] = useState("");
   const [clearApiKey, setClearApiKey] = useState(false);
-  const [extensionText, setExtensionText] = useState(DEFAULT_COMPLEX_EXTENSIONS);
+  const [extensionValues, setExtensionValues] = useState(() => parseExtensions(DEFAULT_COMPLEX_EXTENSIONS));
 
   useEffect(() => {
     if (!token) return;
@@ -31,13 +39,13 @@ export function AttachmentRecognitionSettingsPanel() {
     systemApi.getAttachmentRecognitionSettings(token)
       .then((result) => {
         setSettings(result);
-        setExtensionText(result.mineruSupportedExtensions.join(","));
+        setExtensionValues(result.mineruSupportedExtensions);
       })
       .catch((error) => messageApi.error(error instanceof AgentumApiError ? error.message : "附件识别配置加载失败"))
       .finally(() => setLoading(false));
   }, [messageApi, token]);
 
-  const extensions = useMemo(() => parseExtensions(extensionText), [extensionText]);
+  const extensions = useMemo(() => parseExtensions(extensionValues.join(",")), [extensionValues]);
 
   function patch<K extends keyof AttachmentRecognitionSettings>(key: K, value: AttachmentRecognitionSettings[K]) {
     setSettings((current) => current ? { ...current, [key]: value } : current);
@@ -83,7 +91,7 @@ export function AttachmentRecognitionSettingsPanel() {
     try {
       const result = await systemApi.updateAttachmentRecognitionSettings(token, body);
       setSettings(result);
-      setExtensionText(result.mineruSupportedExtensions.join(","));
+      setExtensionValues(result.mineruSupportedExtensions);
       setApiKey("");
       setClearApiKey(false);
       messageApi.success("附件识别配置已保存");
@@ -115,7 +123,7 @@ export function AttachmentRecognitionSettingsPanel() {
   }
 
   return (
-    <div className="sys-fade-in">
+    <div className="sys-fade-in attachment-settings-panel">
       {contextHolder}
       <Spin spinning={loading}>
         {settings ? (
@@ -123,7 +131,7 @@ export function AttachmentRecognitionSettingsPanel() {
             <section className="sys-section-card">
               <div className="sys-section-card-header">
                 <div>
-                  <h3><FileSearch size={17} /> 附件识别</h3>
+                  <h3><FileSearch size={17} className="attachment-section-icon" /> 附件识别</h3>
                   <p>配置输入节点附件的保存、识别方式与平台级容量限制。</p>
                 </div>
                 <Switch checked={settings.recognitionEnabled} onChange={(value) => patch("recognitionEnabled", value)} checkedChildren="已启用" unCheckedChildren="已关闭" />
@@ -131,11 +139,9 @@ export function AttachmentRecognitionSettingsPanel() {
               <div className="sys-section-card-body space-y-5">
                 <div className="sys-field">
                   <label className="sys-field-label sys-field-label--required">识别方式</label>
-                  <Radio.Group
+                  <OptionButtons
                     value={settings.recognitionEngine}
-                    onChange={(event) => patch("recognitionEngine", event.target.value)}
-                    optionType="button"
-                    buttonStyle="solid"
+                    onChange={(value) => patch("recognitionEngine", value as AttachmentRecognitionSettings["recognitionEngine"])}
                     options={[
                       { value: "local", label: "简单识别" },
                       { value: "mineru", label: "复杂识别（MinerU）" },
@@ -153,14 +159,14 @@ export function AttachmentRecognitionSettingsPanel() {
                   <NumberField label="识别正文字符上限" value={settings.maxExtractedChars} min={1000} max={2_000_000} onChange={(value) => patch("maxExtractedChars", value)} />
                   <div className="sys-field">
                     <label className="sys-field-label">文件默认保存时间</label>
-                    <Radio.Group
+                    <OptionButtons
                       value={settings.retentionPolicy}
-                      onChange={(event) => patch("retentionPolicy", event.target.value)}
+                      onChange={(value) => patch("retentionPolicy", value as AttachmentRecognitionSettings["retentionPolicy"])}
                       options={[{ value: "permanent", label: "永久" }, { value: "days", label: "按天保存" }]}
                     />
                     {settings.retentionPolicy === "days" ? (
                       <div className="mt-3">
-                        <InputNumber className="w-full" min={1} max={3650} addonAfter="天" value={settings.retentionDays} onChange={(value) => patch("retentionDays", value ?? 30)} />
+                        <div className="attachment-suffix-input"><input className="sys-field-input" type="number" min={1} max={3650} value={settings.retentionDays} onChange={(event) => patch("retentionDays", numberValue(event.target.value, 30, 1, 3650))} /><span>天</span></div>
                       </div>
                     ) : (
                       <div className="sys-field-hint">默认永久保存原文件和识别结果，不设置到期时间。</div>
@@ -173,30 +179,49 @@ export function AttachmentRecognitionSettingsPanel() {
             {settings.recognitionEngine === "mineru" ? (
               <section className="sys-section-card">
                 <div className="sys-section-card-header">
-                  <div><h3><ServerCog size={17} /> MinerU 配置</h3><p>扩展名白名单可自定义；列表内文件全部走复杂识别。</p></div>
+                  <div><h3><ServerCog size={17} className="attachment-section-icon" /> MinerU 配置</h3><p>扩展名白名单可自定义；列表内文件全部走复杂识别。</p></div>
                 </div>
                 <div className="sys-section-card-body space-y-5">
-                  <Alert type="info" showIcon message="doc、xls 只有加入白名单后才会发送给 MinerU；服务端不替 MinerU 承诺格式支持，供应商拒绝时会明确标记识别失败。" />
                   <div className="sys-field">
                     <label className="sys-field-label sys-field-label--required">服务地址</label>
-                    <div className="sys-field-input-wrap"><ServerCog size={16} className="sys-field-prefix" /><input className="sys-field-input" value={settings.mineruEndpoint ?? ""} placeholder="http://mineru.example.internal" onChange={(event) => patch("mineruEndpoint", event.target.value)} /></div>
+                    <div className="sys-field-input-wrap"><ServerCog size={16} className="sys-field-prefix" /><input className="sys-field-input" name="mineru-service-endpoint" autoComplete="off" spellCheck={false} value={settings.mineruEndpoint ?? ""} placeholder="http://mineru.example.internal" onChange={(event) => patch("mineruEndpoint", event.target.value)} /></div>
                   </div>
                   <div className="sys-field">
                     <label className="sys-field-label sys-field-label--required">支持扩展名</label>
-                    <textarea className="sys-input w-full min-h-24 p-3" value={extensionText} onChange={(event) => setExtensionText(event.target.value)} placeholder={DEFAULT_COMPLEX_EXTENSIONS} />
-                    <div className="sys-field-hint">使用逗号、空格或换行分隔，不写点号。当前共 {extensions.length} 项。</div>
+                    <Select
+                      className="agent-admin-select attachment-extension-select w-full"
+                      classNames={selectClassNames}
+                      mode="tags"
+                      open={false}
+                      value={extensions}
+                      tokenSeparators={[",", "，", " ", "\n"]}
+                      placeholder="输入扩展名后按回车，例如 pdf"
+                      suffixIcon={null}
+                      onChange={(values) => setExtensionValues(parseExtensions(values.join(",")))}
+                    />
+                    <div className="sys-field-hint">输入后按回车，或粘贴逗号分隔的列表；不写点号。当前共 {extensions.length} 项。</div>
                   </div>
                   <div className="sys-field">
                     <label className="sys-field-label">API Key</label>
-                    <div className="sys-field-input-wrap"><KeyRound size={16} className="sys-field-prefix" /><input className="sys-field-input" type="password" value={apiKey} placeholder={settings.mineruApiKeyConfigured ? "已配置，留空保持不变" : "按服务要求选填"} onChange={(event) => setApiKey(event.target.value)} /></div>
+                    <div className="sys-field-input-wrap"><KeyRound size={16} className="sys-field-prefix" /><input className="sys-field-input" name="mineru-api-credential" autoComplete="new-password" type="password" value={apiKey} placeholder={settings.mineruApiKeyConfigured ? "已配置，留空保持不变" : "按服务要求选填"} onChange={(event) => setApiKey(event.target.value)} /></div>
                     {settings.mineruApiKeyConfigured ? <Checkbox checked={clearApiKey} onChange={(event) => setClearApiKey(event.target.checked)}>清除已保存的 API Key</Checkbox> : null}
                   </div>
                   <div className="sys-field-row">
-                    <TextField label="Backend" value={settings.mineruBackend} onChange={(value) => patch("mineruBackend", value)} />
+                    <div className="sys-field">
+                      <label className="sys-field-label">Backend</label>
+                      <Select
+                        className="agent-admin-select w-full"
+                        classNames={selectClassNames}
+                        value={settings.mineruBackend}
+                        options={BACKEND_OPTIONS}
+                        suffixIcon={<ChevronDown size={16} />}
+                        onChange={(value) => patch("mineruBackend", value)}
+                      />
+                    </div>
                     <TextField label="语言" value={settings.mineruLanguage} onChange={(value) => patch("mineruLanguage", value)} />
                   </div>
                   <div className="sys-field-row">
-                    <div className="sys-field"><label className="sys-field-label">解析方式</label><Radio.Group value={settings.mineruParseMethod} onChange={(event) => patch("mineruParseMethod", event.target.value)} options={[{ value: "auto", label: "auto" }, { value: "txt", label: "txt" }, { value: "ocr", label: "ocr" }]} /></div>
+                    <div className="sys-field"><label className="sys-field-label">解析方式</label><OptionButtons value={settings.mineruParseMethod} onChange={(value) => patch("mineruParseMethod", value as AttachmentRecognitionSettings["mineruParseMethod"])} options={[{ value: "auto", label: "自动识别" }, { value: "txt", label: "文本解析" }, { value: "ocr", label: "OCR 识别" }]} /></div>
                     <div className="sys-field"><label className="sys-field-label">识别能力</label><div className="flex gap-5"><Checkbox checked={settings.mineruEnableTable} onChange={(event) => patch("mineruEnableTable", event.target.checked)}>表格</Checkbox><Checkbox checked={settings.mineruEnableFormula} onChange={(event) => patch("mineruEnableFormula", event.target.checked)}>公式</Checkbox></div></div>
                   </div>
                   <div className="sys-field-row">
@@ -219,9 +244,18 @@ export function AttachmentRecognitionSettingsPanel() {
 }
 
 function NumberField({ label, value, min, max, onChange }: { label: string; value: number; min: number; max: number; onChange: (value: number) => void }) {
-  return <div className="sys-field"><label className="sys-field-label">{label}</label><InputNumber className="w-full" min={min} max={max} value={value} onChange={(next) => onChange(next ?? min)} /></div>;
+  return <div className="sys-field"><label className="sys-field-label">{label}</label><input className="sys-field-input" type="number" min={min} max={max} value={value} onChange={(event) => onChange(numberValue(event.target.value, min, min, max))} /></div>;
 }
 
 function TextField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return <div className="sys-field"><label className="sys-field-label">{label}</label><input className="sys-field-input" value={value} onChange={(event) => onChange(event.target.value)} /></div>;
+}
+
+function OptionButtons({ value, options, onChange }: { value: string; options: Array<{ value: string; label: string }>; onChange: (value: string) => void }) {
+  return <div className="attachment-option-group" role="radiogroup">{options.map((option) => <button key={option.value} type="button" role="radio" aria-checked={value === option.value} className={value === option.value ? "is-active" : ""} onClick={() => onChange(option.value)}>{option.label}</button>)}</div>;
+}
+
+function numberValue(value: string, fallback: number, min: number, max: number): number {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : fallback;
 }

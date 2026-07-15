@@ -4608,6 +4608,102 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
 }
 .sys-field-hint { font-size: 11px; color: var(--color-text-tertiary); margin-top: 4px; }
 
+/* 附件识别配置统一使用工作台主题变量，避免 Ant Design 默认黑色选中态与页面割裂。 */
+.attachment-settings-panel .ant-switch-checked,
+.attachment-settings-panel .ant-checkbox-checked .ant-checkbox-inner {
+  border-color: var(--color-primary) !important;
+  background: var(--color-primary) !important;
+}
+
+.attachment-section-icon {
+  color: var(--color-primary);
+}
+
+.attachment-option-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-page);
+}
+
+.attachment-option-group button {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius-md) - 2px);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: color var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.attachment-option-group button:hover {
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 7%, var(--color-bg-card));
+}
+
+.attachment-option-group button.is-active {
+  border-color: color-mix(in srgb, var(--color-primary) 45%, var(--color-border));
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-bg-card));
+  color: var(--color-primary);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--color-primary) 12%, transparent);
+  font-weight: 600;
+}
+
+.attachment-option-group button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-primary) 45%, transparent);
+  outline-offset: 1px;
+}
+
+.attachment-extension-select.agent-admin-select.ant-select-multiple {
+  max-height: 104px;
+  overflow-y: auto;
+  padding-block: 6px !important;
+}
+
+.attachment-extension-select.agent-admin-select.ant-select-multiple .ant-select-input {
+  min-width: 150px;
+  caret-color: var(--color-primary) !important;
+}
+
+.attachment-extension-select .ant-select-selection-item-content::before {
+  content: ".";
+  color: var(--color-text-tertiary);
+}
+
+.attachment-suffix-input {
+  position: relative;
+}
+
+.attachment-suffix-input .sys-field-input {
+  padding-right: 42px;
+}
+
+.attachment-suffix-input > span {
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  transform: translateY(-50%);
+  color: var(--color-text-tertiary);
+  pointer-events: none;
+}
+
+@media (max-width: 720px) {
+  .attachment-option-group {
+    display: flex;
+    width: 100%;
+  }
+
+  .attachment-option-group button {
+    flex: 1 1 auto;
+  }
+}
+
 .sys-copy-field {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

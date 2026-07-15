@@ -11,16 +11,39 @@ import { isDarkTheme } from "./utils/theme";
 function RootProviders() {
   const themeMode = useAuthStore((state) => state.themeMode);
   const isDark = isDarkTheme(themeMode);
+  const themeTokens = themeMode === "warm"
+    ? {
+        colorPrimary: "#a9563e",
+        colorBgContainer: "#fffaf4",
+        colorBgElevated: "#fffaf4",
+        colorBorder: "#cfc6ba",
+        colorText: "#25211d",
+        colorTextSecondary: "#524a43",
+      }
+    : isDark
+      ? {
+          colorPrimary: "#6366f1",
+          colorBgContainer: "#0f1829",
+          colorBgElevated: "#151e31",
+          colorBorder: "#253352",
+          colorText: "#f1f5f9",
+          colorTextSecondary: "#94a3b8",
+        }
+      : {
+          colorPrimary: "#4f46e5",
+          colorBgContainer: "#ffffff",
+          colorBgElevated: "#ffffff",
+          colorBorder: "#dce0eb",
+          colorText: "#0f172a",
+          colorTextSecondary: "#475569",
+        };
 
   return (
     <ConfigProvider
       locale={zhCN}
       theme={{
         algorithm: isDark ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
-        token: {
-          colorPrimary: themeMode === "warm" ? "#b75f42" : undefined,
-          fontFamily: "var(--font-sans)",
-        },
+        token: { ...themeTokens, fontFamily: "var(--font-sans)" },
       }}
     >
       <AntdApp>
