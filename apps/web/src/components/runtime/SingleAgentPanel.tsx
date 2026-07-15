@@ -259,6 +259,45 @@ function ToolStepRow({
   onToggle: () => void;
 }) {
   const hasDetail = !!step.detail?.trim();
+  const detailRef = useRef<HTMLPreElement | null>(null);
+  /** 流式输出时默认跟到底；用户一旦滚离底部就取消，本轮不再强行拉回。 */
+  const stickToBottomRef = useRef(true);
+  const ignoreScrollEventRef = useRef(false);
+  const wasRunningRef = useRef(false);
+
+  // 新一轮 running 开始时恢复自动跟底（例如下一轮推理）。
+  useEffect(() => {
+    const running = step.status === "running";
+    if (running && !wasRunningRef.current) {
+      stickToBottomRef.current = true;
+    }
+    wasRunningRef.current = running;
+  }, [step.status]);
+
+  useEffect(() => {
+    if (!expanded || step.status !== "running" || !detailRef.current || !stickToBottomRef.current) {
+      return;
+    }
+    const el = detailRef.current;
+    ignoreScrollEventRef.current = true;
+    el.scrollTop = el.scrollHeight;
+    const frame = window.requestAnimationFrame(() => {
+      ignoreScrollEventRef.current = false;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [expanded, step.status, step.detail]);
+
+  function handleDetailScroll() {
+    if (ignoreScrollEventRef.current || !detailRef.current) {
+      return;
+    }
+    const el = detailRef.current;
+    const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    // 用户滚离底部后取消自动跟底，避免抢滚动条。
+    if (distanceToBottom > 12) {
+      stickToBottomRef.current = false;
+    }
+  }
 
   return (
     <div className="agent-tool-step">
@@ -288,7 +327,13 @@ function ToolStepRow({
         ) : null}
       </button>
       {hasDetail && expanded ? (
-        <pre className="agent-tool-step-detail">{step.detail}</pre>
+        <pre
+          ref={detailRef}
+          className="agent-tool-step-detail"
+          onScroll={handleDetailScroll}
+        >
+          {step.detail}
+        </pre>
       ) : null}
     </div>
   );
