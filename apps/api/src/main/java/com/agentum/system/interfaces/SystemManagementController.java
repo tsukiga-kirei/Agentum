@@ -203,6 +203,16 @@ public class SystemManagementController {
         return ApiResponse.success(systemManagementService.testModelProvider(providerId), RequestIds.current(request));
     }
 
+    @PostMapping("/model-providers/test-connection")
+    public ApiResponse<SystemManagementApi.ModelProviderTestResult> testModelProviderDraft(
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @Valid @RequestBody SystemManagementApi.TestModelProviderDraftRequest body,
+        HttpServletRequest request
+    ) {
+        systemAdminAccess.assertSystemAdmin(principal);
+        return ApiResponse.success(systemManagementService.testModelProviderDraft(body), RequestIds.current(request));
+    }
+
     @GetMapping("/capabilities")
     public ApiResponse<PageResponse<SystemManagementApi.CapabilityRow>> listCapabilities(
         @AuthenticationPrincipal CurrentUserPrincipal principal,
@@ -255,6 +265,16 @@ public class SystemManagementController {
     ) {
         systemAdminAccess.assertSystemAdmin(principal);
         return ApiResponse.success(systemManagementService.testCapability(capabilityId), RequestIds.current(request));
+    }
+
+    @PostMapping("/capabilities/mcp/test-connection")
+    public ApiResponse<SystemManagementApi.CapabilityTestResult> testMcpDraft(
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @Valid @RequestBody SystemManagementApi.TestMcpDraftRequest body,
+        HttpServletRequest request
+    ) {
+        systemAdminAccess.assertSystemAdmin(principal);
+        return ApiResponse.success(systemManagementService.testMcpDraft(body), RequestIds.current(request));
     }
 
     @GetMapping("/tenant-capability-grants")

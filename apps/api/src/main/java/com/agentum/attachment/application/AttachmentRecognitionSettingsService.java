@@ -116,7 +116,7 @@ public class AttachmentRecognitionSettingsService {
         String apiKey = request.mineruApiKey();
         if (apiKey != null && !apiKey.isBlank()) {
             builder.header("Authorization", "Bearer " + apiKey.trim());
-        } else {
+        } else if (request.useSavedApiKey()) {
             AttachmentRecognitionSettingEntity entity = requireEntity();
             if (entity.getEncryptedMineruApiKey() != null && !entity.getEncryptedMineruApiKey().isBlank()) {
                 builder.header("Authorization", "Bearer " + encryptionService.decrypt(entity.getEncryptedMineruApiKey()));

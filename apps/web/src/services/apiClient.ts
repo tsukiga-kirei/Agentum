@@ -57,7 +57,10 @@ import type {
   UpdateTenantAdminProfileRequest,
   UpdateTenantAdminStatusRequest,
   AttachmentRecognitionSettings,
+  AttachmentRecognitionTestRequest,
   AttachmentRecognitionTestResult,
+  TestMcpDraftRequest,
+  TestModelProviderDraftRequest,
   UpdateAttachmentRecognitionSettingsRequest,
 } from "../types/system";
 import type {
@@ -491,7 +494,7 @@ export const systemApi = {
     apiRequest<AttachmentRecognitionSettings>("/api/system/settings/attachment-recognition", { token }),
   updateAttachmentRecognitionSettings: (token: string, body: UpdateAttachmentRecognitionSettingsRequest) =>
     apiRequest<AttachmentRecognitionSettings>("/api/system/settings/attachment-recognition", { method: "PUT", token, body }),
-  testAttachmentRecognitionConnection: (token: string, body: { mineruEndpoint: string; mineruApiKey?: string; connectTimeoutSeconds: number }) =>
+  testAttachmentRecognitionConnection: (token: string, body: AttachmentRecognitionTestRequest) =>
     apiRequest<AttachmentRecognitionTestResult>("/api/system/settings/attachment-recognition/test-connection", { method: "POST", token, body }),
   summary: (token: string) => apiRequest<SystemSummary>("/api/system/summary", { token }),
   listTenants: (token: string, page = 1, size = 10, sort = "createdAt,desc") =>
@@ -521,6 +524,8 @@ export const systemApi = {
     apiRequest<void>(`/api/system/model-providers/${providerId}`, { method: "DELETE", token }),
   testModelProvider: (token: string, providerId: string) =>
     apiRequest<ModelProviderTestResult>(`/api/system/model-providers/${providerId}/test`, { method: "POST", token }),
+  testModelProviderDraft: (token: string, body: TestModelProviderDraftRequest) =>
+    apiRequest<ModelProviderTestResult>("/api/system/model-providers/test-connection", { method: "POST", token, body }),
   listCapabilities: (token: string, page = 1, size = 10, sort = "createdAt,desc") =>
     apiRequest<SystemCapabilityPage>(`/api/system/capabilities?page=${page}&size=${size}&sort=${encodeURIComponent(sort)}`, { token }),
   createCapability: (token: string, body: CreateSystemCapabilityRequest) =>
@@ -531,6 +536,8 @@ export const systemApi = {
     apiRequest<void>(`/api/system/capabilities/${capabilityId}`, { method: "DELETE", token }),
   testCapability: (token: string, capabilityId: string) =>
     apiRequest<CapabilityTestResult>(`/api/system/capabilities/${capabilityId}/test`, { method: "POST", token }),
+  testMcpDraft: (token: string, body: TestMcpDraftRequest) =>
+    apiRequest<CapabilityTestResult>("/api/system/capabilities/mcp/test-connection", { method: "POST", token, body }),
   listGrants: (token: string, tenantId?: string) => {
     const q = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : "";
     return apiRequest<TenantCapabilityGrantRow[]>(`/api/system/tenant-capability-grants${q}`, { token });

@@ -1094,28 +1094,75 @@ export function SystemManagementPage() {
 
   const testModelProviderConnection = async (provider?: ModelProviderRow | null) => {
     if (!token) return;
-    const target = provider ?? editingModelProvider;
-    if (!target) {
-      messageApi.warning("请先保存模型供应商后再测试连接");
+    const d = modelRef.current;
+    if (!provider && !d.providerType?.trim()) {
+      messageApi.warning("请选择模型供应商");
       return;
     }
-    messageApi.loading({ content: "正在测试模型供应商连接...", key: `test_model_${target.id}` });
+    if (!provider && !d.defaultModel?.trim()) {
+      messageApi.warning("请输入默认模型");
+      return;
+    }
+    const messageKey = `test_model_${provider?.id ?? editingModelProvider?.id ?? "draft"}`;
+    messageApi.loading({ content: "正在测试模型供应商连接...", key: messageKey });
     try {
-      const result = await systemApi.testModelProvider(token, target.id);
+      const result = provider
+        ? await systemApi.testModelProvider(token, provider.id)
+        : await systemApi.testModelProviderDraft(token, {
+            providerId: editingModelProvider?.id,
+            providerType: d.providerType!.trim(),
+            baseUrl: d.baseUrl?.trim() || undefined,
+            defaultModel: d.defaultModel!.trim(),
+            apiKey: d.apiKey?.trim() || undefined,
+          });
+      if (!provider) {
+        const modelPreview = result.availableModels.length > 0 ? `；模型：${result.availableModels.slice(0, 3).join("、")}` : "";
+        const content = `${result.summary}${modelPreview}（当前表单尚未保存）`;
+        if (result.status === "success") messageApi.success({ content, key: messageKey });
+        else messageApi.warning({ content, key: messageKey });
+        return;
+      }
       const mergeProviderConnectivity = (items: ModelProviderRow[]) =>
-        items.map((item) => (item.id === target.id ? { ...item, connectivityStatus: result.connectivityStatus } : item));
+        items.map((item) => (item.id === provider.id ? { ...item, connectivityStatus: result.connectivityStatus } : item));
       setModelProviders(mergeProviderConnectivity);
       setPreviewModelProviders(mergeProviderConnectivity);
-      setEditingModelProvider((prev) => (prev?.id === target.id ? { ...prev, connectivityStatus: result.connectivityStatus } : prev));
+      setEditingModelProvider((prev) => (prev?.id === provider.id ? { ...prev, connectivityStatus: result.connectivityStatus } : prev));
       const modelPreview = result.availableModels.length > 0 ? `；模型：${result.availableModels.slice(0, 3).join("、")}` : "";
       const content = `${result.summary}${modelPreview}`;
       if (result.status === "success") {
-        messageApi.success({ content, key: `test_model_${target.id}` });
+        messageApi.success({ content, key: messageKey });
       } else {
-        messageApi.warning({ content, key: `test_model_${target.id}` });
+        messageApi.warning({ content, key: messageKey });
       }
     } catch (e) {
       handleApiError(e, "模型供应商测试失败");
+    }
+  };
+
+  const testMcpDraftConnection = async () => {
+    if (!token) return;
+    const transport = selectedMcpTransport === "streamable_http" ? "streamable_http" : "sse";
+    const endpointUrl = transport === "streamable_http"
+      ? capRef.current.endpointUrl?.trim()
+      : capRef.current.sseUrl?.trim();
+    if (!endpointUrl) {
+      messageApi.warning(transport === "streamable_http" ? "请输入 HTTP 端点地址" : "请输入 SSE 地址");
+      return;
+    }
+    const messageKey = `test_mcp_draft_${editingCapability?.id ?? "new"}`;
+    messageApi.loading({ content: "正在测试当前 MCP 配置...", key: messageKey });
+    try {
+      const result = await systemApi.testMcpDraft(token, {
+        capabilityId: editingCapability?.id,
+        transport,
+        endpointUrl,
+      });
+      setCapabilityTestResult(result);
+      const content = `${result.summary}（当前表单尚未保存）`;
+      if (result.status === "success") messageApi.success({ content, key: messageKey });
+      else messageApi.warning({ content, key: messageKey });
+    } catch (e) {
+      handleApiError(e, "MCP 配置测试失败");
     }
   };
 
@@ -1307,7 +1354,8 @@ export function SystemManagementPage() {
       {capabilityTestResult ? (() => {
         const testedCapability = capabilities.find((c) => c.id === capabilityTestResult.capabilityId)
           ?? previewCapabilities.find((c) => c.id === capabilityTestResult.capabilityId);
-        const testedCapabilityType = testedCapability?.capabilityType ?? "";
+        const testedCapabilityType = testedCapability?.capabilityType
+          ?? (capabilityTestResult.capabilityId == null ? "mcp" : "");
         const detailTitle = getCapabilityTestDetailTitle(testedCapabilityType);
         const reachability = resolveConnectivityStatus(capabilityTestResult.connectivityStatus);
         return (
@@ -1982,14 +2030,14 @@ export function SystemManagementPage() {
               <div className="sys-field-static">
                 <ReachabilityBadge status={resolveConnectivityStatus(editingModelProvider.connectivityStatus)} />
               </div>
-              <div className="sys-field-hint">保存配置或修改密钥后需重新测试连接</div>
+              <div className="sys-field-hint">这里显示已保存配置的状态；下方按钮会测试当前尚未保存的表单内容</div>
             </div>
           ) : null}
         </div>
         <div className="sys-drawer-footer">
           <button className="sys-btn sys-btn--default" onClick={()=>{setModelModalOpen(false);setEditingModelProvider(null);}}><X size={14}/> 取消</button>
           <div className="sys-drawer-footer-right">
-            <button className="sys-btn sys-btn--default" onClick={()=>void testModelProviderConnection()}><PlayCircle size={14}/> 测试连接</button>
+            <button className="sys-btn sys-btn--default" onClick={()=>void testModelProviderConnection()}><PlayCircle size={14}/> 测试当前配置</button>
             <button className="sys-btn sys-btn--primary" onClick={()=>void submitModel()}><PlusCircle size={14}/> {editingModelProvider ? "保存修改" : "确认注册"}</button>
           </div>
         </div>
@@ -2032,7 +2080,7 @@ export function SystemManagementPage() {
               <div className="sys-field-static">
                 <ReachabilityBadge status={resolveConnectivityStatus(editingCapability.connectivityStatus)} />
               </div>
-              <div className="sys-field-hint">保存配置后需重新测试连通性</div>
+              <div className="sys-field-hint">这里显示已保存配置的状态；下方按钮会测试当前尚未保存的表单内容</div>
             </div>
           ) : null}
           {selectedCapabilityType === "mcp" && (
@@ -2173,8 +2221,8 @@ export function SystemManagementPage() {
         <div className="sys-drawer-footer">
           <button className="sys-btn sys-btn--default" onClick={()=>{setCapModalOpen(false);setEditingCapability(null);}}><X size={14}/> 取消</button>
           <div className="sys-drawer-footer-right">
-            {editingCapability && capabilitySupportsConnectivityTest(editingCapability.capabilityType) ? (
-              <button className="sys-btn sys-btn--default" onClick={()=>void testCapabilityConnection(editingCapability.id)}><PlayCircle size={14}/> 测试连通性</button>
+            {selectedCapabilityType === "mcp" ? (
+              <button className="sys-btn sys-btn--default" onClick={()=>void testMcpDraftConnection()}><PlayCircle size={14}/> 测试当前配置</button>
             ) : null}
             <button className="sys-btn sys-btn--primary" onClick={()=>void submitCapability()}><PlusCircle size={14}/> {editingCapability ? "保存修改" : "确认注册"}</button>
           </div>

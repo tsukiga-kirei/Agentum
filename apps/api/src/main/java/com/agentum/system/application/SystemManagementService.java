@@ -503,6 +503,54 @@ public class SystemManagementService {
         );
     }
 
+    @Transactional(readOnly = true)
+    public SystemManagementApi.ModelProviderTestResult testModelProviderDraft(
+        SystemManagementApi.TestModelProviderDraftRequest request
+    ) {
+        ModelProviderTypeEntity providerType = modelProviderTypeRepository.findByCodeAndStatus(request.providerType().trim(), ACTIVE)
+            .orElseThrow(() -> {
+                log.warn(
+                    "系统管理测试模型供应商草稿失败：供应商类型不可用 providerId={} providerType={} requestId={}",
+                    request.providerId(),
+                    request.providerType(),
+                    RequestIds.current()
+                );
+                return new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_MODEL_PROVIDER_TYPE_INVALID", "模型供应商类型不存在或已停用");
+            });
+        String baseUrl = firstNonBlank(request.baseUrl(), providerType.getDefaultBaseUrl());
+        if (baseUrl == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_MODEL_PROVIDER_BASE_URL_REQUIRED", "模型供应商基址 URL 未配置");
+        }
+        String apiKey = stringValue(request.apiKey());
+        if (apiKey == null && request.providerId() != null) {
+            ModelProviderEntity savedProvider = modelProviderRepository.findById(request.providerId())
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "SYSTEM_MODEL_PROVIDER_NOT_FOUND", "模型供应商不存在"));
+            String encryptedApiKey = savedProvider.getEncryptedApiKey();
+            apiKey = encryptedApiKey == null ? null : fieldEncryptionService.decrypt(encryptedApiKey);
+        }
+
+        // 编辑抽屉的连接测试只验证当前表单草稿，不更新正式配置的连通状态；密钥留空时才复用同一供应商已保存的密钥。
+        ModelProviderTestOutcome outcome = modelProviderConnectionTester.test(new ModelProviderTestRequest(
+            request.providerId(),
+            providerType.getCode(),
+            baseUrl,
+            firstNonBlank(providerType.getModelListEndpoint(), "/models"),
+            request.defaultModel().trim(),
+            providerType.getAuthScheme(),
+            apiKey
+        ));
+        Instant checkedAt = clock.instant();
+        String connectivityStatus = mapTestStatusToConnectivity(outcome.status());
+        log.info(
+            "系统管理测试模型供应商表单草稿完成 providerId={} type={} status={} connectivityStatus={} requestId={}",
+            request.providerId(), providerType.getCode(), outcome.status(), connectivityStatus, RequestIds.current()
+        );
+        return new SystemManagementApi.ModelProviderTestResult(
+            request.providerId(), outcome.status(), outcome.summary(), outcome.availableModels(), outcome.latencyMs(), checkedAt,
+            connectivityStatus
+        );
+    }
+
     @Transactional
     public void deleteModelProvider(UUID providerId) {
         ModelProviderEntity entity = modelProviderRepository.findById(providerId)
@@ -680,6 +728,31 @@ public class SystemManagementService {
             result.tools(),
             checkedAt,
             capability.getConnectivityStatus()
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public SystemManagementApi.CapabilityTestResult testMcpDraft(SystemManagementApi.TestMcpDraftRequest request) {
+        String transport = request.transport().trim();
+        if (!Set.of("sse", "streamable_http").contains(transport)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_CAPABILITY_MCP_TRANSPORT_INVALID", "MCP 传输类型无效");
+        }
+        String endpointUrl = request.endpointUrl().trim();
+        McpConnectionTestOutcome outcome = mcpConnectionTester.test(new McpConnectionTestRequest(
+            request.capabilityId(), transport, endpointUrl
+        ));
+        List<SystemManagementApi.CapabilityToolRow> tools = outcome.tools().stream()
+            .map(tool -> new SystemManagementApi.CapabilityToolRow(tool.name(), tool.description(), tool.inputSchema()))
+            .toList();
+        Instant checkedAt = clock.instant();
+        String connectivityStatus = mapTestStatusToConnectivity(outcome.status());
+        // 草稿测试发现的工具只用于即时预览；保存正式配置后需再次测试，才能更新运行态使用的 tools/list 快照。
+        log.info(
+            "系统管理测试 MCP 表单草稿完成 capabilityId={} transport={} status={} connectivityStatus={} requestId={}",
+            request.capabilityId(), transport, outcome.status(), connectivityStatus, RequestIds.current()
+        );
+        return new SystemManagementApi.CapabilityTestResult(
+            request.capabilityId(), outcome.status(), outcome.summary(), tools, checkedAt, connectivityStatus
         );
     }
 

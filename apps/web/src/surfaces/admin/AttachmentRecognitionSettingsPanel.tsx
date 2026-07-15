@@ -112,6 +112,7 @@ export function AttachmentRecognitionSettingsPanel() {
       const result = await systemApi.testAttachmentRecognitionConnection(token, {
         mineruEndpoint: settings.mineruEndpoint,
         mineruApiKey: apiKey || undefined,
+        useSavedApiKey: !clearApiKey,
         connectTimeoutSeconds: settings.mineruConnectTimeoutSeconds,
       });
       messageApi.success(`${result.summary}，耗时 ${result.latencyMs} ms`);
@@ -233,7 +234,7 @@ export function AttachmentRecognitionSettingsPanel() {
             ) : null}
 
             <div className="flex justify-end gap-2">
-              {settings.recognitionEngine === "mineru" ? <button type="button" className="sys-btn sys-btn--default" disabled={testing} onClick={() => void testConnection()}><PlayCircle size={15} />{testing ? "测试中" : "测试连接"}</button> : null}
+              {settings.recognitionEngine === "mineru" ? <button type="button" className="sys-btn sys-btn--default" disabled={testing} title="测试当前页面中尚未保存的 MinerU 地址、密钥和超时配置" onClick={() => void testConnection()}><PlayCircle size={15} />{testing ? "测试中" : "测试当前配置"}</button> : null}
               <button type="button" className="sys-btn sys-btn--primary" disabled={saving} onClick={() => void save()}><Save size={15} />{saving ? "保存中" : "保存配置"}</button>
             </div>
           </div>

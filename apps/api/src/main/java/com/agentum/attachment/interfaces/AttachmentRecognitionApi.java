@@ -60,6 +60,7 @@ public final class AttachmentRecognitionApi {
     public record TestConnectionRequest(
         @NotBlank @Size(max = 800) String mineruEndpoint,
         @Size(max = 2000) String mineruApiKey,
+        boolean useSavedApiKey,
         @Min(1) @Max(120) int connectTimeoutSeconds
     ) {
     }

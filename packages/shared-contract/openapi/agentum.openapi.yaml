@@ -3292,6 +3292,30 @@ paths:
           description: 当前账号不是系统管理员
         "404":
           description: 模型供应商不存在
+  /api/system/model-providers/test-connection:
+    post:
+      summary: 测试模型供应商表单草稿
+      description: 使用请求中的未保存基址、模型和临时密钥测试连接；providerId 存在且临时密钥留空时复用已保存密钥，不更新正式配置的连通状态。
+      tags: [System]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TestModelProviderDraftRequest" }
+      responses:
+        "200":
+          description: 当前表单草稿的测试结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/ModelProviderTestResult" }
+        "400": { description: 供应商类型不可用或基址缺失 }
+        "403": { description: 当前账号不是系统管理员 }
   /api/system/capabilities:
     get:
       summary: 列出系统级能力
@@ -3452,6 +3476,30 @@ paths:
                     properties:
                       data:
                         $ref: "#/components/schemas/CapabilityTestResult"
+  /api/system/capabilities/mcp/test-connection:
+    post:
+      summary: 测试 MCP 表单草稿
+      description: 使用请求中的未保存传输类型和端点发现工具，不保存配置、连通状态或 tools/list 快照。
+      tags: [System]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TestMcpDraftRequest" }
+      responses:
+        "200":
+          description: 当前 MCP 表单草稿的测试结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/CapabilityTestResult" }
+        "400": { description: MCP 传输类型或端点无效 }
+        "403": { description: 当前账号不是系统管理员 }
   /api/system/tenant-capability-grants:
     get:
       summary: 列出单租户能力配置
@@ -4716,8 +4764,11 @@ components:
       properties:
         mineruEndpoint: { type: string }
         mineruApiKey: { type: string, writeOnly: true }
+        useSavedApiKey:
+          type: boolean
+          description: 临时密钥留空时是否复用已保存密钥；用户选择清除密钥后应传 false。
         connectTimeoutSeconds: { type: integer, minimum: 1, maximum: 120 }
-      required: [mineruEndpoint, connectTimeoutSeconds]
+      required: [mineruEndpoint, useSavedApiKey, connectTimeoutSeconds]
     AttachmentRecognitionTestResult:
       type: object
       properties:
@@ -4987,14 +5038,9 @@ components:
         providerId:
           type: string
           format: uuid
+          nullable: true
         status:
           type: string
-        maxTokens:
-          type: integer
-          minimum: 256
-          maximum: 131072
-        reasoningModel:
-          type: boolean
           enum:
             - success
             - failed
@@ -5016,7 +5062,6 @@ components:
             - online
             - offline
       required:
-        - providerId
         - status
         - summary
         - availableModels
@@ -5061,6 +5106,12 @@ components:
           description: 仅写入，不会在查询接口回显明文。
         status:
           type: string
+        maxTokens:
+          type: integer
+          minimum: 256
+          maximum: 131072
+        reasoningModel:
+          type: boolean
       required:
         - name
         - providerType
@@ -5070,6 +5121,15 @@ components:
     UpdateModelProviderRequest:
       allOf:
         - $ref: "#/components/schemas/CreateModelProviderRequest"
+    TestModelProviderDraftRequest:
+      type: object
+      properties:
+        providerId: { type: string, format: uuid }
+        providerType: { type: string }
+        baseUrl: { type: string }
+        defaultModel: { type: string }
+        apiKey: { type: string, writeOnly: true }
+      required: [providerType, defaultModel]
     AssetSummary:
       type: object
       properties:
@@ -6707,6 +6767,7 @@ components:
         capabilityId:
           type: string
           format: uuid
+          nullable: true
         status:
           type: string
         summary:
@@ -6725,12 +6786,18 @@ components:
             - offline
             - stale
       required:
-        - capabilityId
         - status
         - summary
         - tools
         - checkedAt
         - connectivityStatus
+    TestMcpDraftRequest:
+      type: object
+      properties:
+        capabilityId: { type: string, format: uuid }
+        transport: { type: string, enum: [sse, streamable_http] }
+        endpointUrl: { type: string }
+      required: [transport, endpointUrl]
     TenantCapabilityGrantRow:
       type: object
       properties:

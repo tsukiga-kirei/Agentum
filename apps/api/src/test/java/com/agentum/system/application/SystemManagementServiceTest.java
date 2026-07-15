@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -538,6 +539,45 @@ class SystemManagementServiceTest {
     }
 
     @Test
+    void shouldTestUnsavedModelDraftWithCurrentUrlAndSavedKeyWithoutPersistingStatus() {
+        ModelProviderRepository modelProviderRepository = mock(ModelProviderRepository.class);
+        ModelProviderTypeRepository modelProviderTypeRepository = mock(ModelProviderTypeRepository.class);
+        ModelProviderConnectionTester connectionTester = mock(ModelProviderConnectionTester.class);
+        ModelProviderEntity savedProvider = ModelProviderEntity.create(
+            "旧配置", "openai-compatible", "https://old.example.com/v1", "old-model", false, "active",
+            Instant.parse("2026-05-15T08:00:00Z")
+        );
+        savedProvider.storeEncryptedApiKey(FIELD_ENCRYPTION.encrypt("saved-secret"), Instant.parse("2026-05-15T08:00:00Z"));
+        ModelProviderTypeEntity providerType = mock(ModelProviderTypeEntity.class);
+        when(modelProviderRepository.findById(savedProvider.getId())).thenReturn(Optional.of(savedProvider));
+        when(modelProviderTypeRepository.findByCodeAndStatus("openai-compatible", "active")).thenReturn(Optional.of(providerType));
+        when(providerType.getCode()).thenReturn("openai-compatible");
+        when(providerType.getAuthScheme()).thenReturn("bearer");
+        when(providerType.getModelListEndpoint()).thenReturn("/models");
+        when(connectionTester.test(any())).thenReturn(new ModelProviderTestOutcome(
+            "success", "草稿连接成功", List.of("new-model"), 21
+        ));
+        SystemManagementService service = buildService(
+            modelProviderRepository, modelProviderTypeRepository, mock(SystemCapabilityRepository.class), connectionTester
+        );
+
+        SystemManagementApi.ModelProviderTestResult result = service.testModelProviderDraft(
+            new SystemManagementApi.TestModelProviderDraftRequest(
+                savedProvider.getId(), "openai-compatible", "https://new.example.com/v1", "new-model", null
+            )
+        );
+
+        assertThat(result.status()).isEqualTo("success");
+        org.mockito.ArgumentCaptor<ModelProviderTestRequest> captor = org.mockito.ArgumentCaptor.forClass(ModelProviderTestRequest.class);
+        verify(connectionTester).test(captor.capture());
+        assertThat(captor.getValue().baseUrl()).isEqualTo("https://new.example.com/v1");
+        assertThat(captor.getValue().defaultModel()).isEqualTo("new-model");
+        assertThat(captor.getValue().apiKey()).isEqualTo("saved-secret");
+        verify(modelProviderRepository, never()).save(any());
+        assertThat(savedProvider.getConnectivityStatus()).isEqualTo("offline");
+    }
+
+    @Test
     void shouldDeleteCapabilityWhenExists() {
         SystemCapabilityRepository systemCapabilityRepository = mock(SystemCapabilityRepository.class);
         UUID capabilityId = UUID.randomUUID();
@@ -826,6 +866,29 @@ class SystemManagementServiceTest {
             "inputSchema", inputSchema
         )));
         verify(systemCapabilityRepository).save(capability);
+    }
+
+    @Test
+    void shouldTestUnsavedMcpDraftWithoutPersistingToolsOrConnectivity() {
+        SystemCapabilityRepository systemCapabilityRepository = mock(SystemCapabilityRepository.class);
+        McpConnectionTester mcpConnectionTester = mock(McpConnectionTester.class);
+        UUID capabilityId = UUID.randomUUID();
+        when(mcpConnectionTester.test(any())).thenReturn(new McpConnectionTestOutcome(
+            "success",
+            "草稿端点连接成功",
+            List.of(new McpConnectionTestOutcome.McpToolDescriptor("draft_tool", "草稿工具", Map.of("type", "object")))
+        ));
+        SystemManagementService service = buildService(systemCapabilityRepository, mcpConnectionTester);
+
+        SystemManagementApi.CapabilityTestResult result = service.testMcpDraft(
+            new SystemManagementApi.TestMcpDraftRequest(capabilityId, "streamable_http", "http://127.0.0.1:3999/mcp")
+        );
+
+        assertThat(result.tools()).extracting(SystemManagementApi.CapabilityToolRow::name).containsExactly("draft_tool");
+        org.mockito.ArgumentCaptor<McpConnectionTestRequest> captor = org.mockito.ArgumentCaptor.forClass(McpConnectionTestRequest.class);
+        verify(mcpConnectionTester).test(captor.capture());
+        assertThat(captor.getValue().endpointUrl()).isEqualTo("http://127.0.0.1:3999/mcp");
+        verify(systemCapabilityRepository, never()).save(any());
     }
 
     @Test

@@ -136,6 +136,15 @@ public final class SystemManagementApi {
     ) {
     }
 
+    public record TestModelProviderDraftRequest(
+        UUID providerId,
+        @NotBlank @Size(max = 80) String providerType,
+        @Size(max = 500) String baseUrl,
+        @NotBlank @Size(max = 160) String defaultModel,
+        @Size(max = 2000) String apiKey
+    ) {
+    }
+
     public record CreateModelProviderRequest(
         @NotBlank @Size(max = 160) String name,
         @NotBlank @Size(max = 80) String providerType,
@@ -212,6 +221,13 @@ public final class SystemManagementApi {
         List<CapabilityToolRow> tools,
         Instant checkedAt,
         String connectivityStatus
+    ) {
+    }
+
+    public record TestMcpDraftRequest(
+        UUID capabilityId,
+        @NotBlank @Size(max = 40) String transport,
+        @NotBlank @Size(max = 500) String endpointUrl
     ) {
     }
 

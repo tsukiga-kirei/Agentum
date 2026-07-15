@@ -32,6 +32,13 @@ export type AttachmentRecognitionTestResult = {
   latencyMs: number;
 };
 
+export type AttachmentRecognitionTestRequest = {
+  mineruEndpoint: string;
+  mineruApiKey?: string;
+  useSavedApiKey: boolean;
+  connectTimeoutSeconds: number;
+};
+
 export type SystemSummary = {
   tenantTotal: number;
   tenantActive: number;
@@ -134,13 +141,21 @@ export type ModelProviderTypeRow = {
 };
 
 export type ModelProviderTestResult = {
-  providerId: string;
+  providerId: string | null;
   status: string;
   summary: string;
   availableModels: string[];
   latencyMs: number;
   checkedAt: string;
   connectivityStatus: string;
+};
+
+export type TestModelProviderDraftRequest = {
+  providerId?: string;
+  providerType: string;
+  baseUrl?: string;
+  defaultModel: string;
+  apiKey?: string;
 };
 
 export type CreateModelProviderRequest = {
@@ -189,12 +204,18 @@ export type CapabilityToolRow = {
 };
 
 export type CapabilityTestResult = {
-  capabilityId: string;
+  capabilityId: string | null;
   status: string;
   summary: string;
   tools: CapabilityToolRow[];
   checkedAt: string;
   connectivityStatus: string;
+};
+
+export type TestMcpDraftRequest = {
+  capabilityId?: string;
+  transport: "sse" | "streamable_http";
+  endpointUrl: string;
 };
 
 export type TenantCapabilityGrantRow = {
