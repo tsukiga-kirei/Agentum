@@ -974,6 +974,9 @@ export function TaskRunWorkspace({
                 {activeStep.kind === "input" ? (
                   <UserInputPanel
                     activeStep={activeStep}
+                    tenantId={tenantId}
+                    token={token}
+                    runId={runDetail.id}
                     templateVariables={activeTemplateVariables}
                     readOnly={runDetail.readOnly}
                     onSubmit={handleCompleteTodo}

@@ -12,6 +12,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.agentum.agent.application.PromptContentResolver;
+import com.agentum.attachment.application.InputAttachmentService;
 import com.agentum.auth.application.CurrentUserPrincipal;
 import com.agentum.asset.infrastructure.TenantAssetCapabilityRepository;
 import com.agentum.system.infrastructure.SystemCapabilityRepository;
@@ -1134,6 +1135,9 @@ class WorkbenchRuntimeServiceTest {
     private WorkbenchRuntimeService newService() {
         when(transactionManager.getTransaction(org.mockito.ArgumentMatchers.any(TransactionDefinition.class)))
             .thenReturn(new SimpleTransactionStatus());
+        InputAttachmentService inputAttachmentService = mock(InputAttachmentService.class);
+        when(inputAttachmentService.resolveSubmittedPayload(any(), any(), any(), any()))
+            .thenAnswer(invocation -> invocation.getArgument(3));
         return new WorkbenchRuntimeService(
             tenantRepository,
             workflowDefinitionRepository,
@@ -1158,7 +1162,8 @@ class WorkbenchRuntimeServiceTest {
             new PromptContentResolver(mock(SystemCapabilityRepository.class), mock(TenantAssetCapabilityRepository.class)),
             leaseService,
             transactionManager,
-            workflowScheduleService
+            workflowScheduleService,
+            inputAttachmentService
         );
     }
 

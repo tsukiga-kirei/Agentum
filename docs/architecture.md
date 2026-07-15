@@ -225,6 +225,7 @@ com.agentum
   schedule
   notification
   runtime
+  attachment
   system
   shared
   config
@@ -388,6 +389,67 @@ pending -> running -> paused -> resumed -> running -> completed
 - `AgentInteractionEvent`
 
 这些对象可以第一阶段作为 `NodeRun` 扩展表或 JSON 字段，后续再拆独立表。
+
+### 5.6.1 附件接入与文档解析模块
+
+附件属于运行输入和后续知识资产的共同基础设施，建议使用独立 `com.agentum.attachment` 包，不放进 `delivery`：`delivery` 负责产出和发送文件，`attachment` 负责接收外部文件、校验、保存、解析和提供受控读取。
+
+推荐链路：
+
+```text
+输入节点选择文件
+  -> API 校验租户 / 运行 / 待办 / 字段权限
+  -> 校验扩展名、MIME、文件签名、大小与数量
+  -> 原文件写入 MinIO，数据库写 uploaded 状态
+  -> RabbitMQ 投递 AttachmentParseCommand
+  -> 文档 Worker 按系统识别方式选择 Java 解析器或 MinerU
+  -> 解析 Markdown 写入 MinIO，数据库写解析摘要与状态
+  -> 输入节点提交附件 ID 集合
+  -> 变量快照冻结附件引用与解析版本
+  -> 智能体按上下文预算读取解析正文
+```
+
+同步上传请求只负责文件落盘和任务创建，不在 HTTP 请求内等待 OCR。解析作业至少支持 `queued -> parsing -> ready / failed / rejected`；消费者按 `attachmentId + contentSha256 + parserConfigHash` 幂等，重复投递不能生成互相冲突的结果。主动删除只允许发生在待办尚未提交时；提交后的附件引用按运行数据保留策略管理，重新执行默认复用相同解析版本。
+
+建议数据对象：
+
+| 对象 / 表 | 关键内容 |
+| --- | --- |
+| `InputAttachment` / `input_attachments` | `tenant_id`、`run_id`、`node_run_id`、`field_id`、`variable_key`、上传人、原文件名、扩展名、可信 MIME、大小、SHA-256、原文件对象键、状态、可空过期时间；永久保存时过期时间为空 |
+| `AttachmentParseResult` / `attachment_parse_results` | 附件 ID、解析器类型与版本、配置哈希和脱敏配置快照、正文对象键、字符 / 页 / Sheet 数、截断标识、状态、错误码和脱敏错误摘要 |
+| `AttachmentAccessEvent` / 审计事件 | 上传、删除、解析、读取正文、下载原文件，以及操作者、用途、运行和节点上下文 |
+
+工作流变量类型沿用已有 `file`，其运行值定义为附件引用集合而不是二进制内容；集合项至少包含 `attachmentId`、`fileName`、`extension`、`size`、`parseStatus`、`parseResultId`。模型提示词只接收经过权限复核、内容预算和提示词注入隔离后的解析正文。变量快照与运行事件不得复制原文件、完整解析正文或 MinerU 原始响应。
+
+系统配置通过类型化接口维护，不向前端暴露通用 KV 写入口：
+
+```text
+GET  /api/system/settings/attachment-recognition
+PUT  /api/system/settings/attachment-recognition
+POST /api/system/settings/attachment-recognition/test-connection
+```
+
+逐格式样例解析测试接口属于后续稳定化范围，不与健康检查混用；第一版真实解析验证通过输入节点上传链路完成。
+
+运行态接口建议：
+
+```text
+POST   /api/tenants/{tenantId}/workbench/runs/{runId}/nodes/{nodeRunId}/attachments
+GET    /api/tenants/{tenantId}/workbench/runs/{runId}/nodes/{nodeRunId}/attachments
+DELETE /api/tenants/{tenantId}/workbench/runs/{runId}/nodes/{nodeRunId}/attachments/{attachmentId}
+GET    /api/tenants/{tenantId}/workbench/runs/{runId}/nodes/{nodeRunId}/attachments/{attachmentId}/content
+GET    /api/tenants/{tenantId}/workbench/runs/{runId}/nodes/{nodeRunId}/attachments/{attachmentId}/parsed-preview
+```
+
+上传接口使用 `multipart/form-data` 并携带发布快照中的 `fieldId`；完成待办时只提交附件 ID。后端必须重新确认这些附件属于当前租户、运行、节点、字段与操作者可处理的待办，不能信任前端传入的对象键、文件名、MIME 或解析状态。
+
+前端附件预览复用交付文档预览的抽屉和 Word / Excel 渲染器，并按扩展名增加 PDF、图片、文本和识别正文通道。原件接口统一返回受保护字节流和服务端确定的 MIME，前端不接收 MinIO 对象键；不支持的格式只允许下载，不把用户上送的 MIME 作为内联渲染依据。
+
+MinerU 只作为解析适配器，不直接承担 Agentum 的文件治理。系统识别方式使用 `local`、`mineru` 两个稳定协议值：`local` 只调用 Java 本地解析器；`mineru` 对命中 `mineruSupportedExtensions` 的全部文件调用 MinerU，包括 TXT、CSV 等本地本可直接读取的格式。复杂识别不做本地预解析，MinerU 失败后也不做本地回退，失败是否阻断输入节点由字段发布快照中的 `recognitionRequired` 决定。
+
+MinerU 端点和 API Key 是平台级敏感配置，API Key 使用现有字段加密服务保存。`mineruSupportedExtensions` 采用系统管理员可编辑白名单，不由 Agentum 根据某个 MinerU 版本硬编码限制；这允许客户封装端点、在线 API 或未来 MinerU 版本接收 `doc`、`xls` 等格式。平台仍应提示当前开源自部署版与在线 API 的格式口径存在差异，并提供逐格式真实解析测试。管理员配置的扩展名代表明确的运行路由意图，而不是平台对 MinerU 成功率的保证。
+
+日志只记录 requestId、tenantId、runId、nodeRunId、attachmentId、解析器、耗时和状态，禁止记录文件正文、密钥、完整原始响应和对象存储签名地址。下载原文件、读取完整解析正文和解析测试均作为敏感操作写入审计。
 
 ### 5.7 能力资产模块
 

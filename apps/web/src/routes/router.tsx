@@ -88,6 +88,7 @@ export const appRouter = createBrowserRouter([
                   { path: "tenants", element: <SystemManagementPage /> },
                   { path: "models", element: <SystemManagementPage /> },
                   { path: "capabilities", element: <SystemManagementPage /> },
+                  { path: "settings", element: <SystemManagementPage /> },
                 ],
               },
 

@@ -983,6 +983,7 @@ class SystemManagementServiceTest {
                 "sourceType", "builtin",
                 "deliveryChannel", "excel",
                 "maxFileSizeMb", "40",
+                "retentionPolicy", "permanent",
                 "retentionDays", "90"
             )
         ));
@@ -994,6 +995,7 @@ class SystemManagementServiceTest {
             .containsEntry("deliveryChannel", "document")
             .containsEntry("documentKind", "excel")
             .containsEntry("maxFileSizeMb", 40)
+            .containsEntry("retentionPolicy", "permanent")
             .containsEntry("retentionDays", 90)
             .doesNotContainKeys("defaultStyle", "smtpHost", "smtpPort", "encryptedSmtpPassword");
         assertThat(row.config())

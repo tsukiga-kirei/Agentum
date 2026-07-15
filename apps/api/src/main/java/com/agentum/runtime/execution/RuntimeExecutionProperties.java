@@ -107,6 +107,9 @@ public class RuntimeExecutionProperties {
         private String exchange = "agentum.runtime";
         private String queueNodeExecute = "runtime.node.execute";
         private String queueNodeExecuteDlq = "runtime.node.execute.dlq";
+        /** 附件解析队列与节点执行队列分离，避免长耗时 OCR 阻塞智能体节点。 */
+        private String queueAttachmentParse = "runtime.attachment.parse";
+        private String queueAttachmentParseDlq = "runtime.attachment.parse.dlq";
 
         public String getExchange() {
             return exchange;
@@ -131,5 +134,10 @@ public class RuntimeExecutionProperties {
         public void setQueueNodeExecuteDlq(String queueNodeExecuteDlq) {
             this.queueNodeExecuteDlq = queueNodeExecuteDlq;
         }
+
+        public String getQueueAttachmentParse() { return queueAttachmentParse; }
+        public void setQueueAttachmentParse(String queueAttachmentParse) { this.queueAttachmentParse = queueAttachmentParse; }
+        public String getQueueAttachmentParseDlq() { return queueAttachmentParseDlq; }
+        public void setQueueAttachmentParseDlq(String queueAttachmentParseDlq) { this.queueAttachmentParseDlq = queueAttachmentParseDlq; }
     }
 }

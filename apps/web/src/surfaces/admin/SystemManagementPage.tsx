@@ -22,6 +22,7 @@ import {
   PlusCircle,
   PlayCircle,
   ServerCog,
+  Settings2,
   ShieldCheck,
   ShieldAlert,
   Tag,
@@ -37,6 +38,7 @@ import { Empty, Segmented, Spin, message, Drawer, Pagination } from "antd";
 import { SurfacePageLayout } from "../../components/workbench/SurfacePageLayout";
 import { SysModalMask } from "../../components/common/SysModalMask";
 import { DocumentDeliveryStyleAdminSections } from "../../components/document/DocumentDeliveryStyleAdminSections";
+import { AttachmentRecognitionSettingsPanel } from "./AttachmentRecognitionSettingsPanel";
 import { paths } from "../../routes/paths";
 import { AgentumApiError, API_BASE_URL, organizationApi, systemApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
@@ -127,7 +129,7 @@ function SysSelect({ options, value, defaultValue, placeholder, icon: Icon, onCh
   );
 }
 
-type SystemSection = "overview" | "tenants" | "models" | "capabilities";
+type SystemSection = "overview" | "tenants" | "models" | "capabilities" | "settings";
 
 type AdminPageState = {
   page: number;
@@ -333,6 +335,7 @@ function buildCapabilityFormValues(capability: SystemCapabilityRow): Record<stri
     documentTitleCentered: readNestedStyleString(capability.config, "titleCentered") || "false",
     documentHeadingFirstLineIndent: readNestedStyleString(capability.config, "headingFirstLineIndent") || "false",
     documentMaxFileSizeMb: readConfigString(capability.config, "maxFileSizeMb") || "20",
+    documentRetentionPolicy: readConfigString(capability.config, "retentionPolicy") || "days",
     documentRetentionDays: readConfigString(capability.config, "retentionDays") || "180",
     implementationKey: readConfigString(capability.config, "implementationKey"),
     protocol: readConfigString(capability.config, "protocol") || "http",
@@ -402,6 +405,9 @@ export function SystemManagementPage() {
     if (location.pathname.startsWith(paths.system.capabilities)) {
       return "capabilities";
     }
+    if (location.pathname.startsWith(paths.system.settings)) {
+      return "settings";
+    }
     return "overview";
   }, [location.pathname]);
 
@@ -409,7 +415,8 @@ export function SystemManagementPage() {
     if (next === "overview") navigate(paths.system.overview);
     else if (next === "tenants") navigate(paths.system.tenants);
     else if (next === "models") navigate(paths.system.models);
-    else navigate(paths.system.capabilities);
+    else if (next === "capabilities") navigate(paths.system.capabilities);
+    else navigate(paths.system.settings);
   }
 
   const token = useAuthStore((s) => s.token);
@@ -477,6 +484,7 @@ export function SystemManagementPage() {
   const [selectedMcpTransport, setSelectedMcpTransport] = useState("sse");
   const [selectedDeliverySourceType, setSelectedDeliverySourceType] = useState("builtin");
   const [selectedDeliveryChannel, setSelectedDeliveryChannel] = useState("email");
+  const [selectedDocumentRetentionPolicy, setSelectedDocumentRetentionPolicy] = useState("days");
   const modelRef = useRef<Record<string,string>>({});
   const capRef = useRef<Record<string,string>>({});
   const [modelFormKey, setModelFormKey] = useState(0);
@@ -781,11 +789,13 @@ export function SystemManagementPage() {
 
   const openCapabilityModal = (capability: SystemCapabilityRow | null) => {
     setEditingCapability(capability);
-    capRef.current = capability ? buildCapabilityFormValues(capability) : { capabilityType: "mcp", transport: "sse" };
+    const formValues = capability ? buildCapabilityFormValues(capability) : { capabilityType: "mcp", transport: "sse", documentRetentionPolicy: "days", documentRetentionDays: "180" };
+    capRef.current = formValues;
     setSelectedCapabilityType(capability?.capabilityType ?? "mcp");
     setSelectedMcpTransport(capability ? (readConfigString(capability.config, "transport") || "sse") : "sse");
     setSelectedDeliverySourceType(capability ? (readConfigString(capability.config, "sourceType") || "builtin") : "builtin");
-    setSelectedDeliveryChannel(capability ? (readConfigString(capability.config, "deliveryChannel") || "email") : "email");
+    setSelectedDeliveryChannel(formValues.deliveryChannel || "email");
+    setSelectedDocumentRetentionPolicy(formValues.documentRetentionPolicy || "days");
     setCapFormKey((key) => key + 1);
     setCapModalOpen(true);
   };
@@ -919,11 +929,13 @@ export function SystemManagementPage() {
         if (deliveryChannel === "excel") {
           config.documentKind = "excel";
           config.maxFileSizeMb = d.documentMaxFileSizeMb?.trim() || "20";
+          config.retentionPolicy = d.documentRetentionPolicy?.trim() || "days";
           config.retentionDays = d.documentRetentionDays?.trim() || "180";
         } else if (deliveryChannel === "document") {
           config.documentKind = "word";
           config.allowNodeStyleOverride = true;
           config.maxFileSizeMb = d.documentMaxFileSizeMb?.trim() || "20";
+          config.retentionPolicy = d.documentRetentionPolicy?.trim() || "days";
           config.retentionDays = d.documentRetentionDays?.trim() || "180";
           config.defaultStyle = {
             chineseFont: d.documentChineseFont?.trim() || "宋体",
@@ -1223,6 +1235,7 @@ export function SystemManagementPage() {
     { key: "tenants", label: "租户管理", icon: Building2, description: "隔离边界与全局分配" },
     { key: "models", label: "模型供应商", icon: DatabaseZap, description: "底层算力与路由配置" },
     { key: "capabilities", label: "全局能力", icon: Boxes, description: "系统级插件与通道" },
+    { key: "settings", label: "系统配置", icon: Settings2, description: "附件识别与平台运行参数" },
   ];
 
   const activeNav = navItems.find((n) => n.key === section) ?? navItems[0];
@@ -1593,6 +1606,7 @@ export function SystemManagementPage() {
                 )}
               </div>
             )}
+            {section === "settings" ? <AttachmentRecognitionSettingsPanel /> : null}
           </Spin>
       </SurfacePageLayout>
 
@@ -2127,13 +2141,13 @@ export function SystemManagementPage() {
                       />
                       <div className="sys-field-row">
                         <div className="sys-field"><label className="sys-field-label">最大文件 MB</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={1} max={200} placeholder="20" defaultValue={capRef.current.documentMaxFileSizeMb || "20"} onChange={e=>{capRef.current.documentMaxFileSizeMb=e.target.value;}}/></div><div className="sys-field-hint">运行时生成 docx 后会按此大小拦截，超过限制则交付失败。</div></div>
-                        <div className="sys-field"><label className="sys-field-label">保留天数</label><div className="sys-field-input-wrap"><Clock size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={1} max={3650} placeholder="180" defaultValue={capRef.current.documentRetentionDays || "180"} onChange={e=>{capRef.current.documentRetentionDays=e.target.value;}}/></div><div className="sys-field-hint">运行结果会写入过期时间，后续对象清理任务按该值删除文档。</div></div>
+                        <div className="sys-field"><label className="sys-field-label">文件保存时间</label><SysSelect icon={Clock} defaultValue={capRef.current.documentRetentionPolicy || "days"} options={[{value:"permanent",label:"永久"},{value:"days",label:"按天保存"}]} onChange={v=>{capRef.current.documentRetentionPolicy=v;setSelectedDocumentRetentionPolicy(v);}}/>{selectedDocumentRetentionPolicy === "days" ? <><div className="sys-field-input-wrap mt-3"><Clock size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={1} max={3650} placeholder="180" defaultValue={capRef.current.documentRetentionDays || "180"} onChange={e=>{capRef.current.documentRetentionDays=e.target.value;}}/></div><div className="sys-field-hint">到期后由对象清理任务删除文档。</div></> : <div className="sys-field-hint">永久保存，不写入过期时间。</div>}</div>
                       </div>
                     </>
                   ) : selectedDeliveryChannel === "excel" ? (
                     <div className="sys-field-row">
                       <div className="sys-field"><label className="sys-field-label">最大文件 MB</label><div className="sys-field-input-wrap"><Hash size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={1} max={200} placeholder="20" defaultValue={capRef.current.documentMaxFileSizeMb || "20"} onChange={e=>{capRef.current.documentMaxFileSizeMb=e.target.value;}}/></div><div className="sys-field-hint">运行时生成 xlsx 后会按此大小拦截，超过限制则交付失败。</div></div>
-                      <div className="sys-field"><label className="sys-field-label">保留天数</label><div className="sys-field-input-wrap"><Clock size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={1} max={3650} placeholder="180" defaultValue={capRef.current.documentRetentionDays || "180"} onChange={e=>{capRef.current.documentRetentionDays=e.target.value;}}/></div><div className="sys-field-hint">运行结果会写入过期时间，后续对象清理任务按该值删除文件。</div></div>
+                      <div className="sys-field"><label className="sys-field-label">文件保存时间</label><SysSelect icon={Clock} defaultValue={capRef.current.documentRetentionPolicy || "days"} options={[{value:"permanent",label:"永久"},{value:"days",label:"按天保存"}]} onChange={v=>{capRef.current.documentRetentionPolicy=v;setSelectedDocumentRetentionPolicy(v);}}/>{selectedDocumentRetentionPolicy === "days" ? <><div className="sys-field-input-wrap mt-3"><Clock size={16} className="sys-field-prefix"/><input className="sys-field-input" type="number" min={1} max={3650} placeholder="180" defaultValue={capRef.current.documentRetentionDays || "180"} onChange={e=>{capRef.current.documentRetentionDays=e.target.value;}}/></div><div className="sys-field-hint">到期后由对象清理任务删除文件。</div></> : <div className="sys-field-hint">永久保存，不写入过期时间。</div>}</div>
                     </div>
                   ) : (
                     <>

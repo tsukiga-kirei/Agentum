@@ -4174,6 +4174,7 @@ function InputFieldModal({
   const [isDrawerScrolling, setIsDrawerScrolling] = useState(false);
   const scrollIdleTimerRef = useRef<number | null>(null);
   const isSelectField = draft.fieldType === "select";
+  const isFileField = draft.fieldType === "file";
 
   useEffect(() => () => {
     if (scrollIdleTimerRef.current !== null) {
@@ -4199,6 +4200,23 @@ function InputFieldModal({
         fieldType,
         placeholder: current.placeholder || "请选择",
         options: current.options?.length ? current.options : [createInputFieldOption(0)],
+      }));
+      return;
+    }
+
+    if (fieldType === "file") {
+      setDraft((current) => ({
+        ...current,
+        fieldType,
+        placeholder: "请选择附件",
+        defaultValue: "",
+        defaultValueSource: "none",
+        options: undefined,
+        allowedExtensions: current.allowedExtensions?.length ? current.allowedExtensions : ["pdf", "docx", "xlsx", "txt"],
+        maxFiles: current.maxFiles ?? 5,
+        maxFileSizeMb: current.maxFileSizeMb ?? 20,
+        recognitionEnabled: current.recognitionEnabled !== false,
+        recognitionRequired: current.recognitionRequired === true,
       }));
       return;
     }
@@ -4249,7 +4267,13 @@ function InputFieldModal({
     onSave(nextField);
   }
 
-  const drawerTitle = draft.fieldType === "select" ? "配置下拉框" : draft.fieldType === "date" ? "配置日期字段" : "配置文本框";
+  const drawerTitle = draft.fieldType === "select"
+    ? "配置下拉框"
+    : draft.fieldType === "date"
+      ? "配置日期字段"
+      : draft.fieldType === "file"
+        ? "配置附件字段"
+        : "配置文本框";
 
   return (
     <Drawer
@@ -4418,6 +4442,48 @@ function InputFieldModal({
                         />
                       </label>
                     ) : null}
+                  </div>
+                </>
+              ) : null}
+
+              {isFileField ? (
+                <>
+                  <p className="workflow-input-field-panel-intro">限制业务人员可上传的文件类型、数量和单文件大小；运行时还会与系统级上限取更小值。</p>
+                  <div className="workflow-input-field-drawer-fields">
+                    <label className="sys-field">
+                      <span className="sys-field-label sys-field-label--required">允许的扩展名</span>
+                      <textarea
+                        className="sys-input w-full min-h-24 p-3"
+                        value={(draft.allowedExtensions ?? []).join(",")}
+                        placeholder="pdf,docx,xlsx,txt"
+                        onChange={(event) => setDraft({
+                          ...draft,
+                          allowedExtensions: Array.from(new Set(event.target.value
+                            .split(/[，,\s]+/)
+                            .map((value) => value.trim().toLowerCase().replace(/^\./, ""))
+                            .filter(Boolean))),
+                        })}
+                      />
+                      <span className="sys-field-hint">使用逗号、空格或换行分隔，不写点号。复杂识别时还必须属于系统配置的 MinerU 白名单。</span>
+                    </label>
+                    <div className="sys-field-row">
+                      <label className="sys-field">
+                        <span className="sys-field-label">最多上传文件数</span>
+                        <input className="sys-field-input" type="number" min={1} max={20} value={draft.maxFiles ?? 5} onChange={(event) => setDraft({ ...draft, maxFiles: Number(event.target.value) })} />
+                      </label>
+                      <label className="sys-field">
+                        <span className="sys-field-label">单文件上限（MB）</span>
+                        <input className="sys-field-input" type="number" min={1} max={200} value={draft.maxFileSizeMb ?? 20} onChange={(event) => setDraft({ ...draft, maxFileSizeMb: Number(event.target.value) })} />
+                      </label>
+                    </div>
+                    <label className="workflow-toggle-row workflow-input-required-toggle">
+                      <span><span className="block">识别附件正文</span><span className="mt-1 block text-xs font-normal text-[var(--color-text-tertiary)]">按系统配置选择简单识别或复杂识别。</span></span>
+                      <input type="checkbox" checked={draft.recognitionEnabled !== false} onChange={(event) => setDraft({ ...draft, recognitionEnabled: event.target.checked, recognitionRequired: event.target.checked ? draft.recognitionRequired : false })} />
+                    </label>
+                    <label className="workflow-toggle-row workflow-input-required-toggle">
+                      <span><span className="block">识别成功后才能提交</span><span className="mt-1 block text-xs font-normal text-[var(--color-text-tertiary)]">开启后，识别中或识别失败的附件会阻止流程继续。</span></span>
+                      <input type="checkbox" disabled={draft.recognitionEnabled === false} checked={draft.recognitionEnabled !== false && draft.recognitionRequired === true} onChange={(event) => setDraft({ ...draft, recognitionRequired: event.target.checked })} />
+                    </label>
                   </div>
                 </>
               ) : null}
@@ -6227,8 +6293,11 @@ function applyPersistedDetail(
 }
 
 function buildWorkflowVariables(nodes: WorkflowEditorNode[], metadataByName: Record<string, WorkflowVariableTemplate> = {}): WorkflowVariable[] {
-  return nodes.flatMap((node) =>
-    node.data.outputVariables.map((name) => {
+  return nodes.flatMap((node) => {
+    const inputFields = node.data.nodeType === "user_input"
+      ? readInputFields(node.data.rawConfig?.inputFields, node.data.outputVariables)
+      : [];
+    return node.data.outputVariables.map((name) => {
       const metadata = metadataByName[name] ?? {
         type: "string" as const,
         sensitive: false,
@@ -6239,13 +6308,13 @@ function buildWorkflowVariables(nodes: WorkflowEditorNode[], metadataByName: Rec
         name,
         sourceNodeId: node.id,
         sourceNodeName: node.data.label,
-        type: metadata.type,
+        type: inputFields.find((field) => field.variable === name)?.fieldType === "file" ? "file" : metadata.type,
         sensitive: metadata.sensitive,
         deliverable: metadata.deliverable,
         description: metadata.description,
       };
-    }),
-  );
+    });
+  });
 }
 
 function buildSystemRuntimeVariables(metadataByName: Record<string, WorkflowVariableTemplate> = {}): WorkflowVariable[] {

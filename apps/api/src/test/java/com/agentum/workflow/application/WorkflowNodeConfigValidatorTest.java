@@ -277,6 +277,41 @@ class WorkflowNodeConfigValidatorTest {
     }
 
     @Test
+    void shouldAcceptAttachmentInputFieldWithLimitsAndExtensionWhitelist() {
+        WorkflowDraftApi.WorkflowNodeRow node = new WorkflowDraftApi.WorkflowNodeRow(
+            "input_1", "user_input", "材料输入", 0, 0, List.of("starter"), List.of("materials"),
+            Map.of("inputFields", List.of(Map.of(
+                "id", "field_1", "label", "附件材料", "variable", "materials", "fieldType", "file",
+                "allowedExtensions", List.of("pdf", "docx", "xlsx"), "maxFiles", 5, "maxFileSizeMb", 20,
+                "recognitionEnabled", true, "recognitionRequired", true
+            )))
+        );
+
+        List<WorkflowDraftApi.WorkflowValidationIssue> issues = validator().validateCapabilityReferences(TENANT_ID, USER_ID, List.of(node));
+
+        assertThat(issues).isEmpty();
+    }
+
+    @Test
+    void shouldRejectAttachmentInputFieldWithoutValidLimitsAndExtensions() {
+        WorkflowDraftApi.WorkflowNodeRow node = new WorkflowDraftApi.WorkflowNodeRow(
+            "input_1", "user_input", "材料输入", 0, 0, List.of("starter"), List.of("materials"),
+            Map.of("inputFields", List.of(Map.of(
+                "id", "field_1", "label", "附件材料", "variable", "materials", "fieldType", "file",
+                "allowedExtensions", List.of(".PDF?"), "maxFiles", 0, "maxFileSizeMb", 201
+            )))
+        );
+
+        List<WorkflowDraftApi.WorkflowValidationIssue> issues = validator().validateCapabilityReferences(TENANT_ID, USER_ID, List.of(node));
+
+        assertThat(issues).extracting(WorkflowDraftApi.WorkflowValidationIssue::code).containsExactlyInAnyOrder(
+            "WORKFLOW_VALIDATION_ATTACHMENT_EXTENSIONS_INVALID",
+            "WORKFLOW_VALIDATION_ATTACHMENT_MAX_FILES_INVALID",
+            "WORKFLOW_VALIDATION_ATTACHMENT_MAX_SIZE_INVALID"
+        );
+    }
+
+    @Test
     void shouldRejectClusterNodeWithoutAgents() {
         WorkflowDraftApi.WorkflowNodeRow node = new WorkflowDraftApi.WorkflowNodeRow(
             "cluster_1",

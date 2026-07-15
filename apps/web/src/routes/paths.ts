@@ -34,6 +34,7 @@ export const paths = {
     tenants: "/app/system/tenants",
     models: "/app/system/models",
     capabilities: "/app/system/capabilities",
+    settings: "/app/system/settings",
   },
   audit: {
     root: "/app/audit",

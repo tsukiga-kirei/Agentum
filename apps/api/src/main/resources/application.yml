@@ -1,4 +1,9 @@
 spring:
+  servlet:
+    multipart:
+      # 业务层仍会按系统配置和字段配置取更小值校验；此处只提供平台级硬上限。
+      max-file-size: 200MB
+      max-request-size: 220MB
   application:
     name: agentum-api
   profiles:
@@ -42,6 +47,8 @@ agentum:
       exchange: agentum.runtime
       queue-node-execute: runtime.node.execute
       queue-node-execute-dlq: runtime.node.execute.dlq
+      queue-attachment-parse: runtime.attachment.parse
+      queue-attachment-parse-dlq: runtime.attachment.parse.dlq
 
 management:
   endpoints:

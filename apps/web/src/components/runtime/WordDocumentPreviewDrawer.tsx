@@ -6,10 +6,11 @@ import "./DocumentPreviewDrawer.css";
 
 interface WordDocumentPreviewDrawerProps {
   open: boolean;
-  tenantId: string;
-  token: string;
-  recordId: string;
+  tenantId?: string;
+  token?: string;
+  recordId?: string;
   fileName: string;
+  loadDocument?: () => Promise<{ blob: Blob }>;
   downloading: boolean;
   onClose: () => void;
   onDownload: () => void;
@@ -21,6 +22,7 @@ export function WordDocumentPreviewDrawer({
   token,
   recordId,
   fileName,
+  loadDocument,
   downloading,
   onClose,
   onDownload,
@@ -31,7 +33,7 @@ export function WordDocumentPreviewDrawer({
   const [reloadVersion, setReloadVersion] = useState(0);
 
   useEffect(() => {
-    if (!open || !recordId) {
+    if (!open || (!recordId && !loadDocument)) {
       return;
     }
 
@@ -47,7 +49,7 @@ export function WordDocumentPreviewDrawer({
       try {
         // 预览与下载复用同一受保护接口，确保租户边界、文件过期状态和工作台权限始终由后端复核。
         const [{ blob }, { renderAsync }] = await Promise.all([
-          workbenchApi.downloadDeliveryRecord(tenantId, token, recordId),
+          loadDocument ? loadDocument() : workbenchApi.downloadDeliveryRecord(tenantId!, token!, recordId!),
           import("docx-preview"),
         ]);
         if (disposed || !containerRef.current) {
@@ -88,7 +90,7 @@ export function WordDocumentPreviewDrawer({
         container.innerHTML = "";
       }
     };
-  }, [open, recordId, reloadVersion, tenantId, token]);
+  }, [open, recordId, reloadVersion, tenantId, token, loadDocument]);
 
   return (
     <Drawer

@@ -1,5 +1,37 @@
 import type { PageResponse } from "./organization";
 
+export type AttachmentRecognitionSettings = {
+  recognitionEnabled: boolean;
+  recognitionEngine: "local" | "mineru";
+  maxFileSizeMb: number;
+  maxFilesPerField: number;
+  maxExtractedChars: number;
+  retentionPolicy: "permanent" | "days";
+  retentionDays: number;
+  mineruSupportedExtensions: string[];
+  mineruEndpoint: string | null;
+  mineruApiKeyConfigured: boolean;
+  mineruBackend: string;
+  mineruParseMethod: "auto" | "txt" | "ocr";
+  mineruLanguage: string;
+  mineruEnableFormula: boolean;
+  mineruEnableTable: boolean;
+  mineruConnectTimeoutSeconds: number;
+  mineruReadTimeoutSeconds: number;
+  updatedAt: string;
+};
+
+export type UpdateAttachmentRecognitionSettingsRequest = Omit<AttachmentRecognitionSettings, "mineruApiKeyConfigured" | "updatedAt"> & {
+  mineruApiKey?: string;
+  clearMineruApiKey: boolean;
+};
+
+export type AttachmentRecognitionTestResult = {
+  status: string;
+  summary: string;
+  latencyMs: number;
+};
+
 export type SystemSummary = {
   tenantTotal: number;
   tenantActive: number;

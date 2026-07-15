@@ -61,15 +61,16 @@ public class ExcelDeliveryService {
         ExcelWorkbookRenderResult workbook = renderer.render(sheets);
         enforceMaxFileSize(capability, workbook.bytes().length, tenantId, operatorUserId, recordId);
         DocumentDeliveryArtifact artifact = storage.store(tenantId, recordId, fileName, ExcelWorkbookRenderer.XLSX_CONTENT_TYPE, workbook.bytes());
-        int retentionDays = retentionDays(capability.getConfig());
+        DeliveryFileRetention retention = DeliveryFileRetention.from(capability.getConfig(), clock.instant());
         log.info(
-            "Excel 工作簿交付已生成 tenantId={} userId={} recordId={} fileName={} sheetCount={} sizeBytes={} requestId={}",
+            "Excel 工作簿交付已生成 tenantId={} userId={} recordId={} fileName={} sheetCount={} sizeBytes={} retentionPolicy={} requestId={}",
             tenantId,
             operatorUserId,
             recordId,
             artifact.fileName(),
             workbook.sheetCount(),
             artifact.sizeBytes(),
+            retention.policy(),
             RequestIds.current()
         );
         Map<String, Object> result = new LinkedHashMap<>();
@@ -84,8 +85,7 @@ public class ExcelDeliveryService {
         result.put("warningCount", workbook.warnings().size());
         result.put("storageProvider", "minio");
         result.put("storageKey", artifact.storageKey());
-        result.put("retentionDays", retentionDays);
-        result.put("expiresAt", clock.instant().plusSeconds(retentionDays * 86_400L).toString());
+        retention.writeTo(result);
         result.put("downloadUrl", "/api/tenants/" + tenantId + "/delivery-records/" + recordId + "/download");
         return result;
     }
@@ -145,10 +145,6 @@ public class ExcelDeliveryService {
             RequestIds.current()
         );
         throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "DELIVERY_EXCEL_FILE_TOO_LARGE", "Excel 工作簿超过系统配置的最大文件大小");
-    }
-
-    private int retentionDays(Map<String, Object> config) {
-        return parsePositiveInt(config == null ? null : config.get("retentionDays"), 180, 1, 3650);
     }
 
     private int parsePositiveInt(Object value, int fallback, int min, int max) {

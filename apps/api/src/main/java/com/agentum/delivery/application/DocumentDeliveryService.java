@@ -89,14 +89,15 @@ public class DocumentDeliveryService {
         byte[] bytes = renderer.render(markdown, style);
         enforceMaxFileSize(capability, bytes.length, tenantId, operatorUserId, recordId);
         DocumentDeliveryArtifact artifact = storage.store(tenantId, recordId, fileName, bytes);
-        int retentionDays = retentionDays(capability.getConfig());
+        DeliveryFileRetention retention = DeliveryFileRetention.from(capability.getConfig(), clock.instant());
         log.info(
-            "Word 文档交付已生成 tenantId={} userId={} recordId={} fileName={} sizeBytes={} requestId={}",
+            "Word 文档交付已生成 tenantId={} userId={} recordId={} fileName={} sizeBytes={} retentionPolicy={} requestId={}",
             tenantId,
             operatorUserId,
             recordId,
             artifact.fileName(),
             artifact.sizeBytes(),
+            retention.policy(),
             RequestIds.current()
         );
         Map<String, Object> result = new LinkedHashMap<>();
@@ -108,8 +109,7 @@ public class DocumentDeliveryService {
         result.put("sizeBytes", artifact.sizeBytes());
         result.put("storageProvider", "minio");
         result.put("storageKey", artifact.storageKey());
-        result.put("retentionDays", retentionDays);
-        result.put("expiresAt", clock.instant().plusSeconds(retentionDays * 86_400L).toString());
+        retention.writeTo(result);
         result.put("downloadUrl", "/api/tenants/" + tenantId + "/delivery-records/" + recordId + "/download");
         result.put("style", style.toMap());
         return result;
@@ -312,10 +312,6 @@ public class DocumentDeliveryService {
 
     private int maxFileSizeMb(Map<String, Object> config) {
         return readInt(config == null ? null : config.get("maxFileSizeMb"), 20, 1, 200);
-    }
-
-    private int retentionDays(Map<String, Object> config) {
-        return readInt(config == null ? null : config.get("retentionDays"), 180, 1, 3650);
     }
 
     private int readInt(Object value, int fallback, int min, int max) {

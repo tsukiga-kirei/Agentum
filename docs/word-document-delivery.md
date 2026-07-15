@@ -14,7 +14,7 @@
 
 Word 文档交付沿用系统能力池模型：
 
-- 系统管理员在系统管理中创建或启用 `Word 文档交付`，配置默认中西文字体、正文/各级标题/表格数字字体、字号、正文对齐、行距、表格格式（含单元格垂直对齐与上下内边距）、首行缩进、段前段后间距及单位、各级标题加粗、四五级标题、页边距、首行标题对齐、文件大小和保留天数策略。逐段个性化规则为节点级，系统级不配置。
+- 系统管理员在系统管理中创建或启用 `Word 文档交付`，配置默认中西文字体、正文/各级标题/表格数字字体、字号、正文对齐、行距、表格格式（含单元格垂直对齐与上下内边距）、首行缩进、段前段后间距及单位、各级标题加粗、四五级标题、页边距、首行标题对齐、文件大小和文件保存策略。文件可选择永久保存或按天保存；逐段个性化规则为节点级，系统级不配置。
 - 系统管理员把该能力加入租户可用能力池。
 - 租户管理员在租户管理中把能力分配给用户、部门或角色。
 - 流程设计者在交付节点选择该能力后，配置交付正文模板、文件名模板和节点级样式。节点级样式会随流程草稿和发布版本保存，运行时按快照生成文件。
@@ -111,7 +111,7 @@ Word 文档交付沿用系统能力池模型：
 
 `paragraphRules` 用于对指定段落单独排版，按非表格段落 1 基序号计数（标题、正文、列表项、引用均计入，表格与代码块不计入）。`targetType` 可选 `index`（配合 `targetIndex` 指定段号）、`first`、`second`、`third`、`last`、`secondLast`。每条规则可覆盖对齐、首行缩进（`firstLineIndentMode`：`none`/`chars`/`cm`）、中西文与数字字体、字号、段前段后（`spacingUnit` 为空表示不覆盖），并可通过 `blankLinesBefore`/`blankLinesAfter` 在段落前后插入空行拉开间距；留空字段表示继承全局样式。
 
-系统级 `maxFileSizeMb` 会在运行态 docx 生成后校验文件大小，超过限制时交付失败并记录错误；`retentionDays` 会写入交付结果的 `expiresAt`，后台清理任务按该时间删除 MinIO 对象并把交付记录标记为 `expired`。
+系统级 `maxFileSizeMb` 会在运行态 docx 生成后校验文件大小，超过限制时交付失败并记录错误。`retentionPolicy=permanent` 时交付结果不写入 `expiresAt`，文件不会进入到期清理；`retentionPolicy=days` 时按 `retentionDays` 计算 `expiresAt`，后台清理任务按该时间删除 MinIO 对象并把交付记录标记为 `expired`。历史能力未配置策略时继续按原有保留天数执行。
 
 ## 设计态预览接口
 
@@ -159,6 +159,7 @@ Content-Type: application/json
     "fileName": "交付文档.docx",
     "storageProvider": "minio",
     "storageKey": "deliveries/documents/{tenantId}/{recordId}/交付文档.docx",
+    "retentionPolicy": "days",
     "retentionDays": 180,
     "expiresAt": "2026-12-12T02:00:00Z",
     "downloadUrl": "/api/tenants/{tenantId}/delivery-records/{recordId}/download"

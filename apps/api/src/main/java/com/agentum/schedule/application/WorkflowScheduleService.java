@@ -38,6 +38,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -546,7 +547,9 @@ public class WorkflowScheduleService {
     }
 
     private void validateRequiredInputs(WorkflowVersionEntity version, Map<String, Object> inputPayload) {
-        for (WorkflowScheduleApi.InputFieldRow field : extractInputFields(readSnapshot(version))) {
+        List<WorkflowScheduleApi.InputFieldRow> fields = extractInputFields(readSnapshot(version));
+        validateScheduleInputCompatibility(fields);
+        for (WorkflowScheduleApi.InputFieldRow field : fields) {
             Object value = inputPayload.get(field.variable());
             if (value instanceof Map<?, ?> binding) {
                 String bindingType = stringValue(binding.get(WorkflowInputDefaultValueResolver.SCHEDULE_VALUE_TYPE_KEY));
@@ -571,6 +574,23 @@ public class WorkflowScheduleService {
                 throw new ApiException(HttpStatus.BAD_REQUEST, "SCHEDULE_INPUT_OPTION_INVALID", "输入字段「" + field.label() + "」的选项无效");
             }
         }
+    }
+
+    /**
+     * 定时触发没有人工上传上下文，附件也绑定具体运行和输入节点，不能跨运行复用临时附件标识。
+     * 因此无论附件字段是否必填，只要发布版本包含附件字段，就不允许创建或更新定时任务。
+     */
+    static void validateScheduleInputCompatibility(List<WorkflowScheduleApi.InputFieldRow> fields) {
+        fields.stream()
+            .filter(field -> "file".equals(field.fieldType()))
+            .findFirst()
+            .ifPresent(field -> {
+                throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "SCHEDULE_ATTACHMENT_INPUT_UNSUPPORTED",
+                    "流程包含附件字段「" + field.label() + "」，暂不支持创建定时任务，请改为人工发起"
+                );
+            });
     }
 
     private VersionSnapshot readSnapshot(WorkflowVersionEntity version) {

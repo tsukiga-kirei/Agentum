@@ -56,6 +56,9 @@ import type {
   UpdateTenantStatusRequest,
   UpdateTenantAdminProfileRequest,
   UpdateTenantAdminStatusRequest,
+  AttachmentRecognitionSettings,
+  AttachmentRecognitionTestResult,
+  UpdateAttachmentRecognitionSettingsRequest,
 } from "../types/system";
 import type {
   CreateWorkflowDraftRequest,
@@ -87,6 +90,8 @@ import type {
   WorkflowSchedulePage,
   WorkbenchSummary,
   WorkbenchTaskRunPage,
+  InputAttachmentList,
+  InputAttachmentRow,
 } from "../types/workbench";
 
 type ApiEnvelope<T> = {
@@ -184,23 +189,29 @@ async function resolveAccessTokenAfterUnauthorized(rejectedToken: string): Promi
 
 async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const headers = new Headers(options.headers);
+  const isFormData = options.body instanceof FormData;
 
   if (options.token) {
     headers.set("Authorization", `Bearer ${options.token}`);
   }
 
-  if (options.body !== undefined) {
+  if (options.body !== undefined && !isFormData) {
     headers.set("Content-Type", "application/json");
   }
 
   let response: Response;
+  const requestBody: BodyInit | undefined = options.body === undefined
+    ? undefined
+    : isFormData
+      ? options.body as FormData
+      : JSON.stringify(options.body);
 
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...options,
       credentials: "include",
       headers,
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      body: requestBody,
     });
   } catch (error) {
     // API client 是前端统一出入口，诊断日志只记录路径和错误摘要，禁止打印 body、Authorization 或 token。
@@ -476,6 +487,12 @@ export const organizationApi = {
 };
 
 export const systemApi = {
+  getAttachmentRecognitionSettings: (token: string) =>
+    apiRequest<AttachmentRecognitionSettings>("/api/system/settings/attachment-recognition", { token }),
+  updateAttachmentRecognitionSettings: (token: string, body: UpdateAttachmentRecognitionSettingsRequest) =>
+    apiRequest<AttachmentRecognitionSettings>("/api/system/settings/attachment-recognition", { method: "PUT", token, body }),
+  testAttachmentRecognitionConnection: (token: string, body: { mineruEndpoint: string; mineruApiKey?: string; connectTimeoutSeconds: number }) =>
+    apiRequest<AttachmentRecognitionTestResult>("/api/system/settings/attachment-recognition/test-connection", { method: "POST", token, body }),
   summary: (token: string) => apiRequest<SystemSummary>("/api/system/summary", { token }),
   listTenants: (token: string, page = 1, size = 10, sort = "createdAt,desc") =>
     apiRequest<SystemTenantPage>(`/api/system/tenants?page=${page}&size=${size}&sort=${encodeURIComponent(sort)}`, { token }),
@@ -580,6 +597,24 @@ export const notificationApi = {
 };
 
 export const workbenchApi = {
+  uploadInputAttachment: (tenantId: string, token: string, runId: string, nodeRunId: string, fieldId: string, file: File) => {
+    const body = new FormData();
+    body.append("fieldId", fieldId);
+    body.append("file", file);
+    return apiRequest<InputAttachmentRow>(`/api/tenants/${tenantId}/workbench/runs/${runId}/nodes/${nodeRunId}/attachments`, {
+      method: "POST",
+      token,
+      body,
+    });
+  },
+  listInputAttachments: (tenantId: string, token: string, runId: string, nodeRunId: string, fieldId: string) =>
+    apiRequest<InputAttachmentList>(`/api/tenants/${tenantId}/workbench/runs/${runId}/nodes/${nodeRunId}/attachments?fieldId=${encodeURIComponent(fieldId)}`, { token }),
+  deleteInputAttachment: (tenantId: string, token: string, runId: string, nodeRunId: string, attachmentId: string) =>
+    apiRequest<void>(`/api/tenants/${tenantId}/workbench/runs/${runId}/nodes/${nodeRunId}/attachments/${attachmentId}`, { method: "DELETE", token }),
+  downloadInputAttachment: (tenantId: string, token: string, runId: string, nodeRunId: string, attachmentId: string) =>
+    apiFileRequest(`/api/tenants/${tenantId}/workbench/runs/${runId}/nodes/${nodeRunId}/attachments/${attachmentId}/content`, { token }),
+  previewInputAttachmentContent: (tenantId: string, token: string, runId: string, nodeRunId: string, attachmentId: string) =>
+    apiFileRequest(`/api/tenants/${tenantId}/workbench/runs/${runId}/nodes/${nodeRunId}/attachments/${attachmentId}/parsed-preview`, { token }),
   // 业务工作台概览：返回真实统计、待办和最近任务运行。
   summary: (tenantId: string, token: string) =>
     apiRequest<WorkbenchSummary>(`/api/tenants/${tenantId}/workbench/summary`, { token }),

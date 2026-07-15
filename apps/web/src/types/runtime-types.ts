@@ -397,6 +397,16 @@ export type InputFieldConfig = {
   dateGranularity?: "day" | "month" | "year";
   /** 系统动态值在人工作业中是否允许修改，默认允许。 */
   allowManualOverride?: boolean;
+  /** 附件字段允许的扩展名，不含点号。 */
+  allowedExtensions?: string[];
+  /** 单字段最多上传文件数。 */
+  maxFiles?: number;
+  /** 单个附件大小上限，单位 MB。 */
+  maxFileSizeMb?: number;
+  /** 是否对附件正文执行系统配置的识别方式。 */
+  recognitionEnabled?: boolean;
+  /** 是否要求识别成功后才能提交输入节点。 */
+  recognitionRequired?: boolean;
 };
 
 /** 输入表单提交的 payload 结构 */

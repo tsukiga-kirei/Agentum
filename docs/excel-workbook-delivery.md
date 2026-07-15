@@ -8,7 +8,7 @@
 - 输入内容：交付节点的 `excelSheets[].bodyTemplate`。每个 Sheet 都可以使用 `{{变量名}}` 引用上游模型输出或运行变量。
 - 输出结果：`.xlsx` 文件、`delivery_records` 成功记录、运行节点输出中的 `deliveryRecordId` 和 `deliveryResult.downloadUrl`。
 - 当前解析范围：Markdown 表格、fenced `csv` / `tsv` / `json` 代码块、编号列表、项目符号列表、键值块和普通文本。
-- 当前存储：复用 MinIO/S3 兼容对象存储。设计态暂不提供 Excel 预览接口，正式运行交付节点时才会持久化文件。
+- 当前存储：复用 MinIO/S3 兼容对象存储。正式运行交付节点时才会持久化文件；系统能力可选择永久保存或按天保存，永久保存不生成到期时间，按天保存由清理任务删除到期对象。
 
 ## 设计心智
 
@@ -52,6 +52,8 @@ Sheet 模板
 | `documentKind` | `excel` |
 | `fileNameTemplate` | 文件名模板，默认 `交付表格-{{runNumber}}.xlsx` |
 | `excelSheets` | Sheet 模板列表 |
+
+系统能力配置中的 `retentionPolicy` 可选 `permanent` 或 `days`。选择 `days` 时，`retentionDays` 范围为 1～3650 天；历史能力未配置策略时继续按原有保留天数执行。
 
 示例：
 

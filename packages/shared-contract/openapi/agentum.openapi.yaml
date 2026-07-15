@@ -1218,6 +1218,104 @@ paths:
                     properties:
                       data:
                         $ref: "#/components/schemas/WorkbenchRunDetail"
+  /api/tenants/{tenantId}/workbench/runs/{runId}/nodes/{nodeRunId}/attachments:
+    get:
+      summary: 查询输入节点指定字段的附件
+      tags: [Workbench]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: tenantId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: runId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: nodeRunId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: fieldId, in: query, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: 附件列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/InputAttachmentList" }
+    post:
+      summary: 上传输入节点附件
+      description: 原件保存到对象存储；启用识别时异步进入简单识别或 MinerU 复杂识别队列。
+      tags: [Workbench]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: tenantId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: runId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: nodeRunId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                fieldId: { type: string }
+                file: { type: string, format: binary }
+              required: [fieldId, file]
+      responses:
+        "200":
+          description: 已保存附件
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/InputAttachmentRow" }
+        "413": { description: 附件超过系统或字段大小上限 }
+        "415": { description: 扩展名不在允许范围 }
+  /api/tenants/{tenantId}/workbench/runs/{runId}/nodes/{nodeRunId}/attachments/{attachmentId}:
+    delete:
+      summary: 删除尚未提交的输入附件
+      tags: [Workbench]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: tenantId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: runId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: nodeRunId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: attachmentId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: 删除成功 }
+  /api/tenants/{tenantId}/workbench/runs/{runId}/nodes/{nodeRunId}/attachments/{attachmentId}/content:
+    get:
+      summary: 下载或前端预览输入附件原件
+      tags: [Workbench]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: tenantId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: runId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: nodeRunId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: attachmentId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: 附件原始字节流；需按 Content-Type 在前端选择对应预览器
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+  /api/tenants/{tenantId}/workbench/runs/{runId}/nodes/{nodeRunId}/attachments/{attachmentId}/parsed-preview:
+    get:
+      summary: 获取附件识别正文预览
+      tags: [Workbench]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: tenantId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: runId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: nodeRunId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: attachmentId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: 识别后的 Markdown 正文
+          content:
+            text/markdown:
+              schema: { type: string }
+        "409": { description: 识别尚未完成或无识别正文 }
   /api/tenants/{tenantId}/workbench/todos/{todoId}/complete:
     post:
       summary: 处理并完成业务待办
@@ -2749,6 +2847,65 @@ paths:
                         $ref: "#/components/schemas/TenantOrgRole"
         "404":
           description: 租户内角色不存在
+  /api/system/settings/attachment-recognition:
+    get:
+      summary: 获取附件识别系统配置
+      tags: [System]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: 已脱敏的附件识别配置
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/AttachmentRecognitionSettings" }
+    put:
+      summary: 更新附件识别系统配置
+      description: 复杂识别模式下，白名单中的所有附件均发送给 MinerU，不做本地预解析或失败回退。
+      tags: [System]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateAttachmentRecognitionSettingsRequest" }
+      responses:
+        "200":
+          description: 更新后的脱敏配置
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/AttachmentRecognitionSettings" }
+  /api/system/settings/attachment-recognition/test-connection:
+    post:
+      summary: 测试 MinerU 健康检查地址
+      tags: [System]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AttachmentRecognitionTestRequest" }
+      responses:
+        "200":
+          description: 连接测试结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/AttachmentRecognitionTestResult" }
+        "502": { description: MinerU 服务不可达或健康检查失败 }
   /api/system/summary:
     get:
       summary: 系统管理概览统计
@@ -4504,6 +4661,70 @@ components:
         - id
         - code
         - name
+    AttachmentRecognitionSettings:
+      type: object
+      properties:
+        recognitionEnabled: { type: boolean }
+        recognitionEngine: { type: string, enum: [local, mineru] }
+        maxFileSizeMb: { type: integer, minimum: 1, maximum: 200 }
+        maxFilesPerField: { type: integer, minimum: 1, maximum: 20 }
+        maxExtractedChars: { type: integer, minimum: 1000, maximum: 2000000 }
+        retentionPolicy: { type: string, enum: [permanent, days], default: permanent }
+        retentionDays: { type: integer, minimum: 1, maximum: 3650 }
+        mineruSupportedExtensions:
+          type: array
+          items: { type: string }
+        mineruEndpoint: { type: [string, "null"] }
+        mineruApiKeyConfigured: { type: boolean }
+        mineruBackend: { type: string }
+        mineruParseMethod: { type: string, enum: [auto, txt, ocr] }
+        mineruLanguage: { type: string }
+        mineruEnableFormula: { type: boolean }
+        mineruEnableTable: { type: boolean }
+        mineruConnectTimeoutSeconds: { type: integer }
+        mineruReadTimeoutSeconds: { type: integer }
+        updatedAt: { type: string, format: date-time }
+      required: [recognitionEnabled, recognitionEngine, maxFileSizeMb, maxFilesPerField, maxExtractedChars, retentionPolicy, retentionDays, mineruSupportedExtensions, mineruApiKeyConfigured, mineruBackend, mineruParseMethod, mineruLanguage, mineruEnableFormula, mineruEnableTable, mineruConnectTimeoutSeconds, mineruReadTimeoutSeconds, updatedAt]
+    UpdateAttachmentRecognitionSettingsRequest:
+      type: object
+      properties:
+        recognitionEnabled: { type: boolean }
+        recognitionEngine: { type: string, enum: [local, mineru] }
+        maxFileSizeMb: { type: integer, minimum: 1, maximum: 200 }
+        maxFilesPerField: { type: integer, minimum: 1, maximum: 20 }
+        maxExtractedChars: { type: integer, minimum: 1000, maximum: 2000000 }
+        retentionPolicy: { type: string, enum: [permanent, days], default: permanent }
+        retentionDays: { type: integer, minimum: 1, maximum: 3650 }
+        mineruSupportedExtensions:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { type: string }
+        mineruEndpoint: { type: [string, "null"] }
+        mineruApiKey: { type: string, writeOnly: true }
+        clearMineruApiKey: { type: boolean }
+        mineruBackend: { type: string }
+        mineruParseMethod: { type: string, enum: [auto, txt, ocr] }
+        mineruLanguage: { type: string }
+        mineruEnableFormula: { type: boolean }
+        mineruEnableTable: { type: boolean }
+        mineruConnectTimeoutSeconds: { type: integer, minimum: 1, maximum: 120 }
+        mineruReadTimeoutSeconds: { type: integer, minimum: 10, maximum: 3600 }
+      required: [recognitionEnabled, recognitionEngine, maxFileSizeMb, maxFilesPerField, maxExtractedChars, retentionPolicy, retentionDays, mineruSupportedExtensions, clearMineruApiKey, mineruBackend, mineruParseMethod, mineruLanguage, mineruEnableFormula, mineruEnableTable, mineruConnectTimeoutSeconds, mineruReadTimeoutSeconds]
+    AttachmentRecognitionTestRequest:
+      type: object
+      properties:
+        mineruEndpoint: { type: string }
+        mineruApiKey: { type: string, writeOnly: true }
+        connectTimeoutSeconds: { type: integer, minimum: 1, maximum: 120 }
+      required: [mineruEndpoint, connectTimeoutSeconds]
+    AttachmentRecognitionTestResult:
+      type: object
+      properties:
+        status: { type: string }
+        summary: { type: string }
+        latencyMs: { type: integer, format: int64 }
+      required: [status, summary, latencyMs]
     SystemSummary:
       type: object
       properties:
@@ -5113,6 +5334,34 @@ components:
         payload:
           type: object
           additionalProperties: true
+    InputAttachmentRow:
+      type: object
+      description: 输入节点附件元数据；不包含对象存储键和识别正文。
+      properties:
+        id: { type: string, format: uuid }
+        fieldId: { type: string }
+        variableKey: { type: string }
+        fileName: { type: string }
+        extension: { type: string }
+        contentType: { type: string }
+        sizeBytes: { type: integer, format: int64 }
+        recognitionEngine: { type: string, enum: [none, local, mineru] }
+        status: { type: string, enum: [queued, parsing, ready, failed, rejected] }
+        errorCode: { type: [string, "null"] }
+        errorMessage: { type: [string, "null"] }
+        parseResultId: { type: [string, "null"], format: uuid }
+        characterCount: { type: [integer, "null"] }
+        truncated: { type: [boolean, "null"] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      required: [id, fieldId, variableKey, fileName, extension, contentType, sizeBytes, recognitionEngine, status, createdAt, updatedAt]
+    InputAttachmentList:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/InputAttachmentRow" }
+      required: [items]
     NotificationUnreadCount:
       type: object
       properties:

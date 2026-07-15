@@ -1224,6 +1224,11 @@ public class SystemManagementService {
                     result.put("allowNodeStyleOverride", booleanValue(config.get("allowNodeStyleOverride")));
                 }
                 result.put("maxFileSizeMb", parsePositiveInt(config.get("maxFileSizeMb"), 20, 1, 200, "SYSTEM_DELIVERY_DOCUMENT_SIZE_INVALID", "交付文件最大大小需在 1 到 200 MB 之间"));
+                String retentionPolicy = firstNonBlank(stringValue(config.get("retentionPolicy")), "days");
+                if (!Set.of("permanent", "days").contains(retentionPolicy)) {
+                    throw new ApiException(HttpStatus.BAD_REQUEST, "SYSTEM_DELIVERY_DOCUMENT_RETENTION_POLICY_INVALID", "交付文件保存时间只能选择永久或按天保存");
+                }
+                result.put("retentionPolicy", retentionPolicy);
                 result.put("retentionDays", parsePositiveInt(config.get("retentionDays"), 180, 1, 3650, "SYSTEM_DELIVERY_DOCUMENT_RETENTION_INVALID", "交付文件保留天数需在 1 到 3650 之间"));
                 return result;
             }

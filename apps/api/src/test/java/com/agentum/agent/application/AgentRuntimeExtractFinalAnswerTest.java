@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
 import com.agentum.agent.infrastructure.ModelCallLogRepository;
+import com.agentum.attachment.application.AttachmentVariableContentResolver;
 import com.agentum.asset.infrastructure.TenantAssetCapabilityRepository;
 import com.agentum.mcp.application.McpRuntimeService;
 import com.agentum.shared.security.FieldEncryptionService;
@@ -35,7 +36,8 @@ class AgentRuntimeExtractFinalAnswerTest {
             Clock.systemUTC(),
             mock(RunCancellationGuard.class),
             new PromptContentResolver(mock(SystemCapabilityRepository.class), mock(TenantAssetCapabilityRepository.class)),
-            runtimeProperties()
+            runtimeProperties(),
+            mock(AttachmentVariableContentResolver.class)
         );
     }
 

@@ -1,5 +1,6 @@
 package com.agentum.agent.application;
 
+import com.agentum.attachment.application.AttachmentVariableContentResolver;
 import com.agentum.agent.domain.ModelCallLogEntity;
 import com.agentum.agent.infrastructure.ModelCallLogRepository;
 import com.agentum.asset.domain.TenantAssetCapabilityEntity;
@@ -55,6 +56,7 @@ public class AgentRuntimeService {
     private final RunCancellationGuard cancellationGuard;
     private final PromptContentResolver promptContentResolver;
     private final AgentRuntimeProperties runtimeProperties;
+    private final AttachmentVariableContentResolver attachmentVariableContentResolver;
 
     public AgentRuntimeService(
         TenantModelAssignmentRepository tenantModelAssignmentRepository,
@@ -69,7 +71,8 @@ public class AgentRuntimeService {
         Clock clock,
         RunCancellationGuard cancellationGuard,
         PromptContentResolver promptContentResolver,
-        AgentRuntimeProperties runtimeProperties
+        AgentRuntimeProperties runtimeProperties,
+        AttachmentVariableContentResolver attachmentVariableContentResolver
     ) {
         this.tenantModelAssignmentRepository = tenantModelAssignmentRepository;
         this.modelProviderRepository = modelProviderRepository;
@@ -84,6 +87,7 @@ public class AgentRuntimeService {
         this.cancellationGuard = cancellationGuard;
         this.promptContentResolver = promptContentResolver;
         this.runtimeProperties = runtimeProperties;
+        this.attachmentVariableContentResolver = attachmentVariableContentResolver;
     }
 
     public AgentRuntimeResult execute(AgentRuntimeRequest request) {
@@ -135,8 +139,8 @@ public class AgentRuntimeService {
         String userPrompt = promptContentResolver.resolveUserPrompt(request.run().getTenantId(), config);
         // 运行态只使用流程设计中的 system/user 提示词，并通过 {{变量名}} 替换上游变量；
         // Skill/MCP 通过 tools 声明暴露给模型，不再向提示词追加平台规则或整包 JSON 上下文。
-        String renderedSystemPrompt = renderTemplate(systemPrompt, request.variables(), request.toolOutputs());
-        String renderedUserPrompt = renderTemplate(userPrompt, request.variables(), request.toolOutputs());
+        String renderedSystemPrompt = renderTemplate(request.run().getTenantId(), systemPrompt, request.variables(), request.toolOutputs(), false);
+        String renderedUserPrompt = renderTemplate(request.run().getTenantId(), userPrompt, request.variables(), request.toolOutputs(), true);
 
         List<ModelChatClient.ChatMessage> messages = buildConversationMessages(
             config,
@@ -1015,13 +1019,22 @@ public class AgentRuntimeService {
         return fieldEncryptionService.decrypt(encryptedApiKey);
     }
 
-    private String renderTemplate(String template, Map<String, Object> variables, Map<String, Object> toolOutputs) {
+    private String renderTemplate(
+        UUID tenantId,
+        String template,
+        Map<String, Object> variables,
+        Map<String, Object> toolOutputs,
+        boolean includeAttachmentContent
+    ) {
         Matcher matcher = VARIABLE_PATTERN.matcher(template == null ? "" : template);
         StringBuilder result = new StringBuilder();
         while (matcher.find()) {
             String key = matcher.group(1);
             Object value = variables.containsKey(key) ? variables.get(key) : toolOutputs.get(key);
-            matcher.appendReplacement(result, Matcher.quoteReplacement(value == null ? "" : value.toString()));
+            matcher.appendReplacement(
+                result,
+                Matcher.quoteReplacement(attachmentVariableContentResolver.renderValue(tenantId, value, includeAttachmentContent))
+            );
         }
         matcher.appendTail(result);
         return result.toString();

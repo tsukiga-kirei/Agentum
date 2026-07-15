@@ -6,6 +6,7 @@ export const WORKFLOW_INPUT_FIELD_TYPE_OPTIONS: Array<{ value: WorkflowInputFiel
   { value: "text", label: "文本输入" },
   { value: "date", label: "日期" },
   { value: "select", label: "下拉选择" },
+  { value: "file", label: "附件" },
 ];
 
 export const WORKFLOW_SYSTEM_DEFAULT_VALUE_OPTIONS = [
@@ -37,7 +38,7 @@ export function normalizeInputFieldOptions(value: unknown, placeholder?: string)
 }
 
 export function normalizeInputField(field: InputFieldConfig): InputFieldConfig {
-  const fieldType: WorkflowInputFieldType = ["select", "date"].includes(field.fieldType ?? "")
+  const fieldType: WorkflowInputFieldType = ["select", "date", "file"].includes(field.fieldType ?? "")
     ? field.fieldType as WorkflowInputFieldType
     : "text";
   const placeholder = field.placeholder ?? (fieldType === "select" ? "请选择" : "请输入内容");
@@ -61,6 +62,15 @@ export function normalizeInputField(field: InputFieldConfig): InputFieldConfig {
     required: field.required !== false,
     fieldType,
     options: fieldType === "select" ? normalizeInputFieldOptions(field.options, placeholder) : undefined,
+    allowedExtensions: fieldType === "file"
+      ? Array.from(new Set((field.allowedExtensions ?? ["pdf", "docx", "xlsx", "txt"])
+        .map((value) => value.trim().toLowerCase().replace(/^\./, ""))
+        .filter(Boolean)))
+      : undefined,
+    maxFiles: fieldType === "file" ? Math.min(20, Math.max(1, field.maxFiles ?? 5)) : undefined,
+    maxFileSizeMb: fieldType === "file" ? Math.min(200, Math.max(1, field.maxFileSizeMb ?? 20)) : undefined,
+    recognitionEnabled: fieldType === "file" ? field.recognitionEnabled !== false : undefined,
+    recognitionRequired: fieldType === "file" ? field.recognitionRequired === true : undefined,
   };
 }
 
@@ -95,24 +105,33 @@ export function createInputField(
   variable?: string,
 ): InputFieldConfig {
   const isSelect = fieldType === "select";
+  const isFile = fieldType === "file";
 
   return normalizeInputField({
     id: `field_${Date.now().toString(36)}_${index}`,
     label: isSelect
       ? (index === 0 ? "下拉选项" : `下拉字段 ${index + 1}`)
+      : isFile
+        ? (index === 0 ? "附件材料" : `附件字段 ${index + 1}`)
       : (index === 0 ? "业务输入" : `输入字段 ${index + 1}`),
     variable: variable ?? `input_${index + 1}`,
-    placeholder: isSelect ? "请选择" : "请输入内容",
+    placeholder: isSelect ? "请选择" : isFile ? "请选择附件" : "请输入内容",
     defaultValue: "",
     required: true,
     fieldType,
     options: isSelect ? [createInputFieldOption(0)] : undefined,
+    allowedExtensions: isFile ? ["pdf", "docx", "xlsx", "txt"] : undefined,
+    maxFiles: isFile ? 5 : undefined,
+    maxFileSizeMb: isFile ? 20 : undefined,
+    recognitionEnabled: isFile ? true : undefined,
+    recognitionRequired: isFile ? true : undefined,
   });
 }
 
 export function getInputFieldTypeLabel(fieldType?: WorkflowInputFieldType): string {
   if (fieldType === "select") return "下拉框";
   if (fieldType === "date") return "日期框";
+  if (fieldType === "file") return "附件";
   return "文本框";
 }
 
@@ -144,6 +163,17 @@ export function validateInputFieldDraft(field: InputFieldConfig): string | null 
   const normalized = normalizeInputField(field);
   if (normalized.fieldType === "select" && (normalized.options?.length ?? 0) === 0) {
     return "下拉框至少需要配置一个有效选项（显示文本与选项值均不能为空）";
+  }
+  if (normalized.fieldType === "file") {
+    if ((normalized.allowedExtensions?.length ?? 0) === 0) {
+      return "附件字段至少需要配置一个允许的扩展名";
+    }
+    if (!normalized.maxFiles || normalized.maxFiles < 1 || normalized.maxFiles > 20) {
+      return "附件字段最大文件数必须在 1 到 20 之间";
+    }
+    if (!normalized.maxFileSizeMb || normalized.maxFileSizeMb < 1 || normalized.maxFileSizeMb > 200) {
+      return "附件字段单文件大小必须在 1 到 200 MB 之间";
+    }
   }
   return null;
 }

@@ -81,6 +81,27 @@ export type WorkbenchAvailableWorkflowPreview = {
   nodes: WorkbenchAvailableWorkflowNodeRow[];
 };
 
+export type InputAttachmentRow = {
+  id: string;
+  fieldId: string;
+  variableKey: string;
+  fileName: string;
+  extension: string;
+  contentType: string;
+  sizeBytes: number;
+  recognitionEngine: "none" | "local" | "mineru";
+  status: "queued" | "parsing" | "ready" | "failed" | "rejected";
+  errorCode: string | null;
+  errorMessage: string | null;
+  parseResultId: string | null;
+  characterCount: number | null;
+  truncated: boolean | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type InputAttachmentList = { items: InputAttachmentRow[] };
+
 export type WorkbenchAvailableWorkflowPage = PageResponse<WorkbenchAvailableWorkflowRow>;
 
 export type WorkbenchTaskRunRow = {

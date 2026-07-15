@@ -1,6 +1,7 @@
 package com.agentum.workbench.application;
 
 import com.agentum.agent.application.PromptContentResolver;
+import com.agentum.attachment.application.InputAttachmentService;
 import com.agentum.auth.application.CurrentUserPrincipal;
 import com.agentum.auth.domain.UserAccount;
 import com.agentum.auth.infrastructure.UserAccountRepository;
@@ -124,6 +125,7 @@ public class WorkbenchRuntimeService {
     private final RunExecutionLeaseService leaseService;
     private final TransactionTemplate transactionTemplate;
     private final WorkflowScheduleService workflowScheduleService;
+    private final InputAttachmentService inputAttachmentService;
 
     public WorkbenchRuntimeService(
         TenantRepository tenantRepository,
@@ -149,7 +151,8 @@ public class WorkbenchRuntimeService {
         PromptContentResolver promptContentResolver,
         RunExecutionLeaseService leaseService,
         PlatformTransactionManager transactionManager,
-        @Lazy WorkflowScheduleService workflowScheduleService
+        @Lazy WorkflowScheduleService workflowScheduleService,
+        InputAttachmentService inputAttachmentService
     ) {
         this.tenantRepository = tenantRepository;
         this.workflowDefinitionRepository = workflowDefinitionRepository;
@@ -175,6 +178,7 @@ public class WorkbenchRuntimeService {
         this.leaseService = leaseService;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.workflowScheduleService = workflowScheduleService;
+        this.inputAttachmentService = inputAttachmentService;
     }
 
     @Transactional(readOnly = true)
@@ -1730,11 +1734,17 @@ public class WorkbenchRuntimeService {
         WorkflowNodeRunEntity nodeRun = workflowNodeRunRepository.findByIdAndRunId(todo.getNodeRunId(), run.getId())
             .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_NODE_RUN_NOT_FOUND", "节点运行不存在"));
         Map<String, Object> submittedPayload = request == null || request.payload() == null ? Map.of() : request.payload();
-        Map<String, Object> requestPayload = WorkflowInputDefaultValueResolver.apply(
+        Map<String, Object> requestPayloadWithDefaults = WorkflowInputDefaultValueResolver.apply(
             nodeRun.getConfigSnapshot(),
             submittedPayload,
             run.getStartedAt() == null ? clock.instant() : run.getStartedAt(),
             false
+        );
+        Map<String, Object> requestPayload = inputAttachmentService.resolveSubmittedPayload(
+            tenantId,
+            principal,
+            nodeRun,
+            requestPayloadWithDefaults
         );
         validateRequiredInputFields(nodeRun, requestPayload);
         Instant now = clock.instant();
@@ -1798,7 +1808,11 @@ public class WorkbenchRuntimeService {
             }
             String variable = String.valueOf(field.get("variable") == null ? "" : field.get("variable")).trim();
             Object value = payload.get(variable);
-            if (variable.isBlank() || value == null || (value instanceof String text && text.isBlank())) {
+            if (variable.isBlank()
+                || value == null
+                || (value instanceof String text && text.isBlank())
+                || (value instanceof Collection<?> collection && collection.isEmpty())
+                || (value instanceof Map<?, ?> map && map.isEmpty())) {
                 String label = String.valueOf(field.get("label") == null ? variable : field.get("label")).trim();
                 throw new ApiException(
                     HttpStatus.BAD_REQUEST,

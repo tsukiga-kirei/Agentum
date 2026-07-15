@@ -33,9 +33,16 @@ public class RuntimeRabbitConfig {
             .deadLetterRoutingKey(rabbit.getQueueNodeExecuteDlq())
             .build();
         Queue dlq = QueueBuilder.durable(rabbit.getQueueNodeExecuteDlq()).build();
+        Queue attachmentQueue = QueueBuilder.durable(rabbit.getQueueAttachmentParse())
+            .deadLetterExchange(rabbit.getExchange())
+            .deadLetterRoutingKey(rabbit.getQueueAttachmentParseDlq())
+            .build();
+        Queue attachmentDlq = QueueBuilder.durable(rabbit.getQueueAttachmentParseDlq()).build();
         Binding executeBinding = BindingBuilder.bind(executeQueue).to(exchange).with(rabbit.getQueueNodeExecute());
         Binding dlqBinding = BindingBuilder.bind(dlq).to(exchange).with(rabbit.getQueueNodeExecuteDlq());
-        return new Declarables(exchange, executeQueue, dlq, executeBinding, dlqBinding);
+        Binding attachmentBinding = BindingBuilder.bind(attachmentQueue).to(exchange).with(rabbit.getQueueAttachmentParse());
+        Binding attachmentDlqBinding = BindingBuilder.bind(attachmentDlq).to(exchange).with(rabbit.getQueueAttachmentParseDlq());
+        return new Declarables(exchange, executeQueue, dlq, attachmentQueue, attachmentDlq, executeBinding, dlqBinding, attachmentBinding, attachmentDlqBinding);
     }
 
     @Bean

@@ -8,6 +8,7 @@ import com.agentum.system.infrastructure.SystemCapabilityRepository;
 import com.agentum.system.infrastructure.TenantCapabilityGrantRepository;
 import com.agentum.workflow.interfaces.WorkflowDraftApi;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -33,6 +34,7 @@ public class WorkflowNodeConfigValidator {
     private static final Set<String> INTENT_SELECTION_MODES = Set.of("single", "multiple");
     private static final Set<String> INTENT_FALLBACK_MODES = Set.of("fail", "agent", "fixed_reply");
     private static final Pattern TEMPLATE_VARIABLE_PATTERN = Pattern.compile("\\{\\{\\s*([a-zA-Z0-9_]+)\\s*}}");
+    private static final Pattern ATTACHMENT_EXTENSION_PATTERN = Pattern.compile("^[a-z0-9][a-z0-9_-]{0,19}$");
 
     private final SystemCapabilityRepository systemCapabilityRepository;
     private final TenantCapabilityGrantRepository tenantCapabilityGrantRepository;
@@ -364,7 +366,7 @@ public class WorkflowNodeConfigValidator {
     ) {
         String fieldType = rawString(field.get("fieldType"));
         String normalizedFieldType = fieldType.isBlank() ? "text" : fieldType;
-        if (!Set.of("text", "date", "select").contains(normalizedFieldType)) {
+        if (!Set.of("text", "date", "select", "file").contains(normalizedFieldType)) {
             issues.add(issue("WORKFLOW_VALIDATION_INPUT_FIELD_TYPE_INVALID", "节点[" + node.name() + "]存在不支持的输入字段类型", node));
             return;
         }
@@ -380,6 +382,10 @@ public class WorkflowNodeConfigValidator {
             if (!validRule || !"date".equals(normalizedFieldType)) {
                 issues.add(issue("WORKFLOW_VALIDATION_INPUT_SYSTEM_DEFAULT_INVALID", "节点[" + node.name() + "]的系统日期默认值与字段类型不匹配", node));
             }
+        }
+        if ("file".equals(normalizedFieldType)) {
+            validateAttachmentInputField(field, node, issues);
+            return;
         }
         if (!"select".equals(fieldType)) {
             return;
@@ -399,6 +405,46 @@ public class WorkflowNodeConfigValidator {
             issues.add(issue(
                 "WORKFLOW_VALIDATION_INPUT_FIELD_OPTIONS_REQUIRED",
                 "节点[" + node.name() + "]的下拉字段「" + fieldLabel + "」至少需要配置一个有效选项",
+                node
+            ));
+        }
+    }
+
+    private void validateAttachmentInputField(
+        Map<String, Object> field,
+        WorkflowDraftApi.WorkflowNodeRow node,
+        List<WorkflowDraftApi.WorkflowValidationIssue> issues
+    ) {
+        String fieldLabel = firstNonBlank(rawString(field.get("label")), rawString(field.get("variable")));
+        Object rawExtensions = field.get("allowedExtensions");
+        List<String> extensions = rawExtensions instanceof Collection<?> values
+            ? values.stream()
+                .map(WorkflowNodeConfigValidator::rawString)
+                .map(value -> value.replaceFirst("^\\.", "").toLowerCase(java.util.Locale.ROOT))
+                .filter(value -> !value.isBlank())
+                .distinct()
+                .toList()
+            : List.of();
+        if (extensions.isEmpty() || extensions.stream().anyMatch(value -> !ATTACHMENT_EXTENSION_PATTERN.matcher(value).matches())) {
+            issues.add(issue(
+                "WORKFLOW_VALIDATION_ATTACHMENT_EXTENSIONS_INVALID",
+                "节点[" + node.name() + "]的附件字段「" + fieldLabel + "」必须配置有效的扩展名白名单",
+                node
+            ));
+        }
+        int maxFiles = parsePositiveInteger(field.get("maxFiles"));
+        if (maxFiles < 1 || maxFiles > 20) {
+            issues.add(issue(
+                "WORKFLOW_VALIDATION_ATTACHMENT_MAX_FILES_INVALID",
+                "节点[" + node.name() + "]的附件字段「" + fieldLabel + "」最大文件数必须在 1 到 20 之间",
+                node
+            ));
+        }
+        int maxFileSizeMb = parsePositiveInteger(field.get("maxFileSizeMb"));
+        if (maxFileSizeMb < 1 || maxFileSizeMb > 200) {
+            issues.add(issue(
+                "WORKFLOW_VALIDATION_ATTACHMENT_MAX_SIZE_INVALID",
+                "节点[" + node.name() + "]的附件字段「" + fieldLabel + "」单文件大小必须在 1 到 200 MB 之间",
                 node
             ));
         }

@@ -7,10 +7,11 @@ import "./DocumentPreviewDrawer.css";
 
 interface ExcelWorkbookPreviewDrawerProps {
   open: boolean;
-  tenantId: string;
-  token: string;
-  recordId: string;
+  tenantId?: string;
+  token?: string;
+  recordId?: string;
   fileName: string;
+  loadDocument?: () => Promise<{ blob: Blob }>;
   downloading: boolean;
   onClose: () => void;
   onDownload: () => void;
@@ -56,6 +57,7 @@ export function ExcelWorkbookPreviewDrawer({
   token,
   recordId,
   fileName,
+  loadDocument,
   downloading,
   onClose,
   onDownload,
@@ -67,7 +69,7 @@ export function ExcelWorkbookPreviewDrawer({
   const [activeSheetKey, setActiveSheetKey] = useState("");
 
   useEffect(() => {
-    if (!open || !recordId) {
+    if (!open || (!recordId && !loadDocument)) {
       return;
     }
 
@@ -81,7 +83,7 @@ export function ExcelWorkbookPreviewDrawer({
       try {
         // 预览与下载复用同一受保护接口，确保租户边界、文件过期状态和工作台权限始终由后端复核。
         const [{ blob }, XLSX] = await Promise.all([
-          workbenchApi.downloadDeliveryRecord(tenantId, token, recordId),
+          loadDocument ? loadDocument() : workbenchApi.downloadDeliveryRecord(tenantId!, token!, recordId!),
           import("xlsx"),
         ]);
         if (disposed) {
@@ -124,7 +126,7 @@ export function ExcelWorkbookPreviewDrawer({
     return () => {
       disposed = true;
     };
-  }, [open, recordId, reloadVersion, tenantId, token]);
+  }, [open, recordId, reloadVersion, tenantId, token, loadDocument]);
 
   const tabItems = useMemo(
     () => sheets.map((sheet) => ({

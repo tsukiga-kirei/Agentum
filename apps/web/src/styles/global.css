@@ -4035,6 +4035,43 @@ textarea:focus-visible {
   max-width: 100%;
 }
 
+.sys-section-card {
+  overflow: hidden;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-xl, 16px);
+  background: var(--color-bg-card);
+}
+
+.sys-section-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--color-border-light);
+  padding: 18px 20px;
+}
+
+.sys-section-card-header h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.sys-section-card-header p {
+  margin: 5px 0 0;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.sys-section-card-body {
+  padding: 20px;
+}
+
 /* 自定义按钮（替代 Ant Button，与 Agentum 风格统一） */
 .sys-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;

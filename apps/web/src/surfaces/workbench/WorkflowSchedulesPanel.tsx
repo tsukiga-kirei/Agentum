@@ -151,6 +151,10 @@ export function WorkflowSchedulesPanel() {
     })),
     [workflows],
   );
+  const attachmentInputField = useMemo(
+    () => inputFields.find((field) => field.fieldType === "file"),
+    [inputFields],
+  );
 
   const loadSchedules = useCallback(async () => {
     if (!tenantId || !token) {
@@ -337,6 +341,10 @@ export function WorkflowSchedulesPanel() {
     }
     if (!form.name.trim()) {
       messageApi.warning("请输入定时任务名称");
+      return;
+    }
+    if (attachmentInputField) {
+      messageApi.warning(`流程包含附件字段「${attachmentInputField.label}」，暂不支持创建定时任务，请改为人工发起`);
       return;
     }
     const missingField = inputFields.find((field) =>
@@ -636,6 +644,11 @@ export function WorkflowSchedulesPanel() {
             <div className="sys-config-group">
               <div className="sys-config-group-title">输入节点运行值</div>
               <p className="schedule-input-config-hint">已带出流程预设，可按当前定时任务调整；动态变量会在每次触发时重新计算。</p>
+              {attachmentInputField ? (
+                <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-6 text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-400">
+                  该流程包含附件字段，定时触发无法提供人工上传上下文，因此不能创建定时任务。请改为从工作台人工发起流程。
+                </div>
+              ) : null}
               {inputFields.map((field) => (
                 <div className="sys-field" key={`${field.nodeId}-${field.variable}`}>
                   <label className={`sys-field-label ${field.required ? "sys-field-label--required" : ""}`}>
@@ -712,7 +725,7 @@ export function WorkflowSchedulesPanel() {
             取消
           </button>
           <div className="sys-drawer-footer-right">
-            <button type="button" className="sys-btn sys-btn--primary" disabled={submitting} onClick={() => void submitSchedule()}>
+            <button type="button" className="sys-btn sys-btn--primary" disabled={submitting || Boolean(attachmentInputField)} onClick={() => void submitSchedule()}>
               {submitting ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <CalendarClock size={16} aria-hidden="true" />}
               保存定时任务
             </button>
@@ -732,6 +745,14 @@ function ScheduleInputFieldControl({
   value: unknown;
   onChange: (value: unknown) => void;
 }) {
+  if (field.fieldType === "file") {
+    return (
+      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-6 text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-400">
+        附件绑定具体流程运行和输入节点，不能由定时任务上传或跨运行复用，因此该流程只能人工发起。
+      </div>
+    );
+  }
+
   if (field.fieldType === "select") {
     const selectedValue = readScheduleTextValue(value);
     return (

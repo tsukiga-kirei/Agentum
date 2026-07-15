@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 
 import com.agentum.agent.domain.ModelCallLogEntity;
 import com.agentum.agent.infrastructure.ModelCallLogRepository;
+import com.agentum.attachment.application.AttachmentVariableContentResolver;
 import com.agentum.asset.infrastructure.TenantAssetCapabilityRepository;
 import com.agentum.mcp.application.McpRuntimeService;
 import com.agentum.shared.api.ApiException;
@@ -62,7 +63,8 @@ class AgentRuntimeServiceTest {
             Clock.fixed(NOW, ZoneOffset.UTC),
             mock(RunCancellationGuard.class),
             new PromptContentResolver(capabilityRepository, assetRepository),
-            runtimeProperties()
+            runtimeProperties(),
+            attachmentVariableContentResolver()
         );
 
         ModelProviderEntity provider = ModelProviderEntity.create(
@@ -191,7 +193,8 @@ class AgentRuntimeServiceTest {
             Clock.fixed(NOW, ZoneOffset.UTC),
             mock(RunCancellationGuard.class),
             new PromptContentResolver(capabilityRepository, assetRepository),
-            runtimeProperties()
+            runtimeProperties(),
+            attachmentVariableContentResolver()
         );
 
         ModelProviderEntity provider = ModelProviderEntity.create(
@@ -295,7 +298,8 @@ class AgentRuntimeServiceTest {
             Clock.fixed(NOW, ZoneOffset.UTC),
             mock(RunCancellationGuard.class),
             new PromptContentResolver(capabilityRepository, assetRepository),
-            runtimeProperties()
+            runtimeProperties(),
+            attachmentVariableContentResolver()
         );
         ModelProviderEntity provider = ModelProviderEntity.create(
             "OpenAI 兼容",
@@ -392,6 +396,15 @@ class AgentRuntimeServiceTest {
         properties.setSuggestedIterationsPerTurn(4);
         properties.setMaxIterationsPerTurn(20);
         return properties;
+    }
+
+    private static AttachmentVariableContentResolver attachmentVariableContentResolver() {
+        AttachmentVariableContentResolver resolver = mock(AttachmentVariableContentResolver.class);
+        when(resolver.renderValue(any(), any(), any(Boolean.class))).thenAnswer(invocation -> {
+            Object value = invocation.getArgument(1);
+            return value == null ? "" : value.toString();
+        });
+        return resolver;
     }
 
     private static final class ScriptedModelChatClient implements ModelChatClient {
