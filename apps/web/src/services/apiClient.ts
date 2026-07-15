@@ -82,6 +82,7 @@ import type {
   UpdateWorkflowScheduleRequest,
   WorkbenchRunDetail,
   WorkflowScheduleExecutionPage,
+  WorkflowScheduleCronPreview,
   WorkflowScheduleInputFieldsResponse,
   WorkflowSchedulePage,
   WorkbenchSummary,
@@ -727,6 +728,12 @@ export const workbenchApi = {
       `/api/tenants/${tenantId}/workbench/schedules/workflows/${workflowId}/input-fields`,
       { token },
     ),
+  previewScheduleCron: (tenantId: string, token: string, cronExpression: string) =>
+    apiRequest<WorkflowScheduleCronPreview>(`/api/tenants/${tenantId}/workbench/schedules/cron-preview`, {
+      method: "POST",
+      token,
+      body: { cronExpression },
+    }),
   createSchedule: (tenantId: string, token: string, body: CreateWorkflowScheduleRequest) =>
     apiRequest<WorkflowSchedulePage["items"][number]>(`/api/tenants/${tenantId}/workbench/schedules`, {
       method: "POST",

@@ -392,7 +392,7 @@ export type InputFieldConfig = {
   /** 默认值来源；旧配置未声明时按 defaultValue 是否为空推导。 */
   defaultValueSource?: "none" | "fixed" | "system";
   /** 系统动态日期规则，每次运行时重新计算。 */
-  systemDefaultValue?: "current_date" | "current_year" | "current_month" | "previous_month";
+  systemDefaultValue?: "current_date" | "current_year" | "current_year_month" | "previous_year_month";
   /** 日期字段的手工选择级别，默认精确到日。 */
   dateGranularity?: "day" | "month" | "year";
   /** 系统动态值在人工作业中是否允许修改，默认允许。 */

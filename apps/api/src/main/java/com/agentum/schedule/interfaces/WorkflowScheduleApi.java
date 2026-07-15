@@ -39,6 +39,7 @@ public final class WorkflowScheduleApi {
         boolean required,
         String valueType,
         String fieldType,
+        List<InputFieldOptionRow> options,
         String defaultValue,
         String defaultValueSource,
         String systemDefaultValue,
@@ -47,12 +48,21 @@ public final class WorkflowScheduleApi {
     ) {
     }
 
+    public record InputFieldOptionRow(String value, String label) {
+    }
+
     public record WorkflowInputFieldsResponse(
         UUID workflowId,
         String workflowName,
         int workflowVersionNumber,
         List<InputFieldRow> inputFields
     ) {
+    }
+
+    public record CronPreviewRequest(String cronExpression) {
+    }
+
+    public record CronPreviewResponse(Instant nextRunAt, String timezone) {
     }
 
     public record CreateScheduleRequest(

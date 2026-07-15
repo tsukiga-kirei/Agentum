@@ -1892,12 +1892,11 @@ function buildRuntimeSystemVariables(run: WorkbenchRunDetail): Record<string, un
     current_weekday: weekday,
     current_year: year,
     current_month: month,
+    current_month_padded: monthPadded,
     current_year_month: `${year}-${monthPadded}`,
     previous_year_month: `${previousMonthYear}-${String(previousMonthNumber).padStart(2, "0")}`,
     current_day: day,
-    year,
-    month: monthPadded,
-    day: dayPadded,
+    current_day_padded: dayPadded,
   };
 }
 

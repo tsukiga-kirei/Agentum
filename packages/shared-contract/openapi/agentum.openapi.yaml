@@ -971,6 +971,35 @@ paths:
                     properties:
                       data:
                         $ref: "#/components/schemas/WorkflowScheduleInputFieldsResponse"
+  /api/tenants/{tenantId}/workbench/schedules/cron-preview:
+    post:
+      summary: 预览 cron 表达式的下次执行时间
+      tags: [Workbench]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkflowScheduleCronPreviewRequest"
+      responses:
+        "200":
+          description: 下次执行时间
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/WorkflowScheduleCronPreviewResponse"
   /api/tenants/{tenantId}/workbench/schedules/{scheduleId}:
     put:
       summary: 更新定时任务
@@ -5173,12 +5202,20 @@ components:
         placeholder: { type: string, nullable: true }
         valueType: { type: string }
         fieldType: { type: string, enum: [text, select, date] }
+        options:
+          type: array
+          items:
+            type: object
+            properties:
+              value: { type: string }
+              label: { type: string }
+            required: [value, label]
         defaultValue: { type: string }
         defaultValueSource: { type: string, enum: [none, fixed, system] }
-        systemDefaultValue: { type: string, enum: [current_date, current_year, current_month, previous_month] }
+        systemDefaultValue: { type: string, enum: [current_date, current_year, current_year_month, previous_year_month] }
         dateGranularity: { type: string, enum: [day, month, year] }
         allowManualOverride: { type: boolean }
-      required: [nodeId, nodeName, variable, label, required, valueType, fieldType, defaultValue, defaultValueSource, systemDefaultValue, dateGranularity, allowManualOverride]
+      required: [nodeId, nodeName, variable, label, required, valueType, fieldType, options, defaultValue, defaultValueSource, systemDefaultValue, dateGranularity, allowManualOverride]
     WorkflowScheduleInputFieldsResponse:
       type: object
       properties:
@@ -5190,6 +5227,17 @@ components:
           items:
             $ref: "#/components/schemas/WorkflowScheduleInputField"
       required: [workflowId, workflowName, versionNumber, inputFields]
+    WorkflowScheduleCronPreviewRequest:
+      type: object
+      properties:
+        cronExpression: { type: string }
+      required: [cronExpression]
+    WorkflowScheduleCronPreviewResponse:
+      type: object
+      properties:
+        nextRunAt: { type: string, format: date-time }
+        timezone: { type: string }
+      required: [nextRunAt, timezone]
     CreateWorkflowScheduleRequest:
       type: object
       properties:

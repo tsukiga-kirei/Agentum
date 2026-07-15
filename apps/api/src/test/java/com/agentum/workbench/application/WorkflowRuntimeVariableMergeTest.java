@@ -39,13 +39,13 @@ class WorkflowRuntimeVariableMergeTest {
     void shouldAppendBusinessVariablesToClassifierPrompt() {
         String prompt = ClusterIntentRoutingSupport.enrichClassifierUserPrompt(
             "根据{{report_month}}判断月份。",
-            Map.of("report_month", "5", "month", "07", "summary", "已完成")
+            Map.of("report_month", "5", "current_month_padded", "07", "summary", "已完成")
         );
 
         assertThat(prompt).contains("根据{{report_month}}判断月份。");
         assertThat(prompt).contains("上游变量快照");
         assertThat(prompt).contains("report_month: 5");
-        assertThat(prompt).doesNotContain("month: 07");
+        assertThat(prompt).doesNotContain("current_month_padded: 07");
         assertThat(prompt).doesNotContain("summary:");
     }
 }

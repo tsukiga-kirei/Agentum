@@ -11,8 +11,8 @@ export const WORKFLOW_INPUT_FIELD_TYPE_OPTIONS: Array<{ value: WorkflowInputFiel
 export const WORKFLOW_SYSTEM_DEFAULT_VALUE_OPTIONS = [
   { value: "current_date", label: "当前日期", description: "格式：YYYY-MM-DD" },
   { value: "current_year", label: "当前年", description: "格式：YYYY" },
-  { value: "current_month", label: "当前年月", description: "格式：YYYY-MM" },
-  { value: "previous_month", label: "上个年月", description: "格式：YYYY-MM" },
+  { value: "current_year_month", label: "当前年月", description: "格式：YYYY-MM" },
+  { value: "previous_year_month", label: "上个年月", description: "格式：YYYY-MM" },
 ] as const;
 
 export function normalizeInputFieldOptions(value: unknown, placeholder?: string): Array<{ label: string; value: string }> {
@@ -129,9 +129,9 @@ export function resolveInputFieldDefaultValue(
   if (normalized.defaultValueSource !== "system") {
     return normalized.defaultValue ?? "";
   }
-  const variableName = normalized.systemDefaultValue === "previous_month"
+  const variableName = normalized.systemDefaultValue === "previous_year_month"
     ? "previous_year_month"
-    : normalized.systemDefaultValue === "current_month"
+    : normalized.systemDefaultValue === "current_year_month"
       ? "current_year_month"
       : normalized.systemDefaultValue === "current_year"
         ? "current_year"

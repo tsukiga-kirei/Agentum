@@ -386,12 +386,6 @@ public class WorkbenchRuntimeService {
         List<SnapshotNode> snapshotNodes = snapshot.nodes() == null ? List.of() : snapshot.nodes();
         Instant now = clock.instant();
         Instant inputReferenceTime = scheduledAt == null ? now : scheduledAt;
-        Map<String, Object> resolvedInputPayload = new LinkedHashMap<>(inputPayload == null ? Map.of() : inputPayload);
-        for (SnapshotNode node : snapshotNodes) {
-            if ("user_input".equals(node.nodeType())) {
-                resolvedInputPayload = WorkflowInputDefaultValueResolver.apply(node.config(), resolvedInputPayload, inputReferenceTime, true);
-            }
-        }
         String title = normalizeTitle((scheduleName == null || scheduleName.isBlank() ? definition.getName() : scheduleName) + "（定时执行）", definition.getName());
         WorkflowRunEntity run = WorkflowRunEntity.create(
             tenantId,
@@ -405,6 +399,21 @@ public class WorkbenchRuntimeService {
             generateRunNumber(now),
             now
         );
+        Map<String, Object> runtimeVariables = WorkflowRuntimeSystemVariables.from(
+            run,
+            Clock.fixed(inputReferenceTime, AgentumTimezones.businessZone())
+        );
+        Map<String, Object> resolvedInputPayload = new LinkedHashMap<>(inputPayload == null ? Map.of() : inputPayload);
+        for (SnapshotNode node : snapshotNodes) {
+            if ("user_input".equals(node.nodeType())) {
+                resolvedInputPayload = WorkflowInputDefaultValueResolver.applyScheduledOverrides(
+                    node.config(),
+                    resolvedInputPayload,
+                    inputReferenceTime,
+                    runtimeVariables
+                );
+            }
+        }
         Map<String, Object> triggerPayload = new LinkedHashMap<>(scheduleSnapshot == null ? Map.of() : scheduleSnapshot);
         triggerPayload.put("inputPayload", resolvedInputPayload);
         run.markScheduledTrigger(scheduleId, triggerPayload, now);

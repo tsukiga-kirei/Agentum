@@ -376,7 +376,7 @@ public class WorkflowNodeConfigValidator {
         }
         if ("system".equals(rawString(field.get("defaultValueSource")))) {
             String rule = rawString(field.get("systemDefaultValue"));
-            boolean validRule = Set.of("current_date", "current_year", "current_month", "previous_month").contains(rule);
+            boolean validRule = Set.of("current_date", "current_year", "current_year_month", "previous_year_month").contains(rule);
             if (!validRule || !"date".equals(normalizedFieldType)) {
                 issues.add(issue("WORKFLOW_VALIDATION_INPUT_SYSTEM_DEFAULT_INVALID", "节点[" + node.name() + "]的系统日期默认值与字段类型不匹配", node));
             }

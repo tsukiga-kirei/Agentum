@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import { DatePicker, Drawer, Empty, Pagination, Select, message } from "antd";
 import dayjs from "dayjs";
@@ -21,7 +21,6 @@ import {
   Search,
   Settings2,
   Trash2,
-  Workflow,
   X,
   Zap,
 } from "lucide-react";
@@ -31,6 +30,7 @@ import { AgentumApiError, workbenchApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import { paths } from "../../routes/paths";
 import { getThemedDrawerRootClassName } from "../../utils/theme";
+import { formatTemplateVariable, insertTemplateToken } from "../../utils/templateTextInsertion";
 import type {
   WorkbenchAvailableWorkflowRow,
   WorkflowScheduleExecutionRow,
@@ -82,6 +82,36 @@ const defaultForm: ScheduleFormState = {
 const selectClassNames = { popup: { root: "agent-select-dropdown agent-admin-select-dropdown" } };
 const selectSuffixIcon = <ChevronDown className="h-[18px] w-[18px] text-[var(--color-text-tertiary)]" aria-hidden="true" />;
 
+const scheduleDateRuleOptions = [
+  { value: "current_date", label: "当前日期（YYYY-MM-DD）" },
+  { value: "current_year", label: "当前年（YYYY）" },
+  { value: "current_year_month", label: "当前年月（YYYY-MM）" },
+  { value: "previous_year_month", label: "上个年月（YYYY-MM）" },
+] as const;
+
+const scheduleTemplateVariables = [
+  { name: "runId", label: "运行 ID" },
+  { name: "runNumber", label: "运行编号" },
+  { name: "date", label: "日期" },
+  { name: "dateCompact", label: "紧凑日期" },
+  { name: "current_date", label: "当前日期" },
+  { name: "current_date_cn", label: "中文日期" },
+  { name: "current_weekday", label: "当前星期" },
+  { name: "current_year", label: "当前年" },
+  { name: "current_year_month", label: "当前年月" },
+  { name: "previous_year_month", label: "上个年月" },
+  { name: "current_month", label: "当前月" },
+  { name: "current_month_padded", label: "当前月（两位）" },
+  { name: "current_day", label: "当前日" },
+  { name: "current_day_padded", label: "当前日（两位）" },
+] as const;
+
+type ScheduleDateBinding = {
+  __scheduleValueType: "system" | "fixed";
+  rule?: string;
+  value?: string;
+};
+
 dayjs.locale("zh-cn");
 
 export function WorkflowSchedulesPanel() {
@@ -110,6 +140,9 @@ export function WorkflowSchedulesPanel() {
   const [submitting, setSubmitting] = useState(false);
   const [triggeringScheduleId, setTriggeringScheduleId] = useState<string | null>(null);
   const [cronGeneratorOpen, setCronGeneratorOpen] = useState(false);
+  const [cronPreview, setCronPreview] = useState<{ nextRunAt: string; timezone: string } | null>(null);
+  const [cronPreviewLoading, setCronPreviewLoading] = useState(false);
+  const [cronPreviewError, setCronPreviewError] = useState("");
 
   const workflowOptions = useMemo(
     () => workflows.filter((workflow) => workflow.canLaunch).map((workflow) => ({
@@ -177,7 +210,7 @@ export function WorkflowSchedulesPanel() {
         const nextPayload = { ...(payload ?? current.inputPayload) };
         data.inputFields.forEach((field) => {
           if (!(field.variable in nextPayload)) {
-            nextPayload[field.variable] = field.defaultValueSource === "fixed" ? field.defaultValue : "";
+            nextPayload[field.variable] = createInitialScheduleInputValue(field);
           }
         });
         return { ...current, inputPayload: nextPayload };
@@ -216,6 +249,48 @@ export function WorkflowSchedulesPanel() {
       void loadWorkflows();
     }
   }, [drawerOpen, loadWorkflows]);
+
+  useEffect(() => {
+    if (!drawerOpen || !tenantId || !token) {
+      setCronPreview(null);
+      setCronPreviewError("");
+      setCronPreviewLoading(false);
+      return;
+    }
+    const cronExpression = form.cronExpression.trim();
+    if (!cronExpression) {
+      setCronPreview(null);
+      setCronPreviewError("请输入 cron 表达式");
+      setCronPreviewLoading(false);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      setCronPreviewLoading(true);
+      setCronPreviewError("");
+      void workbenchApi.previewScheduleCron(tenantId, token, cronExpression)
+        .then((preview) => {
+          if (!cancelled) {
+            setCronPreview(preview);
+          }
+        })
+        .catch((error) => {
+          if (!cancelled) {
+            setCronPreview(null);
+            setCronPreviewError(error instanceof AgentumApiError ? error.message : "无法计算下次执行时间");
+          }
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setCronPreviewLoading(false);
+          }
+        });
+    }, 350);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [drawerOpen, form.cronExpression, tenantId, token]);
 
   function openCreateDrawer() {
     setForm(defaultForm);
@@ -266,8 +341,7 @@ export function WorkflowSchedulesPanel() {
     }
     const missingField = inputFields.find((field) =>
       field.required
-      && field.defaultValueSource !== "system"
-      && !String(form.inputPayload[field.variable] ?? "").trim(),
+      && !hasScheduleInputValue(form.inputPayload[field.variable], field),
     );
     if (missingField) {
       messageApi.warning(`请配置输入字段「${missingField.label}」`);
@@ -521,6 +595,24 @@ export function WorkflowSchedulesPanel() {
               </div>
             </div>
           </div>
+          <div className={`schedule-next-run-preview${cronPreviewError ? " is-error" : ""}`}>
+            <span className="schedule-next-run-preview-icon" aria-hidden="true">
+              {cronPreviewLoading ? <Loader2 size={17} className="animate-spin" /> : <CalendarClock size={17} />}
+            </span>
+            <div className="schedule-next-run-preview-body">
+              <span className="schedule-next-run-preview-label">下次执行时间</span>
+              <strong>
+                {cronPreviewLoading
+                  ? "正在计算…"
+                  : cronPreviewError
+                    ? cronPreviewError
+                    : cronPreview
+                      ? formatCronPreview(cronPreview.nextRunAt, cronPreview.timezone)
+                      : "等待计算"}
+              </strong>
+              {cronPreview && !cronPreviewError ? <small>按 {formatTimezoneLabel(cronPreview.timezone)} 计算</small> : null}
+            </div>
+          </div>
           {cronGeneratorOpen ? (
             <div className="schedule-cron-generator">
               <CronExpressionGenerator
@@ -542,55 +634,22 @@ export function WorkflowSchedulesPanel() {
             </div>
           ) : inputFields.length > 0 ? (
             <div className="sys-config-group">
-              <div className="sys-config-group-title">输入节点预置值</div>
+              <div className="sys-config-group-title">输入节点运行值</div>
+              <p className="schedule-input-config-hint">已带出流程预设，可按当前定时任务调整；动态变量会在每次触发时重新计算。</p>
               {inputFields.map((field) => (
                 <div className="sys-field" key={`${field.nodeId}-${field.variable}`}>
                   <label className={`sys-field-label ${field.required ? "sys-field-label--required" : ""}`}>
                     {field.label}
                     <span className="agent-muted ml-2 text-[11px]">{field.nodeName}</span>
                   </label>
-                  {field.defaultValueSource === "system" ? (
-                    <div className="schedule-system-input-value">
-                      <CalendarClock size={16} aria-hidden="true" />
-                      <span>每次运行自动取“{describeSystemDefaultValue(field.systemDefaultValue)}”</span>
-                      <small>{describeSystemDefaultValueExample(field.systemDefaultValue)}</small>
-                    </div>
-                  ) : (
-                    field.fieldType === "date" ? (
-                      <DatePicker
-                        picker={field.dateGranularity === "year" ? "year" : field.dateGranularity === "month" ? "month" : "date"}
-                        format={field.dateGranularity === "year" ? "YYYY年" : field.dateGranularity === "month" ? "YYYY年MM月" : "YYYY年MM月DD日"}
-                        value={parseSchedulePickerValue(form.inputPayload[field.variable])}
-                        inputReadOnly
-                        placeholder={field.dateGranularity === "year" ? "请选择年份" : field.dateGranularity === "month" ? "请选择年月" : "请选择日期"}
-                        className="workbench-user-input-date-picker w-full"
-                        classNames={{ popup: { root: "workbench-user-input-date-picker-popup" } }}
-                        onChange={(value) => setForm((current) => ({
-                          ...current,
-                          inputPayload: {
-                            ...current.inputPayload,
-                            [field.variable]: value
-                              ? value.format(field.dateGranularity === "year" ? "YYYY" : field.dateGranularity === "month" ? "YYYY-MM" : "YYYY-MM-DD")
-                              : "",
-                          },
-                        }))}
-                      />
-                    ) : (
-                      <div className="sys-field-input-wrap">
-                        <Workflow size={16} className="sys-field-prefix" aria-hidden="true" />
-                        <input
-                          type="text"
-                          className="sys-field-input"
-                          value={String(form.inputPayload[field.variable] ?? "")}
-                          placeholder={field.placeholder || field.variable}
-                          onChange={(event) => setForm((current) => ({
-                            ...current,
-                            inputPayload: { ...current.inputPayload, [field.variable]: event.target.value },
-                          }))}
-                        />
-                      </div>
-                    )
-                  )}
+                  <ScheduleInputFieldControl
+                    field={field}
+                    value={form.inputPayload[field.variable]}
+                    onChange={(value) => setForm((current) => ({
+                      ...current,
+                      inputPayload: { ...current.inputPayload, [field.variable]: value },
+                    }))}
+                  />
                 </div>
               ))}
             </div>
@@ -661,6 +720,129 @@ export function WorkflowSchedulesPanel() {
         </div>
       </Drawer>
     </section>
+  );
+}
+
+function ScheduleInputFieldControl({
+  field,
+  value,
+  onChange,
+}: {
+  field: WorkflowScheduleInputField;
+  value: unknown;
+  onChange: (value: unknown) => void;
+}) {
+  if (field.fieldType === "select") {
+    const selectedValue = readScheduleTextValue(value);
+    return (
+      <Select
+        allowClear
+        className="agent-admin-select w-full"
+        classNames={selectClassNames}
+        suffixIcon={selectSuffixIcon}
+        value={selectedValue || undefined}
+        placeholder={field.placeholder || "请选择"}
+        options={field.options ?? []}
+        onChange={(nextValue) => onChange(nextValue ?? "")}
+      />
+    );
+  }
+
+  if (field.fieldType === "date") {
+    const binding = readScheduleDateBinding(value, field);
+    const isDynamic = binding.__scheduleValueType === "system";
+    const dateFormat = field.dateGranularity === "year" ? "YYYY" : field.dateGranularity === "month" ? "YYYY-MM" : "YYYY-MM-DD";
+    return (
+      <div className="schedule-input-value-editor">
+        <Select
+          className="agent-admin-select w-full"
+          classNames={selectClassNames}
+          suffixIcon={selectSuffixIcon}
+          value={isDynamic ? binding.rule : "manual"}
+          options={[
+            ...scheduleDateRuleOptions,
+            { value: "manual", label: "手工指定日期" },
+          ]}
+          onChange={(nextMode) => {
+            if (nextMode === "manual") {
+              onChange({ __scheduleValueType: "fixed", value: isDynamic ? "" : binding.value ?? "" } satisfies ScheduleDateBinding);
+              return;
+            }
+            onChange({ __scheduleValueType: "system", rule: nextMode } satisfies ScheduleDateBinding);
+          }}
+        />
+        {isDynamic ? (
+          <span className="schedule-input-dynamic-note">
+            <CalendarClock size={14} aria-hidden="true" />
+            每次运行按计划触发时间重新计算
+          </span>
+        ) : (
+          <DatePicker
+            picker={field.dateGranularity === "year" ? "year" : field.dateGranularity === "month" ? "month" : "date"}
+            format={field.dateGranularity === "year" ? "YYYY年" : field.dateGranularity === "month" ? "YYYY年MM月" : "YYYY年MM月DD日"}
+            value={parseSchedulePickerValue(binding.value)}
+            inputReadOnly
+            placeholder={field.dateGranularity === "year" ? "请选择年份" : field.dateGranularity === "month" ? "请选择年月" : "请选择日期"}
+            className="workbench-user-input-date-picker w-full"
+            classNames={{ popup: { root: "workbench-user-input-date-picker-popup" } }}
+            onChange={(date) => onChange({
+              __scheduleValueType: "fixed",
+              value: date ? date.format(dateFormat) : "",
+            } satisfies ScheduleDateBinding)}
+          />
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <ScheduleTemplateInput
+      value={readScheduleTextValue(value)}
+      placeholder={field.placeholder || field.variable}
+      onChange={onChange}
+    />
+  );
+}
+
+function ScheduleTemplateInput({
+  value,
+  placeholder,
+  onChange,
+}: {
+  value: string;
+  placeholder: string;
+  onChange: (value: string) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const dynamic = /\{\{\s*[A-Za-z][A-Za-z0-9_]*\s*}}/.test(value);
+  return (
+    <div className="schedule-template-input">
+      <div className="sys-field-input-wrap">
+        <FileText size={16} className="sys-field-prefix" aria-hidden="true" />
+        <input
+          ref={inputRef}
+          type="text"
+          className="sys-field-input"
+          value={value}
+          placeholder={placeholder}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      </div>
+      <div className="schedule-template-variable-bar" aria-label="可插入的系统变量">
+        {scheduleTemplateVariables.map((variable) => (
+          <button
+            key={variable.name}
+            type="button"
+            title={formatTemplateVariable(variable.name)}
+            onClick={() => insertTemplateToken(inputRef.current, value, formatTemplateVariable(variable.name), onChange)}
+          >
+            <span>{variable.label}</span>
+            <code>{formatTemplateVariable(variable.name)}</code>
+          </button>
+        ))}
+      </div>
+      {dynamic ? <span className="schedule-input-dynamic-note"><Zap size={13} aria-hidden="true" />变量标识会在每次运行时转换为实际内容</span> : null}
+    </div>
   );
 }
 
@@ -746,16 +928,70 @@ function formatDate(value?: string | null) {
   return new Date(value).toLocaleString("zh-CN", { hour12: false });
 }
 
-function describeSystemDefaultValue(value: string) {
-  if (value === "current_year") return "当前年";
-  if (value === "current_month") return "当前年月";
-  if (value === "previous_month") return "上个年月";
-  return "当前日期";
+function formatCronPreview(value: string, timezone: string) {
+  try {
+    return new Intl.DateTimeFormat("zh-CN", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      weekday: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    }).format(new Date(value));
+  } catch {
+    return formatDate(value);
+  }
 }
 
-function describeSystemDefaultValueExample(value: string) {
-  if (value === "current_year") return "按计划触发年份生成 YYYY";
-  return value === "current_date" ? "按计划触发日期生成 YYYY-MM-DD" : "按计划触发月份生成 YYYY-MM";
+function formatTimezoneLabel(timezone: string) {
+  return timezone === "Asia/Shanghai" ? "北京时间" : timezone;
+}
+
+function createInitialScheduleInputValue(field: WorkflowScheduleInputField): unknown {
+  if (field.fieldType === "date") {
+    return field.defaultValueSource === "system"
+      ? { __scheduleValueType: "system", rule: field.systemDefaultValue } satisfies ScheduleDateBinding
+      : { __scheduleValueType: "fixed", value: field.defaultValue || "" } satisfies ScheduleDateBinding;
+  }
+  return field.defaultValueSource === "fixed" ? field.defaultValue : "";
+}
+
+function readScheduleDateBinding(value: unknown, field: WorkflowScheduleInputField): ScheduleDateBinding {
+  if (isScheduleDateBinding(value)) {
+    return value;
+  }
+  if ((value == null || value === "") && field.defaultValueSource === "system") {
+    return { __scheduleValueType: "system", rule: field.systemDefaultValue };
+  }
+  return { __scheduleValueType: "fixed", value: typeof value === "string" ? value : field.defaultValue || "" };
+}
+
+function isScheduleDateBinding(value: unknown): value is ScheduleDateBinding {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const valueType = (value as Record<string, unknown>).__scheduleValueType;
+  return valueType === "system" || valueType === "fixed";
+}
+
+function readScheduleTextValue(value: unknown): string {
+  if (isScheduleDateBinding(value)) {
+    return value.__scheduleValueType === "fixed" ? value.value ?? "" : formatTemplateVariable(value.rule || "current_date");
+  }
+  return value == null ? "" : String(value);
+}
+
+function hasScheduleInputValue(value: unknown, field: WorkflowScheduleInputField): boolean {
+  if (isScheduleDateBinding(value)) {
+    return value.__scheduleValueType === "system" || Boolean(value.value?.trim());
+  }
+  if ((value == null || value === "") && field.defaultValueSource === "system") {
+    return true;
+  }
+  return Boolean(String(value ?? "").trim());
 }
 
 function parseSchedulePickerValue(value: unknown) {

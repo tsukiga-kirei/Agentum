@@ -66,7 +66,7 @@ export function UserInputPanel({
     const initial: Record<string, string> = {};
     fieldConfigs.forEach((field) => {
       const matched = activeStep.inputs?.find((item) => item.label === field.label);
-      // 运行预览里的 inputs 可能仍带设计态模板，初始化表单时必须再按本次运行变量解析，避免 {{day}} 原样展示。
+      // 运行预览里的 inputs 可能仍带设计态模板，初始化表单时必须再按本次运行变量解析，避免变量标识原样展示。
       const candidateValue = renderRuntimeTemplate(matched?.value || field.defaultValue || "", templateVariables);
       if (field.fieldType === "select") {
         const options = normalizeInputFieldOptions(field.options, field.placeholder);
@@ -134,7 +134,7 @@ export function UserInputPanel({
               const datePickerGranularity = field.defaultValueSource === "system"
                 ? field.systemDefaultValue === "current_year"
                   ? "year"
-                  : ["current_month", "previous_month"].includes(field.systemDefaultValue ?? "")
+                  : ["current_year_month", "previous_year_month"].includes(field.systemDefaultValue ?? "")
                     ? "month"
                     : "day"
                 : field.dateGranularity ?? "day";

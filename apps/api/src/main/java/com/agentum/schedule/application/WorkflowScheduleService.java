@@ -22,6 +22,7 @@ import com.agentum.shared.pagination.SortWhitelist;
 import com.agentum.tenant.infrastructure.TenantRepository;
 import com.agentum.workbench.application.WorkbenchRuntimeService;
 import com.agentum.workbench.interfaces.WorkbenchApi;
+import com.agentum.workflow.application.WorkflowInputDefaultValueResolver;
 import com.agentum.workflow.domain.WorkflowAccessGrantEntity;
 import com.agentum.workflow.domain.WorkflowDefinitionEntity;
 import com.agentum.workflow.domain.WorkflowRunEntity;
@@ -132,6 +133,21 @@ public class WorkflowScheduleService {
             context.workflowName(),
             context.version().getVersionNumber(),
             extractInputFields(readSnapshot(context.version()))
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public WorkflowScheduleApi.CronPreviewResponse previewCron(
+        UUID tenantId,
+        CurrentUserPrincipal principal,
+        WorkflowScheduleApi.CronPreviewRequest request
+    ) {
+        ensureActiveTenant(tenantId);
+        ensureAuthenticated(principal);
+        CronExpression cron = parseCron(request == null ? null : request.cronExpression());
+        return new WorkflowScheduleApi.CronPreviewResponse(
+            nextRunAt(cron, clock.instant()),
+            AgentumTimezones.businessZone().getId()
         );
     }
 
@@ -531,12 +547,28 @@ public class WorkflowScheduleService {
 
     private void validateRequiredInputs(WorkflowVersionEntity version, Map<String, Object> inputPayload) {
         for (WorkflowScheduleApi.InputFieldRow field : extractInputFields(readSnapshot(version))) {
-            if (!field.required() || "system".equals(field.defaultValueSource())) {
+            Object value = inputPayload.get(field.variable());
+            if (value instanceof Map<?, ?> binding) {
+                String bindingType = stringValue(binding.get(WorkflowInputDefaultValueResolver.SCHEDULE_VALUE_TYPE_KEY));
+                if (WorkflowInputDefaultValueResolver.SCHEDULE_SYSTEM_VALUE_TYPE.equals(bindingType)) {
+                    continue;
+                }
+                if (WorkflowInputDefaultValueResolver.SCHEDULE_FIXED_VALUE_TYPE.equals(bindingType)) {
+                    value = binding.get(WorkflowInputDefaultValueResolver.SCHEDULE_FIXED_VALUE_KEY);
+                }
+            } else if (!inputPayload.containsKey(field.variable()) && "system".equals(field.defaultValueSource())) {
                 continue;
             }
-            Object value = inputPayload.get(field.variable());
             if (value == null || (value instanceof String text && text.isBlank())) {
-                throw new ApiException(HttpStatus.BAD_REQUEST, "SCHEDULE_INPUT_REQUIRED", "请配置输入字段「" + field.label() + "」");
+                if (field.required()) {
+                    throw new ApiException(HttpStatus.BAD_REQUEST, "SCHEDULE_INPUT_REQUIRED", "请配置输入字段「" + field.label() + "」");
+                }
+                continue;
+            }
+            String selectedValue = String.valueOf(value);
+            if ("select".equals(field.fieldType())
+                && field.options().stream().noneMatch(option -> option.value().equals(selectedValue))) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "SCHEDULE_INPUT_OPTION_INVALID", "输入字段「" + field.label() + "」的选项无效");
             }
         }
     }
@@ -580,6 +612,7 @@ public class WorkflowScheduleService {
                     !Boolean.FALSE.equals(rawField.get("required")),
                     firstNonBlank(stringValue(rawField.get("valueType")), stringValue(rawField.get("type")), "text"),
                     firstNonBlank(stringValue(rawField.get("fieldType")), "text"),
+                    extractInputFieldOptions(rawField.get("options")),
                     stringValue(rawField.get("defaultValue")),
                     firstNonBlank(
                         stringValue(rawField.get("defaultValueSource")),
@@ -592,6 +625,24 @@ public class WorkflowScheduleService {
             }
         }
         return fields;
+    }
+
+    private List<WorkflowScheduleApi.InputFieldOptionRow> extractInputFieldOptions(Object rawOptions) {
+        if (!(rawOptions instanceof List<?> options)) {
+            return List.of();
+        }
+        List<WorkflowScheduleApi.InputFieldOptionRow> result = new ArrayList<>();
+        for (Object option : options) {
+            if (!(option instanceof Map<?, ?> rawOption)) {
+                continue;
+            }
+            String value = stringValue(rawOption.get("value"));
+            String label = firstNonBlank(stringValue(rawOption.get("label")), value);
+            if (!value.isBlank()) {
+                result.add(new WorkflowScheduleApi.InputFieldOptionRow(value, label));
+            }
+        }
+        return result;
     }
 
     private CronExpression parseCron(String cronExpression) {

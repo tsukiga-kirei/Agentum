@@ -5140,6 +5140,61 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
   margin-top: 12px;
 }
 
+.schedule-next-run-preview {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 58px;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 24%, var(--color-border-light));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-primary-bg) 46%, var(--color-bg-card));
+  padding: 10px 13px;
+}
+
+.schedule-next-run-preview.is-error {
+  border-color: color-mix(in srgb, var(--color-danger) 34%, var(--color-border-light));
+  background: color-mix(in srgb, var(--color-danger-bg) 44%, var(--color-bg-card));
+}
+
+.schedule-next-run-preview-icon {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-card);
+  color: var(--color-primary);
+}
+
+.schedule-next-run-preview.is-error .schedule-next-run-preview-icon {
+  color: var(--color-danger);
+}
+
+.schedule-next-run-preview-body {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.schedule-next-run-preview-label,
+.schedule-next-run-preview-body small {
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+}
+
+.schedule-next-run-preview-body strong {
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.schedule-next-run-preview.is-error .schedule-next-run-preview-body strong {
+  color: var(--color-danger);
+}
+
 .schedule-system-input-value {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -5164,6 +5219,64 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
   color: var(--color-text-tertiary);
   font-size: 11px;
   font-weight: 400;
+}
+
+.schedule-input-config-hint {
+  margin: -2px 0 4px;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.schedule-input-value-editor,
+.schedule-template-input {
+  display: grid;
+  gap: 8px;
+}
+
+.schedule-input-dynamic-note {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 5px;
+  color: var(--color-primary);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.schedule-template-variable-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.schedule-template-variable-bar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 22%, var(--color-border-light));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-primary-bg) 48%, var(--color-bg-card));
+  padding: 4px 8px;
+  color: var(--color-primary);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.schedule-template-variable-bar button code {
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.schedule-template-variable-bar button:hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary-bg);
 }
 
 .schedule-execution-list {

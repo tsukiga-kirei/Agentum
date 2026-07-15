@@ -4379,7 +4379,7 @@ function InputFieldModal({
                             ? draft.dateGranularity
                             : value === "current_year"
                               ? "year"
-                              : ["current_month", "previous_month"].includes(value)
+                              : ["current_year_month", "previous_year_month"].includes(value)
                                 ? "month"
                                 : "day",
                           defaultValue: "",

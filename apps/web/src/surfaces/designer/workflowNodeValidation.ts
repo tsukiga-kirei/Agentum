@@ -14,12 +14,11 @@ export const WORKFLOW_SYSTEM_TEMPLATE_VARIABLES = new Set([
   "current_weekday",
   "current_year",
   "current_month",
+  "current_month_padded",
   "current_year_month",
   "previous_year_month",
   "current_day",
-  "year",
-  "month",
-  "day",
+  "current_day_padded",
 ]);
 
 const VARIABLE_NAME_PATTERN = /^[a-z][a-z0-9_]*$/;

@@ -193,9 +193,10 @@ export type WorkflowScheduleInputField = {
   required: boolean;
   valueType: string;
   fieldType: "text" | "select" | "date" | string;
+  options: Array<{ value: string; label: string }>;
   defaultValue: string;
   defaultValueSource: "none" | "fixed" | "system" | string;
-  systemDefaultValue: "current_date" | "current_year" | "current_month" | "previous_month" | string;
+  systemDefaultValue: "current_date" | "current_year" | "current_year_month" | "previous_year_month" | string;
   dateGranularity: "day" | "month" | "year" | string;
   allowManualOverride: boolean;
 };
@@ -205,6 +206,11 @@ export type WorkflowScheduleInputFieldsResponse = {
   workflowName: string;
   workflowVersionNumber: number;
   inputFields: WorkflowScheduleInputField[];
+};
+
+export type WorkflowScheduleCronPreview = {
+  nextRunAt: string;
+  timezone: string;
 };
 
 export type WorkflowScheduleExecutionRow = {

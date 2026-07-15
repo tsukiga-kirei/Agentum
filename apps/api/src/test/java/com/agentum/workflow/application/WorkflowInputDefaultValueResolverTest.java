@@ -21,7 +21,7 @@ class WorkflowInputDefaultValueResolverTest {
         Map<String, Object> config = Map.of("inputFields", List.of(Map.of(
             "variable", "report_month",
             "defaultValueSource", "system",
-            "systemDefaultValue", "previous_month",
+            "systemDefaultValue", "previous_year_month",
             "allowManualOverride", false
         )));
 
@@ -73,5 +73,59 @@ class WorkflowInputDefaultValueResolverTest {
         );
 
         assertThat(resolved).containsEntry("report_year", "2026");
+    }
+
+    @Test
+    void shouldResolveScheduleTextTemplateForEveryRun() {
+        Map<String, Object> config = Map.of("inputFields", List.of(Map.of(
+            "variable", "report_title",
+            "defaultValueSource", "fixed",
+            "defaultValue", "{{current_year}}年{{current_month}}月报告"
+        )));
+
+        Map<String, Object> resolved = WorkflowInputDefaultValueResolver.applyScheduledOverrides(
+            config,
+            Map.of("report_title", "批次{{runNumber}}-{{current_day_padded}}"),
+            Instant.parse("2026-07-14T01:00:00Z"),
+            Map.of("runNumber", "RUN-001", "current_day_padded", "14")
+        );
+
+        assertThat(resolved).containsEntry("report_title", "批次RUN-001-14");
+    }
+
+    @Test
+    void shouldAllowScheduleToOverrideWorkflowDateRuleOrUseFixedDate() {
+        Map<String, Object> config = Map.of("inputFields", List.of(Map.of(
+            "variable", "report_date",
+            "defaultValueSource", "system",
+            "systemDefaultValue", "current_date"
+        )));
+        Instant reference = Instant.parse("2026-07-14T01:00:00Z");
+
+        Map<String, Object> dynamic = WorkflowInputDefaultValueResolver.applyScheduledOverrides(
+            config,
+            Map.of("report_date", Map.of(
+                WorkflowInputDefaultValueResolver.SCHEDULE_VALUE_TYPE_KEY,
+                WorkflowInputDefaultValueResolver.SCHEDULE_SYSTEM_VALUE_TYPE,
+                WorkflowInputDefaultValueResolver.SCHEDULE_SYSTEM_RULE_KEY,
+                "previous_year_month"
+            )),
+            reference,
+            Map.of()
+        );
+        Map<String, Object> fixed = WorkflowInputDefaultValueResolver.applyScheduledOverrides(
+            config,
+            Map.of("report_date", Map.of(
+                WorkflowInputDefaultValueResolver.SCHEDULE_VALUE_TYPE_KEY,
+                WorkflowInputDefaultValueResolver.SCHEDULE_FIXED_VALUE_TYPE,
+                WorkflowInputDefaultValueResolver.SCHEDULE_FIXED_VALUE_KEY,
+                "2026-06-30"
+            )),
+            reference,
+            Map.of()
+        );
+
+        assertThat(dynamic).containsEntry("report_date", "2026-06");
+        assertThat(fixed).containsEntry("report_date", "2026-06-30");
     }
 }

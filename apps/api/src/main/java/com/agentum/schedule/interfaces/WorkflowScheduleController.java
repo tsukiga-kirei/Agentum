@@ -58,6 +58,17 @@ public class WorkflowScheduleController {
         return ApiResponse.success(scheduleService.inputFields(tenantId, principal, workflowId), RequestIds.current(request));
     }
 
+    @PostMapping("/cron-preview")
+    public ApiResponse<WorkflowScheduleApi.CronPreviewResponse> previewCron(
+        @PathVariable UUID tenantId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        @RequestBody WorkflowScheduleApi.CronPreviewRequest body,
+        HttpServletRequest request
+    ) {
+        workbenchAccess.assertCanAccessSchedule(principal, tenantId);
+        return ApiResponse.success(scheduleService.previewCron(tenantId, principal, body), RequestIds.current(request));
+    }
+
     @PostMapping
     public ApiResponse<WorkflowScheduleApi.ScheduleRow> create(
         @PathVariable UUID tenantId,
