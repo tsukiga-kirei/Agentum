@@ -185,17 +185,13 @@ export function TaskRunWorkspace({
       stream.isStreaming
       && stream.connectionState === "connected"
       && !!streamActiveNodeId;
-    const liveTemplateVariables = streamActiveNodeId
-      ? collectVariablesBeforeNode(runDetail, streamActiveNodeId)
-      : {};
-
     const updatedSteps = basePreview.steps.map((step) => {
       // 后端已标记失败/完成时，不再被 SSE 流式态覆盖为「运行中」。
       if (step.state === "failed" || step.state === "done") {
         return step;
       }
       if (mergingLiveStep && step.nodeRunId === streamActiveNodeId) {
-        const chatMessages = buildLiveChatMessages(step, stream.streamingText, liveTemplateVariables);
+        const chatMessages = buildLiveChatMessages(step, stream.streamingText, stream.renderedUserPrompt);
 
         return {
           ...step,
@@ -221,6 +217,7 @@ export function TaskRunWorkspace({
     basePreview,
     stream.activeNodeInfo,
     stream.streamingText,
+    stream.renderedUserPrompt,
     stream.currentPhase,
     stream.toolCalls,
     stream.isStreaming,
@@ -1791,7 +1788,7 @@ function nodeDescription(nodeType: string, config: any): string {
 function buildLiveChatMessages(
   step: RuntimePreviewStep,
   streamingText: string,
-  templateVariables: Record<string, unknown>,
+  renderedUserPrompt: string | null,
 ): RuntimeChatMessage[] {
   const config = (step.configSnapshot ?? {}) as Record<string, unknown>;
   const history = Array.isArray(config.conversationHistory) ? config.conversationHistory : [];
@@ -1817,14 +1814,13 @@ function buildLiveChatMessages(
   });
 
   if (messages.length === 0) {
-    const userPrompt = stringifyValue(config.userPrompt ?? config.prompt ?? "");
-    if (userPrompt) {
+    if (renderedUserPrompt) {
       messages.push({
         id: `${step.nodeRunId}-live-user`,
         role: "user",
         author: "我",
-        // 后端会在模型调用前替换同一批上游变量；运行中也同步渲染，避免暂时展示原始 {{变量名}} 造成未传值的误解。
-        content: renderRuntimeTemplate(userPrompt, templateVariables),
+        // 直接使用后端即将发送给模型的原文，确保附件正文、变量替换和完成后的消息记录完全一致。
+        content: renderedUserPrompt,
       });
     }
   }
@@ -1901,14 +1897,6 @@ function buildRuntimeSystemVariables(run: WorkbenchRunDetail): Record<string, un
     current_day: day,
     current_day_padded: dayPadded,
   };
-}
-
-function renderRuntimeTemplate(template: string, variables: Record<string, unknown>): string {
-  return template.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_placeholder, variableName: string) =>
-    Object.prototype.hasOwnProperty.call(variables, variableName)
-      ? stringifyValue(variables[variableName])
-      : "",
-  );
 }
 
 function nodeMessages(node: any): RuntimeChatMessage[] {

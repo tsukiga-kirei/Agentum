@@ -319,6 +319,13 @@ public class NodeExecutionService {
             }
 
             @Override
+            public void onPromptPrepared(String renderedUserPrompt) {
+                emit(runId, nodeRunId, "agent_prompt_prepared", Map.of(
+                    "renderedUserPrompt", renderedUserPrompt == null ? "" : renderedUserPrompt
+                ));
+            }
+
+            @Override
             public void onToolCall(String toolName, String toolType, String status, String result, long durationMs) {
                 emit(runId, nodeRunId, "agent_tool_call", Map.of(
                     "toolName", toolName,

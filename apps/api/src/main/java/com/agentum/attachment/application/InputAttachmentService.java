@@ -122,7 +122,8 @@ public class InputAttachmentService {
         byte[] bytes = readBytes(file);
         validateFileSignature(extension, bytes);
 
-        boolean recognitionEnabled = settings.isRecognitionEnabled() && !Boolean.FALSE.equals(field.get("recognitionEnabled"));
+        // 附件字段上传后统一服从系统识别配置，节点不能通过历史草稿字段绕过平台级识别策略。
+        boolean recognitionEnabled = settings.isRecognitionEnabled();
         String engine = recognitionEnabled ? settings.getRecognitionEngine() : "none";
         String initialStatus = recognitionEnabled ? "queued" : "ready";
         UUID attachmentId = UUID.randomUUID();
@@ -401,7 +402,7 @@ public class InputAttachmentService {
         if (!allowed.contains(extension)) {
             throw new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "ATTACHMENT_EXTENSION_NOT_ALLOWED", "当前字段不允许上传 ." + extension + " 文件");
         }
-        if (!settings.isRecognitionEnabled() || Boolean.FALSE.equals(field.get("recognitionEnabled"))) {
+        if (!settings.isRecognitionEnabled()) {
             return;
         }
         if ("mineru".equals(settings.getRecognitionEngine()) && !settings.getMineruSupportedExtensions().contains(extension)) {

@@ -132,15 +132,22 @@ class AgentRuntimeServiceTest {
         ));
         when(callLogRepository.save(any(ModelCallLogEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        AgentRuntimeResult result = service.execute(new AgentRuntimeRequest(
+        List<String> preparedPrompts = new ArrayList<>();
+        AgentRuntimeResult result = service.executeStreaming(new AgentRuntimeRequest(
             run,
             nodeRun,
             nodeRun.getConfigSnapshot(),
             Map.of("company", "云程科技"),
             Map.of(),
             OPERATOR_ID
-        ));
+        ), new AgentRuntimeService.AgentRuntimeEventSink() {
+            @Override
+            public void onPromptPrepared(String renderedUserPrompt) {
+                preparedPrompts.add(renderedUserPrompt);
+            }
+        });
 
+        assertThat(preparedPrompts).containsExactly("请分析 云程科技");
         assertThat(result.outputs()).containsEntry("agentMode", "react");
         assertThat(result.outputs().get("final_answer")).asString().contains("可授信");
         assertThat(result.outputs().get("agent_response")).asString().contains("可授信");

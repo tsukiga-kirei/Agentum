@@ -147,6 +147,8 @@ public class AgentRuntimeService {
             renderedSystemPrompt,
             renderedUserPrompt
         );
+        // 前端运行中必须展示与模型请求完全一致的用户消息，不能自行序列化附件引用后生成另一份内容。
+        eventSink.onPromptPrepared(renderedUserPrompt);
 
         Map<String, Object> options = modelOptions(provider, config);
         if (provider.isReasoningModel()) {
@@ -903,6 +905,10 @@ public class AgentRuntimeService {
 
     public interface AgentRuntimeEventSink {
         default void onPhase(String phase, String message) {
+        }
+
+        /** 模板变量和附件正文均已展开、即将发送给模型的用户消息。 */
+        default void onPromptPrepared(String renderedUserPrompt) {
         }
 
         default void onToken(String deltaContent, String accumulatedContent) {

@@ -4215,8 +4215,7 @@ function InputFieldModal({
         allowedExtensions: current.allowedExtensions?.length ? current.allowedExtensions : ["pdf", "docx", "xlsx", "txt"],
         maxFiles: current.maxFiles ?? 5,
         maxFileSizeMb: current.maxFileSizeMb ?? 20,
-        recognitionEnabled: current.recognitionEnabled !== false,
-        recognitionRequired: current.recognitionRequired === true,
+        recognitionRequired: current.recognitionRequired ?? true,
       }));
       return;
     }
@@ -4303,7 +4302,6 @@ function InputFieldModal({
         >
           {activeSection === "basic" ? (
             <div className="workflow-input-field-panel-content">
-              <p className="workflow-input-field-panel-intro">定义业务人员看到的字段名称、类型和下游引用标识。</p>
               <div className="workflow-input-field-drawer-fields">
                 <label className="sys-field">
                   <span className="sys-field-label sys-field-label--required">字段类型</span>
@@ -4347,7 +4345,6 @@ function InputFieldModal({
             <div className="workflow-input-field-panel-content">
               {isSelectField ? (
                 <>
-                  <p className="workflow-input-field-panel-intro">维护可选内容，并可预设一个默认选项；业务人员仍可修改。</p>
                   <div className="workflow-input-field-drawer-fields">
                     <InputFieldOptionsEditor options={draft.options ?? []} onChange={commitSelectOptions} />
                     <label className="sys-field">
@@ -4369,7 +4366,6 @@ function InputFieldModal({
 
               {draft.fieldType === "text" ? (
                 <>
-                  <p className="workflow-input-field-panel-intro">预设内容会在打开任务时自动填入，业务人员可以继续修改；留空表示不预设。</p>
                   <PromptEditor
                     label="预设值（可选）"
                     value={draft.defaultValue ?? ""}
@@ -4382,7 +4378,6 @@ function InputFieldModal({
 
               {draft.fieldType === "date" ? (
                 <>
-                  <p className="workflow-input-field-panel-intro">当前年、当前年月、上个年月和当前日期统一在日期字段内配置。</p>
                   <div className="workflow-input-field-drawer-fields">
                     <label className="sys-field">
                       <span className="sys-field-label">日期取值</span>
@@ -4448,23 +4443,27 @@ function InputFieldModal({
 
               {isFileField ? (
                 <>
-                  <p className="workflow-input-field-panel-intro">限制业务人员可上传的文件类型、数量和单文件大小；运行时还会与系统级上限取更小值。</p>
                   <div className="workflow-input-field-drawer-fields">
                     <label className="sys-field">
-                      <span className="sys-field-label sys-field-label--required">允许的扩展名</span>
-                      <textarea
-                        className="sys-input w-full min-h-24 p-3"
-                        value={(draft.allowedExtensions ?? []).join(",")}
-                        placeholder="pdf,docx,xlsx,txt"
-                        onChange={(event) => setDraft({
+                      <span className="sys-field-label sys-field-label--required">允许上传的文件类型</span>
+                      <Select
+                        className="agent-admin-select attachment-extension-select w-full"
+                        classNames={workflowSelectClassNames}
+                        mode="tags"
+                        open={false}
+                        value={draft.allowedExtensions ?? []}
+                        placeholder="输入扩展名后按回车，例如 pdf"
+                        suffixIcon={null}
+                        tokenSeparators={[",", "，", " ", "\n"]}
+                        onChange={(values) => setDraft({
                           ...draft,
-                          allowedExtensions: Array.from(new Set(event.target.value
-                            .split(/[，,\s]+/)
+                          allowedExtensions: Array.from(new Set(values
+                            .flatMap((value) => value.split(/[，,\s]+/))
                             .map((value) => value.trim().toLowerCase().replace(/^\./, ""))
                             .filter(Boolean))),
                         })}
                       />
-                      <span className="sys-field-hint">使用逗号、空格或换行分隔，不写点号。复杂识别时还必须属于系统配置的 MinerU 白名单。</span>
+                      <span className="sys-field-hint">输入后按回车，可粘贴逗号分隔的列表，不写点号；复杂识别仅接受系统已配置的类型。</span>
                     </label>
                     <div className="sys-field-row">
                       <label className="sys-field">
@@ -4477,12 +4476,8 @@ function InputFieldModal({
                       </label>
                     </div>
                     <label className="workflow-toggle-row workflow-input-required-toggle">
-                      <span><span className="block">识别附件正文</span><span className="mt-1 block text-xs font-normal text-[var(--color-text-tertiary)]">按系统配置选择简单识别或复杂识别。</span></span>
-                      <input type="checkbox" checked={draft.recognitionEnabled !== false} onChange={(event) => setDraft({ ...draft, recognitionEnabled: event.target.checked, recognitionRequired: event.target.checked ? draft.recognitionRequired : false })} />
-                    </label>
-                    <label className="workflow-toggle-row workflow-input-required-toggle">
                       <span><span className="block">识别成功后才能提交</span><span className="mt-1 block text-xs font-normal text-[var(--color-text-tertiary)]">开启后，识别中或识别失败的附件会阻止流程继续。</span></span>
-                      <input type="checkbox" disabled={draft.recognitionEnabled === false} checked={draft.recognitionEnabled !== false && draft.recognitionRequired === true} onChange={(event) => setDraft({ ...draft, recognitionRequired: event.target.checked })} />
+                      <input type="checkbox" checked={draft.recognitionRequired === true} onChange={(event) => setDraft({ ...draft, recognitionRequired: event.target.checked })} />
                     </label>
                   </div>
                 </>
@@ -4492,7 +4487,6 @@ function InputFieldModal({
 
           {activeSection === "rules" ? (
             <div className="workflow-input-field-panel-content">
-              <p className="workflow-input-field-panel-intro">控制业务人员是否必须提供这个字段。</p>
               <label className="workflow-toggle-row workflow-input-required-toggle">
                 <span>
                   <span className="block">是否必填</span>

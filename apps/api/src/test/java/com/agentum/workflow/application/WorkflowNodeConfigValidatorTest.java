@@ -283,7 +283,7 @@ class WorkflowNodeConfigValidatorTest {
             Map.of("inputFields", List.of(Map.of(
                 "id", "field_1", "label", "附件材料", "variable", "materials", "fieldType", "file",
                 "allowedExtensions", List.of("pdf", "docx", "xlsx"), "maxFiles", 5, "maxFileSizeMb", 20,
-                "recognitionEnabled", true, "recognitionRequired", true
+                "recognitionRequired", true
             )))
         );
 

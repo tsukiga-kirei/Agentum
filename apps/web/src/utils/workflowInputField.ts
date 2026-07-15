@@ -38,6 +38,9 @@ export function normalizeInputFieldOptions(value: unknown, placeholder?: string)
 }
 
 export function normalizeInputField(field: InputFieldConfig): InputFieldConfig {
+  // 早期草稿可能保存过字段级识别开关；附件现在统一服从系统配置，归一化时主动清除旧字段，避免继续下发无效决策。
+  const normalizedField = { ...field } as InputFieldConfig & { recognitionEnabled?: unknown };
+  delete normalizedField.recognitionEnabled;
   const fieldType: WorkflowInputFieldType = ["select", "date", "file"].includes(field.fieldType ?? "")
     ? field.fieldType as WorkflowInputFieldType
     : "text";
@@ -52,7 +55,7 @@ export function normalizeInputField(field: InputFieldConfig): InputFieldConfig {
         : "none";
 
   return {
-    ...field,
+    ...normalizedField,
     placeholder,
     defaultValue,
     defaultValueSource,
@@ -69,7 +72,6 @@ export function normalizeInputField(field: InputFieldConfig): InputFieldConfig {
       : undefined,
     maxFiles: fieldType === "file" ? Math.min(20, Math.max(1, field.maxFiles ?? 5)) : undefined,
     maxFileSizeMb: fieldType === "file" ? Math.min(200, Math.max(1, field.maxFileSizeMb ?? 20)) : undefined,
-    recognitionEnabled: fieldType === "file" ? field.recognitionEnabled !== false : undefined,
     recognitionRequired: fieldType === "file" ? field.recognitionRequired === true : undefined,
   };
 }
@@ -123,7 +125,6 @@ export function createInputField(
     allowedExtensions: isFile ? ["pdf", "docx", "xlsx", "txt"] : undefined,
     maxFiles: isFile ? 5 : undefined,
     maxFileSizeMb: isFile ? 20 : undefined,
-    recognitionEnabled: isFile ? true : undefined,
     recognitionRequired: isFile ? true : undefined,
   });
 }

@@ -61,6 +61,7 @@ export function useRunStream(
 ): RunStreamState {
   const [events, setEvents] = useState<StreamEvent[]>([]);
   const [streamingText, setStreamingText] = useState<string>("");
+  const [renderedUserPrompt, setRenderedUserPrompt] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
   const [currentPhase, setCurrentPhase] = useState<AgentPhase | null>(null);
   const [activeNodeInfo, setActiveNodeInfo] = useState<{
@@ -131,6 +132,7 @@ export function useRunStream(
     activeNodeRunIdRef.current = null;
     if (!preserveProgress) {
       setStreamingText("");
+      setRenderedUserPrompt(null);
       setCurrentPhase(null);
       setToolCalls([]);
       setExecutionSteps([]);
@@ -375,6 +377,7 @@ export function useRunStream(
         // SSE 重连/回放会再次收到 node_started：同一节点不清空已展示的流式/集群进度。
         if (!isSameNode) {
           setStreamingText("");
+          setRenderedUserPrompt(null);
           setToolCalls([]);
           setExecutionSteps([]);
           setStreamStartedAt(Date.now());
@@ -399,6 +402,14 @@ export function useRunStream(
         const { phase, message } = event.data;
         setCurrentPhase(phase);
         setExecutionSteps((prev) => upsertPhaseStep(prev, phase, message));
+        break;
+      }
+
+      case "agent_prompt_prepared": {
+        if (!eventMatchesActiveNode()) {
+          break;
+        }
+        setRenderedUserPrompt(event.data.renderedUserPrompt);
         break;
       }
 
@@ -667,6 +678,7 @@ export function useRunStream(
   return {
     events,
     streamingText,
+    renderedUserPrompt,
     isStreaming,
     currentPhase,
     activeNodeInfo,

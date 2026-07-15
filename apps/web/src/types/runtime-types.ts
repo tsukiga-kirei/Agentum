@@ -198,6 +198,14 @@ export type AgentThinkingEvent = {
   timestamp: string;
 };
 
+/** 模型调用前已完成变量和附件正文展开的用户消息事件。 */
+export type AgentPromptPreparedEvent = {
+  runId: string;
+  nodeRunId: string;
+  renderedUserPrompt: string;
+  timestamp: string;
+};
+
 /** 智能体模型流式输出事件 */
 export type AgentStreamingEvent = {
   runId: string;
@@ -346,6 +354,7 @@ export type StreamEvent = (
   | { type: "connected"; data: ConnectedEvent }
   | { type: "node_started"; data: NodeStartedEvent }
   | { type: "agent_thinking"; data: AgentThinkingEvent }
+  | { type: "agent_prompt_prepared"; data: AgentPromptPreparedEvent }
   | { type: "agent_streaming"; data: AgentStreamingEvent }
   | { type: "agent_tool_call"; data: AgentToolCallEvent }
   | { type: "cluster_agent"; data: ClusterAgentEvent }
@@ -403,8 +412,6 @@ export type InputFieldConfig = {
   maxFiles?: number;
   /** 单个附件大小上限，单位 MB。 */
   maxFileSizeMb?: number;
-  /** 是否对附件正文执行系统配置的识别方式。 */
-  recognitionEnabled?: boolean;
   /** 是否要求识别成功后才能提交输入节点。 */
   recognitionRequired?: boolean;
 };
@@ -436,6 +443,8 @@ export type RunStreamState = {
   events: StreamEvent[];
   /** 当前正在流式输出的文本（智能体节点） */
   streamingText: string;
+  /** 后端已完成变量与附件展开、实际发送给模型的用户消息。 */
+  renderedUserPrompt: string | null;
   /** 当前是否正在流式输出 */
   isStreaming: boolean;
   /** 当前智能体执行阶段 */
