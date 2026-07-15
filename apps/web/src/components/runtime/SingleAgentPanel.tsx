@@ -172,16 +172,67 @@ function normalizeTurnSteps(steps: AgentExecutionStep[], options?: { running?: b
 }
 
 function dedupeProcessSteps(steps: AgentExecutionStep[]): AgentExecutionStep[] {
-  const seen = new Set<string>();
-  return steps.filter((step) => {
+  const result: AgentExecutionStep[] = [];
+  const seenToolKeys = new Set<string>();
+  let reasoningIndex = -1;
+  let modelOutputIndex = -1;
+
+  for (const step of steps) {
+    if (step.kind === "reasoning") {
+      if (reasoningIndex >= 0) {
+        result[reasoningIndex] = preferUniqueStep(result[reasoningIndex], step, "reasoning");
+      } else {
+        reasoningIndex = result.length;
+        result.push(step);
+      }
+      continue;
+    }
+    if (step.kind === "model_output" || step.kind === "final_answer") {
+      if (modelOutputIndex >= 0) {
+        result[modelOutputIndex] = preferUniqueStep(result[modelOutputIndex], step, "model_output");
+      } else {
+        modelOutputIndex = result.length;
+        result.push(step);
+      }
+      continue;
+    }
     const contentKey = (step.detail || step.summary || step.title).replace(/\s+/g, " ").trim();
     const key = `${step.kind}:${step.title}:${contentKey}`;
-    if (seen.has(key)) {
-      return false;
+    if (seenToolKeys.has(key)) {
+      continue;
     }
-    seen.add(key);
-    return true;
-  });
+    seenToolKeys.add(key);
+    result.push(step);
+  }
+  return result;
+}
+
+/** 同 kind 只保留一条：内容更长者优先；任一侧已 done 则收尾，避免 live+持久化叠出双转圈。 */
+function preferUniqueStep(
+  current: AgentExecutionStep,
+  incoming: AgentExecutionStep,
+  kind: "reasoning" | "model_output",
+): AgentExecutionStep {
+  const currentLen = current.detail?.trim().length ?? 0;
+  const incomingLen = incoming.detail?.trim().length ?? 0;
+  const richer = incomingLen >= currentLen ? incoming : current;
+  const eitherDone = current.status === "done" || incoming.status === "done";
+  const eitherError = current.status === "error" || incoming.status === "error";
+  if (kind === "reasoning") {
+    return {
+      ...richer,
+      kind: "reasoning",
+      title: eitherDone || eitherError ? "深度推理" : richer.title,
+      summary: eitherDone || eitherError ? "可展开查看推理过程" : richer.summary,
+      status: eitherError ? "error" : eitherDone ? "done" : richer.status,
+    };
+  }
+  return {
+    ...richer,
+    kind: richer.kind === "final_answer" ? "final_answer" : "model_output",
+    status: eitherError ? "error" : eitherDone ? "done" : richer.status,
+    summary: eitherDone && !eitherError ? "可展开查看" : richer.summary,
+  };
 }
 
 /**
@@ -223,7 +274,7 @@ function ToolStepRow({
           ) : step.kind === "reasoning" ? (
             step.status === "running" ? <Loader2 size={12} className="animate-spin text-indigo-500" /> : <BrainCircuit size={12} className="text-indigo-500" />
           ) : step.kind === "model_output" ? (
-            <Cpu size={12} className="text-emerald-500" />
+            step.status === "running" ? <Loader2 size={12} className="animate-spin text-emerald-500" /> : <Cpu size={12} className="text-emerald-500" />
           ) : (
             <CheckCircle2 size={12} className="text-emerald-500" />
           )}
@@ -425,12 +476,23 @@ export function SingleAgentPanel({
   const latestTurnRef = useRef<HTMLDivElement | null>(null);
   const latestTurnEndRef = useRef<HTMLDivElement | null>(null);
   const rawProcessSteps = useMemo(() => {
-    const modelOutputSteps = buildModelOutputSteps(activeStep, finalAnswer);
     const visibleSteps = filterUserVisibleSteps(steps)
       .filter((step) => step.kind !== "final_answer" || showRunningHero);
-    return [...visibleSteps, ...modelOutputSteps].filter((step, index, list) =>
-      list.findIndex((item) => item.id === step.id) === index
+    // live 步骤已含推理/答案时不再追加 outputs 快照，避免刷新回放后同内容叠两条。
+    const hasLiveReasoning = visibleSteps.some((step) => step.kind === "reasoning");
+    const hasLiveModelOutput = visibleSteps.some(
+      (step) => step.kind === "model_output" || step.kind === "final_answer",
     );
+    const modelOutputSteps = buildModelOutputSteps(activeStep, finalAnswer).filter((step) => {
+      if (step.kind === "reasoning" && hasLiveReasoning) {
+        return false;
+      }
+      if (step.kind === "model_output" && hasLiveModelOutput) {
+        return false;
+      }
+      return true;
+    });
+    return dedupeProcessSteps([...visibleSteps, ...modelOutputSteps]);
   }, [activeStep, finalAnswer, showRunningHero, steps]);
   const pureContextAnswer = useMemo(() => {
     if (showRunningHero || hasToolResultStep(rawProcessSteps) || finalAnswerFromTool) {

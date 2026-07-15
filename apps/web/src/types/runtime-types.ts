@@ -464,6 +464,16 @@ export type RunStreamState = {
     status: "pending" | "running" | "completed" | "failed";
     streamingText: string;
     reasoningText?: string;
+    /**
+     * 当前是否仍处于本轮推理流式输出中。
+     * 离开推理阶段（工具调用 / 答案流）后为 false；多轮 ReAct 下一轮 reasoning 再置 true。
+     */
+    reasoningActive?: boolean;
+    /**
+     * 当前是否仍在流式输出最终答案正文。
+     * 转入工具或下一轮推理后为 false，用于把「正在生成…」收成「可展开查看」。
+     */
+    answerActive?: boolean;
     outputSummary: string;
     errorMessage?: string;
     toolCalls: RuntimeCapabilityItem[];

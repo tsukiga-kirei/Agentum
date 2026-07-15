@@ -256,8 +256,9 @@ export function TaskRunWorkspace({
   // 刷新/重进时：后端作业仍在执行（activeJob queued/running 或节点 running）→ 自动重连 SSE
   // 并整步回放进度，做到无感恢复；绝不重复触发 advance。
   // 步骤已 node_completed / [DONE] 但 runDetail 尚未刷新时，跳过误重连。
+  // 看门狗已判定失联时禁止自动重连，否则会盖住「恢复进度」入口并再次叠流。
   useEffect(() => {
-    if (runDetail.readOnly) {
+    if (runDetail.readOnly || watchdogStaleMessage) {
       return;
     }
     if (stream.isStepStreamTerminal()) {
@@ -277,6 +278,7 @@ export function TaskRunWorkspace({
     activeJobAlive,
     activeStep.state,
     activeStep.nodeRunId,
+    watchdogStaleMessage,
     stream.connectionState,
     stream.connect,
     stream.isStepStreamTerminal,
@@ -314,12 +316,14 @@ export function TaskRunWorkspace({
   // 前端看门狗：满足任一条件即判定异常，亮出被动「恢复进度」按钮。
   // 1) SSE 连续重连失败达到阈值（前后端关联失效）；
   // 2) activeJob 显示运行中，但超过阈值无任何事件（含 heartbeat），且 getRun 探测后仍无进展。
+  // 判定后必须断开 SSE 并保留已展示进度，否则 isStreaming 仍为 true，「恢复进度」出不来。
   useEffect(() => {
     if (runDetail.readOnly || watchdogStaleMessage) {
       return;
     }
     if (stream.reconnectFailures >= WATCHDOG_RECONNECT_FAILURE_LIMIT) {
       setWatchdogStaleMessage("与执行服务的连接持续失败，页面已无法获取最新进度。");
+      stream.disconnect({ preserveProgress: true });
       return;
     }
     if (!activeJobAlive) {
@@ -336,12 +340,14 @@ export function TaskRunWorkspace({
         const probed = await reloadRunDetail();
         if (!probed) {
           setWatchdogStaleMessage("无法从服务端获取任务状态，执行进度可能已中断。");
+          stream.disconnect({ preserveProgress: true });
           return;
         }
         const probeLastSeen = stream.lastEventAt;
         const probeSince = probeLastSeen === null ? Number.POSITIVE_INFINITY : Date.now() - probeLastSeen;
         if (isActiveJobAlive(probed) && probeSince >= WATCHDOG_STALE_THRESHOLD_MS) {
-          setWatchdogStaleMessage("后台执行长时间无响应（超过 1 分钟未收到任何进度心跳）。");
+          setWatchdogStaleMessage("后台执行长时间无进度事件（超过 1 分钟未收到流式增量或心跳），页面已与执行失联。");
+          stream.disconnect({ preserveProgress: true });
         }
       })();
     }, 15_000);

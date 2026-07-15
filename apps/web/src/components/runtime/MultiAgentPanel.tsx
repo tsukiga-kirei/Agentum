@@ -27,6 +27,10 @@ type DrawerAgent = {
   status: "pending" | "running" | "completed" | "failed" | "skipped";
   streamingText: string;
   reasoningText?: string;
+  /** 是否仍在本轮推理流中；离开推理（工具/答案）后为 false */
+  reasoningActive?: boolean;
+  /** 是否仍在流式输出答案正文 */
+  answerActive?: boolean;
   outputSummary: string;
   errorMessage?: string;
   toolCalls: RunStreamState["clusterAgents"][number]["toolCalls"];
@@ -661,39 +665,72 @@ function buildAgentExecutionSteps(agent: DrawerAgent): AgentExecutionStep[] {
   const conversationSteps = (agent.conversationHistory ?? []).flatMap((message) =>
     message.role === "assistant" ? (message.processSteps ?? []) : [],
   );
-  const toolSteps: AgentExecutionStep[] = conversationSteps.length > 0
-    ? conversationSteps.filter((step) => step.kind === "tool" || step.kind === "reasoning" || step.kind === "model_output")
+  const historyToolSteps = conversationSteps.filter((step) => step.kind === "tool");
+  const historyReasoning = conversationSteps.find((step) => step.kind === "reasoning");
+  const historyOutput = conversationSteps.find(
+    (step) => step.kind === "model_output" || step.kind === "final_answer",
+  );
+
+  const toolSteps: AgentExecutionStep[] = historyToolSteps.length > 0
+    ? historyToolSteps.map((step, index) => ({
+        ...step,
+        id: step.id || `cluster-history-tool-${agent.index}-${index}`,
+        status: step.status === "error" ? "error" : "done",
+      }))
     : (agent.toolCalls ?? [])
       .filter((tool): tool is RuntimeCapabilityItem & { kind: "mcp" | "skill" } => tool.kind === "mcp" || tool.kind === "skill")
       .map((tool) => ({
         id: `cluster-tool-${agent.index}-${tool.id}`,
-        kind: "tool",
+        kind: "tool" as const,
         title: tool.kind === "skill" ? `读取 Skill：${tool.name}` : `调用 MCP：${tool.name}`,
         summary: tool.resultSummary || tool.statusLabel,
-        status: tool.status === "error" ? "error" : tool.status === "running" ? "running" : "done",
+        status: tool.status === "error" ? "error" as const : tool.status === "running" ? "running" as const : "done" as const,
         durationMs: tool.durationMs,
         detail: tool.resultSummary,
         toolType: tool.kind,
       }));
-  if (agent.reasoningText?.trim()) {
+
+  const liveReasoning = agent.reasoningText?.trim() ?? "";
+  const isRunning = agent.status === "running";
+  // 以 reasoningActive / answerActive 为准，保证阶段切换后文案从「…中 / 正在生成」收成完成态。
+  const reasoningRunning = isRunning && agent.reasoningActive === true;
+  const answerRunning = isRunning && agent.answerActive === true;
+
+  // 同一子智能体只保留一条推理、一条答案：运行中优先 live，完成态优先历史，避免恢复/回放重叠。
+  if (liveReasoning) {
     toolSteps.push({
       id: `cluster-reasoning-${agent.index}`,
       kind: "reasoning",
-      title: agent.status === "running" ? "深度推理中" : "深度推理",
-      summary: agent.status === "running" ? "正在生成推理过程" : "可展开查看推理过程",
-      status: agent.status === "running" ? "running" : "done",
-      detail: agent.reasoningText.trim(),
+      title: reasoningRunning ? "深度推理中" : "深度推理",
+      summary: reasoningRunning ? "正在生成推理过程" : "可展开查看推理过程",
+      status: reasoningRunning ? "running" : "done",
+      detail: liveReasoning,
+      toolType: "reasoning",
+    });
+  } else if (historyReasoning?.detail?.trim()) {
+    toolSteps.push({
+      ...historyReasoning,
+      id: `cluster-reasoning-${agent.index}`,
+      kind: "reasoning",
+      title: "深度推理",
+      summary: "可展开查看推理过程",
+      status: "done",
+      detail: historyReasoning.detail.trim(),
       toolType: "reasoning",
     });
   }
-  if (outputText && (toolSteps.length > 0 || agent.status === "running")) {
+
+  const answerDetail = isRunning
+    ? outputText
+    : (historyOutput?.detail?.trim() || outputText);
+  if (answerDetail && (toolSteps.length > 0 || isRunning || agent.status === "completed" || agent.status === "failed")) {
     toolSteps.push({
       id: `cluster-model-output-${agent.index}`,
       kind: "model_output",
       title: agent.status === "failed" ? "生成失败原因" : "生成最终答案",
-      summary: agent.status === "running" ? "正在生成…" : "可展开查看",
-      status: agent.status === "running" ? "running" : agent.status === "failed" ? "error" : "done",
-      detail: agent.status === "failed" ? formatRuntimeErrorMessage(undefined, outputText) : outputText,
+      summary: answerRunning ? "正在生成…" : "可展开查看",
+      status: answerRunning ? "running" : agent.status === "failed" ? "error" : "done",
+      detail: agent.status === "failed" ? formatRuntimeErrorMessage(undefined, answerDetail) : answerDetail,
       toolType: "model",
     });
   }

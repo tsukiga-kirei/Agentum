@@ -9,6 +9,8 @@ import type {
   AgentExecutionStep,
 } from "../types/runtime-types";
 import {
+  completeReasoningStep,
+  completeModelOutputStep,
   finalizeFinalAnswerStep,
   upsertModelOutputStep,
   upsertPhaseStep,
@@ -401,7 +403,16 @@ export function useRunStream(
         }
         const { phase, message } = event.data;
         setCurrentPhase(phase);
-        setExecutionSteps((prev) => upsertPhaseStep(prev, phase, message));
+        setExecutionSteps((prev) => {
+          // 阶段切换时主动刷新文案：推理→工具 / 校验完成时，结束「…中 / 正在生成」类进行中文案。
+          let base = prev;
+          if (phase === "tool_calling") {
+            base = completeModelOutputStep(completeReasoningStep(base));
+          } else if (phase === "validating" || phase === "completed") {
+            base = finalizeFinalAnswerStep(base);
+          }
+          return upsertPhaseStep(base, phase, message);
+        });
         break;
       }
 
@@ -421,11 +432,24 @@ export function useRunStream(
         setCurrentPhase("model_calling");
         setIsStreaming(true);
         if (streamKind === "reasoning") {
+          // 多轮 ReAct：工具观察后可能再次进入推理，此时重新标为 running。
           setExecutionSteps((prev) => upsertReasoningStep(prev, accumulatedContent, true));
         } else if (streamKind === "model_content") {
+          // 离开推理阶段的路径之一：开始输出模型正文。
           setExecutionSteps((prev) => upsertModelOutputStep(prev, accumulatedContent, true));
         } else {
+          // final_answer：离开推理；若尚无 model_content 步骤则补齐「生成最终答案」。
           setStreamingText(accumulatedContent);
+          setExecutionSteps((prev) => {
+            const withReasoningDone = completeReasoningStep(prev);
+            const hasModelOutput = withReasoningDone.some(
+              (step) => step.kind === "model_output" || step.id === "live-model-output",
+            );
+            if (hasModelOutput || !String(accumulatedContent ?? "").trim()) {
+              return withReasoningDone;
+            }
+            return upsertModelOutputStep(withReasoningDone, accumulatedContent, true);
+          });
         }
         break;
       }
@@ -436,6 +460,8 @@ export function useRunStream(
         }
         const { toolName, toolType, status, result, durationMs } = event.data;
         setCurrentPhase("tool_calling");
+        // 转入 Skill/MCP：推理与（若有）中间正文的进行中文案一并收尾。
+        setExecutionSteps((prev) => completeModelOutputStep(completeReasoningStep(prev)));
 
         setToolCalls((prev) => {
           const existingIdx = prev.findIndex((t) => t.name === toolName);
@@ -480,6 +506,7 @@ export function useRunStream(
           durationMs,
           errorCode,
           errorMessage,
+          phase,
         } = event.data;
 
         setClusterAgents((prev) => {
@@ -503,17 +530,32 @@ export function useRunStream(
             agent.status = "running";
             agent.streamingText = "";
             agent.reasoningText = "";
+            agent.reasoningActive = false;
+            agent.answerActive = false;
+            agent.outputSummary = "";
+            agent.errorMessage = undefined;
             agent.toolCalls = [];
           } else if (eventType === "phase") {
             agent.status = "running";
+            // 进入 tool_calling / 校验完成：结束进行中文案。
+            if (phase === "tool_calling" || phase === "validating" || phase === "completed") {
+              agent.reasoningActive = false;
+              agent.answerActive = false;
+            }
           } else if (eventType === "streaming" && accumulatedContent && streamKind === "reasoning") {
             agent.status = "running";
             agent.reasoningText = accumulatedContent;
+            agent.reasoningActive = true;
+            agent.answerActive = false;
           } else if (eventType === "streaming" && accumulatedContent) {
             agent.status = "running";
             agent.streamingText = accumulatedContent;
+            agent.reasoningActive = false;
+            agent.answerActive = true;
           } else if (eventType === "completed") {
             agent.status = "completed";
+            agent.reasoningActive = false;
+            agent.answerActive = false;
             const bestText = pickBestAgentOutput(
               outputSummary,
               accumulatedContent,
@@ -524,9 +566,13 @@ export function useRunStream(
             agent.streamingText = bestText;
           } else if (eventType === "failed") {
             agent.status = "failed";
+            agent.reasoningActive = false;
+            agent.answerActive = false;
             agent.errorMessage = formatRuntimeErrorMessage(errorCode, errorMessage);
             agent.outputSummary = agent.errorMessage;
           } else if (eventType === "tool_call" && toolName) {
+            agent.reasoningActive = false;
+            agent.answerActive = false;
             const existingToolIdx = agent.toolCalls.findIndex((t) => t.name === toolName);
             const updatedTool: RuntimeCapabilityItem = {
               id: toolName,
@@ -645,6 +691,7 @@ export function useRunStream(
         markStepStreamTerminal();
         setIsStreaming(false);
         setCurrentPhase("failed");
+        setExecutionSteps((prev) => finalizeFinalAnswerStep(prev));
         setActiveNodeInfo(null);
         setError(formatRuntimeErrorMessage(errorCode, errorMessage));
         break;

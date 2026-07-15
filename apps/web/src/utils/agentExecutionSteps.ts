@@ -206,8 +206,25 @@ export function mergeExecutionSteps(
   live: AgentExecutionStep[],
   isLiveForStep: boolean,
 ): AgentExecutionStep[] {
-  if (!isLiveForStep || live.length === 0) {
-    return persisted.length > 0 ? persisted : live;
+  if (isLiveForStep && live.length > 0) {
+    return live;
+  }
+  // 看门狗断开或节点刚完成时 isStreaming=false，但 live 仍可能保有完整推理/答案；
+  // persisted 往往只有工具摘要。优先保留含过程内容的 live，避免刷新/失联后过程被清空或重叠重建。
+  const liveHasProcess = live.some(
+    (step) => step.kind === "reasoning" || step.kind === "model_output" || step.kind === "final_answer",
+  );
+  if (liveHasProcess) {
+    const liveToolTitles = new Set(
+      live.filter((step) => step.kind === "tool").map((step) => step.title),
+    );
+    const extraPersistedTools = persisted.filter(
+      (step) => step.kind === "tool" && !liveToolTitles.has(step.title),
+    );
+    return extraPersistedTools.length > 0 ? [...extraPersistedTools, ...live] : live;
+  }
+  if (persisted.length > 0) {
+    return persisted;
   }
   return live;
 }
@@ -319,6 +336,42 @@ export function upsertPhaseStep(
   ];
 }
 
+/**
+ * 离开推理阶段时收尾文案：工具调用、模型正文或最终答案开始后，推理不得继续显示「深度推理中」。
+ * 多轮 ReAct 下一轮 reasoning 增量会再次 upsert 为 running。
+ */
+export function completeReasoningStep(steps: AgentExecutionStep[]): AgentExecutionStep[] {
+  return steps.map((step) =>
+    step.kind === "reasoning" && step.status === "running"
+      ? {
+          ...step,
+          title: "深度推理",
+          status: "done" as const,
+          summary: "可展开查看推理过程",
+        }
+      : step,
+  );
+}
+
+/** 离开「生成最终答案」阶段时收尾文案（例如转入工具调用或节点完成）。 */
+export function completeModelOutputStep(steps: AgentExecutionStep[]): AgentExecutionStep[] {
+  return steps.map((step) =>
+    (step.id === "live-model-output" || step.kind === "model_output") && step.status === "running"
+      ? {
+          ...step,
+          status: "done" as const,
+          summary: "可展开查看",
+        }
+      : step.id === "live-final-answer" && step.status === "running"
+        ? {
+            ...step,
+            status: "done" as const,
+            summary: "智能体已提交 final_answer",
+          }
+        : step,
+  );
+}
+
 export function upsertReasoningStep(
   steps: AgentExecutionStep[],
   accumulatedContent: string,
@@ -373,7 +426,7 @@ export function upsertFinalAnswerStep(
   if (!content.trim() && !streaming && !existing) {
     return steps;
   }
-  const withoutDraft = steps.filter((step) => step.id !== "live-final-answer");
+  const withoutDraft = completeReasoningStep(steps).filter((step) => step.id !== "live-final-answer");
   return [
     ...withoutDraft,
     {
@@ -396,7 +449,8 @@ export function upsertModelOutputStep(
   if (!content.trim() && !streaming && !existing) {
     return steps;
   }
-  const withoutDraft = steps.filter((step) => step.id !== "live-model-output");
+  // 进入答案生成即结束本轮推理转圈（推理→答案）；推理→工具路径由 tool_call / tool_calling 收尾。
+  const withoutDraft = completeReasoningStep(steps).filter((step) => step.id !== "live-model-output");
   return [
     ...withoutDraft,
     {
@@ -412,17 +466,23 @@ export function upsertModelOutputStep(
 }
 
 export function finalizeFinalAnswerStep(steps: AgentExecutionStep[]): AgentExecutionStep[] {
-  return steps.map((step) =>
-    step.kind === "reasoning"
-      ? { ...step, title: "深度推理", status: "done", summary: "可展开查看推理过程" }
-      : step.id === "live-final-answer"
-      ? {
-          ...step,
-          status: "done",
-          summary: "智能体已提交 final_answer",
-        }
-      : step,
-  );
+  return completeModelOutputStep(completeReasoningStep(steps)).map((step) => {
+    if (step.id === "live-final-answer") {
+      return {
+        ...step,
+        status: "done" as const,
+        summary: "智能体已提交 final_answer",
+      };
+    }
+    if (step.id === "live-model-output" || (step.kind === "model_output" && step.status === "running")) {
+      return {
+        ...step,
+        status: "done" as const,
+        summary: "可展开查看",
+      };
+    }
+    return step;
+  });
 }
 
 function readIdList(value: unknown): string[] {
