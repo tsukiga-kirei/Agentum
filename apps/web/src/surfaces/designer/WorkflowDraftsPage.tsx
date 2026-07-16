@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   AlertCircle,
@@ -48,6 +48,7 @@ import type {
 } from "../../types/workflow-contract";
 import { parsePositiveInt, paths } from "../../routes/paths";
 import { getThemedDrawerRootClassName } from "../../utils/theme";
+import { WorkflowDesignStatusBadge } from "./WorkflowDesignStatusBadge";
 
 // 工作流草稿列表是设计态入口，不等同于运行实例；发布后需要生成不可变 WorkflowVersion。
 export type WorkflowDraft = WorkflowDraftRow;
@@ -68,7 +69,7 @@ const workflowPaginationLocale = {
 
 type WorkflowDesignerTab = "overview" | "all" | "mine";
 type WorkflowListScope = "all" | "mine" | "shared";
-type WorkflowStatusFilter = WorkflowStatus | "all";
+type WorkflowStatusFilter = WorkflowStatus | "all" | "active";
 type WorkflowAccessDraft = {
   readScope: CollaborationAccessScope;
   editScope: CollaborationAccessScope;
@@ -76,11 +77,12 @@ type WorkflowAccessDraft = {
   editUserIds: string[];
 };
 
-const workflowStatusOptions: Array<{ value: WorkflowStatusFilter; label: string }> = [
-  { value: "all", label: "全部状态" },
-  { value: "draft", label: "草稿" },
-  { value: "published", label: "已发布" },
-  { value: "review", label: "待校验" },
+const workflowStatusOptions: Array<{ value: WorkflowStatusFilter; label: ReactNode }> = [
+  { value: "active", label: <WorkflowDesignStatusBadge status="active" /> },
+  { value: "all", label: <WorkflowDesignStatusBadge status="all" /> },
+  { value: "draft", label: <WorkflowDesignStatusBadge status="draft" /> },
+  { value: "published", label: <WorkflowDesignStatusBadge status="published" /> },
+  { value: "review", label: <WorkflowDesignStatusBadge status="review" /> },
 ];
 const accessScopeOptions = [
   { value: "self", label: "仅自己" },
@@ -111,7 +113,7 @@ export function WorkflowDraftsPage() {
   const page = parsePositiveInt(searchParams.get("page"), 1);
   const pageSize = parsePositiveInt(searchParams.get("size"), 8);
   const searchValue = searchParams.get("q") ?? "";
-  const workflowStatusFilter = (searchParams.get("status") as WorkflowStatusFilter | null) ?? "all";
+  const workflowStatusFilter = (searchParams.get("status") as WorkflowStatusFilter | null) ?? "active";
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
   const themeMode = useAuthStore((s) => s.themeMode);
@@ -273,6 +275,14 @@ export function WorkflowDraftsPage() {
     }
     return workflows;
   }, [activeTab, currentUserId, workflows]);
+  const activeWorkflows = useMemo(
+    () => filteredWorkflows.filter((workflow) => workflow.launchEnabled),
+    [filteredWorkflows],
+  );
+  const offlineWorkflows = useMemo(
+    () => filteredWorkflows.filter((workflow) => !workflow.launchEnabled),
+    [filteredWorkflows],
+  );
   const sharedWorkflows = useMemo(() => workflows.filter((workflow) => !isWorkflowOwnedByCurrentUser(workflow, currentUserId)), [currentUserId, workflows]);
   const myOwnedWorkflows = useMemo(() => workflows.filter((workflow) => isWorkflowOwnedByCurrentUser(workflow, currentUserId)), [currentUserId, workflows]);
 
@@ -693,12 +703,13 @@ export function WorkflowDraftsPage() {
                   />
                 </label>
                 <Select
-                  className="agent-admin-select workflow-status-select"
+                  className="agent-admin-select workflow-status-select w-44"
                   classNames={workflowSelectClassNames}
                   suffixIcon={workflowSelectSuffixIcon}
+                  prefix={<ListChecks className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
                   value={workflowStatusFilter}
                   options={workflowStatusOptions}
-                  onChange={(value) => updateSearchParams({ status: value === "all" ? null : value, page: "1" })}
+                  onChange={(value) => updateSearchParams({ status: value === "active" ? null : value, page: "1" })}
                 />
                 <button type="button" className="sys-btn sys-btn--default" onClick={() => void loadDrafts(1, searchValue, pageSize, currentScope, workflowStatusFilter)}>
                   <Search size={18} aria-hidden="true" />
@@ -726,38 +737,102 @@ export function WorkflowDraftsPage() {
               </div>
             </div>
 
-            <div className="sys-card-grid">
-              {filteredWorkflows.map((workflow, index) => (
-                <WorkflowDesignCard
-                  key={workflow.id}
-                  workflow={workflow}
-                  mine={isWorkflowOwnedByCurrentUser(workflow, currentUserId)}
-                  validating={validatingWorkflowId === workflow.id}
-                  copying={copyingWorkflowId === workflow.id}
-                  exporting={exportingWorkflowId === workflow.id}
-                  onOpenDetail={() => setDetailWorkflow(workflow)}
-                  onCopy={() => void handleCopyWorkflow(workflow)}
-                  onExport={() => void handleExportWorkflow(workflow)}
-                  onValidate={workflow.accessLevel === "read" ? undefined : () => void handleValidateForPublish(workflow)}
-                  index={index}
-                />
-              ))}
-            </div>
-
             {loading ? (
               <div className="workflow-definition-empty-state">
                 <Clock3 className="h-8 w-8" aria-hidden="true" />
                 <p>正在加载工作流</p>
               </div>
-            ) : null}
-
-            {!loading && filteredWorkflows.length === 0 ? (
+            ) : filteredWorkflows.length === 0 ? (
               <div className="workflow-definition-empty-state">
                 <AlertCircle className="h-8 w-8" aria-hidden="true" />
                 <p>{activeTab === "mine" ? "还没有我的流程" : "没有找到匹配的流程"}</p>
                 <span>{activeTab === "mine" ? "可以新建流程草稿，或查看协作开放流程参与设计。" : "可以调整搜索词或筛选条件。"}</span>
               </div>
-            ) : null}
+            ) : workflowStatusFilter === "all" ? (
+              <div className="workflow-launch-sections">
+                <section className="workflow-launch-section" aria-label="未下线流程">
+                  <div className="workflow-launch-section-head">
+                    <h3 className="workflow-launch-section-title">未下线流程</h3>
+                    {activeWorkflows.length > 0 ? (
+                      <p className="workflow-launch-section-desc">
+                        当前页共 {activeWorkflows.length} 个流程，可继续设计、发布或下线。
+                      </p>
+                    ) : null}
+                  </div>
+                  {activeWorkflows.length > 0 ? (
+                    <div className="sys-card-grid">
+                      {activeWorkflows.map((workflow, index) => (
+                        <WorkflowDesignCard
+                          key={workflow.id}
+                          workflow={workflow}
+                          mine={isWorkflowOwnedByCurrentUser(workflow, currentUserId)}
+                          validating={validatingWorkflowId === workflow.id}
+                          copying={copyingWorkflowId === workflow.id}
+                          exporting={exportingWorkflowId === workflow.id}
+                          onOpenDetail={() => setDetailWorkflow(workflow)}
+                          onCopy={() => void handleCopyWorkflow(workflow)}
+                          onExport={() => void handleExportWorkflow(workflow)}
+                          onValidate={workflow.accessLevel === "read" ? undefined : () => void handleValidateForPublish(workflow)}
+                          index={index}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="workflow-definition-empty-state">
+                      <CheckCircle2 className="h-8 w-8" aria-hidden="true" />
+                      <p>当前页暂无未下线流程</p>
+                      <span>已下线流程见下方分区，或切换筛选条件查看。</span>
+                    </div>
+                  )}
+                </section>
+
+                {offlineWorkflows.length > 0 ? (
+                  <section className="workflow-launch-section workflow-launch-section--restricted" aria-label="已下线流程">
+                    <div className="workflow-launch-section-head">
+                      <h3 className="workflow-launch-section-title">已下线流程</h3>
+                      <p className="workflow-launch-section-desc">
+                        业务入口已收回，工作台不可再发起；设计态与历史版本仍保留，可随时上线或在无运行引用时删除。
+                      </p>
+                    </div>
+                    <div className="sys-card-grid">
+                      {offlineWorkflows.map((workflow, index) => (
+                        <WorkflowDesignCard
+                          key={workflow.id}
+                          workflow={workflow}
+                          mine={isWorkflowOwnedByCurrentUser(workflow, currentUserId)}
+                          validating={validatingWorkflowId === workflow.id}
+                          copying={copyingWorkflowId === workflow.id}
+                          exporting={exportingWorkflowId === workflow.id}
+                          onOpenDetail={() => setDetailWorkflow(workflow)}
+                          onCopy={() => void handleCopyWorkflow(workflow)}
+                          onExport={() => void handleExportWorkflow(workflow)}
+                          onValidate={workflow.accessLevel === "read" ? undefined : () => void handleValidateForPublish(workflow)}
+                          index={index}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                ) : null}
+              </div>
+            ) : (
+              <div className="sys-card-grid">
+                {filteredWorkflows.map((workflow, index) => (
+                  <WorkflowDesignCard
+                    key={workflow.id}
+                    workflow={workflow}
+                    mine={isWorkflowOwnedByCurrentUser(workflow, currentUserId)}
+                    validating={validatingWorkflowId === workflow.id}
+                    copying={copyingWorkflowId === workflow.id}
+                    exporting={exportingWorkflowId === workflow.id}
+                    onOpenDetail={() => setDetailWorkflow(workflow)}
+                    onCopy={() => void handleCopyWorkflow(workflow)}
+                    onExport={() => void handleExportWorkflow(workflow)}
+                    onValidate={workflow.accessLevel === "read" ? undefined : () => void handleValidateForPublish(workflow)}
+                    index={index}
+                  />
+                ))}
+              </div>
+            )}
 
             {total > 0 ? (
               <div className="agent-admin-pagination-wrap px-4 py-4">
@@ -1019,7 +1094,7 @@ export function WorkflowDraftsPage() {
             <div className="sys-modal-body">
               <p>确定删除「{deleteTarget.name}」吗？</p>
               <p className="agent-muted text-sm leading-6">
-                将同时删除设计态与全部已冻结版本。若业务侧已有运行实例，后续接入运行态后将禁止删除。
+                将同时删除设计态与全部已冻结版本。若已有运行记录或定时任务，将禁止删除；此时请改用下线保留历史。
               </p>
             </div>
             <div className="sys-modal-footer">

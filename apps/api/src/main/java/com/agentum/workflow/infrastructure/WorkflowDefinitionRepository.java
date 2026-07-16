@@ -66,6 +66,7 @@ public interface WorkflowDefinitionRepository extends JpaRepository<WorkflowDefi
           and (:onlyMine = false or definition.createdBy = :operatorUserId)
           and (:onlyShared = false or definition.createdBy is null or definition.createdBy <> :operatorUserId)
           and (:status is null or definition.status = :status)
+          and (:includeOffline = true or definition.launchEnabled = true)
         """)
         Page<WorkflowDefinitionEntity> searchDrafts(
         @Param("tenantId") UUID tenantId,
@@ -74,6 +75,7 @@ public interface WorkflowDefinitionRepository extends JpaRepository<WorkflowDefi
         @Param("onlyMine") boolean onlyMine,
         @Param("onlyShared") boolean onlyShared,
         @Param("status") String status,
+        @Param("includeOffline") boolean includeOffline,
         Pageable pageable
     );
 

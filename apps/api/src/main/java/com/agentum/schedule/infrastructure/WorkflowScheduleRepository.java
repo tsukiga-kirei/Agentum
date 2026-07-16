@@ -15,6 +15,8 @@ public interface WorkflowScheduleRepository extends JpaRepository<WorkflowSchedu
 
     Optional<WorkflowScheduleEntity> findByIdAndTenantId(UUID id, UUID tenantId);
 
+    boolean existsByWorkflowId(UUID workflowId);
+
     @Query("""
         select schedule from WorkflowScheduleEntity schedule
         where schedule.tenantId = :tenantId

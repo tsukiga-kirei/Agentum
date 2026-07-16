@@ -14,6 +14,8 @@ public interface WorkflowRunRepository extends JpaRepository<WorkflowRunEntity, 
 
     Optional<WorkflowRunEntity> findByIdAndTenantId(UUID id, UUID tenantId);
 
+    boolean existsByWorkflowId(UUID workflowId);
+
     @Query("""
         select count(run) from WorkflowRunEntity run
         where run.tenantId = :tenantId

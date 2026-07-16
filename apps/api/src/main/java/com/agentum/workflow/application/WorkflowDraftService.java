@@ -18,10 +18,12 @@ import com.agentum.workflow.domain.WorkflowEdgeDefinitionEntity;
 import com.agentum.workflow.domain.WorkflowNodeDefinitionEntity;
 import com.agentum.workflow.domain.WorkflowVariableDefinitionEntity;
 import com.agentum.workflow.domain.WorkflowVersionEntity;
+import com.agentum.schedule.infrastructure.WorkflowScheduleRepository;
 import com.agentum.workflow.infrastructure.WorkflowDefinitionRepository;
 import com.agentum.workflow.infrastructure.WorkflowAccessGrantRepository;
 import com.agentum.workflow.infrastructure.WorkflowEdgeDefinitionRepository;
 import com.agentum.workflow.infrastructure.WorkflowNodeDefinitionRepository;
+import com.agentum.workflow.infrastructure.WorkflowRunRepository;
 import com.agentum.workflow.infrastructure.WorkflowVariableDefinitionRepository;
 import com.agentum.workflow.infrastructure.WorkflowVersionRepository;
 import com.agentum.workflow.interfaces.WorkflowDraftApi;
@@ -78,6 +80,8 @@ public class WorkflowDraftService {
     private final WorkflowEdgeDefinitionRepository workflowEdgeDefinitionRepository;
     private final WorkflowVariableDefinitionRepository workflowVariableDefinitionRepository;
     private final WorkflowVersionRepository workflowVersionRepository;
+    private final WorkflowRunRepository workflowRunRepository;
+    private final WorkflowScheduleRepository workflowScheduleRepository;
     private final WorkflowVariableDeclarationValidator workflowVariableDeclarationValidator;
     private final WorkflowPublishValidator workflowPublishValidator;
     private final WorkflowNodeConfigValidator workflowNodeConfigValidator;
@@ -96,6 +100,8 @@ public class WorkflowDraftService {
         WorkflowEdgeDefinitionRepository workflowEdgeDefinitionRepository,
         WorkflowVariableDefinitionRepository workflowVariableDefinitionRepository,
         WorkflowVersionRepository workflowVersionRepository,
+        WorkflowRunRepository workflowRunRepository,
+        WorkflowScheduleRepository workflowScheduleRepository,
         WorkflowVariableDeclarationValidator workflowVariableDeclarationValidator,
         WorkflowPublishValidator workflowPublishValidator,
         WorkflowNodeConfigValidator workflowNodeConfigValidator,
@@ -113,6 +119,8 @@ public class WorkflowDraftService {
         this.workflowEdgeDefinitionRepository = workflowEdgeDefinitionRepository;
         this.workflowVariableDefinitionRepository = workflowVariableDefinitionRepository;
         this.workflowVersionRepository = workflowVersionRepository;
+        this.workflowRunRepository = workflowRunRepository;
+        this.workflowScheduleRepository = workflowScheduleRepository;
         this.workflowVariableDeclarationValidator = workflowVariableDeclarationValidator;
         this.workflowPublishValidator = workflowPublishValidator;
         this.workflowNodeConfigValidator = workflowNodeConfigValidator;
@@ -130,9 +138,24 @@ public class WorkflowDraftService {
         String normalizedKeyword = keyword == null ? "" : keyword.trim();
         boolean onlyMine = "mine".equals(scope);
         boolean onlyShared = "shared".equals(scope);
-        String normalizedStatus = status == null || status.isBlank() || "all".equals(status) ? null : status.trim();
+        // active（默认）：排除已下线；all：含已下线；draft/published/review：按设计态状态且仍排除已下线。
+        String rawStatus = status == null ? "" : status.trim();
+        boolean includeOffline = "all".equals(rawStatus);
+        String normalizedStatus = switch (rawStatus) {
+            case "", "all", "active" -> null;
+            default -> rawStatus;
+        };
         // 协作开放只展示他人开放给当前用户参与设计的流程；我的流程只筛当前创建人，避免前端用负责人姓名猜测归属。
-        var resultPage = workflowDefinitionRepository.searchDrafts(tenantId, normalizedKeyword, operatorUserId, onlyMine, onlyShared, normalizedStatus, pageable);
+        var resultPage = workflowDefinitionRepository.searchDrafts(
+            tenantId,
+            normalizedKeyword,
+            operatorUserId,
+            onlyMine,
+            onlyShared,
+            normalizedStatus,
+            includeOffline,
+            pageable
+        );
         Set<UUID> creatorIds = resultPage.getContent().stream()
             .map(WorkflowDefinitionEntity::getCreatedBy)
             .filter(Objects::nonNull)
@@ -374,7 +397,14 @@ public class WorkflowDraftService {
     @Transactional
     public void deleteDraft(UUID tenantId, UUID operatorUserId, UUID workflowId) {
         WorkflowDefinitionEntity definition = findDefinitionForOwner(tenantId, workflowId, operatorUserId);
-        // 运行实例引用检查将在运行态接入后补全；当前仅允许创建者删除整条定义及关联版本快照。
+        // 运行实例与定时任务对定义/版本是 RESTRICT；有引用时禁止物理删除，引导创建者改用下线保留审计。
+        if (workflowRunRepository.existsByWorkflowId(workflowId) || workflowScheduleRepository.existsByWorkflowId(workflowId)) {
+            throw new ApiException(
+                HttpStatus.CONFLICT,
+                "WORKFLOW_HAS_RUNTIME_REFERENCES",
+                "该流程已有运行记录或定时任务，无法删除；如需停止使用请先下线"
+            );
+        }
         workflowAccessGrantRepository.deleteByWorkflowId(workflowId);
         workflowDefinitionRepository.delete(definition);
         log.info(

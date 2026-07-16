@@ -21,10 +21,12 @@ import com.agentum.workflow.domain.WorkflowEdgeDefinitionEntity;
 import com.agentum.workflow.domain.WorkflowNodeDefinitionEntity;
 import com.agentum.workflow.domain.WorkflowVariableDefinitionEntity;
 import com.agentum.workflow.domain.WorkflowVersionEntity;
+import com.agentum.schedule.infrastructure.WorkflowScheduleRepository;
 import com.agentum.workflow.infrastructure.WorkflowDefinitionRepository;
 import com.agentum.workflow.infrastructure.WorkflowAccessGrantRepository;
 import com.agentum.workflow.infrastructure.WorkflowEdgeDefinitionRepository;
 import com.agentum.workflow.infrastructure.WorkflowNodeDefinitionRepository;
+import com.agentum.workflow.infrastructure.WorkflowRunRepository;
 import com.agentum.workflow.infrastructure.WorkflowVariableDefinitionRepository;
 import com.agentum.workflow.infrastructure.WorkflowVersionRepository;
 import com.agentum.workflow.interfaces.WorkflowDraftApi;
@@ -67,6 +69,10 @@ class WorkflowDraftServicePublishTest {
     private WorkflowVariableDefinitionRepository workflowVariableDefinitionRepository;
     @Mock
     private WorkflowVersionRepository workflowVersionRepository;
+    @Mock
+    private WorkflowRunRepository workflowRunRepository;
+    @Mock
+    private WorkflowScheduleRepository workflowScheduleRepository;
     @Mock
     private WorkflowVariableDeclarationValidator workflowVariableDeclarationValidator;
     @Mock
@@ -402,6 +408,34 @@ class WorkflowDraftServicePublishTest {
             .isEqualTo("WORKFLOW_EDIT_ACCESS_REQUIRED");
     }
 
+    @Test
+    void shouldDeleteDraftWhenNoRuntimeReferencesExist() {
+        WorkflowDefinitionEntity definition = draft();
+        when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("租户", "tenant", NOW)));
+        when(workflowDefinitionRepository.findByIdAndTenantId(definition.getId(), TENANT_ID)).thenReturn(Optional.of(definition));
+        when(workflowRunRepository.existsByWorkflowId(definition.getId())).thenReturn(false);
+        when(workflowScheduleRepository.existsByWorkflowId(definition.getId())).thenReturn(false);
+
+        service().deleteDraft(TENANT_ID, USER_ID, definition.getId());
+
+        verify(workflowAccessGrantRepository).deleteByWorkflowId(definition.getId());
+        verify(workflowDefinitionRepository).delete(definition);
+    }
+
+    @Test
+    void shouldRejectDeleteWhenWorkflowHasRuntimeRuns() {
+        WorkflowDefinitionEntity definition = draft();
+        when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("租户", "tenant", NOW)));
+        when(workflowDefinitionRepository.findByIdAndTenantId(definition.getId(), TENANT_ID)).thenReturn(Optional.of(definition));
+        when(workflowRunRepository.existsByWorkflowId(definition.getId())).thenReturn(true);
+
+        assertThatThrownBy(() -> service().deleteDraft(TENANT_ID, USER_ID, definition.getId()))
+            .isInstanceOf(ApiException.class)
+            .extracting("code")
+            .isEqualTo("WORKFLOW_HAS_RUNTIME_REFERENCES");
+        verify(workflowDefinitionRepository, never()).delete(any());
+    }
+
     private void stubDefinitionLookup(WorkflowDefinitionEntity definition) {
         when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("租户", "tenant", NOW)));
         when(workflowDefinitionRepository.findByIdAndTenantId(definition.getId(), TENANT_ID)).thenReturn(Optional.of(definition));
@@ -421,6 +455,8 @@ class WorkflowDraftServicePublishTest {
             workflowEdgeDefinitionRepository,
             workflowVariableDefinitionRepository,
             workflowVersionRepository,
+            workflowRunRepository,
+            workflowScheduleRepository,
             workflowVariableDeclarationValidator,
             workflowPublishValidator,
             workflowNodeConfigValidator,

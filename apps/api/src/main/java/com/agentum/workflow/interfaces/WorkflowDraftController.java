@@ -56,7 +56,7 @@ public class WorkflowDraftController {
         @AuthenticationPrincipal CurrentUserPrincipal principal,
         @RequestParam(defaultValue = "") String keyword,
         @RequestParam(defaultValue = "all") String scope,
-        @RequestParam(defaultValue = "all") String status,
+        @RequestParam(defaultValue = "active") String status,
         @RequestParam(defaultValue = "1") int page,
         @RequestParam(defaultValue = "10") int size,
         @RequestParam(defaultValue = "updatedAt,desc") String sort,
