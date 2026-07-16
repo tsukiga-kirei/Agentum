@@ -146,6 +146,7 @@ public class NodeExecutionService {
 
         ScheduledFuture<?> heartbeat = null;
         UUID nodeRunId = command.nodeRunId();
+        JobProgressEmitter progress = new JobProgressEmitter(runId, command.jobId());
         try {
             WorkflowNodeRunEntity node = workflowNodeRunRepository.findById(nodeRunId).orElse(null);
             WorkflowRunEntity run = workflowRunRepository.findById(runId).orElse(null);
@@ -166,7 +167,7 @@ public class NodeExecutionService {
                 cancellationGuard.markDeadline(runId, job.getDeadlineAt().toEpochMilli());
             }
             heartbeat = heartbeatScheduler.scheduleAtFixedRate(
-                () -> emitHeartbeat(runId, nodeRunId, workerId),
+                () -> emitHeartbeat(progress, nodeRunId, workerId),
                 HEARTBEAT_INTERVAL_SECONDS,
                 HEARTBEAT_INTERVAL_SECONDS,
                 TimeUnit.SECONDS
@@ -177,13 +178,13 @@ public class NodeExecutionService {
                 command.tenantId(), runId, nodeRunId, node.getNodeType(), job.getId(), command.attempt(), workerId, command.requestId()
             );
 
-            emit(runId, nodeRunId, "node_started", Map.of(
+            progress.emit(nodeRunId, "node_started", Map.of(
                 "nodeType", node.getNodeType(),
                 "nodeName", node.getName()
             ));
 
             Map<String, Object> variables = variablesBeforeNode(run, node.getSortOrder());
-            Map<String, Object> outputs = dispatch(run, node, variables, command.operatorUserId());
+            Map<String, Object> outputs = dispatch(run, node, variables, command.operatorUserId(), progress);
 
             // 中断/restart 后旧 Worker 可能仍持有内存上下文；落库前必须确认本 job 仍为 DB 中的有效 running 作业。
             if (!isJobStillActive(command.jobId())) {
@@ -206,13 +207,13 @@ public class NodeExecutionService {
             }
             finalizeJobSucceeded(command.jobId());
 
-            emit(runId, nodeRunId, "node_completed", Map.of("outputs", outputs));
+            progress.emit(nodeRunId, "node_completed", Map.of("outputs", outputs));
             if (scheduledRun) {
                 workbenchRuntimeService.continueScheduledRunAfterJob(runId, command.operatorUserId());
             } else {
-                emitPostCompletionState(runId, nodeRunId);
+                emitPostCompletionState(progress, nodeRunId);
             }
-            streamWriter.append(runId, "message", "[DONE]");
+            progress.done();
 
             log.info(
                 "节点执行完成 tenantId={} runId={} nodeRunId={} jobId={} requestId={}",
@@ -263,11 +264,12 @@ public class NodeExecutionService {
         WorkflowRunEntity run,
         WorkflowNodeRunEntity node,
         Map<String, Object> variables,
-        UUID operatorUserId
+        UUID operatorUserId,
+        JobProgressEmitter progress
     ) {
         return switch (node.getNodeType()) {
-            case "agent" -> executeAgentNode(run, node, variables, operatorUserId);
-            case "parallel_group" -> executeClusterNode(run, node, variables, operatorUserId);
+            case "agent" -> executeAgentNode(run, node, variables, operatorUserId, progress);
+            case "parallel_group" -> executeClusterNode(run, node, variables, operatorUserId, progress);
             case "delivery" -> deliveryRuntimeService.execute(new DeliveryRuntimeRequest(
                 run,
                 node,
@@ -292,11 +294,12 @@ public class NodeExecutionService {
         WorkflowRunEntity run,
         WorkflowNodeRunEntity node,
         Map<String, Object> variables,
-        UUID operatorUserId
+        UUID operatorUserId,
+        JobProgressEmitter progress
     ) {
         UUID runId = run.getId();
         UUID nodeRunId = node.getId();
-        emit(runId, nodeRunId, "agent_thinking", Map.of(
+        progress.emit(nodeRunId, "agent_thinking", Map.of(
             "phase", "preparing",
             "message", "正在装配 Agent 工具箱与上下文..."
         ));
@@ -315,19 +318,19 @@ public class NodeExecutionService {
 
             @Override
             public void onPhase(String phase, String message) {
-                emit(runId, nodeRunId, "agent_thinking", Map.of("phase", phase, "message", message));
+                progress.emit(nodeRunId, "agent_thinking", Map.of("phase", phase, "message", message));
             }
 
             @Override
             public void onPromptPrepared(String renderedUserPrompt) {
-                emit(runId, nodeRunId, "agent_prompt_prepared", Map.of(
+                progress.emit(nodeRunId, "agent_prompt_prepared", Map.of(
                     "renderedUserPrompt", renderedUserPrompt == null ? "" : renderedUserPrompt
                 ));
             }
 
             @Override
             public void onToolCall(String toolName, String toolType, String status, String result, long durationMs) {
-                emit(runId, nodeRunId, "agent_tool_call", Map.of(
+                progress.emit(nodeRunId, "agent_tool_call", Map.of(
                     "toolName", toolName,
                     "toolType", toolType,
                     "status", status,
@@ -364,7 +367,7 @@ public class NodeExecutionService {
                 } else if (deltaContent != null && !deltaContent.isBlank()) {
                     accumulated.append(deltaContent);
                 }
-                emit(runId, nodeRunId, "agent_streaming", Map.of(
+                progress.emit(nodeRunId, "agent_streaming", Map.of(
                     "streamKind", streamKind,
                     "deltaContent", deltaContent == null ? "" : deltaContent,
                     "accumulatedContent", accumulated.toString()
@@ -375,12 +378,12 @@ public class NodeExecutionService {
             public void onCompleted(String answer) {
                 accumulated.setLength(0);
                 accumulated.append(answer == null ? "" : answer);
-                emit(runId, nodeRunId, "agent_streaming", Map.of(
+                progress.emit(nodeRunId, "agent_streaming", Map.of(
                     "streamKind", "final_answer",
                     "deltaContent", "",
                     "accumulatedContent", accumulated.toString()
                 ));
-                emit(runId, nodeRunId, "agent_thinking", Map.of(
+                progress.emit(nodeRunId, "agent_thinking", Map.of(
                     "phase", "completed",
                     "message", "智能体已完成 final_answer。"
                 ));
@@ -388,7 +391,7 @@ public class NodeExecutionService {
 
             @Override
             public void onFailed(String code, String message) {
-                emit(runId, nodeRunId, "agent_thinking", Map.of(
+                progress.emit(nodeRunId, "agent_thinking", Map.of(
                     "phase", "failed",
                     "message", "智能体执行出错: " + message
                 ));
@@ -405,7 +408,8 @@ public class NodeExecutionService {
         WorkflowRunEntity run,
         WorkflowNodeRunEntity node,
         Map<String, Object> variables,
-        UUID operatorUserId
+        UUID operatorUserId,
+        JobProgressEmitter progress
     ) {
         UUID runId = run.getId();
         UUID nodeRunId = node.getId();
@@ -434,7 +438,7 @@ public class NodeExecutionService {
             }
             Map<String, Object> output = existing.getOutput() == null ? Map.of() : existing.getOutput();
             outputsByIndex.put(existing.getAgentIndex(), output);
-            emit(runId, nodeRunId, "cluster_agent", Map.of(
+            progress.emit(nodeRunId, "cluster_agent", Map.of(
                 "agentIndex", existing.getAgentIndex(),
                 "agentName", existing.getName(),
                 "eventType", "completed",
@@ -447,7 +451,7 @@ public class NodeExecutionService {
         List<ClusterAgentOutcome> failures;
         ClusterIntentRoutingSupport.IntentDecision intentDecision = null;
         if (ClusterIntentRoutingSupport.MODE_INTENT.equals(executionMode)) {
-            IntentRoutingResult routingResult = routeClusterByIntent(run, node, slots, variables, operatorUserId);
+            IntentRoutingResult routingResult = routeClusterByIntent(run, node, slots, variables, operatorUserId, progress);
             intentDecision = routingResult.decision();
             resultSlots = routingResult.selectedSlots();
             if (resultSlots.isEmpty()) {
@@ -460,11 +464,11 @@ public class NodeExecutionService {
                     "意图分派未命中任何可执行子智能体，请检查意图配置或其他情况处理策略"
                 );
             }
-            failures = executeClusterParallel(run, node, resultSlots, variables, outputsByIndex, operatorUserId);
+            failures = executeClusterParallel(run, node, resultSlots, variables, outputsByIndex, operatorUserId, progress);
         } else if (ClusterIntentRoutingSupport.MODE_RELAY.equals(executionMode)) {
-            failures = executeClusterSequential(run, node, slots, variables, outputsByIndex, operatorUserId);
+            failures = executeClusterSequential(run, node, slots, variables, outputsByIndex, operatorUserId, progress);
         } else {
-            failures = executeClusterParallel(run, node, slots, variables, outputsByIndex, operatorUserId);
+            failures = executeClusterParallel(run, node, slots, variables, outputsByIndex, operatorUserId, progress);
         }
 
         cancellationGuard.assertExecutable(runId);
@@ -536,12 +540,13 @@ public class NodeExecutionService {
         WorkflowNodeRunEntity node,
         List<ClusterAgentSlot> slots,
         Map<String, Object> variables,
-        UUID operatorUserId
+        UUID operatorUserId,
+        JobProgressEmitter progress
     ) {
         Map<String, Object> nodeConfig = node.getConfigSnapshot();
         List<Map<String, Object>> agentConfigs = slots.stream().map(ClusterAgentSlot::config).toList();
         List<ClusterIntentRoutingSupport.IntentRoute> routes = ClusterIntentRoutingSupport.intentRoutes(nodeConfig, agentConfigs);
-        emit(run.getId(), node.getId(), "cluster_intent", Map.of(
+        progress.emit(node.getId(), "cluster_intent", Map.of(
             "eventType", "started",
             "routeCount", routes.size()
         ));
@@ -564,7 +569,7 @@ public class NodeExecutionService {
                 Map.of(),
                 operatorUserId
             ),
-            intentClassifierEventSink(run.getId(), node.getId())
+            intentClassifierEventSink(node.getId(), progress)
         ).outputs();
         ClusterIntentRoutingSupport.IntentDecision decision = ClusterIntentRoutingSupport.decide(
             nodeConfig,
@@ -578,7 +583,7 @@ public class NodeExecutionService {
             .map(slotByIndex::get)
             .filter(slot -> slot != null)
             .toList();
-        emit(run.getId(), node.getId(), "cluster_intent", Map.of(
+        progress.emit(node.getId(), "cluster_intent", Map.of(
             "eventType", "completed",
             "requestedCodes", decision.requestedCodes(),
             "selectedCodes", decision.selectedCodes(),
@@ -600,7 +605,8 @@ public class NodeExecutionService {
         List<ClusterAgentSlot> slots,
         Map<String, Object> variables,
         Map<Integer, Map<String, Object>> outputsByIndex,
-        UUID operatorUserId
+        UUID operatorUserId,
+        JobProgressEmitter progress
     ) {
         List<ClusterAgentOutcome> failures = new ArrayList<>();
         Map<String, Object> currentVars = new LinkedHashMap<>(variables);
@@ -610,7 +616,7 @@ public class NodeExecutionService {
                 currentVars.putAll(reused);
                 continue;
             }
-            ClusterAgentOutcome outcome = runClusterAgent(run, node, slot, new LinkedHashMap<>(currentVars), operatorUserId);
+            ClusterAgentOutcome outcome = runClusterAgent(run, node, slot, new LinkedHashMap<>(currentVars), operatorUserId, progress);
             if (outcome.success()) {
                 outputsByIndex.put(slot.index(), outcome.output());
                 currentVars.putAll(outcome.output());
@@ -632,7 +638,8 @@ public class NodeExecutionService {
         List<ClusterAgentSlot> slots,
         Map<String, Object> variables,
         Map<Integer, Map<String, Object>> outputsByIndex,
-        UUID operatorUserId
+        UUID operatorUserId,
+        JobProgressEmitter progress
     ) {
         List<ClusterAgentSlot> pending = slots.stream()
             .filter(slot -> !outputsByIndex.containsKey(slot.index()))
@@ -651,7 +658,7 @@ public class NodeExecutionService {
         try {
             List<CompletableFuture<ClusterAgentOutcome>> futures = pending.stream()
                 .map(slot -> CompletableFuture.supplyAsync(
-                    () -> runClusterAgent(run, node, slot, new LinkedHashMap<>(variables), operatorUserId),
+                    () -> runClusterAgent(run, node, slot, new LinkedHashMap<>(variables), operatorUserId, progress),
                     pool
                 ))
                 .toList();
@@ -687,10 +694,12 @@ public class NodeExecutionService {
         WorkflowNodeRunEntity node,
         ClusterAgentSlot slot,
         Map<String, Object> vars,
-        UUID operatorUserId
+        UUID operatorUserId,
+        JobProgressEmitter progress
     ) {
         UUID runId = run.getId();
         UUID nodeRunId = node.getId();
+        assertJobStillActive(progress.jobId());
         cancellationGuard.assertExecutable(runId);
 
         // 旧的非成功行（上次失败/中断残留）先删除，再插入本次 running 行。
@@ -700,9 +709,9 @@ public class NodeExecutionService {
         WorkflowClusterAgentRunEntity row = WorkflowClusterAgentRunEntity.started(
             runId, nodeRunId, run.getTenantId(), slot.index(), slot.name(), clock.instant()
         );
-        saveClusterRowIfNodeRunning(nodeRunId, row);
+        saveClusterRowIfNodeRunning(nodeRunId, row, progress.jobId());
 
-        emit(runId, nodeRunId, "cluster_agent", Map.of(
+        progress.emit(nodeRunId, "cluster_agent", Map.of(
             "agentIndex", slot.index(),
             "agentName", slot.name(),
             "eventType", "started"
@@ -711,13 +720,13 @@ public class NodeExecutionService {
         try {
             Map<String, Object> agentOutput = agentRuntimeService.executeStreaming(
                 new AgentRuntimeRequest(run, node, slot.config(), vars, Map.of(), operatorUserId),
-                clusterAgentEventSink(runId, nodeRunId, slot)
+                clusterAgentEventSink(nodeRunId, slot, progress)
             ).outputs();
 
             row.succeed(agentOutput, clock.instant());
-            saveClusterRowIfNodeRunning(nodeRunId, row);
+            saveClusterRowIfNodeRunning(nodeRunId, row, progress.jobId());
 
-            emit(runId, nodeRunId, "cluster_agent", Map.of(
+            progress.emit(nodeRunId, "cluster_agent", Map.of(
                 "agentIndex", slot.index(),
                 "agentName", slot.name(),
                 "eventType", "completed",
@@ -729,9 +738,13 @@ public class NodeExecutionService {
                 // 中断/超时不是子智能体业务失败：行保持 running，由中断清理或恢复时删除重跑。
                 throw exception;
             }
-            return failClusterAgent(runId, nodeRunId, slot, row, exception.getCode(), exception.getMessage(), exception);
+            return failClusterAgent(
+                runId, nodeRunId, slot, row, exception.getCode(), exception.getMessage(), exception, progress
+            );
         } catch (RuntimeException exception) {
-            return failClusterAgent(runId, nodeRunId, slot, row, "CLUSTER_AGENT_FAILED", "子智能体执行失败，请稍后重试", exception);
+            return failClusterAgent(
+                runId, nodeRunId, slot, row, "CLUSTER_AGENT_FAILED", "子智能体执行失败，请稍后重试", exception, progress
+            );
         }
     }
 
@@ -742,15 +755,16 @@ public class NodeExecutionService {
         WorkflowClusterAgentRunEntity row,
         String errorCode,
         String errorMessage,
-        Exception exception
+        Exception exception,
+        JobProgressEmitter progress
     ) {
         log.warn(
             "智能体集群子智能体执行失败 runId={} nodeRunId={} agentIndex={} agentName={} errorCode={}",
             runId, nodeRunId, slot.index(), slot.name(), errorCode, exception
         );
         row.fail(errorCode, errorMessage, clock.instant());
-        saveClusterRowIfNodeRunning(nodeRunId, row);
-        emit(runId, nodeRunId, "cluster_agent", Map.of(
+        saveClusterRowIfNodeRunning(nodeRunId, row, progress.jobId());
+        progress.emit(nodeRunId, "cluster_agent", Map.of(
             "agentIndex", slot.index(),
             "agentName", slot.name(),
             "eventType", "failed",
@@ -760,13 +774,17 @@ public class NodeExecutionService {
         return ClusterAgentOutcome.failure(slot.index(), slot.name(), errorCode, errorMessage);
     }
 
-    private AgentRuntimeService.AgentRuntimeEventSink clusterAgentEventSink(UUID runId, UUID nodeRunId, ClusterAgentSlot slot) {
+    private AgentRuntimeService.AgentRuntimeEventSink clusterAgentEventSink(
+        UUID nodeRunId,
+        ClusterAgentSlot slot,
+        JobProgressEmitter progress
+    ) {
         return new AgentRuntimeService.AgentRuntimeEventSink() {
             private final StringBuilder subAccumulated = new StringBuilder();
 
             @Override
             public void onPhase(String phase, String message) {
-                emit(runId, nodeRunId, "cluster_agent", Map.of(
+                progress.emit(nodeRunId, "cluster_agent", Map.of(
                     "agentIndex", slot.index(),
                     "agentName", slot.name(),
                     "eventType", "phase",
@@ -777,7 +795,7 @@ public class NodeExecutionService {
 
             @Override
             public void onToolCall(String toolName, String toolType, String status, String result, long durationMs) {
-                emit(runId, nodeRunId, "cluster_agent", Map.of(
+                progress.emit(nodeRunId, "cluster_agent", Map.of(
                     "agentIndex", slot.index(),
                     "agentName", slot.name(),
                     "eventType", "tool_call",
@@ -816,7 +834,7 @@ public class NodeExecutionService {
                 } else if (deltaContent != null && !deltaContent.isBlank()) {
                     subAccumulated.append(deltaContent);
                 }
-                emit(runId, nodeRunId, "cluster_agent", Map.of(
+                progress.emit(nodeRunId, "cluster_agent", Map.of(
                     "agentIndex", slot.index(),
                     "agentName", slot.name(),
                     "eventType", "streaming",
@@ -830,7 +848,7 @@ public class NodeExecutionService {
             public void onCompleted(String answer) {
                 subAccumulated.setLength(0);
                 subAccumulated.append(answer == null ? "" : answer);
-                emit(runId, nodeRunId, "cluster_agent", Map.of(
+                progress.emit(nodeRunId, "cluster_agent", Map.of(
                     "agentIndex", slot.index(),
                     "agentName", slot.name(),
                     "eventType", "streaming",
@@ -842,7 +860,7 @@ public class NodeExecutionService {
 
             @Override
             public void onFailed(String code, String message) {
-                emit(runId, nodeRunId, "cluster_agent", Map.of(
+                progress.emit(nodeRunId, "cluster_agent", Map.of(
                     "agentIndex", slot.index(),
                     "agentName", slot.name(),
                     "eventType", "failed",
@@ -853,13 +871,16 @@ public class NodeExecutionService {
         };
     }
 
-    private AgentRuntimeService.AgentRuntimeEventSink intentClassifierEventSink(UUID runId, UUID nodeRunId) {
+    private AgentRuntimeService.AgentRuntimeEventSink intentClassifierEventSink(
+        UUID nodeRunId,
+        JobProgressEmitter progress
+    ) {
         return new AgentRuntimeService.AgentRuntimeEventSink() {
             private final StringBuilder accumulated = new StringBuilder();
 
             @Override
             public void onPhase(String phase, String message) {
-                emit(runId, nodeRunId, "cluster_intent", Map.of(
+                progress.emit(nodeRunId, "cluster_intent", Map.of(
                     "eventType", "phase",
                     "phase", phase,
                     "message", message
@@ -869,7 +890,7 @@ public class NodeExecutionService {
             @Override
             public void onToolCall(String toolName, String toolType, String status, String result, long durationMs) {
                 // 意图分类器不注入 Skill/MCP；如果未来扩展工具，这里仍保留脱敏事件，便于审计异常配置。
-                emit(runId, nodeRunId, "cluster_intent", Map.of(
+                progress.emit(nodeRunId, "cluster_intent", Map.of(
                     "eventType", "tool_call",
                     "toolName", toolName,
                     "toolType", toolType,
@@ -906,7 +927,7 @@ public class NodeExecutionService {
                 } else if (deltaContent != null && !deltaContent.isBlank()) {
                     accumulated.append(deltaContent);
                 }
-                emit(runId, nodeRunId, "cluster_intent", Map.of(
+                progress.emit(nodeRunId, "cluster_intent", Map.of(
                     "eventType", "streaming",
                     "streamKind", streamKind,
                     "deltaContent", deltaContent == null ? "" : deltaContent,
@@ -918,7 +939,7 @@ public class NodeExecutionService {
             public void onCompleted(String answer) {
                 accumulated.setLength(0);
                 accumulated.append(answer == null ? "" : answer);
-                emit(runId, nodeRunId, "cluster_intent", Map.of(
+                progress.emit(nodeRunId, "cluster_intent", Map.of(
                     "eventType", "streaming",
                     "streamKind", "final_answer",
                     "deltaContent", "",
@@ -928,7 +949,7 @@ public class NodeExecutionService {
 
             @Override
             public void onFailed(String code, String message) {
-                emit(runId, nodeRunId, "cluster_intent", Map.of(
+                progress.emit(nodeRunId, "cluster_intent", Map.of(
                     "eventType", "failed",
                     "errorCode", code,
                     "errorMessage", message
@@ -940,7 +961,10 @@ public class NodeExecutionService {
     /**
      * 仅当节点仍在运行时写入子智能体行：防止用户中断清理数据后，迟到的执行线程把旧数据复活。
      */
-    private void saveClusterRowIfNodeRunning(UUID nodeRunId, WorkflowClusterAgentRunEntity row) {
+    private void saveClusterRowIfNodeRunning(UUID nodeRunId, WorkflowClusterAgentRunEntity row, UUID jobId) {
+        if (!isJobStillActive(jobId)) {
+            return;
+        }
         WorkflowNodeRunEntity node = workflowNodeRunRepository.findById(nodeRunId).orElse(null);
         if (node == null || !"running".equals(node.getState())) {
             return;
@@ -987,11 +1011,12 @@ public class NodeExecutionService {
             }
         });
         workbenchRuntimeService.failNodeIfActive(runId, command.nodeRunId(), errorCode, errorMessage);
-        emit(runId, command.nodeRunId(), "node_failed", Map.of(
+        JobProgressEmitter progress = new JobProgressEmitter(runId, command.jobId());
+        progress.emit(command.nodeRunId(), "node_failed", Map.of(
             "errorCode", errorCode,
             "errorMessage", errorMessage == null ? "节点执行失败" : errorMessage
         ));
-        streamWriter.append(runId, "message", "[DONE]");
+        progress.done();
     }
 
     /**
@@ -1018,7 +1043,10 @@ public class NodeExecutionService {
             now
         );
         jobRepository.save(retryJob);
-        emit(command.runId(), command.nodeRunId(), "agent_thinking", Map.of(
+        // 自动重试属于同一轮执行，保留既有进度，但切换 activeJob 栅栏，旧 attempt 不得继续写流。
+        streamWriter.activateJob(command.runId(), retryJob.getId(), false);
+        JobProgressEmitter retryProgress = new JobProgressEmitter(command.runId(), retryJob.getId());
+        retryProgress.emit(command.nodeRunId(), "agent_thinking", Map.of(
             "phase", "model_calling",
             "message", "模型调用出现瞬时故障，正在自动重试（第 " + nextAttempt + " 次尝试）..."
         ));
@@ -1039,7 +1067,8 @@ public class NodeExecutionService {
         );
     }
 
-    private void emitPostCompletionState(UUID runId, UUID nodeRunId) {
+    private void emitPostCompletionState(JobProgressEmitter progress, UUID nodeRunId) {
+        UUID runId = progress.runId();
         List<WorkflowNodeRunEntity> allNodes = workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(runId);
         WorkflowNodeRunEntity finishedNode = allNodes.stream()
             .filter(node -> node.getId().equals(nodeRunId))
@@ -1049,7 +1078,7 @@ public class NodeExecutionService {
             return;
         }
         // 智能体/集群/交付完成后停在当前节点等待用户确认，与 saveNodeSuccess 的状态机口径一致。
-        emit(runId, null, "run_paused", Map.of(
+        progress.emit(null, "run_paused", Map.of(
             "nextNodeRunId", finishedNode.getId().toString(),
             "nextNodeName", finishedNode.getName(),
             "nextNodeType", finishedNode.getNodeType(),
@@ -1085,10 +1114,17 @@ public class NodeExecutionService {
             .orElse(false);
     }
 
-    private void emitHeartbeat(UUID runId, UUID nodeRunId, String workerId) {
+    private void assertJobStillActive(UUID jobId) {
+        if (!isJobStillActive(jobId)) {
+            throw new ApiException(HttpStatus.CONFLICT, "RUN_CANCELLED", "当前执行作业已被替换");
+        }
+    }
+
+    private void emitHeartbeat(JobProgressEmitter progress, UUID nodeRunId, String workerId) {
+        UUID runId = progress.runId();
         try {
             leaseService.renew(runId, workerId);
-            emit(runId, nodeRunId, "heartbeat", Map.of("workerId", workerId));
+            progress.emit(nodeRunId, "heartbeat", Map.of("workerId", workerId));
         } catch (Exception exception) {
             log.warn("执行心跳发送失败 runId={} workerId={}", runId, workerId, exception);
         }
@@ -1096,19 +1132,6 @@ public class NodeExecutionService {
 
     private Map<String, Object> variablesBeforeNode(WorkflowRunEntity run, int sortOrder) {
         return workbenchRuntimeService.resolveVariablesBeforeNode(run.getId(), sortOrder);
-    }
-
-    private void emit(UUID runId, UUID nodeRunId, String eventName, Map<String, Object> extra) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("runId", runId.toString());
-        if (nodeRunId != null) {
-            payload.put("nodeRunId", nodeRunId.toString());
-        }
-        payload.put("timestamp", clock.instant().toString());
-        if (extra != null) {
-            payload.putAll(extra);
-        }
-        streamWriter.append(runId, eventName, payload);
     }
 
     private static boolean isExecutableState(String state) {
@@ -1206,6 +1229,47 @@ public class NodeExecutionService {
 
         static ClusterAgentOutcome failure(int index, String name, String errorCode, String errorMessage) {
             return new ClusterAgentOutcome(index, name, false, Map.of(), errorCode, errorMessage);
+        }
+    }
+
+    /**
+     * 单次执行作业的进度写入器。所有事件携带 jobId，并由 Redis Lua 与当前 activeJob 原子比对；
+     * 中断、恢复或自动重试切换作业后，旧 Worker 即使模型请求迟到返回也无法污染新一轮 Stream。
+     */
+    private final class JobProgressEmitter {
+
+        private final UUID runId;
+        private final UUID jobId;
+
+        private JobProgressEmitter(UUID runId, UUID jobId) {
+            this.runId = runId;
+            this.jobId = jobId;
+        }
+
+        private UUID runId() {
+            return runId;
+        }
+
+        private UUID jobId() {
+            return jobId;
+        }
+
+        private void emit(UUID nodeRunId, String eventName, Map<String, Object> extra) {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("runId", runId.toString());
+            payload.put("jobId", jobId.toString());
+            if (nodeRunId != null) {
+                payload.put("nodeRunId", nodeRunId.toString());
+            }
+            payload.put("timestamp", clock.instant().toString());
+            if (extra != null) {
+                payload.putAll(extra);
+            }
+            streamWriter.appendIfActiveJob(runId, jobId, eventName, payload);
+        }
+
+        private void done() {
+            streamWriter.appendIfActiveJob(runId, jobId, "message", "[DONE]");
         }
     }
 }

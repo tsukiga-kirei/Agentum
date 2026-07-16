@@ -53,8 +53,8 @@ function clearStoredLastEventId(runId: string): void {
  * 执行在后端 Worker 完成、事件落 Redis Stream，本 Hook 只负责连接中继并回放：
  * - 进入/刷新页面用 `connect({ replay: true })` 回放当前步骤全部事件，做到无感恢复；
  * - 断线自动重连时优先带 lastEventId 续传，避免漏事件；
- * - heartbeat 事件刷新 lastEventAt，供上层看门狗判定后台执行是否存活；
- * - 连续重连失败计数暴露给上层，达到阈值时亮出被动「恢复进度」按钮。
+ * - heartbeat 事件刷新 lastEventAt，供上层看门狗判定页面进度连接是否存活；
+ * - 连续重连失败计数暴露给上层，达到阈值时提示用户重新连接进度流。
  */
 export function useRunStream(
   tenantId: string,
@@ -91,6 +91,8 @@ export function useRunStream(
   const [reconnectFailures, setReconnectFailures] = useState(0);
 
   const abortControllerRef = useRef<AbortController | null>(null);
+  /** 看门狗必须读到实时值：state 版本会被 setInterval 闭包冻结，导致流仍在推送却被误判失联。 */
+  const lastEventAtRef = useRef<number | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const connectionStateRef = useRef<StreamConnectionState>("disconnected");
   const isStreamActiveRef = useRef(false);
@@ -112,6 +114,9 @@ export function useRunStream(
 
   const isStepStreamTerminal = useCallback(() => stepStreamTerminalRef.current, []);
 
+  /** 实时读取最近事件时间：供看门狗在 setInterval 内使用，避免闭包捕获过期 state。 */
+  const getLastEventAt = useCallback(() => lastEventAtRef.current, []);
+
   const disconnect = useCallback((options?: { preserveProgress?: boolean }) => {
     const preserveProgress = options?.preserveProgress === true;
     connectSessionRef.current += 1;
@@ -130,9 +135,11 @@ export function useRunStream(
     }
     setConnectionState("disconnected");
     setIsStreaming(false);
-    setActiveNodeInfo(null);
-    activeNodeRunIdRef.current = null;
+    // 看门狗失联时保留当前节点身份：否则 clusterAgentsForPanel 会因 activeNodeInfo 被清空
+    // 而丢掉已展示的流式进度，界面退化成空的「智能体正在生成回复…」。
     if (!preserveProgress) {
+      setActiveNodeInfo(null);
+      activeNodeRunIdRef.current = null;
       setStreamingText("");
       setRenderedUserPrompt(null);
       setCurrentPhase(null);
@@ -178,6 +185,10 @@ export function useRunStream(
 
     setConnectionState("connecting");
     setError(null);
+    // 从本次连接真正开始计时，保证首次巡检不会把 null 当成“已失联无限久”，
+    // 同时也避免沿用上一次连接的旧时间戳而在重连后立即误报。
+    lastEventAtRef.current = Date.now();
+    setLastEventAt(lastEventAtRef.current);
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -266,7 +277,8 @@ export function useRunStream(
                 if (currentEventId) {
                   storeLastEventId(runId, currentEventId);
                 }
-                setLastEventAt(Date.now());
+                lastEventAtRef.current = Date.now();
+                setLastEventAt(lastEventAtRef.current);
 
                 if (dataStr === "[DONE]") {
                   // 步骤终态：清除断点记录，下次进入重新整步回放。
@@ -538,6 +550,10 @@ export function useRunStream(
             }
           } else if (eventType === "streaming" && accumulatedContent && streamKind === "reasoning") {
             agent.status = "running";
+            // 新一轮推理开始时收起上一轮正文，避免「深度推理中」与「生成最终答案」并排抢占。
+            if (agent.answerActive || agent.streamingText) {
+              agent.streamingText = "";
+            }
             agent.reasoningText = accumulatedContent;
             agent.reasoningActive = true;
             agent.answerActive = false;
@@ -731,6 +747,7 @@ export function useRunStream(
     connectionState,
     error,
     lastEventAt,
+    getLastEventAt,
     reconnectFailures,
     connect,
     ensureConnected,

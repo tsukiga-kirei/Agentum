@@ -94,7 +94,8 @@ export function TaskRunWorkspace({
   const [selectedTraceStepIndex, setSelectedTraceStepIndex] = useState<number | null>(null);
   const [isAdvancing, setIsAdvancing] = useState(false);
   const [advanceError, setAdvanceError] = useState<string | null>(null);
-  // 前端看门狗：SSE 连续失败或后台长时间无事件且探测失败时，主动亮出被动「恢复进度」按钮。
+  // 前端看门狗只描述“页面进度流失联”，不能把浏览器断流等同于后台执行失败。
+  // 后台是否失败由 activeJob / 节点事实状态决定，只有后端确认 failed 后才能恢复进度。
   const [watchdogStaleMessage, setWatchdogStaleMessage] = useState<string | null>(null);
   const processedStreamEventsRef = useRef(0);
   /** 「当前处理 / 执行历史」主内容滚动容器：切到已完成步骤时滚回顶部。 */
@@ -286,12 +287,20 @@ export function TaskRunWorkspace({
     stream.isStepStreamTerminal,
   ]);
 
-  // 节点到达终态后清除看门狗异常标记（恢复进度/重新执行成功后不再残留提示）。
+  // 节点到达事实终态后清除页面断流标记，让按钮回到后端状态对应的恢复/重做语义。
   useEffect(() => {
-    if (activeStep.state === "done" || activeStep.state === "pending") {
+    if (
+      !activeJobAlive
+      && (
+        activeStep.state === "done"
+        || activeStep.state === "pending"
+        || activeStep.state === "failed"
+        || activeStep.state === "canceled"
+      )
+    ) {
       setWatchdogStaleMessage(null);
     }
-  }, [activeStep.nodeRunId, activeStep.state]);
+  }, [activeStep.nodeRunId, activeStep.state, activeJobAlive]);
 
   // 失败或被中断的步骤自动切到「当前处理」，让用户第一时间看到恢复按钮。
   useEffect(() => {
@@ -315,10 +324,10 @@ export function TaskRunWorkspace({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runDetail.readOnly, runDetail.id, activeJobAlive]);
 
-  // 前端看门狗：满足任一条件即判定异常，亮出被动「恢复进度」按钮。
+  // 前端看门狗：满足任一条件即判定“本页面进度连接异常”。
   // 1) SSE 连续重连失败达到阈值（前后端关联失效）；
-  // 2) activeJob 显示运行中，但超过阈值无任何事件（含 heartbeat），且 getRun 探测后仍无进展。
-  // 判定后必须断开 SSE 并保留已展示进度，否则 isStreaming 仍为 true，「恢复进度」出不来。
+  // 2) activeJob 显示运行中，且确实超过阈值未收到任何事件（含 heartbeat）。
+  // 判定后断开 SSE 并保留已展示进度；这里只允许重新连接，不允许触发 recover 新建作业。
   useEffect(() => {
     if (runDetail.readOnly || watchdogStaleMessage) {
       return;
@@ -332,12 +341,17 @@ export function TaskRunWorkspace({
       return;
     }
     const timer = window.setInterval(() => {
-      const lastSeen = stream.lastEventAt;
-      const sinceLastEvent = lastSeen === null ? Number.POSITIVE_INFINITY : Date.now() - lastSeen;
-      if (stream.connectionState === "connected" && sinceLastEvent < WATCHDOG_STALE_THRESHOLD_MS) {
+      // 必须用 ref 实时读取：闭包中的 stream.lastEventAt / connectionState 会被冻结。
+      const lastSeen = stream.getLastEventAt();
+      // 尚未收到任何 SSE 事件时不得按「超时 1 分钟」判定——刚连上时 lastEventAt 为 null，
+      // 若当成 Infinity 会在第一次 15s 探测时就误报失联。
+      if (lastSeen === null) {
         return;
       }
-      // 长时间无事件：主动探测一次后端，若作业已消失则由轮询兜底收敛，否则判定执行无响应。
+      const sinceLastEvent = Date.now() - lastSeen;
+      if (sinceLastEvent < WATCHDOG_STALE_THRESHOLD_MS) {
+        return;
+      }
       void (async () => {
         const probed = await reloadRunDetail();
         if (!probed) {
@@ -345,10 +359,17 @@ export function TaskRunWorkspace({
           stream.disconnect({ preserveProgress: true });
           return;
         }
-        const probeLastSeen = stream.lastEventAt;
-        const probeSince = probeLastSeen === null ? Number.POSITIVE_INFINITY : Date.now() - probeLastSeen;
-        if (isActiveJobAlive(probed) && probeSince >= WATCHDOG_STALE_THRESHOLD_MS) {
-          setWatchdogStaleMessage("后台执行长时间无进度事件（超过 1 分钟未收到流式增量或心跳），页面已与执行失联。");
+        const probeLastSeen = stream.getLastEventAt();
+        if (probeLastSeen === null) {
+          return;
+        }
+        const probeSince = Date.now() - probeLastSeen;
+        // 探测期间若又收到事件/心跳，说明流仍存活，取消误判。
+        if (probeSince < WATCHDOG_STALE_THRESHOLD_MS) {
+          return;
+        }
+        if (isActiveJobAlive(probed)) {
+          setWatchdogStaleMessage("超过 1 分钟未收到流式增量或心跳，页面进度连接已断开；后台任务仍在执行，请重新连接查看进度。");
           stream.disconnect({ preserveProgress: true });
         }
       })();
@@ -363,7 +384,6 @@ export function TaskRunWorkspace({
     activeJobAlive,
     watchdogStaleMessage,
     stream.reconnectFailures,
-    stream.connectionState,
   ]);
 
   useEffect(() => {
@@ -668,6 +688,37 @@ export function TaskRunWorkspace({
       console.error("恢复当前步骤进度失败", error);
       setAdvanceError(message);
       await reloadRunDetail();
+    } finally {
+      setIsAdvancing(false);
+    }
+  }
+
+  // 页面断流只重新连接 Redis Stream/SSE；不得调用 recover，否则健康 Worker 会与新作业并行输出。
+  async function handleReconnectProgress() {
+    if (isAdvancing) {
+      return;
+    }
+    setIsAdvancing(true);
+    setAdvanceError(null);
+    try {
+      const updated = await reloadRunDetail();
+      if (!updated) {
+        setWatchdogStaleMessage("暂时无法获取服务端任务状态，请稍后重新连接。");
+        return;
+      }
+      if (!isActiveJobAlive(updated)) {
+        setWatchdogStaleMessage(null);
+        return;
+      }
+      stream.clearStepStreamTerminal();
+      setWatchdogStaleMessage(null);
+      await stream.connect();
+      await stream.ensureConnected();
+    } catch (error: unknown) {
+      console.warn("重新连接任务进度失败", {
+        message: error instanceof Error ? error.message : "未知错误",
+      });
+      setWatchdogStaleMessage("重新连接进度失败，后台任务可能仍在执行，请稍后重试。");
     } finally {
       setIsAdvancing(false);
     }
@@ -1022,7 +1073,7 @@ export function TaskRunWorkspace({
                     executionSteps={stream.executionSteps}
                     streamStartedAt={stream.streamStartedAt}
                     readOnly={runDetail.readOnly}
-                    scrollToLatestAnswerWhenDone={!isFlowCompleted && activeStep.state === "done"}
+                    scrollToLatestAnswerWhenDone={!isFlowCompleted && (activeStep.state === "done" || activeStep.state === "failed")}
                     onSaveAnswer={(content) => handleSaveAnswer(content)}
                     onFollowUp={(followUpMessage) => handleFollowUpStep(followUpMessage)}
                   />
@@ -1034,7 +1085,7 @@ export function TaskRunWorkspace({
                     templateVariables={activeTemplateVariables}
                     isStreaming={isLiveExecuting}
                     streamStartedAt={stream.streamStartedAt}
-                    scrollToLatestAnswerWhenDone={!isFlowCompleted && activeStep.state === "done"}
+                    scrollToLatestAnswerWhenDone={!isFlowCompleted && (activeStep.state === "done" || activeStep.state === "failed")}
                     onFollowUpAgent={(agentIndex, followUpMessage) => handleFollowUpClusterAgent(agentIndex, followUpMessage)}
                     onSaveAgentAnswer={(agentIndex, content) => handleSaveClusterAgentAnswer(agentIndex, content)}
                   />
@@ -1106,7 +1157,7 @@ export function TaskRunWorkspace({
               isLastStep={isLastStep}
               stepCanceled={stepCanceled}
               stepFailed={runDetail.state === "failed" || activeStep.state === "failed"}
-              watchdogStale={!!watchdogStaleMessage}
+              streamDisconnected={!!watchdogStaleMessage}
               failureMessage={watchdogStaleMessage ?? stepErrorMessage}
               readOnly={runDetail.readOnly}
               onAdvance={handleAdvanceStep}
@@ -1118,6 +1169,7 @@ export function TaskRunWorkspace({
               onInterrupt={handleInterruptStream}
               onRestart={handleRestartStep}
               onRecover={handleRecoverStep}
+              onReconnectProgress={handleReconnectProgress}
             />
           )}
         </section>

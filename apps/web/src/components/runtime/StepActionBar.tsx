@@ -14,8 +14,8 @@ interface StepActionBarProps {
   stepCanceled?: boolean;
   /** 节点执行失败（failed）：仅展示「恢复进度」 */
   stepFailed?: boolean;
-  /** 前端看门狗判定执行异常（SSE 持续失败 / 长时间无心跳）：按被动失败处理 */
-  watchdogStale?: boolean;
+  /** 页面进度流断开：后台作业可能仍在执行，只允许重新连接，不能新建恢复作业 */
+  streamDisconnected?: boolean;
   /** 被动恢复场景展示在按钮左侧的人类可读错误原因 */
   failureMessage?: string | null;
   readOnly: boolean;
@@ -30,6 +30,8 @@ interface StepActionBarProps {
   onRestart?: () => void;
   /** 被动「恢复进度」：保留已成功子智能体，仅重跑失败/未完成部分 */
   onRecover?: () => void;
+  /** 仅重新建立 SSE 进度连接，不触发后台重复执行 */
+  onReconnectProgress?: () => void;
 }
 
 export function StepActionBar({
@@ -41,7 +43,7 @@ export function StepActionBar({
   isLastStep = false,
   stepCanceled = false,
   stepFailed = false,
-  watchdogStale = false,
+  streamDisconnected = false,
   failureMessage,
   readOnly,
   onAdvance,
@@ -53,6 +55,7 @@ export function StepActionBar({
   onInterrupt,
   onRestart,
   onRecover,
+  onReconnectProgress,
 }: StepActionBarProps) {
   
   if (readOnly) {
@@ -79,7 +82,7 @@ export function StepActionBar({
   }
 
   // 按钮互斥矩阵：主动中断（canceled）优先级最高，只出「重新执行」；
-  // 其后是被动失败（failed / 看门狗判异常），只出「恢复进度」并在左侧展示错误原因。
+  // 后端确认失败才允许「恢复进度」；浏览器进度流断开只能重新连接，不能创建第二个执行作业。
   if (stepCanceled && !isAdvancing && !isStreaming) {
     return (
       <div className="step-action-bar flex justify-between items-center p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
@@ -97,7 +100,7 @@ export function StepActionBar({
     );
   }
 
-  if ((stepFailed || watchdogStale) && !isAdvancing && !isStreaming) {
+  if (stepFailed && !isAdvancing && !isStreaming) {
     return (
       <div className="step-action-bar flex justify-between items-center gap-4 p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
         <span className="min-w-0 text-xs text-rose-600 dark:text-rose-400 font-medium leading-relaxed">
@@ -109,6 +112,23 @@ export function StepActionBar({
           onClick={onRecover}
         >
           <History size={14} /> 恢复进度
+        </button>
+      </div>
+    );
+  }
+
+  if (streamDisconnected && !isAdvancing && !isStreaming) {
+    return (
+      <div className="step-action-bar flex justify-between items-center gap-4 p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
+        <span className="min-w-0 text-xs text-amber-600 dark:text-amber-400 font-medium leading-relaxed">
+          {failureMessage || "页面暂时收不到执行进度，后台任务可能仍在继续。"}
+        </span>
+        <button
+          type="button"
+          className="sys-btn sys-btn--primary shrink-0 flex items-center gap-2 text-xs"
+          onClick={onReconnectProgress}
+        >
+          <RotateCw size={14} /> 重新连接进度
         </button>
       </div>
     );

@@ -179,8 +179,13 @@ export type RuntimePreview = {
 // SSE 事件类型
 // ============================================================
 
+/** Worker 作业事件代次；旧 job 的迟到事件会由 Redis 栅栏丢弃。 */
+type RuntimeJobEventMeta = {
+  jobId?: string;
+};
+
 /** 节点开始执行事件 */
-export type NodeStartedEvent = {
+export type NodeStartedEvent = RuntimeJobEventMeta & {
   runId: string;
   nodeRunId: string;
   nodeType: string;
@@ -189,7 +194,7 @@ export type NodeStartedEvent = {
 };
 
 /** 智能体准备阶段事件 */
-export type AgentThinkingEvent = {
+export type AgentThinkingEvent = RuntimeJobEventMeta & {
   runId: string;
   nodeRunId: string;
   phase: AgentPhase;
@@ -199,7 +204,7 @@ export type AgentThinkingEvent = {
 };
 
 /** 模型调用前已完成变量和附件正文展开的用户消息事件。 */
-export type AgentPromptPreparedEvent = {
+export type AgentPromptPreparedEvent = RuntimeJobEventMeta & {
   runId: string;
   nodeRunId: string;
   renderedUserPrompt: string;
@@ -207,7 +212,7 @@ export type AgentPromptPreparedEvent = {
 };
 
 /** 智能体模型流式输出事件 */
-export type AgentStreamingEvent = {
+export type AgentStreamingEvent = RuntimeJobEventMeta & {
   runId: string;
   nodeRunId: string;
   /** model_content 表示模型普通正文，final_answer 表示 final_answer 工具参数正文 */
@@ -220,7 +225,7 @@ export type AgentStreamingEvent = {
 };
 
 /** 工具调用事件（MCP / Skill） */
-export type AgentToolCallEvent = {
+export type AgentToolCallEvent = RuntimeJobEventMeta & {
   runId: string;
   nodeRunId: string;
   toolName: string;
@@ -234,7 +239,7 @@ export type AgentToolCallEvent = {
 };
 
 /** 子智能体事件（多智能体集群场景） */
-export type ClusterAgentEvent = {
+export type ClusterAgentEvent = RuntimeJobEventMeta & {
   runId: string;
   nodeRunId: string;
   /** 子智能体在集群中的索引 */
@@ -271,7 +276,7 @@ export type ClusterAgentEvent = {
 };
 
 /** 智能体集群意图分派事件 */
-export type ClusterIntentEvent = {
+export type ClusterIntentEvent = RuntimeJobEventMeta & {
   runId: string;
   nodeRunId: string;
   eventType: "started" | "phase" | "streaming" | "tool_call" | "completed" | "failed";
@@ -297,7 +302,7 @@ export type ClusterIntentEvent = {
 };
 
 /** 节点执行完成事件 */
-export type NodeCompletedEvent = {
+export type NodeCompletedEvent = RuntimeJobEventMeta & {
   runId: string;
   nodeRunId: string;
   outputs: Record<string, unknown>;
@@ -305,7 +310,7 @@ export type NodeCompletedEvent = {
 };
 
 /** 节点执行失败事件 */
-export type NodeFailedEvent = {
+export type NodeFailedEvent = RuntimeJobEventMeta & {
   runId: string;
   nodeRunId: string;
   errorCode: string;
@@ -314,7 +319,7 @@ export type NodeFailedEvent = {
 };
 
 /** 流程暂停事件 */
-export type RunPausedEvent = {
+export type RunPausedEvent = RuntimeJobEventMeta & {
   runId: string;
   /** 下一个待处理的节点（如果有） */
   nextNodeRunId?: string;
@@ -334,7 +339,7 @@ export type RunCompletedEvent = {
 };
 
 /** 心跳保活事件：Worker 每 15s 发送一次，前端看门狗据此判定后台执行是否存活 */
-export type HeartbeatEvent = {
+export type HeartbeatEvent = RuntimeJobEventMeta & {
   timestamp: string;
   runId?: string;
   nodeRunId?: string;
@@ -499,6 +504,8 @@ export type RunStreamState = {
   error: string | null;
   /** 最近一次收到任意事件（含 heartbeat）的本地时间戳（毫秒），看门狗活性判定依据 */
   lastEventAt: number | null;
+  /** 实时读取最近事件时间戳：看门狗定时器内必须用它，state 版本会被闭包冻结导致误判失联 */
+  getLastEventAt: () => number | null;
   /** 连续重连失败次数：达到阈值时前端看门狗主动判定异常 */
   reconnectFailures: number;
   /** 建立连接 */

@@ -37,10 +37,12 @@ interface SingleAgentPanelProps {
   /** 中断空态文案场景：多智能体抽屉内子智能体详情使用 clusterDrawer */
   interruptedScope?: "default" | "clusterDrawer";
   /**
-   * 当前步骤已完成、尚未点「执行下一步」时：切换回来滚到最后一轮 AI 回答开头，
-   * 而不是整页顶部。
+   * 当前步骤已完成/失败、尚未点「执行下一步」时：切换回来滚到最后一轮 AI 回答。
+   * 失败态同样需要滚动——报错不会取消滚动，此前漏接了 failed。
    */
   scrollToLatestAnswerWhenDone?: boolean;
+  /** 完成/失败态滚到回答时的对齐方式；详情抽屉常用 end 以露出最底部回复。 */
+  scrollAnswerBlockWhenDone?: ScrollLogicalPosition;
   onSaveAnswer?: (content: string) => void | Promise<void>;
   onFollowUp?: (followUpMessage: string) => void | Promise<void>;
 }
@@ -538,6 +540,7 @@ export function SingleAgentPanel({
   readOnly = false,
   interruptedScope = "default",
   scrollToLatestAnswerWhenDone = false,
+  scrollAnswerBlockWhenDone = "start",
   onSaveAnswer,
   onFollowUp,
 }: SingleAgentPanelProps) {
@@ -646,7 +649,7 @@ export function SingleAgentPanel({
   }
 
   // 进入进行中步骤：首次 → 跟底；切回已看过的进行中步骤 → 最新 AI 回答开头。
-  // 当前步已完成但未推进下一步：同样滚到最后一轮 AI 回答开头。
+  // 当前步已完成/失败但未推进下一步：滚到最后一轮 AI 回答（默认正文开头；抽屉可指定 end）。
   // 历史已完成步骤由 TaskRunWorkspace 主滚动区回到顶部。
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -665,16 +668,28 @@ export function SingleAgentPanel({
         scrollAnswerAnchor(latestAnswerEndRef.current, "end", "smooth");
         return;
       }
-      if (scrollToLatestAnswerWhenDone && activeStep.state === "done") {
-        scrollAnswerAnchor(
-          latestAnswerBodyRef.current ?? latestAnswerStartRef.current,
-          "start",
-          "auto",
-        );
+      const terminalForScroll = activeStep.state === "done" || activeStep.state === "failed";
+      if (!scrollToLatestAnswerWhenDone || !terminalForScroll) {
+        return;
       }
+      if (scrollAnswerBlockWhenDone === "end") {
+        scrollAnswerAnchor(latestAnswerEndRef.current ?? latestAnswerStartRef.current, "end", "auto");
+        return;
+      }
+      scrollAnswerAnchor(
+        latestAnswerBodyRef.current ?? latestAnswerStartRef.current,
+        "start",
+        "auto",
+      );
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [activeStep.nodeRunId, activeStep.state, showRunningHero, scrollToLatestAnswerWhenDone]);
+  }, [
+    activeStep.nodeRunId,
+    activeStep.state,
+    showRunningHero,
+    scrollToLatestAnswerWhenDone,
+    scrollAnswerBlockWhenDone,
+  ]);
 
   // 进行中且未取消跟底时：工具/推理/正文任意更新都跟到 AI 回答最底部。
   useEffect(() => {

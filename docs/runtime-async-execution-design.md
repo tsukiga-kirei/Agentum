@@ -1,6 +1,6 @@
 # 运行态异步执行设计（MQ + Redis）
 
-更新时间：2026-06-10
+更新时间：2026-07-16
 
 本文档描述 Agentum 工作流运行态从「单进程 `@Async` + 内存 SSE」演进到「RabbitMQ 执行 + Redis 协调与进度回放」的目标架构、消息契约、数据变更与分阶段落地计划。
 
@@ -12,6 +12,8 @@
 > - 交互语义：主动中断 → 节点 `canceled` + 数据清空 + 「重新执行」（`POST .../nodes/{nodeRunId}/restart`）；被动失败（模型错误/超时/失联）→ 节点 `failed` + 保留已成功子智能体 + 「恢复进度」（`.../recover`）。
 > - 集群节点 `config.executionMode` 支持 `collaborative`（协同处理，受 `cluster-parallelism` 限流）、`relay`（接力处理，后续子智能体可引用前序输出）与 `intent`（意图分派，先按 `intentRoutes` 分类，再只执行命中子智能体；多个命中按意图清单顺序写入集群输出模板）；历史 `parallel` / `sequential` 数据由迁移脚本清洗为新枚举，运行态不再保留旧值兼容分支。
 > - 节点执行超时通过环境变量 `AGENTUM_RUNTIME_NODE_TIMEOUT_SECONDS`（默认 1800s）控制。
+> - 运行进度按 `jobId` 设置 Redis activeJob 代次栅栏；恢复、重做或自动重试切换作业后，旧 Worker 的迟到事件不能写入新一轮 Stream，子智能体中间结果落库也会复核 job 仍有效。
+> - 浏览器超过阈值未收到 SSE 增量/心跳只表示「页面进度连接断开」，页面仅允许重新连接；只有后端节点已进入 `failed` 才开放「恢复进度」，健康 `queued/running` 作业会拒绝 recover，避免重复生成。
 > - 文中提到的 `inline` 模式与 `runtime.execution.mode` 开关为历史迁移方案，未予保留，仅作设计过程记录。
 
 相关文档：
@@ -211,6 +213,7 @@ Routing keys:
 | `run:{runId}:events` | Stream | SSE 进度事件，支持 `XREAD` / `XRANGE` | `MAXLEN ~ stream-max-len` |
 | `run:{runId}:stream:{nodeRunId}` | Hash | `accumulatedContent`、`updatedAt` | 与 run 生命周期一致，完成后 24h |
 | `run:{runId}:cancel` | String | `"1"` 表示用户请求取消 | 1h |
+| `run:{runId}:active-job` | String | 当前允许写进度的 `jobId`；Lua 原子比较后再 XADD，隔离迟到事件 | 节点超时 + 1h |
 
 ### 5.2 Stream 事件格式
 
@@ -451,6 +454,8 @@ async 模式：`ProgressCallback` -> `RunProgressStreamWriter`
 | SSE 30s 无事件且 activeJob 存在 | 调 `GET /progress` 或刷新 RunDetail |
 | 节点 `failed` | 展示错误 + 「重新执行」（新 attempt，新 idempotencyKey） |
 | 节点 `running` 且无 activeJob | 视为 stale，允许用户确认后 re-advance |
+
+补充约束：前端 SSE 看门狗不能直接调用 `recover`。页面断流时只执行 RunDetail 探测与 SSE 断点续传；`recover` 只处理后端已确认的失败/僵死作业。后端即使收到伪造或过期 recover 请求，也必须在存在健康 `queued/running` job 或有效租约时返回 `WORKBENCH_ADVANCE_ALREADY_IN_FLIGHT`。
 
 移除或弱化「3s 无 SSE 自动 advance」启发式，改为以后端 `activeJob` + StaleReaper 为准。
 

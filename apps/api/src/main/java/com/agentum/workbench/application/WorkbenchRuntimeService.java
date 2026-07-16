@@ -1151,7 +1151,8 @@ public class WorkbenchRuntimeService {
         }
         transactionTemplate.executeWithoutResult(status -> {
             terminateRecoverableStaleJobs(runId);
-            abortLingeringExecution(runId);
+            // 页面 SSE 断流不代表 Worker 失败。仍有健康 queued/running 作业时必须拒绝恢复，
+            // 否则释放租约并创建第二个作业会让两轮模型输出互相抢占。
             assertNoExecutionInFlight(runId);
             prepareNodeReExecution(run, node, false, principal.userId(), "run_node_recovered", "步骤恢复执行",
                 "已保留「" + node.getName() + "」已成功的子智能体结果，仅重跑失败或未完成部分。");
@@ -1266,7 +1267,6 @@ public class WorkbenchRuntimeService {
             }
             throw exception;
         }
-        streamWriter.reset(runId);
         publishNodeExecuteCommandAfterCommit(NodeExecuteCommand.of(
             job.getId(),
             tenantId,
@@ -1305,11 +1305,14 @@ public class WorkbenchRuntimeService {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
+                    // 先激活作业代次并原子清空旧 Stream，再发布 MQ；旧 Worker 的迟到事件会被栅栏丢弃。
+                    streamWriter.activateJob(command.runId(), command.jobId(), true);
                     commandPublisher.publish(command);
                 }
             });
             return;
         }
+        streamWriter.activateJob(command.runId(), command.jobId(), true);
         commandPublisher.publish(command);
     }
 

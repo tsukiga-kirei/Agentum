@@ -17,7 +17,7 @@ interface MultiAgentPanelProps {
   templateVariables?: Record<string, unknown>;
   isStreaming?: boolean;
   streamStartedAt?: number | null;
-  /** 当前步已完成、尚未点「执行下一步」时：切回滚到最近完成子智能体卡片开头 */
+  /** 当前步已完成/失败、尚未点「执行下一步」时：切回滚到最近完成或失败的子智能体卡片 */
   scrollToLatestAnswerWhenDone?: boolean;
   onFollowUpAgent?: (agentIndex: number, message: string) => void | Promise<void>;
   onSaveAgentAnswer?: (agentIndex: number, content: string) => void | Promise<void>;
@@ -62,10 +62,12 @@ export function MultiAgentPanel({
   onSaveAgentAnswer,
 }: MultiAgentPanelProps) {
   const [selectedAgentIndex, setSelectedAgentIndex] = useState<number | null>(null);
+  const [drawerScrollReady, setDrawerScrollReady] = useState(false);
   const themeMode = useAuthStore((s) => s.themeMode);
   const drawerRootClassName = getThemedDrawerRootClassName(themeMode, "multi-agent-detail-drawer");
   const latestRunningCardRef = useRef<HTMLButtonElement | null>(null);
   const latestCompletedCardRef = useRef<HTMLButtonElement | null>(null);
+  const latestFailedCardRef = useRef<HTMLButtonElement | null>(null);
   const stickToBottomRef = useRef(true);
   const ignoreOuterScrollRef = useRef(false);
 
@@ -168,6 +170,7 @@ export function MultiAgentPanel({
   const stepPending = activeStep.state === "pending" && !stepCanceled;
   const latestRunningAgentIndex = [...agents].reverse().find((agent) => agent.status === "running")?.index ?? null;
   const latestCompletedAgentIndex = [...agents].reverse().find((agent) => agent.status === "completed")?.index ?? null;
+  const latestFailedAgentIndex = [...agents].reverse().find((agent) => agent.status === "failed")?.index ?? null;
   const stepInProgress = !stepCanceled && (isStreaming || activeStep.state === "running");
   const runningProgressKey = agents
     .map((agent) => `${agent.index}:${agent.status}:${agent.streamingText?.length ?? 0}:${agent.reasoningText?.length ?? 0}:${agent.toolCalls?.length ?? 0}`)
@@ -184,15 +187,33 @@ export function MultiAgentPanel({
   }, [activeStep.nodeRunId, activeStep.state]);
 
   // 当前步已完成、待执行下一步：切回时滚到最近完成的子智能体卡片开头。
+  // 失败态同样滚到最近失败卡片，避免停在列表顶部误以为「没滚动是因为报错」。
   useEffect(() => {
-    if (!scrollToLatestAnswerWhenDone || activeStep.state !== "done" || latestCompletedAgentIndex === null) {
+    if (!scrollToLatestAnswerWhenDone) {
+      return;
+    }
+    const targetIndex = activeStep.state === "done"
+      ? latestCompletedAgentIndex
+      : activeStep.state === "failed"
+        ? latestFailedAgentIndex
+        : null;
+    if (targetIndex === null) {
       return;
     }
     const frame = window.requestAnimationFrame(() => {
-      latestCompletedCardRef.current?.scrollIntoView({ block: "start", behavior: "auto" });
+      const card = activeStep.state === "failed"
+        ? latestFailedCardRef.current
+        : latestCompletedCardRef.current;
+      card?.scrollIntoView({ block: "start", behavior: "auto" });
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [scrollToLatestAnswerWhenDone, activeStep.state, activeStep.nodeRunId, latestCompletedAgentIndex]);
+  }, [
+    scrollToLatestAnswerWhenDone,
+    activeStep.state,
+    activeStep.nodeRunId,
+    latestCompletedAgentIndex,
+    latestFailedAgentIndex,
+  ]);
 
   // 列表页：首次进入跟运行卡片底部；切回滚到卡片开头；详情抽屉内由 SingleAgentPanel 处理回答区。
   useEffect(() => {
@@ -338,7 +359,9 @@ export function MultiAgentPanel({
                   ? latestRunningCardRef
                   : agent.index === latestCompletedAgentIndex
                     ? latestCompletedCardRef
-                    : undefined
+                    : agent.index === latestFailedAgentIndex
+                      ? latestFailedCardRef
+                      : undefined
               }
               onClick={() => setSelectedAgentIndex(agent.index)}
               disabled={isSkipped}
@@ -429,14 +452,28 @@ export function MultiAgentPanel({
           open
           onClose={() => setSelectedAgentIndex(null)}
           rootClassName={drawerRootClassName}
+          afterOpenChange={(open) => {
+            // 抽屉动画结束后再挂载滚动标记，确保滚到回答区时 drawer body 已可滚动。
+            if (open) {
+              setDrawerScrollReady(true);
+              return;
+            }
+            setDrawerScrollReady(false);
+          }}
         >
           <SingleAgentPanel
+            key={`cluster-agent-${selectedAgent.index}-${drawerScrollReady ? "ready" : "mount"}`}
             activeStep={buildAgentDetailStep(activeStep, selectedAgent, templateVariables)}
             isStreaming={!stepCanceled && selectedAgent.status === "running"}
             streamingText=""
             executionSteps={stepCanceled ? [] : buildAgentExecutionSteps(selectedAgent)}
             streamStartedAt={!stepCanceled && selectedAgent.status === "running" ? streamStartedAt : null}
             interruptedScope="clusterDrawer"
+            scrollToLatestAnswerWhenDone={
+              drawerScrollReady
+              && (selectedAgent.status === "completed" || selectedAgent.status === "failed")
+            }
+            scrollAnswerBlockWhenDone="end"
             onFollowUp={async (followUpMessage) => {
               if (!onFollowUpAgent) {
                 message.warning("当前子智能体未开放追问");

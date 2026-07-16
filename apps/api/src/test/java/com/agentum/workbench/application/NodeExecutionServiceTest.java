@@ -116,8 +116,10 @@ class NodeExecutionServiceTest {
         service.execute(command);
 
         verify(workbenchRuntimeService, never()).saveNodeSuccess(eq(RUN_ID), eq(NODE_RUN_ID), any(), any());
-        verify(streamWriter, never()).append(eq(RUN_ID), eq("node_completed"), any());
-        verify(streamWriter, never()).append(RUN_ID, "message", "[DONE]");
+        verify(streamWriter).appendIfActiveJob(eq(RUN_ID), eq(jobId), eq("node_started"), any());
+        verify(streamWriter, never()).appendIfActiveJob(eq(RUN_ID), eq(jobId), eq("node_completed"), any());
+        verify(streamWriter, never()).appendIfActiveJob(RUN_ID, jobId, "message", "[DONE]");
+        verify(streamWriter, never()).append(eq(RUN_ID), anyString(), any());
     }
 
     private WorkflowRunExecutionJobEntity queuedJob() {

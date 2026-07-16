@@ -505,14 +505,14 @@ class WorkbenchRuntimeServiceTest {
 
         service.restartNode(TENANT_ID, businessPrincipal(), run.getId(), node.getId());
 
-        // 重新执行语义：清空全部子智能体结果（含已成功），重置 Stream，attempt 递增后入队。
+        // 重新执行语义：清空全部子智能体结果（含已成功），激活新作业代次并重置 Stream，attempt 递增后入队。
         assertThat(node.getState()).isEqualTo("running");
         assertThat(run.getState()).isEqualTo("running");
         verify(cancellationGuard).clearCancel(run.getId());
         verify(clusterAgentRunRepository).deleteByNodeRunId(node.getId());
-        verify(streamWriter).reset(run.getId());
         ArgumentCaptor<NodeExecuteCommand> commandCaptor = ArgumentCaptor.forClass(NodeExecuteCommand.class);
         verify(commandPublisher).publish(commandCaptor.capture());
+        verify(streamWriter).activateJob(run.getId(), commandCaptor.getValue().jobId(), true);
         assertThat(commandCaptor.getValue().attempt()).isEqualTo(3);
         assertThat(commandCaptor.getValue().nodeRunId()).isEqualTo(node.getId());
     }
@@ -661,6 +661,40 @@ class WorkbenchRuntimeServiceTest {
         verify(cancellationGuard, org.mockito.Mockito.atLeastOnce()).requestCancel(run.getId());
         verify(commandPublisher).publish(any(NodeExecuteCommand.class));
         assertThat(node.getState()).isEqualTo("running");
+    }
+
+    @Test
+    void shouldRejectRecoverWhileHealthyJobIsStillRunning() {
+        WorkbenchRuntimeService service = newService();
+        WorkflowRunEntity run = ownedRun();
+        WorkflowNodeRunEntity node = clusterNode(run);
+        node.start(NOW.minusSeconds(90));
+        WorkflowRunExecutionJobEntity healthyJob = WorkflowRunExecutionJobEntity.queued(
+            TENANT_ID,
+            run.getId(),
+            node.getId(),
+            4,
+            OPERATOR_ID,
+            "req-active",
+            NOW.plusSeconds(1800),
+            NOW.minusSeconds(100)
+        );
+        healthyJob.markRunning("worker-active", NOW.minusSeconds(90));
+
+        stubTenant();
+        when(workflowRunRepository.findByIdAndTenantId(run.getId(), TENANT_ID)).thenReturn(Optional.of(run));
+        when(workflowNodeRunRepository.findByIdAndRunId(node.getId(), run.getId())).thenReturn(Optional.of(node));
+        when(jobRepository.findByRunIdAndStatusIn(eq(run.getId()), any())).thenReturn(List.of(healthyJob));
+        when(leaseService.hasActiveLease(run.getId())).thenReturn(true);
+
+        assertThatThrownBy(() -> service.recoverNode(TENANT_ID, businessPrincipal(), run.getId(), node.getId()))
+            .isInstanceOf(ApiException.class)
+            .extracting("code")
+            .isEqualTo("WORKBENCH_ADVANCE_ALREADY_IN_FLIGHT");
+
+        verify(cancellationGuard, never()).requestCancel(run.getId());
+        verify(leaseService, never()).forceRelease(run.getId());
+        verify(commandPublisher, never()).publish(any());
     }
 
     @Test

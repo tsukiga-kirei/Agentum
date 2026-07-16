@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "AgentumRuntimeEvents",
-  "description": "Schema definitions for Agentum runtime SSE stream events. 事件由 Worker 写入 Redis Stream（run:{runId}:events），API 中继为 SSE 推送；每条 SSE 消息的 id 行携带 Redis Stream 记录 ID（eventId），前端用于断线续传（?lastEventId=）与整步回放（?replay=true）。",
+  "description": "Schema definitions for Agentum runtime SSE stream events. 事件由 Worker 写入 Redis Stream（run:{runId}:events），API 中继为 SSE 推送；每条 SSE 消息的 id 行携带 Redis Stream 记录 ID（eventId），前端用于断线续传（?lastEventId=）与整步回放（?replay=true）。Worker 作业事件额外携带 jobId，Redis 只接受当前 activeJob 的事件，避免恢复或重做后旧 Worker 的迟到内容混入新一轮进度。",
   "type": "object",
   "definitions": {
     "ConnectedEvent": {
@@ -19,6 +19,7 @@
       "required": ["runId", "nodeRunId", "nodeType", "nodeName", "timestamp"],
       "properties": {
         "runId": { "type": "string", "format": "uuid" },
+        "jobId": { "type": "string", "format": "uuid" },
         "nodeRunId": { "type": "string", "format": "uuid" },
         "nodeType": { "type": "string" },
         "nodeName": { "type": "string" },
@@ -30,6 +31,7 @@
       "required": ["runId", "nodeRunId", "phase", "message", "timestamp"],
       "properties": {
         "runId": { "type": "string", "format": "uuid" },
+        "jobId": { "type": "string", "format": "uuid" },
         "nodeRunId": { "type": "string", "format": "uuid" },
         "phase": { "type": "string", "enum": ["preparing", "tool_calling", "model_calling", "validating", "completed", "failed"] },
         "message": { "type": "string" },
@@ -41,6 +43,7 @@
       "required": ["runId", "nodeRunId", "deltaContent", "accumulatedContent", "timestamp"],
       "properties": {
         "runId": { "type": "string", "format": "uuid" },
+        "jobId": { "type": "string", "format": "uuid" },
         "nodeRunId": { "type": "string", "format": "uuid" },
         "streamKind": { "type": "string", "enum": ["reasoning", "model_content", "final_answer"] },
         "deltaContent": { "type": "string" },
@@ -53,6 +56,7 @@
       "required": ["runId", "nodeRunId", "toolName", "toolType", "status", "timestamp"],
       "properties": {
         "runId": { "type": "string", "format": "uuid" },
+        "jobId": { "type": "string", "format": "uuid" },
         "nodeRunId": { "type": "string", "format": "uuid" },
         "toolName": { "type": "string" },
         "toolType": { "type": "string", "enum": ["mcp", "skill"] },
@@ -67,6 +71,7 @@
       "required": ["runId", "nodeRunId", "agentIndex", "agentName", "eventType", "timestamp"],
       "properties": {
         "runId": { "type": "string", "format": "uuid" },
+        "jobId": { "type": "string", "format": "uuid" },
         "nodeRunId": { "type": "string", "format": "uuid" },
         "agentIndex": { "type": "integer" },
         "agentName": { "type": "string" },
@@ -92,6 +97,7 @@
       "required": ["runId", "nodeRunId", "outputs", "timestamp"],
       "properties": {
         "runId": { "type": "string", "format": "uuid" },
+        "jobId": { "type": "string", "format": "uuid" },
         "nodeRunId": { "type": "string", "format": "uuid" },
         "outputs": { "type": "object" },
         "timestamp": { "type": "string", "format": "date-time" }
@@ -102,6 +108,7 @@
       "required": ["runId", "nodeRunId", "errorCode", "errorMessage", "timestamp"],
       "properties": {
         "runId": { "type": "string", "format": "uuid" },
+        "jobId": { "type": "string", "format": "uuid" },
         "nodeRunId": { "type": "string", "format": "uuid" },
         "errorCode": { "type": "string" },
         "errorMessage": { "type": "string" },
@@ -113,6 +120,7 @@
       "required": ["runId", "reason", "timestamp"],
       "properties": {
         "runId": { "type": "string", "format": "uuid" },
+        "jobId": { "type": "string", "format": "uuid" },
         "nextNodeRunId": { "type": "string", "format": "uuid" },
         "nextNodeName": { "type": "string" },
         "nextNodeType": { "type": "string" },
@@ -136,6 +144,7 @@
       "required": ["timestamp"],
       "properties": {
         "runId": { "type": "string", "format": "uuid" },
+        "jobId": { "type": "string", "format": "uuid" },
         "nodeRunId": { "type": "string", "format": "uuid" },
         "workerId": { "type": "string" },
         "timestamp": { "type": "string", "format": "date-time" }

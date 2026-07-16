@@ -1,6 +1,6 @@
 # 当前进度与后续计划
 
-更新时间：2026-07-15（阶段一验收完成；阶段二补充附件输入与文档解析设计，作为知识资产和运行输入的共同基础设施）。
+更新时间：2026-07-16（阶段一验收完成；运行态补充 SSE 误判修复、断流重连语义与执行作业代次隔离）。
 
 本文档只记录当前施工状态、阶段计划和下一步任务。长期规范、系统说明和架构设计分别维护在：
 
@@ -230,6 +230,7 @@
 - 系统管理 API 新增 `POST /api/system/model-providers/{providerId}/test`，模型密钥通过通用字段加密服务保存为密文，测试接口只返回连接状态、脱敏摘要、模型 ID 预览和耗时。
 - 新增业务工作台 package（`workbench.application` / `workbench.interfaces`）：聚合租户内已发布工作流计数、对当前用户开放的能力资产计数、我的能力草稿计数，以及可发起的已发布工作流分页（含最新版本号、节点数、所有者）；运行态相关字段以空列表 + `runtimeAvailable=false` 返回，并补 `WorkbenchAccess` / `WorkbenchService` 单元测试覆盖访问校验、跨租户拒绝与最新版本号回填路径。
 - 运行态异步执行落地（2026-06-10）：新增 `com.agentum.runtime` 包（RabbitMQ 拓扑与命令发布/消费、Redis 执行租约、`RunProgressStreamWriter` / `RunStreamRelayService` Redis Stream 进度写入与 SSE 中继、`StaleExecutionReaper` 超时/失联回收、`RedisRunCancellationGuard` 取消与截止信号）与 Worker 侧 `NodeExecutionService`；新增迁移 `V202606100001`（`workflow_run_execution_jobs`、`workflow_cluster_agent_runs`）；`WorkbenchRuntimeService` 重构为 advance 入队化，删除 `@Async`、内存 `RunStreamEmitterRegistry` 与 `RunExecutionCancellationRegistry`；新增 `interrupt`（节点 `canceled` + 数据清空）、`restart`（整步重跑）、`recover`（保留已成功子智能体只重跑失败部分）端点；智能体集群支持协同处理、接力处理与意图分派，历史执行模式值由 `V202607020001` 清洗为新枚举；模型瞬时错误自动重试（attempt ≤ 3）；节点执行超时由 `AGENTUM_RUNTIME_NODE_TIMEOUT_SECONDS` 控制。前端 `useRunStream` 支持 `replay` 整步回放、`lastEventId` 断线续传与 heartbeat 活性；`TaskRunWorkspace` 进入即执行、刷新无感恢复（activeJob 驱动）、看门狗异常判定；`StepActionBar` 重做「中断执行 / 重新执行 / 恢复进度」互斥按钮矩阵。本地开发必须先 `make dev-infra`。
+- 运行态断流与恢复稳定化（2026-07-16）：修复前端看门狗定时器读取过期 `lastEventAt=null`、首次 15 秒巡检误报“超过 1 分钟失联”的问题；每次 SSE 连接从当前时间建立活性基准。页面断流只提供「重新连接进度」，不再把浏览器连接异常当作后台失败调用 recover。后端 recover 在健康 `queued/running` 作业存在时返回冲突；Redis Stream 增加 `active-job` 代次栅栏，所有 Worker 事件携带 `jobId` 并通过 Lua 原子校验后写入，旧 Worker 的迟到 token 与子智能体中间结果不能污染恢复/重做后的新一轮执行。
 - 模型 Token 用量闭环（2026-06-19）：流式 Chat Completions 显式请求 usage，模型调用日志增加标准化输入、输出和总 Token 字段；单智能体每条 assistant 回复按本轮全部 ReAct 调用累计展示，多智能体按子智能体/对话轮次展示；运行审计详情展示整次运行累计和逐次调用用量，模型调用台账同步展示 Token 明细。
 - 推理模型控制闭环（2026-06-22）：模型供应商新增推理模型标识；流程单智能体和集群子智能体按租户模型分配选择运行模型，仅推理模型可开启深度推理；OpenAI 兼容请求传输 `chat_template_kwargs.enable_thinking`，运行态兼容解析 `reasoning` / `reasoning_content` 并以“深度推理”独立流式展示和留痕。
 - Word 文档交付落地（2026-06-15）：新增文档样式快照、轻量 Markdown -> DOCX 渲染器、MinIO/S3 对象存储、设计态预览接口 `/api/tenants/{tenantId}/document-deliveries/preview`、运行态下载接口 `/api/tenants/{tenantId}/delivery-records/{recordId}/download`，并新增演示数据种子 `word_document_delivery`。
