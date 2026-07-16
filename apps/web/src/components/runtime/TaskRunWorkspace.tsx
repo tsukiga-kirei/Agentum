@@ -1728,9 +1728,9 @@ function buildRuntimePreviewFromRun(run: WorkbenchRunDetail): RuntimePreview {
         allowsFollowUp: node.nodeType === "agent" || node.nodeType === "parallel_group"
           ? readBooleanConfig(node.config?.allowQuestion)
           : false,
-        allowsRegenerate: node.nodeType === "agent" || node.nodeType === "parallel_group"
-          ? readBooleanConfig(node.config?.allowUserEdit) || node.config?.outputMode === "追问确认"
-          : false,
+        // 整步重新执行与“允许用户编辑答案”是两种独立能力：前者会清空本节点运行数据并重新调用模型，
+        // 后者只控制结果区的人工改写入口。所有 AI 节点完成后都应允许整步重跑。
+        allowsRegenerate: node.nodeType === "agent" || node.nodeType === "parallel_group",
         allowsInterrupt: node.state === "running",
       };
     });

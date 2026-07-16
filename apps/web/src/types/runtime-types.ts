@@ -116,7 +116,7 @@ export type RuntimePreviewStep = {
   agentPhase?: AgentPhase;
   /** 是否允许追问 */
   allowsFollowUp?: boolean;
-  /** 是否允许重新生成 */
+  /** 是否允许整步重新执行 */
   allowsRegenerate?: boolean;
   /** 是否允许中断 */
   allowsInterrupt?: boolean;
