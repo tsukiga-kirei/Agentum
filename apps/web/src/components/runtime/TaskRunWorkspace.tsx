@@ -97,6 +97,8 @@ export function TaskRunWorkspace({
   // 前端看门狗：SSE 连续失败或后台长时间无事件且探测失败时，主动亮出被动「恢复进度」按钮。
   const [watchdogStaleMessage, setWatchdogStaleMessage] = useState<string | null>(null);
   const processedStreamEventsRef = useRef(0);
+  /** 「当前处理 / 执行历史」主内容滚动容器：切到已完成步骤时滚回顶部。 */
+  const mainPanelScrollRef = useRef<HTMLDivElement | null>(null);
 
   const stream = useRunStream(tenantId, runDetail.id, token);
 
@@ -476,6 +478,34 @@ export function TaskRunWorkspace({
       setActiveRunTab("current");
     }
   }
+
+  // 切到历史已完成步骤时主内容回顶；当前步已完成但尚未「执行下一步」时不回顶，由面板滚到最后回答开头。
+  useEffect(() => {
+    const waitingAdvanceOnCompletedCurrent =
+      activeRunTab === "current" && activeStep.state === "done" && !isFlowCompleted;
+    if (waitingAdvanceOnCompletedCurrent) {
+      return;
+    }
+    const viewingCompletedCurrent = activeRunTab === "current" && activeStep.state === "done";
+    const traceStep = selectedTraceStepIndex === null ? null : preview.steps[selectedTraceStepIndex] ?? null;
+    const viewingCompletedTrace = activeRunTab === "trace" && traceStep?.state === "done";
+    if (!viewingCompletedCurrent && !viewingCompletedTrace) {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      if (mainPanelScrollRef.current) {
+        mainPanelScrollRef.current.scrollTop = 0;
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [
+    activeRunTab,
+    activeStep.nodeRunId,
+    activeStep.state,
+    selectedTraceStepIndex,
+    preview.steps,
+    isFlowCompleted,
+  ]);
 
   // 4. Action Handlers: Advance Step
   // advance 仅创建执行作业并立即返回（202 语义），真实进度由 SSE 事件与 activeJob 轮询驱动，
@@ -931,7 +961,7 @@ export function TaskRunWorkspace({
 
         <section className="workbench-task-main flex-1 flex flex-col bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm overflow-hidden">
           {/* Panel Container Scroll */}
-          <div className="flex-1 overflow-y-auto p-6 min-h-0">
+          <div ref={mainPanelScrollRef} className="flex-1 overflow-y-auto p-6 min-h-0">
             {activeRunTab === "overview" && (
               <RunOverviewPanel run={runDetail} preview={preview} />
             )}
@@ -992,6 +1022,7 @@ export function TaskRunWorkspace({
                     executionSteps={stream.executionSteps}
                     streamStartedAt={stream.streamStartedAt}
                     readOnly={runDetail.readOnly}
+                    scrollToLatestAnswerWhenDone={!isFlowCompleted && activeStep.state === "done"}
                     onSaveAnswer={(content) => handleSaveAnswer(content)}
                     onFollowUp={(followUpMessage) => handleFollowUpStep(followUpMessage)}
                   />
@@ -1003,6 +1034,7 @@ export function TaskRunWorkspace({
                     templateVariables={activeTemplateVariables}
                     isStreaming={isLiveExecuting}
                     streamStartedAt={stream.streamStartedAt}
+                    scrollToLatestAnswerWhenDone={!isFlowCompleted && activeStep.state === "done"}
                     onFollowUpAgent={(agentIndex, followUpMessage) => handleFollowUpClusterAgent(agentIndex, followUpMessage)}
                     onSaveAgentAnswer={(agentIndex, content) => handleSaveClusterAgentAnswer(agentIndex, content)}
                   />
@@ -1246,15 +1278,15 @@ function RunTracePanel({
             {step.kind === "agent" && (
               <div className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800">
-                    <span className="text-xs text-slate-400 block">执行模型</span>
-                    <strong className="text-sm text-slate-700 dark:text-slate-300 mt-1 block">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900">
+                    <span className="block text-xs text-slate-500 dark:text-slate-400">执行模型</span>
+                    <strong className="mt-1 block text-sm text-slate-700 dark:text-slate-300">
                       {step.outputs?.find((f) => f.label === "modelName")?.value || "GLM-5.1"}
                     </strong>
                   </div>
-                  <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800">
-                    <span className="text-xs text-slate-400 block">执行模式</span>
-                    <strong className="text-sm text-slate-700 dark:text-slate-300 mt-1 block">ReAct 智能体模式</strong>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900">
+                    <span className="block text-xs text-slate-500 dark:text-slate-400">执行模式</span>
+                    <strong className="mt-1 block text-sm text-slate-700 dark:text-slate-300">ReAct 智能体模式</strong>
                   </div>
                 </div>
 
@@ -1263,9 +1295,9 @@ function RunTracePanel({
                   steps={traceExecutionSteps}
                 />
 
-                <div className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 p-4">
+                <div className="bg-slate-100/80 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-4">
                   <h5 className="text-sm font-bold text-slate-700 dark:text-slate-350 mb-2">输出结论</h5>
-                  <div className="bg-white dark:bg-slate-950 border border-slate-150 dark:border-slate-850 p-4 rounded-lg">
+                  <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-850 p-4 rounded-lg">
                     <MarkdownRenderer content={step.outputs?.find((f) => f.label === "final_answer" || f.label === "agent_response")?.value || "—"} />
                   </div>
                 </div>
@@ -1281,16 +1313,16 @@ function RunTracePanel({
                     const agentTraceSteps = buildClusterAgentTraceSteps(agent, `${step.nodeRunId}-cluster-${idx}`);
                     const toolStepCount = agentTraceSteps.filter((item) => item.kind === "tool").length;
                     return (
-                      <div key={idx} className="bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800 p-4">
-                        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-850 pb-2 mb-3">
+                      <div key={idx} className="rounded-lg border border-slate-300 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:shadow-none">
+                        <div className="mb-3 flex items-center justify-between border-b border-slate-200 pb-2 dark:border-slate-850">
                           <span className="text-sm font-bold text-slate-800 dark:text-slate-200">{agentName}</span>
                           <div className="flex items-center gap-2">
                             {toolStepCount > 0 ? (
-                              <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400 font-medium">
+                              <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-200 dark:bg-blue-950/40 dark:text-blue-400 dark:ring-blue-900/50">
                                 {toolStepCount} 次工具调用
                               </span>
                             ) : null}
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400 font-medium">已完成</span>
+                            <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:ring-emerald-900/50">已完成</span>
                           </div>
                         </div>
                         {agentTraceSteps.length > 0 ? (
@@ -1303,8 +1335,8 @@ function RunTracePanel({
                           </div>
                         ) : null}
                         <div>
-                          <h6 className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">输出结论</h6>
-                          <div className="rounded-lg border border-slate-100 bg-white p-3 dark:border-slate-850 dark:bg-slate-950">
+                          <h6 className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">输出结论</h6>
+                          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-850 dark:bg-slate-950">
                             <MarkdownRenderer
                               content={clusterAgentDisplayText(agent) || "已完成"}
                             />

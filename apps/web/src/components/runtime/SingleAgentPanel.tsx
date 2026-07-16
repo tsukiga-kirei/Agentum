@@ -36,6 +36,11 @@ interface SingleAgentPanelProps {
   readOnly?: boolean;
   /** 中断空态文案场景：多智能体抽屉内子智能体详情使用 clusterDrawer */
   interruptedScope?: "default" | "clusterDrawer";
+  /**
+   * 当前步骤已完成、尚未点「执行下一步」时：切换回来滚到最后一轮 AI 回答开头，
+   * 而不是整页顶部。
+   */
+  scrollToLatestAnswerWhenDone?: boolean;
   onSaveAnswer?: (content: string) => void | Promise<void>;
   onFollowUp?: (followUpMessage: string) => void | Promise<void>;
 }
@@ -422,16 +427,50 @@ function AgentInterruptedState({ scope }: { scope: "default" | "clusterDrawer" }
   );
 }
 
+function findScrollParent(element: HTMLElement | null): HTMLElement | Window {
+  let node = element?.parentElement ?? null;
+  while (node) {
+    const style = window.getComputedStyle(node);
+    const overflowY = style.overflowY;
+    if ((overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay")
+      && node.scrollHeight > node.clientHeight + 1) {
+      return node;
+    }
+    node = node.parentElement;
+  }
+  return window;
+}
+
+function isScrollNearBottom(container: HTMLElement | Window, threshold = 80): boolean {
+  if (container instanceof HTMLElement) {
+    return container.scrollHeight - container.scrollTop - container.clientHeight <= threshold;
+  }
+  const doc = document.documentElement;
+  return doc.scrollHeight - window.scrollY - window.innerHeight <= threshold;
+}
+
+/** 同一页会话内已进入过的进行中节点：再次切回时滚到回答开头，而非跟底。 */
+const seenRunningAgentNodes = new Set<string>();
+
 function ConversationTurnBlock({
   turn,
   showRunningHero,
   elapsedLabel,
   headerActions,
+  answerStartRef,
+  answerEndRef,
+  answerBodyRef,
 }: {
   turn: ConversationTurn;
   showRunningHero: boolean;
   elapsedLabel: string;
   headerActions?: React.ReactNode;
+  /** 最新一轮 AI 回答内容起点（含过程步骤） */
+  answerStartRef?: React.Ref<HTMLDivElement>;
+  /** 最新一轮 AI 回答内容终点（工具/推理/正文都在此面板内） */
+  answerEndRef?: React.Ref<HTMLDivElement>;
+  /** 最终回复正文起点（已完成待推进时滚到这里） */
+  answerBodyRef?: React.Ref<HTMLDivElement>;
 }) {
   const running = turn.current && showRunningHero;
   const headerTitle = summarizeToolSteps(turn.toolSteps, elapsedLabel, running);
@@ -448,7 +487,7 @@ function ConversationTurnBlock({
         </div>
       ) : null}
 
-      <div className="agent-turn-assistant-panel">
+      <div ref={answerStartRef} className="agent-turn-assistant-panel">
         {turn.current || turn.toolSteps.length > 0 ? (
           <ToolStepsBlock
             steps={turn.toolSteps}
@@ -460,7 +499,7 @@ function ConversationTurnBlock({
 
         {showFinalAnswerBody ? (
           <>
-            <div className="agent-turn-assistant">
+            <div ref={answerBodyRef} className="agent-turn-assistant">
               <MarkdownRenderer
                 content={turn.finalAnswer}
                 compact
@@ -471,6 +510,7 @@ function ConversationTurnBlock({
         ) : waitingForAnswer && turn.toolSteps.length === 0 ? (
           <div className="agent-turn-waiting">智能体正在生成回复…</div>
         ) : null}
+        <div ref={answerEndRef} aria-hidden="true" />
       </div>
     </section>
   );
@@ -497,6 +537,7 @@ export function SingleAgentPanel({
   streamStartedAt,
   readOnly = false,
   interruptedScope = "default",
+  scrollToLatestAnswerWhenDone = false,
   onSaveAnswer,
   onFollowUp,
 }: SingleAgentPanelProps) {
@@ -519,7 +560,12 @@ export function SingleAgentPanel({
     && (activeStep.state === "running" || activeStep.state === "pending" || isStreaming);
   const finalAnswerFromTool = useMemo(() => hasFinalAnswerToolResult(activeStep), [activeStep]);
   const latestTurnRef = useRef<HTMLDivElement | null>(null);
-  const latestTurnEndRef = useRef<HTMLDivElement | null>(null);
+  const latestAnswerStartRef = useRef<HTMLDivElement | null>(null);
+  const latestAnswerEndRef = useRef<HTMLDivElement | null>(null);
+  const latestAnswerBodyRef = useRef<HTMLDivElement | null>(null);
+  /** 进行中默认跟 AI 回答底部；用户滚离后取消，直到下次「首次进入」该步骤。 */
+  const stickToBottomRef = useRef(true);
+  const ignoreOuterScrollRef = useRef(false);
   const rawProcessSteps = useMemo(() => {
     const visibleSteps = filterUserVisibleSteps(steps)
       .filter((step) => step.kind !== "final_answer" || showRunningHero);
@@ -539,12 +585,6 @@ export function SingleAgentPanel({
     });
     return dedupeProcessSteps([...visibleSteps, ...modelOutputSteps]);
   }, [activeStep, finalAnswer, showRunningHero, steps]);
-  const pureContextAnswer = useMemo(() => {
-    if (showRunningHero || hasToolResultStep(rawProcessSteps) || finalAnswerFromTool) {
-      return "";
-    }
-    return rawProcessSteps.find((step) => step.kind === "model_output" && step.detail?.trim())?.detail?.trim() ?? "";
-  }, [finalAnswerFromTool, rawProcessSteps, showRunningHero]);
   const processSteps = useMemo(() => {
     return normalizeTurnSteps(dedupeProcessSteps(rawProcessSteps), {
       running: showRunningHero,
@@ -557,9 +597,8 @@ export function SingleAgentPanel({
   );
   const canFollowUp = permissions.allowQuestion && activeStep.allowsFollowUp !== false && activeStep.state === "done" && !readOnly && !!onFollowUp;
   const canEditAnswer = permissions.allowUserEdit && activeStep.allowsRegenerate !== false && activeStep.state === "done" && !readOnly;
-  const displayFinalAnswer = showRunningHero
-    ? firstNonBlank(streamingText, pureContextAnswer)
-    : finalAnswer;
+  // 运行中正文只在过程区「生成最终答案」框内流式展示，不提前画到下方最终回复区。
+  const displayFinalAnswer = showRunningHero ? "" : finalAnswer;
   const conversationTurns = useMemo(
     () =>
       buildConversationTurns(activeStep.chatMessages, config, processSteps, {
@@ -584,22 +623,88 @@ export function SingleAgentPanel({
     return () => window.clearInterval(timer);
   }, [showRunningHero, streamStartedAt]);
 
+  // 中断 / 待执行 / 失败后清掉「已看过」标记，下次重新执行按首次跟底。
+  useEffect(() => {
+    const nodeId = activeStep.nodeRunId ?? "";
+    if (!nodeId) {
+      return;
+    }
+    if (activeStep.state === "canceled" || activeStep.state === "pending" || activeStep.state === "failed") {
+      seenRunningAgentNodes.delete(nodeId);
+    }
+  }, [activeStep.nodeRunId, activeStep.state]);
+
+  function scrollAnswerAnchor(anchor: HTMLElement | null, block: ScrollLogicalPosition, behavior: ScrollBehavior) {
+    if (!anchor) {
+      return;
+    }
+    ignoreOuterScrollRef.current = true;
+    anchor.scrollIntoView({ block, behavior });
+    window.requestAnimationFrame(() => {
+      ignoreOuterScrollRef.current = false;
+    });
+  }
+
+  // 进入进行中步骤：首次 → 跟底；切回已看过的进行中步骤 → 最新 AI 回答开头。
+  // 当前步已完成但未推进下一步：同样滚到最后一轮 AI 回答开头。
+  // 历史已完成步骤由 TaskRunWorkspace 主滚动区回到顶部。
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
       if (showRunningHero) {
-        latestTurnEndRef.current?.scrollIntoView({
-          block: "end",
-          behavior: "smooth",
-        });
+        const nodeId = activeStep.nodeRunId ?? "";
+        const returning = Boolean(nodeId) && seenRunningAgentNodes.has(nodeId);
+        if (nodeId) {
+          seenRunningAgentNodes.add(nodeId);
+        }
+        if (returning) {
+          stickToBottomRef.current = false;
+          scrollAnswerAnchor(latestAnswerStartRef.current, "start", "smooth");
+          return;
+        }
+        stickToBottomRef.current = true;
+        scrollAnswerAnchor(latestAnswerEndRef.current, "end", "smooth");
         return;
       }
-      latestTurnRef.current?.scrollIntoView({
-        block: "start",
-        behavior: "auto",
-      });
+      if (scrollToLatestAnswerWhenDone && activeStep.state === "done") {
+        scrollAnswerAnchor(
+          latestAnswerBodyRef.current ?? latestAnswerStartRef.current,
+          "start",
+          "auto",
+        );
+      }
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [conversationTurns.length, displayFinalAnswer.length, processStepsScrollKey, showRunningHero]);
+  }, [activeStep.nodeRunId, activeStep.state, showRunningHero, scrollToLatestAnswerWhenDone]);
+
+  // 进行中且未取消跟底时：工具/推理/正文任意更新都跟到 AI 回答最底部。
+  useEffect(() => {
+    if (!showRunningHero || !stickToBottomRef.current) {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      scrollAnswerAnchor(latestAnswerEndRef.current, "end", "smooth");
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [showRunningHero, processStepsScrollKey, conversationTurns.length]);
+
+  // 用户滚离工作区底部后取消强制跟底。
+  useEffect(() => {
+    if (!showRunningHero) {
+      return;
+    }
+    const parent = findScrollParent(latestAnswerStartRef.current);
+    const onScroll = () => {
+      if (ignoreOuterScrollRef.current) {
+        return;
+      }
+      if (!isScrollNearBottom(parent)) {
+        stickToBottomRef.current = false;
+      }
+    };
+    const target: HTMLElement | Window = parent;
+    target.addEventListener("scroll", onScroll, { passive: true });
+    return () => target.removeEventListener("scroll", onScroll);
+  }, [showRunningHero, activeStep.nodeRunId, conversationTurns.length]);
 
   async function handleFollowUpSubmit(followUpMessage: string) {
     if (!followUpMessage.trim()) {
@@ -670,8 +775,10 @@ export function SingleAgentPanel({
                   showRunningHero={showRunningHero}
                   elapsedLabel={elapsedLabel}
                   headerActions={turn.current ? turnHeaderActions : undefined}
+                  answerStartRef={index === conversationTurns.length - 1 ? latestAnswerStartRef : undefined}
+                  answerEndRef={index === conversationTurns.length - 1 ? latestAnswerEndRef : undefined}
+                  answerBodyRef={index === conversationTurns.length - 1 ? latestAnswerBodyRef : undefined}
                 />
-                {index === conversationTurns.length - 1 ? <div ref={latestTurnEndRef} /> : null}
               </div>
             ))}
           </div>

@@ -48,9 +48,9 @@ function TraceExecutionStepRow({
         ) : null}
       </button>
       {hasDetail && expanded ? (
-        <div className="border-t border-slate-100 px-3 py-2 dark:border-slate-850">
+        <div className="border-t border-slate-200 px-3 py-2 dark:border-slate-850">
           {step.durationMs ? (
-            <div className="mb-2 text-[11px] text-slate-400">调用耗时：{step.durationMs} ms</div>
+            <div className="mb-2 text-[11px] text-slate-500 dark:text-slate-400">调用耗时：{step.durationMs} ms</div>
           ) : null}
           <pre className="agent-tool-step-detail m-0">{step.detail}</pre>
         </div>
@@ -75,9 +75,9 @@ export function TraceExecutionStepsSection({
 
   if (steps.length === 0) {
     return (
-      <div className="rounded-lg border border-slate-100 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900">
+      <div className="rounded-lg border border-slate-200 bg-slate-100/80 p-4 dark:border-slate-800 dark:bg-slate-900">
         <h5 className="mb-1 text-sm font-bold text-slate-700 dark:text-slate-350">{title}</h5>
-        <p className="text-sm text-slate-400">{emptyText}</p>
+        <p className="text-sm text-slate-500 dark:text-slate-400">{emptyText}</p>
       </div>
     );
   }
@@ -87,7 +87,7 @@ export function TraceExecutionStepsSection({
   }
 
   return (
-    <div className="rounded-lg border border-slate-100 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900">
+    <div className="rounded-lg border border-slate-200 bg-slate-100/80 p-4 dark:border-slate-800 dark:bg-slate-900">
       <button
         type="button"
         className="mb-3 flex w-full items-center justify-between gap-2 text-left"
@@ -95,9 +95,9 @@ export function TraceExecutionStepsSection({
       >
         <h5 className="text-sm font-bold text-slate-700 dark:text-slate-350">
           {title}
-          <span className="ml-2 text-xs font-normal text-slate-400">({steps.length})</span>
+          <span className="ml-2 text-xs font-normal text-slate-500 dark:text-slate-400">({steps.length})</span>
         </h5>
-        <span className="text-slate-400">
+        <span className="text-slate-500 dark:text-slate-400">
           {sectionExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         </span>
       </button>

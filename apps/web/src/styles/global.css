@@ -6537,11 +6537,17 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
 }
 
 .agent-tool-step {
-  border: 1px solid color-mix(in srgb, var(--color-border-light) 74%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-border) 82%, var(--color-text-primary) 8%);
   border-radius: 6px;
   background: var(--color-bg-card);
   overflow: hidden;
   box-shadow: none;
+}
+
+html:not(.dark) .agent-tool-step {
+  border-color: #cbd5e1;
+  background: #ffffff;
+  box-shadow: 0 1px 0 color-mix(in srgb, #0f172a 4%, transparent);
 }
 
 .agent-tool-step-head {
@@ -6587,15 +6593,23 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
   min-width: 0;
   flex: 1;
   font-size: 11px;
-  color: var(--color-text-tertiary);
+  color: var(--color-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+html:not(.dark) .agent-tool-step-summary {
+  color: #64748b;
+}
+
 .agent-tool-step-chevron {
   flex-shrink: 0;
-  color: var(--color-text-tertiary);
+  color: var(--color-text-secondary);
+}
+
+html:not(.dark) .agent-tool-step-chevron {
+  color: #64748b;
 }
 
 .agent-tool-step-detail {
@@ -6603,13 +6617,19 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
   max-height: 180px;
   overflow: auto;
   padding: 8px 10px;
-  border-top: 1px solid color-mix(in srgb, var(--color-border-light) 74%, transparent);
-  background: color-mix(in srgb, var(--color-text-primary) 2%, var(--color-bg-card));
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 82%, var(--color-text-primary) 8%);
+  background: color-mix(in srgb, var(--color-text-primary) 3.5%, var(--color-bg-card));
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 11px;
   line-height: 1.6;
   color: var(--color-text-secondary);
   white-space: pre-wrap;
+}
+
+html:not(.dark) .agent-tool-step-detail {
+  border-top-color: #cbd5e1;
+  background: #f1f5f9;
+  color: #334155;
 }
 
 .agent-turn-assistant {
@@ -8533,7 +8553,11 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
   width: 4px;
   overflow: hidden;
   border-radius: var(--radius-full);
-  background: color-mix(in srgb, var(--color-border-light) 82%, var(--color-text-tertiary) 18%);
+  background: color-mix(in srgb, var(--color-border) 72%, var(--color-text-secondary) 28%);
+}
+
+html:not(.dark) .rail-flow-line {
+  background: #cbd5e1;
 }
 
 .rail-flow-line--done {

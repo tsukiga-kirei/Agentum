@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 import type { AgentExecutionStep, RuntimeCapabilityItem, RuntimeChatMessage, RuntimePreviewStep, RuntimeTokenUsage, RunStreamState } from "../../types/runtime-types";
 import { AlertCircle, Bot, BrainCircuit, CheckCircle2, ChevronRight, Loader2, MessageSquarePlus, PencilLine, Settings2, Sparkles, Users, Wrench } from "lucide-react";
 import { Drawer, message } from "antd";
@@ -17,6 +17,8 @@ interface MultiAgentPanelProps {
   templateVariables?: Record<string, unknown>;
   isStreaming?: boolean;
   streamStartedAt?: number | null;
+  /** 当前步已完成、尚未点「执行下一步」时：切回滚到最近完成子智能体卡片开头 */
+  scrollToLatestAnswerWhenDone?: boolean;
   onFollowUpAgent?: (agentIndex: number, message: string) => void | Promise<void>;
   onSaveAgentAnswer?: (agentIndex: number, content: string) => void | Promise<void>;
 }
@@ -45,6 +47,9 @@ type DrawerAgent = {
   allowUserEdit: boolean;
 };
 
+/** 同一页会话内已进入过的进行中集群节点：再次切回时滚到当前运行卡片开头。 */
+const seenRunningClusterNodes = new Set<string>();
+
 export function MultiAgentPanel({
   activeStep,
   clusterAgents,
@@ -52,12 +57,17 @@ export function MultiAgentPanel({
   templateVariables = {},
   isStreaming = false,
   streamStartedAt = null,
+  scrollToLatestAnswerWhenDone = false,
   onFollowUpAgent,
   onSaveAgentAnswer,
 }: MultiAgentPanelProps) {
   const [selectedAgentIndex, setSelectedAgentIndex] = useState<number | null>(null);
   const themeMode = useAuthStore((s) => s.themeMode);
   const drawerRootClassName = getThemedDrawerRootClassName(themeMode, "multi-agent-detail-drawer");
+  const latestRunningCardRef = useRef<HTMLButtonElement | null>(null);
+  const latestCompletedCardRef = useRef<HTMLButtonElement | null>(null);
+  const stickToBottomRef = useRef(true);
+  const ignoreOuterScrollRef = useRef(false);
 
   const configAgents = Array.isArray(activeStep.configSnapshot?.clusterAgents)
     ? (activeStep.configSnapshot?.clusterAgents as Array<Record<string, unknown>>)
@@ -156,6 +166,90 @@ export function MultiAgentPanel({
     : 0;
   const stepCanceled = activeStep.state === "canceled";
   const stepPending = activeStep.state === "pending" && !stepCanceled;
+  const latestRunningAgentIndex = [...agents].reverse().find((agent) => agent.status === "running")?.index ?? null;
+  const latestCompletedAgentIndex = [...agents].reverse().find((agent) => agent.status === "completed")?.index ?? null;
+  const stepInProgress = !stepCanceled && (isStreaming || activeStep.state === "running");
+  const runningProgressKey = agents
+    .map((agent) => `${agent.index}:${agent.status}:${agent.streamingText?.length ?? 0}:${agent.reasoningText?.length ?? 0}:${agent.toolCalls?.length ?? 0}`)
+    .join("|");
+
+  useEffect(() => {
+    const nodeId = activeStep.nodeRunId ?? "";
+    if (!nodeId) {
+      return;
+    }
+    if (activeStep.state === "canceled" || activeStep.state === "pending" || activeStep.state === "failed") {
+      seenRunningClusterNodes.delete(nodeId);
+    }
+  }, [activeStep.nodeRunId, activeStep.state]);
+
+  // 当前步已完成、待执行下一步：切回时滚到最近完成的子智能体卡片开头。
+  useEffect(() => {
+    if (!scrollToLatestAnswerWhenDone || activeStep.state !== "done" || latestCompletedAgentIndex === null) {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      latestCompletedCardRef.current?.scrollIntoView({ block: "start", behavior: "auto" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [scrollToLatestAnswerWhenDone, activeStep.state, activeStep.nodeRunId, latestCompletedAgentIndex]);
+
+  // 列表页：首次进入跟运行卡片底部；切回滚到卡片开头；详情抽屉内由 SingleAgentPanel 处理回答区。
+  useEffect(() => {
+    if (!stepInProgress || latestRunningAgentIndex === null) {
+      return;
+    }
+    const nodeId = activeStep.nodeRunId ?? "";
+    const returning = Boolean(nodeId) && seenRunningClusterNodes.has(nodeId);
+    if (nodeId) {
+      seenRunningClusterNodes.add(nodeId);
+    }
+    const frame = window.requestAnimationFrame(() => {
+      ignoreOuterScrollRef.current = true;
+      if (returning) {
+        stickToBottomRef.current = false;
+        latestRunningCardRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+      } else {
+        stickToBottomRef.current = true;
+        latestRunningCardRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+      }
+      window.requestAnimationFrame(() => {
+        ignoreOuterScrollRef.current = false;
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeStep.nodeRunId, stepInProgress, latestRunningAgentIndex]);
+
+  useEffect(() => {
+    if (!stepInProgress || !stickToBottomRef.current || latestRunningAgentIndex === null) {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      ignoreOuterScrollRef.current = true;
+      latestRunningCardRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+      window.requestAnimationFrame(() => {
+        ignoreOuterScrollRef.current = false;
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [stepInProgress, latestRunningAgentIndex, runningProgressKey]);
+
+  useEffect(() => {
+    if (!stepInProgress) {
+      return;
+    }
+    const parent = findClusterScrollParent(latestRunningCardRef.current);
+    const onScroll = () => {
+      if (ignoreOuterScrollRef.current) {
+        return;
+      }
+      if (!isClusterScrollNearBottom(parent)) {
+        stickToBottomRef.current = false;
+      }
+    };
+    parent.addEventListener("scroll", onScroll, { passive: true });
+    return () => parent.removeEventListener("scroll", onScroll);
+  }, [stepInProgress, activeStep.nodeRunId, latestRunningAgentIndex]);
 
   return (
     <div className="multi-agent-run">
@@ -239,6 +333,13 @@ export function MultiAgentPanel({
             <button
               type="button"
               key={agent.index}
+              ref={
+                agent.index === latestRunningAgentIndex
+                  ? latestRunningCardRef
+                  : agent.index === latestCompletedAgentIndex
+                    ? latestCompletedCardRef
+                    : undefined
+              }
               onClick={() => setSelectedAgentIndex(agent.index)}
               disabled={isSkipped}
               className={`multi-agent-card ${
@@ -363,6 +464,28 @@ function readConfigString(value: unknown, fallback: string): string {
   }
   const text = String(value).trim();
   return text || fallback;
+}
+
+function findClusterScrollParent(element: HTMLElement | null): HTMLElement | Window {
+  let node = element?.parentElement ?? null;
+  while (node) {
+    const style = window.getComputedStyle(node);
+    const overflowY = style.overflowY;
+    if ((overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay")
+      && node.scrollHeight > node.clientHeight + 1) {
+      return node;
+    }
+    node = node.parentElement;
+  }
+  return window;
+}
+
+function isClusterScrollNearBottom(container: HTMLElement | Window, threshold = 80): boolean {
+  if (container instanceof HTMLElement) {
+    return container.scrollHeight - container.scrollTop - container.clientHeight <= threshold;
+  }
+  const doc = document.documentElement;
+  return doc.scrollHeight - window.scrollY - window.innerHeight <= threshold;
 }
 
 function stringifyTemplateValue(value: unknown): string {

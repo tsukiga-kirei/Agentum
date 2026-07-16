@@ -438,18 +438,12 @@ export function useRunStream(
           // 离开推理阶段的路径之一：开始输出模型正文。
           setExecutionSteps((prev) => upsertModelOutputStep(prev, accumulatedContent, true));
         } else {
-          // final_answer：离开推理；若尚无 model_content 步骤则补齐「生成最终答案」。
+          // final_answer 与 model_content 一样写入过程区「生成最终答案」框内流式展示。
+          // streamingText 仍保留供完成后落库/回读，但运行中不在下方回复区渲染，避免看起来像最终回复已出框。
           setStreamingText(accumulatedContent);
-          setExecutionSteps((prev) => {
-            const withReasoningDone = completeReasoningStep(prev);
-            const hasModelOutput = withReasoningDone.some(
-              (step) => step.kind === "model_output" || step.id === "live-model-output",
-            );
-            if (hasModelOutput || !String(accumulatedContent ?? "").trim()) {
-              return withReasoningDone;
-            }
-            return upsertModelOutputStep(withReasoningDone, accumulatedContent, true);
-          });
+          setExecutionSteps((prev) =>
+            upsertModelOutputStep(completeReasoningStep(prev), accumulatedContent, true),
+          );
         }
         break;
       }
