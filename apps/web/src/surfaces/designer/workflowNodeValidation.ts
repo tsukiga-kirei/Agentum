@@ -364,6 +364,11 @@ function validateAgentConfig(
   config: Record<string, unknown>,
   subject: string,
 ): WorkflowNodeValidationIssue[] {
+  const issues: WorkflowNodeValidationIssue[] = [];
+  if (!readString(config.modelProviderId)) {
+    const message = subject ? `${subject}：必须选择运行模型` : "必须选择运行模型";
+    issues.push(issue("WORKFLOW_NODE_AGENT_MODEL_REQUIRED", message));
+  }
   const promptError = validateCustomPromptConfiguration({
     systemPromptTemplateId: readString(config.systemPromptTemplateId, readString(config.promptTemplateId, "none")),
     userPromptTemplateId: readString(config.userPromptTemplateId, "none"),
@@ -373,9 +378,9 @@ function validateAgentConfig(
   });
   if (promptError) {
     const message = subject ? `${subject}：${promptError}` : promptError;
-    return [issue("WORKFLOW_NODE_AGENT_PROMPT_INVALID", message)];
+    issues.push(issue("WORKFLOW_NODE_AGENT_PROMPT_INVALID", message));
   }
-  return [];
+  return issues;
 }
 
 function validateAgentNode(node: ValidatableWorkflowNode): WorkflowNodeValidationIssue[] {
@@ -417,6 +422,9 @@ function validateClusterNode(node: ValidatableWorkflowNode): WorkflowNodeValidat
   const declaredOutputs = new Set(node.data.outputVariables.filter(Boolean));
   const clusterOutputVariable = readString(node.data.rawConfig?.clusterOutputVariable, "cluster_result");
   if (executionMode === "intent") {
+    if (!readString(node.data.rawConfig?.intentModelProviderId)) {
+      issues.push(issue("WORKFLOW_NODE_CLUSTER_INTENT_MODEL_REQUIRED", "意图分派模式下必须选择意图识别模型"));
+    }
     if (declaredOutputs.size !== 1 || !declaredOutputs.has(clusterOutputVariable)) {
       issues.push(issue("WORKFLOW_NODE_CLUSTER_INTENT_OUTPUT_INVALID", `意图分派模式下，下游输出必须统一为 ${clusterOutputVariable}`));
     }

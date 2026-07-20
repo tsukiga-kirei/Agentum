@@ -6,14 +6,19 @@ import static org.mockito.Mockito.when;
 
 import com.agentum.asset.application.AssetManagementService;
 import com.agentum.agent.application.AgentRuntimeProperties;
+import com.agentum.system.domain.ModelProviderEntity;
 import com.agentum.system.domain.SystemCapabilityEntity;
 import com.agentum.system.domain.TenantCapabilityGrantEntity;
+import com.agentum.system.domain.TenantModelAssignmentEntity;
 import com.agentum.system.infrastructure.SystemCapabilityRepository;
+import com.agentum.system.infrastructure.ModelProviderRepository;
 import com.agentum.system.infrastructure.TenantCapabilityGrantRepository;
+import com.agentum.system.infrastructure.TenantModelAssignmentRepository;
 import com.agentum.workflow.interfaces.WorkflowDraftApi;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -33,6 +38,104 @@ class WorkflowNodeConfigValidatorTest {
     private TenantCapabilityGrantRepository tenantCapabilityGrantRepository;
     @Mock
     private AssetManagementService assetManagementService;
+    @Mock
+    private TenantModelAssignmentRepository tenantModelAssignmentRepository;
+    @Mock
+    private ModelProviderRepository modelProviderRepository;
+
+    @Test
+    void shouldRejectAgentNodeWhenDeclaredModelIsEmpty() {
+        WorkflowDraftApi.WorkflowNodeRow node = new WorkflowDraftApi.WorkflowNodeRow(
+            "agent_1",
+            "agent",
+            "合同分析",
+            0,
+            0,
+            List.of(),
+            List.of(),
+            Map.of(
+                "modelProviderId", "",
+                "modelName", "",
+                "systemPrompt", WorkflowPromptDefaults.DEFAULT_SYSTEM_PROMPT,
+                "userPrompt", WorkflowPromptDefaults.DEFAULT_USER_PROMPT,
+                "maxAgentIterationsPerTurn", 4
+            )
+        );
+
+        List<WorkflowDraftApi.WorkflowValidationIssue> issues = validator().validateCapabilityReferences(TENANT_ID, USER_ID, List.of(node));
+
+        assertThat(issues).extracting(WorkflowDraftApi.WorkflowValidationIssue::code)
+            .containsExactly("WORKFLOW_VALIDATION_MODEL_REQUIRED");
+    }
+
+    @Test
+    void shouldRejectAgentNodeWhenImportedModelProviderIdIsInvalid() {
+        WorkflowDraftApi.WorkflowNodeRow node = new WorkflowDraftApi.WorkflowNodeRow(
+            "agent_1",
+            "agent",
+            "合同分析",
+            0,
+            0,
+            List.of(),
+            List.of(),
+            Map.of(
+                "modelProviderId", "source-environment-model-id",
+                "modelName", "glm-5.1",
+                "systemPrompt", WorkflowPromptDefaults.DEFAULT_SYSTEM_PROMPT,
+                "userPrompt", WorkflowPromptDefaults.DEFAULT_USER_PROMPT,
+                "maxAgentIterationsPerTurn", 4
+            )
+        );
+
+        List<WorkflowDraftApi.WorkflowValidationIssue> issues = validator().validateCapabilityReferences(TENANT_ID, USER_ID, List.of(node));
+
+        assertThat(issues).extracting(WorkflowDraftApi.WorkflowValidationIssue::code)
+            .containsExactly("WORKFLOW_VALIDATION_MODEL_PROVIDER_ID_INVALID");
+    }
+
+    @Test
+    void shouldRejectAgentNodeWhenConfiguredModelNameDiffersFromTenantAssignment() {
+        ModelProviderEntity provider = ModelProviderEntity.create(
+            "OpenAI 兼容供应商",
+            "openai_compatible",
+            "https://example.com/v1",
+            "glm-5.1",
+            false,
+            "active",
+            NOW
+        );
+        TenantModelAssignmentEntity assignment = TenantModelAssignmentEntity.create(
+            TENANT_ID,
+            provider.getId(),
+            "glm-5.1",
+            "enabled",
+            NOW
+        );
+        when(tenantModelAssignmentRepository.findByTenantIdAndProviderId(TENANT_ID, provider.getId()))
+            .thenReturn(Optional.of(assignment));
+        when(modelProviderRepository.findById(provider.getId())).thenReturn(Optional.of(provider));
+        WorkflowDraftApi.WorkflowNodeRow node = new WorkflowDraftApi.WorkflowNodeRow(
+            "agent_1",
+            "agent",
+            "合同分析",
+            0,
+            0,
+            List.of(),
+            List.of(),
+            Map.of(
+                "modelProviderId", provider.getId().toString(),
+                "modelName", "other-model",
+                "systemPrompt", WorkflowPromptDefaults.DEFAULT_SYSTEM_PROMPT,
+                "userPrompt", WorkflowPromptDefaults.DEFAULT_USER_PROMPT,
+                "maxAgentIterationsPerTurn", 4
+            )
+        );
+
+        List<WorkflowDraftApi.WorkflowValidationIssue> issues = validator().validateCapabilityReferences(TENANT_ID, USER_ID, List.of(node));
+
+        assertThat(issues).extracting(WorkflowDraftApi.WorkflowValidationIssue::code)
+            .containsExactly("WORKFLOW_VALIDATION_MODEL_NAME_MISMATCH");
+    }
 
     @Test
     void shouldRejectAgentNodeWhenCustomPromptsAreBlank() {
@@ -528,7 +631,9 @@ class WorkflowNodeConfigValidatorTest {
             systemCapabilityRepository,
             tenantCapabilityGrantRepository,
             assetManagementService,
-            runtimeProperties()
+            runtimeProperties(),
+            tenantModelAssignmentRepository,
+            modelProviderRepository
         );
     }
 

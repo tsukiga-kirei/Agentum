@@ -587,7 +587,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
         setDesignerCatalog(catalog);
         const hasPersistedGraph = detail.nodes.some((node) => node.nodeType !== "trigger" && node.nodeId !== SYSTEM_TRIGGER_ID);
         const nextNodes = hasPersistedGraph
-          ? ensureSystemTrigger(detail.nodes.map((node) => toEditorNode(node, catalog.agentRuntimeLimits)), catalog)
+          ? ensureSystemTrigger(detail.nodes.map((node) => toEditorNode(node, catalog.agentRuntimeLimits, catalog.modelOptions)), catalog)
           : [createNodeFromTemplate(catalog.systemTrigger, 0, [])];
         const nextEdges = hasPersistedGraph ? detail.edges.map(toEditorEdge) : [];
         const nextVariables = detail.variables.length > 0 ? toWorkflowVariables(detail.variables, nextNodes) : buildWorkflowVariables(nextNodes, catalog.variableMetadata);
@@ -749,7 +749,7 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
       applyPersistedDetail(mergedDetail, designerCatalog, setNodes, setEdges, setSelectedNodeId);
       setDeclaredVariables(toWorkflowVariables(
         mergedDetail.variables,
-        mergedDetail.nodes.map((node) => toEditorNode(node, designerCatalog.agentRuntimeLimits)),
+        mergedDetail.nodes.map((node) => toEditorNode(node, designerCatalog.agentRuntimeLimits, designerCatalog.modelOptions)),
       ));
       messageApi.success("流程设计已保存");
       setSaveSucceeded(true);
@@ -1790,8 +1790,7 @@ function AgentClusterBrickConfig({
   const promptAssets = filterCapabilities(capabilityState.capabilities, "prompt_template");
   const mcpAssets = filterCapabilities(capabilityState.capabilities, "mcp");
   const skillAssets = filterCapabilities(capabilityState.capabilities, "skill");
-  const intentModel = modelOptions.find((model) => model.providerId === readString(config.intentModelProviderId, ""))
-    ?? modelOptions[0];
+  const intentModel = modelOptions.find((model) => model.providerId === readString(config.intentModelProviderId, ""));
 
   function commitAgents(nextAgents: ClusterAgentConfig[]) {
     onUpdateConfig({ clusterAgents: nextAgents });
@@ -2164,7 +2163,7 @@ function IntentRoutingDrawer({
   const [draftFallbackAgentId, setDraftFallbackAgentId] = useState(fallbackAgentId);
   const [draftFallbackReply, setDraftFallbackReply] = useState(fallbackReply);
   const [activeSection, setActiveSection] = useState<string>("dispatch");
-  const initialIntentModel = modelOptions.find((model) => model.providerId === intentModelProviderId) ?? modelOptions[0];
+  const initialIntentModel = modelOptions.find((model) => model.providerId === intentModelProviderId);
   const [draftIntentModel, setDraftIntentModel] = useState({
     modelProviderId: initialIntentModel?.providerId ?? "",
     modelName: initialIntentModel?.modelName ?? "",
@@ -2287,7 +2286,7 @@ function IntentRoutingDrawer({
                     allowUserEdit={false}
                     allowQuestion={false}
                     enableThinking={draftIntentModel.enableThinking}
-                    showThinking={(modelOptions.find((model) => model.providerId === draftIntentModel.modelProviderId) ?? modelOptions[0])?.reasoningModel}
+                    showThinking={modelOptions.find((model) => model.providerId === draftIntentModel.modelProviderId)?.reasoningModel}
                     showAllowUserEdit={false}
                     showAllowQuestion={false}
                     onChange={(patch) => setDraftIntentModel({ ...draftIntentModel, ...patch })}
@@ -3736,12 +3735,14 @@ function SelectLikeField({
   icon: Icon,
   value,
   options,
+  placeholder,
   onChange,
 }: {
   label: string;
   icon?: WorkflowIcon;
   value: string;
   options: Array<string | { value: string; label: string }>;
+  placeholder?: string;
   onChange: (value: string) => void;
 }) {
   const normalizedOptions = options.map((option) => typeof option === "string" ? { value: option, label: option } : option);
@@ -3758,7 +3759,8 @@ function SelectLikeField({
         prefix={Icon ? <Icon className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" /> : undefined}
         suffixIcon={workflowSelectSuffixIcon}
         showSearch={false}
-        value={value}
+        value={value || undefined}
+        placeholder={placeholder}
         options={effectiveOptions}
         onChange={onChange}
       />
@@ -4532,7 +4534,7 @@ type SingleAgentConfigDraft = {
 function buildSingleAgentConfigDraft(node: WorkflowEditorNode, agentRuntimeLimits: AgentRuntimeLimits, modelOptions: WorkflowModelOption[]): SingleAgentConfigDraft {
   const config = node.data.rawConfig ?? {};
   const configuredProviderId = readString(config.modelProviderId, "");
-  const selectedModel = modelOptions.find((model) => model.providerId === configuredProviderId) ?? modelOptions[0];
+  const selectedModel = modelOptions.find((model) => model.providerId === configuredProviderId);
   return {
     agentAssetId: readString(config.agentAssetId, "custom"),
     systemPromptTemplateId: readString(config.systemPromptTemplateId, readString(config.promptTemplateId, "none")),
@@ -4546,7 +4548,7 @@ function buildSingleAgentConfigDraft(node: WorkflowEditorNode, agentRuntimeLimit
     allowUserEdit: node.data.allowUserEdit,
     allowQuestion: node.data.allowQuestion,
     modelProviderId: selectedModel?.providerId ?? "",
-    modelName: readString(config.modelName, selectedModel?.modelName ?? ""),
+    modelName: selectedModel?.modelName ?? "",
     enableThinking: selectedModel?.reasoningModel ? readBoolean(config.enableThinking, false) : false,
   };
 }
@@ -4622,26 +4624,8 @@ function SingleAgentConfigModal({
   const { message } = App.useApp();
   const themeMode = useAuthStore((state) => state.themeMode);
   const drawerRootClassName = getThemedDrawerRootClassName(themeMode, "workflow-agent-drawer");
-  const initialDraftRef = useRef(buildSingleAgentConfigDraft(node, agentRuntimeLimits, modelOptions));
-  const [draft, setDraftState] = useState<SingleAgentConfigDraft>(initialDraftRef.current);
+  const [draft, setDraft] = useState<SingleAgentConfigDraft>(() => buildSingleAgentConfigDraft(node, agentRuntimeLimits, modelOptions));
   const [activeSection, setActiveSection] = useState<AgentConfigSectionId>("basic");
-  const onConfigChangeRef = useRef(onConfigChange);
-  onConfigChangeRef.current = onConfigChange;
-
-  function applyDraft(nextDraft: SingleAgentConfigDraft) {
-    onConfigChangeRef.current(buildSingleAgentConfigPayload(nextDraft), buildSingleAgentNodePatch(nextDraft));
-  }
-
-  function setDraft(nextDraft: SingleAgentConfigDraft) {
-    setDraftState(nextDraft);
-    applyDraft(nextDraft);
-  }
-
-  function handleCancel() {
-    setDraftState(initialDraftRef.current);
-    applyDraft(initialDraftRef.current);
-    onClose();
-  }
 
   return (
     <Drawer
@@ -4650,7 +4634,7 @@ function SingleAgentConfigModal({
       width={WORKFLOW_AGENT_DRAWER_WIDTH}
       open
       destroyOnClose
-      onClose={handleCancel}
+      onClose={onClose}
       rootClassName={drawerRootClassName}
     >
       <div className="sys-drawer-section sys-drawer-section-enter workflow-agent-drawer-shell">
@@ -4745,7 +4729,7 @@ function SingleAgentConfigModal({
                 allowUserEdit={draft.allowUserEdit}
                 allowQuestion={draft.allowQuestion}
                 enableThinking={draft.enableThinking}
-                showThinking={(modelOptions.find((model) => model.providerId === draft.modelProviderId) ?? modelOptions[0])?.reasoningModel}
+                showThinking={modelOptions.find((model) => model.providerId === draft.modelProviderId)?.reasoningModel}
                 onChange={(patch) => setDraft({ ...draft, ...patch })}
               />
             </div>
@@ -4754,7 +4738,7 @@ function SingleAgentConfigModal({
       </div>
       <div className="sys-drawer-footer">
         <div className="sys-drawer-footer-right">
-          <button type="button" className="sys-btn sys-btn--default" onClick={handleCancel}>取消</button>
+          <button type="button" className="sys-btn sys-btn--default" onClick={onClose}>取消</button>
           <button
             type="button"
             className="sys-btn sys-btn--primary"
@@ -4767,6 +4751,8 @@ function SingleAgentConfigModal({
                 message.error(validationError);
                 return;
               }
+              // 与集群智能体保持一致：抽屉内只维护临时草稿，点击“完成”后才写回节点；取消不产生隐式修改。
+              onConfigChange(buildSingleAgentConfigPayload(draft), buildSingleAgentNodePatch(draft));
               onClose();
             }}
           >
@@ -4804,7 +4790,7 @@ function ClusterAgentModal({
   const { message } = App.useApp();
   const themeMode = useAuthStore((state) => state.themeMode);
   const drawerRootClassName = getThemedDrawerRootClassName(themeMode, "workflow-agent-drawer");
-  const initialModel = modelOptions.find((model) => model.providerId === agent.modelProviderId) ?? modelOptions[0];
+  const initialModel = modelOptions.find((model) => model.providerId === agent.modelProviderId);
   const [draft, setDraft] = useState<ClusterAgentConfig>({
     ...agent,
     modelProviderId: initialModel?.providerId ?? "",
@@ -4928,7 +4914,7 @@ function ClusterAgentModal({
                 allowUserEdit={draft.allowUserEdit}
                 allowQuestion={draft.allowQuestion}
                 enableThinking={draft.enableThinking}
-                showThinking={(modelOptions.find((model) => model.providerId === draft.modelProviderId) ?? modelOptions[0])?.reasoningModel}
+                showThinking={modelOptions.find((model) => model.providerId === draft.modelProviderId)?.reasoningModel}
                 onChange={(patch) => setDraft({ ...draft, ...patch })}
               />
             </div>
@@ -5168,13 +5154,14 @@ function ModelSelectField({
   enableThinking: boolean;
   onChange: (patch: { modelProviderId: string; modelName: string; enableThinking: boolean }) => void;
 }) {
-  const selectedModel = modelOptions.find((model) => model.providerId === modelProviderId) ?? modelOptions[0];
+  const selectedModel = modelOptions.find((model) => model.providerId === modelProviderId);
 
   return (
     <SelectLikeField
       label="运行模型"
       icon={DatabaseZap}
       value={selectedModel?.providerId ?? ""}
+      placeholder="请选择运行模型"
       options={modelOptions.map((model) => ({
         value: model.providerId,
         label: `${model.providerName} · ${model.modelName}${model.reasoningModel ? " · 推理模型" : ""}`,
@@ -6161,8 +6148,59 @@ function ensureSystemTrigger(nextNodes: WorkflowEditorNode[], catalog: WorkflowD
   return [createNodeFromTemplate(catalog.systemTrigger, 0, []), ...nextNodes];
 }
 
-function toEditorNode(node: WorkflowNodeDraft, agentRuntimeLimits: AgentRuntimeLimits): WorkflowEditorNode {
-  const config = { ...(node.config ?? {}) } as Record<string, unknown>;
+function normalizeUnavailableModelReferences(
+  nodeType: WorkflowNodeType,
+  source: Record<string, unknown>,
+  modelOptions: WorkflowModelOption[],
+): Record<string, unknown> {
+  const modelsByProviderId = new Map(modelOptions.map((model) => [model.providerId, model]));
+
+  function normalizeModelFields(
+    config: Record<string, unknown>,
+    providerKey: string,
+    modelNameKey: string,
+    thinkingKey: string,
+  ) {
+    const selectedModel = modelsByProviderId.get(readString(config[providerKey], ""));
+    return {
+      ...config,
+      [providerKey]: selectedModel?.providerId ?? "",
+      [modelNameKey]: selectedModel?.modelName ?? "",
+      [thinkingKey]: selectedModel?.reasoningModel ? readBoolean(config[thinkingKey], false) : false,
+    };
+  }
+
+  // 导出文件中的供应商 UUID 只在来源环境内有意义。目标租户找不到该 UUID 时必须清空，
+  // 不能静默显示第一项模型，否则设计者会误以为已经完成了跨环境映射。
+  if (nodeType === "agent") {
+    return normalizeModelFields(source, "modelProviderId", "modelName", "enableThinking");
+  }
+  if (nodeType !== "parallel_group") {
+    return source;
+  }
+
+  const normalized = normalizeModelFields(
+    source,
+    "intentModelProviderId",
+    "intentModelName",
+    "intentEnableThinking",
+  );
+  normalized.clusterAgents = (Array.isArray(source.clusterAgents) ? source.clusterAgents : [])
+    .filter(isRecord)
+    .map((agent) => normalizeModelFields(agent, "modelProviderId", "modelName", "enableThinking"));
+  return normalized;
+}
+
+function toEditorNode(
+  node: WorkflowNodeDraft,
+  agentRuntimeLimits: AgentRuntimeLimits,
+  modelOptions: WorkflowModelOption[],
+): WorkflowEditorNode {
+  const config = normalizeUnavailableModelReferences(
+    node.nodeType,
+    { ...(node.config ?? {}) } as Record<string, unknown>,
+    modelOptions,
+  );
   if (node.nodeType === "agent" && !readOptionalInt(config.maxAgentIterationsPerTurn)) {
     config.maxAgentIterationsPerTurn = agentRuntimeLimits.suggestedIterationsPerTurn;
   } else if (node.nodeType === "agent") {
@@ -6283,7 +6321,7 @@ function applyPersistedDetail(
   setSelectedNodeId: (updater: string | ((currentSelection: string) => string)) => void,
 ) {
   const nextNodes = ensureSystemTrigger(
-    detail.nodes.map((node) => toEditorNode(node, catalog.agentRuntimeLimits)),
+    detail.nodes.map((node) => toEditorNode(node, catalog.agentRuntimeLimits, catalog.modelOptions)),
     catalog,
   );
   const nextEdges = detail.edges.map(toEditorEdge);

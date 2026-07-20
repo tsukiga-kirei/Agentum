@@ -567,7 +567,7 @@ public class WorkflowDraftService {
             );
         }
 
-        // 发布前校验节点 config 中引用的 MCP / Skill / 交付能力仍在租户能力池内且状态有效。
+        // 发布前校验节点 config 中引用的模型、MCP、Skill、模板和交付能力仍在当前租户/操作者边界内且状态有效。
         List<WorkflowDraftApi.WorkflowValidationIssue> configIssues = workflowNodeConfigValidator.validateCapabilityReferences(tenantId, operatorUserId, detail.nodes());
         if (!configIssues.isEmpty()) {
             log.warn(
@@ -581,7 +581,7 @@ public class WorkflowDraftService {
             throw new ApiException(
                 HttpStatus.BAD_REQUEST,
                 "WORKFLOW_PUBLISH_CAPABILITY_REFERENCE_INVALID",
-                "流程节点引用的 MCP、Skill 或交付能力不在当前租户能力池中或已失效",
+                "流程节点引用的模型或能力不在当前可用范围中、未分配或已失效",
                 Map.of("issueCount", configIssues.size())
             );
         }

@@ -2,9 +2,13 @@ package com.agentum.workflow.application;
 
 import com.agentum.agent.application.AgentRuntimeProperties;
 import com.agentum.asset.application.AssetManagementService;
+import com.agentum.system.domain.ModelProviderEntity;
 import com.agentum.system.domain.SystemCapabilityEntity;
+import com.agentum.system.domain.TenantModelAssignmentEntity;
 import com.agentum.system.domain.TenantCapabilityGrantEntity;
+import com.agentum.system.infrastructure.ModelProviderRepository;
 import com.agentum.system.infrastructure.SystemCapabilityRepository;
+import com.agentum.system.infrastructure.TenantModelAssignmentRepository;
 import com.agentum.system.infrastructure.TenantCapabilityGrantRepository;
 import com.agentum.workflow.interfaces.WorkflowDraftApi;
 import java.util.ArrayList;
@@ -40,17 +44,23 @@ public class WorkflowNodeConfigValidator {
     private final TenantCapabilityGrantRepository tenantCapabilityGrantRepository;
     private final AssetManagementService assetManagementService;
     private final AgentRuntimeProperties agentRuntimeProperties;
+    private final TenantModelAssignmentRepository tenantModelAssignmentRepository;
+    private final ModelProviderRepository modelProviderRepository;
 
     public WorkflowNodeConfigValidator(
         SystemCapabilityRepository systemCapabilityRepository,
         TenantCapabilityGrantRepository tenantCapabilityGrantRepository,
         AssetManagementService assetManagementService,
-        AgentRuntimeProperties agentRuntimeProperties
+        AgentRuntimeProperties agentRuntimeProperties,
+        TenantModelAssignmentRepository tenantModelAssignmentRepository,
+        ModelProviderRepository modelProviderRepository
     ) {
         this.systemCapabilityRepository = systemCapabilityRepository;
         this.tenantCapabilityGrantRepository = tenantCapabilityGrantRepository;
         this.assetManagementService = assetManagementService;
         this.agentRuntimeProperties = agentRuntimeProperties;
+        this.tenantModelAssignmentRepository = tenantModelAssignmentRepository;
+        this.modelProviderRepository = modelProviderRepository;
     }
 
     public List<WorkflowDraftApi.WorkflowValidationIssue> validateCapabilityReferences(
@@ -74,6 +84,7 @@ public class WorkflowNodeConfigValidator {
             if ("user_input".equals(nodeType)) {
                 validateInputNodeConfig(config, node, issues);
             } else if ("agent".equals(nodeType)) {
+                validateModelReference(tenantId, config, "modelProviderId", "modelName", "节点[" + node.name() + "]", node, issues);
                 validateTenantAssetId(tenantId, operatorUserId, extractString(config, "agentAssetId"), "agent_template", "智能体模板", node, issues);
                 validateTenantAssetId(tenantId, operatorUserId, extractString(config, "systemPromptTemplateId"), "prompt_template", "系统提示词模板", node, issues);
                 validateTenantAssetId(tenantId, operatorUserId, extractString(config, "promptTemplateId"), "prompt_template", "系统提示词模板", node, issues);
@@ -100,6 +111,7 @@ public class WorkflowNodeConfigValidator {
                         agentName = "子智能体 " + (index + 1);
                     }
                     String subject = "节点[" + node.name() + "]的子智能体「" + agentName + "」";
+                    validateModelReference(tenantId, agent, "modelProviderId", "modelName", subject, node, issues);
                     validateTenantAssetId(tenantId, operatorUserId, extractString(agent, "agentAssetId"), "agent_template", "智能体模板", node, issues);
                     validateTenantAssetId(tenantId, operatorUserId, extractString(agent, "systemPromptTemplateId"), "prompt_template", "系统提示词模板", node, issues);
                     validateTenantAssetId(tenantId, operatorUserId, extractString(agent, "promptTemplateId"), "prompt_template", "系统提示词模板", node, issues);
@@ -108,6 +120,9 @@ public class WorkflowNodeConfigValidator {
                     validateAgentIterationLimit(agent, node, subject, issues);
                     validateIds(tenantId, operatorUserId, extractStringList(agent, "mcpIds", "mcpServices"), "mcp", "MCP", node, poolCapabilities, issues);
                     validateIds(tenantId, operatorUserId, extractStringList(agent, "skillIds", "skills"), "skill", "Skill", node, poolCapabilities, issues);
+                }
+                if ("intent".equals(executionMode)) {
+                    validateModelReference(tenantId, config, "intentModelProviderId", "intentModelName", "节点[" + node.name() + "]的意图识别", node, issues);
                 }
             } else if ("delivery".equals(nodeType)) {
                 String deliveryMode = rawString(config.get("deliveryMode"));
@@ -609,6 +624,53 @@ public class WorkflowNodeConfigValidator {
             }
         } catch (IllegalArgumentException exception) {
             issues.add(issue("WORKFLOW_VALIDATION_TENANT_ASSET_ID_INVALID", "节点[" + node.name() + "]引用的" + typeLabel + "标识不合法", node));
+        }
+    }
+
+    private void validateModelReference(
+        UUID tenantId,
+        Map<String, Object> config,
+        String providerKey,
+        String modelNameKey,
+        String subject,
+        WorkflowDraftApi.WorkflowNodeRow node,
+        List<WorkflowDraftApi.WorkflowValidationIssue> issues
+    ) {
+        // 早期草稿可能完全没有模型字段，运行时仍沿用租户默认模型；新配置一旦声明了模型字段，
+        // 发布时必须精确绑定当前租户可用供应商，避免导入 UUID 失效后静默回退到另一模型。
+        if (!config.containsKey(providerKey) && !config.containsKey(modelNameKey)) {
+            return;
+        }
+        String providerIdText = rawString(config.get(providerKey));
+        if (providerIdText.isBlank()) {
+            issues.add(issue("WORKFLOW_VALIDATION_MODEL_REQUIRED", subject + "必须选择运行模型", node));
+            return;
+        }
+
+        UUID providerId;
+        try {
+            providerId = UUID.fromString(providerIdText);
+        } catch (IllegalArgumentException exception) {
+            issues.add(issue("WORKFLOW_VALIDATION_MODEL_PROVIDER_ID_INVALID", subject + "引用的模型供应商标识不合法", node));
+            return;
+        }
+
+        TenantModelAssignmentEntity assignment = tenantModelAssignmentRepository
+            .findByTenantIdAndProviderId(tenantId, providerId)
+            .filter(item -> "enabled".equals(item.getStatus()))
+            .orElse(null);
+        ModelProviderEntity provider = modelProviderRepository.findById(providerId)
+            .filter(item -> ACTIVE_STATUS.equals(item.getStatus()))
+            .orElse(null);
+        if (assignment == null || provider == null) {
+            issues.add(issue("WORKFLOW_VALIDATION_MODEL_NOT_AVAILABLE", subject + "选择的模型未分配给当前租户或已停用", node));
+            return;
+        }
+
+        String assignedModelName = firstNonBlank(assignment.getDefaultModel(), provider.getDefaultModel());
+        String configuredModelName = rawString(config.get(modelNameKey));
+        if (assignedModelName.isBlank() || !assignedModelName.equals(configuredModelName)) {
+            issues.add(issue("WORKFLOW_VALIDATION_MODEL_NAME_MISMATCH", subject + "选择的模型与当前租户模型分配不一致，请重新选择", node));
         }
     }
 
