@@ -6099,6 +6099,40 @@ components:
           type: number
           default: 0.75
           description: 首行缩进厘米数，firstLineIndentMode=cm 时生效。
+        orderedListIndentMode:
+          type: string
+          enum: [body, none, hanging]
+          default: body
+          description: 有序列表缩进方式；body 继承正文首行缩进，none 不使用缩进，hanging 使用独立悬挂缩进。
+        orderedListLeftIndentChars:
+          type: number
+          minimum: 0
+          maximum: 12
+          default: 3
+          description: 有序列表左缩进字符数，仅 orderedListIndentMode=hanging 时生效。
+        orderedListHangingIndentChars:
+          type: number
+          minimum: 0
+          maximum: 12
+          default: 1.5
+          description: 有序列表悬挂缩进字符数，仅 orderedListIndentMode=hanging 时生效。
+        unorderedListIndentMode:
+          type: string
+          enum: [body, none, hanging]
+          default: body
+          description: 无序列表缩进方式；body 继承正文首行缩进，none 不使用缩进，hanging 使用独立悬挂缩进。
+        unorderedListLeftIndentChars:
+          type: number
+          minimum: 0
+          maximum: 12
+          default: 3
+          description: 无序列表左缩进字符数，仅 unorderedListIndentMode=hanging 时生效。
+        unorderedListHangingIndentChars:
+          type: number
+          minimum: 0
+          maximum: 12
+          default: 1.5
+          description: 无序列表悬挂缩进字符数，仅 unorderedListIndentMode=hanging 时生效。
         paragraphSpacingUnit:
           type: string
           enum: [line, pt, cm, mm]

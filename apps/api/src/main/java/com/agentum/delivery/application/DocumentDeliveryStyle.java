@@ -64,6 +64,12 @@ public record DocumentDeliveryStyle(
     String firstLineIndentMode,
     double firstLineIndentChars,
     double firstLineIndentCm,
+    String orderedListIndentMode,
+    double orderedListLeftIndentChars,
+    double orderedListHangingIndentChars,
+    String unorderedListIndentMode,
+    double unorderedListLeftIndentChars,
+    double unorderedListHangingIndentChars,
     String paragraphSpacingUnit,
     double paragraphSpacingBefore,
     double paragraphSpacingAfter,
@@ -82,6 +88,7 @@ public record DocumentDeliveryStyle(
     private static final Set<String> SPACING_UNITS = Set.of("line", "pt", "cm", "mm");
     private static final Set<String> RULE_TARGET_TYPES = Set.of("index", "first", "second", "third", "last", "secondLast");
     private static final Set<String> RULE_INDENT_MODES = Set.of("", "none", "chars", "cm");
+    private static final Set<String> LIST_INDENT_MODES = Set.of("body", "none", "hanging");
 
     /**
      * 逐段个性化规则。空字符串字段表示继承全局样式，仅显式设置的字段参与覆盖。
@@ -173,6 +180,12 @@ public record DocumentDeliveryStyle(
             "chars",
             2,
             0.75,
+            "body",
+            3,
+            1.5,
+            "body",
+            3,
+            1.5,
             "pt",
             0,
             6,
@@ -239,6 +252,12 @@ public record DocumentDeliveryStyle(
             readFirstLineIndentMode(source, defaults.firstLineIndentMode()),
             readDouble(source, "firstLineIndentChars", defaults.firstLineIndentChars(), 0.0, 6.0),
             readDouble(source, "firstLineIndentCm", defaults.firstLineIndentCm(), 0.0, 10.0),
+            readListIndentMode(source, "orderedListIndentMode", defaults.orderedListIndentMode()),
+            readDouble(source, "orderedListLeftIndentChars", defaults.orderedListLeftIndentChars(), 0.0, 12.0),
+            readDouble(source, "orderedListHangingIndentChars", defaults.orderedListHangingIndentChars(), 0.0, 12.0),
+            readListIndentMode(source, "unorderedListIndentMode", defaults.unorderedListIndentMode()),
+            readDouble(source, "unorderedListLeftIndentChars", defaults.unorderedListLeftIndentChars(), 0.0, 12.0),
+            readDouble(source, "unorderedListHangingIndentChars", defaults.unorderedListHangingIndentChars(), 0.0, 12.0),
             readSpacingUnit(source, "paragraphSpacingUnit", defaults.paragraphSpacingUnit()),
             readDouble(source, "paragraphSpacingBefore", defaults.paragraphSpacingBefore(), 0.0, 200.0),
             readDouble(source, "paragraphSpacingAfter", defaults.paragraphSpacingAfter(), 0.0, 200.0),
@@ -467,6 +486,12 @@ public record DocumentDeliveryStyle(
         result.put("firstLineIndentMode", firstLineIndentMode);
         result.put("firstLineIndentChars", firstLineIndentChars);
         result.put("firstLineIndentCm", firstLineIndentCm);
+        result.put("orderedListIndentMode", orderedListIndentMode);
+        result.put("orderedListLeftIndentChars", orderedListLeftIndentChars);
+        result.put("orderedListHangingIndentChars", orderedListHangingIndentChars);
+        result.put("unorderedListIndentMode", unorderedListIndentMode);
+        result.put("unorderedListLeftIndentChars", unorderedListLeftIndentChars);
+        result.put("unorderedListHangingIndentChars", unorderedListHangingIndentChars);
         result.put("paragraphSpacingUnit", paragraphSpacingUnit);
         result.put("paragraphSpacingBefore", paragraphSpacingBefore);
         result.put("paragraphSpacingAfter", paragraphSpacingAfter);
@@ -527,6 +552,11 @@ public record DocumentDeliveryStyle(
             return fallback;
         }
         return "cm".equalsIgnoreCase(text) ? "cm" : "chars";
+    }
+
+    private static String readListIndentMode(Map<String, Object> source, String key, String fallback) {
+        String text = readOptionalString(source, key).toLowerCase();
+        return LIST_INDENT_MODES.contains(text) ? text : fallback;
     }
 
     private static void putOptional(Map<String, Object> target, String key, String value) {

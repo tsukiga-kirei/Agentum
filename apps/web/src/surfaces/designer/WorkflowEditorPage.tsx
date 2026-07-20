@@ -386,6 +386,12 @@ const DEFAULT_WORD_DOCUMENT_STYLE: DocumentDeliveryStyleDraft = {
   firstLineIndentMode: "chars",
   firstLineIndentChars: 2,
   firstLineIndentCm: 0.75,
+  orderedListIndentMode: "body",
+  orderedListLeftIndentChars: 3,
+  orderedListHangingIndentChars: 1.5,
+  unorderedListIndentMode: "body",
+  unorderedListLeftIndentChars: 3,
+  unorderedListHangingIndentChars: 1.5,
   paragraphSpacingUnit: "pt",
   paragraphSpacingBefore: 0,
   paragraphSpacingAfter: 6,
@@ -6662,6 +6668,12 @@ function readDocumentDeliveryStyle(rawStyle: unknown, capabilityConfig?: Record<
     firstLineIndentMode: (merged.firstLineIndentMode === "cm" ? "cm" : "chars") as "chars" | "cm",
     firstLineIndentChars: readNumberLike(merged.firstLineIndentChars, Number(DEFAULT_WORD_DOCUMENT_STYLE.firstLineIndentChars)),
     firstLineIndentCm: readNumberLike(merged.firstLineIndentCm, Number(DEFAULT_WORD_DOCUMENT_STYLE.firstLineIndentCm)),
+    orderedListIndentMode: readListIndentMode(merged.orderedListIndentMode),
+    orderedListLeftIndentChars: readNumberLike(merged.orderedListLeftIndentChars, DEFAULT_WORD_DOCUMENT_STYLE.orderedListLeftIndentChars),
+    orderedListHangingIndentChars: readNumberLike(merged.orderedListHangingIndentChars, DEFAULT_WORD_DOCUMENT_STYLE.orderedListHangingIndentChars),
+    unorderedListIndentMode: readListIndentMode(merged.unorderedListIndentMode),
+    unorderedListLeftIndentChars: readNumberLike(merged.unorderedListLeftIndentChars, DEFAULT_WORD_DOCUMENT_STYLE.unorderedListLeftIndentChars),
+    unorderedListHangingIndentChars: readNumberLike(merged.unorderedListHangingIndentChars, DEFAULT_WORD_DOCUMENT_STYLE.unorderedListHangingIndentChars),
     paragraphSpacingUnit: readSpacingUnit(merged.paragraphSpacingUnit ?? DEFAULT_WORD_DOCUMENT_STYLE.paragraphSpacingUnit),
     paragraphSpacingBefore: readNumberLike(merged.paragraphSpacingBefore, Number(DEFAULT_WORD_DOCUMENT_STYLE.paragraphSpacingBefore)),
     paragraphSpacingAfter: readNumberLike(merged.paragraphSpacingAfter, Number(DEFAULT_WORD_DOCUMENT_STYLE.paragraphSpacingAfter)),
@@ -6673,6 +6685,10 @@ function readDocumentDeliveryStyle(rawStyle: unknown, capabilityConfig?: Record<
     headingFirstLineIndent: readBooleanLike(merged.headingFirstLineIndent, Boolean(DEFAULT_WORD_DOCUMENT_STYLE.headingFirstLineIndent)),
     paragraphRules: readParagraphRules(merged.paragraphRules),
   };
+}
+
+function readListIndentMode(value: unknown): "body" | "none" | "hanging" {
+  return value === "none" || value === "hanging" ? value : "body";
 }
 
 function readParagraphRules(value: unknown): ParagraphRule[] {

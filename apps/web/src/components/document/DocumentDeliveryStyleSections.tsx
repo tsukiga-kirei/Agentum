@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Select } from "antd";
 import type { LucideIcon } from "lucide-react";
-import { AlignCenter, ChevronDown, FileText, Hash, LayoutTemplate, Plus, Table2, Trash2, Type } from "lucide-react";
+import { AlignCenter, ChevronDown, FileText, Hash, LayoutList, LayoutTemplate, ListOrdered, Plus, Table2, Trash2, Type } from "lucide-react";
 import {
   BODY_ALIGNMENT_OPTIONS,
   BLANK_LINE_OPTIONS,
@@ -15,6 +15,8 @@ import {
   INHERITABLE_LATIN_FONT_OPTIONS,
   INHERITABLE_NUMBER_FONT_OPTIONS,
   LATIN_FONT_OPTIONS,
+  LIST_INDENT_CHARS_OPTIONS,
+  LIST_INDENT_MODE_OPTIONS,
   NUMBER_FONT_OPTIONS,
   MARGIN_CM_OPTIONS,
   MARGIN_PRESETS,
@@ -469,6 +471,33 @@ export function DocumentDeliveryStyleSections({ style, onFieldChange, onFieldsCh
           <StyleSelectField label="段前间距" icon={FileText} value={stringifySelectValue(style.paragraphSpacingBefore)} options={spacingOptions} onChange={(value) => onFieldChange("paragraphSpacingBefore", Number(value))} />
           <StyleSelectField label="段后间距" icon={FileText} value={stringifySelectValue(style.paragraphSpacingAfter)} options={spacingOptions} onChange={(value) => onFieldChange("paragraphSpacingAfter", Number(value))} />
         </StyleRow>
+      </StyleSection>
+
+      <StyleSection title="列表" description="分别设置有序与无序列表的缩进；选择悬挂缩进后可配置续行位置。">
+        <div className="space-y-2">
+          <span className="text-xs font-medium text-[var(--color-text-secondary)]">有序列表</span>
+          <StyleRow columns={style.orderedListIndentMode === "hanging" ? 3 : 1}>
+            <StyleSelectField label="缩进方式" icon={ListOrdered} value={style.orderedListIndentMode} options={LIST_INDENT_MODE_OPTIONS} onChange={(value) => onFieldChange("orderedListIndentMode", value as DocumentDeliveryStyleValues["orderedListIndentMode"])} />
+            {style.orderedListIndentMode === "hanging" ? (
+              <>
+                <StyleSelectField label="左缩进" icon={ListOrdered} value={stringifySelectValue(style.orderedListLeftIndentChars)} options={LIST_INDENT_CHARS_OPTIONS} onChange={(value) => onFieldChange("orderedListLeftIndentChars", Number(value))} />
+                <StyleSelectField label="悬挂缩进" icon={ListOrdered} value={stringifySelectValue(style.orderedListHangingIndentChars)} options={LIST_INDENT_CHARS_OPTIONS} onChange={(value) => onFieldChange("orderedListHangingIndentChars", Number(value))} />
+              </>
+            ) : null}
+          </StyleRow>
+        </div>
+        <div className="space-y-2">
+          <span className="text-xs font-medium text-[var(--color-text-secondary)]">无序列表</span>
+          <StyleRow columns={style.unorderedListIndentMode === "hanging" ? 3 : 1}>
+            <StyleSelectField label="缩进方式" icon={LayoutList} value={style.unorderedListIndentMode} options={LIST_INDENT_MODE_OPTIONS} onChange={(value) => onFieldChange("unorderedListIndentMode", value as DocumentDeliveryStyleValues["unorderedListIndentMode"])} />
+            {style.unorderedListIndentMode === "hanging" ? (
+              <>
+                <StyleSelectField label="左缩进" icon={LayoutList} value={stringifySelectValue(style.unorderedListLeftIndentChars)} options={LIST_INDENT_CHARS_OPTIONS} onChange={(value) => onFieldChange("unorderedListLeftIndentChars", Number(value))} />
+                <StyleSelectField label="悬挂缩进" icon={LayoutList} value={stringifySelectValue(style.unorderedListHangingIndentChars)} options={LIST_INDENT_CHARS_OPTIONS} onChange={(value) => onFieldChange("unorderedListHangingIndentChars", Number(value))} />
+              </>
+            ) : null}
+          </StyleRow>
+        </div>
       </StyleSection>
 
       <StyleSection title="表格" description="表格文字、对齐、单元格内边距、框线与行距。">

@@ -105,6 +105,66 @@ class MarkdownDocxRendererTest {
     }
 
     @Test
+    void shouldRenderQuotesWithBodyStyleWithoutForcedIndentOrItalic() throws IOException {
+        byte[] bytes = renderer.render("> 引用内容", DocumentDeliveryStyle.defaults());
+
+        String documentXml = unzip(bytes).get("word/document.xml");
+        assertThat(documentXml)
+            .contains("引用内容")
+            .contains("<w:ind w:firstLine=\"480\" w:firstLineChars=\"200\"/>")
+            .doesNotContain("<w:ind w:left=\"480\"/>")
+            .doesNotContain("<w:i/>")
+            .doesNotContain("<w:iCs/>");
+    }
+
+    @Test
+    void shouldLetOrderedAndUnorderedListsInheritBodyIndentByDefault() throws IOException {
+        byte[] bytes = renderer.render("1. 有序列表\n\n- 无序列表", DocumentDeliveryStyle.defaults());
+
+        String documentXml = unzip(bytes).get("word/document.xml");
+        assertThat(documentXml)
+            .contains("1.")
+            .contains("•")
+            .contains("<w:ind w:firstLine=\"480\" w:firstLineChars=\"200\"/>")
+            .doesNotContain("w:hanging=");
+    }
+
+    @Test
+    void shouldApplyIndependentHangingAndNoIndentListStyles() throws IOException {
+        DocumentDeliveryStyle style = DocumentDeliveryStyle.from(Map.of(
+            "orderedListIndentMode", "hanging",
+            "orderedListLeftIndentChars", 4,
+            "orderedListHangingIndentChars", 2,
+            "unorderedListIndentMode", "none"
+        ));
+
+        byte[] bytes = renderer.render("1. 有序列表\n\n- 无序列表", style);
+
+        String documentXml = unzip(bytes).get("word/document.xml");
+        assertThat(documentXml)
+            .contains("<w:ind w:left=\"960\" w:leftChars=\"400\" w:hanging=\"480\" w:hangingChars=\"200\"/>");
+        assertThat(documentXml.split("<w:ind", -1)).hasSize(2);
+    }
+
+    @Test
+    void shouldAllowParagraphRuleToOverrideListIndent() throws IOException {
+        DocumentDeliveryStyle style = DocumentDeliveryStyle.from(Map.of(
+            "orderedListIndentMode", "hanging",
+            "paragraphRules", java.util.List.of(Map.of(
+                "targetType", "first",
+                "firstLineIndentMode", "chars",
+                "firstLineIndentChars", 1
+            ))
+        ));
+
+        byte[] bytes = renderer.render("1. 个性化列表", style);
+
+        assertThat(unzip(bytes).get("word/document.xml"))
+            .contains("<w:ind w:firstLine=\"240\" w:firstLineChars=\"100\"/>")
+            .doesNotContain("w:hanging=");
+    }
+
+    @Test
     void shouldApplyHeadingFontsAndTableStyles() throws IOException {
         DocumentDeliveryStyle style = DocumentDeliveryStyle.from(Map.ofEntries(
             Map.entry("numberFont", "Calibri"),
@@ -387,6 +447,23 @@ class MarkdownDocxRendererTest {
         assertThat(reparsed.paragraphRules()).hasSize(1);
         assertThat(reparsed.paragraphRules().get(0).alignment()).isEqualTo("center");
         assertThat(reparsed.paragraphRules().get(0).spacingUnit()).isEqualTo("line");
+    }
+
+    @Test
+    void shouldRoundTripListIndentStylesThroughMap() {
+        DocumentDeliveryStyle style = DocumentDeliveryStyle.from(Map.of(
+            "orderedListIndentMode", "hanging",
+            "orderedListLeftIndentChars", 4,
+            "orderedListHangingIndentChars", 2,
+            "unorderedListIndentMode", "none"
+        ));
+
+        DocumentDeliveryStyle reparsed = DocumentDeliveryStyle.from(style.toMap());
+
+        assertThat(reparsed.orderedListIndentMode()).isEqualTo("hanging");
+        assertThat(reparsed.orderedListLeftIndentChars()).isEqualTo(4);
+        assertThat(reparsed.orderedListHangingIndentChars()).isEqualTo(2);
+        assertThat(reparsed.unorderedListIndentMode()).isEqualTo("none");
     }
 
     private static Map<String, String> unzip(byte[] bytes) throws IOException {

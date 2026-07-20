@@ -48,6 +48,12 @@ export type DocumentDeliveryStyleValues = {
   firstLineIndentMode: FirstLineIndentMode;
   firstLineIndentChars: number;
   firstLineIndentCm: number;
+  orderedListIndentMode: ListIndentMode;
+  orderedListLeftIndentChars: number;
+  orderedListHangingIndentChars: number;
+  unorderedListIndentMode: ListIndentMode;
+  unorderedListLeftIndentChars: number;
+  unorderedListHangingIndentChars: number;
   paragraphSpacingUnit: SpacingUnit;
   paragraphSpacingBefore: number;
   paragraphSpacingAfter: number;
@@ -64,6 +70,7 @@ export type SelectOption = { value: string; label: string };
 
 export type LineSpacingMode = "multiple" | "exact";
 export type FirstLineIndentMode = "chars" | "cm";
+export type ListIndentMode = "body" | "none" | "hanging";
 export type SpacingUnit = "line" | "pt" | "cm" | "mm";
 export type ParagraphRuleTargetType = "index" | "first" | "second" | "third" | "last" | "secondLast";
 
@@ -265,6 +272,15 @@ export const FIRST_LINE_INDENT_OPTIONS: SelectOption[] = [
   { value: "5", label: "5 字符" },
   { value: "6", label: "6 字符" },
 ];
+
+export const LIST_INDENT_MODE_OPTIONS: SelectOption[] = [
+  { value: "body", label: "继承正文首行缩进（默认）" },
+  { value: "none", label: "无特殊缩进" },
+  { value: "hanging", label: "悬挂缩进" },
+];
+
+export const LIST_INDENT_CHARS_OPTIONS: SelectOption[] = [0, 0.5, 1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10, 12]
+  .map((value) => ({ value: String(value), label: `${value} 字符` }));
 
 export const PARAGRAPH_SPACING_BEFORE_OPTIONS: SelectOption[] = [
   { value: "0", label: "0 pt（默认）" },

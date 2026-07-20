@@ -59,7 +59,7 @@ public class MarkdownDocxRenderer {
                 case BLANK -> body.append(emptyParagraph(style));
                 case TABLE -> body.append(table(block.rows(), style));
                 case CODE -> body.append(codeBlock(block.codeLines(), style));
-                case HEADING, BODY, LIST, QUOTE -> {
+                case HEADING, BODY, ORDERED_LIST, UNORDERED_LIST, QUOTE -> {
                     contentIndex++;
                     ParagraphRule rule = matchRule(style.paragraphRules(), contentIndex, totalContentParagraphs);
                     boolean centered = contentIndex == 1 && style.titleCentered();
@@ -68,8 +68,10 @@ public class MarkdownDocxRenderer {
                         body.append(headingParagraph(block.text(), block.headingLevel(), style, centered, rule));
                     } else {
                         ParagraphKind kind = switch (block.type()) {
-                            case LIST -> ParagraphKind.LIST;
-                            case QUOTE -> ParagraphKind.QUOTE;
+                            case ORDERED_LIST -> ParagraphKind.ORDERED_LIST;
+                            case UNORDERED_LIST -> ParagraphKind.UNORDERED_LIST;
+                            // 引用只保留 Markdown 语义识别和前缀剥离，排版完全按普通正文处理。
+                            case QUOTE -> ParagraphKind.BODY;
                             default -> ParagraphKind.BODY;
                         };
                         body.append(paragraph(block.text(), style, kind, centered, rule));
@@ -144,14 +146,14 @@ public class MarkdownDocxRenderer {
                 continue;
             }
             if (isBullet(trimmed)) {
-                blocks.add(Block.paragraph(BlockType.LIST, "• " + trimmed.substring(2).trim()));
+                blocks.add(Block.paragraph(BlockType.UNORDERED_LIST, "• " + trimmed.substring(2).trim()));
                 index++;
                 continue;
             }
             int orderedPrefixLength = orderedPrefixLength(trimmed);
             if (orderedPrefixLength > 0) {
                 blocks.add(Block.paragraph(
-                    BlockType.LIST,
+                    BlockType.ORDERED_LIST,
                     trimmed.substring(0, orderedPrefixLength).trim() + " " + trimmed.substring(orderedPrefixLength).trim()
                 ));
                 index++;
@@ -168,7 +170,11 @@ public class MarkdownDocxRenderer {
     }
 
     private boolean isContentParagraph(BlockType type) {
-        return type == BlockType.HEADING || type == BlockType.BODY || type == BlockType.LIST || type == BlockType.QUOTE;
+        return type == BlockType.HEADING
+            || type == BlockType.BODY
+            || type == BlockType.ORDERED_LIST
+            || type == BlockType.UNORDERED_LIST
+            || type == BlockType.QUOTE;
     }
 
     /** 命中冲突时显式段号优先，同优先级后添加者覆盖。 */
@@ -260,15 +266,15 @@ public class MarkdownDocxRenderer {
             .append("\" w:lineRule=\"").append(style.resolvedLineSpacingRule()).append("\"/>");
         switch (kind) {
             case BODY -> pPr.append(bodyIndentTag(style, rule, size, centered));
-            case LIST -> pPr.append("<w:ind w:left=\"720\" w:hanging=\"360\"/>");
-            case QUOTE -> pPr.append("<w:ind w:left=\"480\"/>");
+            case ORDERED_LIST -> pPr.append(listIndentTag(style, true, rule, size, centered));
+            case UNORDERED_LIST -> pPr.append(listIndentTag(style, false, rule, size, centered));
         }
         String alignment = paragraphAlignment(style.bodyAlignment(), style, rule, centered);
         if (!alignment.isEmpty()) {
             pPr.append("<w:jc w:val=\"").append(alignment).append("\"/>");
         }
         pPr.append("</w:pPr>");
-        return "<w:p>" + pPr + runs(text, latinFont, chineseFont, numberFont, size, false, kind == ParagraphKind.QUOTE) + "</w:p>";
+        return "<w:p>" + pPr + runs(text, latinFont, chineseFont, numberFont, size, false, false) + "</w:p>";
     }
 
     /**
@@ -324,6 +330,31 @@ public class MarkdownDocxRenderer {
             return "";
         }
         return buildIndTag(style.firstLineIndentMode(), style.firstLineIndentChars(), style.firstLineIndentCm(), style.bodyFontSize());
+    }
+
+    /**
+     * 列表不再强制悬挂缩进：系统或节点可分别配置有序、无序列表，逐段规则仍保持最高优先级。
+     */
+    private String listIndentTag(
+        DocumentDeliveryStyle style,
+        boolean ordered,
+        ParagraphRule rule,
+        int size,
+        boolean centered
+    ) {
+        if (rule != null && !rule.firstLineIndentMode().isBlank()) {
+            return bodyIndentTag(style, rule, size, centered);
+        }
+        String mode = ordered ? style.orderedListIndentMode() : style.unorderedListIndentMode();
+        if ("none".equals(mode) || centered) {
+            return "";
+        }
+        if ("hanging".equals(mode)) {
+            double leftChars = ordered ? style.orderedListLeftIndentChars() : style.unorderedListLeftIndentChars();
+            double hangingChars = ordered ? style.orderedListHangingIndentChars() : style.unorderedListHangingIndentChars();
+            return buildHangingIndTag(leftChars, hangingChars, size);
+        }
+        return bodyIndentTag(style, null, size, centered);
     }
 
     private String emptyParagraph(DocumentDeliveryStyle style) {
@@ -637,6 +668,17 @@ public class MarkdownDocxRenderer {
         return "<w:ind w:firstLine=\"" + twips + "\" w:firstLineChars=\"" + charsHundredths + "\"/>";
     }
 
+    private String buildHangingIndTag(double leftChars, double hangingChars, int sizePt) {
+        double safeLeftChars = Math.max(0, leftChars);
+        double safeHangingChars = Math.min(safeLeftChars, Math.max(0, hangingChars));
+        int leftTwips = (int) Math.round(sizePt * 20 * safeLeftChars);
+        int hangingTwips = (int) Math.round(sizePt * 20 * safeHangingChars);
+        int leftCharsHundredths = (int) Math.round(safeLeftChars * 100);
+        int hangingCharsHundredths = (int) Math.round(safeHangingChars * 100);
+        return "<w:ind w:left=\"" + leftTwips + "\" w:leftChars=\"" + leftCharsHundredths
+            + "\" w:hanging=\"" + hangingTwips + "\" w:hangingChars=\"" + hangingCharsHundredths + "\"/>";
+    }
+
     private int cmToTwips(double cm) {
         return (int) Math.round(cm / 2.54 * 1440);
     }
@@ -736,14 +778,15 @@ public class MarkdownDocxRenderer {
 
     private enum ParagraphKind {
         BODY,
-        LIST,
-        QUOTE
+        ORDERED_LIST,
+        UNORDERED_LIST
     }
 
     private enum BlockType {
         HEADING,
         BODY,
-        LIST,
+        ORDERED_LIST,
+        UNORDERED_LIST,
         QUOTE,
         TABLE,
         CODE,

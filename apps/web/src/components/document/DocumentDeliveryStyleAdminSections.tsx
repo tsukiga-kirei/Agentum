@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { AlignCenter, FileText, Hash, LayoutTemplate, Table2, Type } from "lucide-react";
+import { AlignCenter, FileText, Hash, LayoutList, LayoutTemplate, ListOrdered, Table2, Type } from "lucide-react";
 import {
   BODY_ALIGNMENT_OPTIONS,
   CHINESE_FONT_OPTIONS,
@@ -12,6 +12,8 @@ import {
   INHERITABLE_LATIN_FONT_OPTIONS,
   INHERITABLE_NUMBER_FONT_OPTIONS,
   LATIN_FONT_OPTIONS,
+  LIST_INDENT_CHARS_OPTIONS,
+  LIST_INDENT_MODE_OPTIONS,
   NUMBER_FONT_OPTIONS,
   MARGIN_CM_OPTIONS,
   MARGIN_PRESETS,
@@ -95,6 +97,8 @@ export function DocumentDeliveryStyleAdminSections({
     [],
   );
   const [marginPreset, setMarginPreset] = useState<MarginPresetKey>(initialPreset);
+  const [orderedListIndentMode, setOrderedListIndentMode] = useState(values.documentOrderedListIndentMode || "body");
+  const [unorderedListIndentMode, setUnorderedListIndentMode] = useState(values.documentUnorderedListIndentMode || "body");
   const documentSpacingUnit: SpacingUnit = readSpacingUnit(values.documentParagraphSpacingUnit);
   const documentSpacingOptions = useMemo(() => spacingValueOptions(documentSpacingUnit), [documentSpacingUnit]);
 
@@ -562,6 +566,47 @@ export function DocumentDeliveryStyleAdminSections({
             options={HEADING_INDENT_OPTIONS}
             onChange={(value) => onChange("documentHeadingFirstLineIndent", value)}
           />
+        </AdminStyleRow>
+      </AdminStyleSection>
+
+      <AdminStyleSection title="列表" description="有序与无序列表可分别继承正文、取消缩进或使用自定义悬挂缩进。">
+        <AdminStyleRow columns={3}>
+          <SelectField
+            label="有序列表缩进"
+            icon={ListOrdered}
+            defaultValue={orderedListIndentMode}
+            placeholder="请选择缩进方式"
+            options={LIST_INDENT_MODE_OPTIONS}
+            onChange={(value) => {
+              setOrderedListIndentMode(value);
+              onChange("documentOrderedListIndentMode", value);
+            }}
+          />
+          {orderedListIndentMode === "hanging" ? (
+            <>
+              <SelectField label="有序列表左缩进" icon={ListOrdered} defaultValue={values.documentOrderedListLeftIndentChars || "3"} options={LIST_INDENT_CHARS_OPTIONS} onChange={(value) => onChange("documentOrderedListLeftIndentChars", value)} />
+              <SelectField label="有序列表悬挂缩进" icon={ListOrdered} defaultValue={values.documentOrderedListHangingIndentChars || "1.5"} options={LIST_INDENT_CHARS_OPTIONS} onChange={(value) => onChange("documentOrderedListHangingIndentChars", value)} />
+            </>
+          ) : null}
+        </AdminStyleRow>
+        <AdminStyleRow columns={3}>
+          <SelectField
+            label="无序列表缩进"
+            icon={LayoutList}
+            defaultValue={unorderedListIndentMode}
+            placeholder="请选择缩进方式"
+            options={LIST_INDENT_MODE_OPTIONS}
+            onChange={(value) => {
+              setUnorderedListIndentMode(value);
+              onChange("documentUnorderedListIndentMode", value);
+            }}
+          />
+          {unorderedListIndentMode === "hanging" ? (
+            <>
+              <SelectField label="无序列表左缩进" icon={LayoutList} defaultValue={values.documentUnorderedListLeftIndentChars || "3"} options={LIST_INDENT_CHARS_OPTIONS} onChange={(value) => onChange("documentUnorderedListLeftIndentChars", value)} />
+              <SelectField label="无序列表悬挂缩进" icon={LayoutList} defaultValue={values.documentUnorderedListHangingIndentChars || "1.5"} options={LIST_INDENT_CHARS_OPTIONS} onChange={(value) => onChange("documentUnorderedListHangingIndentChars", value)} />
+            </>
+          ) : null}
         </AdminStyleRow>
       </AdminStyleSection>
 
