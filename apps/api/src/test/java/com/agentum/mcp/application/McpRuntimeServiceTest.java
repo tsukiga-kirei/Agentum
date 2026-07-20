@@ -62,13 +62,8 @@ class McpRuntimeServiceTest {
                 "endpointUrl", "http://127.0.0.1:3001/mcp",
                 "tools", List.of(
                     Map.of(
-                        "name", "get_financial_work_report_core_kpi",
-                        "description", "获取核心经营指标",
-                        "inputSchema", pdtSchema
-                    ),
-                    Map.of(
-                        "name", "get_financial_work_report_risk_indicators",
-                        "description", "获取监管风险指标",
+                        "name", "stale_tool_name",
+                        "description", "系统管理中的旧预览快照",
                         "inputSchema", pdtSchema
                     )
                 )
@@ -95,10 +90,17 @@ class McpRuntimeServiceTest {
             runtimeClient,
             Clock.fixed(NOW, ZoneOffset.UTC)
         );
+        when(runtimeClient.listTools(any())).thenReturn(new McpRuntimeClient.ToolListResult(
+            List.of(
+                new McpRuntimeClient.ToolDescriptor("get_financial_work_report_core_kpi", "获取核心经营指标", pdtSchema),
+                new McpRuntimeClient.ToolDescriptor("get_financial_work_report_risk_indicators", "获取监管风险指标", pdtSchema)
+            ),
+            12L
+        ));
     }
 
     @Test
-    void shouldExposeEveryDiscoveredToolWithItsInputSchema() {
+    void shouldExposeEveryRuntimeDiscoveredToolInsteadOfSavedSnapshot() {
         List<McpRuntimeService.McpToolBinding> bindings = service.resolveMcpTools(request());
 
         assertThat(bindings).extracting(McpRuntimeService.McpToolBinding::remoteToolName).containsExactly(
@@ -107,6 +109,34 @@ class McpRuntimeServiceTest {
         );
         assertThat(bindings.getFirst().parameters()).containsEntry("required", List.of("pdt"));
         assertThat(bindings.getFirst().parameters().get("properties").toString()).contains("pdt");
+    }
+
+    @Test
+    void shouldDiscoverChangedToolListAgainForEveryAgentTurn() {
+        when(runtimeClient.listTools(any()))
+            .thenReturn(new McpRuntimeClient.ToolListResult(
+                List.of(new McpRuntimeClient.ToolDescriptor("old_tool", "旧工具", Map.of("type", "object"))),
+                8L
+            ))
+            .thenReturn(new McpRuntimeClient.ToolListResult(
+                List.of(new McpRuntimeClient.ToolDescriptor("new_tool", "新工具", Map.of("type", "object"))),
+                9L
+            ));
+
+        List<McpRuntimeService.McpToolBinding> firstTurn = service.resolveMcpTools(request());
+        List<McpRuntimeService.McpToolBinding> secondTurn = service.resolveMcpTools(request());
+
+        assertThat(firstTurn).extracting(McpRuntimeService.McpToolBinding::remoteToolName).containsExactly("old_tool");
+        assertThat(secondTurn).extracting(McpRuntimeService.McpToolBinding::remoteToolName).containsExactly("new_tool");
+    }
+
+    @Test
+    void shouldRejectEmptyRuntimeToolListWithoutFallingBackToSavedSnapshot() {
+        when(runtimeClient.listTools(any())).thenReturn(new McpRuntimeClient.ToolListResult(List.of(), 7L));
+
+        assertThatThrownBy(() -> service.resolveMcpTools(request()))
+            .isInstanceOf(ApiException.class)
+            .satisfies(error -> assertThat(((ApiException) error).getCode()).isEqualTo("MCP_TOOL_LIST_EMPTY"));
     }
 
     @Test

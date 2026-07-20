@@ -121,17 +121,7 @@ public class AgentRuntimeService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "MODEL_NAME_NOT_ASSIGNED", "流程节点选择的模型与当前租户模型分配不一致");
         }
 
-        List<McpRuntimeService.McpToolBinding> mcpTools = mcpRuntimeService.resolveMcpTools(new McpRuntimeRequest(
-            request.run(),
-            request.nodeRun(),
-            config,
-            request.variables(),
-            request.operatorUserId()
-        ));
         List<SkillRuntimeService.SkillToolBinding> skillTools = skillRuntimeService.resolveSkillTools(request.run().getTenantId(), config);
-        List<ModelChatClient.ToolDefinition> toolDefinitions = buildToolDefinitions(mcpTools, skillTools);
-        Map<String, McpRuntimeService.McpToolBinding> mcpToolByName = mcpTools.stream()
-            .collect(Collectors.toMap(McpRuntimeService.McpToolBinding::functionName, tool -> tool, (left, right) -> left, LinkedHashMap::new));
         Map<String, SkillRuntimeService.SkillToolBinding> skillToolByName = skillTools.stream()
             .collect(Collectors.toMap(SkillRuntimeService.SkillToolBinding::functionName, tool -> tool, (left, right) -> left, LinkedHashMap::new));
 
@@ -171,6 +161,23 @@ public class AgentRuntimeService {
         try {
             for (int iteration = 0; iteration < maxIterations; iteration++) {
                 assertRunNotCancelled(request.run().getId());
+                // MCP Server 可以在任意时刻新增、删除或修改工具；每个模型推理回合前都重新 tools/list。
+                // 上一回合调用若因契约漂移失败，失败 observation 回写后，本回合会自然拿到最新工具并重新规划。
+                List<McpRuntimeService.McpToolBinding> mcpTools = mcpRuntimeService.resolveMcpTools(new McpRuntimeRequest(
+                    request.run(),
+                    request.nodeRun(),
+                    config,
+                    request.variables(),
+                    request.operatorUserId()
+                ));
+                List<ModelChatClient.ToolDefinition> toolDefinitions = buildToolDefinitions(mcpTools, skillTools);
+                Map<String, McpRuntimeService.McpToolBinding> mcpToolByName = mcpTools.stream()
+                    .collect(Collectors.toMap(
+                        McpRuntimeService.McpToolBinding::functionName,
+                        tool -> tool,
+                        (left, right) -> left,
+                        LinkedHashMap::new
+                    ));
                 eventSink.onPhase("model_calling", iteration == 0 ? "正在让智能体规划下一步。" : "正在基于工具观察结果继续推理。");
                 LoggedChatResult loggedResult = streamFinalAnswer
                     ? callModelStreamWithLog(request, provider, modelName, messages, options, toolDefinitions, eventSink)

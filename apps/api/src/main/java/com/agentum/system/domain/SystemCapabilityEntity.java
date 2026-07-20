@@ -120,8 +120,8 @@ public class SystemCapabilityEntity {
     }
 
     /**
-     * MCP 连通性测试得到的工具清单属于运行时契约快照，需要和端点配置一起持久化。
-     * AI 运行时据此获得真实工具名和输入 Schema，不能用平台能力编码猜测远端工具名。
+     * MCP 连通性测试得到的工具清单用于系统管理预览和问题诊断，需要和端点配置一起持久化。
+     * 远端契约可能随时变化，AI 运行时会自行 tools/list，不把这里的观察快照当成执行依据。
      */
     public void recordDiscoveredTools(List<Map<String, Object>> tools, Instant now) {
         if (this.config == null) {

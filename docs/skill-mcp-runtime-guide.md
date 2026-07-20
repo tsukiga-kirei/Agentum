@@ -35,9 +35,9 @@
 `AgentRuntimeService` 在每次初次执行或追问开始时：
 
 1. 展开智能体模板和节点配置。
-2. 调用 `SkillRuntimeService.resolveSkillTools` 和 `McpRuntimeService.resolveMcpTools`。
-3. 生成全部 Skill、MCP 工具定义，并追加平台工具 `final_answer`。
-4. 每个正常模型轮次都发送完整工具定义；模型选择工具后，执行结果以 `tool` message 追加到会话。
+2. 调用 `SkillRuntimeService.resolveSkillTools`，并在每个模型推理回合前调用 `McpRuntimeService.resolveMcpTools` 实时发现 MCP 工具。
+3. 根据本回合发现结果生成全部 Skill、MCP 工具定义，并追加平台工具 `final_answer`。
+4. 每个正常模型轮次都发送当时最新的完整工具定义；模型选择工具后，执行结果以 `tool` message 追加到会话。
 5. 模型调用 `final_answer` 后结束。如果达到节点配置的单轮最大推理次数，则执行一次不携带工具的最终汇总。
 
 `maxAgentIterationsPerTurn` 必须由每个单智能体或集群子智能体显式保存。首次执行和每次追问都会重新进入一次 `executeAgentLoop`，所以计数按本轮对话重新从零开始，不累计上一轮次数。
@@ -99,18 +99,19 @@
 - `sse`：连接 SSE 流，读取服务端提供的消息 POST endpoint；
 - `streamable_http`：在同一 HTTP endpoint 上发送 JSON-RPC POST。
 
-连接测试按 MCP 协议执行 `initialize`、`notifications/initialized`、`tools/list`。测试成功后把发现到的工具 `name`、`description`、`inputSchema` 持久化到系统能力的 `config.tools`，供流程设计和运行时使用。
+连接测试按 MCP 协议执行 `initialize`、`notifications/initialized`、`tools/list`。测试成功后把发现到的工具 `name`、`description`、`inputSchema` 持久化到系统能力的 `config.tools`，供系统管理预览、人工核对和故障诊断使用。远端 MCP 契约不受 Agentum 版本控制，因此运行时不把该快照作为工具事实源。
 
 浏览器直接 GET Streamable HTTP `/mcp` 不能代替连接测试；无状态服务返回“不支持 GET”是正常协议行为。真正调用必须是带正确 `Accept` 和 JSON-RPC body 的 POST。
 
 ### 5.2 工具定义如何给 AI
 
-运行时按节点的 `mcpIds` 读取能力：
+运行时按节点的 `mcpIds` 读取能力，并在每个模型推理回合前重新执行 `initialize`、`notifications/initialized`、`tools/list`：
 
-- 默认将 `config.tools` 中每个已发现远端工具分别暴露给模型；
-- 如果节点或能力显式配置 `toolName` / `mcpToolName` / `defaultToolName`，只暴露该工具；
-- 未显式指定工具且 `config.tools` 为空时返回 `MCP_TOOL_METADATA_REQUIRED`，要求重新测试连接，不再拿能力编码冒充远端工具名；
-- 发现工具的 `inputSchema` 原样成为模型 Function Calling 参数 Schema，因此 MCP Server 提供的名称、描述、参数类型和 required 字段会直接影响模型能否正确调用。
+- 默认将本回合实时发现的每个远端工具分别暴露给模型，完全忽略管理侧 `config.tools` 预览快照；
+- 如果节点或能力显式配置 `toolName` / `mcpToolName` / `defaultToolName`，只暴露当前列表中的该工具；工具已不存在时返回 `MCP_CONFIGURED_TOOL_NOT_FOUND`，不猜测重命名关系；
+- 当前 `tools/list` 为空时返回 `MCP_TOOL_LIST_EMPTY`，不拿能力编码或历史工具名冒充远端工具；
+- 发现工具的 `inputSchema` 原样成为模型 Function Calling 参数 Schema，因此 MCP Server 提供的名称、描述、参数类型和 required 字段会直接影响模型能否正确调用；
+- 某次 `tools/call` 因工具删除、参数变化或网络故障失败时，失败作为 observation 回写模型；下一推理回合会再次发现工具，让模型基于最新契约重新规划。
 
 平台生成唯一 function name 供模型使用，同时在 binding 中保留真实远端工具名；发送 `tools/call` 时使用后者。
 
@@ -147,7 +148,7 @@ POST initialize
 | 类型 | 示例 | 行为 |
 | --- | --- | --- |
 | 可恢复的外部执行失败 | `MCP_TOOL_EXECUTION_FAILED`、`MCP_CALL_FAILED` | 作为 `isError` observation 回写模型，模型可以换工具或解释数据不可用，然后继续回答 |
-| 配置、授权或治理失败 | 能力不存在、未启用、未授权、工具元数据缺失 | 终止节点，避免绕过安全边界或在错误配置上继续运行 |
+| 配置、授权或治理失败 | 能力不存在、未启用、未授权、当前工具列表为空、显式指定工具已不存在 | 终止节点，避免绕过安全边界或在错误配置上继续运行 |
 
 因此，“中台接口返回业务失败”不应必然让智能体节点直接失败；只要被归类为上述可恢复错误，模型会再获得一次响应机会。若连模型继续回答也没有发生，应先看错误码是否属于配置/权限类，或是否在进入 MCP 工具执行前已经失败。
 
@@ -163,7 +164,7 @@ POST initialize
 
 ## 6. 当前协议边界
 
-- Streamable HTTP 客户端每次工具调用都会重新初始化，当前没有维护服务端返回的 `Mcp-Session-Id`；适合无状态 MCP Server。若服务端要求会话状态，需要后续补会话 ID 透传和生命周期管理。
+- SSE 与 Streamable HTTP 客户端在每次运行时工具发现和每次工具调用时都会重新初始化；Streamable HTTP 当前没有维护服务端返回的 `Mcp-Session-Id`，适合无状态 MCP Server。若服务端要求会话状态或依赖 `notifications/tools/list_changed`，需要后续补运行轮次级会话与通知监听；当前通过每个模型推理回合主动 `tools/list` 保证最终一致。
 - 当前系统能力配置只保留 transport、endpoint 和 tools，没有通用自定义 Header/凭证注入机制。需要鉴权的 MCP 暂不能靠登记 Token 直接接入，建议先通过受控网关或后续凭证中心方案实现，禁止把 Token 写进 URL。
 - 当前没有高风险 MCP 工具的人工审批卡点。
 - Skill 没有脚本执行器；MCP 是当前真实外部动作的标准入口。
@@ -174,8 +175,8 @@ POST initialize
 
 1. 检查流程发布快照的 `skillIds` / `mcpIds`。
 2. 检查能力是否 `active`，租户授权是否 `enabled`。
-3. MCP 在系统管理重新测试，确认 `tools/list` 不为空且 Schema 正确。
-4. 查看 `AI调用链路-请求` 的 tools 快照，确认工具定义是否真正发给模型。
+3. 查看运行日志中的“MCP 运行时工具发现”，确认本轮 `tools/list` 不为空且 Schema 正确；系统管理测试只用于独立连通性诊断。
+4. 查看 `AI调用链路-请求` 的 tools 快照，确认本回合实时发现的工具定义是否真正发给模型。
 
 ### 7.2 MCP Server 没有请求日志
 
@@ -200,4 +201,3 @@ POST initialize
 | 系统连接测试 | `apps/api/src/main/java/com/agentum/system/infrastructure/HttpMcpSseConnectionTester.java`、`HttpMcpStreamableHttpConnectionTester.java` |
 | 流程发布校验 | `apps/api/src/main/java/com/agentum/workflow/application/WorkflowNodeConfigValidator.java` |
 | 流程设计器 | `apps/web/src/surfaces/designer/WorkflowEditorPage.tsx` |
-

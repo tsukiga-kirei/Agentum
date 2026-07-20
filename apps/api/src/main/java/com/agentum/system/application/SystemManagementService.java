@@ -746,7 +746,7 @@ public class SystemManagementService {
             .toList();
         Instant checkedAt = clock.instant();
         String connectivityStatus = mapTestStatusToConnectivity(outcome.status());
-        // 草稿测试发现的工具只用于即时预览；保存正式配置后需再次测试，才能更新运行态使用的 tools/list 快照。
+        // 草稿测试发现的工具只用于即时预览；正式能力测试会更新管理侧观察快照，运行态始终自行 tools/list。
         log.info(
             "系统管理测试 MCP 表单草稿完成 capabilityId={} transport={} status={} connectivityStatus={} requestId={}",
             request.capabilityId(), transport, outcome.status(), connectivityStatus, RequestIds.current()

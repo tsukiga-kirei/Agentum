@@ -18,9 +18,11 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -33,6 +35,7 @@ public class HttpMcpStreamableHttpRuntimeClient implements McpRuntimeClient {
     private static final String MCP_PROTOCOL_VERSION = "2024-11-05";
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(3);
     private static final Duration OPERATION_TIMEOUT = Duration.ofSeconds(15);
+    private static final int MAX_TOOL_LIST_PAGES = 100;
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
@@ -43,6 +46,53 @@ public class HttpMcpStreamableHttpRuntimeClient implements McpRuntimeClient {
             .followRedirects(HttpClient.Redirect.NORMAL)
             .build();
         this.objectMapper = objectMapper;
+    }
+
+    @Override
+    public ToolListResult listTools(ToolListRequest request) {
+        String endpointUrl = request.endpointUrl() == null ? "" : request.endpointUrl().trim();
+        if (endpointUrl.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "MCP_ENDPOINT_URL_REQUIRED", "MCP 能力未配置 HTTP 端点");
+        }
+
+        Instant startedAt = Instant.now();
+        try {
+            URI endpointUri = URI.create(endpointUrl);
+            postJsonRpcAndGetResult(endpointUri, initializeRequest(1), 1);
+            postNotification(endpointUri, initializedNotification());
+
+            List<ToolDescriptor> tools = new ArrayList<>();
+            Set<String> seenCursors = new HashSet<>();
+            String cursor = "";
+            int requestId = 2;
+            int pageCount = 0;
+            do {
+                if (++pageCount > MAX_TOOL_LIST_PAGES) {
+                    throw new McpRuntimeException("MCP tools/list 分页超过平台上限");
+                }
+                JsonNode result = postJsonRpcAndGetResult(endpointUri, toolsListRequest(requestId, cursor), requestId);
+                tools.addAll(parseTools(result.path("tools")));
+                cursor = result.path("nextCursor").asText("").trim();
+                if (!cursor.isBlank() && !seenCursors.add(cursor)) {
+                    throw new McpRuntimeException("MCP tools/list 返回重复分页游标");
+                }
+                requestId++;
+            } while (!cursor.isBlank());
+            long latency = Duration.between(startedAt, Instant.now()).toMillis();
+            return new ToolListResult(tools, latency);
+        } catch (ApiException exception) {
+            throw exception;
+        } catch (McpRuntimeException exception) {
+            throw new ApiException(HttpStatus.BAD_GATEWAY, "MCP_TOOL_DISCOVERY_FAILED", exception.getMessage());
+        } catch (Exception exception) {
+            log.warn(
+                "MCP Streamable HTTP 运行时工具发现异常 capabilityId={} errorType={} requestId={}",
+                request.capabilityId(),
+                exception.getClass().getSimpleName(),
+                RequestIds.current()
+            );
+            throw new ApiException(HttpStatus.BAD_GATEWAY, "MCP_TOOL_DISCOVERY_FAILED", "MCP 工具发现失败，请检查服务连通性");
+        }
     }
 
     @Override
@@ -185,6 +235,14 @@ public class HttpMcpStreamableHttpRuntimeClient implements McpRuntimeClient {
         return payload;
     }
 
+    private ObjectNode toolsListRequest(int id, String cursor) {
+        ObjectNode params = objectMapper.createObjectNode();
+        if (cursor != null && !cursor.isBlank()) {
+            params.put("cursor", cursor);
+        }
+        return jsonRpcRequest(id, "tools/list", params);
+    }
+
     private ObjectNode toolsCallRequest(int id, String toolName, Map<String, Object> arguments) {
         ObjectNode params = objectMapper.createObjectNode();
         params.put("name", toolName);
@@ -218,6 +276,31 @@ public class HttpMcpStreamableHttpRuntimeClient implements McpRuntimeClient {
             }
         }
         return response;
+    }
+
+    private List<ToolDescriptor> parseTools(JsonNode toolsNode) {
+        if (!toolsNode.isArray()) {
+            return List.of();
+        }
+        List<ToolDescriptor> tools = new ArrayList<>();
+        for (JsonNode toolNode : toolsNode) {
+            String name = toolNode.path("name").asText("").trim();
+            if (name.isBlank()) {
+                continue;
+            }
+            String description = toolNode.path("description").asText("");
+            Map<String, Object> inputSchema = readInputSchema(toolNode.path("inputSchema"));
+            tools.add(new ToolDescriptor(name, description, inputSchema));
+        }
+        return tools;
+    }
+
+    private Map<String, Object> readInputSchema(JsonNode schemaNode) {
+        if (schemaNode.isMissingNode() || schemaNode.isNull()) {
+            return Map.of("type", "object", "properties", Map.of());
+        }
+        return objectMapper.convertValue(schemaNode, new TypeReference<LinkedHashMap<String, Object>>() {
+        });
     }
 
     private static final class McpRuntimeException extends RuntimeException {

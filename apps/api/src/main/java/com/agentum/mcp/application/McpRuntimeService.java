@@ -66,20 +66,26 @@ public class McpRuntimeService {
             );
             String transportType = firstNonBlank(stringValue(capability.getConfig().get("transport")), "sse");
             String endpointUrl = firstNonBlank(stringValue(capability.getConfig().get("endpointUrl")), stringValue(capability.getConfig().get("sseUrl")));
-            List<DiscoveredMcpTool> discoveredTools = readDiscoveredTools(capability);
+            // MCP 工具契约由远端服务控制，系统管理保存的 config.tools 只能用于预览，不能成为运行时真相。
+            // Agent loop 每个模型推理回合都会进入这里，使新增、删除、重命名和 Schema 变化在本轮模型调用前生效。
+            List<DiscoveredMcpTool> discoveredTools = discoverRuntimeTools(request, capability, transportType, endpointUrl);
             if (!configuredToolName.isBlank()) {
                 DiscoveredMcpTool selected = discoveredTools.stream()
                     .filter(tool -> configuredToolName.equals(tool.name()))
                     .findFirst()
-                    .orElse(new DiscoveredMcpTool(configuredToolName, "", Map.of()));
+                    .orElseThrow(() -> new ApiException(
+                        HttpStatus.BAD_REQUEST,
+                        "MCP_CONFIGURED_TOOL_NOT_FOUND",
+                        "MCP 当前未提供已配置工具：" + configuredToolName
+                    ));
                 bindings.add(toBinding(capability, selected, transportType, endpointUrl, bindingIndex++));
                 continue;
             }
             if (discoveredTools.isEmpty()) {
                 throw new ApiException(
                     HttpStatus.BAD_REQUEST,
-                    "MCP_TOOL_METADATA_REQUIRED",
-                    "MCP 能力尚未发现可用工具，请在系统管理中重新测试连接"
+                    "MCP_TOOL_LIST_EMPTY",
+                    "MCP 当前未提供可用工具"
                 );
             }
             for (DiscoveredMcpTool tool : discoveredTools) {
@@ -87,6 +93,47 @@ public class McpRuntimeService {
             }
         }
         return bindings;
+    }
+
+    private List<DiscoveredMcpTool> discoverRuntimeTools(
+        McpRuntimeRequest request,
+        SystemCapabilityEntity capability,
+        String transportType,
+        String endpointUrl
+    ) {
+        try {
+            McpRuntimeClient.ToolListResult result = mcpRuntimeClient.listTools(new McpRuntimeClient.ToolListRequest(
+                capability.getId(),
+                transportType,
+                endpointUrl
+            ));
+            List<DiscoveredMcpTool> tools = result.tools().stream()
+                .filter(tool -> !tool.name().isBlank())
+                .map(tool -> new DiscoveredMcpTool(tool.name(), tool.description(), tool.inputSchema()))
+                .toList();
+            log.info(
+                "MCP 运行时工具发现成功 tenantId={} runId={} nodeRunId={} capabilityId={} toolCount={} latencyMs={} requestId={}",
+                request.run().getTenantId(),
+                request.run().getId(),
+                request.nodeRun().getId(),
+                capability.getId(),
+                tools.size(),
+                result.latencyMs(),
+                RequestIds.current()
+            );
+            return tools;
+        } catch (ApiException exception) {
+            log.warn(
+                "MCP 运行时工具发现失败 tenantId={} runId={} nodeRunId={} capabilityId={} errorCode={} requestId={}",
+                request.run().getTenantId(),
+                request.run().getId(),
+                request.nodeRun().getId(),
+                capability.getId(),
+                exception.getCode(),
+                RequestIds.current()
+            );
+            throw exception;
+        }
     }
 
     private McpToolBinding toBinding(
@@ -240,31 +287,6 @@ public class McpRuntimeService {
             ),
             "required", List.of("arguments")
         );
-    }
-
-    @SuppressWarnings("unchecked")
-    private List<DiscoveredMcpTool> readDiscoveredTools(SystemCapabilityEntity capability) {
-        Object value = capability.getConfig().get("tools");
-        if (!(value instanceof List<?> tools)) {
-            return List.of();
-        }
-        List<DiscoveredMcpTool> result = new ArrayList<>();
-        for (Object item : tools) {
-            if (!(item instanceof Map<?, ?> rawTool)) {
-                continue;
-            }
-            String name = stringValue(rawTool.get("name"));
-            if (name.isBlank()) {
-                continue;
-            }
-            String description = stringValue(rawTool.get("description"));
-            Object rawSchema = rawTool.get("inputSchema");
-            Map<String, Object> inputSchema = rawSchema instanceof Map<?, ?> schema
-                ? new LinkedHashMap<>((Map<String, Object>) schema)
-                : Map.of();
-            result.add(new DiscoveredMcpTool(name, description, inputSchema));
-        }
-        return result;
     }
 
     private boolean isSensitive(String key) {

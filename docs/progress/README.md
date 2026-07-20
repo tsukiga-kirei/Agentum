@@ -183,6 +183,7 @@
 - 后端运行态已从占位输出升级为 `WorkflowRuntimeExecutor` + `AgentRuntimeService` 分发：触发、条件、汇聚节点本地完成；单智能体和智能体集群调用租户已启用模型分配，支持 OpenAI / 通义兼容与 Azure OpenAI Chat Completions；智能体节点已改为 ReAct/Function Calling 模式，模型可自主调用当前节点可用的 Skill 读取工具和 MCP SSE `tools/call`，最后通过 `final_answer` 提交 Markdown 结论；交付节点支持系统内置邮箱、Webhook、Word 文档和 Excel 工作簿交付能力。
 - 新增运行态勾稽表 `variable_snapshots`、`model_call_logs`、`mcp_call_logs`、`delivery_records`，节点完成后写入变量快照，模型 / MCP / 交付调用均关联租户、运行、节点、流程定义和发布版本；执行失败会把运行与当前节点标记为失败并写入 `node_failed` 事件，不再返回“尚未接入”的占位输出。
 - MCP 多工具运行契约已补齐：系统管理连通性测试会持久化 `tools/list` 的真实工具名、描述和输入 Schema，智能体按远程工具逐项获得可调用定义与必填参数；移除以平台能力编码回退远程工具名的错误路径，并将 MCP `isError=true` 正确记为失败及推送失败事件。可恢复的工具执行 / 网络失败会作为 observation 回写模型继续回答，权限与配置错误仍终止节点。
+- MCP 运行时工具发现已改为动态契约：系统管理保存的 `config.tools` 降级为管理预览和诊断快照；智能体在每个模型推理回合前重新执行 `tools/list`，实时使用远端当前工具名、描述和输入 Schema。上一回合因工具删除、重命名、参数变化或网络故障产生的可恢复失败会作为 observation 回写，下一回合基于最新工具重新规划；显式指定工具已不存在或当前工具列表为空时明确终止，避免猜测映射或回退旧快照。
 - 智能体循环次数已改为流程节点级配置：单智能体和每个集群子智能体分别保存 `maxAgentIterationsPerTurn`，首次执行与每次追问独立重新计数；设计目录由后端下发建议值和平台最大值，运行时不再对旧快照隐式使用固定次数。补充 [Skill 与 MCP 运行机制](../skill-mcp-runtime-guide.md)，明确 Skill 当前只读文本、不执行脚本，以及 MCP 工具发现、参数、失败恢复和审计链路。
 - 业务工作台运行详情收敛为真实可操作项：待办节点只显示提交动作，AI / MCP / Skill / 交付节点展示后端输出、调用状态和交付摘要；执行历史去掉与左侧流程轨重复的节点列表，改为选中步骤快照 + 事件时间线；已保存任务可对智能体节点释放重新生成入口，追问追加上下文和后端取消补偿进入阶段二运行监控增强。
 - 流程设计落地版本治理方案 C：`workflow_definitions.launch_enabled` 控制业务入口收回/恢复；列表与详情展示 `latestVersionNumber`、`hasUnpublishedChanges`；创建者可删除流程或收回业务入口；业务工作台可发起列表改为「有冻结版本且入口未收回」，与设计态 `status` 解耦；新增 [能力—流程—权限治理](../capability-workflow-governance.md) 文档。
@@ -501,3 +502,5 @@
 | 2026-07-06 | OpenAPI YAML 解析 / `git diff --check` | 通过：Excel 交付契约、文档、演示数据迁移和空白检查 |
 | 2026-07-06 | 文档截图更新 | 通过：登录、工作台、流程设计、能力资产、运行审计、租户管理、系统管理七张界面截图写入 `docs/images/` |
 | 2026-07-06 | `git diff --check` | 通过：README 架构图 / 截图 / PR 说明与进度文档知识资产计划更新 |
+| 2026-07-20 | `./gradlew test --no-daemon` | 通过：MCP SSE / Streamable HTTP 运行时动态 `tools/list`、分页发现、Agent 每回合刷新及既有后端全量回归 |
+| 2026-07-20 | `git diff --check` | 通过：MCP 动态工具发现代码、测试与运行机制文档空白检查 |

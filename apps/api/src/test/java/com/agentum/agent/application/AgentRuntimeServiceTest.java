@@ -366,10 +366,24 @@ class AgentRuntimeServiceTest {
                 "required", List.of("pdt")
             )
         );
+        McpRuntimeService.McpToolBinding refreshedBinding = new McpRuntimeService.McpToolBinding(
+            "mcp_financial_latest_kpi",
+            binding.capabilityId(),
+            binding.capabilityCode(),
+            "金融月报 / 最新经营指标",
+            "MCP 契约变化后重新发现的新工具",
+            "get_financial_work_report_latest_kpi",
+            binding.transportType(),
+            binding.endpointUrl(),
+            binding.sseUrl(),
+            binding.parameters()
+        );
 
         when(assignmentRepository.findByTenantIdOrderByCreatedAtDesc(TENANT_ID)).thenReturn(List.of(assignment));
         when(providerRepository.findById(provider.getId())).thenReturn(Optional.of(provider));
-        when(mcpRuntimeService.resolveMcpTools(any())).thenReturn(List.of(binding));
+        when(mcpRuntimeService.resolveMcpTools(any()))
+            .thenReturn(List.of(binding))
+            .thenReturn(List.of(refreshedBinding));
         when(mcpRuntimeService.executeResolvedTool(any(), any(), any())).thenThrow(new ApiException(
             HttpStatus.BAD_GATEWAY,
             "MCP_TOOL_EXECUTION_FAILED",
@@ -388,6 +402,12 @@ class AgentRuntimeServiceTest {
         ));
 
         assertThat(modelChatClient.requests()).hasSize(2);
+        assertThat(modelChatClient.requests().getFirst().tools()).extracting(ModelChatClient.ToolDefinition::name)
+            .contains("mcp_financial_core_kpi")
+            .doesNotContain("mcp_financial_latest_kpi");
+        assertThat(modelChatClient.requests().getLast().tools()).extracting(ModelChatClient.ToolDefinition::name)
+            .contains("mcp_financial_latest_kpi")
+            .doesNotContain("mcp_financial_core_kpi");
         assertThat(result.outputs().get("final_answer")).asString().contains("数据中台暂时不可用");
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> toolCalls = (List<Map<String, Object>>) result.outputs().get("toolCalls");

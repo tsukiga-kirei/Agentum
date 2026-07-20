@@ -285,8 +285,8 @@ capabilities/mcp-servers/<server-key>   # 自研 MCP 源码
 对 `agent` 节点，MCP 由 Agent ReAct 循环暴露为模型工具：
 
 ```text
-1. AgentRuntimeService.resolveMcpTools 读取当前节点 mcpIds。
-2. 每个 MCP 能力转换为一个 OpenAI function tool。
+1. AgentRuntimeService.resolveMcpTools 读取当前节点 mcpIds，并在每个模型推理回合前向对应服务执行 tools/list。
+2. 当前实时发现的每个 MCP 远程工具分别转换为一个 OpenAI function tool。
 3. 模型在需要事实数据或外部系统动作时选择对应工具。
 4. AgentRuntimeService 调用 McpRuntimeService.executeResolvedTool。
 5. MCP 观察结果作为 tool message 回写给模型继续推理。
@@ -301,9 +301,9 @@ capabilities/mcp-servers/<server-key>   # 自研 MCP 源码
 | 字段 | 作用 |
 | --- | --- |
 | `mcpIds` / `mcpServices` | 绑定的 MCP 能力 ID 列表 |
-| `toolName` / `mcpToolName` | 远端 MCP 工具名；未配置时回退到能力 `defaultToolName` 或 `code` |
+| `toolName` / `mcpToolName` | 可选的远端 MCP 工具限制；未配置时暴露本回合实时发现的全部工具 |
 
-模型通过 Function Calling 传入 `arguments` 对象；`McpRuntimeService.executeResolvedTool` 将其解包后发起 `tools/call`。生产能力应在系统管理配置 `defaultToolName` 或在节点显式配置 `toolName`，避免模型选到无法执行的远端工具。
+模型通过 Function Calling 传入 `arguments` 对象；`McpRuntimeService.executeResolvedTool` 将其解包后发起 `tools/call`。系统管理保存的工具清单只作预览，运行时以当前 `tools/list` 为准；只有需要把智能体限制到某个固定远端工具时才配置 `toolName`，该工具消失后会明确终止节点，不自动猜测重命名关系。
 
 ### 5.4 运行时协议
 
@@ -315,8 +315,9 @@ capabilities/mcp-servers/<server-key>   # 自研 MCP 源码
 2. 读取 SSE endpoint
 3. 发送 JSON-RPC `initialize`
 4. 发送 `notifications/initialized`
-5. 发送 `tools/call`
-6. 解析工具结果
+5. 每个模型推理回合前发送 `tools/list` 并据此更新模型工具定义
+6. 模型选择工具后发送 `tools/call`
+7. 解析工具结果；可恢复失败回写模型后，下一回合重新发现并规划
 
 安全与治理：
 

@@ -22,6 +22,16 @@ public class McpRuntimeClientRouter implements McpRuntimeClient {
     }
 
     @Override
+    public ToolListResult listTools(ToolListRequest request) {
+        McpTransportType transportType = McpTransportType.fromValue(request.transportType());
+        if (transportType == McpTransportType.STREAMABLE_HTTP) {
+            return streamableHttpClient.listTools(request);
+        } else {
+            return sseClient.listTools(request);
+        }
+    }
+
+    @Override
     public ToolResult callTool(ToolCall call) {
         McpTransportType transportType = McpTransportType.fromValue(call.transportType());
         if (transportType == McpTransportType.STREAMABLE_HTTP) {

@@ -98,6 +98,8 @@ sequenceDiagram
   U->>W: 提交输入 / 处理待办
   W->>API: 推进运行实例
   API->>RT: 执行单智能体 / 集群节点
+  RT->>MCP: initialize + tools/list
+  MCP-->>RT: 当前工具名称、描述与输入 Schema
   RT->>M: Chat Completions
   M-->>RT: 工具调用意图
   RT->>S: 读取 Skill 文本
