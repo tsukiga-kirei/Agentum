@@ -990,9 +990,12 @@ class SystemManagementServiceTest {
                     "latinFont", "Arial",
                     "bodyFontSize", "四号",
                     "heading1FontSize", "三号",
+                    "heading1Alignment", "center",
                     "lineSpacing", "1.25",
                     "firstLineIndentChars", "2",
-                    "titleCentered", "true"
+                    "titleCentered", "true",
+                    "blankLineHeightMode", "exact",
+                    "blankLineHeightPt", "24"
                 ),
                 "allowNodeStyleOverride", true,
                 "maxFileSizeMb", "30",
@@ -1017,8 +1020,10 @@ class SystemManagementServiceTest {
             .containsEntry("latinFont", "Arial")
             .containsEntry("bodyFontSize", 14)
             .containsEntry("heading1FontSize", 16)
+            .containsEntry("heading1Alignment", "center")
             .containsEntry("lineSpacing", 1.25)
-            .containsEntry("titleCentered", true);
+            .containsEntry("titleCentered", true)
+            .doesNotContainKeys("blankLineHeightMode", "blankLineHeightPt");
         assertThat(row.config()).containsEntry("deliveryChannel", "document");
     }
 

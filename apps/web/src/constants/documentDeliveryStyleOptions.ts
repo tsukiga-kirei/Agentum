@@ -4,6 +4,11 @@ export type DocumentDeliveryStyleValues = {
   numberFont: string;
   bodyFontSize: string | number;
   bodyAlignment: string;
+  heading1Alignment: string;
+  heading2Alignment: string;
+  heading3Alignment: string;
+  heading4Alignment: string;
+  heading5Alignment: string;
   heading1FontSize: string | number;
   heading2FontSize: string | number;
   heading3FontSize: string | number;
@@ -71,6 +76,7 @@ export type SelectOption = { value: string; label: string };
 export type LineSpacingMode = "multiple" | "exact";
 export type FirstLineIndentMode = "chars" | "cm";
 export type ListIndentMode = "body" | "none" | "hanging";
+export type BlankLineHeightMode = "target" | "body" | "exact";
 export type SpacingUnit = "line" | "pt" | "cm" | "mm";
 export type ParagraphRuleTargetType = "index" | "first" | "second" | "third" | "last" | "secondLast";
 
@@ -95,6 +101,8 @@ export type ParagraphRule = {
   spacingAfter: number;
   blankLinesBefore: number;
   blankLinesAfter: number;
+  blankLineHeightMode: BlankLineHeightMode;
+  blankLineHeightPt: number;
 };
 
 
@@ -282,6 +290,15 @@ export const LIST_INDENT_MODE_OPTIONS: SelectOption[] = [
 export const LIST_INDENT_CHARS_OPTIONS: SelectOption[] = [0, 0.5, 1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10, 12]
   .map((value) => ({ value: String(value), label: `${value} 字符` }));
 
+export const BLANK_LINE_HEIGHT_MODE_OPTIONS: SelectOption[] = [
+  { value: "target", label: "继承目标段落（默认）" },
+  { value: "body", label: "继承正文" },
+  { value: "exact", label: "固定磅值" },
+];
+
+export const BLANK_LINE_HEIGHT_PT_OPTIONS: SelectOption[] = [6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 28, 32, 36, 48, 72]
+  .map((value) => ({ value: String(value), label: `${value} pt` }));
+
 export const PARAGRAPH_SPACING_BEFORE_OPTIONS: SelectOption[] = [
   { value: "0", label: "0 pt（默认）" },
   { value: "3", label: "3 pt" },
@@ -305,14 +322,14 @@ export const PARAGRAPH_SPACING_AFTER_OPTIONS: SelectOption[] = [
 /** @deprecated 使用 PARAGRAPH_SPACING_AFTER_OPTIONS */
 export const PARAGRAPH_SPACING_OPTIONS = PARAGRAPH_SPACING_AFTER_OPTIONS;
 
-export const TITLE_ALIGNMENT_OPTIONS: SelectOption[] = [
-  { value: "false", label: "默认左对齐" },
-  { value: "true", label: "居中" },
-];
-
 export const HEADING_INDENT_OPTIONS: SelectOption[] = [
   { value: "false", label: "不应用" },
   { value: "true", label: "应用" },
+];
+
+export const TITLE_ALIGNMENT_OPTIONS: SelectOption[] = [
+  { value: "false", label: "不单独设置（默认）" },
+  { value: "true", label: "首行居中" },
 ];
 
 export const MARGIN_CM_OPTIONS: SelectOption[] = [
@@ -483,6 +500,8 @@ export function createDefaultParagraphRule(): ParagraphRule {
     spacingAfter: 0,
     blankLinesBefore: 0,
     blankLinesAfter: 0,
+    blankLineHeightMode: "target",
+    blankLineHeightPt: 18,
   };
 }
 

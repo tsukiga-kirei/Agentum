@@ -14,7 +14,7 @@
 
 Word 文档交付沿用系统能力池模型：
 
-- 系统管理员在系统管理中创建或启用 `Word 文档交付`，配置默认中西文字体、正文/各级标题/表格数字字体、字号、正文对齐、行距、表格格式（含单元格垂直对齐与上下内边距）、首行缩进、有序/无序列表缩进、段前段后间距及单位、各级标题加粗、四五级标题、页边距、首行标题对齐、文件大小和文件保存策略。文件可选择永久保存或按天保存；逐段个性化规则为节点级，系统级不配置。
+- 系统管理员在系统管理中创建或启用 `Word 文档交付`，配置默认中西文字体、正文/各级标题/表格数字字体、字号、正文对齐、各级标题对齐、行距、表格格式（含单元格垂直对齐与上下内边距）、首行缩进、有序/无序列表缩进、段前段后间距及单位、各级标题加粗、四五级标题、页边距、文件大小和文件保存策略。文件可选择永久保存或按天保存；逐段个性化规则及其手动空行配置为节点级，系统级不配置。
 - 系统管理员把该能力加入租户可用能力池。
 - 租户管理员在租户管理中把能力分配给用户、部门或角色。
 - 流程设计者在交付节点选择该能力后，配置交付正文模板、文件名模板和节点级样式。节点级样式会随流程草稿和发布版本保存，运行时按快照生成文件。
@@ -46,6 +46,11 @@ Word 文档交付沿用系统能力池模型：
   "numberFont": "Times New Roman",
   "bodyFontSize": "小四",
   "bodyAlignment": "both",
+  "heading1Alignment": "center",
+  "heading2Alignment": "left",
+  "heading3Alignment": "left",
+  "heading4Alignment": "left",
+  "heading5Alignment": "left",
   "heading1FontSize": "三号",
   "heading2FontSize": "四号",
   "heading3FontSize": 13,
@@ -85,7 +90,9 @@ Word 文档交付沿用系统能力池模型：
       "spacingUnit": "line",
       "spacingBefore": 0,
       "spacingAfter": 1,
-      "blankLinesAfter": 1
+      "blankLinesAfter": 1,
+      "blankLineHeightMode": "target",
+      "blankLineHeightPt": 18
     },
     {
       "targetType": "index",
@@ -113,7 +120,9 @@ Markdown 引用（`> 内容`）只用于识别并移除引用标记，生成 Wor
 
 ### 多级标题
 
-字号字段支持 pt 数字，也支持中文字号名：`初号`、`小初`、`一号`、`小一`、`二号`、`小二`、`三号`、`小三`、`四号`、`小四`、`五号`、`小五`、`六号`。数字字体按正文、一至五级标题和表格分别配置；一至三级标题与表格留空时继承正文，四五级标题字号与字体留空时继承三级标题。Markdown 六级标题（`######`）自动按五级标题渲染。`heading1Bold`～`heading5Bold` 控制各级标题是否加粗，默认加粗。
+字号字段支持 pt 数字，也支持中文字号名：`初号`、`小初`、`一号`、`小一`、`二号`、`小二`、`三号`、`小三`、`四号`、`小四`、`五号`、`小五`、`六号`。数字字体按正文、一至五级标题和表格分别配置；一至三级标题与表格留空时继承正文，四五级标题字号与字体留空时继承三级标题。Markdown 六级标题（`######`）自动按五级标题渲染。`heading1Bold`～`heading5Bold` 控制各级标题是否加粗，默认加粗；`heading1Alignment`～`heading5Alignment` 分别控制各级标题的左对齐、居中、右对齐或两端对齐。逐段个性化对齐仍具有更高优先级。
+
+`titleCentered=true` 保留首行单独居中的原有能力：它作用于文档第一个非表格内容段。对齐优先级为逐段个性化规则 > 首行单独设置 > 标题级别设置；因此第一段命中个性化对齐时使用个性化值，否则首行设置开启时居中，最后才回退到对应标题级别配置。
 
 ### 表格
 
@@ -121,7 +130,9 @@ Markdown 引用（`> 内容`）只用于识别并移除引用标记，生成 Wor
 
 ### 逐段个性化规则
 
-`paragraphRules` 用于对指定段落单独排版，按非表格段落 1 基序号计数（标题、正文、列表项、引用均计入，表格与代码块不计入）。`targetType` 可选 `index`（配合 `targetIndex` 指定段号）、`first`、`second`、`third`、`last`、`secondLast`。每条规则可覆盖对齐、首行缩进（`firstLineIndentMode`：`none`/`chars`/`cm`）、中西文与数字字体、字号、段前段后（`spacingUnit` 为空表示不覆盖），并可通过 `blankLinesBefore`/`blankLinesAfter` 在段落前后插入空行拉开间距；留空字段表示继承全局样式。列表项与引用段落同样支持逐段首行缩进覆盖。
+`paragraphRules` 用于对指定段落单独排版，按非表格段落 1 基序号计数（标题、正文、列表项、引用均计入，表格与代码块不计入）。`targetType` 可选 `index`（配合 `targetIndex` 指定段号）、`first`、`second`、`third`、`last`、`secondLast`。每条规则可覆盖对齐、首行缩进（`firstLineIndentMode`：`none`/`chars`/`cm`）、中西文与数字字体、字号、段前段后（`spacingUnit` 为空表示不覆盖）。
+
+`blankLinesBefore`/`blankLinesAfter` 是个性化规则专属的手动空行能力：渲染器会在目标段落前后实际插入独立空段落，等价于在 Word 中敲回车，不会转换成全局段前/段后间距。`blankLineHeightMode` 只控制这些空段落：`target` 继承目标段落的有效字号与正文行距，`body` 使用正文字号与正文行距，`exact` 使用 `blankLineHeightPt` 指定的固定磅值；空段落自身的段前段后固定为 0。列表项与引用段落同样支持逐段规则覆盖。
 
 系统级 `maxFileSizeMb` 会在运行态 docx 生成后校验文件大小，超过限制时交付失败并记录错误。`retentionPolicy=permanent` 时交付结果不写入 `expiresAt`，文件不会进入到期清理；`retentionPolicy=days` 时按 `retentionDays` 计算 `expiresAt`，后台清理任务按该时间删除 MinIO 对象并把交付记录标记为 `expired`。历史能力未配置策略时继续按原有保留天数执行。
 
@@ -149,6 +160,7 @@ Content-Type: application/json
     "bodyFontSize": "小四",
     "lineSpacing": 1.5,
     "firstLineIndentChars": 2,
+    "heading1Alignment": "center",
     "titleCentered": true
   }
 }

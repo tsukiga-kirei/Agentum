@@ -342,6 +342,11 @@ const DEFAULT_WORD_DOCUMENT_STYLE: DocumentDeliveryStyleDraft = {
   numberFont: "Times New Roman",
   bodyFontSize: 12,
   bodyAlignment: "left",
+  heading1Alignment: "left",
+  heading2Alignment: "left",
+  heading3Alignment: "left",
+  heading4Alignment: "left",
+  heading5Alignment: "left",
   heading1FontSize: 16,
   heading2FontSize: 14,
   heading3FontSize: 13,
@@ -6662,6 +6667,11 @@ function readDocumentDeliveryStyle(rawStyle: unknown, capabilityConfig?: Record<
     numberFont: readString(merged.numberFont, String(DEFAULT_WORD_DOCUMENT_STYLE.numberFont)),
     bodyFontSize: readFontSizeLike(merged.bodyFontSize, DEFAULT_WORD_DOCUMENT_STYLE.bodyFontSize),
     bodyAlignment: readString(merged.bodyAlignment, String(DEFAULT_WORD_DOCUMENT_STYLE.bodyAlignment)),
+    heading1Alignment: readAlignment(merged.heading1Alignment),
+    heading2Alignment: readAlignment(merged.heading2Alignment),
+    heading3Alignment: readAlignment(merged.heading3Alignment),
+    heading4Alignment: readAlignment(merged.heading4Alignment),
+    heading5Alignment: readAlignment(merged.heading5Alignment),
     heading1FontSize: readFontSizeLike(merged.heading1FontSize, DEFAULT_WORD_DOCUMENT_STYLE.heading1FontSize),
     heading2FontSize: readFontSizeLike(merged.heading2FontSize, DEFAULT_WORD_DOCUMENT_STYLE.heading2FontSize),
     heading3FontSize: readFontSizeLike(merged.heading3FontSize, DEFAULT_WORD_DOCUMENT_STYLE.heading3FontSize),
@@ -6729,6 +6739,14 @@ function readListIndentMode(value: unknown): "body" | "none" | "hanging" {
   return value === "none" || value === "hanging" ? value : "body";
 }
 
+function readBlankLineHeightMode(value: unknown): "target" | "body" | "exact" {
+  return value === "body" || value === "exact" ? value : "target";
+}
+
+function readAlignment(value: unknown): "left" | "center" | "right" | "both" {
+  return value === "center" || value === "right" || value === "both" ? value : "left";
+}
+
 function readParagraphRules(value: unknown): ParagraphRule[] {
   if (!Array.isArray(value)) {
     return [];
@@ -6765,6 +6783,8 @@ function readParagraphRules(value: unknown): ParagraphRule[] {
         spacingAfter: readNumberLike(item.spacingAfter, 0),
         blankLinesBefore: Math.max(0, Math.round(readNumberLike(item.blankLinesBefore, 0))),
         blankLinesAfter: Math.max(0, Math.round(readNumberLike(item.blankLinesAfter, 0))),
+        blankLineHeightMode: readBlankLineHeightMode(item.blankLineHeightMode),
+        blankLineHeightPt: Math.max(1, Math.round(readNumberLike(item.blankLineHeightPt, 18))),
       };
     });
 }

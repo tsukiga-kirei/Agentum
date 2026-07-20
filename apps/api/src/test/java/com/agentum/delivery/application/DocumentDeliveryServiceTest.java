@@ -114,6 +114,52 @@ class DocumentDeliveryServiceTest {
     }
 
     @Test
+    void shouldApplyNodeHeadingAlignmentAndParagraphBlankLineStyleOverSystemDefaults() {
+        SystemCapabilityEntity capability = wordCapability(Map.of(
+            "defaultStyle", Map.of(
+                "heading1Alignment", "left"
+            )
+        ));
+        when(renderer.render(any(), any())).thenReturn(new byte[] {1, 2, 3});
+        when(storage.store(eq(TENANT_ID), eq(RECORD_ID), any(), any()))
+            .thenReturn(new DocumentDeliveryArtifact(
+                "交付文档.docx",
+                "deliveries/documents/key.docx",
+                MarkdownDocxRenderer.DOCX_CONTENT_TYPE,
+                3
+            ));
+
+        service.generateRuntimeDocument(
+            TENANT_ID,
+            OPERATOR_ID,
+            RECORD_ID,
+            capability,
+            Map.of(
+                "markdownContent", "# 月报",
+                "documentStyle", Map.of(
+                    "heading1Alignment", "center",
+                    "paragraphRules", java.util.List.of(Map.of(
+                        "targetType", "first",
+                        "blankLinesAfter", 1,
+                        "blankLineHeightMode", "exact",
+                        "blankLineHeightPt", 24
+                    ))
+                )
+            ),
+            Map.of()
+        );
+
+        ArgumentCaptor<DocumentDeliveryStyle> styleCaptor = ArgumentCaptor.forClass(DocumentDeliveryStyle.class);
+        verify(renderer).render(eq("# 月报"), styleCaptor.capture());
+        assertThat(styleCaptor.getValue().headingAlignment(1)).isEqualTo("center");
+        assertThat(styleCaptor.getValue().paragraphRules()).singleElement().satisfies(rule -> {
+            assertThat(rule.blankLinesAfter()).isEqualTo(1);
+            assertThat(rule.blankLineHeightMode()).isEqualTo("exact");
+            assertThat(rule.blankLineHeightPt()).isEqualTo(24);
+        });
+    }
+
+    @Test
     void shouldRejectWordDeliveryWithoutMarkdownTemplate() {
         SystemCapabilityEntity capability = wordCapability(Map.of());
 

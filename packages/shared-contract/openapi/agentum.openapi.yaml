@@ -5920,6 +5920,31 @@ components:
           enum: [left, center, right, both]
           default: left
           description: 正文段落对齐方式（左/居中/右/两端对齐）。
+        heading1Alignment:
+          type: string
+          enum: [left, center, right, both]
+          default: left
+          description: 一级标题对齐方式。
+        heading2Alignment:
+          type: string
+          enum: [left, center, right, both]
+          default: left
+          description: 二级标题对齐方式。
+        heading3Alignment:
+          type: string
+          enum: [left, center, right, both]
+          default: left
+          description: 三级标题对齐方式。
+        heading4Alignment:
+          type: string
+          enum: [left, center, right, both]
+          default: left
+          description: 四级标题对齐方式。
+        heading5Alignment:
+          type: string
+          enum: [left, center, right, both]
+          default: left
+          description: 五级标题对齐方式。
         heading1FontSize:
           oneOf:
             - type: integer
@@ -6161,7 +6186,7 @@ components:
         titleCentered:
           type: boolean
           default: false
-          description: 是否将文档首行标题居中。
+          description: 是否将文档第一个内容段单独居中；优先级低于逐段个性化规则，高于标题级别对齐。
         headingFirstLineIndent:
           type: boolean
           default: false
@@ -6234,12 +6259,23 @@ components:
           type: integer
           minimum: 0
           default: 0
-          description: 段前插入的空行数量，用于拉开间距。
+          description: 段前插入的空段落数量，等价于手动回车形成的空行。
         blankLinesAfter:
           type: integer
           minimum: 0
           default: 0
-          description: 段后插入的空行数量，用于拉开间距。
+          description: 段后插入的空段落数量，等价于手动回车形成的空行。
+        blankLineHeightMode:
+          type: string
+          enum: [target, body, exact]
+          default: target
+          description: 本规则插入空段落的高度方式；target 继承目标段落有效字号与正文行距，body 使用正文，exact 使用固定磅值。
+        blankLineHeightPt:
+          type: integer
+          minimum: 1
+          maximum: 144
+          default: 18
+          description: 本规则插入空段落的固定高度（pt），仅 blankLineHeightMode=exact 时生效。
     WordDocumentPreviewRequest:
       type: object
       properties:

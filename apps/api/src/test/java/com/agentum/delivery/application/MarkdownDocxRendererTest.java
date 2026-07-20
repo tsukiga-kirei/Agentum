@@ -51,25 +51,63 @@ class MarkdownDocxRendererTest {
     }
 
     @Test
-    void shouldRenderCenteredTitleAndChineseFontSizeNames() throws IOException {
+    void shouldRenderHeadingAlignmentAndChineseFontSizeNames() throws IOException {
         DocumentDeliveryStyle style = DocumentDeliveryStyle.from(Map.of(
             "bodyFontSize", "小四",
             "heading1FontSize", "四号",
-            "titleCentered", true
+            "heading1Alignment", "center"
         ));
 
-        byte[] bytes = renderer.render("居中标题\n\n正文", style);
+        byte[] bytes = renderer.render("# 居中标题\n\n正文", style);
 
         Map<String, String> entries = unzip(bytes);
         assertThat(style.bodyFontSize()).isEqualTo(12);
         assertThat(style.heading1FontSize()).isEqualTo(14);
-        assertThat(style.titleCentered()).isTrue();
+        assertThat(style.headingAlignment(1)).isEqualTo("center");
         assertThat(entries.get("word/document.xml"))
             .contains("居中标题")
             .contains("<w:jc w:val=\"center\"/>");
         assertThat(entries.get("word/styles.xml"))
             .contains("<w:sz w:val=\"24\"/>")
             .contains("<w:sz w:val=\"28\"/>");
+    }
+
+    @Test
+    void shouldApplyAlignmentIndependentlyForEachHeadingLevel() throws IOException {
+        DocumentDeliveryStyle style = DocumentDeliveryStyle.from(Map.of(
+            "heading1Alignment", "center",
+            "heading2Alignment", "right",
+            "heading3Alignment", "both"
+        ));
+
+        byte[] bytes = renderer.render("# 一级\n\n## 二级\n\n### 三级", style);
+
+        String documentXml = unzip(bytes).get("word/document.xml");
+        assertThat(documentXml)
+            .contains("<w:pStyle w:val=\"Heading1\"/><w:spacing")
+            .contains("<w:jc w:val=\"center\"/>")
+            .contains("<w:jc w:val=\"right\"/>")
+            .contains("<w:jc w:val=\"both\"/>");
+    }
+
+    @Test
+    void shouldLetParagraphRuleOverrideFirstContentAndHeadingAlignment() throws IOException {
+        DocumentDeliveryStyle style = DocumentDeliveryStyle.from(Map.of(
+            "titleCentered", true,
+            "heading1Alignment", "right",
+            "headingFirstLineIndent", true,
+            "paragraphRules", java.util.List.of(Map.of(
+                "targetType", "first",
+                "alignment", "left"
+            ))
+        ));
+
+        byte[] bytes = renderer.render("# 首行标题", style);
+
+        assertThat(unzip(bytes).get("word/document.xml"))
+            .doesNotContain("<w:jc w:val=\"center\"/>")
+            .doesNotContain("<w:jc w:val=\"right\"/>")
+            .contains("<w:ind w:firstLine=\"480\" w:firstLineChars=\"200\"/>");
     }
 
     @Test
@@ -410,6 +448,44 @@ class MarkdownDocxRendererTest {
     }
 
     @Test
+    void shouldUseTargetParagraphFontSizeForBlankLinesByDefault() throws IOException {
+        DocumentDeliveryStyle style = DocumentDeliveryStyle.from(Map.of(
+            "heading1FontSize", 20,
+            "paragraphRules", java.util.List.of(Map.of(
+                "targetType", "first",
+                "blankLinesAfter", 1
+            ))
+        ));
+
+        byte[] bytes = renderer.render("# 大标题", style);
+
+        String documentXml = unzip(bytes).get("word/document.xml");
+        assertThat(documentXml)
+            .contains("<w:spacing w:before=\"0\" w:after=\"0\" w:line=\"360\" w:lineRule=\"auto\"/>")
+            .contains("<w:t xml:space=\"preserve\"></w:t>");
+        assertThat(documentXml.split("<w:sz w:val=\"40\"/>", -1)).hasSizeGreaterThanOrEqualTo(3);
+    }
+
+    @Test
+    void shouldApplyExactBlankLineHeightWithoutParagraphSpacing() throws IOException {
+        DocumentDeliveryStyle style = DocumentDeliveryStyle.from(Map.of(
+            "paragraphSpacingBefore", 12,
+            "paragraphSpacingAfter", 18,
+            "paragraphRules", java.util.List.of(Map.of(
+                "targetType", "first",
+                "blankLinesAfter", 1,
+                "blankLineHeightMode", "exact",
+                "blankLineHeightPt", 24
+            ))
+        ));
+
+        byte[] bytes = renderer.render("正文", style);
+
+        assertThat(unzip(bytes).get("word/document.xml"))
+            .contains("<w:spacing w:before=\"0\" w:after=\"0\" w:line=\"480\" w:lineRule=\"exact\"/>");
+    }
+
+    @Test
     void shouldApplyParagraphRuleWithLastSelector() throws IOException {
         DocumentDeliveryStyle style = DocumentDeliveryStyle.from(Map.of(
             "paragraphRules", java.util.List.of(Map.of(
@@ -464,6 +540,32 @@ class MarkdownDocxRendererTest {
         assertThat(reparsed.orderedListLeftIndentChars()).isEqualTo(4);
         assertThat(reparsed.orderedListHangingIndentChars()).isEqualTo(2);
         assertThat(reparsed.unorderedListIndentMode()).isEqualTo("none");
+    }
+
+    @Test
+    void shouldRoundTripHeadingAlignmentAndParagraphBlankLineStyleThroughMap() {
+        DocumentDeliveryStyle style = DocumentDeliveryStyle.from(Map.of(
+            "heading1Alignment", "center",
+            "heading5Alignment", "right",
+            "titleCentered", true,
+            "paragraphRules", java.util.List.of(Map.of(
+                "targetType", "first",
+                "blankLinesBefore", 1,
+                "blankLineHeightMode", "exact",
+                "blankLineHeightPt", 24
+            ))
+        ));
+
+        DocumentDeliveryStyle reparsed = DocumentDeliveryStyle.from(style.toMap());
+
+        assertThat(reparsed.headingAlignment(1)).isEqualTo("center");
+        assertThat(reparsed.headingAlignment(5)).isEqualTo("right");
+        assertThat(reparsed.titleCentered()).isTrue();
+        assertThat(reparsed.paragraphRules()).singleElement().satisfies(rule -> {
+            assertThat(rule.blankLinesBefore()).isEqualTo(1);
+            assertThat(rule.blankLineHeightMode()).isEqualTo("exact");
+            assertThat(rule.blankLineHeightPt()).isEqualTo(24);
+        });
     }
 
     private static Map<String, String> unzip(byte[] bytes) throws IOException {

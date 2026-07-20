@@ -4,6 +4,8 @@ import type { LucideIcon } from "lucide-react";
 import { AlignCenter, ChevronDown, FileText, Hash, LayoutList, LayoutTemplate, ListOrdered, Plus, Table2, Trash2, Type } from "lucide-react";
 import {
   BODY_ALIGNMENT_OPTIONS,
+  BLANK_LINE_HEIGHT_MODE_OPTIONS,
+  BLANK_LINE_HEIGHT_PT_OPTIONS,
   BLANK_LINE_OPTIONS,
   CHINESE_FONT_OPTIONS,
   createDefaultParagraphRule,
@@ -63,7 +65,7 @@ type DocumentDeliveryStyleSectionsProps = {
   onFieldsChange: (updates: Partial<DocumentDeliveryStyleValues>) => void;
 };
 
-type ColumnCount = 1 | 2 | 3 | 4;
+type ColumnCount = 1 | 2 | 3 | 4 | 5;
 
 function StyleSection({
   title,
@@ -99,8 +101,10 @@ function StyleSection({
 }
 
 function StyleRow({ children, columns = 2 }: { children: React.ReactNode; columns?: ColumnCount }) {
-  const className = columns === 4
-    ? "grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
+  const className = columns === 5
+    ? "grid gap-4 sm:grid-cols-2 lg:grid-cols-5"
+    : columns === 4
+      ? "grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
     : columns === 3
       ? "grid gap-4 sm:grid-cols-3"
       : columns === 1
@@ -320,7 +324,7 @@ function ParagraphRuleCard({
             </>
           ) : null}
         </StyleRow>
-        <StyleRow columns={2}>
+        <StyleRow columns={3}>
           <StyleSelectField
             label="段前空行"
             icon={FileText}
@@ -335,7 +339,25 @@ function ParagraphRuleCard({
             options={BLANK_LINE_OPTIONS}
             onChange={(value) => onChange({ blankLinesAfter: Number(value) })}
           />
+          <StyleSelectField
+            label="空行高度"
+            icon={FileText}
+            value={rule.blankLineHeightMode}
+            options={BLANK_LINE_HEIGHT_MODE_OPTIONS}
+            onChange={(value) => onChange({ blankLineHeightMode: value as ParagraphRule["blankLineHeightMode"] })}
+          />
         </StyleRow>
+        {rule.blankLineHeightMode === "exact" ? (
+          <StyleRow columns={1}>
+            <StyleSelectField
+              label="空行固定高度"
+              icon={FileText}
+              value={stringifySelectValue(rule.blankLineHeightPt)}
+              options={BLANK_LINE_HEIGHT_PT_OPTIONS}
+              onChange={(value) => onChange({ blankLineHeightPt: Number(value) })}
+            />
+          </StyleRow>
+        ) : null}
       </div>
     </div>
   );
@@ -383,11 +405,11 @@ export function DocumentDeliveryStyleSections({ style, onFieldChange, onFieldsCh
   }
 
   const headingFontKeys = {
-    1: { chinese: "heading1ChineseFont", latin: "heading1LatinFont", number: "heading1NumberFont", bold: "heading1Bold" },
-    2: { chinese: "heading2ChineseFont", latin: "heading2LatinFont", number: "heading2NumberFont", bold: "heading2Bold" },
-    3: { chinese: "heading3ChineseFont", latin: "heading3LatinFont", number: "heading3NumberFont", bold: "heading3Bold" },
-    4: { chinese: "heading4ChineseFont", latin: "heading4LatinFont", number: "heading4NumberFont", bold: "heading4Bold" },
-    5: { chinese: "heading5ChineseFont", latin: "heading5LatinFont", number: "heading5NumberFont", bold: "heading5Bold" },
+    1: { chinese: "heading1ChineseFont", latin: "heading1LatinFont", number: "heading1NumberFont", bold: "heading1Bold", alignment: "heading1Alignment" },
+    2: { chinese: "heading2ChineseFont", latin: "heading2LatinFont", number: "heading2NumberFont", bold: "heading2Bold", alignment: "heading2Alignment" },
+    3: { chinese: "heading3ChineseFont", latin: "heading3LatinFont", number: "heading3NumberFont", bold: "heading3Bold", alignment: "heading3Alignment" },
+    4: { chinese: "heading4ChineseFont", latin: "heading4LatinFont", number: "heading4NumberFont", bold: "heading4Bold", alignment: "heading4Alignment" },
+    5: { chinese: "heading5ChineseFont", latin: "heading5LatinFont", number: "heading5NumberFont", bold: "heading5Bold", alignment: "heading5Alignment" },
   } as const;
 
   return (
@@ -425,11 +447,12 @@ export function DocumentDeliveryStyleSections({ style, onFieldChange, onFieldsCh
           return (
             <div key={level} className="space-y-2">
               <span className="text-xs font-medium text-[var(--color-text-secondary)]">{label}</span>
-              <StyleRow columns={4}>
+              <StyleRow columns={5}>
                 <StyleSelectField label="中文字体" icon={Type} value={style[keys.chinese]} options={INHERITABLE_CHINESE_FONT_OPTIONS} onChange={(value) => onFieldChange(keys.chinese, value)} />
                 <StyleSelectField label="西文字体" icon={Type} value={style[keys.latin]} options={INHERITABLE_LATIN_FONT_OPTIONS} onChange={(value) => onFieldChange(keys.latin, value)} />
                 <StyleSelectField label="数字字体" icon={Hash} value={style[keys.number]} options={INHERITABLE_NUMBER_FONT_OPTIONS} onChange={(value) => onFieldChange(keys.number, value)} />
                 <StyleSelectField label="是否加粗" icon={Type} value={String(Boolean(style[keys.bold]))} options={HEADING_BOLD_OPTIONS} onChange={(value) => onFieldChange(keys.bold, value === "true")} />
+                <StyleSelectField label="对齐方式" icon={AlignCenter} value={style[keys.alignment]} options={BODY_ALIGNMENT_OPTIONS} onChange={(value) => onFieldChange(keys.alignment, value)} />
               </StyleRow>
             </div>
           );

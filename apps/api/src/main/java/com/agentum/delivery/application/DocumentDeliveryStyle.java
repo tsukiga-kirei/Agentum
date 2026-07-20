@@ -20,6 +20,11 @@ public record DocumentDeliveryStyle(
     String numberFont,
     int bodyFontSize,
     String bodyAlignment,
+    String heading1Alignment,
+    String heading2Alignment,
+    String heading3Alignment,
+    String heading4Alignment,
+    String heading5Alignment,
     int heading1FontSize,
     int heading2FontSize,
     int heading3FontSize,
@@ -108,7 +113,9 @@ public record DocumentDeliveryStyle(
         double spacingBefore,
         double spacingAfter,
         int blankLinesBefore,
-        int blankLinesAfter
+        int blankLinesAfter,
+        String blankLineHeightMode,
+        int blankLineHeightPt
     ) {
 
         /** 判断该规则是否命中给定段落序号（1 基，total 为非表格段落总数）。 */
@@ -135,6 +142,11 @@ public record DocumentDeliveryStyle(
             "Times New Roman",
             "Times New Roman",
             12,
+            "left",
+            "left",
+            "left",
+            "left",
+            "left",
             "left",
             16,
             14,
@@ -208,6 +220,11 @@ public record DocumentDeliveryStyle(
             readString(source, "numberFont", defaults.numberFont()),
             readInt(source, "bodyFontSize", defaults.bodyFontSize(), 8, 48),
             readAlignment(source, "bodyAlignment", PARAGRAPH_ALIGNMENTS, defaults.bodyAlignment()),
+            readAlignment(source, "heading1Alignment", PARAGRAPH_ALIGNMENTS, defaults.heading1Alignment()),
+            readAlignment(source, "heading2Alignment", PARAGRAPH_ALIGNMENTS, defaults.heading2Alignment()),
+            readAlignment(source, "heading3Alignment", PARAGRAPH_ALIGNMENTS, defaults.heading3Alignment()),
+            readAlignment(source, "heading4Alignment", PARAGRAPH_ALIGNMENTS, defaults.heading4Alignment()),
+            readAlignment(source, "heading5Alignment", PARAGRAPH_ALIGNMENTS, defaults.heading5Alignment()),
             readInt(source, "heading1FontSize", defaults.heading1FontSize(), 8, 72),
             readInt(source, "heading2FontSize", defaults.heading2FontSize(), 8, 72),
             readInt(source, "heading3FontSize", defaults.heading3FontSize(), 8, 72),
@@ -309,7 +326,9 @@ public record DocumentDeliveryStyle(
                 readDouble(map, "spacingBefore", 0, 0.0, 200.0),
                 readDouble(map, "spacingAfter", 0, 0.0, 200.0),
                 readInt(map, "blankLinesBefore", 0, 0, 20),
-                readInt(map, "blankLinesAfter", 0, 0, 20)
+                readInt(map, "blankLinesAfter", 0, 0, 20),
+                readBlankLineHeightMode(map, "target"),
+                readInt(map, "blankLineHeightPt", 18, 1, 144)
             ));
         }
         return List.copyOf(rules);
@@ -338,6 +357,16 @@ public record DocumentDeliveryStyle(
             case 3 -> heading3Bold;
             case 4 -> heading4Bold;
             default -> heading5Bold;
+        };
+    }
+
+    public String headingAlignment(int level) {
+        return switch (Math.max(1, Math.min(5, level))) {
+            case 1 -> heading1Alignment;
+            case 2 -> heading2Alignment;
+            case 3 -> heading3Alignment;
+            case 4 -> heading4Alignment;
+            default -> heading5Alignment;
         };
     }
 
@@ -432,6 +461,11 @@ public record DocumentDeliveryStyle(
         result.put("numberFont", numberFont);
         result.put("bodyFontSize", bodyFontSize);
         result.put("bodyAlignment", bodyAlignment);
+        result.put("heading1Alignment", heading1Alignment);
+        result.put("heading2Alignment", heading2Alignment);
+        result.put("heading3Alignment", heading3Alignment);
+        result.put("heading4Alignment", heading4Alignment);
+        result.put("heading5Alignment", heading5Alignment);
         result.put("heading1FontSize", heading1FontSize);
         result.put("heading2FontSize", heading2FontSize);
         result.put("heading3FontSize", heading3FontSize);
@@ -522,6 +556,10 @@ public record DocumentDeliveryStyle(
                 ruleMap.put("spacingAfter", rule.spacingAfter());
                 ruleMap.put("blankLinesBefore", rule.blankLinesBefore());
                 ruleMap.put("blankLinesAfter", rule.blankLinesAfter());
+                ruleMap.put("blankLineHeightMode", rule.blankLineHeightMode());
+                if ("exact".equals(rule.blankLineHeightMode())) {
+                    ruleMap.put("blankLineHeightPt", rule.blankLineHeightPt());
+                }
                 rules.add(ruleMap);
             }
             result.put("paragraphRules", rules);
@@ -557,6 +595,11 @@ public record DocumentDeliveryStyle(
     private static String readListIndentMode(Map<String, Object> source, String key, String fallback) {
         String text = readOptionalString(source, key).toLowerCase();
         return LIST_INDENT_MODES.contains(text) ? text : fallback;
+    }
+
+    private static String readBlankLineHeightMode(Map<String, Object> source, String fallback) {
+        String text = readOptionalString(source, "blankLineHeightMode").toLowerCase();
+        return Set.of("target", "body", "exact").contains(text) ? text : fallback;
     }
 
     private static void putOptional(Map<String, Object> target, String key, String value) {

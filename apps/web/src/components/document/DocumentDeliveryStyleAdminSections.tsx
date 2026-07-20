@@ -76,8 +76,13 @@ function AdminStyleSection({
   );
 }
 
-function AdminStyleRow({ children, columns = 2 }: { children: React.ReactNode; columns?: 2 | 3 }) {
-  return <div className={columns === 3 ? "document-style-field-row--three" : "sys-field-row"}>{children}</div>;
+function AdminStyleRow({ children, columns = 2 }: { children: React.ReactNode; columns?: 2 | 3 | 4 }) {
+  const className = columns === 4
+    ? "grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
+    : columns === 3
+      ? "document-style-field-row--three"
+      : "sys-field-row";
+  return <div className={className}>{children}</div>;
 }
 
 export function DocumentDeliveryStyleAdminSections({
@@ -210,8 +215,8 @@ export function DocumentDeliveryStyleAdminSections({
         </AdminStyleRow>
       </AdminStyleSection>
 
-      <AdminStyleSection title="标题字体" description="可为各级标题单独设置中文、西文与数字字体，留空则继承正文。">
-        <AdminStyleRow columns={3}>
+      <AdminStyleSection title="标题样式" description="可为各级标题单独设置字体、对齐与加粗，字体留空则继承正文。">
+        <AdminStyleRow columns={4}>
           <SelectField
             label="一级标题中文字体"
             icon={Type}
@@ -236,8 +241,9 @@ export function DocumentDeliveryStyleAdminSections({
             options={INHERITABLE_NUMBER_FONT_OPTIONS}
             onChange={(value) => onChange("documentHeading1NumberFont", value)}
           />
+          <SelectField label="一级标题对齐" icon={AlignCenter} defaultValue={values.documentHeading1Alignment || "left"} options={BODY_ALIGNMENT_OPTIONS} onChange={(value) => onChange("documentHeading1Alignment", value)} />
         </AdminStyleRow>
-        <AdminStyleRow columns={3}>
+        <AdminStyleRow columns={4}>
           <SelectField
             label="二级标题中文字体"
             icon={Type}
@@ -262,8 +268,9 @@ export function DocumentDeliveryStyleAdminSections({
             options={INHERITABLE_NUMBER_FONT_OPTIONS}
             onChange={(value) => onChange("documentHeading2NumberFont", value)}
           />
+          <SelectField label="二级标题对齐" icon={AlignCenter} defaultValue={values.documentHeading2Alignment || "left"} options={BODY_ALIGNMENT_OPTIONS} onChange={(value) => onChange("documentHeading2Alignment", value)} />
         </AdminStyleRow>
-        <AdminStyleRow columns={3}>
+        <AdminStyleRow columns={4}>
           <SelectField
             label="三级标题中文字体"
             icon={Type}
@@ -288,8 +295,9 @@ export function DocumentDeliveryStyleAdminSections({
             options={INHERITABLE_NUMBER_FONT_OPTIONS}
             onChange={(value) => onChange("documentHeading3NumberFont", value)}
           />
+          <SelectField label="三级标题对齐" icon={AlignCenter} defaultValue={values.documentHeading3Alignment || "left"} options={BODY_ALIGNMENT_OPTIONS} onChange={(value) => onChange("documentHeading3Alignment", value)} />
         </AdminStyleRow>
-        <AdminStyleRow columns={3}>
+        <AdminStyleRow columns={4}>
           <SelectField
             label="四级标题中文字体"
             icon={Type}
@@ -314,8 +322,9 @@ export function DocumentDeliveryStyleAdminSections({
             options={INHERITABLE_NUMBER_FONT_OPTIONS}
             onChange={(value) => onChange("documentHeading4NumberFont", value)}
           />
+          <SelectField label="四级标题对齐" icon={AlignCenter} defaultValue={values.documentHeading4Alignment || "left"} options={BODY_ALIGNMENT_OPTIONS} onChange={(value) => onChange("documentHeading4Alignment", value)} />
         </AdminStyleRow>
-        <AdminStyleRow columns={3}>
+        <AdminStyleRow columns={4}>
           <SelectField
             label="五级标题中文字体"
             icon={Type}
@@ -340,6 +349,7 @@ export function DocumentDeliveryStyleAdminSections({
             options={INHERITABLE_NUMBER_FONT_OPTIONS}
             onChange={(value) => onChange("documentHeading5NumberFont", value)}
           />
+          <SelectField label="五级标题对齐" icon={AlignCenter} defaultValue={values.documentHeading5Alignment || "left"} options={BODY_ALIGNMENT_OPTIONS} onChange={(value) => onChange("documentHeading5Alignment", value)} />
         </AdminStyleRow>
         <AdminStyleRow columns={3}>
           <SelectField
