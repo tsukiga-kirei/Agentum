@@ -132,7 +132,7 @@ Markdown 引用（`> 内容`）只用于识别并移除引用标记，生成 Wor
 
 `paragraphRules` 用于对指定段落单独排版，按非表格段落 1 基序号计数（标题、正文、列表项、引用均计入，表格与代码块不计入）。`targetType` 可选 `index`（配合 `targetIndex` 指定段号）、`first`、`second`、`third`、`last`、`secondLast`。每条规则可覆盖对齐、首行缩进（`firstLineIndentMode`：`none`/`chars`/`cm`）、中西文与数字字体、字号、段前段后（`spacingUnit` 为空表示不覆盖）。
 
-`blankLinesBefore`/`blankLinesAfter` 是个性化规则专属的手动空行能力：渲染器会在目标段落前后实际插入独立空段落，等价于在 Word 中敲回车，不会转换成全局段前/段后间距。`blankLineHeightMode` 只控制这些空段落：`target` 继承目标段落的有效字号与正文行距，`body` 使用正文字号与正文行距，`exact` 使用 `blankLineHeightPt` 指定的固定磅值；空段落自身的段前段后固定为 0。列表项与引用段落同样支持逐段规则覆盖。
+`blankLinesBefore`/`blankLinesAfter` 是个性化规则专属的手动空行能力：渲染器会在目标段落前后实际插入独立空段落，等价于在 Word 中敲回车，不会转换成全局段前/段后间距。`blankLineHeightMode` 控制这些空段落：`target` 把目标段落的有效字体、字号、行距与段距写入空段落标记，`body` 继承正文的完整段落格式，二者都与在对应段落中手动回车的行为保持一致；`exact` 使用 `blankLineHeightPt` 指定的固定磅值并把空段落自身段距归零。列表项与引用段落同样支持逐段规则覆盖。
 
 系统级 `maxFileSizeMb` 会在运行态 docx 生成后校验文件大小，超过限制时交付失败并记录错误。`retentionPolicy=permanent` 时交付结果不写入 `expiresAt`，文件不会进入到期清理；`retentionPolicy=days` 时按 `retentionDays` 计算 `expiresAt`，后台清理任务按该时间删除 MinIO 对象并把交付记录标记为 `expired`。历史能力未配置策略时继续按原有保留天数执行。
 

@@ -316,18 +316,16 @@ class MarkdownDocxRendererTest {
         String docXmlSingle = entriesSingle.get("word/document.xml");
 
         assertThat(docXmlSingle).contains("第一段").contains("第二段");
-        assertThat(docXmlSingle).doesNotContain("<w:t xml:space=\"preserve\"></w:t>");
+        assertThat(docXmlSingle.split("<w:p>", -1)).hasSize(3);
 
         byte[] bytesDouble = renderer.render("第一段\n\n\n第二段", DocumentDeliveryStyle.defaults());
         Map<String, String> entriesDouble = unzip(bytesDouble);
         String docXmlDouble = entriesDouble.get("word/document.xml");
 
         assertThat(docXmlDouble).contains("第一段").contains("第二段");
-        assertThat(docXmlDouble).contains("<w:t xml:space=\"preserve\"></w:t>");
-
-        int firstIndex = docXmlDouble.indexOf("<w:t xml:space=\"preserve\"></w:t>");
-        int lastIndex = docXmlDouble.lastIndexOf("<w:t xml:space=\"preserve\"></w:t>");
-        assertThat(firstIndex).isEqualTo(lastIndex).isNotEqualTo(-1);
+        assertThat(docXmlDouble.split("<w:p>", -1)).hasSize(4);
+        assertThat(docXmlDouble)
+            .contains("<w:spacing w:before=\"0\" w:after=\"120\" w:line=\"360\" w:lineRule=\"auto\"/><w:rPr>");
     }
 
     @Test
@@ -444,11 +442,11 @@ class MarkdownDocxRendererTest {
 
         assertThat(unzip(bytes).get("word/document.xml"))
             .contains("<w:jc w:val=\"right\"/>")
-            .contains("<w:t xml:space=\"preserve\"></w:t>");
+            .contains("<w:spacing w:before=\"0\" w:after=\"120\" w:line=\"360\" w:lineRule=\"auto\"/><w:rPr>");
     }
 
     @Test
-    void shouldUseTargetParagraphFontSizeForBlankLinesByDefault() throws IOException {
+    void shouldWriteTargetParagraphFormatToBlankParagraphMark() throws IOException {
         DocumentDeliveryStyle style = DocumentDeliveryStyle.from(Map.of(
             "heading1FontSize", 20,
             "paragraphRules", java.util.List.of(Map.of(
@@ -461,8 +459,10 @@ class MarkdownDocxRendererTest {
 
         String documentXml = unzip(bytes).get("word/document.xml");
         assertThat(documentXml)
-            .contains("<w:spacing w:before=\"0\" w:after=\"0\" w:line=\"360\" w:lineRule=\"auto\"/>")
-            .contains("<w:t xml:space=\"preserve\"></w:t>");
+            .contains("<w:spacing w:before=\"0\" w:after=\"120\" w:line=\"360\" w:lineRule=\"auto\"/><w:rPr>"
+                + "<w:rFonts w:ascii=\"Times New Roman\" w:hAnsi=\"Times New Roman\" w:eastAsia=\"宋体\"/>"
+                + "<w:sz w:val=\"40\"/><w:szCs w:val=\"40\"/></w:rPr></w:pPr></w:p>")
+            .doesNotContain("<w:t xml:space=\"preserve\"></w:t>");
         assertThat(documentXml.split("<w:sz w:val=\"40\"/>", -1)).hasSizeGreaterThanOrEqualTo(3);
     }
 

@@ -6269,7 +6269,7 @@ components:
           type: string
           enum: [target, body, exact]
           default: target
-          description: 本规则插入空段落的高度方式；target 继承目标段落有效字号与正文行距，body 使用正文，exact 使用固定磅值。
+          description: 本规则插入空段落的排版方式；target 继承目标段落的有效字体、字号、行距与段距，body 继承正文，exact 使用固定磅值并清除空段落段距。
         blankLineHeightPt:
           type: integer
           minimum: 1

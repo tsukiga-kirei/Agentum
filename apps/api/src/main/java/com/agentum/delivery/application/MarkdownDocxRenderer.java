@@ -56,15 +56,21 @@ public class MarkdownDocxRenderer {
         int contentIndex = 0;
         for (Block block : blocks) {
             switch (block.type()) {
-                case BLANK -> body.append(emptyParagraph(style, style.bodyFontSize(), "body", 0));
+                case BLANK -> body.append(emptyParagraph(
+                    style,
+                    bodyTextStyle(style),
+                    "body",
+                    0,
+                    bodyParagraphSpacingFragment(style)
+                ));
                 case TABLE -> body.append(table(block.rows(), style));
                 case CODE -> body.append(codeBlock(block.codeLines(), style));
                 case HEADING, BODY, ORDERED_LIST, UNORDERED_LIST, QUOTE -> {
                     contentIndex++;
                     ParagraphRule rule = matchRule(style.paragraphRules(), contentIndex, totalContentParagraphs);
                     boolean centered = contentIndex == 1 && style.titleCentered();
-                    int targetFontSize = resolvedParagraphFontSize(block, style, rule);
-                    appendBlankParagraphs(body, style, rule, rule == null ? 0 : rule.blankLinesBefore(), targetFontSize);
+                    ParagraphTextStyle targetTextStyle = resolvedParagraphTextStyle(block, style, rule);
+                    appendBlankParagraphs(body, style, rule, rule == null ? 0 : rule.blankLinesBefore(), targetTextStyle);
                     if (block.type() == BlockType.HEADING) {
                         body.append(headingParagraph(block.text(), block.headingLevel(), style, centered, rule));
                     } else {
@@ -77,7 +83,7 @@ public class MarkdownDocxRenderer {
                         };
                         body.append(paragraph(block.text(), style, kind, centered, rule));
                     }
-                    appendBlankParagraphs(body, style, rule, rule == null ? 0 : rule.blankLinesAfter(), targetFontSize);
+                    appendBlankParagraphs(body, style, rule, rule == null ? 0 : rule.blankLinesAfter(), targetTextStyle);
                 }
             }
         }
@@ -196,16 +202,47 @@ public class MarkdownDocxRenderer {
         DocumentDeliveryStyle style,
         ParagraphRule rule,
         int count,
-        int targetFontSize
+        ParagraphTextStyle targetTextStyle
     ) {
+        if (count <= 0 || rule == null) {
+            return;
+        }
+        String heightMode = rule.blankLineHeightMode();
+        String paragraphSpacing = switch (heightMode) {
+            case "target" -> paragraphSpacingFragment(style, rule);
+            case "body" -> bodyParagraphSpacingFragment(style);
+            default -> spacingFragment("pt", 0, 0);
+        };
         for (int i = 0; i < count; i++) {
-            body.append(emptyParagraph(style, targetFontSize, rule.blankLineHeightMode(), rule.blankLineHeightPt()));
+            body.append(emptyParagraph(
+                style,
+                targetTextStyle,
+                heightMode,
+                rule.blankLineHeightPt(),
+                paragraphSpacing
+            ));
         }
     }
 
-    private int resolvedParagraphFontSize(Block block, DocumentDeliveryStyle style, ParagraphRule rule) {
-        int size = block.type() == BlockType.HEADING ? style.headingFontSize(block.headingLevel()) : style.bodyFontSize();
-        return rule != null && rule.fontSize() > 0 ? rule.fontSize() : size;
+    private ParagraphTextStyle resolvedParagraphTextStyle(Block block, DocumentDeliveryStyle style, ParagraphRule rule) {
+        int size = style.bodyFontSize();
+        String latinFont = style.latinFont();
+        String chineseFont = style.chineseFont();
+        if (block.type() == BlockType.HEADING) {
+            size = style.headingFontSize(block.headingLevel());
+            latinFont = style.headingLatinFont(block.headingLevel());
+            chineseFont = style.headingChineseFont(block.headingLevel());
+        }
+        if (rule != null) {
+            size = rule.fontSize() > 0 ? rule.fontSize() : size;
+            latinFont = rule.latinFont().isBlank() ? latinFont : rule.latinFont();
+            chineseFont = rule.chineseFont().isBlank() ? chineseFont : rule.chineseFont();
+        }
+        return new ParagraphTextStyle(latinFont, chineseFont, size);
+    }
+
+    private ParagraphTextStyle bodyTextStyle(DocumentDeliveryStyle style) {
+        return new ParagraphTextStyle(style.latinFont(), style.chineseFont(), style.bodyFontSize());
     }
 
     private boolean canJoinParagraphLine(List<String> lines, int index) {
@@ -315,6 +352,14 @@ public class MarkdownDocxRenderer {
         return spacingFragment(unit, before, after);
     }
 
+    private String bodyParagraphSpacingFragment(DocumentDeliveryStyle style) {
+        return spacingFragment(
+            style.paragraphSpacingUnit(),
+            style.paragraphSpacingBefore(),
+            style.paragraphSpacingAfter()
+        );
+    }
+
     private String headingSpacingTag(DocumentDeliveryStyle style, ParagraphRule rule) {
         return "<w:spacing " + paragraphSpacingFragment(style, rule) + "/>";
     }
@@ -371,33 +416,33 @@ public class MarkdownDocxRenderer {
     }
 
     /**
-     * 可见空行使用独立空段落，段前段后固定为 0，避免把正文段距重复算入空行高度。
-     * target 模式继承相邻目标段落的有效字号，body 模式使用正文字号，exact 模式使用固定磅值行高。
+     * 可见空行使用独立空段落，等价于在 Word 中手动回车。
+     * target/body 模式继承对应段落的字号、字体与段距；exact 模式只使用固定磅值行高且段距归零。
+     * 字体和字号必须写入 pPr/rPr（段落标记格式），否则 Word 会忽略空文本 Run 并按默认字号压缩空行。
      */
     private String emptyParagraph(
         DocumentDeliveryStyle style,
-        int targetFontSize,
+        ParagraphTextStyle targetTextStyle,
         String blankLineHeightMode,
-        int blankLineHeightPt
+        int blankLineHeightPt,
+        String paragraphSpacing
     ) {
-        int fontSize = "target".equals(blankLineHeightMode) ? targetFontSize : style.bodyFontSize();
+        ParagraphTextStyle textStyle = "target".equals(blankLineHeightMode)
+            ? targetTextStyle
+            : bodyTextStyle(style);
         int lineTwips = "exact".equals(blankLineHeightMode)
             ? blankLineHeightPt * 20
             : style.resolvedLineTwips();
         String lineRule = "exact".equals(blankLineHeightMode)
             ? "exact"
             : style.resolvedLineSpacingRule();
-        String pPr = "<w:pPr><w:spacing w:before=\"0\" w:after=\"0\" w:line=\"" + lineTwips
-            + "\" w:lineRule=\"" + lineRule + "\"/></w:pPr>";
-        return "<w:p>" + pPr + runs(
-            "",
-            style.latinFont(),
-            style.chineseFont(),
-            style.numberFont(),
-            fontSize,
-            false,
-            false
-        ) + "</w:p>";
+        int halfPoint = Math.max(1, textStyle.fontSize() * 2);
+        String paragraphMarkProperties = "<w:rPr>"
+            + fontRunXml(textStyle.latinFont(), textStyle.chineseFont())
+            + "<w:sz w:val=\"" + halfPoint + "\"/><w:szCs w:val=\"" + halfPoint + "\"/></w:rPr>";
+        String pPr = "<w:pPr><w:spacing " + paragraphSpacing + " w:line=\"" + lineTwips
+            + "\" w:lineRule=\"" + lineRule + "\"/>" + paragraphMarkProperties + "</w:pPr>";
+        return "<w:p>" + pPr + "</w:p>";
     }
 
     private String codeBlock(List<String> codeLines, DocumentDeliveryStyle style) {
@@ -464,7 +509,13 @@ public class MarkdownDocxRenderer {
             }
             result.append("</w:tr>");
         }
-        result.append("</w:tbl>").append(emptyParagraph(style, style.bodyFontSize(), "body", 0));
+        result.append("</w:tbl>").append(emptyParagraph(
+            style,
+            bodyTextStyle(style),
+            "body",
+            0,
+            spacingFragment("pt", 0, 0)
+        ));
         return result.toString();
     }
 
@@ -856,5 +907,8 @@ public class MarkdownDocxRenderer {
     }
 
     private record InlineRun(String text, boolean bold, boolean italic, boolean code) {
+    }
+
+    private record ParagraphTextStyle(String latinFont, String chineseFont, int fontSize) {
     }
 }
