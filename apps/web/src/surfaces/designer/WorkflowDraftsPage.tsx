@@ -1348,14 +1348,23 @@ function WorkflowAccessFields({
           <label className="sys-field-label sys-field-label--required">指定可读取同事</label>
           <Select
             mode="multiple"
-            className="agent-admin-select w-full"
+            className="agent-admin-select agent-member-search-select w-full"
             classNames={workflowSelectClassNames}
             suffixIcon={workflowSelectSuffixIcon}
             disabled={readOnly}
+            showSearch
+            allowClear
+            optionFilterProp="label"
+            autoClearSearchValue
+            maxTagCount={2}
+            maxTagTextLength={18}
             value={access.readUserIds}
             options={memberOptions}
+            placeholder="搜索姓名或账号后选择"
+            notFoundContent="未找到匹配同事"
             onChange={(readUserIds) => onChange({ ...access, readUserIds })}
           />
+          <div className="sys-field-hint">支持按姓名或账号搜索，可连续选择多位同事。</div>
         </div>
       ) : null}
       <div className="sys-field">
@@ -1376,14 +1385,23 @@ function WorkflowAccessFields({
           <label className="sys-field-label sys-field-label--required">指定可编辑同事</label>
           <Select
             mode="multiple"
-            className="agent-admin-select w-full"
+            className="agent-admin-select agent-member-search-select w-full"
             classNames={workflowSelectClassNames}
             suffixIcon={workflowSelectSuffixIcon}
             disabled={readOnly}
+            showSearch
+            allowClear
+            optionFilterProp="label"
+            autoClearSearchValue
+            maxTagCount={2}
+            maxTagTextLength={18}
             value={access.editUserIds}
             options={memberOptions}
+            placeholder="搜索姓名或账号后选择"
+            notFoundContent="未找到匹配同事"
             onChange={(editUserIds) => onChange({ ...access, editUserIds })}
           />
+          <div className="sys-field-hint">支持按姓名或账号搜索，可连续选择多位同事。</div>
         </div>
       ) : null}
     </section>

@@ -33,6 +33,7 @@ import {
 import { SurfacePageLayout } from "../../components/workbench/SurfacePageLayout";
 import { SysModalMask } from "../../components/common/SysModalMask";
 import { SysPasswordInput } from "../../components/common/SysPasswordInput";
+import { GrantPrincipalPicker } from "../../components/common/GrantPrincipalPicker";
 import { paths } from "../../routes/paths";
 import { AgentumApiError, organizationApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
@@ -158,13 +159,6 @@ const emptyRoleForm: RoleDraft = {
 
 const adminSelectClassNames = { popup: { root: "agent-select-dropdown agent-admin-select-dropdown" } };
 const adminSelectSuffixIcon = <ChevronDown className="h-4 w-4 text-[var(--color-text-tertiary)]" aria-hidden="true" />;
-// 多选空态占位与左侧图标需同一垂直中线；antd 6 默认把占位符放在仅 font-size 高的槽位里，需用 styles 拉回居中。
-const adminPrincipalSelectStyles = {
-  root: { alignItems: "center" as const, paddingBlock: 0 },
-  content: { alignItems: "center" as const, lineHeight: 1.4 },
-  placeholder: { position: "static" as const, transform: "none", lineHeight: 1.4 },
-  input: { height: 22, lineHeight: "22px" },
-};
 
 type MemberEditDraft = {
   username: string;
@@ -1506,24 +1500,12 @@ export function TenantManagementPage() {
           </div>
           <div className="sys-field">
             <label className="sys-field-label sys-field-label--required">分配对象</label>
-            <div className="sys-field-input-wrap sys-field-input-wrap--select">
-              <UserRoundCog size={16} className="sys-field-prefix" aria-hidden="true" />
-              <Select
-                mode="multiple"
-                className="agent-admin-select agent-principal-select w-full"
-                classNames={adminSelectClassNames}
-                styles={adminPrincipalSelectStyles}
-                popupMatchSelectWidth
-                showSearch
-                suffixIcon={adminSelectSuffixIcon}
-                maxTagCount="responsive"
-                maxTagTextLength={16}
-                placeholder="选择角色、部门或人员"
-                value={pageGrantPrincipalKeys}
-                options={getPrincipalOptions(organizationOverview)}
-                onChange={(principalKeys) => setPageGrantPrincipalKeys(principalKeys as PrincipalSelectionKey[])}
-              />
-            </div>
+            <GrantPrincipalPicker
+              value={pageGrantPrincipalKeys}
+              overview={organizationOverview}
+              onChange={(principalKeys) => setPageGrantPrincipalKeys(principalKeys)}
+            />
+            <div className="sys-field-hint">角色、部门和人员分开选择；人员较多时可搜索并分页查看。</div>
           </div>
           <div className="sys-config-group tenant-drawer-option-group">
             <div className="sys-config-group-title">可访问页签</div>
@@ -1648,24 +1630,12 @@ export function TenantManagementPage() {
           </div>
           <div className="sys-field">
             <label className="sys-field-label sys-field-label--required">分配对象</label>
-            <div className="sys-field-input-wrap sys-field-input-wrap--select">
-              <UserRoundCog size={16} className="sys-field-prefix" aria-hidden="true" />
-              <Select
-                mode="multiple"
-                className="agent-admin-select agent-principal-select w-full"
-                classNames={adminSelectClassNames}
-                styles={adminPrincipalSelectStyles}
-                popupMatchSelectWidth
-                showSearch
-                suffixIcon={adminSelectSuffixIcon}
-                maxTagCount="responsive"
-                maxTagTextLength={16}
-                placeholder="选择角色、部门或人员"
-                value={grantPrincipalKeys}
-                options={getPrincipalOptions(organizationOverview)}
-                onChange={(principalKeys) => setGrantPrincipalKeys(principalKeys as PrincipalSelectionKey[])}
-              />
-            </div>
+            <GrantPrincipalPicker
+              value={grantPrincipalKeys}
+              overview={organizationOverview}
+              onChange={(principalKeys) => setGrantPrincipalKeys(principalKeys)}
+            />
+            <div className="sys-field-hint">角色、部门和人员分开选择；人员较多时可搜索并分页查看。</div>
           </div>
           <div className="sys-config-group tenant-drawer-option-group">
             <div className="sys-config-group-title">能力资源</div>
@@ -2313,24 +2283,6 @@ function formatPrincipalType(type: string): string {
 function formatPrincipalNames(principals: GrantPrincipal[]): string {
   if (principals.length === 0) return "未选择对象";
   return principals.map((principal) => principal.principalName).join("、");
-}
-
-function getPrincipalOptions(overview: TenantOrganizationOverview | null) {
-  if (!overview) return [];
-  return [
-    {
-      label: "角色",
-      options: overview.roles.map((role) => ({ value: `role:${role.id}`, label: role.name })),
-    },
-    {
-      label: "部门",
-      options: overview.departments.map((department) => ({ value: `department:${department.id}`, label: department.name })),
-    },
-    {
-      label: "人员",
-      options: overview.members.map((member) => ({ value: `user:${member.id}`, label: `${member.displayName} (${member.username})` })),
-    },
-  ];
 }
 
 function formatRiskLevel(riskLevel: string): string {
