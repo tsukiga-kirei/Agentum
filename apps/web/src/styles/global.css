@@ -6973,8 +6973,7 @@ html:not(.dark) .agent-tool-step-detail {
   background: color-mix(in srgb, #f43f5e 4%, var(--color-bg-card));
 }
 
-.multi-agent-card--skipped,
-.multi-agent-card:disabled {
+.multi-agent-card--skipped {
   cursor: not-allowed;
   opacity: 0.58;
   filter: grayscale(0.45);
@@ -6982,11 +6981,24 @@ html:not(.dark) .agent-tool-step-detail {
   box-shadow: none;
 }
 
-.multi-agent-card--skipped:hover,
-.multi-agent-card:disabled:hover {
+.multi-agent-card--skipped:hover {
   transform: none;
   border-color: color-mix(in srgb, var(--color-border-light) 78%, transparent);
   box-shadow: none;
+}
+
+.multi-agent-card-open {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.multi-agent-card-open:disabled {
+  cursor: not-allowed;
 }
 
 .multi-agent-card-glow {
@@ -7108,6 +7120,29 @@ html:not(.dark) .agent-tool-step-detail {
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.multi-agent-card-restart {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  background: transparent;
+  color: var(--color-primary);
+  padding: 2px 0;
+  font-size: 12px;
+  font-weight: 720;
+  cursor: pointer;
+}
+
+.multi-agent-card-restart:hover:not(:disabled) {
+  color: color-mix(in srgb, var(--color-primary) 78%, #111827);
+}
+
+.multi-agent-card-restart:disabled {
+  cursor: wait;
+  opacity: 0.55;
 }
 
 @keyframes multi-agent-card-glow {

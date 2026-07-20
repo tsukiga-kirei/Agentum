@@ -143,6 +143,23 @@ public class RuntimeSseController {
         );
     }
 
+    /** 单独重新执行已完成的子智能体；接力处理会连同依赖该结果的后序智能体一起重跑。 */
+    @PostMapping("/runs/{runId}/nodes/{nodeRunId}/cluster-agents/{agentIndex}/restart")
+    public ApiResponse<WorkbenchApi.RunDetail> restartClusterAgent(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID runId,
+        @PathVariable UUID nodeRunId,
+        @PathVariable int agentIndex,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        workbenchAccess.assertCanAccessWorkbench(principal, tenantId);
+        return ApiResponse.success(
+            workbenchRuntimeService.restartClusterAgent(tenantId, principal, runId, nodeRunId, agentIndex),
+            RequestIds.current(request)
+        );
+    }
+
     /** 保存用户修改后的最终答案，不重新调用模型。 */
     @PostMapping("/runs/{runId}/nodes/{nodeRunId}/final-answer")
     public ApiResponse<WorkbenchApi.RunDetail> updateFinalAnswer(

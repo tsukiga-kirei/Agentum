@@ -783,12 +783,115 @@ public class WorkbenchRuntimeService {
             abortLingeringExecution(runId);
             assertNoExecutionInFlight(runId);
             prepareNodeReExecution(run, node, true, principal.userId(), "run_node_restarted", "步骤重新执行",
-                "已清空「" + node.getName() + "」全部执行数据，开始从头重新执行。");
+                "已清空「" + node.getName() + "」全部执行数据，开始从头重新执行。", Map.of());
             enqueueExecution(tenantId, runId, node.getId(), node.getNodeType(), principal.userId());
         });
         log.info(
             "用户重新执行节点 tenantId={} userId={} runId={} nodeRunId={} requestId={}",
             tenantId, principal.userId(), runId, nodeRunId, RequestIds.current()
+        );
+        return getRunDetail(tenantId, principal, runId);
+    }
+
+    /**
+     * 单独重新执行一个已完成的集群子智能体。
+     *
+     * <p>协同处理只清理目标结果；接力处理因后序提示词可以引用前序输出，必须从目标开始重跑后续链路；
+     * 意图分派沿用本次运行已命中的智能体集合，不重新调用分类器，避免同一次任务发生路由漂移。</p>
+     */
+    public WorkbenchApi.RunDetail restartClusterAgent(
+        UUID tenantId,
+        CurrentUserPrincipal principal,
+        UUID runId,
+        UUID nodeRunId,
+        int agentIndex
+    ) {
+        ensureActiveTenant(tenantId);
+        ensureAuthenticated(principal);
+        WorkflowRunEntity run = requireOwnedRun(tenantId, principal, runId);
+        if ("completed".equals(run.getState())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_RUN_READONLY", "已完成任务只能查看，不能重新执行");
+        }
+        WorkflowNodeRunEntity node = workflowNodeRunRepository.findByIdAndRunId(nodeRunId, runId)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_NODE_RUN_NOT_FOUND", "节点运行不存在"));
+        if (!"parallel_group".equals(node.getNodeType())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_CLUSTER_AGENT_RESTART_UNSUPPORTED", "当前节点不是智能体集群节点");
+        }
+        if (!"completed".equals(node.getState())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_CLUSTER_AGENT_RESTART_INVALID", "仅已完成的子智能体可以单独重新执行");
+        }
+
+        int agentCount = clusterAgentCount(node.getConfigSnapshot());
+        if (agentIndex < 0 || agentIndex >= agentCount) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_CLUSTER_AGENT_NOT_FOUND", "子智能体配置不存在");
+        }
+        String executionMode = ClusterIntentRoutingSupport.normalizeExecutionMode(node.getConfigSnapshot().get("executionMode"));
+
+        transactionTemplate.executeWithoutResult(status -> {
+            terminateRecoverableStaleJobs(runId);
+            abortLingeringExecution(runId);
+            assertNoExecutionInFlight(runId);
+
+            List<WorkflowClusterAgentRunEntity> existingRows = clusterAgentRunRepository.findByNodeRunIdOrderByAgentIndexAsc(node.getId());
+            WorkflowClusterAgentRunEntity target = existingRows.stream()
+                .filter(row -> row.getAgentIndex() == agentIndex && row.isSucceeded())
+                .findFirst()
+                .orElseThrow(() -> new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "WORKBENCH_CLUSTER_AGENT_RESTART_INVALID",
+                    "仅已完成的子智能体可以单独重新执行"
+                ));
+
+            List<Integer> rerunIndexes = new ArrayList<>();
+            if (ClusterIntentRoutingSupport.MODE_RELAY.equals(executionMode)) {
+                for (int index = agentIndex; index < agentCount; index++) {
+                    rerunIndexes.add(index);
+                }
+            } else {
+                rerunIndexes.add(agentIndex);
+            }
+
+            List<Integer> executionIndexes = new ArrayList<>();
+            if (ClusterIntentRoutingSupport.MODE_INTENT.equals(executionMode)) {
+                existingRows.stream()
+                    .filter(WorkflowClusterAgentRunEntity::isSucceeded)
+                    .map(WorkflowClusterAgentRunEntity::getAgentIndex)
+                    .distinct()
+                    .sorted()
+                    .forEach(executionIndexes::add);
+            } else {
+                for (int index = 0; index < agentCount; index++) {
+                    executionIndexes.add(index);
+                }
+            }
+
+            existingRows.stream()
+                .filter(row -> rerunIndexes.contains(row.getAgentIndex()))
+                .forEach(clusterAgentRunRepository::delete);
+            clearClusterAgentConversationHistory(node, rerunIndexes, clock.instant());
+
+            String description = ClusterIntentRoutingSupport.MODE_RELAY.equals(executionMode)
+                ? "已从「" + target.getName() + "」开始重新执行，依赖其结果的后续子智能体将同步重跑。"
+                : "已单独重新执行「" + target.getName() + "」，其他已完成结果保持不变。";
+            prepareNodeReExecution(
+                run,
+                node,
+                false,
+                principal.userId(),
+                "run_cluster_agent_restarted",
+                "子智能体重新执行",
+                description,
+                Map.of(
+                    "agentIndex", agentIndex,
+                    "rerunAgentIndexes", rerunIndexes,
+                    "executionMode", executionMode
+                )
+            );
+            enqueueExecution(tenantId, runId, node.getId(), node.getNodeType(), principal.userId(), executionIndexes);
+        });
+        log.info(
+            "用户重新执行子智能体 tenantId={} userId={} runId={} nodeRunId={} agentIndex={} executionMode={} requestId={}",
+            tenantId, principal.userId(), runId, nodeRunId, agentIndex, executionMode, RequestIds.current()
         );
         return getRunDetail(tenantId, principal, runId);
     }
@@ -1155,7 +1258,7 @@ public class WorkbenchRuntimeService {
             // 否则释放租约并创建第二个作业会让两轮模型输出互相抢占。
             assertNoExecutionInFlight(runId);
             prepareNodeReExecution(run, node, false, principal.userId(), "run_node_recovered", "步骤恢复执行",
-                "已保留「" + node.getName() + "」已成功的子智能体结果，仅重跑失败或未完成部分。");
+                "已保留「" + node.getName() + "」已成功的子智能体结果，仅重跑失败或未完成部分。", Map.of());
             enqueueExecution(tenantId, runId, node.getId(), node.getNodeType(), principal.userId());
         });
         log.info(
@@ -1177,7 +1280,8 @@ public class WorkbenchRuntimeService {
         UUID operatorUserId,
         String eventType,
         String eventTitle,
-        String eventDescription
+        String eventDescription,
+        Map<String, Object> extraMetadata
     ) {
         Instant now = clock.instant();
         cancellationGuard.clearCancel(run.getId());
@@ -1199,6 +1303,12 @@ public class WorkbenchRuntimeService {
             .count();
         run.markRunning(node.getNodeKey(), node.getName(), node.getNodeType(), completedBefore, now);
         workflowRunRepository.save(run);
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("nodeRunId", node.getId().toString());
+        metadata.put("fullRestart", fullRestart);
+        if (extraMetadata != null) {
+            metadata.putAll(extraMetadata);
+        }
         workflowRunEventRepository.save(WorkflowRunEventEntity.create(
             run.getId(),
             run.getTenantId(),
@@ -1207,7 +1317,7 @@ public class WorkbenchRuntimeService {
             eventDescription,
             node.getNodeKey(),
             operatorUserId,
-            Map.of("nodeRunId", node.getId().toString(), "fullRestart", fullRestart),
+            metadata,
             now
         ));
     }
@@ -1219,6 +1329,17 @@ public class WorkbenchRuntimeService {
      * 入队前清理孤儿租约，避免 DB 无在途作业时 Redis 仍占锁导致「租约被占用」循环。</p>
      */
     private void enqueueExecution(UUID tenantId, UUID runId, UUID nodeRunId, String nodeType, UUID operatorUserId) {
+        enqueueExecution(tenantId, runId, nodeRunId, nodeType, operatorUserId, List.of());
+    }
+
+    private void enqueueExecution(
+        UUID tenantId,
+        UUID runId,
+        UUID nodeRunId,
+        String nodeType,
+        UUID operatorUserId,
+        List<Integer> clusterAgentIndexes
+    ) {
         releaseOrphanedExecutionLeaseIfIdle(runId);
         Instant now = clock.instant();
         int attempt = jobRepository.findFirstByNodeRunIdOrderByAttemptDesc(nodeRunId)
@@ -1267,17 +1388,15 @@ public class WorkbenchRuntimeService {
             }
             throw exception;
         }
-        publishNodeExecuteCommandAfterCommit(NodeExecuteCommand.of(
-            job.getId(),
-            tenantId,
-            runId,
-            nodeRunId,
-            nodeType,
-            operatorUserId,
-            RequestIds.current(),
-            attempt,
-            now
-        ));
+        NodeExecuteCommand command = clusterAgentIndexes == null || clusterAgentIndexes.isEmpty()
+            ? NodeExecuteCommand.of(
+                job.getId(), tenantId, runId, nodeRunId, nodeType, operatorUserId, RequestIds.current(), attempt, now
+            )
+            : NodeExecuteCommand.forClusterAgents(
+                job.getId(), tenantId, runId, nodeRunId, nodeType, operatorUserId, RequestIds.current(), attempt,
+                clusterAgentIndexes, now
+            );
+        publishNodeExecuteCommandAfterCommit(command);
     }
 
     /**
@@ -1359,6 +1478,43 @@ public class WorkbenchRuntimeService {
         if (changed) {
             node.replaceConfigSnapshot(nextConfig, now);
         }
+    }
+
+    /** 单个子智能体重新执行不应继承其追问历史；接力模式同时清理所有受影响的后序智能体。 */
+    @SuppressWarnings("unchecked")
+    private static void clearClusterAgentConversationHistory(
+        WorkflowNodeRunEntity node,
+        List<Integer> rerunIndexes,
+        Instant now
+    ) {
+        Map<String, Object> config = node.getConfigSnapshot();
+        Object rawAgents = config == null ? null : config.get("clusterAgents");
+        if (!(rawAgents instanceof List<?> agents)) {
+            return;
+        }
+        boolean changed = false;
+        List<Map<String, Object>> nextAgents = new ArrayList<>();
+        for (int index = 0; index < agents.size(); index++) {
+            Object rawAgent = agents.get(index);
+            if (!(rawAgent instanceof Map<?, ?> rawMap)) {
+                continue;
+            }
+            Map<String, Object> nextAgent = new LinkedHashMap<>((Map<String, Object>) rawMap);
+            if (rerunIndexes.contains(index) && nextAgent.remove("conversationHistory") != null) {
+                changed = true;
+            }
+            nextAgents.add(nextAgent);
+        }
+        if (changed) {
+            Map<String, Object> nextConfig = new LinkedHashMap<>(config);
+            nextConfig.put("clusterAgents", nextAgents);
+            node.replaceConfigSnapshot(nextConfig, now);
+        }
+    }
+
+    private static int clusterAgentCount(Map<String, Object> config) {
+        Object rawAgents = config == null ? null : config.get("clusterAgents");
+        return rawAgents instanceof List<?> agents ? agents.size() : 0;
     }
 
     /**

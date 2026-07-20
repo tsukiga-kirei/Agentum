@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect, useRef } from "react";
 import type { AgentExecutionStep, RuntimeCapabilityItem, RuntimeChatMessage, RuntimePreviewStep, RuntimeTokenUsage, RunStreamState } from "../../types/runtime-types";
-import { AlertCircle, Bot, BrainCircuit, CheckCircle2, ChevronRight, Loader2, MessageSquarePlus, PencilLine, Settings2, Sparkles, Users, Wrench } from "lucide-react";
+import { AlertCircle, Bot, BrainCircuit, CheckCircle2, ChevronRight, Loader2, MessageSquarePlus, PencilLine, RotateCw, Settings2, Sparkles, Users, Wrench } from "lucide-react";
 import { Drawer, message } from "antd";
 import { useAuthStore } from "../../stores/authStore";
 import { SingleAgentPanel } from "./SingleAgentPanel";
@@ -19,6 +19,7 @@ interface MultiAgentPanelProps {
   streamStartedAt?: number | null;
   /** 当前步已完成/失败、尚未点「执行下一步」时：切回滚到最近完成或失败的子智能体卡片 */
   scrollToLatestAnswerWhenDone?: boolean;
+  onRestartAgent?: (agentIndex: number) => void | Promise<void>;
   onFollowUpAgent?: (agentIndex: number, message: string) => void | Promise<void>;
   onSaveAgentAnswer?: (agentIndex: number, content: string) => void | Promise<void>;
 }
@@ -58,16 +59,18 @@ export function MultiAgentPanel({
   isStreaming = false,
   streamStartedAt = null,
   scrollToLatestAnswerWhenDone = false,
+  onRestartAgent,
   onFollowUpAgent,
   onSaveAgentAnswer,
 }: MultiAgentPanelProps) {
   const [selectedAgentIndex, setSelectedAgentIndex] = useState<number | null>(null);
+  const [restartingAgentIndex, setRestartingAgentIndex] = useState<number | null>(null);
   const [drawerScrollReady, setDrawerScrollReady] = useState(false);
   const themeMode = useAuthStore((s) => s.themeMode);
   const drawerRootClassName = getThemedDrawerRootClassName(themeMode, "multi-agent-detail-drawer");
-  const latestRunningCardRef = useRef<HTMLButtonElement | null>(null);
-  const latestCompletedCardRef = useRef<HTMLButtonElement | null>(null);
-  const latestFailedCardRef = useRef<HTMLButtonElement | null>(null);
+  const latestRunningCardRef = useRef<HTMLElement | null>(null);
+  const latestCompletedCardRef = useRef<HTMLElement | null>(null);
+  const latestFailedCardRef = useRef<HTMLElement | null>(null);
   const stickToBottomRef = useRef(true);
   const ignoreOuterScrollRef = useRef(false);
 
@@ -351,8 +354,7 @@ export function MultiAgentPanel({
           const mcpCount = agent.mcpNames.length;
 
           return (
-            <button
-              type="button"
+            <article
               key={agent.index}
               ref={
                 agent.index === latestRunningAgentIndex
@@ -363,8 +365,6 @@ export function MultiAgentPanel({
                       ? latestFailedCardRef
                       : undefined
               }
-              onClick={() => setSelectedAgentIndex(agent.index)}
-              disabled={isSkipped}
               className={`multi-agent-card ${
                 isRunning
                   ? "multi-agent-card--running"
@@ -378,69 +378,98 @@ export function MultiAgentPanel({
               }`}
             >
               {isRunning ? <span className="multi-agent-card-glow" aria-hidden="true" /> : null}
-              <div className="multi-agent-card-main">
-                <div className="multi-agent-card-icon">
-                  {isRunning ? (
-                    <Loader2 size={15} className="animate-spin" />
-                  ) : isCompleted ? (
-                    <CheckCircle2 size={15} />
-                  ) : isFailed ? (
-                    <AlertCircle size={15} />
-                  ) : isSkipped ? (
-                    <Bot size={15} />
-                  ) : (
-                    <Bot size={15} />
-                  )}
+              <button
+                type="button"
+                className="multi-agent-card-open"
+                onClick={() => setSelectedAgentIndex(agent.index)}
+                disabled={isSkipped}
+              >
+                <div className="multi-agent-card-main">
+                  <div className="multi-agent-card-icon">
+                    {isRunning ? (
+                      <Loader2 size={15} className="animate-spin" />
+                    ) : isCompleted ? (
+                      <CheckCircle2 size={15} />
+                    ) : isFailed ? (
+                      <AlertCircle size={15} />
+                    ) : (
+                      <Bot size={15} />
+                    )}
+                  </div>
+                  <div className="multi-agent-card-body">
+                    <strong>{agent.name}</strong>
+                    <span>
+                      {stepCanceled
+                        ? "已中断"
+                        : isRunning
+                        ? "正在执行"
+                        : isCompleted
+                        ? "执行完成"
+                        : isFailed
+                        ? "执行失败"
+                        : isSkipped
+                        ? "意图未命中"
+                        : stepPending
+                        ? "等待启动"
+                        : "等待调度"}
+                    </span>
+                  </div>
+                  {!isSkipped ? <ChevronRight size={16} className="multi-agent-card-arrow" /> : null}
                 </div>
-                <div className="multi-agent-card-body">
-                  <strong>{agent.name}</strong>
-                  <span>
-                    {stepCanceled
-                      ? "已中断"
-                      : isRunning
-                      ? "正在执行"
-                      : isCompleted
-                      ? "执行完成"
-                      : isFailed
-                      ? "执行失败"
-                      : isSkipped
-                      ? "意图未命中"
-                      : stepPending
-                      ? "等待启动"
-                      : "等待调度"}
+                <div className="multi-agent-card-meta">
+                  {agent.modelName ? (
+                    <span title={agent.modelName}>
+                      <Settings2 size={12} />
+                      {agent.modelName}
+                    </span>
+                  ) : null}
+                  <span title={agent.skillNames.join("、") || "未配置 Skill"}>
+                    <Sparkles size={12} />
+                    {skillCount > 0 ? `${skillCount} 个 Skill` : "无 Skill"}
+                  </span>
+                  <span title={agent.mcpNames.join("、") || "未配置 MCP"}>
+                    <Wrench size={12} />
+                    {mcpCount > 0 ? `${mcpCount} 个 MCP` : "无 MCP"}
+                  </span>
+                  <span className={agent.allowQuestion ? "multi-agent-card-chip--on" : ""}>
+                    <MessageSquarePlus size={12} />
+                    {agent.allowQuestion ? "可追问" : "不可追问"}
+                  </span>
+                  <span className={agent.allowUserEdit ? "multi-agent-card-chip--on" : ""}>
+                    <PencilLine size={12} />
+                    {agent.allowUserEdit ? "可修改" : "不可修改"}
                   </span>
                 </div>
-                {!isSkipped ? <ChevronRight size={16} className="multi-agent-card-arrow" /> : null}
-              </div>
-              <div className="multi-agent-card-meta">
-                {agent.modelName ? (
-                  <span title={agent.modelName}>
-                    <Settings2 size={12} />
-                    {agent.modelName}
-                  </span>
-                ) : null}
-                <span title={agent.skillNames.join("、") || "未配置 Skill"}>
-                  <Sparkles size={12} />
-                  {skillCount > 0 ? `${skillCount} 个 Skill` : "无 Skill"}
-                </span>
-                <span title={agent.mcpNames.join("、") || "未配置 MCP"}>
-                  <Wrench size={12} />
-                  {mcpCount > 0 ? `${mcpCount} 个 MCP` : "无 MCP"}
-                </span>
-                <span className={agent.allowQuestion ? "multi-agent-card-chip--on" : ""}>
-                  <MessageSquarePlus size={12} />
-                  {agent.allowQuestion ? "可追问" : "不可追问"}
-                </span>
-                <span className={agent.allowUserEdit ? "multi-agent-card-chip--on" : ""}>
-                  <PencilLine size={12} />
-                  {agent.allowUserEdit ? "可修改" : "不可修改"}
-                </span>
-              </div>
+              </button>
               <div className="multi-agent-card-foot">
                 <span>{toolCount > 0 ? `${toolCount} 个工具调用` : "无工具调用"}</span>
-                <span>{stepCanceled ? "需重新执行" : isRunning ? "实时更新" : isCompleted ? "可查看结果" : isFailed ? "查看原因" : isSkipped ? "不执行" : "等待中"}</span>
+                {isCompleted && onRestartAgent && !stepInProgress ? (
+                  <button
+                    type="button"
+                    className="multi-agent-card-restart"
+                    disabled={restartingAgentIndex !== null}
+                    title={readConfigString(activeStep.configSnapshot?.executionMode, "") === "relay"
+                      ? "接力处理会同时重跑依赖该结果的后序智能体"
+                      : "仅重新执行当前子智能体，保留其他已完成结果"}
+                    onClick={async () => {
+                      setRestartingAgentIndex(agent.index);
+                      try {
+                        await onRestartAgent(agent.index);
+                      } finally {
+                        setRestartingAgentIndex(null);
+                      }
+                    }}
+                  >
+                    {restartingAgentIndex === agent.index
+                      ? <Loader2 size={12} className="animate-spin" />
+                      : <RotateCw size={12} />}
+                    重新执行
+                  </button>
+                ) : (
+                  <span>{stepCanceled ? "需重新执行" : isRunning ? "实时更新" : isCompleted ? "可查看结果" : isFailed ? "查看原因" : isSkipped ? "不执行" : "等待中"}</span>
+                )}
               </div>
-            </button>
+            </article>
           );
         })}
       </div>

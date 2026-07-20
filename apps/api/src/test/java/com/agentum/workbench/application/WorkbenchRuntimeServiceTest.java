@@ -574,6 +574,93 @@ class WorkbenchRuntimeServiceTest {
     }
 
     @Test
+    void shouldRestartOnlySelectedAgentInCollaborativeCluster() {
+        WorkbenchRuntimeService service = newService();
+        WorkflowRunEntity run = ownedRun();
+        WorkflowNodeRunEntity node = clusterNode(run);
+        node.replaceConfigSnapshot(clusterConfigWithFollowUpHistory(), NOW);
+        node.complete(Map.of("final_answer", "旧集群答案"), NOW);
+        WorkflowClusterAgentRunEntity first = succeededClusterAgent(run, node, 0, "子智能体 1");
+        WorkflowClusterAgentRunEntity second = succeededClusterAgent(run, node, 1, "子智能体 2");
+
+        stubTenant();
+        when(workflowRunRepository.findByIdAndTenantId(run.getId(), TENANT_ID)).thenReturn(Optional.of(run));
+        when(workflowNodeRunRepository.findByIdAndRunId(node.getId(), run.getId())).thenReturn(Optional.of(node));
+        when(workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(run.getId())).thenReturn(List.of(node));
+        when(clusterAgentRunRepository.findByNodeRunIdOrderByAgentIndexAsc(node.getId())).thenReturn(List.of(first, second));
+        when(jobRepository.findByRunIdAndStatusIn(eq(run.getId()), any())).thenReturn(List.of());
+        when(jobRepository.findFirstByNodeRunIdOrderByAttemptDesc(node.getId())).thenReturn(Optional.empty());
+
+        service.restartClusterAgent(TENANT_ID, businessPrincipal(), run.getId(), node.getId(), 0);
+
+        verify(clusterAgentRunRepository).delete(first);
+        verify(clusterAgentRunRepository, never()).delete(second);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> agents = (List<Map<String, Object>>) node.getConfigSnapshot().get("clusterAgents");
+        assertThat(agents.get(0)).doesNotContainKey("conversationHistory");
+        assertThat(agents.get(1)).containsKey("conversationHistory");
+        ArgumentCaptor<NodeExecuteCommand> commandCaptor = ArgumentCaptor.forClass(NodeExecuteCommand.class);
+        verify(commandPublisher).publish(commandCaptor.capture());
+        assertThat(commandCaptor.getValue().clusterAgentIndexes()).containsExactly(0, 1);
+        assertThat(node.getState()).isEqualTo("running");
+    }
+
+    @Test
+    void shouldRestartRelayAgentAndAllDependentAgents() {
+        WorkbenchRuntimeService service = newService();
+        WorkflowRunEntity run = ownedRun();
+        WorkflowNodeRunEntity node = clusterNode(run);
+        Map<String, Object> relayConfig = clusterConfigWithFollowUpHistory();
+        relayConfig.put("executionMode", "relay");
+        node.replaceConfigSnapshot(relayConfig, NOW);
+        node.complete(Map.of("final_answer", "旧集群答案"), NOW);
+        WorkflowClusterAgentRunEntity first = succeededClusterAgent(run, node, 0, "子智能体 1");
+        WorkflowClusterAgentRunEntity second = succeededClusterAgent(run, node, 1, "子智能体 2");
+
+        stubTenant();
+        when(workflowRunRepository.findByIdAndTenantId(run.getId(), TENANT_ID)).thenReturn(Optional.of(run));
+        when(workflowNodeRunRepository.findByIdAndRunId(node.getId(), run.getId())).thenReturn(Optional.of(node));
+        when(workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(run.getId())).thenReturn(List.of(node));
+        when(clusterAgentRunRepository.findByNodeRunIdOrderByAgentIndexAsc(node.getId())).thenReturn(List.of(first, second));
+        when(jobRepository.findByRunIdAndStatusIn(eq(run.getId()), any())).thenReturn(List.of());
+        when(jobRepository.findFirstByNodeRunIdOrderByAttemptDesc(node.getId())).thenReturn(Optional.empty());
+
+        service.restartClusterAgent(TENANT_ID, businessPrincipal(), run.getId(), node.getId(), 0);
+
+        verify(clusterAgentRunRepository).delete(first);
+        verify(clusterAgentRunRepository).delete(second);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> agents = (List<Map<String, Object>>) node.getConfigSnapshot().get("clusterAgents");
+        assertThat(agents).allSatisfy(agent -> assertThat(agent).doesNotContainKey("conversationHistory"));
+    }
+
+    @Test
+    void shouldKeepOriginalIntentSelectionWhenRestartingIntentAgent() {
+        WorkbenchRuntimeService service = newService();
+        WorkflowRunEntity run = ownedRun();
+        WorkflowNodeRunEntity node = clusterNode(run);
+        Map<String, Object> intentConfig = clusterConfigWithFollowUpHistory();
+        intentConfig.put("executionMode", "intent");
+        node.replaceConfigSnapshot(intentConfig, NOW);
+        node.complete(Map.of("final_answer", "旧集群答案"), NOW);
+        WorkflowClusterAgentRunEntity selected = succeededClusterAgent(run, node, 1, "子智能体 2");
+
+        stubTenant();
+        when(workflowRunRepository.findByIdAndTenantId(run.getId(), TENANT_ID)).thenReturn(Optional.of(run));
+        when(workflowNodeRunRepository.findByIdAndRunId(node.getId(), run.getId())).thenReturn(Optional.of(node));
+        when(workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(run.getId())).thenReturn(List.of(node));
+        when(clusterAgentRunRepository.findByNodeRunIdOrderByAgentIndexAsc(node.getId())).thenReturn(List.of(selected));
+        when(jobRepository.findByRunIdAndStatusIn(eq(run.getId()), any())).thenReturn(List.of());
+        when(jobRepository.findFirstByNodeRunIdOrderByAttemptDesc(node.getId())).thenReturn(Optional.empty());
+
+        service.restartClusterAgent(TENANT_ID, businessPrincipal(), run.getId(), node.getId(), 1);
+
+        ArgumentCaptor<NodeExecuteCommand> commandCaptor = ArgumentCaptor.forClass(NodeExecuteCommand.class);
+        verify(commandPublisher).publish(commandCaptor.capture());
+        assertThat(commandCaptor.getValue().clusterAgentIndexes()).containsExactly(1);
+    }
+
+    @Test
     void shouldRollbackToClusterNodeFromFreshStateWithoutFollowUpHistory() {
         WorkbenchRuntimeService service = newService();
         WorkflowRunEntity run = ownedRun(4);
@@ -1140,6 +1227,19 @@ class WorkbenchRuntimeServiceTest {
                 ))
             )
         ));
+    }
+
+    private WorkflowClusterAgentRunEntity succeededClusterAgent(
+        WorkflowRunEntity run,
+        WorkflowNodeRunEntity node,
+        int index,
+        String name
+    ) {
+        WorkflowClusterAgentRunEntity row = WorkflowClusterAgentRunEntity.started(
+            run.getId(), node.getId(), TENANT_ID, index, name, NOW
+        );
+        row.succeed(Map.of("final_answer", name + "旧答案"), NOW);
+        return row;
     }
 
     private WorkflowNodeRunEntity nodeAt(

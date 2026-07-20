@@ -729,6 +729,12 @@ export const workbenchApi = {
       method: "POST",
       token,
     }),
+  // 集群子智能体单独重跑；接力处理由后端自动连带重跑依赖该结果的后序智能体。
+  restartClusterAgent: (tenantId: string, token: string, runId: string, nodeRunId: string, agentIndex: number) =>
+    apiRequest<WorkbenchRunDetail>(`/api/tenants/${tenantId}/workbench/runs/${runId}/nodes/${nodeRunId}/cluster-agents/${agentIndex}/restart`, {
+      method: "POST",
+      token,
+    }),
   downloadDeliveryRecord: (tenantId: string, token: string, recordId: string) =>
     apiFileRequest(`/api/tenants/${tenantId}/delivery-records/${recordId}/download`, { token }),
   followUpNode: (tenantId: string, token: string, runId: string, nodeRunId: string, message: string) =>

@@ -356,7 +356,7 @@ pending -> running -> paused -> resumed -> running -> completed
 
 **异步执行（已落地，仅 async 模式）**
 
-运行态已重构为「RabbitMQ 执行 + Redis Stream 进度回放」：`POST /advance` 仅创建执行作业（`workflow_run_execution_jobs`）并投递 `NodeExecuteCommand`，同 JVM 的 `NodeExecutionService` Worker 消费执行；执行租约、取消信号、节点超时（`AGENTUM_RUNTIME_NODE_TIMEOUT_SECONDS`）与进度事件均放 Redis，PostgreSQL 仍为事实源。SSE 由 `RunStreamRelayService` 从 Redis Stream 中继，支持 `lastEventId` 断线续传与 `replay` 整步回放，刷新/重进页面无感恢复。`StaleExecutionReaper` 定时回收超时与失联作业。原 `@Async` + 内存 SSE 路径已删除，后端强依赖 Redis 与 RabbitMQ。中断/恢复语义：主动中断 → 节点 `canceled` 并清空该步数据，只能「重新执行」整步重跑；被动失败 → 节点 `failed`，已落库的子智能体结果（`workflow_cluster_agent_runs`）保留，「恢复进度」只重跑失败/未完成部分。智能体集群节点支持协同处理、接力处理与意图分派；意图分派只执行命中的子智能体，多个命中按意图清单顺序写入集群输出模板。历史 `parallel` / `sequential` 数据由迁移脚本清洗。详见 [运行态异步执行设计](./runtime-async-execution-design.md)。
+运行态已重构为「RabbitMQ 执行 + Redis Stream 进度回放」：`POST /advance` 仅创建执行作业（`workflow_run_execution_jobs`）并投递 `NodeExecuteCommand`，同 JVM 的 `NodeExecutionService` Worker 消费执行；执行租约、取消信号、节点超时（`AGENTUM_RUNTIME_NODE_TIMEOUT_SECONDS`）与进度事件均放 Redis，PostgreSQL 仍为事实源。SSE 由 `RunStreamRelayService` 从 Redis Stream 中继，支持 `lastEventId` 断线续传与 `replay` 整步回放，刷新/重进页面无感恢复。`StaleExecutionReaper` 定时回收超时与失联作业。原 `@Async` + 内存 SSE 路径已删除，后端强依赖 Redis 与 RabbitMQ。中断/恢复语义：主动中断 → 节点 `canceled` 并清空该步数据，只能「重新执行」整步重跑；被动失败 → 节点 `failed`，已落库的子智能体结果（`workflow_cluster_agent_runs`）保留，「恢复进度」只重跑失败/未完成部分。已完成的集群节点还支持单个子智能体重新执行：协同处理只删除目标结果，接力处理删除目标及后序依赖结果，意图分派通过 `NodeExecuteCommand.clusterAgentIndexes` 冻结原命中范围，避免重新分类导致路由漂移。智能体集群节点支持协同处理、接力处理与意图分派；意图分派只执行命中的子智能体，多个命中按意图清单顺序写入集群输出模板。历史 `parallel` / `sequential` 数据由迁移脚本清洗。详见 [运行态异步执行设计](./runtime-async-execution-design.md)。
 
 ### 5.6 智能体运行时
 

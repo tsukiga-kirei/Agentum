@@ -57,6 +57,15 @@
       "type": "integer",
       "minimum": 1
     },
+    "clusterAgentIndexes": {
+      "type": "array",
+      "description": "子智能体单独重跑时冻结的本轮参与下标；为空表示按节点正常执行方式选择",
+      "items": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "uniqueItems": true
+    },
     "enqueuedAt": {
       "type": "string",
       "format": "date-time"

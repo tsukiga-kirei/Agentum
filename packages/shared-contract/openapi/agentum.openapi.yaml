@@ -1218,6 +1218,31 @@ paths:
                     properties:
                       data:
                         $ref: "#/components/schemas/WorkbenchRunDetail"
+  /api/tenants/{tenantId}/workbench/runs/{runId}/nodes/{nodeRunId}/cluster-agents/{agentIndex}/restart:
+    post:
+      summary: 单独重新执行集群子智能体
+      description: 协同处理仅重跑目标子智能体；接力处理从目标开始重跑后序依赖；意图分派沿用本次运行原命中范围。
+      tags: [Workbench]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: tenantId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: runId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: nodeRunId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: agentIndex, in: path, required: true, schema: { type: integer, minimum: 0 } }
+      responses:
+        "200":
+          description: 子智能体重新执行作业已创建
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/WorkbenchRunDetail"
+        "400": { description: 节点、子智能体或运行状态不支持重新执行 }
+        "409": { description: 当前任务已有执行作业在运行 }
   /api/tenants/{tenantId}/workbench/runs/{runId}/nodes/{nodeRunId}/attachments:
     get:
       summary: 查询输入节点指定字段的附件

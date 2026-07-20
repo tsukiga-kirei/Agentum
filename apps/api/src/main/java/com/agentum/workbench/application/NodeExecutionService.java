@@ -25,6 +25,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -184,7 +185,14 @@ public class NodeExecutionService {
             ));
 
             Map<String, Object> variables = variablesBeforeNode(run, node.getSortOrder());
-            Map<String, Object> outputs = dispatch(run, node, variables, command.operatorUserId(), progress);
+            Map<String, Object> outputs = dispatch(
+                run,
+                node,
+                variables,
+                command.operatorUserId(),
+                command.clusterAgentIndexes(),
+                progress
+            );
 
             // 中断/restart 后旧 Worker 可能仍持有内存上下文；落库前必须确认本 job 仍为 DB 中的有效 running 作业。
             if (!isJobStillActive(command.jobId())) {
@@ -265,11 +273,19 @@ public class NodeExecutionService {
         WorkflowNodeRunEntity node,
         Map<String, Object> variables,
         UUID operatorUserId,
+        List<Integer> clusterAgentIndexes,
         JobProgressEmitter progress
     ) {
         return switch (node.getNodeType()) {
             case "agent" -> executeAgentNode(run, node, variables, operatorUserId, progress);
-            case "parallel_group" -> executeClusterNode(run, node, variables, operatorUserId, progress);
+            case "parallel_group" -> executeClusterNode(
+                run,
+                node,
+                variables,
+                operatorUserId,
+                clusterAgentIndexes,
+                progress
+            );
             case "delivery" -> deliveryRuntimeService.execute(new DeliveryRuntimeRequest(
                 run,
                 node,
@@ -409,6 +425,7 @@ public class NodeExecutionService {
         WorkflowNodeRunEntity node,
         Map<String, Object> variables,
         UUID operatorUserId,
+        List<Integer> requestedAgentIndexes,
         JobProgressEmitter progress
     ) {
         UUID runId = run.getId();
@@ -450,7 +467,25 @@ public class NodeExecutionService {
         List<ClusterAgentSlot> resultSlots = slots;
         List<ClusterAgentOutcome> failures;
         ClusterIntentRoutingSupport.IntentDecision intentDecision = null;
-        if (ClusterIntentRoutingSupport.MODE_INTENT.equals(executionMode)) {
+        Map<String, Object> fixedIntentRouting = null;
+        if (requestedAgentIndexes != null && !requestedAgentIndexes.isEmpty()) {
+            // 单独重跑必须沿用原执行范围：协同/接力复用其他成功结果，意图分派不重新分类，
+            // 防止同一次业务运行因分类模型波动把重跑请求派给另一组智能体。
+            Set<Integer> requested = new LinkedHashSet<>(requestedAgentIndexes);
+            resultSlots = slots.stream().filter(slot -> requested.contains(slot.index())).toList();
+            if (resultSlots.isEmpty()) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_CLUSTER_AGENT_SCOPE_INVALID", "子智能体重新执行范围已失效");
+            }
+            if (ClusterIntentRoutingSupport.MODE_INTENT.equals(executionMode)) {
+                fixedIntentRouting = fixedIntentRoutingSummary(node.getConfigSnapshot(), slots, requestedAgentIndexes);
+                progress.emit(nodeRunId, "cluster_intent", fixedIntentRoutingEvent(fixedIntentRouting));
+                failures = executeClusterParallel(run, node, resultSlots, variables, outputsByIndex, operatorUserId, progress);
+            } else if (ClusterIntentRoutingSupport.MODE_RELAY.equals(executionMode)) {
+                failures = executeClusterSequential(run, node, resultSlots, variables, outputsByIndex, operatorUserId, progress);
+            } else {
+                failures = executeClusterParallel(run, node, resultSlots, variables, outputsByIndex, operatorUserId, progress);
+            }
+        } else if (ClusterIntentRoutingSupport.MODE_INTENT.equals(executionMode)) {
             IntentRoutingResult routingResult = routeClusterByIntent(run, node, slots, variables, operatorUserId, progress);
             intentDecision = routingResult.decision();
             resultSlots = routingResult.selectedSlots();
@@ -526,6 +561,8 @@ public class NodeExecutionService {
         result.put(ClusterIntentRoutingSupport.DEFAULT_INTENT_OUTPUT_VARIABLE, finalAnswer);
         if (intentDecision != null) {
             result.put("intentRouting", intentRoutingSummary(intentDecision));
+        } else if (fixedIntentRouting != null) {
+            result.put("intentRouting", fixedIntentRouting);
         }
         result.put("summary", "智能体集群已完成 " + summaries.size() + " 个子智能体。");
         return result;
@@ -1050,17 +1087,16 @@ public class NodeExecutionService {
             "phase", "model_calling",
             "message", "模型调用出现瞬时故障，正在自动重试（第 " + nextAttempt + " 次尝试）..."
         ));
-        commandPublisher.publish(NodeExecuteCommand.of(
-            retryJob.getId(),
-            command.tenantId(),
-            command.runId(),
-            command.nodeRunId(),
-            command.nodeType(),
-            command.operatorUserId(),
-            command.requestId(),
-            nextAttempt,
-            now
-        ));
+        NodeExecuteCommand retryCommand = command.clusterAgentIndexes() == null || command.clusterAgentIndexes().isEmpty()
+            ? NodeExecuteCommand.of(
+                retryJob.getId(), command.tenantId(), command.runId(), command.nodeRunId(), command.nodeType(),
+                command.operatorUserId(), command.requestId(), nextAttempt, now
+            )
+            : NodeExecuteCommand.forClusterAgents(
+                retryJob.getId(), command.tenantId(), command.runId(), command.nodeRunId(), command.nodeType(),
+                command.operatorUserId(), command.requestId(), nextAttempt, command.clusterAgentIndexes(), now
+            );
+        commandPublisher.publish(retryCommand);
         log.info(
             "节点执行瞬时失败，已自动重试 runId={} nodeRunId={} errorCode={} nextAttempt={} requestId={}",
             command.runId(), command.nodeRunId(), errorCode, nextAttempt, command.requestId()
@@ -1167,6 +1203,35 @@ public class NodeExecutionService {
         summary.put("usedFallback", decision.usedFallback());
         summary.put("fallbackMode", decision.fallbackMode());
         return summary;
+    }
+
+    private static Map<String, Object> fixedIntentRoutingSummary(
+        Map<String, Object> nodeConfig,
+        List<ClusterAgentSlot> slots,
+        List<Integer> selectedAgentIndexes
+    ) {
+        Set<Integer> selected = new LinkedHashSet<>(selectedAgentIndexes);
+        List<Map<String, Object>> agentConfigs = slots.stream().map(ClusterAgentSlot::config).toList();
+        List<String> selectedCodes = ClusterIntentRoutingSupport.intentRoutes(nodeConfig, agentConfigs).stream()
+            .filter(route -> selected.contains(route.agentIndex()))
+            .map(ClusterIntentRoutingSupport.IntentRoute::code)
+            .distinct()
+            .toList();
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("requestedCodes", selectedCodes);
+        summary.put("selectedCodes", selectedCodes);
+        summary.put("selectedAgentIndexes", List.copyOf(selected));
+        summary.put("reason", "单独重新执行沿用本次运行原有的意图命中范围");
+        summary.put("slots", Map.of());
+        summary.put("usedFallback", false);
+        summary.put("fallbackMode", "");
+        return summary;
+    }
+
+    private static Map<String, Object> fixedIntentRoutingEvent(Map<String, Object> summary) {
+        Map<String, Object> event = new LinkedHashMap<>(summary);
+        event.put("eventType", "completed");
+        return event;
     }
 
     private static Map<String, Object> fixedIntentReplyResult(

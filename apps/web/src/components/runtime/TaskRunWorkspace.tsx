@@ -824,6 +824,44 @@ export function TaskRunWorkspace({
     }
   }
 
+  async function handleRestartClusterAgent(agentIndex: number) {
+    const targetStep = preview.steps[resolveActiveStepIndex(preview.steps, runDetail)];
+    if (!targetStep?.nodeRunId || isAdvancing || isLiveExecuting) {
+      return;
+    }
+
+    setIsAdvancing(true);
+    setAdvanceError(null);
+    setWatchdogStaleMessage(null);
+    initialAutoStartRef.current = true;
+    stream.clearStepStreamTerminal();
+    stream.disconnect();
+
+    try {
+      const updated = await workbenchApi.restartClusterAgent(
+        tenantId,
+        token,
+        runDetail.id,
+        targetStep.nodeRunId,
+        agentIndex,
+      );
+      setRunDetail(updated);
+      onReload(updated);
+      message.success("子智能体已开始重新执行");
+      await stream.connect({ replay: true });
+      await stream.ensureConnected();
+    } catch (error: unknown) {
+      console.error("重新执行子智能体失败", error);
+      const reason = error instanceof Error ? error.message : "重新执行子智能体失败";
+      setAdvanceError(reason);
+      message.error(reason);
+      await reloadRunDetail();
+      setActiveRunTab("current");
+    } finally {
+      setIsAdvancing(false);
+    }
+  }
+
   async function handleFollowUpStep(followUpMessage: string) {
     const targetStep = preview.steps[resolveActiveStepIndex(preview.steps, runDetail)];
     if (!targetStep?.nodeRunId || isAdvancing) {
@@ -1086,6 +1124,9 @@ export function TaskRunWorkspace({
                     isStreaming={isLiveExecuting}
                     streamStartedAt={stream.streamStartedAt}
                     scrollToLatestAnswerWhenDone={!isFlowCompleted && (activeStep.state === "done" || activeStep.state === "failed")}
+                    onRestartAgent={!runDetail.readOnly && !isFlowCompleted
+                      ? (agentIndex) => handleRestartClusterAgent(agentIndex)
+                      : undefined}
                     onFollowUpAgent={(agentIndex, followUpMessage) => handleFollowUpClusterAgent(agentIndex, followUpMessage)}
                     onSaveAgentAnswer={(agentIndex, content) => handleSaveClusterAgentAnswer(agentIndex, content)}
                   />
