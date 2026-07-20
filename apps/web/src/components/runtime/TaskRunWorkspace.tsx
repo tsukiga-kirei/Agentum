@@ -1102,6 +1102,7 @@ export function TaskRunWorkspace({
                     templateVariables={activeTemplateVariables}
                     readOnly={runDetail.readOnly}
                     onSubmit={handleCompleteTodo}
+                    onError={messageApi.error}
                   />
                 ) : activeStep.kind === "agent" ? (
                   <SingleAgentPanel

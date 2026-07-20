@@ -3,7 +3,7 @@ import { DatePicker, Select } from "antd";
 import dayjs from "dayjs";
 import "dayjs/locale/zh-cn";
 import type { InputFieldConfig, RuntimePreviewStep } from "../../types/runtime-types";
-import { AlertCircle, CalendarDays, ChevronDown, Download, Eye, FileText, Loader2, Paperclip, Trash2, Upload } from "lucide-react";
+import { CalendarDays, ChevronDown, Download, Eye, FileText, Loader2, Paperclip, Trash2, Upload } from "lucide-react";
 import type { InputAttachmentRow } from "../../types/workbench";
 import { AgentumApiError, workbenchApi } from "../../services/apiClient";
 import { AttachmentPreviewDrawer } from "./AttachmentPreviewDrawer";
@@ -23,6 +23,7 @@ interface UserInputPanelProps {
   templateVariables?: Record<string, unknown>;
   readOnly: boolean;
   onSubmit: (payload: Record<string, unknown>) => void;
+  onError: (content: string) => void;
 }
 
 const runtimeSelectClassNames = { popup: { root: "agent-select-dropdown agent-admin-select-dropdown workbench-user-input-select-dropdown" } };
@@ -38,9 +39,9 @@ export function UserInputPanel({
   templateVariables = {},
   readOnly,
   onSubmit,
+  onError,
 }: UserInputPanelProps) {
   const [formValues, setFormValues] = useState<Record<string, string>>({});
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [attachments, setAttachments] = useState<Record<string, InputAttachmentRow[]>>({});
   const [uploadingFields, setUploadingFields] = useState<Set<string>>(new Set());
   const [previewAttachment, setPreviewAttachment] = useState<InputAttachmentRow | null>(null);
@@ -89,7 +90,6 @@ export function UserInputPanel({
       initial[field.id] = candidateValue;
     });
     setFormValues(initial);
-    setErrorMsg(null);
   }, [activeStep.nodeRunId, fieldConfigs, activeStep.inputs]);
 
   useEffect(() => {
@@ -107,7 +107,7 @@ export function UserInputPanel({
         })));
         if (!disposed) setAttachments(Object.fromEntries(results.map((result) => [result.fieldId, result.items])));
       } catch (error) {
-        if (!disposed && showError) setErrorMsg(error instanceof AgentumApiError ? error.message : "附件列表加载失败");
+        if (!disposed && showError) onError(error instanceof AgentumApiError ? error.message : "附件列表加载失败");
       }
     }
     void reload(true);
@@ -118,11 +118,10 @@ export function UserInputPanel({
       disposed = true;
       window.clearInterval(timer);
     };
-  }, [activeStep.nodeRunId, activeStep.state, fieldConfigs, runId, tenantId, token]);
+  }, [activeStep.nodeRunId, activeStep.state, fieldConfigs, onError, runId, tenantId, token]);
 
   function handleInputChange(fieldId: string, val: string) {
     setFormValues((prev) => ({ ...prev, [fieldId]: val }));
-    setErrorMsg(null);
   }
 
   function handleFormSubmit(e: React.FormEvent) {
@@ -132,7 +131,7 @@ export function UserInputPanel({
       field.fieldType === "file" ? (attachments[field.id]?.length ?? 0) === 0 : !formValues[field.id]?.trim()
     ));
     if (emptyField) {
-      setErrorMsg(emptyField.fieldType === "select" ? `请选择「${emptyField.label}」` : `请填写「${emptyField.label}」`);
+      onError(emptyField.fieldType === "select" ? `请选择「${emptyField.label}」` : `请填写「${emptyField.label}」`);
       return;
     }
 
@@ -152,22 +151,21 @@ export function UserInputPanel({
     const selected = Array.from(files);
     const maxFiles = field.maxFiles ?? 5;
     if (current.length + selected.length > maxFiles) {
-      setErrorMsg(`「${field.label}」最多上传 ${maxFiles} 个附件`);
+      onError(`「${field.label}」最多上传 ${maxFiles} 个附件`);
       return;
     }
     const allowed = new Set((field.allowedExtensions ?? []).map((value) => value.toLowerCase()));
     const invalid = selected.find((file) => !allowed.has(file.name.split(".").pop()?.toLowerCase() ?? ""));
     if (invalid) {
-      setErrorMsg(`文件「${invalid.name}」不在允许的扩展名范围内`);
+      onError(`文件「${invalid.name}」不在允许的扩展名范围内`);
       return;
     }
     const oversized = selected.find((file) => file.size > (field.maxFileSizeMb ?? 20) * 1024 * 1024);
     if (oversized) {
-      setErrorMsg(`文件「${oversized.name}」超过 ${(field.maxFileSizeMb ?? 20)} MB`);
+      onError(`文件「${oversized.name}」超过 ${(field.maxFileSizeMb ?? 20)} MB`);
       return;
     }
     setUploadingFields((value) => new Set(value).add(field.id));
-    setErrorMsg(null);
     try {
       const uploaded: InputAttachmentRow[] = [];
       for (const file of selected) {
@@ -175,7 +173,7 @@ export function UserInputPanel({
       }
       setAttachments((value) => ({ ...value, [field.id]: [...(value[field.id] ?? []), ...uploaded] }));
     } catch (error) {
-      setErrorMsg(error instanceof AgentumApiError ? error.message : "附件上传失败，请稍后重试");
+      onError(error instanceof AgentumApiError ? error.message : "附件上传失败，请稍后重试");
     } finally {
       setUploadingFields((value) => {
         const next = new Set(value);
@@ -191,7 +189,7 @@ export function UserInputPanel({
       setAttachments((value) => ({ ...value, [fieldId]: (value[fieldId] ?? []).filter((item) => item.id !== attachmentId) }));
       if (previewAttachment?.id === attachmentId) setPreviewAttachment(null);
     } catch (error) {
-      setErrorMsg(error instanceof AgentumApiError ? error.message : "附件删除失败，请稍后重试");
+      onError(error instanceof AgentumApiError ? error.message : "附件删除失败，请稍后重试");
     }
   }
 
@@ -206,7 +204,7 @@ export function UserInputPanel({
       link.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) {
-      setErrorMsg(error instanceof AgentumApiError ? error.message : "附件下载失败，请稍后重试");
+      onError(error instanceof AgentumApiError ? error.message : "附件下载失败，请稍后重试");
     } finally {
       setDownloadingAttachmentId("");
     }
@@ -336,12 +334,6 @@ export function UserInputPanel({
           </div>
         )}
 
-        {errorMsg && (
-          <div className="p-3 rounded-lg bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/40 text-rose-600 dark:text-rose-450 text-sm flex items-center gap-2">
-            <AlertCircle size={16} />
-            <span>{errorMsg}</span>
-          </div>
-        )}
       </form>
       {previewAttachment ? (
         <AttachmentPreviewDrawer

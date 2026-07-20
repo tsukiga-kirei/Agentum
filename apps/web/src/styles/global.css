@@ -1920,12 +1920,18 @@ textarea:focus-visible {
 }
 
 /* ===== 非默认主题：Ant Design message 全局提示 ===== */
-.dark .ant-message .ant-message-notice-content,
-:root[data-theme="warm"] .ant-message .ant-message-notice-content {
+.dark .ant-message .ant-message-notice-content {
   background: var(--color-bg-card);
   color: var(--color-text-primary);
   box-shadow: var(--shadow-md);
   border: 1px solid var(--color-border-light);
+}
+:root[data-theme="warm"] .ant-message .ant-message-notice-content {
+  /* message 会覆盖在页面内容之上，必须使用不透明暖白底，避免卡片透明度让底层文字穿透。 */
+  background: #fffdf9;
+  color: var(--color-text-primary);
+  border: 1px solid #d8cfc3;
+  box-shadow: 0 12px 32px rgba(65, 49, 38, 0.16);
 }
 .dark .ant-message-success .ant-message-icon { color: var(--color-success); }
 .dark .ant-message-error .ant-message-icon { color: var(--color-danger); }
