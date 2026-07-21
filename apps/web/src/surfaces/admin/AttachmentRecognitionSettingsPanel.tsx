@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Checkbox, Select, Spin, Switch, message } from "antd";
+import { Checkbox, Segmented, Select, Spin, Switch, message } from "antd";
 import { ChevronDown, FileSearch, KeyRound, PlayCircle, Save, ServerCog } from "lucide-react";
 import { AgentumApiError, systemApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
@@ -140,7 +140,7 @@ export function AttachmentRecognitionSettingsPanel() {
               <div className="sys-section-card-body space-y-5">
                 <div className="sys-field">
                   <label className="sys-field-label sys-field-label--required">识别方式</label>
-                  <OptionButtons
+                  <OptionSegmented
                     value={settings.recognitionEngine}
                     onChange={(value) => patch("recognitionEngine", value as AttachmentRecognitionSettings["recognitionEngine"])}
                     options={[
@@ -160,7 +160,7 @@ export function AttachmentRecognitionSettingsPanel() {
                   <NumberField label="识别正文字符上限" value={settings.maxExtractedChars} min={1000} max={2_000_000} onChange={(value) => patch("maxExtractedChars", value)} />
                   <div className="sys-field">
                     <label className="sys-field-label">文件默认保存时间</label>
-                    <OptionButtons
+                    <OptionSegmented
                       value={settings.retentionPolicy}
                       onChange={(value) => patch("retentionPolicy", value as AttachmentRecognitionSettings["retentionPolicy"])}
                       options={[{ value: "permanent", label: "永久" }, { value: "days", label: "按天保存" }]}
@@ -222,7 +222,14 @@ export function AttachmentRecognitionSettingsPanel() {
                     <TextField label="语言" value={settings.mineruLanguage} onChange={(value) => patch("mineruLanguage", value)} />
                   </div>
                   <div className="sys-field-row">
-                    <div className="sys-field"><label className="sys-field-label">解析方式</label><OptionButtons value={settings.mineruParseMethod} onChange={(value) => patch("mineruParseMethod", value as AttachmentRecognitionSettings["mineruParseMethod"])} options={[{ value: "auto", label: "自动识别" }, { value: "txt", label: "文本解析" }, { value: "ocr", label: "OCR 识别" }]} /></div>
+                    <div className="sys-field">
+                      <label className="sys-field-label">解析方式</label>
+                      <OptionSegmented
+                        value={settings.mineruParseMethod}
+                        onChange={(value) => patch("mineruParseMethod", value as AttachmentRecognitionSettings["mineruParseMethod"])}
+                        options={[{ value: "auto", label: "自动识别" }, { value: "txt", label: "文本解析" }, { value: "ocr", label: "OCR 识别" }]}
+                      />
+                    </div>
                     <div className="sys-field"><label className="sys-field-label">识别能力</label><div className="flex gap-5"><Checkbox checked={settings.mineruEnableTable} onChange={(event) => patch("mineruEnableTable", event.target.checked)}>表格</Checkbox><Checkbox checked={settings.mineruEnableFormula} onChange={(event) => patch("mineruEnableFormula", event.target.checked)}>公式</Checkbox></div></div>
                   </div>
                   <div className="sys-field-row">
@@ -252,8 +259,17 @@ function TextField({ label, value, onChange }: { label: string; value: string; o
   return <div className="sys-field"><label className="sys-field-label">{label}</label><input className="sys-field-input" value={value} onChange={(event) => onChange(event.target.value)} /></div>;
 }
 
-function OptionButtons({ value, options, onChange }: { value: string; options: Array<{ value: string; label: string }>; onChange: (value: string) => void }) {
-  return <div className="attachment-option-group" role="radiogroup">{options.map((option) => <button key={option.value} type="button" role="radio" aria-checked={value === option.value} className={value === option.value ? "is-active" : ""} onClick={() => onChange(option.value)}>{option.label}</button>)}</div>;
+/** 表单内选项切换：复用全局 Segmented 视觉与滑块动效，避免自定义描边按钮组显得突兀。 */
+function OptionSegmented({ value, options, onChange }: { value: string; options: Array<{ value: string; label: string }>; onChange: (value: string) => void }) {
+  return (
+    <Segmented
+      block
+      value={value}
+      options={options}
+      onChange={(next) => onChange(String(next))}
+      className="login-portal-segmented form-option-segmented"
+    />
+  );
 }
 
 function numberValue(value: string, fallback: number, min: number, max: number): number {

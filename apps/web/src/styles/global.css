@@ -1821,6 +1821,14 @@ textarea:focus-visible {
   min-width: 0;
 }
 
+/* 多选/标签：用 gap 统一项间距；此前 margin:0 会把 antd 默认间距清掉，导致标签贴在一起 */
+.agent-admin-select.ant-select-multiple .ant-select-content {
+  display: flex !important;
+  flex-wrap: wrap;
+  align-items: center !important;
+  gap: 6px !important;
+}
+
 /* 多选空态：占位符在 content-item-prefix 内，antd 默认仅给 prefix 槽 font-size 高度，导致文字比左侧图标偏上 */
 .agent-admin-select.ant-select-multiple .ant-select-content-item-prefix {
   display: inline-flex !important;
@@ -4903,45 +4911,21 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
   color: var(--color-primary);
 }
 
-.attachment-option-group {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding: 4px;
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-md);
-  background: var(--color-bg-page);
+/* 表单内紧凑 Segmented：与页签菜单同语言，高度适配字段区 */
+.form-option-segmented.login-portal-segmented {
+  --login-portal-color: var(--color-primary);
+  width: 100%;
+  margin-bottom: 0;
 }
 
-.attachment-option-group button {
-  min-height: 34px;
-  padding: 0 14px;
-  border: 1px solid transparent;
-  border-radius: calc(var(--radius-md) - 2px);
-  background: transparent;
-  color: var(--color-text-secondary);
-  font: inherit;
+.form-option-segmented.login-portal-segmented .ant-segmented-item {
+  min-height: 38px;
+}
+
+.form-option-segmented.login-portal-segmented .ant-segmented-item-label {
+  min-height: 38px;
+  padding-inline: 12px;
   font-size: 13px;
-  cursor: pointer;
-  transition: color var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast), box-shadow var(--transition-fast);
-}
-
-.attachment-option-group button:hover {
-  color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 7%, var(--color-bg-card));
-}
-
-.attachment-option-group button.is-active {
-  border-color: color-mix(in srgb, var(--color-primary) 45%, var(--color-border));
-  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-bg-card));
-  color: var(--color-primary);
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--color-primary) 12%, transparent);
-  font-weight: 600;
-}
-
-.attachment-option-group button:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--color-primary) 45%, transparent);
-  outline-offset: 1px;
 }
 
 .attachment-extension-select.agent-admin-select.ant-select-multiple {
@@ -4978,13 +4962,8 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
 }
 
 @media (max-width: 720px) {
-  .attachment-option-group {
-    display: flex;
+  .form-option-segmented.login-portal-segmented {
     width: 100%;
-  }
-
-  .attachment-option-group button {
-    flex: 1 1 auto;
   }
 }
 
