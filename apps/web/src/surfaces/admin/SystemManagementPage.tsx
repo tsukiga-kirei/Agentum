@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Empty, Segmented, Spin, message, Drawer, Pagination } from "antd";
+import { useFlipText } from "../../motion/useFlipText";
 import { SurfacePageLayout } from "../../components/workbench/SurfacePageLayout";
 import { SysModalMask } from "../../components/common/SysModalMask";
 import { DocumentDeliveryStyleAdminSections } from "../../components/document/DocumentDeliveryStyleAdminSections";
@@ -1308,6 +1309,8 @@ export function SystemManagementPage() {
   ];
 
   const activeNav = navItems.find((n) => n.key === section) ?? navItems[0];
+  const moduleDescRef = useRef<HTMLDivElement>(null);
+  useFlipText(moduleDescRef, section);
 
   const moduleSegmentedOptions = navItems.map((item) => {
     const Icon = item.icon;
@@ -1441,7 +1444,7 @@ export function SystemManagementPage() {
                 className="login-portal-segmented login-portal-segmented--system_admin system-mgmt-segmented"
               />
             </div>
-            <div className="login-portal-description login-portal-description--system_admin">
+            <div ref={moduleDescRef} className="login-portal-description login-portal-description--system_admin">
               <span className="login-portal-description-dot" />
               {activeNav.description}
             </div>

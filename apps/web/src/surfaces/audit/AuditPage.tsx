@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Segmented, Spin } from "antd";
 import { Eye, ClipboardList, Database, FileText } from "lucide-react";
 import { SurfacePageLayout } from "../../components/workbench/SurfacePageLayout";
+import { useFlipText } from "../../motion/useFlipText";
 import { paths } from "../../routes/paths";
 import { ExecutionAuditTab } from "./ExecutionAuditTab";
 import { ToolAuditTab } from "./ToolAuditTab";
@@ -39,6 +40,8 @@ export function AuditPage() {
   const activeTabInfo = useMemo(() => {
     return auditTabs.find((t) => t.key === activeTab) || auditTabs[0];
   }, [activeTab]);
+  const moduleDescRef = useRef<HTMLDivElement>(null);
+  useFlipText(moduleDescRef, activeTab);
 
   const moduleSegmentedOptions = useMemo(() => {
     return auditTabs.map((t) => {
@@ -84,7 +87,7 @@ export function AuditPage() {
             className="login-portal-segmented login-portal-segmented--business system-mgmt-segmented"
           />
         </div>
-        <div className="login-portal-description login-portal-description--business">
+        <div ref={moduleDescRef} className="login-portal-description login-portal-description--business">
           <span className="login-portal-description-dot" />
           {activeTabInfo.description}
         </div>

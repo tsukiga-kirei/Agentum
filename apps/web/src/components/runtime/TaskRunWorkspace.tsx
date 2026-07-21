@@ -30,6 +30,8 @@ import { formatRuntimeErrorMessage } from "../../utils/runtimeErrors";
 import { mergeClusterAgents, parseClusterAgentSummariesFromOutputs, clusterAgentDisplayText } from "../../utils/clusterAgentsMerge";
 import { buildClusterAgentTraceSteps, buildTraceExecutionSteps } from "../../utils/agentExecutionSteps";
 import { TraceExecutionStepsSection } from "./TraceExecutionSteps";
+import { AnimatedChars } from "../brand/AnimatedChars";
+import { useChromeEnter } from "../../motion/useChromeEnter";
 import { 
   Save, 
   Trash2, 
@@ -100,6 +102,9 @@ export function TaskRunWorkspace({
   const processedStreamEventsRef = useRef(0);
   /** 「当前处理 / 执行历史」主内容滚动容器：切到已完成步骤时滚回顶部。 */
   const mainPanelScrollRef = useRef<HTMLDivElement | null>(null);
+  const chromeRef = useRef<HTMLElement | null>(null);
+
+  useChromeEnter({ scopeRef: chromeRef, deps: [runDetail.title] });
 
   const stream = useRunStream(tenantId, runDetail.id, token);
 
@@ -982,23 +987,25 @@ export function TaskRunWorkspace({
     <section className="workbench-task-workspace sys-fade-in flex flex-col h-full bg-[var(--color-bg-page)] overflow-hidden" aria-label="任务处理工作区">
       {messageContextHolder}
       {/* 5a. Topbar bar actions */}
-      <header className="surface-page-chrome pb-4 border-b border-[var(--color-border-light)] flex flex-col gap-4">
+      <header ref={chromeRef} className="surface-page-chrome pb-4 border-b border-[var(--color-border-light)] flex flex-col gap-4">
         {/* Row 1: Title, Page Actions, and Global Actions (Theme/Role switcher) */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between w-full">
           <div className="flex min-w-0 gap-4">
-            <div className="workbench-page-mark flex h-12 w-12 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-blue-500/10 text-blue-500">
+            <div className="workbench-page-mark flex h-12 w-12 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-blue-500/10 text-blue-500" data-motion="chrome-mark">
               <Activity className="h-6 w-6" aria-hidden="true" />
             </div>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-lg font-semibold tracking-tight text-[var(--color-text-primary)] sm:text-xl">
-                  {runDetail.title}
-                </h1>
-                {!runDetail.saved && <span className="rounded-full bg-amber-50 dark:bg-amber-950/40 px-2.5 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400 ring-1 ring-amber-200 dark:ring-amber-900/50">草稿</span>}
-                {runDetail.saved && !runDetail.readOnly && <span className="rounded-full bg-blue-50 dark:bg-blue-950/40 px-2.5 py-0.5 text-xs font-medium text-blue-600 dark:text-blue-450 ring-1 ring-blue-200 dark:ring-blue-900/50">已保存</span>}
-                {runDetail.readOnly && <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 text-xs font-medium text-slate-500 dark:text-slate-400 ring-1 ring-slate-200 dark:ring-slate-700/50">只读</span>}
+                <AnimatedChars
+                  as="h1"
+                  text={runDetail.title}
+                  className="agent-chrome-title text-lg font-semibold tracking-tight text-[var(--color-text-primary)] sm:text-xl"
+                />
+                {!runDetail.saved && <span className="rounded-full bg-amber-50 dark:bg-amber-950/40 px-2.5 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400 ring-1 ring-amber-200 dark:ring-amber-900/50" data-motion="chrome-badge">草稿</span>}
+                {runDetail.saved && !runDetail.readOnly && <span className="rounded-full bg-blue-50 dark:bg-blue-950/40 px-2.5 py-0.5 text-xs font-medium text-blue-600 dark:text-blue-450 ring-1 ring-blue-200 dark:ring-blue-900/50" data-motion="chrome-badge">已保存</span>}
+                {runDetail.readOnly && <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 text-xs font-medium text-slate-500 dark:text-slate-400 ring-1 ring-slate-200 dark:ring-slate-700/50" data-motion="chrome-badge">只读</span>}
               </div>
-              <p className="agent-muted mt-1.5 max-w-2xl text-sm leading-relaxed text-slate-500 dark:text-slate-400">
+              <p className="agent-muted mt-1.5 max-w-2xl text-sm leading-relaxed text-slate-500 dark:text-slate-400" data-motion="chrome-description">
                 {runDetail.workflowName} · 任务单号 {preview.runId} · v{preview.workflowVersion} · 当前步骤：<strong>{activeStep.title}</strong>
               </p>
             </div>

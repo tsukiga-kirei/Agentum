@@ -97,6 +97,7 @@ apps/
 | `src/services/` | API 客户端（`apiClient.ts` 及各域 API 封装） |
 | `src/stores/` | Zustand 状态（`authStore`、会话偏好等） |
 | `src/hooks/` | 共享 Hook（如 `useRunStream` SSE 运行流） |
+| `src/motion/` | GSAP 动效封装（登录品牌、工作台页头字/翻转、模块描述翻转；尊重 reduced-motion） |
 | `src/types/` | TypeScript 类型（部分待 OpenAPI 生成收口） |
 | `src/utils/`、`src/lib/` | 工具函数与轻量库封装 |
 | `src/constants/` | 前端常量 |

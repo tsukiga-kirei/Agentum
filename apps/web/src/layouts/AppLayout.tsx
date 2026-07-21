@@ -34,10 +34,12 @@ import { SysPasswordInput } from "../components/common/SysPasswordInput";
 import { MarkdownRenderer } from "../components/runtime/MarkdownRenderer";
 import { AgentumApiError, notificationApi } from "../services/apiClient";
 import { useAuthStore } from "../stores/authStore";
+import { prefersReducedMotion } from "../motion/prefersReducedMotion";
 import { paths, surfaceFromPath, surfaceNavPath, type SurfaceKey } from "../routes/paths";
 import { getThemedDrawerRootClassName, isDarkTheme } from "../utils/theme";
 import type { NotificationRow, NotificationStatusFilter } from "../types/notification";
 import type { RoleInfo, ThemeMode } from "../types/auth";
+import gsap from "gsap";
 
 const ICON_MAP = {
   LayoutDashboard,
@@ -98,7 +100,6 @@ export function AppLayout() {
   const isWorkflowEditor = location.pathname.includes("/designer/workflows/");
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [isSidebarTransitioning, setIsSidebarTransitioning] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [switchingRoleId, setSwitchingRoleId] = useState<string | null>(null);
   const [profileDrawerOpen, setProfileDrawerOpen] = useState(false);
@@ -119,10 +120,11 @@ export function AppLayout() {
   const [announcementEditorMode, setAnnouncementEditorMode] = useState<AnnouncementEditorMode>("edit");
   const [announcementPublishing, setAnnouncementPublishing] = useState(false);
   const [messageApi, messageContextHolder] = message.useMessage();
-  const sidebarTransitionTimer = useRef<number | null>(null);
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
-  const isSidebarCompact = isSidebarCollapsed || isSidebarTransitioning;
-  const showSidebarText = !isSidebarCompact;
+  const sidebarBrandRef = useRef<HTMLDivElement | null>(null);
+  // 侧栏只保留 collapsed 一个状态：宽度与文字都由 CSS 同步过渡，避免超时状态机打架。
+  const isSidebarCompact = isSidebarCollapsed;
+  const showSidebarText = !isSidebarCollapsed;
   const avatarText = getAvatarText(user?.displayName || user?.username || "A");
   const canPublishAnnouncement = user?.role === "system_admin" || user?.role === "tenant_admin";
   const accountSettingsSegmentedOptions = accountSettingsTabs.map((tab) => {
@@ -168,12 +170,6 @@ export function AppLayout() {
     ],
     [],
   );
-
-  useEffect(() => () => {
-    if (sidebarTransitionTimer.current !== null) {
-      window.clearTimeout(sidebarTransitionTimer.current);
-    }
-  }, []);
 
   useEffect(() => {
     setProfileDraft({ displayName: user?.displayName ?? "", email: user?.email ?? "" });
@@ -236,16 +232,21 @@ export function AppLayout() {
     return () => window.removeEventListener("mousedown", handlePointerDown);
   }, [accountMenuOpen]);
 
-  const handleToggleSidebar = useCallback(() => {
-    if (sidebarTransitionTimer.current !== null) {
-      window.clearTimeout(sidebarTransitionTimer.current);
+  // 侧栏品牌区入场：SSO 用户每天都能看到，不依赖登录页。
+  useEffect(() => {
+    const el = sidebarBrandRef.current;
+    if (!el || prefersReducedMotion()) {
+      return;
     }
-    setIsSidebarTransitioning(true);
+    gsap.fromTo(
+      el,
+      { rotateY: -40, opacity: 0, transformPerspective: 600 },
+      { rotateY: 0, opacity: 1, duration: 0.5, ease: "power2.out" },
+    );
+  }, []);
+
+  const handleToggleSidebar = useCallback(() => {
     setIsSidebarCollapsed((current) => !current);
-    sidebarTransitionTimer.current = window.setTimeout(() => {
-      setIsSidebarTransitioning(false);
-      sidebarTransitionTimer.current = null;
-    }, 320);
   }, []);
 
   const openProfileSettings = useCallback(() => {
@@ -408,7 +409,7 @@ export function AppLayout() {
       {messageContextHolder}
       <div className="flex min-h-screen">
         <aside
-          className={`workbench-sidebar hidden shrink-0 sticky top-0 z-20 h-screen max-h-screen border-r border-[var(--color-sidebar-border)] bg-[var(--color-bg-sidebar)] text-[var(--color-text-sidebar)] transition-[width,background-color] duration-300 lg:flex lg:flex-col ${isSidebarCollapsed ? "workbench-sidebar--collapsed w-[var(--sidebar-collapsed-width)]" : "w-[var(--sidebar-width)]"}`}
+          className={`workbench-sidebar hidden shrink-0 sticky top-0 z-20 h-screen max-h-screen border-r border-[var(--color-sidebar-border)] bg-[var(--color-bg-sidebar)] text-[var(--color-text-sidebar)] transition-[width,background-color] duration-300 ease-out lg:flex lg:flex-col ${isSidebarCollapsed ? "workbench-sidebar--collapsed w-[var(--sidebar-collapsed-width)]" : "w-[var(--sidebar-width)]"}`}
         >
           <div
             className={`workbench-sidebar-header shrink-0 ${isSidebarCollapsed ? "workbench-sidebar-header--compact" : "workbench-sidebar-header--expanded"}`}
@@ -434,15 +435,13 @@ export function AppLayout() {
               </>
             ) : (
               <>
-                <div className="workbench-sidebar-brand">
+                <div ref={sidebarBrandRef} className="workbench-sidebar-brand" data-motion="sidebar-brand">
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg shadow-sm">
                     <AgentumMark className="h-9 w-9 shrink-0 object-contain" />
                   </div>
-                  {showSidebarText ? (
-                    <div className="workbench-sidebar-text workbench-sidebar-text--visible">
-                      <p className="text-lg font-bold text-[var(--color-sidebar-logo-text)]">Agentum</p>
-                    </div>
-                  ) : null}
+                  <div className={`workbench-sidebar-text ${showSidebarText ? "workbench-sidebar-text--visible" : ""}`}>
+                    <p className="text-lg font-bold text-[var(--color-sidebar-logo-text)]">Agentum</p>
+                  </div>
                 </div>
                 <button
                   type="button"
@@ -471,6 +470,7 @@ export function AppLayout() {
                   key={menuItem.key}
                   to={navPath}
                   title={menuItem.description}
+                  data-nav-key={menuItem.key}
                   className={({ isActive }) =>
                     `relative flex w-full items-center rounded-lg text-left transition-all duration-200 ${isSidebarCompact ? "h-11 justify-center px-0" : "gap-3 px-3 py-2.5"} ${
                       isActive || activeSurface === surfaceKey
@@ -479,18 +479,30 @@ export function AppLayout() {
                     }`
                   }
                 >
-                  {({ isActive }) => (
-                    <>
-                      <Icon className={`h-5 w-5 shrink-0 ${isActive || activeSurface === surfaceKey ? "text-[var(--color-primary)]" : ""}`} aria-hidden="true" />
-                      <span className={`workbench-sidebar-text min-w-0 ${showSidebarText ? "workbench-sidebar-text--visible" : ""}`} aria-hidden={!showSidebarText}>
-                        <span className="block text-sm font-medium">{menuItem.label}</span>
-                        <span className="block text-xs text-[var(--color-text-tertiary)]">{menuItem.description}</span>
-                      </span>
-                      {isActive || activeSurface === surfaceKey ? (
-                        <span className="absolute right-0 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-l bg-[var(--color-primary)]" />
-                      ) : null}
-                    </>
-                  )}
+                  {({ isActive }) => {
+                    const active = isActive || activeSurface === surfaceKey;
+                    return (
+                      <>
+                        <span
+                          key={`${menuItem.key}-${active ? "on" : "off"}`}
+                          className={`workbench-nav-icon ${active ? "workbench-nav-icon--pop" : ""}`}
+                          aria-hidden="true"
+                        >
+                          <Icon
+                            className={`h-5 w-5 shrink-0 ${active ? "text-[var(--color-primary)]" : ""}`}
+                          />
+                        </span>
+                        <span className={`workbench-sidebar-text min-w-0 ${showSidebarText ? "workbench-sidebar-text--visible" : ""}`} aria-hidden={!showSidebarText}>
+                          <span className="block text-sm font-medium">{menuItem.label}</span>
+                          <span className="block text-xs text-[var(--color-text-tertiary)]">{menuItem.description}</span>
+                        </span>
+                        <span
+                          className={`workbench-nav-indicator ${active ? "workbench-nav-indicator--active" : ""}`}
+                          aria-hidden="true"
+                        />
+                      </>
+                    );
+                  }}
                 </NavLink>
               );
             })}

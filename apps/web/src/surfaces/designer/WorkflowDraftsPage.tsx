@@ -35,6 +35,7 @@ import { Drawer, Pagination, Segmented, Select, message } from "antd";
 import { SurfacePageLayout } from "../../components/workbench/SurfacePageLayout";
 import { SysModalMask } from "../../components/common/SysModalMask";
 import { AgentumApiError, workflowApi } from "../../services/apiClient";
+import { useFlipText } from "../../motion/useFlipText";
 import { useAuthStore } from "../../stores/authStore";
 import type {
   WorkflowDraftDetail,
@@ -110,6 +111,8 @@ export function WorkflowDraftsPage() {
     }
     return "overview";
   }, [location.pathname]);
+  const moduleDescRef = useRef<HTMLDivElement>(null);
+  useFlipText(moduleDescRef, activeTab);
   const page = parsePositiveInt(searchParams.get("page"), 1);
   const pageSize = parsePositiveInt(searchParams.get("size"), 8);
   const searchValue = searchParams.get("q") ?? "";
@@ -607,7 +610,7 @@ export function WorkflowDraftsPage() {
               className="login-portal-segmented login-portal-segmented--business system-mgmt-segmented"
             />
           </div>
-          <div className="login-portal-description login-portal-description--business">
+          <div ref={moduleDescRef} className="login-portal-description login-portal-description--business">
             <span className="login-portal-description-dot" />
             {activeTab === "overview" ? "功能入口与近期协作流程" : activeTab === "all" ? "他人开放给我的流程，可参与共享设计" : "我创建或维护的流程草稿与发布治理"}
           </div>

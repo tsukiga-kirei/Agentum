@@ -23,7 +23,8 @@ export function StepProgressRail({
     if (activeRunTab !== "current") {
       return;
     }
-    activeStepRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    // 页签切入时用瞬时定位，避免 smooth 滚动让切换体感比其它模块页签更慢
+    activeStepRef.current?.scrollIntoView({ block: "nearest", behavior: "auto" });
   }, [activeRunTab, activeStepIndex]);
 
   function getStepIcon(kind: string, state: string) {

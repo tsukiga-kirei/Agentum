@@ -1,4 +1,4 @@
-import { type CSSProperties, useCallback, useEffect, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Button, Checkbox, ConfigProvider, Form, Input, Select, Segmented, message, theme as antdTheme } from "antd";
 import { Building2, KeyRound, LayoutDashboard, LockKeyhole, ServerCog, Settings, Shield, User } from "lucide-react";
@@ -6,10 +6,14 @@ import { useAuthStore } from "../../stores/authStore";
 import { readLoginPrefs, saveLoginPrefs } from "../../stores/authSession";
 import { ThemeToggle } from "../../components/ThemeToggle";
 import { AgentumMark } from "../../components/brand/AgentumMark";
+import { AnimatedBrandTitle } from "../../components/brand/AnimatedBrandTitle";
+import { useLoginEnter } from "../../motion/useLoginEnter";
+import { prefersReducedMotion } from "../../motion/prefersReducedMotion";
 import { API_BASE_URL, authApi } from "../../services/apiClient";
 import { firstAllowedSurfacePath, paths } from "../../routes/paths";
 import type { LoginResponse, PortalType, ThemeMode } from "../../types/auth";
 import { isDarkTheme } from "../../utils/theme";
+import gsap from "gsap";
 
 // 登录入口选项，与 docs/system-overview.md 中角色定义对齐。
 // 三种入口面向不同角色，登录后进入不同默认页面。
@@ -86,6 +90,23 @@ export function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [ssoLoadingProviderId, setSsoLoadingProviderId] = useState<string | null>(null);
   const [messageApi, messageContextHolder] = message.useMessage();
+  const loginPageRef = useRef<HTMLDivElement>(null);
+  const portalDescriptionRef = useRef<HTMLDivElement>(null);
+
+  useLoginEnter({ scopeRef: loginPageRef });
+
+  // 切换登录入口时，描述文案做一次 3D 翻转入场（不拖慢表单本身）。
+  useEffect(() => {
+    const el = portalDescriptionRef.current;
+    if (!el || prefersReducedMotion()) {
+      return;
+    }
+    gsap.fromTo(
+      el,
+      { rotateX: -75, opacity: 0, transformPerspective: 520, transformOrigin: "50% 0%" },
+      { rotateX: 0, opacity: 1, duration: 0.36, ease: "back.out(1.6)" },
+    );
+  }, [activePortal]);
 
   useEffect(() => {
     if (bootstrapRequired) {
@@ -165,6 +186,7 @@ export function LoginPage() {
   }, [fetchTenants, showLoginError]);
 
   // 恢复上次登录页偏好；只有勾选“记住账号”才恢复用户名，密码始终交给浏览器密码管理器。
+  // 租户 ID 不能在这里回填：此时 options 往往还未加载，Select 会短暂把 UUID 当文案显示造成闪烁。
   useEffect(() => {
     const prefs = readLoginPrefs();
 
@@ -176,21 +198,27 @@ export function LoginPage() {
     form.setFieldsValue({
       rememberMe: prefs.rememberMe,
       username: prefs.rememberMe ? prefs.username ?? "" : "",
-      tenantId: prefs.tenantId,
     });
   }, [form]);
 
+  // 租户列表就绪后再写入 tenantId，保证选中项始终能解析出名称 / 编码。
   useEffect(() => {
+    if (tenants.length === 0) {
+      return;
+    }
+
     const prefs = readLoginPrefs();
     const preferredTenantId = prefs?.tenantId;
-    const matchedTenant = preferredTenantId ? tenants.find((tenant) => tenant.id === preferredTenantId) : undefined;
+    const matchedTenant = preferredTenantId
+      ? tenants.find((tenant) => tenant.id === preferredTenantId)
+      : undefined;
 
     if (matchedTenant) {
       form.setFieldValue("tenantId", matchedTenant.id);
       return;
     }
 
-    if (!form.getFieldValue("tenantId") && tenants[0]) {
+    if (!form.getFieldValue("tenantId")) {
       form.setFieldValue("tenantId", tenants[0].id);
     }
   }, [form, tenants]);
@@ -327,7 +355,7 @@ export function LoginPage() {
   return (
     <>
     {messageContextHolder}
-    <div className={`login-page ${isDark ? "dark" : ""}`} style={portalColorStyle}>
+    <div ref={loginPageRef} className={`login-page ${isDark ? "dark" : ""}`} style={portalColorStyle}>
       {/* 动态背景 */}
       <div className="login-bg">
         <div className="login-bg-shape login-bg-shape--1" />
@@ -345,14 +373,14 @@ export function LoginPage() {
         {/* 左侧品牌区 */}
         <div className="login-branding">
           <div className="login-brand-content">
-            <div className="login-brand-mark">
+            <div className="login-brand-mark" data-motion="brand-mark">
               <AgentumMark className="h-full w-full" variant="full" />
             </div>
-            <h1 className="login-brand-title">Agentum</h1>
-            <p className="login-brand-subtitle">智能体装配式工作流平台</p>
+            <AnimatedBrandTitle text="Agentum" className="login-brand-title" />
+            <p className="login-brand-subtitle" data-motion="brand-subtitle">智能体装配式工作流平台</p>
             <div className="login-feature-list">
               {["原子能力独立管理与版本化", "工作流可审计执行与暂停恢复", "多智能体协作与交付闭环"].map((feature) => (
-                <div key={feature} className="login-feature-item">
+                <div key={feature} className="login-feature-item" data-motion="feature-item">
                   <span className="login-feature-dot" />
                   <span>{feature}</span>
                 </div>
@@ -364,7 +392,13 @@ export function LoginPage() {
         {/* 右侧登录表单 */}
         <div className="login-form-side">
           <div className="login-panel">
-            <h2 className="login-heading">欢迎回来</h2>
+            <h2 className="login-heading" aria-label="欢迎回来">
+              {Array.from("欢迎回来").map((char, index) => (
+                <span key={`${char}-${index}`} className="login-heading-char" data-motion="panel-char" aria-hidden="true">
+                  {char}
+                </span>
+              ))}
+            </h2>
             <p className="login-subheading">选择身份入口并登录工作台</p>
 
             {/* 入口选择器 - 药丸式 */}
@@ -378,7 +412,11 @@ export function LoginPage() {
             />
 
             {/* 当前入口描述 */}
-            <div className={`login-portal-description login-portal-description--${activePortal}`} style={portalColorStyle}>
+            <div
+              ref={portalDescriptionRef}
+              className={`login-portal-description login-portal-description--${activePortal}`}
+              style={portalColorStyle}
+            >
               <span className="login-portal-description-dot" />
               {currentPortal.description}
             </div>
@@ -421,10 +459,22 @@ export function LoginPage() {
                         className="agent-tenant-select"
                         classNames={{ popup: { root: "agent-select-dropdown" } }}
                         options={tenantOptions}
-                        placeholder="请选择租户"
+                        placeholder={tenantsLoading ? "正在加载租户…" : "请选择租户"}
                         prefix={<Building2 className="h-5 w-5 text-[var(--color-text-tertiary)]" aria-hidden="true" />}
                         loading={tenantsLoading}
-                        disabled={tenantsLoading}
+                        disabled={tenantsLoading || tenants.length === 0}
+                        labelRender={(props) => {
+                          const tenant = tenants.find((item) => item.id === props.value);
+                          if (!tenant) {
+                            return <span className="text-[var(--color-text-tertiary)]">请选择租户</span>;
+                          }
+                          return (
+                            <span className="agent-tenant-option">
+                              <span className="agent-tenant-name">{tenant.name}</span>
+                              <span className="agent-tenant-code">{tenant.code}</span>
+                            </span>
+                          );
+                        }}
                       />
                     </Form.Item>
                   ) : (

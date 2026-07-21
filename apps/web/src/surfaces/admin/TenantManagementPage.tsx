@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Empty, Segmented, Select, message, Pagination, Drawer } from "antd";
+import { useFlipText } from "../../motion/useFlipText";
 import {
   AlertTriangle,
   Building2,
@@ -263,6 +264,8 @@ export function TenantManagementPage() {
     }
     return "organization";
   }, [location.pathname]);
+  const moduleDescRef = useRef<HTMLDivElement>(null);
+  useFlipText(moduleDescRef, activeTab);
   const user = useAuthStore((s) => s.user);
   const token = useAuthStore((s) => s.token);
   const themeMode = useAuthStore((s) => s.themeMode);
@@ -995,7 +998,7 @@ export function TenantManagementPage() {
               className="login-portal-segmented login-portal-segmented--tenant_admin system-mgmt-segmented"
             />
           </div>
-          <div className="login-portal-description login-portal-description--tenant_admin">
+          <div ref={moduleDescRef} className="login-portal-description login-portal-description--tenant_admin">
             <span className="login-portal-description-dot" />
             {activeTabMeta.description}
           </div>

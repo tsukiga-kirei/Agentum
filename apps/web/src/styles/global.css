@@ -643,11 +643,11 @@ textarea:focus-visible {
   overflow: hidden;
   opacity: 0;
   pointer-events: none;
-  transform: translateX(-6px);
+  transform: translateX(-8px);
   transition:
-    max-width var(--transition-base),
-    opacity var(--transition-fast),
-    transform var(--transition-fast);
+    max-width 0.28s ease,
+    opacity 0.22s ease,
+    transform 0.28s ease;
   white-space: nowrap;
 }
 
@@ -961,6 +961,19 @@ textarea:focus-visible {
   border-radius: var(--radius-lg);
   background: var(--color-bg-card);
   box-shadow: var(--shadow-lg);
+  animation: workbench-account-menu-in 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: bottom center;
+}
+
+@keyframes workbench-account-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .workbench-account-menu--compact {
@@ -2750,6 +2763,14 @@ textarea:focus-visible {
   color: #ffffff;
   font-size: 28px;
   font-weight: 700;
+  display: flex;
+  flex-wrap: wrap;
+  perspective: 680px;
+}
+
+.login-brand-char {
+  display: inline-block;
+  will-change: transform, opacity;
 }
 
 :root[data-theme="warm"] .login-brand-title {
@@ -2766,6 +2787,7 @@ textarea:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  perspective: 800px;
 }
 
 .login-feature-item {
@@ -2774,6 +2796,8 @@ textarea:focus-visible {
   gap: 10px;
   color: rgba(255, 255, 255, 0.9);
   font-size: 13px;
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
 }
 
 .login-feature-dot {
@@ -2812,6 +2836,13 @@ textarea:focus-visible {
   color: var(--color-text-primary);
   font-size: 28px;
   font-weight: 700;
+  display: flex;
+  perspective: 560px;
+}
+
+.login-heading-char {
+  display: inline-block;
+  will-change: transform, opacity;
 }
 
 .login-subheading {
@@ -2845,6 +2876,8 @@ textarea:focus-visible {
   min-height: 44px;
   border-radius: calc(var(--radius-lg) - 3px);
   color: var(--color-text-secondary);
+  /* 与滑块同节奏，避免文字颜色硬切 */
+  transition: color 0.32s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .login-portal-segmented .ant-segmented-item-label {
@@ -2855,7 +2888,12 @@ textarea:focus-visible {
   line-height: 1;
 }
 
-.login-portal-segmented .ant-segmented-item-selected {
+/*
+ * Ant Design 滑动中会暂时去掉 item-selected；用 :checked 保持激活色，
+ * 避免滑块移动时文字颜色先变灰再弹回。
+ */
+.login-portal-segmented .ant-segmented-item-selected,
+.login-portal-segmented .ant-segmented-item:has(.ant-segmented-item-input:checked) {
   color: var(--login-portal-color);
   font-weight: 600;
 }
@@ -2865,6 +2903,20 @@ textarea:focus-visible {
   border-radius: calc(var(--radius-lg) - 3px);
   background: color-mix(in srgb, var(--login-portal-color) 8%, var(--color-bg-card));
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--login-portal-color) 16%, transparent);
+}
+
+/*
+ * 页签滑块：略长时长 + 减速曲线，比 0.2s ease 更顺滑。
+ * 覆盖 Ant Design thumb-motion-appear-active 的默认 transition。
+ */
+.login-portal-segmented .ant-segmented-thumb,
+.login-portal-segmented .ant-segmented-thumb-motion,
+.login-portal-segmented .ant-segmented-thumb-motion-appear,
+.login-portal-segmented .ant-segmented-thumb-motion-appear-active,
+.login-portal-segmented .ant-segmented-thumb-motion-appear-done {
+  transition:
+    transform 0.36s cubic-bezier(0.22, 1, 0.36, 1),
+    width 0.36s cubic-bezier(0.22, 1, 0.36, 1) !important;
 }
 
 .dark .login-portal-segmented {
@@ -2884,12 +2936,18 @@ textarea:focus-visible {
   color: var(--color-text-primary) !important;
 }
 
-.dark .login-portal-segmented .ant-segmented-item-selected {
-  background: color-mix(in srgb, var(--login-portal-color) 16%, #0f1829) !important;
+.dark .login-portal-segmented .ant-segmented-item-selected,
+.dark .login-portal-segmented .ant-segmented-item:has(.ant-segmented-item-input:checked) {
   color: color-mix(in srgb, var(--login-portal-color) 85%, #ffffff) !important;
 }
 
-.dark .login-portal-segmented .ant-segmented-item-selected .ant-segmented-item-label {
+/* 背景只在滑动结束后挂 selected，避免与 thumb 叠出双层高亮 */
+.dark .login-portal-segmented .ant-segmented-item-selected {
+  background: color-mix(in srgb, var(--login-portal-color) 16%, #0f1829) !important;
+}
+
+.dark .login-portal-segmented .ant-segmented-item-selected .ant-segmented-item-label,
+.dark .login-portal-segmented .ant-segmented-item:has(.ant-segmented-item-input:checked) .ant-segmented-item-label {
   color: color-mix(in srgb, var(--login-portal-color) 85%, #ffffff) !important;
 }
 
@@ -2942,6 +3000,45 @@ textarea:focus-visible {
   width: 20px;
   height: 20px;
   color: currentcolor;
+  flex-shrink: 0;
+}
+
+/* 切到对应页签时图标轻弹，与侧栏导航反馈一致 */
+.login-portal-segmented .ant-segmented-item:has(.ant-segmented-item-input:checked) .login-portal-option-icon {
+  animation: login-portal-option-icon-pop 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes login-portal-option-icon-pop {
+  0% {
+    transform: scale(0.78) rotate(-8deg);
+    opacity: 0.65;
+  }
+  55% {
+    transform: scale(1.08) rotate(2deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-portal-segmented .ant-segmented-item {
+    transition: none;
+  }
+
+  .login-portal-segmented .ant-segmented-thumb,
+  .login-portal-segmented .ant-segmented-thumb-motion,
+  .login-portal-segmented .ant-segmented-thumb-motion-appear,
+  .login-portal-segmented .ant-segmented-thumb-motion-appear-active,
+  .login-portal-segmented .ant-segmented-thumb-motion-appear-done {
+    transition: none !important;
+  }
+
+  .login-portal-segmented .ant-segmented-item:has(.ant-segmented-item-input:checked) .login-portal-option-icon {
+    animation: none;
+  }
 }
 
 .login-portal-description {
@@ -2952,6 +3049,8 @@ textarea:focus-visible {
   padding: 0 4px;
   color: var(--color-text-tertiary);
   font-size: 13px;
+  transform-style: preserve-3d;
+  perspective: 520px;
 }
 
 .login-portal-description--business {
@@ -3061,6 +3160,7 @@ textarea:focus-visible {
   padding: 16px;
   color: var(--color-text-primary);
   text-align: left;
+  transform-style: preserve-3d;
   transition:
     border-color var(--transition-base),
     background-color var(--transition-base),
@@ -3069,10 +3169,10 @@ textarea:focus-visible {
 }
 
 .asset-feature-card:hover {
-  transform: translateY(-4px) scale(1.01);
+  transform: translateY(-6px) rotateX(4deg) rotateY(-5deg) scale(1.02);
   border-color: var(--color-primary);
   background: var(--color-bg-card);
-  box-shadow: 0 12px 24px -10px color-mix(in srgb, var(--color-primary) 18%, transparent), var(--shadow-lg);
+  box-shadow: 0 18px 32px -12px color-mix(in srgb, var(--color-primary) 22%, transparent), var(--shadow-lg);
 }
 
 :root[data-theme="warm"] .asset-feature-card {
@@ -3619,6 +3719,47 @@ textarea:focus-visible {
   .login-brand-mark::before {
     animation: none;
   }
+
+  .workbench-account-menu {
+    animation: none !important;
+  }
+
+  .workbench-nav-indicator {
+    transition: none;
+  }
+
+  .asset-feature-card:hover,
+  .sys-card:hover:not(.sys-card--static),
+  .workflow-feature-card:hover {
+    transform: none;
+  }
+}
+
+/* GSAP 品牌动效目标：仅预隐藏品牌区，表单立即可见 */
+@media (prefers-reduced-motion: no-preference) {
+  .login-page [data-motion="brand-mark"],
+  .login-page [data-motion="brand-char"],
+  .login-page [data-motion="brand-subtitle"],
+  .login-page [data-motion="feature-item"],
+  .login-page [data-motion="panel-char"],
+  .surface-page-chrome [data-motion="chrome-mark"],
+  .surface-page-chrome [data-motion="chrome-char"],
+  .surface-page-chrome [data-motion="chrome-badge"],
+  .surface-page-chrome [data-motion="chrome-description"] {
+    opacity: 0;
+  }
+}
+
+.agent-chrome-title {
+  display: inline-flex;
+  flex-wrap: wrap;
+  perspective: 520px;
+  margin: 0;
+}
+
+.agent-motion-char {
+  display: inline-block;
+  will-change: transform, opacity;
 }
 
 /* ==================== 系统管理页 ==================== */
@@ -3631,6 +3772,7 @@ textarea:focus-visible {
   width: 100%;
   min-width: 0;
   align-items: stretch;
+  perspective: 1100px;
 }
 .sys-card-grid > .workflow-feature-card {
   width: 100%;
@@ -3659,10 +3801,11 @@ textarea:focus-visible {
   cursor: pointer;
   min-width: 0;
   max-width: 100%;
+  transform-style: preserve-3d;
 }
 .sys-card:hover {
-  box-shadow: 0 12px 24px -10px color-mix(in srgb, var(--color-primary) 18%, transparent), var(--shadow-lg);
-  transform: translateY(-4px) scale(1.01);
+  box-shadow: 0 18px 32px -12px color-mix(in srgb, var(--color-primary) 22%, transparent), var(--shadow-lg);
+  transform: translateY(-6px) rotateX(3deg) rotateY(-4deg) scale(1.015);
   border-color: var(--color-primary);
 }
 .sys-card--static { cursor: default; }
@@ -4043,6 +4186,61 @@ textarea:focus-visible {
   animation: sysFadeIn 0.3s ease;
   min-width: 0;
   max-width: 100%;
+}
+
+/* 侧栏导航激活指示条：缩放过渡，避免硬切 */
+.workbench-nav-indicator {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  height: 1.5rem;
+  width: 3px;
+  border-radius: 999px 0 0 999px;
+  background: var(--color-primary);
+  opacity: 0;
+  transform: translateY(-50%) scaleY(0.35);
+  transition:
+    opacity 0.28s ease,
+    transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+
+.workbench-nav-indicator--active {
+  opacity: 1;
+  transform: translateY(-50%) scaleY(1);
+}
+
+/* 切换到对应菜单时，图标轻弹一下 */
+.workbench-nav-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.workbench-nav-icon--pop {
+  animation: workbench-nav-icon-pop 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes workbench-nav-icon-pop {
+  0% {
+    transform: scale(0.72) rotate(-10deg);
+    opacity: 0.55;
+  }
+  55% {
+    transform: scale(1.1) rotate(3deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workbench-nav-icon--pop {
+    animation: none;
+  }
 }
 
 .sys-section-card {
@@ -6463,10 +6661,10 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
 }
 
 .workflow-feature-card:hover {
-  transform: translateY(-2px);
+  transform: translateY(-6px) rotateX(4deg) rotateY(-5deg) scale(1.02);
   border-color: var(--color-primary);
   background: var(--color-bg-card);
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 18px 32px -12px color-mix(in srgb, var(--color-primary) 22%, transparent), var(--shadow-lg);
 }
 
 .workflow-feature-card-icon {

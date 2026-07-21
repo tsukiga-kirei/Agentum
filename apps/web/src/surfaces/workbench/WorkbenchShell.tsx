@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Activity,
   AlertCircle,
@@ -40,6 +40,7 @@ import { SurfacePageLayout } from "../../components/workbench/SurfacePageLayout"
 import { TaskRunWorkspace } from "../../components/runtime/TaskRunWorkspace";
 import { WorkflowSchedulesPanel } from "./WorkflowSchedulesPanel";
 import { useAuthStore } from "../../stores/authStore";
+import { useFlipText } from "../../motion/useFlipText";
 import { AgentumApiError, workbenchApi } from "../../services/apiClient";
 import { parsePositiveInt, paths } from "../../routes/paths";
 import type {
@@ -108,16 +109,31 @@ const taskCenterSelectSuffixIcon = <ChevronDown className="h-[18px] w-[18px] tex
 
 
 
-// 运行状态对应的颜色标记，后端返回中文 stateLabel，前端只负责稳定映射。
-const stateColors: Record<string, string> = {
-  "运行中": "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300",
-  "已暂停": "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
-  "已完成": "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300",
-  "已失败": "bg-rose-100 text-rose-800 dark:bg-rose-950/50 dark:text-rose-300",
-  "等待人工审核": "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
-  "等待用户输入": "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300",
-  "等待交付确认": "bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300",
-};
+// 运行状态对应的 sys-status 变体；后端返回中文 stateLabel，前端只负责稳定映射。
+function stateStatusClass(label: string): string {
+  if (label === "运行中") {
+    return "sys-status--running";
+  }
+  if (label === "已完成") {
+    return "sys-status--success";
+  }
+  if (label === "已失败") {
+    return "sys-status--failed";
+  }
+  if (label === "已暂停" || label.startsWith("等待")) {
+    return "sys-status--paused";
+  }
+  return "sys-status--neutral";
+}
+
+function RunStateLabelBadge({ label }: { label: string }) {
+  return (
+    <span className={`sys-status ${stateStatusClass(label)}`}>
+      <span className="sys-status-dot" aria-hidden="true" />
+      {label}
+    </span>
+  );
+}
 
 const AVAILABLE_PAGE_SIZE = 12;
 const TASK_RUN_PAGE_SIZE = 10;
@@ -195,6 +211,8 @@ export function WorkbenchShell() {
   const activeWorkbenchTabMeta = visibleWorkbenchTabs.find((tab) => tab.key === activeWorkbenchTab)
     ?? visibleWorkbenchTabs[0]
     ?? workbenchTabs[0];
+  const moduleDescRef = useRef<HTMLDivElement>(null);
+  useFlipText(moduleDescRef, activeWorkbenchTab);
   const { launchableWorkflows, blockedWorkflows } = useMemo(() => ({
     launchableWorkflows: availableWorkflows.filter((workflow) => workflow.canLaunch),
     blockedWorkflows: availableWorkflows.filter((workflow) => !workflow.canLaunch),
@@ -711,7 +729,7 @@ export function WorkbenchShell() {
               className="login-portal-segmented login-portal-segmented--business system-mgmt-segmented"
             />
           </div>
-          <div className="login-portal-description login-portal-description--business">
+          <div ref={moduleDescRef} className="login-portal-description login-portal-description--business">
             <span className="login-portal-description-dot" />
             {activeWorkbenchTabMeta.description}
           </div>
@@ -1483,9 +1501,7 @@ function ActiveTaskListItem({
       </div>
       <div className="flex shrink-0 items-center gap-2">
         <TriggerSourceBadge triggerSource={record.triggerSource} />
-        <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${stateColors[record.stateLabel] ?? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"}`}>
-          {record.stateLabel}
-        </span>
+        <RunStateLabelBadge label={record.stateLabel} />
         <button type="button" className="agent-button h-7 px-2 text-xs" onClick={onOpen}>
           {record.hasOpenTodo ? "处理" : "继续"}
         </button>
@@ -1513,9 +1529,7 @@ function RecentRunListItem({ record, onOpen, index }: { record: WorkbenchRecentR
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${stateColors[record.stateLabel] ?? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"}`}>
-          {record.stateLabel}
-        </span>
+        <RunStateLabelBadge label={record.stateLabel} />
         {onOpen ? (
           <button type="button" className="agent-button h-7 px-2 text-xs" onClick={onOpen}>
             查看
@@ -1550,9 +1564,7 @@ function TaskRunListItem({
       </div>
       <div className="flex shrink-0 items-center gap-2">
         <TriggerSourceBadge triggerSource={record.triggerSource} />
-        <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${stateColors[record.stateLabel] ?? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"}`}>
-          {record.stateLabel}
-        </span>
+        <RunStateLabelBadge label={record.stateLabel} />
         <button type="button" className="agent-button h-7 px-2 text-xs" onClick={onOpen}>
           查看
         </button>

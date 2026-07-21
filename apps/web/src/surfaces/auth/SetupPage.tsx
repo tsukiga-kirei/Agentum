@@ -1,9 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button, ConfigProvider, Form, Input, message, theme as antdTheme } from "antd";
 import { BadgeCheck, KeyRound, Mail, ShieldCheck, User } from "lucide-react";
 import { AgentumMark } from "../../components/brand/AgentumMark";
+import { AnimatedBrandTitle } from "../../components/brand/AnimatedBrandTitle";
 import { ThemeToggle } from "../../components/ThemeToggle";
+import { useLoginEnter } from "../../motion/useLoginEnter";
 import { paths } from "../../routes/paths";
 import { useAuthStore } from "../../stores/authStore";
 import { isDarkTheme } from "../../utils/theme";
@@ -25,6 +27,9 @@ export function SetupPage() {
   const [loading, setLoading] = useState(false);
   const [messageApi, messageContextHolder] = message.useMessage();
   const isDark = isDarkTheme(themeMode);
+  const setupPageRef = useRef<HTMLDivElement>(null);
+
+  useLoginEnter({ scopeRef: setupPageRef });
 
   useEffect(() => {
     if (!bootstrapRequired) {
@@ -68,7 +73,7 @@ export function SetupPage() {
   return (
     <>
       {messageContextHolder}
-      <div className={`login-page setup-page ${isDark ? "dark" : ""}`}>
+      <div ref={setupPageRef} className={`login-page setup-page ${isDark ? "dark" : ""}`}>
         <div className="login-bg">
           <div className="login-bg-shape login-bg-shape--1" />
           <div className="login-bg-shape login-bg-shape--2" />
@@ -82,12 +87,12 @@ export function SetupPage() {
         <div className="login-container setup-container">
           <div className="login-branding setup-branding">
             <div className="login-brand-content">
-              <div className="login-brand-mark">
+              <div className="login-brand-mark" data-motion="brand-mark">
                 <AgentumMark className="h-full w-full" variant="full" />
               </div>
-              <h1 className="login-brand-title">Agentum</h1>
-              <p className="login-brand-subtitle">初始化平台治理入口</p>
-              <div className="setup-status-panel">
+              <AnimatedBrandTitle text="Agentum" className="login-brand-title" />
+              <p className="login-brand-subtitle" data-motion="brand-subtitle">初始化平台治理入口</p>
+              <div className="setup-status-panel" data-motion="feature-item">
                 <ShieldCheck className="setup-status-icon" aria-hidden="true" />
                 <div>
                   <strong>创建首个系统管理员</strong>

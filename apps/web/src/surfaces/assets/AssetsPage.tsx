@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import type { ReactNode, CSSProperties } from "react";
 import { ArrowRight, Bot, Boxes, BrainCircuit, CheckCircle2, ChevronDown, CircleAlert, Clock, Edit3, Eye, FileText, Hash, Library, PlusCircle, RotateCcw, Save, Search, Send, ShieldCheck, Tag, Trash2, UserRoundCog, X } from "lucide-react";
@@ -7,6 +7,7 @@ import { Empty, Pagination, Segmented, Select, Spin, message, Drawer } from "ant
 import { SurfacePageLayout } from "../../components/workbench/SurfacePageLayout";
 import { SysModalMask } from "../../components/common/SysModalMask";
 import { AgentumApiError, assetApi } from "../../services/apiClient";
+import { useFlipText } from "../../motion/useFlipText";
 import { paths } from "../../routes/paths";
 import { useAuthStore } from "../../stores/authStore";
 import type { AccessScope, AssetSummary, AssetType, CreatableAssetType, CreateMyAssetRequest, MyAssetDetail, MyAssetRow, ShareableMemberRow, SystemCapabilityAssetRow, UpdateMyAssetRequest } from "../../types/asset";
@@ -139,6 +140,8 @@ export function AssetsPage() {
 
   const tenantId = user?.tenantId ?? "";
   const activeTabMeta = assetTabs.find((tab) => tab.key === activeTab) ?? assetTabs[0];
+  const moduleDescRef = useRef<HTMLDivElement>(null);
+  useFlipText(moduleDescRef, activeTab);
   const tabSegmentedOptions = assetTabs.map((tab) => {
     const Icon = tab.icon;
     return {
@@ -560,7 +563,7 @@ export function AssetsPage() {
               options={tabSegmentedOptions}
             />
           </div>
-          <div className="login-portal-description login-portal-description--business">
+          <div ref={moduleDescRef} className="login-portal-description login-portal-description--business">
             <span className="login-portal-description-dot" />
             {activeTabMeta.description}
           </div>
