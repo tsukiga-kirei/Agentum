@@ -1,11 +1,8 @@
 /**
- * 复制文本到系统剪贴板。
- *
- * 局域网测试环境经常通过 HTTP IP 访问，不属于浏览器安全上下文，无法使用异步 Clipboard API。
- * 此时退回到浏览器仍广泛支持的选区复制能力；正式 HTTPS 环境继续优先使用权限边界更清晰的新 API。
+ * 将文本写入系统剪贴板；在非安全上下文中回退到浏览器兼容复制方案。
  */
 export async function copyTextToClipboard(text: string): Promise<void> {
-  if (window.isSecureContext && navigator.clipboard?.writeText) {
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
     try {
       await navigator.clipboard.writeText(text);
       return;
@@ -14,23 +11,11 @@ export async function copyTextToClipboard(text: string): Promise<void> {
     }
   }
 
-  if (!copyTextWithSelection(text)) {
-    throw new Error("当前浏览器不允许写入剪贴板");
-  }
-}
-
-function copyTextWithSelection(text: string): boolean {
-  if (!document.body || typeof document.execCommand !== "function") {
-    return false;
+  if (typeof document === "undefined" || !document.body) {
+    throw new Error("Clipboard is unavailable");
   }
 
-  const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-  const selection = document.getSelection();
-  const previousRanges = selection
-    ? Array.from({ length: selection.rangeCount }, (_, index) => selection.getRangeAt(index).cloneRange())
-    : [];
   const textArea = document.createElement("textarea");
-
   textArea.value = text;
   textArea.readOnly = true;
   textArea.setAttribute("aria-hidden", "true");
@@ -39,19 +24,23 @@ function copyTextWithSelection(text: string): boolean {
   textArea.style.left = "-9999px";
   textArea.style.opacity = "0";
   textArea.style.pointerEvents = "none";
-  document.body.appendChild(textArea);
+
+  const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  // Ant Design React 的抽屉和弹窗会把焦点锁在 role=dialog 容器内。
+  // 临时文本框若直接放到 body，焦点会在选中前被抢回，execCommand 可能返回成功但没有复制目标文本。
+  const copyContainer = activeElement?.closest<HTMLElement>('[role="dialog"]') ?? document.body;
+
+  copyContainer.appendChild(textArea);
+  textArea.focus({ preventScroll: true });
+  textArea.select();
+  textArea.setSelectionRange(0, textArea.value.length);
 
   try {
-    textArea.focus({ preventScroll: true });
-    textArea.select();
-    textArea.setSelectionRange(0, text.length);
-    return document.execCommand("copy");
+    if (!document.execCommand("copy")) {
+      throw new Error("Clipboard copy command failed");
+    }
   } finally {
     textArea.remove();
     activeElement?.focus({ preventScroll: true });
-    if (selection) {
-      selection.removeAllRanges();
-      previousRanges.forEach((range) => selection.addRange(range));
-    }
   }
 }
