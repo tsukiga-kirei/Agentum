@@ -7,6 +7,7 @@ import com.agentum.shared.api.ApiError;
 import com.agentum.shared.api.ApiException;
 import com.agentum.shared.api.ApiResponse;
 import com.agentum.shared.api.RequestIds;
+import com.agentum.shared.logging.LogContext;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -57,23 +58,26 @@ public class BearerTokenAuthenticationFilter extends OncePerRequestFilter {
                 claims.portal(),
                 claims.roleAssignmentId()
             );
-            // 过滤器只负责把 Bearer Token 还原为 Principal；具体租户、资源和敏感动作权限仍由业务层重新校验。
-            log.debug(
-                "Bearer Token 解析成功 path={} userId={} tenantId={} role={} portal={} requestId={}",
-                request.getRequestURI(),
-                claims.userId(),
-                claims.tenantId(),
-                claims.role(),
-                claims.portal(),
-                RequestIds.current(request)
-            );
-            UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
-                principal,
-                token,
-                List.of(new SimpleGrantedAuthority("ROLE_" + claims.role().toUpperCase()))
-            );
-            SecurityContextHolder.getContext().setAuthentication(authentication);
-            filterChain.doFilter(request, response);
+            // 已校验 Token 中的租户身份后才写入日志上下文，避免使用 URL 或请求体中的未可信 tenantId 分流日志。
+            try (LogContext.Scope ignored = LogContext.openForPrincipal(principal)) {
+                // 过滤器只负责把 Bearer Token 还原为 Principal；具体租户、资源和敏感动作权限仍由业务层重新校验。
+                log.debug(
+                    "Bearer Token 解析成功 path={} userId={} tenantId={} role={} portal={} requestId={}",
+                    request.getRequestURI(),
+                    claims.userId(),
+                    claims.tenantId(),
+                    claims.role(),
+                    claims.portal(),
+                    RequestIds.current(request)
+                );
+                UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
+                    principal,
+                    token,
+                    List.of(new SimpleGrantedAuthority("ROLE_" + claims.role().toUpperCase()))
+                );
+                SecurityContextHolder.getContext().setAuthentication(authentication);
+                filterChain.doFilter(request, response);
+            }
         } catch (ApiException exception) {
             SecurityContextHolder.clearContext();
             log.warn(

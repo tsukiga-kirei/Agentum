@@ -11,6 +11,7 @@ import com.agentum.runtime.messaging.NodeExecuteCommand;
 import com.agentum.runtime.messaging.NodeExecuteCommandPublisher;
 import com.agentum.runtime.stream.RunProgressStreamWriter;
 import com.agentum.shared.api.ApiException;
+import com.agentum.shared.logging.LogContext;
 import com.agentum.workflow.domain.WorkflowClusterAgentRunEntity;
 import com.agentum.workflow.domain.WorkflowNodeRunEntity;
 import com.agentum.workflow.domain.WorkflowRunEntity;
@@ -692,10 +693,16 @@ public class NodeExecutionService {
         });
         List<ClusterAgentOutcome> failures = new ArrayList<>();
         ApiException abortException = null;
+        Map<String, String> logContext = LogContext.snapshot();
         try {
             List<CompletableFuture<ClusterAgentOutcome>> futures = pending.stream()
                 .map(slot -> CompletableFuture.supplyAsync(
-                    () -> runClusterAgent(run, node, slot, new LinkedHashMap<>(variables), operatorUserId, progress),
+                    () -> {
+                        // 子智能体线程不自动继承 MDC，显式恢复父执行链路并在任务结束后清理。
+                        try (LogContext.Scope ignored = LogContext.openSnapshot(logContext)) {
+                            return runClusterAgent(run, node, slot, new LinkedHashMap<>(variables), operatorUserId, progress);
+                        }
+                    },
                     pool
                 ))
                 .toList();

@@ -1,6 +1,7 @@
 package com.agentum.runtime.stream;
 
 import com.agentum.shared.api.ClientDisconnectSupport;
+import com.agentum.shared.logging.LogContext;
 import java.time.Clock;
 import java.util.List;
 import java.util.Map;
@@ -57,15 +58,23 @@ public class RunStreamRelayService {
         // 0 表示不设超时，长任务执行期间由客户端断开或 [DONE] 终止。
         SseEmitter emitter = new SseEmitter(0L);
         AtomicBoolean open = new AtomicBoolean(true);
+        Map<String, String> logContext = LogContext.snapshot();
         emitter.onCompletion(() -> open.set(false));
         emitter.onTimeout(() -> open.set(false));
         emitter.onError(ex -> {
             open.set(false);
             if (!ClientDisconnectSupport.isClientDisconnect(ex)) {
-                log.warn("SSE 中继连接异常 runId={} message={}", runId, ex.getMessage());
+                try (LogContext.Scope ignored = LogContext.openSnapshot(logContext)) {
+                    log.warn("SSE 中继连接异常 runId={} message={}", runId, ex.getMessage());
+                }
             }
         });
-        relayExecutor.submit(() -> relayLoop(runId, lastEventId, replay, emitter, open));
+        relayExecutor.submit(() -> {
+            // 中继线程独立于 Servlet 线程，恢复认证后的租户上下文才能把连接异常写入正确文件。
+            try (LogContext.Scope ignored = LogContext.openSnapshot(logContext)) {
+                relayLoop(runId, lastEventId, replay, emitter, open);
+            }
+        });
         return emitter;
     }
 

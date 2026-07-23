@@ -1,10 +1,9 @@
 package com.agentum.runtime.messaging;
 
-import com.agentum.shared.api.RequestIds;
+import com.agentum.shared.logging.LogContext;
 import com.agentum.workbench.application.NodeExecutionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.slf4j.MDC;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
 
@@ -30,24 +29,13 @@ public class NodeExecuteCommandListener {
         containerFactory = "runtimeListenerContainerFactory"
     )
     public void onNodeExecuteCommand(NodeExecuteCommand command) {
-        String previousRequestId = MDC.get(RequestIds.MDC_KEY);
-        String commandRequestId = command == null ? null : command.requestId();
-        if (commandRequestId != null && !commandRequestId.isBlank()) {
-            // RabbitMQ 消费线程不会经过 HTTP Filter，必须从命令恢复 MDC 才能串联模型、MCP 和下游服务日志。
-            MDC.put(RequestIds.MDC_KEY, commandRequestId);
-        }
-        try {
+        // RabbitMQ 消费线程不会经过 HTTP Filter，必须从命令恢复完整租户与运行链路，且处理后清理线程 MDC。
+        try (LogContext.Scope ignored = LogContext.openForExecution(command)) {
             if (command == null || command.jobId() == null || command.runId() == null || command.nodeRunId() == null) {
                 log.warn("收到非法节点执行命令，已丢弃 command={}", command);
                 return;
             }
             nodeExecutionService.execute(command);
-        } finally {
-            if (previousRequestId == null || previousRequestId.isBlank()) {
-                MDC.remove(RequestIds.MDC_KEY);
-            } else {
-                MDC.put(RequestIds.MDC_KEY, previousRequestId);
-            }
         }
     }
 }

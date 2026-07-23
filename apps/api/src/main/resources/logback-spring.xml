@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+
+    <springProperty scope="context" name="AGENTUM_LOG_PATH"
+                    source="agentum.logging.file.path" defaultValue="./logs"/>
+    <springProperty scope="context" name="AGENTUM_LOG_MAX_FILE_SIZE"
+                    source="agentum.logging.file.max-file-size" defaultValue="50MB"/>
+    <springProperty scope="context" name="AGENTUM_LOG_SYSTEM_MAX_HISTORY"
+                    source="agentum.logging.file.system-max-history" defaultValue="30"/>
+    <springProperty scope="context" name="AGENTUM_LOG_SYSTEM_TOTAL_SIZE_CAP"
+                    source="agentum.logging.file.system-total-size-cap" defaultValue="5GB"/>
+    <springProperty scope="context" name="AGENTUM_LOG_TENANT_MAX_HISTORY"
+                    source="agentum.logging.file.tenant-max-history" defaultValue="60"/>
+    <springProperty scope="context" name="AGENTUM_LOG_TENANT_TOTAL_SIZE_CAP"
+                    source="agentum.logging.file.tenant-total-size-cap" defaultValue="20GB"/>
+
+    <property name="AGENTUM_FILE_LOG_PATTERN"
+              value="%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [scope:%X{logScope:-SYSTEM}] [requestId:%X{requestId:-none}] [tenantId:%X{tenantId:-none}] [userId:%X{userId:-none}] [role:%X{role:-none}] [runId:%X{runId:-none}] [jobId:%X{jobId:-none}] [nodeRunId:%X{nodeRunId:-none}] [%thread] %logger{48} - %msg%n%wEx"/>
+
+    <springProfile name="logfile">
+        <appender name="SYSTEM_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>${AGENTUM_LOG_PATH}/system/agentum-system.log</file>
+            <filter class="com.agentum.shared.logging.LogScopeFilter">
+                <targetScope>SYSTEM</targetScope>
+            </filter>
+            <encoder>
+                <pattern>${AGENTUM_FILE_LOG_PATTERN}</pattern>
+                <charset>UTF-8</charset>
+            </encoder>
+            <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+                <fileNamePattern>${AGENTUM_LOG_PATH}/system/archive/agentum-system.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+                <maxFileSize>${AGENTUM_LOG_MAX_FILE_SIZE}</maxFileSize>
+                <maxHistory>${AGENTUM_LOG_SYSTEM_MAX_HISTORY}</maxHistory>
+                <totalSizeCap>${AGENTUM_LOG_SYSTEM_TOTAL_SIZE_CAP}</totalSizeCap>
+                <cleanHistoryOnStart>true</cleanHistoryOnStart>
+            </rollingPolicy>
+        </appender>
+
+        <appender name="TENANT_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>${AGENTUM_LOG_PATH}/tenant/agentum-tenant.log</file>
+            <filter class="com.agentum.shared.logging.LogScopeFilter">
+                <targetScope>TENANT</targetScope>
+            </filter>
+            <encoder>
+                <pattern>${AGENTUM_FILE_LOG_PATTERN}</pattern>
+                <charset>UTF-8</charset>
+            </encoder>
+            <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+                <fileNamePattern>${AGENTUM_LOG_PATH}/tenant/archive/agentum-tenant.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+                <maxFileSize>${AGENTUM_LOG_MAX_FILE_SIZE}</maxFileSize>
+                <maxHistory>${AGENTUM_LOG_TENANT_MAX_HISTORY}</maxHistory>
+                <totalSizeCap>${AGENTUM_LOG_TENANT_TOTAL_SIZE_CAP}</totalSizeCap>
+                <cleanHistoryOnStart>true</cleanHistoryOnStart>
+            </rollingPolicy>
+        </appender>
+    </springProfile>
+
+    <springProfile name="!logfile">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="logfile">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="SYSTEM_FILE"/>
+            <appender-ref ref="TENANT_FILE"/>
+        </root>
+    </springProfile>
+</configuration>

@@ -1,0 +1,15 @@
+spring:
+  config:
+    activate:
+      on-profile: logfile
+
+# 文件日志是服务器部署的可选能力；本地 local profile 默认不启用，避免产生开发垃圾文件。
+agentum:
+  logging:
+    file:
+      path: ${AGENTUM_LOG_PATH:./logs}
+      max-file-size: ${AGENTUM_LOG_MAX_FILE_SIZE:50MB}
+      system-max-history: ${AGENTUM_LOG_SYSTEM_MAX_HISTORY:30}
+      system-total-size-cap: ${AGENTUM_LOG_SYSTEM_TOTAL_SIZE_CAP:5GB}
+      tenant-max-history: ${AGENTUM_LOG_TENANT_MAX_HISTORY:60}
+      tenant-total-size-cap: ${AGENTUM_LOG_TENANT_TOTAL_SIZE_CAP:20GB}

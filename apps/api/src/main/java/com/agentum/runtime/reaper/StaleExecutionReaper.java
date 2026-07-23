@@ -4,6 +4,7 @@ import com.agentum.runtime.cancel.RunCancellationGuard;
 import com.agentum.runtime.execution.RuntimeExecutionProperties;
 import com.agentum.runtime.lease.RunExecutionLeaseService;
 import com.agentum.runtime.stream.RunProgressStreamWriter;
+import com.agentum.shared.logging.LogContext;
 import com.agentum.workbench.application.WorkbenchRuntimeService;
 import com.agentum.workflow.domain.WorkflowRunExecutionJobEntity;
 import com.agentum.workflow.infrastructure.WorkflowRunExecutionJobRepository;
@@ -63,7 +64,9 @@ public class StaleExecutionReaper {
             now.minusSeconds(5)
         );
         for (WorkflowRunExecutionJobEntity job : activeJobs) {
-            try {
+            try (LogContext.Scope ignored = LogContext.openTenantOperation(
+                job.getTenantId(), null, job.getRunId(), job.getId(), job.getNodeRunId(), null
+            )) {
                 reapJob(job, now);
             } catch (Exception exception) {
                 log.error(

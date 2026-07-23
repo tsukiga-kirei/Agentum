@@ -140,7 +140,8 @@ apps/
 | `src/main/java/com/agentum/AgentumApiApplication.java` | Spring Boot 启动类 |
 | `src/main/java/com/agentum/config/` | 横切配置：Security、认证过滤器、可注入 `Clock` |
 | `src/main/java/com/agentum/shared/` | 横切能力：统一 API 响应、分页、加解密工具、客户端断开支持 |
-| `src/main/resources/application*.yml` | Spring 配置（数据源、Redis、RabbitMQ、运行态超时等） |
+| `src/main/resources/application*.yml` | Spring 配置（数据源、Redis、RabbitMQ、运行态超时、可选 `logfile` 文件日志等） |
+| `src/main/resources/logback-spring.xml` | 系统 / 租户运行日志分流、滚动与格式配置 |
 | `src/main/resources/db/migration/` | Flyway 迁移，见下文 |
 | `src/test/java/` | 单元与集成测试（与 `main` 包结构对应） |
 | `build.gradle.kts` | API 模块依赖与测试配置 |
@@ -378,6 +379,7 @@ agentum/
 │   │       │   └── notification/
 │   │       ├── main/resources/
 │   │       │   ├── application*.yml
+│   │       │   ├── logback-spring.xml
 │   │       │   └── db/migration/{schema,devdata}/
 │   │       └── test/java/com/agentum/
 │   └── web/

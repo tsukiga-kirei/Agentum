@@ -4,6 +4,7 @@ import com.agentum.attachment.domain.InputAttachmentEntity;
 import com.agentum.attachment.infrastructure.AttachmentParseResultRepository;
 import com.agentum.attachment.infrastructure.InputAttachmentRepository;
 import com.agentum.shared.api.RequestIds;
+import com.agentum.shared.logging.LogContext;
 import java.time.Clock;
 import java.util.List;
 import org.slf4j.Logger;
@@ -46,7 +47,12 @@ public class AttachmentRetentionCleanupJob {
             PageRequest.of(0, batchSize)
         );
         for (InputAttachmentEntity attachment : attachments) {
-            cleanup(attachment);
+            // 清理任务按附件落库的可信租户与运行字段恢复上下文，避免全部归入系统日志。
+            try (LogContext.Scope ignored = LogContext.openTenantOperation(
+                attachment.getTenantId(), null, attachment.getRunId(), null, attachment.getNodeRunId(), RequestIds.current()
+            )) {
+                cleanup(attachment);
+            }
         }
     }
 

@@ -3,6 +3,7 @@ package com.agentum.delivery.application;
 import com.agentum.delivery.domain.DeliveryRecordEntity;
 import com.agentum.delivery.infrastructure.DeliveryRecordRepository;
 import com.agentum.shared.api.RequestIds;
+import com.agentum.shared.logging.LogContext;
 import java.time.Clock;
 import java.util.List;
 import java.util.Map;
@@ -44,7 +45,12 @@ public class DocumentDeliveryRetentionCleanupJob {
             return;
         }
         for (DeliveryRecordEntity record : records) {
-            cleanupRecord(record);
+            // 清理线程没有登录身份，按记录自身的租户恢复日志范围。
+            try (LogContext.Scope ignored = LogContext.openTenantOperation(
+                record.getTenantId(), null, record.getRunId(), null, null, RequestIds.current()
+            )) {
+                cleanupRecord(record);
+            }
         }
     }
 

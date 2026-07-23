@@ -58,4 +58,4 @@ management:
 
 logging:
   pattern:
-    level: "%5p [requestId:%X{requestId:-none}]"
+    level: "%5p [scope:%X{logScope:-SYSTEM}] [requestId:%X{requestId:-none}] [tenantId:%X{tenantId:-none}] [userId:%X{userId:-none}] [role:%X{role:-none}]"

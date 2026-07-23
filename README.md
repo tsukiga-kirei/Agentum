@@ -236,6 +236,12 @@ make dev-infra
 ./gradlew :apps:api:bootRun
 ```
 
+本地 `local` profile 默认只输出控制台日志，不创建日志文件。如需专门验证文件分流，可临时启用：
+
+```bash
+SPRING_PROFILES_ACTIVE=local,logfile AGENTUM_LOG_PATH=./logs ./gradlew :apps:api:bootRun
+```
+
 启动前端：
 
 ```bash
@@ -308,7 +314,7 @@ docker load -i agentum-runtime-linux-amd64.tar
 
 ### 测试部署
 
-测试部署用于验收镜像、数据库迁移、登录初始化、模型/MCP/交付配置和端到端流程。测试环境也应使用 `prod` profile，避免加载本地演示数据：
+测试部署用于验收镜像、数据库迁移、登录初始化、模型/MCP/交付配置和端到端流程。测试环境使用 `prod,logfile`，既避免加载本地演示数据，也保留可滚动的服务器日志文件：
 
 ```bash
 cp .env.example .env.test
@@ -318,7 +324,8 @@ cp .env.example .env.test
 
 ```env
 WEB_HTTP_PORT=8088
-SPRING_PROFILES_ACTIVE=prod
+AGENTUM_API_PROFILES=prod,logfile
+AGENTUM_LOG_HOST_PATH=./logs
 AGENTUM_DOCKER_NETWORK=agentum-test
 AGENTUM_AUTH_SSO_API_BASE_URL=http://测试服务器IP:8088
 AGENTUM_AUTH_SSO_WEB_BASE_URL=http://测试服务器IP:8088
@@ -352,7 +359,8 @@ cp .env.example .env.prod
 
 ```env
 WEB_HTTP_PORT=80
-SPRING_PROFILES_ACTIVE=prod
+AGENTUM_API_PROFILES=prod,logfile
+AGENTUM_LOG_HOST_PATH=./logs
 AGENTUM_DOCKER_NETWORK=agentum-prod
 AGENTUM_AUTH_SSO_API_BASE_URL=https://正式域名
 AGENTUM_AUTH_SSO_WEB_BASE_URL=https://正式域名
@@ -373,6 +381,17 @@ docker compose --env-file .env.prod up -d
 docker compose --env-file .env.prod ps
 docker compose --env-file .env.prod logs -f api
 ```
+
+`docker compose logs api` 继续读取容器标准输出；文件日志通过 `AGENTUM_LOG_HOST_PATH` 持久化到宿主机：
+
+```text
+logs/system/agentum-system.log
+logs/tenant/agentum-tenant.log
+```
+
+系统文件记录启动、基础设施和平台级操作；租户文件只接收已校验租户上下文的业务请求与异步任务，并通过 `tenantId`、`userId`、`requestId`、`runId` 等字段区分链路。两个文件均按日期或大小滚动并压缩，具体上限可通过 `.env.example` 中的 `AGENTUM_LOG_*` 参数调整。
+
+本地通常只启动基础设施并用 `bootRun` 运行 API，因此默认不落盘；如果本地启动完整 Compose 也不需要文件，把 `AGENTUM_API_PROFILES` 改为 `prod` 即可。
 
 首次正式部署使用空库启动后，访问 `/setup` 创建首个系统管理员。`AGENTUM_FIELD_ENCRYPTION_MASTER_KEY` 一旦用于加密模型密钥、SSO Secret 或外部交付凭证，就不能在未做密文迁移的情况下直接更换。
 

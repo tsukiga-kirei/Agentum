@@ -198,6 +198,10 @@ const visibleTodos = todos.filter((todo) => todo.assigneeId === currentUser.id);
 - `warn` 用于可预期失败或安全相关拒绝，例如登录失败、权限不足、Token 过期、租户不可用。
 - `error` 用于非预期异常、外部依赖失败、数据不一致和审计写入失败。
 - 禁止输出密码、Token、密钥、凭证明文、完整请求头、完整 Cookie、供应商敏感原始响应和文件敏感内容。
+- 运行日志按 `SYSTEM` / `TENANT` 两个范围分流：系统级事件进入系统文件；租户级事件必须携带可信 `tenantId` 后才能进入租户文件。不得按租户动态创建无限数量的日志文件。
+- HTTP 认证线程、RabbitMQ 消费线程和后续异步线程必须在执行前恢复 MDC，并在 `finally` 阶段清理，避免线程复用导致跨租户日志污染。
+- `local` 与自动化测试默认只输出控制台；服务器通过额外启用 `logfile` profile 生成滚动文件，并将日志目录挂载到容器外持久化。
+- 文件日志是运行排障材料，不替代 `audit_logs`、`model_call_logs`、`mcp_call_logs` 等业务审计事实表；完整 Prompt、模型正文和附件正文不得写入运行日志文件。
 
 前端日志要求：
 

@@ -14,6 +14,7 @@ import com.agentum.schedule.infrastructure.WorkflowScheduleRepository;
 import com.agentum.schedule.interfaces.WorkflowScheduleApi;
 import com.agentum.shared.api.ApiException;
 import com.agentum.shared.api.RequestIds;
+import com.agentum.shared.logging.LogContext;
 import com.agentum.shared.platform.AgentumTimezones;
 import com.agentum.shared.pagination.PageQuery;
 import com.agentum.shared.pagination.PageResponse;
@@ -351,8 +352,13 @@ public class WorkflowScheduleService {
         Instant now = clock.instant();
         List<WorkflowScheduleEntity> dueSchedules = scheduleRepository.findDueSchedules(now, PageRequest.of(0, 20));
         for (WorkflowScheduleEntity schedule : dueSchedules) {
-            Instant scheduledAt = schedule.getNextRunAt() == null ? now : schedule.getNextRunAt();
-            triggerOne(schedule, now, scheduledAt);
+            // 定时调度线程没有 HTTP 身份，按已落库的租户和所有者恢复上下文，确保触发日志进入对应租户文件。
+            try (LogContext.Scope ignored = LogContext.openTenantOperation(
+                schedule.getTenantId(), schedule.getOwnerId(), null, null, null, RequestIds.current()
+            )) {
+                Instant scheduledAt = schedule.getNextRunAt() == null ? now : schedule.getNextRunAt();
+                triggerOne(schedule, now, scheduledAt);
+            }
         }
     }
 
@@ -379,35 +385,39 @@ public class WorkflowScheduleService {
         Map<UUID, WorkflowRunEntity> runsById = workflowRunRepository.findAllById(runIds).stream()
             .collect(Collectors.toMap(WorkflowRunEntity::getId, Function.identity()));
         for (WorkflowScheduleExecutionEntity execution : executions) {
-            WorkflowRunEntity run = execution.getRunId() == null ? null : runsById.get(execution.getRunId());
-            if (run == null) {
-                if (execution.getRunId() != null) {
-                    execution.abort("关联运行已删除，执行记录已中止。", now);
-                    executionRepository.save(execution);
-                    markScheduleState(execution.getScheduleId(), "aborted", now);
-                } else {
-                    // 触发流程尚未绑定 run 或运行已被删除后遗留的脏记录，不能长期停留在“执行中”。
-                    execution.abort("执行记录已失效，系统自动中止。", now);
-                    executionRepository.save(execution);
-                    markScheduleState(execution.getScheduleId(), "aborted", now);
+            try (LogContext.Scope ignored = LogContext.openTenantOperation(
+                execution.getTenantId(), null, execution.getRunId(), null, null, RequestIds.current()
+            )) {
+                WorkflowRunEntity run = execution.getRunId() == null ? null : runsById.get(execution.getRunId());
+                if (run == null) {
+                    if (execution.getRunId() != null) {
+                        execution.abort("关联运行已删除，执行记录已中止。", now);
+                        executionRepository.save(execution);
+                        markScheduleState(execution.getScheduleId(), "aborted", now);
+                    } else {
+                        // 触发流程尚未绑定 run 或运行已被删除后遗留的脏记录，不能长期停留在“执行中”。
+                        execution.abort("执行记录已失效，系统自动中止。", now);
+                        executionRepository.save(execution);
+                        markScheduleState(execution.getScheduleId(), "aborted", now);
+                    }
+                    continue;
                 }
-                continue;
-            }
-            if ("completed".equals(run.getState())) {
-                execution.succeed("定时任务执行成功。", now);
-                executionRepository.save(execution);
-                markScheduleState(execution.getScheduleId(), "succeeded", now);
-                notifyScheduleResult(execution, run, true, "定时任务执行成功", "流程已完成并进入任务记录。");
-            } else if ("failed".equals(run.getState())) {
-                execution.abort("定时任务执行中止，失败任务已保存到待办。", now);
-                executionRepository.save(execution);
-                markScheduleState(execution.getScheduleId(), "aborted", now);
-                notifyScheduleResult(execution, run, false, "定时任务执行中止", "流程运行失败，已保存到任务中心待办，可进入后查看失败节点并恢复。");
-            } else if ("paused".equals(run.getState()) && "human_review".equals(run.getCurrentNodeType())) {
-                execution.abort("定时任务等待人工审核，已保存到待办。", now);
-                executionRepository.save(execution);
-                markScheduleState(execution.getScheduleId(), "aborted", now);
-                notifyScheduleResult(execution, run, false, "定时任务等待人工处理", "流程已推进到人工审核节点，系统无法继续自动执行，已保存到任务中心待办。");
+                if ("completed".equals(run.getState())) {
+                    execution.succeed("定时任务执行成功。", now);
+                    executionRepository.save(execution);
+                    markScheduleState(execution.getScheduleId(), "succeeded", now);
+                    notifyScheduleResult(execution, run, true, "定时任务执行成功", "流程已完成并进入任务记录。");
+                } else if ("failed".equals(run.getState())) {
+                    execution.abort("定时任务执行中止，失败任务已保存到待办。", now);
+                    executionRepository.save(execution);
+                    markScheduleState(execution.getScheduleId(), "aborted", now);
+                    notifyScheduleResult(execution, run, false, "定时任务执行中止", "流程运行失败，已保存到任务中心待办，可进入后查看失败节点并恢复。");
+                } else if ("paused".equals(run.getState()) && "human_review".equals(run.getCurrentNodeType())) {
+                    execution.abort("定时任务等待人工审核，已保存到待办。", now);
+                    executionRepository.save(execution);
+                    markScheduleState(execution.getScheduleId(), "aborted", now);
+                    notifyScheduleResult(execution, run, false, "定时任务等待人工处理", "流程已推进到人工审核节点，系统无法继续自动执行，已保存到任务中心待办。");
+                }
             }
         }
     }

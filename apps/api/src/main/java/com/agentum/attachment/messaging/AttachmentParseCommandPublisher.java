@@ -19,6 +19,14 @@ public class AttachmentParseCommandPublisher {
 
     public void publish(AttachmentParseCommand command) {
         rabbitTemplate.convertAndSend(properties.getRabbitmq().getExchange(), properties.getRabbitmq().getQueueAttachmentParse(), command);
-        log.info("附件解析命令已入队 attachmentId={} requestId={}", command.attachmentId(), command.requestId());
+        log.info(
+            "附件解析命令已入队 tenantId={} runId={} nodeRunId={} attachmentId={} userId={} requestId={}",
+            command.tenantId(),
+            command.runId(),
+            command.nodeRunId(),
+            command.attachmentId(),
+            command.operatorUserId(),
+            command.requestId()
+        );
     }
 }

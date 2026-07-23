@@ -157,7 +157,14 @@ public class InputAttachmentService {
         }
         if (recognitionEnabled) {
             try {
-                commandPublisher.publish(new AttachmentParseCommand(attachmentId, RequestIds.current()));
+                commandPublisher.publish(new AttachmentParseCommand(
+                    attachmentId,
+                    tenantId,
+                    runId,
+                    nodeRunId,
+                    principal.userId(),
+                    RequestIds.current()
+                ));
             } catch (RuntimeException exception) {
                 // 消息中间件不可用时保留已安全保存的原件，并把状态明确暴露给用户，避免产生“数据库有记录但对象已被误删”的断链数据。
                 attachment.markFailed("ATTACHMENT_QUEUE_FAILED", "附件已保存，但识别任务入队失败，请删除后重试", clock.instant());

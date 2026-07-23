@@ -4,6 +4,7 @@ node_modules
 dist
 build
 target
+logs
 .venv
 venv
 __pycache__
@@ -11,4 +12,3 @@ __pycache__
 .env
 .env.*
 !.env.example
-

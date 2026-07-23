@@ -657,6 +657,19 @@ GET /api/.../xxx?page=1&size=20&sort=createdAt,desc
 
 主密钥与现有密文构成生命周期绑定：直接替换会导致历史密文无法解密。正式轮换前必须实现带密钥版本的密文格式和“旧密钥解密、新密钥重加密”的迁移流程；当前 `v1:` 密文尚不支持无迁移直接轮换。
 
+### 9.2 运行日志文件
+
+运行日志与产品审计采用不同存储边界：`audit_logs`、模型 / MCP 调用和交付记录继续由 PostgreSQL 承担业务证据；Spring Boot 运行日志用于启动、异常和链路排障。应用始终保留控制台输出，服务器额外启用 `logfile` profile，把日志写入容器挂载目录：
+
+```text
+/var/log/agentum/system/agentum-system.log
+/var/log/agentum/tenant/agentum-tenant.log
+```
+
+日志通过 MDC 的 `logScope` 分流。只有经过认证或异步命令恢复后同时具备 `logScope=TENANT` 与 `tenantId` 的事件进入租户文件；启动、系统管理员、基础设施、预认证失败和上下文缺失事件进入系统文件。租户事件在同一文件内通过 `tenantId` 查询，不为每个租户动态创建 Appender，避免文件句柄和归档数量随租户数无界增长。
+
+HTTP 请求在已校验 JWT 后写入 `tenantId`、`userId`、`role`；运行 Worker 与附件解析 Worker 从 RabbitMQ 命令恢复 `requestId`、`tenantId`、`userId`、`runId`、`jobId`、`nodeRunId`，完成后必须清理 MDC。日志按日期与文件大小双条件滚动并压缩，历史天数、单文件大小和总容量通过环境变量控制。本地 `local` 和自动化测试不默认启用文件日志。
+
 第一阶段（已完成）：
 
 - 单体 API。

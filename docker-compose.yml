@@ -15,7 +15,8 @@ services:
     environment:
       TZ: ${AGENTUM_TIMEZONE:-Asia/Shanghai}
       AGENTUM_TIMEZONE: ${AGENTUM_TIMEZONE:-Asia/Shanghai}
-      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+      # 使用项目专用变量，避免宿主机或旧 .env 中的通用 Spring 变量意外关闭文件日志。
+      SPRING_PROFILES_ACTIVE: ${AGENTUM_API_PROFILES:-prod,logfile}
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-agentum}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-agentum}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
@@ -46,6 +47,12 @@ services:
       AGENTUM_RUNTIME_WORKER_CONCURRENCY: ${AGENTUM_RUNTIME_WORKER_CONCURRENCY:-4}
       AGENTUM_RUNTIME_CLUSTER_PARALLELISM: ${AGENTUM_RUNTIME_CLUSTER_PARALLELISM:-4}
       AGENTUM_RUNTIME_STALE_THRESHOLD_SECONDS: ${AGENTUM_RUNTIME_STALE_THRESHOLD_SECONDS:-120}
+      AGENTUM_LOG_PATH: /var/log/agentum
+      AGENTUM_LOG_MAX_FILE_SIZE: ${AGENTUM_LOG_MAX_FILE_SIZE:-50MB}
+      AGENTUM_LOG_SYSTEM_MAX_HISTORY: ${AGENTUM_LOG_SYSTEM_MAX_HISTORY:-30}
+      AGENTUM_LOG_SYSTEM_TOTAL_SIZE_CAP: ${AGENTUM_LOG_SYSTEM_TOTAL_SIZE_CAP:-5GB}
+      AGENTUM_LOG_TENANT_MAX_HISTORY: ${AGENTUM_LOG_TENANT_MAX_HISTORY:-60}
+      AGENTUM_LOG_TENANT_TOTAL_SIZE_CAP: ${AGENTUM_LOG_TENANT_TOTAL_SIZE_CAP:-20GB}
     depends_on:
       - postgres
       - redis
@@ -53,6 +60,9 @@ services:
       - minio
     expose:
       - "8080"
+    volumes:
+      # 文件日志必须落在宿主机目录，容器重建后仍可保留；控制台日志继续供 docker compose logs 使用。
+      - "${AGENTUM_LOG_HOST_PATH:-./logs}:/var/log/agentum"
     networks:
       - agentum
 

@@ -1,8 +1,7 @@
 package com.agentum.attachment.messaging;
 
 import com.agentum.attachment.application.AttachmentParseService;
-import com.agentum.shared.api.RequestIds;
-import org.slf4j.MDC;
+import com.agentum.shared.logging.LogContext;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
 
@@ -17,12 +16,16 @@ public class AttachmentParseCommandListener {
     @RabbitListener(queues = "${agentum.runtime.rabbitmq.queue-attachment-parse}", containerFactory = "runtimeListenerContainerFactory")
     public void onCommand(AttachmentParseCommand command) {
         if (command == null || command.attachmentId() == null) return;
-        String previous = MDC.get(RequestIds.MDC_KEY);
-        if (command.requestId() != null && !command.requestId().isBlank()) MDC.put(RequestIds.MDC_KEY, command.requestId());
-        try {
+        // 附件解析同样运行在复用的 MQ 线程中，必须恢复并在完成后清理租户、运行与请求链路。
+        try (LogContext.Scope ignored = LogContext.openTenantOperation(
+            command.tenantId(),
+            command.operatorUserId(),
+            command.runId(),
+            null,
+            command.nodeRunId(),
+            command.requestId()
+        )) {
             parseService.parse(command.attachmentId());
-        } finally {
-            if (previous == null) MDC.remove(RequestIds.MDC_KEY); else MDC.put(RequestIds.MDC_KEY, previous);
         }
     }
 }
