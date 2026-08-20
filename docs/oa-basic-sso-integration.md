@@ -29,7 +29,7 @@ Basic 方案适用于以下情况：
   -> OA 使用 sendRedirect 把用户浏览器跳到 Location
   -> 浏览器访问 Agentum basic-consume
   -> Agentum 再次校验用户和角色，写入 Refresh Cookie
-  -> 登录桥接页保存短期 Access Token，进入 Agentum 工作台
+  -> 登录桥接页判断 opener：仅 Agentum 登录弹窗才关闭；OA 菜单打开的窗口跳到工作台
 ```
 
 这里最重要的边界是：OA 的服务端 HTTP 客户端只负责换取 `Location`，不能自动跟随 302。最终必须由用户浏览器访问 Agentum 域名，Agentum 才能为浏览器建立自己的登录会话。
@@ -291,12 +291,14 @@ curl -i --max-redirs 0 \
 | 返回 `403` | OA IP / Origin 不在白名单，用户不存在或没有入口角色 | 暂时清空白名单定位问题，再检查用户与 `business` / `tenant_admin` 角色 |
 | 返回 `302`，浏览器提示地址无效 | 地址超过 60 秒、已被 HttpClient 自动跟随或已打开一次 | 禁止自动跟随并重新换取地址 |
 | 浏览器进入后仍显示登录页 | SSO API / Web 对外地址不一致，或混用 `localhost` 与 `127.0.0.1` | 统一浏览器 Origin，生产使用同域 HTTPS |
+| 单点后新窗口秒关，再单独打开已登录 | OA 用 `window.open` 打开 Agentum，回调页把跨域 `opener` 当成登录弹窗并 `close` | 确认 API 已包含同源 `opener` 判断；OA 入口应跳到 `sso-web-base-url`，不要关窗 |
 | OA 服务端连接超时 | Agentum 地址不可达、防火墙或代理配置错误 | 从 OA 服务器检查 Agentum API 网络连通性 |
 | 本地返回 Redis 错误 | Redis 未启动 | 执行 `make dev-infra` 并检查 Redis 状态 |
 
 ## 10. Agentum 实现位置
 
 - Basic 换址和消费接口：`apps/api/src/main/java/com/agentum/auth/interfaces/SsoAuthController.java`
+- 登录桥接页：`apps/api/src/main/java/com/agentum/auth/application/LoginCallbackPageRenderer.java`
 - Basic 用户、租户、角色与来源校验：`apps/api/src/main/java/com/agentum/auth/application/SsoAuthService.java`
 - Redis 一次性交接码：`apps/api/src/main/java/com/agentum/auth/application/BasicSsoHandoffService.java`
 - Spring Security 公开入口：`apps/api/src/main/java/com/agentum/config/SecurityConfiguration.java`
