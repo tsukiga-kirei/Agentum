@@ -112,10 +112,10 @@ class WorkbenchServiceTest {
         WorkflowDefinitionEntity definition = WorkflowDefinitionEntity.create(
             TENANT_ID, "合同审查流程", "识别合同条款风险", USER_ID, NOW
         );
-        definition.markPublished(USER_ID, NOW);
         WorkflowVersionEntity version = WorkflowVersionEntity.create(
             definition.getId(), TENANT_ID, 2, "{}", 5, USER_ID, NOW.plusSeconds(60)
         );
+        definition.markPublished(version.getId(), USER_ID, NOW);
         // UserAccount#create 默认生成随机 id，这里用 mock 让 id 与 createdBy 对齐，便于断言 ownerName 落到“设计者”。
         UserAccount owner = mock(UserAccount.class);
         when(owner.getId()).thenReturn(USER_ID);
@@ -125,7 +125,7 @@ class WorkbenchServiceTest {
             .thenReturn(Optional.of(TenantEntity.create("演示租户", "demo", NOW)));
         when(workflowDefinitionRepository.searchLaunchableWorkflows(eq(TENANT_ID), anyString(), eq(USER_ID), any(Pageable.class)))
             .thenReturn(new PageImpl<>(List.of(definition)));
-        when(workflowVersionRepository.findLatestByWorkflowIds(any())).thenReturn(List.of(version));
+        when(workflowVersionRepository.findAllById(any())).thenReturn(List.of(version));
         when(userAccountRepository.findAllById(any())).thenReturn(List.of(owner));
 
         var page = service.listAvailableWorkflows(TENANT_ID, businessPrincipal(), "", 1, 10, "updatedAt,desc");

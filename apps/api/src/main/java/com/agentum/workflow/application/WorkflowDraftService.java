@@ -35,6 +35,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -162,7 +163,14 @@ public class WorkflowDraftService {
             .collect(Collectors.toSet());
         Map<UUID, UserAccount> usersById = loadUsersById(creatorIds);
         Map<UUID, WorkflowVersionEntity> latestVersions = loadLatestVersions(resultPage.getContent());
-        return PageResponse.from(resultPage.map(definition -> toDraftRow(definition, usersById, operatorUserId, latestVersions.get(definition.getId()))));
+        Map<UUID, WorkflowVersionEntity> activeVersions = loadActiveVersions(resultPage.getContent());
+        return PageResponse.from(resultPage.map(definition -> toDraftRow(
+            definition,
+            usersById,
+            operatorUserId,
+            latestVersions.get(definition.getId()),
+            activeVersions.get(definition.getId())
+        )));
     }
 
     @Transactional
@@ -200,7 +208,7 @@ public class WorkflowDraftService {
             Map.of("id", definition.getId().toString(), "name", definition.getName()),
             null
         );
-        return toDraftRow(definition, loadUsersById(Set.of(operatorUserId)), operatorUserId, null);
+        return toDraftRow(definition, loadUsersById(Set.of(operatorUserId)), operatorUserId, null, null);
     }
 
     @Transactional
@@ -285,7 +293,7 @@ public class WorkflowDraftService {
             Map.of("sourceWorkflowId", source.getId().toString(), "copyWorkflowId", copy.getId().toString()),
             null
         );
-        return toDraftRow(copy, loadUsersById(Set.of(operatorUserId)), operatorUserId, null);
+        return toDraftRow(copy, loadUsersById(Set.of(operatorUserId)), operatorUserId, null, null);
     }
 
     @Transactional(readOnly = true)
@@ -389,7 +397,7 @@ public class WorkflowDraftService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "WORKFLOW_DRAFT_NAME_REQUIRED", "请输入工作流名称");
         }
         definition.updateMetadata(name, normalizeOptional(request.description()), operatorUserId, clock.instant());
-        markUnpublishedChangesIfNeeded(definition, operatorUserId);
+        // 名称和简介属于业务元数据，不参与节点执行协议；修改后无需重新校验或生成版本。
         workflowDefinitionRepository.save(definition);
         return toDetail(definition, operatorUserId);
     }
@@ -419,7 +427,7 @@ public class WorkflowDraftService {
     @Transactional
     public WorkflowDraftApi.WorkflowDraftDetail recallLaunch(UUID tenantId, UUID operatorUserId, UUID workflowId) {
         WorkflowDefinitionEntity definition = findDefinitionForOwner(tenantId, workflowId, operatorUserId);
-        WorkflowVersionEntity latestVersion = requireLatestVersion(workflowId);
+        WorkflowVersionEntity activeVersion = requireActiveVersion(definition);
         if (!definition.isLaunchEnabled()) {
             return toDetail(definition, operatorUserId);
         }
@@ -430,7 +438,7 @@ public class WorkflowDraftService {
             tenantId,
             operatorUserId,
             workflowId,
-            latestVersion.getVersionNumber(),
+            activeVersion.getVersionNumber(),
             RequestIds.current()
         );
         auditService.recordOperationLog(
@@ -442,7 +450,7 @@ public class WorkflowDraftService {
             definition.getId().toString(),
             definition.getName(),
             "收回工作流业务入口（下线流程）",
-            Map.of("versionNumber", latestVersion.getVersionNumber()),
+            Map.of("versionNumber", activeVersion.getVersionNumber()),
             null
         );
         return toDetail(definition, operatorUserId);
@@ -451,7 +459,7 @@ public class WorkflowDraftService {
     @Transactional
     public WorkflowDraftApi.WorkflowDraftDetail restoreLaunch(UUID tenantId, UUID operatorUserId, UUID workflowId) {
         WorkflowDefinitionEntity definition = findDefinitionForOwner(tenantId, workflowId, operatorUserId);
-        WorkflowVersionEntity latestVersion = requireLatestVersion(workflowId);
+        WorkflowVersionEntity activeVersion = requireActiveVersion(definition);
         if (definition.isLaunchEnabled()) {
             return toDetail(definition, operatorUserId);
         }
@@ -473,7 +481,7 @@ public class WorkflowDraftService {
             definition.getId().toString(),
             definition.getName(),
             "恢复工作流业务入口（上线流程）",
-            Map.of("versionNumber", latestVersion.getVersionNumber()),
+            Map.of("versionNumber", activeVersion.getVersionNumber()),
             null
         );
         return toDetail(definition, operatorUserId);
@@ -600,7 +608,7 @@ public class WorkflowDraftService {
             now
         );
         workflowVersionRepository.save(version);
-        definition.markPublished(operatorUserId, now);
+        definition.markPublished(version.getId(), operatorUserId, now);
         workflowDefinitionRepository.save(definition);
 
         log.info(
@@ -624,10 +632,100 @@ public class WorkflowDraftService {
             null
         );
         return new WorkflowDraftApi.WorkflowPublishResult(
-            toDraftRow(definition, loadUsersById(definition.getCreatedBy() == null ? Set.of() : Set.of(definition.getCreatedBy())), operatorUserId, version),
+            toDraftRow(
+                definition,
+                loadUsersById(definition.getCreatedBy() == null ? Set.of() : Set.of(definition.getCreatedBy())),
+                operatorUserId,
+                version,
+                version
+            ),
             nextVersionNumber,
             now
         );
+    }
+
+    @Transactional(readOnly = true)
+    public List<WorkflowDraftApi.WorkflowVersionRow> listVersions(UUID tenantId, UUID operatorUserId, UUID workflowId) {
+        WorkflowDefinitionEntity definition = findDefinitionForRead(tenantId, workflowId, operatorUserId);
+        List<WorkflowVersionEntity> versions = workflowVersionRepository.findByWorkflowIdOrderByVersionNumberDesc(workflowId);
+        Set<UUID> publisherIds = versions.stream()
+            .map(WorkflowVersionEntity::getPublishedBy)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
+        Map<UUID, UserAccount> publishers = loadUsersById(publisherIds);
+        return versions.stream().map(version -> {
+            UserAccount publisher = version.getPublishedBy() == null ? null : publishers.get(version.getPublishedBy());
+            return new WorkflowDraftApi.WorkflowVersionRow(
+                version.getId(),
+                version.getVersionNumber(),
+                version.getNodeCount(),
+                version.getPublishedBy(),
+                publisher == null ? "未知用户" : publisher.getDisplayName(),
+                version.getPublishedAt(),
+                version.getId().equals(definition.getActiveVersionId())
+            );
+        }).toList();
+    }
+
+    @Transactional
+    public WorkflowDraftApi.WorkflowDraftDetail activateVersion(
+        UUID tenantId,
+        UUID operatorUserId,
+        UUID workflowId,
+        UUID versionId
+    ) {
+        WorkflowDefinitionEntity definition = findDefinitionForOwner(tenantId, workflowId, operatorUserId);
+        WorkflowVersionEntity version = workflowVersionRepository.findByIdAndWorkflowIdAndTenantId(versionId, workflowId, tenantId)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKFLOW_VERSION_NOT_FOUND", "工作流版本不存在"));
+        if (version.getId().equals(definition.getActiveVersionId())) {
+            return toDetail(definition, operatorUserId);
+        }
+
+        // 历史快照的图结构已经在发布时冻结；切换时只复核当前能力和权限边界，避免启用已停用的模型、Skill、MCP 或交付能力。
+        WorkflowVersionSnapshot snapshot = readVersionSnapshot(version);
+        List<WorkflowDraftApi.WorkflowValidationIssue> configIssues = workflowNodeConfigValidator.validateCapabilityReferences(
+            tenantId,
+            operatorUserId,
+            snapshot.nodes() == null ? List.of() : snapshot.nodes()
+        );
+        if (!configIssues.isEmpty()) {
+            throw new ApiException(
+                HttpStatus.BAD_REQUEST,
+                "WORKFLOW_VERSION_ACTIVATION_CAPABILITY_INVALID",
+                "该历史版本引用的模型或能力当前不可用，无法设为可用版本",
+                Map.of("issueCount", configIssues.size())
+            );
+        }
+
+        UUID previousVersionId = definition.getActiveVersionId();
+        Instant now = clock.instant();
+        definition.activateVersion(version.getId(), operatorUserId, now);
+        workflowDefinitionRepository.save(definition);
+        log.info(
+            "工作流可用版本切换成功 tenantId={} operatorUserId={} workflowId={} version={} requestId={}",
+            tenantId,
+            operatorUserId,
+            workflowId,
+            version.getVersionNumber(),
+            RequestIds.current()
+        );
+        Map<String, Object> auditDetails = new LinkedHashMap<>();
+        auditDetails.put("versionId", version.getId().toString());
+        auditDetails.put("versionNumber", version.getVersionNumber());
+        auditDetails.put("previousVersionId", previousVersionId == null ? "" : previousVersionId.toString());
+        auditService.recordOperationLog(
+            tenantId,
+            operatorUserId,
+            getOperatorName(operatorUserId),
+            "ACTIVATE_WORKFLOW_VERSION",
+            "WORKFLOW_DEFINITION",
+            definition.getId().toString(),
+            definition.getName(),
+            "将工作流当前可用版本切换为 v" + version.getVersionNumber(),
+            auditDetails,
+            null
+        );
+        return toDetail(definition, operatorUserId);
     }
 
     @Transactional
@@ -665,6 +763,16 @@ public class WorkflowDraftService {
         validateGraph(tenantId, workflowId, nodes, edges);
         workflowVariableDeclarationValidator.validate(nodes, variables);
         // 草稿保存只校验图结构与变量声明；节点配置完整性与能力引用留给发布前校验，避免打断设计中的半成品保存。
+
+        List<WorkflowDraftApi.WorkflowNodeRow> currentNodes = workflowNodeDefinitionRepository
+            .findByWorkflowIdOrderBySortOrderAsc(workflowId).stream().map(this::toNodeRow).toList();
+        List<WorkflowDraftApi.WorkflowEdgeRow> currentEdges = workflowEdgeDefinitionRepository
+            .findByWorkflowIdOrderBySortOrderAsc(workflowId).stream().map(this::toEdgeRow).toList();
+        List<WorkflowDraftApi.WorkflowVariableRow> currentVariables = workflowVariableDefinitionRepository
+            .findByWorkflowIdOrderBySortOrderAsc(workflowId).stream().map(this::toVariableRow).toList();
+        boolean executionChanged = !currentExecutionGraphSnapshot(currentNodes, currentEdges, currentVariables).equals(
+            draftExecutionGraphSnapshot(nodes, edges, variables)
+        );
 
         Instant now = clock.instant();
         workflowNodeDefinitionRepository.deleteByWorkflowId(workflowId);
@@ -731,7 +839,11 @@ public class WorkflowDraftService {
 
         // 积木计数排除系统触发节点（trigger），与前端编辑器 visibleNodes 口径一致，用户只关心业务积木数量。
         int userNodeCount = (int) nodes.stream().filter(n -> !"trigger".equals(n.nodeType())).count();
-        definition.updateGraphSummary(userNodeCount, operatorUserId, now);
+        if (executionChanged) {
+            definition.updateGraphSummary(userNodeCount, operatorUserId, now);
+        } else {
+            definition.updateGraphLayoutSummary(userNodeCount, operatorUserId, now);
+        }
         workflowDefinitionRepository.save(definition);
         log.info(
             "工作流草稿图保存成功 tenantId={} operatorUserId={} workflowId={} nodeCount={} edgeCount={} variableCount={} requestId={}",
@@ -752,7 +864,12 @@ public class WorkflowDraftService {
             definition.getId().toString(),
             definition.getName(),
             auditSummary,
-            Map.of("nodeCount", nodes.size(), "edgeCount", edges.size(), "variableCount", variables.size()),
+            Map.of(
+                "nodeCount", nodes.size(),
+                "edgeCount", edges.size(),
+                "variableCount", variables.size(),
+                "executionChanged", executionChanged
+            ),
             null
         );
         return toDetail(definition, operatorUserId);
@@ -902,12 +1019,16 @@ public class WorkflowDraftService {
         CollaborationAccessPolicy.AccessLevel accessLevel = resolveAccess(definition, operatorUserId, grants);
         boolean canManageAccess = definition.getCreatedBy() != null && definition.getCreatedBy().equals(operatorUserId);
         WorkflowVersionEntity latestVersion = workflowVersionRepository.findTopByWorkflowIdOrderByVersionNumberDesc(definition.getId()).orElse(null);
+        WorkflowVersionEntity activeVersion = definition.getActiveVersionId() == null
+            ? null
+            : workflowVersionRepository.findById(definition.getActiveVersionId()).orElse(null);
         return new WorkflowDraftApi.WorkflowDraftDetail(
             toDraftRow(
                 definition,
                 loadUsersById(definition.getCreatedBy() == null ? Set.of() : Set.of(definition.getCreatedBy())),
                 operatorUserId,
-                latestVersion
+                latestVersion,
+                activeVersion
             ),
             workflowNodeDefinitionRepository.findByWorkflowIdOrderBySortOrderAsc(definition.getId()).stream().map(this::toNodeRow).toList(),
             workflowEdgeDefinitionRepository.findByWorkflowIdOrderBySortOrderAsc(definition.getId()).stream().map(this::toEdgeRow).toList(),
@@ -927,7 +1048,8 @@ public class WorkflowDraftService {
         WorkflowDefinitionEntity definition,
         Map<UUID, UserAccount> usersById,
         UUID operatorUserId,
-        WorkflowVersionEntity latestVersion
+        WorkflowVersionEntity latestVersion,
+        WorkflowVersionEntity activeVersion
     ) {
         UserAccount owner = definition.getCreatedBy() == null ? null : usersById.get(definition.getCreatedBy());
         int latestVersionNumber = latestVersion == null ? 0 : latestVersion.getVersionNumber();
@@ -944,6 +1066,8 @@ public class WorkflowDraftService {
             owner == null ? "未知用户" : owner.getDisplayName(),
             resolveAccess(definition, operatorUserId).name().toLowerCase(),
             latestVersionNumber,
+            activeVersion == null ? null : activeVersion.getId(),
+            activeVersion == null ? 0 : activeVersion.getVersionNumber(),
             latestPublishedAt,
             hasUnpublishedChanges,
             definition.isLaunchEnabled(),
@@ -960,19 +1084,31 @@ public class WorkflowDraftService {
             .collect(Collectors.toMap(WorkflowVersionEntity::getWorkflowId, Function.identity(), (left, right) -> left));
     }
 
-    private void markUnpublishedChangesIfNeeded(WorkflowDefinitionEntity definition, UUID operatorUserId) {
-        if (!"published".equals(definition.getStatus())) {
-            return;
+    private Map<UUID, WorkflowVersionEntity> loadActiveVersions(Collection<WorkflowDefinitionEntity> definitions) {
+        Set<UUID> activeVersionIds = definitions.stream()
+            .map(WorkflowDefinitionEntity::getActiveVersionId)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
+        if (activeVersionIds.isEmpty()) {
+            return Map.of();
         }
-        if (workflowVersionRepository.findTopByWorkflowIdOrderByVersionNumberDesc(definition.getId()).isEmpty()) {
-            return;
-        }
-        definition.markUnpublishedChanges(operatorUserId, clock.instant());
+        return workflowVersionRepository.findAllById(activeVersionIds).stream()
+            .collect(Collectors.toMap(WorkflowVersionEntity::getWorkflowId, Function.identity(), (left, right) -> left));
     }
 
-    private WorkflowVersionEntity requireLatestVersion(UUID workflowId) {
-        return workflowVersionRepository.findTopByWorkflowIdOrderByVersionNumberDesc(workflowId)
-            .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "WORKFLOW_VERSION_REQUIRED", "流程尚未发布，无法上下线"));
+    private WorkflowVersionEntity requireActiveVersion(WorkflowDefinitionEntity definition) {
+        if (definition.getActiveVersionId() == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKFLOW_VERSION_REQUIRED", "流程尚未发布，无法上下线");
+        }
+        return workflowVersionRepository.findByIdAndWorkflowIdAndTenantId(
+            definition.getActiveVersionId(),
+            definition.getId(),
+            definition.getTenantId()
+        ).orElseThrow(() -> new ApiException(
+            HttpStatus.CONFLICT,
+            "WORKFLOW_ACTIVE_VERSION_INVALID",
+            "当前可用版本不存在，请重新选择工作流版本"
+        ));
     }
 
     private CollaborationAccessPolicy.AccessLevel resolveAccess(WorkflowDefinitionEntity definition, UUID operatorUserId) {
@@ -1126,6 +1262,95 @@ public class WorkflowDraftService {
         }
     }
 
+    private WorkflowVersionSnapshot readVersionSnapshot(WorkflowVersionEntity version) {
+        try {
+            return objectMapper.readValue(version.getDefinitionSnapshot(), WorkflowVersionSnapshot.class);
+        } catch (JsonProcessingException exception) {
+            log.error(
+                "工作流发布快照解析失败 workflowId={} version={} requestId={}",
+                version.getWorkflowId(),
+                version.getVersionNumber(),
+                RequestIds.current(),
+                exception
+            );
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "WORKFLOW_VERSION_SNAPSHOT_INVALID", "工作流发布版本快照无法解析");
+        }
+    }
+
+    private ExecutionGraphSnapshot currentExecutionGraphSnapshot(
+        List<WorkflowDraftApi.WorkflowNodeRow> nodes,
+        List<WorkflowDraftApi.WorkflowEdgeRow> edges,
+        List<WorkflowDraftApi.WorkflowVariableRow> variables
+    ) {
+        return new ExecutionGraphSnapshot(
+            nodes.stream().map(node -> new ExecutionNodeSnapshot(
+                normalizeRequired(node.nodeId()),
+                normalizeRequired(node.nodeType()),
+                normalizeRequired(node.name()),
+                safeList(node.inputVariables()),
+                safeList(node.outputVariables()),
+                safeMap(node.config())
+            )).toList(),
+            edges.stream().map(edge -> new ExecutionEdgeSnapshot(
+                normalizeRequired(edge.edgeId()),
+                normalizeRequired(edge.sourceNodeId()),
+                normalizeRequired(edge.targetNodeId()),
+                normalizeRequired(edge.label()),
+                normalizeRequired(edge.conditionExpression())
+            )).toList(),
+            variables.stream().map(variable -> new ExecutionVariableSnapshot(
+                normalizeRequired(variable.name()),
+                normalizeRequired(variable.type()),
+                normalizeRequired(variable.sourceNode()),
+                normalizeRequired(variable.description()),
+                safeMap(variable.jsonSchema()),
+                variable.sensitive(),
+                variable.deliverable()
+            )).toList()
+        );
+    }
+
+    private ExecutionGraphSnapshot draftExecutionGraphSnapshot(
+        List<WorkflowDraftApi.WorkflowNodeDraft> nodes,
+        List<WorkflowDraftApi.WorkflowEdgeDraft> edges,
+        List<WorkflowDraftApi.WorkflowVariableDraft> variables
+    ) {
+        return new ExecutionGraphSnapshot(
+            nodes.stream().map(node -> new ExecutionNodeSnapshot(
+                normalizeRequired(node.nodeId()),
+                normalizeRequired(node.nodeType()),
+                normalizeRequired(node.name()),
+                safeList(node.inputVariables()),
+                safeList(node.outputVariables()),
+                safeMap(node.config())
+            )).toList(),
+            edges.stream().map(edge -> new ExecutionEdgeSnapshot(
+                normalizeRequired(edge.edgeId()),
+                normalizeRequired(edge.sourceNodeId()),
+                normalizeRequired(edge.targetNodeId()),
+                normalizeRequired(edge.label()),
+                normalizeRequired(edge.conditionExpression())
+            )).toList(),
+            variables.stream().map(variable -> new ExecutionVariableSnapshot(
+                normalizeRequired(variable.name()),
+                normalizeRequired(variable.type()),
+                normalizeRequired(variable.sourceNode()),
+                normalizeRequired(variable.description()),
+                safeMap(variable.jsonSchema()),
+                variable.sensitive(),
+                variable.deliverable()
+            )).toList()
+        );
+    }
+
+    private static List<String> safeList(List<String> values) {
+        return values == null ? List.of() : Collections.unmodifiableList(new ArrayList<>(values));
+    }
+
+    private static Map<String, Object> safeMap(Map<String, Object> values) {
+        return values == null ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(values));
+    }
+
     private Map<String, Object> readJsonObject(String value) {
         try {
             return objectMapper.readValue(value, new TypeReference<Map<String, Object>>() {});
@@ -1231,6 +1456,43 @@ public class WorkflowDraftService {
         List<WorkflowDraftApi.WorkflowNodeRow> nodes,
         List<WorkflowDraftApi.WorkflowEdgeRow> edges,
         List<WorkflowDraftApi.WorkflowVariableRow> variables
+    ) {
+    }
+
+    private record ExecutionGraphSnapshot(
+        List<ExecutionNodeSnapshot> nodes,
+        List<ExecutionEdgeSnapshot> edges,
+        List<ExecutionVariableSnapshot> variables
+    ) {
+    }
+
+    private record ExecutionNodeSnapshot(
+        String nodeId,
+        String nodeType,
+        String name,
+        List<String> inputVariables,
+        List<String> outputVariables,
+        Map<String, Object> config
+    ) {
+    }
+
+    private record ExecutionEdgeSnapshot(
+        String edgeId,
+        String sourceNodeId,
+        String targetNodeId,
+        String label,
+        String conditionExpression
+    ) {
+    }
+
+    private record ExecutionVariableSnapshot(
+        String name,
+        String type,
+        String sourceNode,
+        String description,
+        Map<String, Object> jsonSchema,
+        boolean sensitive,
+        boolean deliverable
     ) {
     }
 }

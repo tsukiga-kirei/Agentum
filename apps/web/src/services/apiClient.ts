@@ -73,6 +73,7 @@ import type {
   WorkflowNodeDraft,
   WorkflowDraftRow,
   WorkflowPublishResult,
+  WorkflowVersionRow,
   WorkflowPublishValidationResult,
   WorkflowShareableMemberRow,
   FileDownloadResponse,
@@ -853,6 +854,13 @@ export const workflowApi = {
     }),
   publish: (tenantId: string, workflowId: string, token: string) =>
     apiRequest<WorkflowPublishResult>(`/api/tenants/${tenantId}/workflows/drafts/${workflowId}/publish`, {
+      method: "POST",
+      token,
+    }),
+  listVersions: (tenantId: string, workflowId: string, token: string) =>
+    apiRequest<WorkflowVersionRow[]>(`/api/tenants/${tenantId}/workflows/drafts/${workflowId}/versions`, { token }),
+  activateVersion: (tenantId: string, workflowId: string, versionId: string, token: string) =>
+    apiRequest<WorkflowDraftDetail>(`/api/tenants/${tenantId}/workflows/drafts/${workflowId}/versions/${versionId}/activate`, {
       method: "POST",
       token,
     }),

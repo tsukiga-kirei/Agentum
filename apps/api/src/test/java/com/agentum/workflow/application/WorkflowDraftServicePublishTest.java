@@ -104,6 +104,102 @@ class WorkflowDraftServicePublishTest {
         assertThat(result.draft().latestVersionNumber()).isEqualTo(1);
         assertThat(result.draft().launchEnabled()).isTrue();
         assertThat(result.draft().hasUnpublishedChanges()).isFalse();
+        assertThat(result.draft().activeVersionNumber()).isEqualTo(1);
+    }
+
+    @Test
+    void shouldKeepPublishedStateWhenOnlyMetadataChanges() {
+        WorkflowDefinitionEntity definition = draft();
+        WorkflowVersionEntity version = WorkflowVersionEntity.create(
+            definition.getId(), TENANT_ID, 1, "{\"name\":\"需求评审\",\"description\":\"旧简介\",\"nodes\":[],\"edges\":[],\"variables\":[]}", 0, USER_ID, NOW
+        );
+        definition.markPublished(version.getId(), USER_ID, NOW);
+        stubDefinitionLookup(definition);
+        when(workflowVersionRepository.findTopByWorkflowIdOrderByVersionNumberDesc(definition.getId())).thenReturn(Optional.of(version));
+        when(workflowVersionRepository.findById(version.getId())).thenReturn(Optional.of(version));
+
+        WorkflowDraftApi.WorkflowDraftDetail detail = service().updateDraft(
+            TENANT_ID,
+            USER_ID,
+            definition.getId(),
+            new WorkflowDraftApi.UpdateWorkflowDraftRequest("需求评审（新版简介）", "只调整展示说明")
+        );
+
+        assertThat(detail.draft().status()).isEqualTo("published");
+        assertThat(detail.draft().hasUnpublishedChanges()).isFalse();
+        assertThat(detail.draft().activeVersionNumber()).isEqualTo(1);
+    }
+
+    @Test
+    void shouldKeepPublishedStateWhenOnlyCanvasPositionChanges() {
+        WorkflowDefinitionEntity definition = draft();
+        WorkflowNodeDefinitionEntity currentNode = WorkflowNodeDefinitionEntity.create(
+            definition.getId(),
+            "input_1",
+            "user_input",
+            "资料输入",
+            java.math.BigDecimal.ZERO,
+            java.math.BigDecimal.ZERO,
+            List.of(),
+            List.of("company_name"),
+            Map.of("placeholder", "请输入公司名称"),
+            0,
+            NOW
+        );
+        WorkflowVersionEntity version = WorkflowVersionEntity.create(
+            definition.getId(), TENANT_ID, 1, "{\"name\":\"需求评审\",\"description\":\"\",\"nodes\":[],\"edges\":[],\"variables\":[]}", 1, USER_ID, NOW
+        );
+        definition.markPublished(version.getId(), USER_ID, NOW);
+        stubDefinitionLookup(definition);
+        when(workflowNodeDefinitionRepository.findByWorkflowIdOrderBySortOrderAsc(definition.getId())).thenReturn(List.of(currentNode));
+        when(workflowVersionRepository.findTopByWorkflowIdOrderByVersionNumberDesc(definition.getId())).thenReturn(Optional.of(version));
+        when(workflowVersionRepository.findById(version.getId())).thenReturn(Optional.of(version));
+
+        WorkflowDraftApi.WorkflowDraftDetail detail = service().saveGraph(
+            TENANT_ID,
+            USER_ID,
+            definition.getId(),
+            new WorkflowDraftApi.SaveWorkflowDraftGraphRequest(
+                List.of(new WorkflowDraftApi.WorkflowNodeDraft(
+                    "input_1", "user_input", "资料输入", 320, 180,
+                    List.of(), List.of("company_name"), Map.of("placeholder", "请输入公司名称")
+                )),
+                List.of(),
+                List.of()
+            )
+        );
+
+        assertThat(detail.draft().status()).isEqualTo("published");
+        assertThat(detail.draft().hasUnpublishedChanges()).isFalse();
+    }
+
+    @Test
+    void shouldActivateHistoricalVersionWithoutCreatingAnotherVersion() {
+        WorkflowDefinitionEntity definition = draft();
+        WorkflowVersionEntity version1 = WorkflowVersionEntity.create(
+            definition.getId(), TENANT_ID, 1, "{\"name\":\"需求评审\",\"description\":\"\",\"nodes\":[],\"edges\":[],\"variables\":[]}", 0, USER_ID, NOW
+        );
+        WorkflowVersionEntity version2 = WorkflowVersionEntity.create(
+            definition.getId(), TENANT_ID, 2, "{\"name\":\"需求评审\",\"description\":\"\",\"nodes\":[],\"edges\":[],\"variables\":[]}", 0, USER_ID, NOW.plusSeconds(60)
+        );
+        definition.markPublished(version2.getId(), USER_ID, NOW.plusSeconds(60));
+        stubDefinitionLookup(definition);
+        when(workflowVersionRepository.findByIdAndWorkflowIdAndTenantId(version1.getId(), definition.getId(), TENANT_ID))
+            .thenReturn(Optional.of(version1));
+        when(workflowVersionRepository.findTopByWorkflowIdOrderByVersionNumberDesc(definition.getId())).thenReturn(Optional.of(version2));
+        when(workflowVersionRepository.findById(version1.getId())).thenReturn(Optional.of(version1));
+
+        WorkflowDraftApi.WorkflowDraftDetail detail = service().activateVersion(
+            TENANT_ID,
+            USER_ID,
+            definition.getId(),
+            version1.getId()
+        );
+
+        assertThat(detail.draft().activeVersionNumber()).isEqualTo(1);
+        assertThat(detail.draft().latestVersionNumber()).isEqualTo(2);
+        assertThat(detail.draft().launchEnabled()).isTrue();
+        verify(workflowVersionRepository, never()).save(any());
     }
 
     @Test

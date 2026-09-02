@@ -38,6 +38,9 @@ public class WorkflowDefinitionEntity {
     @Column(name = "launch_enabled", nullable = false)
     private boolean launchEnabled = true;
 
+    @Column(name = "active_version_id")
+    private UUID activeVersionId;
+
     @Column(name = "created_by")
     private UUID createdBy;
 
@@ -80,9 +83,10 @@ public class WorkflowDefinitionEntity {
         this.updatedAt = now;
     }
 
-    public void markPublished(UUID operatorUserId, Instant now) {
+    public void markPublished(UUID versionId, UUID operatorUserId, Instant now) {
         // 发布只改变设计态摘要；真正可回放的执行协议会冻结到 workflow_versions，避免后续草稿编辑污染历史版本。
         this.status = "published";
+        this.activeVersionId = versionId;
         this.launchEnabled = true;
         this.updatedBy = operatorUserId;
         this.updatedAt = now;
@@ -103,6 +107,20 @@ public class WorkflowDefinitionEntity {
 
     public void restoreLaunch(UUID operatorUserId, Instant now) {
         this.launchEnabled = true;
+        this.updatedBy = operatorUserId;
+        this.updatedAt = now;
+    }
+
+    public void activateVersion(UUID versionId, UUID operatorUserId, Instant now) {
+        // 版本切换只影响后续新发起任务；已经创建的运行实例继续引用原 workflow_version_id。
+        this.activeVersionId = versionId;
+        this.updatedBy = operatorUserId;
+        this.updatedAt = now;
+    }
+
+    public void updateGraphLayoutSummary(int nodeCount, UUID operatorUserId, Instant now) {
+        // 仅画布位置等非执行信息变化时保留发布状态，避免无意义地要求重新校验和发布。
+        this.nodeCount = nodeCount;
         this.updatedBy = operatorUserId;
         this.updatedAt = now;
     }
@@ -155,6 +173,10 @@ public class WorkflowDefinitionEntity {
 
     public boolean isLaunchEnabled() {
         return launchEnabled;
+    }
+
+    public UUID getActiveVersionId() {
+        return activeVersionId;
     }
 
     public UUID getCreatedBy() {

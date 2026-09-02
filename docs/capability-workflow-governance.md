@@ -61,7 +61,7 @@
 | 设计态 | 单表记录，发布即正式版 | `workflow_definitions` 工作副本 |
 | 正式版 | 记录本身 status=published | `workflow_versions` 冻结快照 |
 | 再编辑 | 必须「改回草稿」 | 可直接改；保存积木后标记「有未发布改动」 |
-| 业务入口 | 被引用为节点配置 | `launch_enabled` + 最新冻结版本 |
+| 业务入口 | 被引用为节点配置 | `launch_enabled` + 当前可用冻结版本 |
 
 能力更严，是因为能力是被引用的**零件**；流程是**组合体**，已有独立版本表。
 
@@ -73,6 +73,7 @@
 |------|------|
 | `workflow_definitions.status` | 设计态是否与最近发布一致：`published` = 一致，`draft` = 有未发布改动或从未发布 |
 | `workflow_versions` | 不可变快照 v1、v2…；运行态只能引用此表 |
+| `active_version_id` | 当前业务入口用于新发起任务的版本；可在历史版本之间切换 |
 | `launch_enabled` | 业务工作台是否允许**新发起**；false = 已收回入口 |
 
 ### 3.2 用户可见状态
@@ -80,18 +81,21 @@
 | UI 标签 | 条件 |
 |---------|------|
 | 未发布 | `latestVersionNumber = 0` |
-| 已发布 vN | 有版本且 `!hasUnpublishedChanges` |
-| 已发布 vN · 有未发布改动 | 有版本且 `status = draft` |
-| 已发布 vN · 已收回 | 有版本且 `launch_enabled = false` |
+| 当前 vN | 有当前可用版本且 `!hasUnpublishedChanges` |
+| 当前 vN · 最新 vM | 当前可用版本不是最近发布版本 |
+| 当前 vN · 有未发布改动 | 有当前可用版本且 `status = draft` |
+| 当前 vN · 已收回 | 有当前可用版本且 `launch_enabled = false` |
 
 ### 3.3 关键操作
 
 | 操作 | 效果 | 是否可逆 |
 |------|------|---------|
 | 发布 | 新增冻结版本，业务可发起（若入口开放） | 版本不可修改，只能发新版本 |
+| 切换可用版本 | 更新 `active_version_id`，只影响后续新运行 | 可随时切回其他有效历史版本 |
 | 收回入口 | `launch_enabled=false` | 可「恢复入口」 |
 | 删除流程 | 删除定义 + 全部版本 | 不可逆；运行态接入后需引用保护 |
-| 改积木/说明 | 有版本时标记未发布改动 | 重新发布生成 vN+1 |
+| 改执行配置 | 节点、连线、变量及模型/能力配置变化时标记未发布改动 | 重新发布生成 vN+1 |
+| 改名称/简介/权限/布局 | 直接保存并留审计，不改变执行版本状态 | 无需发布 |
 
 ### 3.4 业务工作台查询
 
@@ -100,10 +104,10 @@
 ```text
 当前用户有读取权限
 AND launch_enabled = true
-AND EXISTS workflow_versions
+AND active_version_id IS NOT NULL
 ```
 
-避免设计者改积木后 `status=draft` 误将已发布版本从业务侧下线。
+避免设计者改积木后 `status=draft` 误将当前可用版本从业务侧下线。新运行绑定 `active_version_id`；已有运行继续使用自身的 `workflow_version_id`。历史版本切换前只复核当前模型、Skill、MCP、模板和交付能力是否仍有效，不重复执行已经冻结的图结构校验。
 
 ## 4. 协作权限（流程 & 能力）
 

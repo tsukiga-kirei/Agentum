@@ -13,6 +13,10 @@ public interface WorkflowVersionRepository extends JpaRepository<WorkflowVersion
 
     Optional<WorkflowVersionEntity> findTopByWorkflowIdOrderByVersionNumberDesc(UUID workflowId);
 
+    Optional<WorkflowVersionEntity> findByIdAndWorkflowIdAndTenantId(UUID id, UUID workflowId, UUID tenantId);
+
+    List<WorkflowVersionEntity> findByWorkflowIdOrderByVersionNumberDesc(UUID workflowId);
+
     /**
      * 批量查询多个工作流各自的最新发布版本，供业务工作台“可发起流程”一次性聚合，
      * 避免按 workflow 逐个回查触发 N+1。

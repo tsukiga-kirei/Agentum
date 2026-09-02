@@ -180,6 +180,32 @@ public class WorkflowDraftController {
         return ApiResponse.success(workflowDraftService.publish(tenantId, principal.userId(), workflowId), RequestIds.current(request));
     }
 
+    @GetMapping("/{workflowId}/versions")
+    public ApiResponse<List<WorkflowDraftApi.WorkflowVersionRow>> listVersions(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID workflowId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        workflowDesignAccess.assertCanDesign(principal, tenantId);
+        return ApiResponse.success(workflowDraftService.listVersions(tenantId, principal.userId(), workflowId), RequestIds.current(request));
+    }
+
+    @PostMapping("/{workflowId}/versions/{versionId}/activate")
+    public ApiResponse<WorkflowDraftApi.WorkflowDraftDetail> activateVersion(
+        @PathVariable UUID tenantId,
+        @PathVariable UUID workflowId,
+        @PathVariable UUID versionId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        workflowDesignAccess.assertCanDesign(principal, tenantId);
+        return ApiResponse.success(
+            workflowDraftService.activateVersion(tenantId, principal.userId(), workflowId, versionId),
+            RequestIds.current(request)
+        );
+    }
+
     @PostMapping("/{workflowId}/recall-launch")
     public ApiResponse<WorkflowDraftApi.WorkflowDraftDetail> recallLaunch(
         @PathVariable UUID tenantId,

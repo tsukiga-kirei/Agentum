@@ -10412,6 +10412,72 @@ html:not(.dark) .rail-flow-line {
   gap: 10px;
 }
 
+.workflow-version-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-page);
+}
+
+.workflow-version-panel-header,
+.workflow-version-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.workflow-version-panel-header .sys-config-group-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.workflow-version-panel-header p {
+  margin: 4px 0 0;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.workflow-version-list {
+  display: grid;
+  gap: 8px;
+}
+
+.workflow-version-item {
+  padding: 10px 12px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-card);
+}
+
+.workflow-version-item--active {
+  border-color: color-mix(in srgb, var(--color-success) 36%, var(--color-border-light));
+  background: color-mix(in srgb, var(--color-success) 6%, var(--color-bg-card));
+}
+
+.workflow-version-item-main {
+  min-width: 0;
+}
+
+.workflow-version-item-main > div {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.workflow-version-item-main small {
+  display: block;
+  margin-top: 4px;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+}
+
 .workflow-drawer-overview {
   display: grid;
   gap: 14px;

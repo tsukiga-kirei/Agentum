@@ -17,10 +17,7 @@ public interface WorkflowDefinitionRepository extends JpaRepository<WorkflowDefi
         select count(definition) from WorkflowDefinitionEntity definition
         where definition.tenantId = :tenantId
           and definition.launchEnabled = true
-          and exists (
-            select version.id from WorkflowVersionEntity version
-            where version.workflowId = definition.id
-          )
+          and definition.activeVersionId is not null
         """)
     long countLaunchableByTenantId(@Param("tenantId") UUID tenantId);
 
@@ -37,10 +34,7 @@ public interface WorkflowDefinitionRepository extends JpaRepository<WorkflowDefi
             )
           )
           and definition.launchEnabled = true
-          and exists (
-            select version.id from WorkflowVersionEntity version
-            where version.workflowId = definition.id
-          )
+          and definition.activeVersionId is not null
         """)
     long countVisibleLaunchableByTenantId(
         @Param("tenantId") UUID tenantId,
@@ -97,10 +91,7 @@ public interface WorkflowDefinitionRepository extends JpaRepository<WorkflowDefi
             )
           )
           and definition.launchEnabled = true
-          and exists (
-            select version.id from WorkflowVersionEntity version
-            where version.workflowId = definition.id
-          )
+          and definition.activeVersionId is not null
         """)
     Page<WorkflowDefinitionEntity> searchLaunchableWorkflows(
         @Param("tenantId") UUID tenantId,
@@ -118,10 +109,7 @@ public interface WorkflowDefinitionRepository extends JpaRepository<WorkflowDefi
             or lower(coalesce(definition.description, '')) like lower(concat('%', :keyword, '%'))
           )
           and definition.launchEnabled = true
-          and exists (
-            select version.id from WorkflowVersionEntity version
-            where version.workflowId = definition.id
-          )
+          and definition.activeVersionId is not null
         """)
     Page<WorkflowDefinitionEntity> searchAllLaunchableWorkflows(
         @Param("tenantId") UUID tenantId,

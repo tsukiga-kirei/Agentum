@@ -25,6 +25,8 @@ public final class WorkflowDraftApi {
         String ownerName,
         String accessLevel,
         int latestVersionNumber,
+        UUID activeVersionId,
+        int activeVersionNumber,
         Instant latestPublishedAt,
         boolean hasUnpublishedChanges,
         boolean launchEnabled,
@@ -66,6 +68,17 @@ public final class WorkflowDraftApi {
         WorkflowDraftRow draft,
         int versionNumber,
         Instant publishedAt
+    ) {
+    }
+
+    public record WorkflowVersionRow(
+        UUID id,
+        int versionNumber,
+        int nodeCount,
+        UUID publishedBy,
+        String publisherName,
+        Instant publishedAt,
+        boolean active
     ) {
     }
 

@@ -137,7 +137,7 @@ class WorkbenchRuntimeServiceTest {
         stubTenant();
         when(workflowDefinitionRepository.searchAllLaunchableWorkflows(eq(TENANT_ID), eq(""), any(Pageable.class)))
             .thenReturn(new PageImpl<>(List.of(open, locked)));
-        when(workflowVersionRepository.findLatestByWorkflowIds(any())).thenReturn(List.of(openVersion, lockedVersion));
+        when(workflowVersionRepository.findAllById(any())).thenReturn(List.of(openVersion, lockedVersion));
         when(workflowAccessGrantRepository.findByWorkflowIdIn(any())).thenReturn(List.of());
         when(userAccountRepository.findAllById(any())).thenReturn(List.of(designer));
 
@@ -159,7 +159,7 @@ class WorkbenchRuntimeServiceTest {
 
         stubTenant();
         when(workflowDefinitionRepository.findByIdAndTenantId(open.getId(), TENANT_ID)).thenReturn(Optional.of(open));
-        when(workflowVersionRepository.findTopByWorkflowIdOrderByVersionNumberDesc(open.getId())).thenReturn(Optional.of(openVersion));
+        when(workflowVersionRepository.findByIdAndWorkflowIdAndTenantId(openVersion.getId(), open.getId(), TENANT_ID)).thenReturn(Optional.of(openVersion));
 
         WorkbenchApi.AvailableWorkflowPreview preview = service.getAvailableWorkflowPreview(
             TENANT_ID,
@@ -180,8 +180,9 @@ class WorkbenchRuntimeServiceTest {
         WorkflowDefinitionEntity locked = publishedDefinition("未开放流程", DESIGNER_ID, "self");
         stubTenant();
         when(workflowDefinitionRepository.findByIdAndTenantId(locked.getId(), TENANT_ID)).thenReturn(Optional.of(locked));
-        when(workflowVersionRepository.findTopByWorkflowIdOrderByVersionNumberDesc(locked.getId()))
-            .thenReturn(Optional.of(version(locked, 1, snapshotJson())));
+        WorkflowVersionEntity lockedVersion = version(locked, 1, snapshotJson());
+        when(workflowVersionRepository.findByIdAndWorkflowIdAndTenantId(lockedVersion.getId(), locked.getId(), TENANT_ID))
+            .thenReturn(Optional.of(lockedVersion));
         when(workflowAccessGrantRepository.findByWorkflowId(locked.getId())).thenReturn(List.of());
 
         assertThatThrownBy(() -> service.createRun(
@@ -204,7 +205,7 @@ class WorkbenchRuntimeServiceTest {
 
         stubTenant();
         when(workflowDefinitionRepository.findByIdAndTenantId(open.getId(), TENANT_ID)).thenReturn(Optional.of(open));
-        when(workflowVersionRepository.findTopByWorkflowIdOrderByVersionNumberDesc(open.getId())).thenReturn(Optional.of(version));
+        when(workflowVersionRepository.findByIdAndWorkflowIdAndTenantId(version.getId(), open.getId(), TENANT_ID)).thenReturn(Optional.of(version));
         when(workflowAccessGrantRepository.findByWorkflowId(open.getId())).thenReturn(List.of());
         when(userAccountRepository.findAllById(any())).thenReturn(List.of(operator));
         when(workflowRuntimeExecutor.execute(any()))
@@ -242,7 +243,7 @@ class WorkbenchRuntimeServiceTest {
 
         stubTenant();
         when(workflowDefinitionRepository.findByIdAndTenantId(open.getId(), TENANT_ID)).thenReturn(Optional.of(open));
-        when(workflowVersionRepository.findTopByWorkflowIdOrderByVersionNumberDesc(open.getId())).thenReturn(Optional.of(version));
+        when(workflowVersionRepository.findByIdAndWorkflowIdAndTenantId(version.getId(), open.getId(), TENANT_ID)).thenReturn(Optional.of(version));
         when(workflowAccessGrantRepository.findByWorkflowId(open.getId())).thenReturn(List.of());
         when(userAccountRepository.findAllById(any())).thenReturn(List.of(operator));
         when(workflowRuntimeExecutor.execute(any()))
@@ -273,7 +274,7 @@ class WorkbenchRuntimeServiceTest {
 
         stubTenant();
         when(workflowDefinitionRepository.findByIdAndTenantId(open.getId(), TENANT_ID)).thenReturn(Optional.of(open));
-        when(workflowVersionRepository.findTopByWorkflowIdOrderByVersionNumberDesc(open.getId())).thenReturn(Optional.of(version));
+        when(workflowVersionRepository.findByIdAndWorkflowIdAndTenantId(version.getId(), open.getId(), TENANT_ID)).thenReturn(Optional.of(version));
         when(workflowAccessGrantRepository.findByWorkflowId(open.getId())).thenReturn(List.of());
         when(userAccountRepository.findAllById(any())).thenReturn(List.of(operator));
         when(workflowRuntimeExecutor.execute(any()))
@@ -307,7 +308,7 @@ class WorkbenchRuntimeServiceTest {
 
         stubTenant();
         when(workflowDefinitionRepository.findByIdAndTenantId(open.getId(), TENANT_ID)).thenReturn(Optional.of(open));
-        when(workflowVersionRepository.findTopByWorkflowIdOrderByVersionNumberDesc(open.getId())).thenReturn(Optional.of(version));
+        when(workflowVersionRepository.findByIdAndWorkflowIdAndTenantId(version.getId(), open.getId(), TENANT_ID)).thenReturn(Optional.of(version));
         when(workflowAccessGrantRepository.findByWorkflowId(open.getId())).thenReturn(List.of());
         when(userAccountRepository.findAllById(any())).thenReturn(List.of(operator));
         when(workflowRuntimeExecutor.execute(any()))
@@ -338,6 +339,7 @@ class WorkbenchRuntimeServiceTest {
             TENANT_ID,
             businessPrincipal(),
             open.getId(),
+            version.getId(),
             scheduleId,
             "每日授信复核",
             Map.of("company_profile", "云程科技"),
@@ -1309,12 +1311,11 @@ class WorkbenchRuntimeServiceTest {
     private static WorkflowDefinitionEntity publishedDefinition(String name, UUID createdBy, String readScope) {
         WorkflowDefinitionEntity definition = WorkflowDefinitionEntity.create(TENANT_ID, name, "流程说明", createdBy, NOW);
         definition.updateAccess(readScope, "self", createdBy, NOW);
-        definition.markPublished(createdBy, NOW);
         return definition;
     }
 
     private static WorkflowVersionEntity version(WorkflowDefinitionEntity definition, int versionNumber, String snapshot) {
-        return WorkflowVersionEntity.create(
+        WorkflowVersionEntity version = WorkflowVersionEntity.create(
             definition.getId(),
             TENANT_ID,
             versionNumber,
@@ -1323,6 +1324,8 @@ class WorkbenchRuntimeServiceTest {
             DESIGNER_ID,
             NOW
         );
+        definition.markPublished(version.getId(), definition.getCreatedBy(), NOW);
+        return version;
     }
 
     private static CurrentUserPrincipal businessPrincipal() {

@@ -440,6 +440,7 @@ public class WorkflowScheduleService {
                 schedule.getTenantId(),
                 principal,
                 schedule.getWorkflowId(),
+                schedule.getWorkflowVersionId(),
                 schedule.getId(),
                 schedule.getName(),
                 schedule.getInputPayload(),
@@ -511,8 +512,18 @@ public class WorkflowScheduleService {
         if (!definition.isLaunchEnabled()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_WORKFLOW_RECALLED", "该流程入口已被收回，不能创建定时任务");
         }
-        WorkflowVersionEntity version = workflowVersionRepository.findTopByWorkflowIdOrderByVersionNumberDesc(workflowId)
-            .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "WORKFLOW_VERSION_REQUIRED", "流程尚未发布，不能创建定时任务"));
+        if (definition.getActiveVersionId() == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKFLOW_VERSION_REQUIRED", "流程尚未发布，不能创建定时任务");
+        }
+        WorkflowVersionEntity version = workflowVersionRepository.findByIdAndWorkflowIdAndTenantId(
+            definition.getActiveVersionId(),
+            workflowId,
+            tenantId
+        ).orElseThrow(() -> new ApiException(
+            HttpStatus.CONFLICT,
+            "WORKFLOW_ACTIVE_VERSION_INVALID",
+            "当前可用版本不存在，不能创建定时任务"
+        ));
         AccessLevel access = resolveAccess(definition, principal.userId(), workflowAccessGrantRepository.findByWorkflowId(workflowId));
         if (!isTenantManager(principal) && !access.canRead()) {
             throw new ApiException(HttpStatus.FORBIDDEN, "SCHEDULE_WORKFLOW_FORBIDDEN", "当前账号没有该流程的发起权限");

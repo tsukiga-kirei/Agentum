@@ -13,6 +13,7 @@ import {
   FilePlus2,
   GitBranch,
   GitMerge,
+  History,
   Inbox,
   ListChecks,
   PanelRightOpen,
@@ -44,6 +45,7 @@ import type {
   WorkflowNodeDraft,
   WorkflowPublishValidationResult,
   WorkflowShareableMemberRow,
+  WorkflowVersionRow,
   WorkflowStatus,
   CollaborationAccessScope,
 } from "../../types/workflow-contract";
@@ -150,6 +152,8 @@ export function WorkflowDraftsPage() {
   const [detailWorkflow, setDetailWorkflow] = useState<WorkflowDraft | null>(null);
   const [drawerDetail, setDrawerDetail] = useState<WorkflowDraftDetail | null>(null);
   const [drawerDetailLoading, setDrawerDetailLoading] = useState(false);
+  const [workflowVersions, setWorkflowVersions] = useState<WorkflowVersionRow[]>([]);
+  const [activatingVersionId, setActivatingVersionId] = useState("");
   const [detailName, setDetailName] = useState("");
   const [detailDescription, setDetailDescription] = useState("");
   const [detailAccess, setDetailAccess] = useState({
@@ -222,6 +226,7 @@ export function WorkflowDraftsPage() {
     if (!detailWorkflow) {
       setDrawerDetail(null);
       setDrawerDetailLoading(false);
+      setWorkflowVersions([]);
       return;
     }
 
@@ -235,8 +240,11 @@ export function WorkflowDraftsPage() {
     setDrawerDetailLoading(true);
 
     // 抽屉用于进入设计前快速看完整流程内容，只读取草稿详情，不触发保存或发布等写动作。
-    void workflowApi.getDraft(tenantId, detailWorkflow.id, token)
-      .then((detail) => {
+    void Promise.all([
+      workflowApi.getDraft(tenantId, detailWorkflow.id, token),
+      workflowApi.listVersions(tenantId, detailWorkflow.id, token),
+    ])
+      .then(([detail, versions]) => {
         if (!cancelled) {
           setDrawerDetail(detail);
           setDetailWorkflow(detail.draft);
@@ -248,6 +256,7 @@ export function WorkflowDraftsPage() {
             readUserIds: detail.access.readUserIds ?? [],
             editUserIds: detail.access.editUserIds ?? [],
           });
+          setWorkflowVersions(versions);
         }
       })
       .catch((error) => {
@@ -257,6 +266,7 @@ export function WorkflowDraftsPage() {
         console.warn("[workflow] 工作流详情抽屉加载失败", getWorkflowErrorContext(error, tenantId, { workflowId: detailWorkflow.id }));
         messageApi.error(error instanceof AgentumApiError ? error.message : "无法加载流程内容");
         setDrawerDetail(null);
+        setWorkflowVersions([]);
       })
       .finally(() => {
         if (!cancelled) {
@@ -553,6 +563,10 @@ export function WorkflowDraftsPage() {
       setWorkflows((currentWorkflows) => currentWorkflows.map((item) => item.id === workflow.id ? result.draft : item));
       setDetailWorkflow((current) => current?.id === workflow.id ? result.draft : current);
       setValidationModal(null);
+      if (detailWorkflow?.id === workflow.id) {
+        const versions = await workflowApi.listVersions(user.tenantId, workflow.id, token);
+        setWorkflowVersions(versions);
+      }
       messageApi.success(`“${result.draft.name}”已发布为 v${result.versionNumber}`);
     } catch (error) {
       console.warn("[workflow] 工作流正式发布失败", getWorkflowErrorContext(error, user.tenantId, { workflowId: workflow.id }));
@@ -563,6 +577,28 @@ export function WorkflowDraftsPage() {
       }
     } finally {
       setPublishingWorkflowId("");
+    }
+  }
+
+  async function handleActivateVersion(version: WorkflowVersionRow) {
+    if (!token || !user?.tenantId || !detailWorkflow || version.active) return;
+    setActivatingVersionId(version.id);
+    try {
+      const detail = await workflowApi.activateVersion(user.tenantId, detailWorkflow.id, version.id, token);
+      const versions = await workflowApi.listVersions(user.tenantId, detailWorkflow.id, token);
+      setDrawerDetail(detail);
+      setDetailWorkflow(detail.draft);
+      setWorkflowVersions(versions);
+      setWorkflows((items) => items.map((item) => item.id === detail.draft.id ? detail.draft : item));
+      messageApi.success(`已将 v${version.versionNumber} 设为当前可用版本`);
+    } catch (error) {
+      console.warn("[workflow] 工作流可用版本切换失败", getWorkflowErrorContext(error, user.tenantId, {
+        workflowId: detailWorkflow.id,
+        versionId: version.id,
+      }));
+      messageApi.error(error instanceof AgentumApiError ? error.message : "切换可用版本失败");
+    } finally {
+      setActivatingVersionId("");
     }
   }
 
@@ -937,6 +973,43 @@ export function WorkflowDraftsPage() {
                   <span className="sys-form-value">{formatDateTime(detailWorkflow.updatedAt)}</span>
                 </div>
               </div>
+
+              {workflowVersions.length > 0 ? (
+                <section className="workflow-version-panel" aria-label="发布版本记录">
+                  <div className="workflow-version-panel-header">
+                    <div>
+                      <span className="sys-config-group-title"><History size={15} aria-hidden="true" />版本记录</span>
+                      <p>切换只影响后续新任务，已有运行继续使用原版本。</p>
+                    </div>
+                    <span className="sys-info-tag sys-info-tag--info">当前 v{detailWorkflow.activeVersionNumber}</span>
+                  </div>
+                  <div className="workflow-version-list">
+                    {workflowVersions.map((version) => (
+                      <article key={version.id} className={`workflow-version-item${version.active ? " workflow-version-item--active" : ""}`}>
+                        <div className="workflow-version-item-main">
+                          <div>
+                            <strong>v{version.versionNumber}</strong>
+                            {version.active ? <span className="sys-info-tag sys-info-tag--success">当前可用</span> : null}
+                            {version.versionNumber === detailWorkflow.latestVersionNumber ? <span className="sys-info-tag sys-info-tag--info">最新</span> : null}
+                          </div>
+                          <small>{version.publisherName} · {formatDateTime(version.publishedAt)} · {version.nodeCount} 个积木</small>
+                        </div>
+                        {!version.active && isWorkflowOwnedByCurrentUser(detailWorkflow, currentUserId) ? (
+                          <button
+                            type="button"
+                            className="sys-btn sys-btn--default sys-btn--sm"
+                            disabled={activatingVersionId === version.id}
+                            onClick={() => void handleActivateVersion(version)}
+                          >
+                            <RotateCcw size={13} aria-hidden="true" />
+                            {activatingVersionId === version.id ? "切换中" : "设为可用"}
+                          </button>
+                        ) : null}
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
 
               {drawerDetail ? (
                 <WorkflowAccessFields
@@ -1493,21 +1566,28 @@ function resolveWorkflowVersionMeta(workflow: WorkflowDraft) {
   }
   if (!workflow.launchEnabled) {
     return {
-      label: `已发布 v${workflow.latestVersionNumber} · 已下线`,
-      shortLabel: `v${workflow.latestVersionNumber} 下线`,
+      label: `当前 v${workflow.activeVersionNumber} · 已下线`,
+      shortLabel: `v${workflow.activeVersionNumber} 下线`,
       className: "sys-info-tag--info",
     };
   }
   if (workflow.hasUnpublishedChanges) {
     return {
-      label: `已发布 v${workflow.latestVersionNumber} · 有未发布改动`,
-      shortLabel: `v${workflow.latestVersionNumber} 待发布`,
+      label: `当前 v${workflow.activeVersionNumber} · 有未发布改动`,
+      shortLabel: `v${workflow.activeVersionNumber} 待发布`,
       className: "sys-info-tag--warn",
     };
   }
+  if (workflow.activeVersionNumber !== workflow.latestVersionNumber) {
+    return {
+      label: `当前 v${workflow.activeVersionNumber} · 最新 v${workflow.latestVersionNumber}`,
+      shortLabel: `当前 v${workflow.activeVersionNumber}`,
+      className: "sys-info-tag--info",
+    };
+  }
   return {
-    label: `已发布 v${workflow.latestVersionNumber}`,
-    shortLabel: `v${workflow.latestVersionNumber}`,
+    label: `当前 v${workflow.activeVersionNumber}`,
+    shortLabel: `v${workflow.activeVersionNumber}`,
     className: "sys-info-tag--success",
   };
 }

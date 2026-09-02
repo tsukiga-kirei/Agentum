@@ -200,12 +200,13 @@ public class WorkbenchService {
             pageable
         );
 
-        Set<UUID> definitionIds = resultPage.getContent().stream()
-            .map(WorkflowDefinitionEntity::getId)
+        Set<UUID> activeVersionIds = resultPage.getContent().stream()
+            .map(WorkflowDefinitionEntity::getActiveVersionId)
+            .filter(Objects::nonNull)
             .collect(Collectors.toSet());
-        Map<UUID, WorkflowVersionEntity> latestVersions = definitionIds.isEmpty()
+        Map<UUID, WorkflowVersionEntity> activeVersions = activeVersionIds.isEmpty()
             ? Map.of()
-            : workflowVersionRepository.findLatestByWorkflowIds(definitionIds).stream()
+            : workflowVersionRepository.findAllById(activeVersionIds).stream()
                 .collect(Collectors.toMap(WorkflowVersionEntity::getWorkflowId, Function.identity(), (left, right) -> left));
 
         Set<UUID> ownerIds = resultPage.getContent().stream()
@@ -214,12 +215,12 @@ public class WorkbenchService {
             .collect(Collectors.toSet());
         Map<UUID, UserAccount> ownersById = loadUsersById(ownerIds);
 
-        return PageResponse.from(resultPage.map(definition -> toAvailableWorkflow(definition, latestVersions.get(definition.getId()), ownersById)));
+        return PageResponse.from(resultPage.map(definition -> toAvailableWorkflow(definition, activeVersions.get(definition.getId()), ownersById)));
     }
 
     private WorkbenchApi.AvailableWorkflowRow toAvailableWorkflow(
         WorkflowDefinitionEntity definition,
-        WorkflowVersionEntity latestVersion,
+        WorkflowVersionEntity activeVersion,
         Map<UUID, UserAccount> ownersById
     ) {
         UserAccount owner = definition.getCreatedBy() == null ? null : ownersById.get(definition.getCreatedBy());
@@ -227,9 +228,9 @@ public class WorkbenchService {
             definition.getId(),
             definition.getName(),
             definition.getDescription() == null ? "" : definition.getDescription(),
-            definition.getNodeCount(),
-            latestVersion == null ? 0 : latestVersion.getVersionNumber(),
-            latestVersion == null ? definition.getUpdatedAt() : latestVersion.getPublishedAt(),
+            activeVersion == null ? 0 : activeVersion.getNodeCount(),
+            activeVersion == null ? 0 : activeVersion.getVersionNumber(),
+            activeVersion == null ? definition.getUpdatedAt() : activeVersion.getPublishedAt(),
             definition.getCreatedBy(),
             owner == null ? "未知用户" : owner.getDisplayName(),
             "open",

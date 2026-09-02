@@ -90,4 +90,8 @@ public class WorkflowVersionEntity {
     public Instant getPublishedAt() {
         return publishedAt;
     }
+
+    public UUID getPublishedBy() {
+        return publishedBy;
+    }
 }

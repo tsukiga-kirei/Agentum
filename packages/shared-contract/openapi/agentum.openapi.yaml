@@ -1872,6 +1872,80 @@ paths:
                     properties:
                       data:
                         $ref: "#/components/schemas/WorkflowPublishResult"
+  /api/tenants/{tenantId}/workflows/drafts/{workflowId}/versions:
+    get:
+      summary: 获取工作流发布版本记录
+      description: 按版本号倒序返回不可变发布快照摘要，并标记当前业务可用版本。
+      tags:
+        - Workflow
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 版本记录
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/WorkflowVersionRow"
+  /api/tenants/{tenantId}/workflows/drafts/{workflowId}/versions/{versionId}/activate:
+    post:
+      summary: 切换工作流当前可用版本
+      description: 仅流程创建者可操作；切换前复核历史版本引用的模型和能力是否仍可用，切换只影响后续新发起任务。
+      tags:
+        - Workflow
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: versionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 切换成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/WorkflowDraftDetail"
   /api/admin/tenants/{tenantId}/organization/overview:
     get:
       summary: 获取租户人员组织概览
@@ -7055,6 +7129,22 @@ components:
           type: string
         accessLevel:
           $ref: "#/components/schemas/CollaborationAccessLevel"
+        latestVersionNumber:
+          type: integer
+        activeVersionId:
+          type: string
+          format: uuid
+          nullable: true
+        activeVersionNumber:
+          type: integer
+        latestPublishedAt:
+          type: string
+          format: date-time
+          nullable: true
+        hasUnpublishedChanges:
+          type: boolean
+        launchEnabled:
+          type: boolean
         updatedAt:
           type: string
           format: date-time
@@ -7068,6 +7158,12 @@ components:
         - ownerId
         - ownerName
         - accessLevel
+        - latestVersionNumber
+        - activeVersionId
+        - activeVersionNumber
+        - latestPublishedAt
+        - hasUnpublishedChanges
+        - launchEnabled
         - updatedAt
     CreateWorkflowDraftRequest:
       type: object
@@ -7196,6 +7292,35 @@ components:
         - draft
         - versionNumber
         - publishedAt
+    WorkflowVersionRow:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        versionNumber:
+          type: integer
+        nodeCount:
+          type: integer
+        publishedBy:
+          type: string
+          format: uuid
+          nullable: true
+        publisherName:
+          type: string
+        publishedAt:
+          type: string
+          format: date-time
+        active:
+          type: boolean
+      required:
+        - id
+        - versionNumber
+        - nodeCount
+        - publishedBy
+        - publisherName
+        - publishedAt
+        - active
     WorkflowExportDocument:
       type: object
       description: 流程设计态导出 JSON，只包含草稿图结构和变量声明，不包含发布版本、运行实例和协作权限。

@@ -26,6 +26,8 @@ export type WorkflowDraftRow = {
   ownerName: string;
   accessLevel: CollaborationAccessLevel;
   latestVersionNumber: number;
+  activeVersionId: string | null;
+  activeVersionNumber: number;
   latestPublishedAt: string | null;
   hasUnpublishedChanges: boolean;
   launchEnabled: boolean;
@@ -110,6 +112,16 @@ export type WorkflowPublishResult = {
   draft: WorkflowDraftRow;
   versionNumber: number;
   publishedAt: string;
+};
+
+export type WorkflowVersionRow = {
+  id: string;
+  versionNumber: number;
+  nodeCount: number;
+  publishedBy: string | null;
+  publisherName: string;
+  publishedAt: string;
+  active: boolean;
 };
 
 export type WorkflowExportDocument = {

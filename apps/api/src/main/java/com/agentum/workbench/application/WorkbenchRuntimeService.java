@@ -197,9 +197,13 @@ public class WorkbenchRuntimeService {
         Page<WorkflowDefinitionEntity> resultPage = workflowDefinitionRepository.searchAllLaunchableWorkflows(tenantId, normalizedKeyword, pageable);
 
         Set<UUID> workflowIds = resultPage.getContent().stream().map(WorkflowDefinitionEntity::getId).collect(Collectors.toSet());
-        Map<UUID, WorkflowVersionEntity> latestVersions = workflowIds.isEmpty()
+        Set<UUID> activeVersionIds = resultPage.getContent().stream()
+            .map(WorkflowDefinitionEntity::getActiveVersionId)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
+        Map<UUID, WorkflowVersionEntity> activeVersions = activeVersionIds.isEmpty()
             ? Map.of()
-            : workflowVersionRepository.findLatestByWorkflowIds(workflowIds).stream()
+            : workflowVersionRepository.findAllById(activeVersionIds).stream()
                 .collect(Collectors.toMap(WorkflowVersionEntity::getWorkflowId, Function.identity(), (left, right) -> left));
         Map<UUID, List<WorkflowAccessGrantEntity>> grantsByWorkflow = workflowIds.isEmpty()
             ? Map.of()
@@ -212,7 +216,7 @@ public class WorkbenchRuntimeService {
 
         return PageResponse.from(resultPage.map(definition -> toAvailableWorkflow(
             definition,
-            latestVersions.get(definition.getId()),
+            activeVersions.get(definition.getId()),
             ownersById,
             resolveAccess(definition, principal.userId(), grantsByWorkflow.getOrDefault(definition.getId(), List.of())),
             isTenantManager(principal)
@@ -232,8 +236,7 @@ public class WorkbenchRuntimeService {
         if (!definition.isLaunchEnabled()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_WORKFLOW_RECALLED", "该流程入口已被收回，暂不能查看发布节点");
         }
-        WorkflowVersionEntity version = workflowVersionRepository.findTopByWorkflowIdOrderByVersionNumberDesc(workflowId)
-            .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "WORKFLOW_VERSION_REQUIRED", "流程尚未发布，无法预览节点"));
+        WorkflowVersionEntity version = requireActiveVersion(definition, "流程尚未发布，无法预览节点");
         VersionSnapshot snapshot = readSnapshot(version);
         List<SnapshotNode> snapshotNodes = snapshot.nodes() == null ? List.of() : snapshot.nodes();
         List<WorkbenchApi.AvailableWorkflowNodeRow> nodes = new ArrayList<>();
@@ -263,8 +266,7 @@ public class WorkbenchRuntimeService {
         }
         WorkflowDefinitionEntity definition = workflowDefinitionRepository.findByIdAndTenantId(workflowId, tenantId)
             .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKFLOW_DRAFT_NOT_FOUND", "流程不存在"));
-        WorkflowVersionEntity version = workflowVersionRepository.findTopByWorkflowIdOrderByVersionNumberDesc(workflowId)
-            .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "WORKFLOW_VERSION_REQUIRED", "流程尚未发布，无法发起任务"));
+        WorkflowVersionEntity version = requireActiveVersion(definition, "流程尚未发布，无法发起任务");
         if (!definition.isLaunchEnabled()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_WORKFLOW_RECALLED", "该流程入口已被收回，暂不能发起任务");
         }
@@ -363,6 +365,7 @@ public class WorkbenchRuntimeService {
         UUID tenantId,
         CurrentUserPrincipal principal,
         UUID workflowId,
+        UUID workflowVersionId,
         UUID scheduleId,
         String scheduleName,
         Map<String, Object> inputPayload,
@@ -376,8 +379,8 @@ public class WorkbenchRuntimeService {
         }
         WorkflowDefinitionEntity definition = workflowDefinitionRepository.findByIdAndTenantId(workflowId, tenantId)
             .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKFLOW_DRAFT_NOT_FOUND", "流程不存在"));
-        WorkflowVersionEntity version = workflowVersionRepository.findTopByWorkflowIdOrderByVersionNumberDesc(workflowId)
-            .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "WORKFLOW_VERSION_REQUIRED", "流程尚未发布，无法发起任务"));
+        WorkflowVersionEntity version = workflowVersionRepository.findByIdAndWorkflowIdAndTenantId(workflowVersionId, workflowId, tenantId)
+            .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "WORKFLOW_SCHEDULE_VERSION_INVALID", "定时任务绑定的工作流版本不存在"));
         if (!definition.isLaunchEnabled()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_WORKFLOW_RECALLED", "该流程入口已被收回，暂不能发起任务");
         }
@@ -2194,7 +2197,7 @@ public class WorkbenchRuntimeService {
 
     private WorkbenchApi.AvailableWorkflowRow toAvailableWorkflow(
         WorkflowDefinitionEntity definition,
-        WorkflowVersionEntity latestVersion,
+        WorkflowVersionEntity activeVersion,
         Map<UUID, UserAccount> ownersById,
         AccessLevel access,
         boolean tenantManager
@@ -2210,9 +2213,9 @@ public class WorkbenchRuntimeService {
             definition.getId(),
             definition.getName(),
             definition.getDescription() == null ? "" : definition.getDescription(),
-            definition.getNodeCount(),
-            latestVersion == null ? 0 : latestVersion.getVersionNumber(),
-            latestVersion == null ? definition.getUpdatedAt() : latestVersion.getPublishedAt(),
+            activeVersion == null ? 0 : activeVersion.getNodeCount(),
+            activeVersion == null ? 0 : activeVersion.getVersionNumber(),
+            activeVersion == null ? definition.getUpdatedAt() : activeVersion.getPublishedAt(),
             definition.getCreatedBy(),
             owner == null ? "未知用户" : owner.getDisplayName(),
             visibility,
@@ -2462,6 +2465,21 @@ public class WorkbenchRuntimeService {
             log.error("工作流发布快照解析失败 workflowId={} version={} requestId={}", version.getWorkflowId(), version.getVersionNumber(), RequestIds.current(), exception);
             throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "WORKFLOW_VERSION_SNAPSHOT_INVALID", "流程发布版本快照无法解析");
         }
+    }
+
+    private WorkflowVersionEntity requireActiveVersion(WorkflowDefinitionEntity definition, String missingMessage) {
+        if (definition.getActiveVersionId() == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKFLOW_VERSION_REQUIRED", missingMessage);
+        }
+        return workflowVersionRepository.findByIdAndWorkflowIdAndTenantId(
+            definition.getActiveVersionId(),
+            definition.getId(),
+            definition.getTenantId()
+        ).orElseThrow(() -> new ApiException(
+            HttpStatus.CONFLICT,
+            "WORKFLOW_ACTIVE_VERSION_INVALID",
+            "当前可用版本不存在，请联系流程创建者重新选择版本"
+        ));
     }
 
     private Map<String, Object> snapshotVariables(List<String> variables, String value) {
