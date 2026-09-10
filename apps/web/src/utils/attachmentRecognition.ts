@@ -14,22 +14,23 @@ export function getEffectiveAttachmentExtensions(
   capabilities: AttachmentRecognitionCapabilities,
 ): string[] {
   const configured = normalizeAttachmentExtensions(configuredExtensions);
+  const blocked = new Set(normalizeAttachmentExtensions(capabilities.blockedExtensions));
   if (!capabilities.recognitionEnabled) {
-    return configured;
+    return configured.filter((extension) => !blocked.has(extension));
   }
   const supported = new Set(normalizeAttachmentExtensions(capabilities.supportedExtensions));
-  return configured.filter((extension) => supported.has(extension));
+  return configured.filter((extension) => supported.has(extension) && !blocked.has(extension));
 }
 
 export function getUnsupportedAttachmentExtensions(
   configuredExtensions: string[] | undefined,
   capabilities: AttachmentRecognitionCapabilities,
 ): string[] {
-  if (!capabilities.recognitionEnabled) {
-    return [];
-  }
+  const blocked = new Set(normalizeAttachmentExtensions(capabilities.blockedExtensions));
   const supported = new Set(normalizeAttachmentExtensions(capabilities.supportedExtensions));
-  return normalizeAttachmentExtensions(configuredExtensions).filter((extension) => !supported.has(extension));
+  return normalizeAttachmentExtensions(configuredExtensions).filter((extension) => (
+    blocked.has(extension) || (capabilities.recognitionEnabled && !supported.has(extension))
+  ));
 }
 
 export function getAttachmentRecognitionEngineLabel(capabilities: AttachmentRecognitionCapabilities): string {

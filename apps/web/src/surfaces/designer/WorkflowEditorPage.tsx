@@ -4361,7 +4361,10 @@ function InputFieldModal({
       }
       const unsupported = getUnsupportedAttachmentExtensions(nextField.allowedExtensions, attachmentCapabilities);
       if (unsupported.length > 0) {
-        message.warning(`当前${getAttachmentRecognitionEngineLabel(attachmentCapabilities)}不支持：${unsupported.map((value) => `.${value}`).join("、")}`);
+        const policyLabel = attachmentCapabilities.recognitionEnabled
+          ? `当前${getAttachmentRecognitionEngineLabel(attachmentCapabilities)}`
+          : "平台";
+        message.warning(`${policyLabel}不允许：${unsupported.map((value) => `.${value}`).join("、")}`);
         return;
       }
     }
@@ -4580,7 +4583,7 @@ function InputFieldModal({
                       )}
                       {unsupportedAttachmentExtensions.length > 0 ? (
                         <span className="sys-field-hint text-rose-500">
-                          当前识别方式不支持：{unsupportedAttachmentExtensions.map((extension) => `.${extension}`).join("、")}，请移除后保存。
+                          {attachmentCapabilities?.recognitionEnabled ? "当前识别方式不支持" : "平台禁止上传"}：{unsupportedAttachmentExtensions.map((extension) => `.${extension}`).join("、")}，请移除后保存。
                         </span>
                       ) : null}
                     </label>

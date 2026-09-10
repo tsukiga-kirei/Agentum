@@ -31,6 +31,7 @@ export type AttachmentRecognitionCapabilities = {
   recognitionEnabled: boolean;
   recognitionEngine: "local" | "mineru";
   supportedExtensions: string[];
+  blockedExtensions: string[];
 };
 
 export type AttachmentRecognitionTestResult = {

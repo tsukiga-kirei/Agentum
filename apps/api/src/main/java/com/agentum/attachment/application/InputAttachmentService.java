@@ -45,9 +45,6 @@ import org.springframework.web.multipart.MultipartFile;
 public class InputAttachmentService {
 
     private static final Logger log = LoggerFactory.getLogger(InputAttachmentService.class);
-    private static final Set<String> BLOCKED_EXTENSIONS = Set.of(
-        "app", "bat", "cmd", "com", "dll", "dmg", "exe", "hta", "jar", "js", "msi", "ps1", "scr", "sh", "vbs"
-    );
     private static final Pattern SAFE_FILE_NAME = Pattern.compile("[^\\p{L}\\p{N}._()（） -]");
 
     private final WorkbenchAccess workbenchAccess;
@@ -401,7 +398,7 @@ public class InputAttachmentService {
         AttachmentRecognitionSettingEntity settings,
         String extension
     ) {
-        if (BLOCKED_EXTENSIONS.contains(extension)) {
+        if (AttachmentRecognitionPolicy.blockedExtensions().contains(extension)) {
             throw new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "ATTACHMENT_EXTENSION_BLOCKED", "出于安全原因，不允许上传该类型文件");
         }
         Set<String> allowed = stringList(field.get("allowedExtensions"));

@@ -4862,7 +4862,11 @@ components:
           type: array
           items: { type: string }
           description: 当前识别方式允许的扩展名；识别关闭时仅作所选引擎能力说明，不限制原件保存。
-      required: [recognitionEnabled, recognitionEngine, supportedExtensions]
+        blockedExtensions:
+          type: array
+          items: { type: string }
+          description: 无论识别是否启用都禁止上传的危险扩展名。
+      required: [recognitionEnabled, recognitionEngine, supportedExtensions, blockedExtensions]
     UpdateAttachmentRecognitionSettingsRequest:
       type: object
       properties:

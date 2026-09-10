@@ -68,7 +68,8 @@ public class AttachmentRecognitionSettingsService {
         return new AttachmentRecognitionApi.Capabilities(
             entity.isRecognitionEnabled(),
             entity.getRecognitionEngine(),
-            AttachmentRecognitionPolicy.supportedExtensions(entity)
+            AttachmentRecognitionPolicy.supportedExtensions(entity),
+            AttachmentRecognitionPolicy.blockedExtensions()
         );
     }
 

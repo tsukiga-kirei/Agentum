@@ -39,7 +39,8 @@ public final class AttachmentRecognitionApi {
     public record Capabilities(
         boolean recognitionEnabled,
         String recognitionEngine,
-        List<String> supportedExtensions
+        List<String> supportedExtensions,
+        List<String> blockedExtensions
     ) {
     }
 

@@ -427,10 +427,13 @@ pending -> running -> paused -> resumed -> running -> completed
 系统配置通过类型化接口维护，不向前端暴露通用 KV 写入口：
 
 ```text
+GET  /api/attachment-recognition/capabilities
 GET  /api/system/settings/attachment-recognition
 PUT  /api/system/settings/attachment-recognition
 POST /api/system/settings/attachment-recognition/test-connection
 ```
+
+`GET /api/attachment-recognition/capabilities` 对所有已登录用户开放，只返回识别启停、当前引擎、当前支持扩展名和平台禁止扩展名，不返回 MinerU 地址、密钥状态等系统敏感配置。流程设计器与运行态上传共用该接口：启用识别时字段扩展名只能从当前支持列表中收窄；关闭识别时不以解析器名单限制原件保存，但仍排除平台禁止的危险类型。前端校验用于即时反馈，工作流发布、历史版本启用和附件上传接口必须继续执行服务端校验。
 
 逐格式样例解析测试接口属于后续稳定化范围，不与健康检查混用；第一版真实解析验证通过输入节点上传链路完成。
 

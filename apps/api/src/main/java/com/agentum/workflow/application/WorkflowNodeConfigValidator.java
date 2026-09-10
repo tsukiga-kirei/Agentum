@@ -458,15 +458,18 @@ public class WorkflowNodeConfigValidator {
                 node
             ));
         }
-        if (extensionsValid && attachmentCapabilities.recognitionEnabled()) {
+        if (extensionsValid) {
             List<String> unsupported = extensions.stream()
-                .filter(value -> !attachmentCapabilities.supportedExtensions().contains(value))
+                .filter(value -> attachmentCapabilities.blockedExtensions().contains(value)
+                    || (attachmentCapabilities.recognitionEnabled() && !attachmentCapabilities.supportedExtensions().contains(value)))
                 .toList();
             if (!unsupported.isEmpty()) {
-                String engineLabel = "mineru".equals(attachmentCapabilities.recognitionEngine()) ? "复杂识别" : "简单识别";
+                String policyLabel = attachmentCapabilities.recognitionEnabled()
+                    ? ("mineru".equals(attachmentCapabilities.recognitionEngine()) ? "复杂识别" : "简单识别")
+                    : "平台";
                 issues.add(issue(
                     "WORKFLOW_VALIDATION_ATTACHMENT_EXTENSIONS_UNSUPPORTED",
-                    "节点[" + node.name() + "]的附件字段「" + fieldLabel + "」包含当前" + engineLabel + "不支持的扩展名："
+                    "节点[" + node.name() + "]的附件字段「" + fieldLabel + "」包含当前" + policyLabel + "不允许的扩展名："
                         + unsupported.stream().map(value -> "." + value).collect(Collectors.joining("、")),
                     node
                 ));

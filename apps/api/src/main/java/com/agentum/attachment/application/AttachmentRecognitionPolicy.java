@@ -12,12 +12,19 @@ public final class AttachmentRecognitionPolicy {
     private static final List<String> LOCAL_SUPPORTED_EXTENSIONS = List.of(
         "txt", "md", "csv", "pdf", "doc", "docx", "xls", "xlsx"
     );
+    private static final List<String> BLOCKED_EXTENSIONS = List.of(
+        "app", "bat", "cmd", "com", "dll", "dmg", "exe", "hta", "jar", "js", "msi", "ps1", "scr", "sh", "vbs"
+    );
 
     private AttachmentRecognitionPolicy() {
     }
 
     public static List<String> localSupportedExtensions() {
         return LOCAL_SUPPORTED_EXTENSIONS;
+    }
+
+    public static List<String> blockedExtensions() {
+        return BLOCKED_EXTENSIONS;
     }
 
     public static List<String> supportedExtensions(AttachmentRecognitionSettingEntity settings) {

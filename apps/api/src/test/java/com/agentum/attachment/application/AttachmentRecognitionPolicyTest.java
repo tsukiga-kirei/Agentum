@@ -24,4 +24,10 @@ class AttachmentRecognitionPolicyTest {
 
         assertThat(AttachmentRecognitionPolicy.supportedExtensions(settings)).containsExactly("pdf", "png");
     }
+
+    @Test
+    void shouldExposeDangerousExtensionsBlockedForEveryRecognitionMode() {
+        assertThat(AttachmentRecognitionPolicy.blockedExtensions())
+            .contains("exe", "js", "sh", "vbs");
+    }
 }

@@ -1,6 +1,6 @@
 # 当前进度与后续计划
 
-更新时间：2026-07-23（阶段一验收完成；补齐系统 / 租户运行日志文件分流与服务器持久化）。
+更新时间：2026-09-10（附件识别扩展名展示与前后端一致性校验完成）。
 
 本文档只记录当前施工状态、阶段计划和下一步任务。长期规范、系统说明和架构设计分别维护在：
 
@@ -306,6 +306,7 @@
 - 系统提供简单识别 `local`、复杂识别 `mineru` 两种方式。简单识别只走 Java；复杂识别对命中自定义扩展名白名单的全部文件调用 MinerU，不做 Java 预解析或失败回退。
 - 复杂识别支持由系统管理员维护 MinerU 扩展名白名单，建议初始值为 `pdf,png,jpg,jpeg,bmp,gif,tiff,webp,docx,xlsx,txt`；加入 `doc/xls` 后也按配置直接发送 MinerU，实际不支持时明确失败。
 - 简单识别由 Java 解析 `txt/md/csv/docx/xlsx/xls` 和电子 PDF；旧版 `doc` 只保证基础文本提取。
+- 系统配置页已明确展示简单识别内置扩展名 `txt/md/csv/pdf/doc/docx/xls/xlsx`；新增非敏感附件能力查询接口，流程设计器、运行态文件选择和上传前校验统一使用当前系统能力，工作流发布、历史版本启用与上传接口继续做后端兜底。关闭识别时可保存字段自定义类型的原件，但 `.exe/.js/.sh` 等平台危险扩展名仍在前后端禁止。
 - 原文件与解析正文写入 MinIO，PostgreSQL 只保存元数据、状态、对象键和审计关联；RabbitMQ + 文档 Worker 异步解析。
 - 原件下载与在线预览均走鉴权接口；前端复用交付预览的 Word / Excel 渲染器，并适配 PDF、图片、文本和识别正文。
 - 系统文件默认保存时间为“永久”，也可切换为按天保存；按天期限到达后由定时任务清理原件、解析正文和附件元数据，上传、预览、下载与删除写入操作审计。
@@ -516,3 +517,6 @@
 | 2026-09-02 | `./gradlew test --no-daemon` | 通过：工作流当前可用版本、历史版本回切、非执行信息保存、定时任务固定版本及既有后端全量回归 |
 | 2026-09-02 | `pnpm --filter @agentum/web lint` / `pnpm --filter @agentum/web build` | 通过：流程版本记录与切换界面前端复验；Vite 仍提示部分 chunk 超过 500 kB |
 | 2026-09-02 | OpenAPI YAML 解析 / `git diff --check` | 通过：工作流版本列表、切换接口、响应字段、迁移与文档空白检查 |
+| 2026-09-10 | `./gradlew :apps:api:test --no-daemon --tests 'com.agentum.attachment.application.AttachmentRecognitionPolicyTest' --tests 'com.agentum.workflow.application.WorkflowNodeConfigValidatorTest'` | 通过：简单识别支持列表、识别关闭场景和危险扩展名发布拦截回归 |
+| 2026-09-10 | `pnpm lint:web` / `pnpm build:web` | 通过：系统配置扩展名展示、设计器白名单选择和运行态上传前拦截复验；Vite 仍提示部分 chunk 超过 500 kB |
+| 2026-09-10 | `./gradlew test --no-daemon` / OpenAPI YAML 解析 / `git diff --check` | 通过：附件能力接口、工作流校验和既有后端全量回归，契约及文档空白检查通过 |

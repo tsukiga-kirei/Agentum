@@ -92,6 +92,7 @@ export function UserInputPanel({
   useEffect(() => {
     if (!hasFileFields) {
       setAttachmentCapabilities(null);
+      setAttachmentCapabilitiesLoading(false);
       setAttachmentCapabilitiesError("");
       return;
     }
