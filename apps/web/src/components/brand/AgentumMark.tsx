@@ -3,8 +3,6 @@ type AgentumMarkProps = {
   variant?: "full" | "mono";
 };
 
-export function AgentumMark({ className, variant = "full" }: AgentumMarkProps) {
-  const source = variant === "mono" ? "/brand/agentum-mark-monochrome.svg" : "/brand/agentum-mark.svg";
-
-  return <img src={source} alt="" aria-hidden="true" className={["block", className].filter(Boolean).join(" ")} />;
+export function AgentumMark({ className }: AgentumMarkProps) {
+  return <img src="/brand/agentum-ai-app-icon.png" alt="" aria-hidden="true" className={["block", className].filter(Boolean).join(" ")} />;
 }

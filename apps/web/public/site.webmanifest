@@ -3,9 +3,9 @@
   "short_name": "Agentum",
   "icons": [
     {
-      "src": "/brand/agentum-mark.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "/brand/agentum-ai-app-icon.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
       "purpose": "any"
     },
     {
