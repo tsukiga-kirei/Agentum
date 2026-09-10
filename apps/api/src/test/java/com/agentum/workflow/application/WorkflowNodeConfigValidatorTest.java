@@ -6,6 +6,9 @@ import static org.mockito.Mockito.when;
 
 import com.agentum.asset.application.AssetManagementService;
 import com.agentum.agent.application.AgentRuntimeProperties;
+import com.agentum.attachment.application.AttachmentRecognitionPolicy;
+import com.agentum.attachment.application.AttachmentRecognitionSettingsService;
+import com.agentum.attachment.interfaces.AttachmentRecognitionApi;
 import com.agentum.system.domain.ModelProviderEntity;
 import com.agentum.system.domain.SystemCapabilityEntity;
 import com.agentum.system.domain.TenantCapabilityGrantEntity;
@@ -42,6 +45,8 @@ class WorkflowNodeConfigValidatorTest {
     private TenantModelAssignmentRepository tenantModelAssignmentRepository;
     @Mock
     private ModelProviderRepository modelProviderRepository;
+    @Mock
+    private AttachmentRecognitionSettingsService attachmentRecognitionSettingsService;
 
     @Test
     void shouldRejectAgentNodeWhenDeclaredModelIsEmpty() {
@@ -396,6 +401,42 @@ class WorkflowNodeConfigValidatorTest {
     }
 
     @Test
+    void shouldRejectAttachmentExtensionOutsideActiveRecognitionCapabilities() {
+        WorkflowDraftApi.WorkflowNodeRow node = new WorkflowDraftApi.WorkflowNodeRow(
+            "input_1", "user_input", "材料输入", 0, 0, List.of("starter"), List.of("materials"),
+            Map.of("inputFields", List.of(Map.of(
+                "id", "field_1", "label", "附件材料", "variable", "materials", "fieldType", "file",
+                "allowedExtensions", List.of("pdf", "pptx"), "maxFiles", 5, "maxFileSizeMb", 20,
+                "recognitionRequired", true
+            )))
+        );
+
+        List<WorkflowDraftApi.WorkflowValidationIssue> issues = validator().validateCapabilityReferences(TENANT_ID, USER_ID, List.of(node));
+
+        assertThat(issues).extracting(WorkflowDraftApi.WorkflowValidationIssue::code)
+            .containsExactly("WORKFLOW_VALIDATION_ATTACHMENT_EXTENSIONS_UNSUPPORTED");
+        assertThat(issues.getFirst().message()).contains(".pptx");
+    }
+
+    @Test
+    void shouldAllowFieldWhitelistOutsideParserCapabilitiesWhenRecognitionIsDisabled() {
+        WorkflowDraftApi.WorkflowNodeRow node = new WorkflowDraftApi.WorkflowNodeRow(
+            "input_1", "user_input", "材料输入", 0, 0, List.of("starter"), List.of("materials"),
+            Map.of("inputFields", List.of(Map.of(
+                "id", "field_1", "label", "附件材料", "variable", "materials", "fieldType", "file",
+                "allowedExtensions", List.of("pptx"), "maxFiles", 5, "maxFileSizeMb", 20,
+                "recognitionRequired", false
+            )))
+        );
+
+        List<WorkflowDraftApi.WorkflowValidationIssue> issues = validatorWithCapabilities(
+            new AttachmentRecognitionApi.Capabilities(false, "local", AttachmentRecognitionPolicy.localSupportedExtensions())
+        ).validateCapabilityReferences(TENANT_ID, USER_ID, List.of(node));
+
+        assertThat(issues).isEmpty();
+    }
+
+    @Test
     void shouldRejectAttachmentInputFieldWithoutValidLimitsAndExtensions() {
         WorkflowDraftApi.WorkflowNodeRow node = new WorkflowDraftApi.WorkflowNodeRow(
             "input_1", "user_input", "材料输入", 0, 0, List.of("starter"), List.of("materials"),
@@ -627,13 +668,23 @@ class WorkflowNodeConfigValidatorTest {
     }
 
     private WorkflowNodeConfigValidator validator() {
+        return validatorWithCapabilities(new AttachmentRecognitionApi.Capabilities(
+            true,
+            "local",
+            AttachmentRecognitionPolicy.localSupportedExtensions()
+        ));
+    }
+
+    private WorkflowNodeConfigValidator validatorWithCapabilities(AttachmentRecognitionApi.Capabilities capabilities) {
+        when(attachmentRecognitionSettingsService.getCapabilities()).thenReturn(capabilities);
         return new WorkflowNodeConfigValidator(
             systemCapabilityRepository,
             tenantCapabilityGrantRepository,
             assetManagementService,
             runtimeProperties(),
             tenantModelAssignmentRepository,
-            modelProviderRepository
+            modelProviderRepository,
+            attachmentRecognitionSettingsService
         );
     }
 

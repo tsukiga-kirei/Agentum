@@ -16,6 +16,7 @@ public final class AttachmentRecognitionApi {
     public record Settings(
         boolean recognitionEnabled,
         String recognitionEngine,
+        List<String> localSupportedExtensions,
         int maxFileSizeMb,
         int maxFilesPerField,
         int maxExtractedChars,
@@ -32,6 +33,13 @@ public final class AttachmentRecognitionApi {
         int mineruConnectTimeoutSeconds,
         int mineruReadTimeoutSeconds,
         Instant updatedAt
+    ) {
+    }
+
+    public record Capabilities(
+        boolean recognitionEnabled,
+        String recognitionEngine,
+        List<String> supportedExtensions
     ) {
     }
 

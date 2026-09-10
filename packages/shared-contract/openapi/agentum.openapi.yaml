@@ -1243,6 +1243,23 @@ paths:
                         $ref: "#/components/schemas/WorkbenchRunDetail"
         "400": { description: 节点、子智能体或运行状态不支持重新执行 }
         "409": { description: 当前任务已有执行作业在运行 }
+  /api/attachment-recognition/capabilities:
+    get:
+      summary: 获取当前附件识别能力
+      description: 向已登录用户返回当前识别开关、识别方式和可用扩展名，不包含 MinerU 地址或密钥配置。
+      tags: [Attachment]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: 当前附件识别能力
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/AttachmentRecognitionCapabilities" }
   /api/tenants/{tenantId}/workbench/runs/{runId}/nodes/{nodeRunId}/attachments:
     get:
       summary: 查询输入节点指定字段的附件
@@ -4813,6 +4830,10 @@ components:
       properties:
         recognitionEnabled: { type: boolean }
         recognitionEngine: { type: string, enum: [local, mineru] }
+        localSupportedExtensions:
+          type: array
+          items: { type: string }
+          description: 简单识别内置支持的扩展名，只读。
         maxFileSizeMb: { type: integer, minimum: 1, maximum: 200 }
         maxFilesPerField: { type: integer, minimum: 1, maximum: 20 }
         maxExtractedChars: { type: integer, minimum: 1000, maximum: 2000000 }
@@ -4831,7 +4852,17 @@ components:
         mineruConnectTimeoutSeconds: { type: integer }
         mineruReadTimeoutSeconds: { type: integer }
         updatedAt: { type: string, format: date-time }
-      required: [recognitionEnabled, recognitionEngine, maxFileSizeMb, maxFilesPerField, maxExtractedChars, retentionPolicy, retentionDays, mineruSupportedExtensions, mineruApiKeyConfigured, mineruBackend, mineruParseMethod, mineruLanguage, mineruEnableFormula, mineruEnableTable, mineruConnectTimeoutSeconds, mineruReadTimeoutSeconds, updatedAt]
+      required: [recognitionEnabled, recognitionEngine, localSupportedExtensions, maxFileSizeMb, maxFilesPerField, maxExtractedChars, retentionPolicy, retentionDays, mineruSupportedExtensions, mineruApiKeyConfigured, mineruBackend, mineruParseMethod, mineruLanguage, mineruEnableFormula, mineruEnableTable, mineruConnectTimeoutSeconds, mineruReadTimeoutSeconds, updatedAt]
+    AttachmentRecognitionCapabilities:
+      type: object
+      properties:
+        recognitionEnabled: { type: boolean }
+        recognitionEngine: { type: string, enum: [local, mineru] }
+        supportedExtensions:
+          type: array
+          items: { type: string }
+          description: 当前识别方式允许的扩展名；识别关闭时仅作所选引擎能力说明，不限制原件保存。
+      required: [recognitionEnabled, recognitionEngine, supportedExtensions]
     UpdateAttachmentRecognitionSettingsRequest:
       type: object
       properties:

@@ -1,6 +1,8 @@
 package com.agentum.workflow.application;
 
 import com.agentum.agent.application.AgentRuntimeProperties;
+import com.agentum.attachment.application.AttachmentRecognitionSettingsService;
+import com.agentum.attachment.interfaces.AttachmentRecognitionApi;
 import com.agentum.asset.application.AssetManagementService;
 import com.agentum.system.domain.ModelProviderEntity;
 import com.agentum.system.domain.SystemCapabilityEntity;
@@ -46,6 +48,7 @@ public class WorkflowNodeConfigValidator {
     private final AgentRuntimeProperties agentRuntimeProperties;
     private final TenantModelAssignmentRepository tenantModelAssignmentRepository;
     private final ModelProviderRepository modelProviderRepository;
+    private final AttachmentRecognitionSettingsService attachmentRecognitionSettingsService;
 
     public WorkflowNodeConfigValidator(
         SystemCapabilityRepository systemCapabilityRepository,
@@ -53,7 +56,8 @@ public class WorkflowNodeConfigValidator {
         AssetManagementService assetManagementService,
         AgentRuntimeProperties agentRuntimeProperties,
         TenantModelAssignmentRepository tenantModelAssignmentRepository,
-        ModelProviderRepository modelProviderRepository
+        ModelProviderRepository modelProviderRepository,
+        AttachmentRecognitionSettingsService attachmentRecognitionSettingsService
     ) {
         this.systemCapabilityRepository = systemCapabilityRepository;
         this.tenantCapabilityGrantRepository = tenantCapabilityGrantRepository;
@@ -61,6 +65,7 @@ public class WorkflowNodeConfigValidator {
         this.agentRuntimeProperties = agentRuntimeProperties;
         this.tenantModelAssignmentRepository = tenantModelAssignmentRepository;
         this.modelProviderRepository = modelProviderRepository;
+        this.attachmentRecognitionSettingsService = attachmentRecognitionSettingsService;
     }
 
     public List<WorkflowDraftApi.WorkflowValidationIssue> validateCapabilityReferences(
@@ -73,6 +78,7 @@ public class WorkflowNodeConfigValidator {
         Map<String, WorkflowDraftApi.WorkflowNodeRow> nodesById = nodes.stream()
             .collect(Collectors.toMap(WorkflowDraftApi.WorkflowNodeRow::nodeId, Function.identity(), (left, right) -> left));
         List<WorkflowDraftApi.WorkflowValidationIssue> issues = new ArrayList<>();
+        AttachmentRecognitionApi.Capabilities attachmentCapabilities = attachmentRecognitionSettingsService.getCapabilities();
 
         for (WorkflowDraftApi.WorkflowNodeRow node : nodes) {
             Map<String, Object> config = node.config();
@@ -82,7 +88,7 @@ public class WorkflowNodeConfigValidator {
 
             String nodeType = node.nodeType();
             if ("user_input".equals(nodeType)) {
-                validateInputNodeConfig(config, node, issues);
+                validateInputNodeConfig(config, node, attachmentCapabilities, issues);
             } else if ("agent".equals(nodeType)) {
                 validateModelReference(tenantId, config, "modelProviderId", "modelName", "节点[" + node.name() + "]", node, issues);
                 validateTenantAssetId(tenantId, operatorUserId, extractString(config, "agentAssetId"), "agent_template", "智能体模板", node, issues);
@@ -351,6 +357,7 @@ public class WorkflowNodeConfigValidator {
     private void validateInputNodeConfig(
         Map<String, Object> config,
         WorkflowDraftApi.WorkflowNodeRow node,
+        AttachmentRecognitionApi.Capabilities attachmentCapabilities,
         List<WorkflowDraftApi.WorkflowValidationIssue> issues
     ) {
         List<Map<String, Object>> fields = extractMapList(config, "inputFields");
@@ -366,7 +373,7 @@ public class WorkflowNodeConfigValidator {
                 continue;
             }
             fieldVariables.add(variable);
-            validateInputFieldOptions(field, node, issues);
+            validateInputFieldOptions(field, node, attachmentCapabilities, issues);
         }
         Set<String> declaredOutputs = variableSet(node.outputVariables());
         if (!fieldVariables.equals(declaredOutputs)) {
@@ -377,6 +384,7 @@ public class WorkflowNodeConfigValidator {
     private void validateInputFieldOptions(
         Map<String, Object> field,
         WorkflowDraftApi.WorkflowNodeRow node,
+        AttachmentRecognitionApi.Capabilities attachmentCapabilities,
         List<WorkflowDraftApi.WorkflowValidationIssue> issues
     ) {
         String fieldType = rawString(field.get("fieldType"));
@@ -399,7 +407,7 @@ public class WorkflowNodeConfigValidator {
             }
         }
         if ("file".equals(normalizedFieldType)) {
-            validateAttachmentInputField(field, node, issues);
+            validateAttachmentInputField(field, node, attachmentCapabilities, issues);
             return;
         }
         if (!"select".equals(fieldType)) {
@@ -428,6 +436,7 @@ public class WorkflowNodeConfigValidator {
     private void validateAttachmentInputField(
         Map<String, Object> field,
         WorkflowDraftApi.WorkflowNodeRow node,
+        AttachmentRecognitionApi.Capabilities attachmentCapabilities,
         List<WorkflowDraftApi.WorkflowValidationIssue> issues
     ) {
         String fieldLabel = firstNonBlank(rawString(field.get("label")), rawString(field.get("variable")));
@@ -440,12 +449,28 @@ public class WorkflowNodeConfigValidator {
                 .distinct()
                 .toList()
             : List.of();
-        if (extensions.isEmpty() || extensions.stream().anyMatch(value -> !ATTACHMENT_EXTENSION_PATTERN.matcher(value).matches())) {
+        boolean extensionsValid = !extensions.isEmpty()
+            && extensions.stream().allMatch(value -> ATTACHMENT_EXTENSION_PATTERN.matcher(value).matches());
+        if (!extensionsValid) {
             issues.add(issue(
                 "WORKFLOW_VALIDATION_ATTACHMENT_EXTENSIONS_INVALID",
                 "节点[" + node.name() + "]的附件字段「" + fieldLabel + "」必须配置有效的扩展名白名单",
                 node
             ));
+        }
+        if (extensionsValid && attachmentCapabilities.recognitionEnabled()) {
+            List<String> unsupported = extensions.stream()
+                .filter(value -> !attachmentCapabilities.supportedExtensions().contains(value))
+                .toList();
+            if (!unsupported.isEmpty()) {
+                String engineLabel = "mineru".equals(attachmentCapabilities.recognitionEngine()) ? "复杂识别" : "简单识别";
+                issues.add(issue(
+                    "WORKFLOW_VALIDATION_ATTACHMENT_EXTENSIONS_UNSUPPORTED",
+                    "节点[" + node.name() + "]的附件字段「" + fieldLabel + "」包含当前" + engineLabel + "不支持的扩展名："
+                        + unsupported.stream().map(value -> "." + value).collect(Collectors.joining("、")),
+                    node
+                ));
+            }
         }
         int maxFiles = parsePositiveInteger(field.get("maxFiles"));
         if (maxFiles < 1 || maxFiles > 20) {

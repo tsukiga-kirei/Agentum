@@ -151,6 +151,17 @@ export function AttachmentRecognitionSettingsPanel() {
                   <div className="sys-field-hint">
                     简单识别由服务端直接解析常见文档；复杂识别会把白名单内的所有附件交给 MinerU，不执行本地预解析或失败回退。
                   </div>
+                  {settings.recognitionEngine === "local" ? (
+                    <div className="attachment-supported-types" aria-label="简单识别支持的扩展名">
+                      <span className="attachment-supported-types__label">支持扩展名</span>
+                      <div className="attachment-supported-types__list">
+                        {settings.localSupportedExtensions.map((extension) => (
+                          <span key={extension}>.{extension}</span>
+                        ))}
+                      </div>
+                      <p>PDF 仅提取电子文本，不支持扫描件 OCR；图片和 PowerPoint 文件不支持简单识别。</p>
+                    </div>
+                  ) : null}
                 </div>
                 <div className="sys-field-row">
                   <NumberField label="单文件上限（MB）" value={settings.maxFileSizeMb} min={1} max={200} onChange={(value) => patch("maxFileSizeMb", value)} />

@@ -45,7 +45,6 @@ import org.springframework.web.multipart.MultipartFile;
 public class InputAttachmentService {
 
     private static final Logger log = LoggerFactory.getLogger(InputAttachmentService.class);
-    private static final Set<String> LOCAL_EXTENSIONS = Set.of("txt", "md", "csv", "pdf", "doc", "docx", "xls", "xlsx");
     private static final Set<String> BLOCKED_EXTENSIONS = Set.of(
         "app", "bat", "cmd", "com", "dll", "dmg", "exe", "hta", "jar", "js", "msi", "ps1", "scr", "sh", "vbs"
     );
@@ -415,7 +414,7 @@ public class InputAttachmentService {
         if ("mineru".equals(settings.getRecognitionEngine()) && !settings.getMineruSupportedExtensions().contains(extension)) {
             throw new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "ATTACHMENT_MINERU_EXTENSION_NOT_ALLOWED", "该扩展名未配置为复杂识别支持类型");
         }
-        if ("local".equals(settings.getRecognitionEngine()) && !LOCAL_EXTENSIONS.contains(extension)) {
+        if ("local".equals(settings.getRecognitionEngine()) && !AttachmentRecognitionPolicy.localSupportedExtensions().contains(extension)) {
             throw new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "ATTACHMENT_LOCAL_EXTENSION_NOT_SUPPORTED", "简单识别暂不支持该类型文件");
         }
     }

@@ -5,7 +5,8 @@ import "dayjs/locale/zh-cn";
 import type { InputFieldConfig, RuntimePreviewStep } from "../../types/runtime-types";
 import { CalendarDays, ChevronDown, Download, Eye, FileText, Loader2, Paperclip, Trash2, Upload } from "lucide-react";
 import type { InputAttachmentRow } from "../../types/workbench";
-import { AgentumApiError, workbenchApi } from "../../services/apiClient";
+import type { AttachmentRecognitionCapabilities } from "../../types/system";
+import { AgentumApiError, attachmentApi, workbenchApi } from "../../services/apiClient";
 import { AttachmentPreviewDrawer } from "./AttachmentPreviewDrawer";
 import {
   getSystemDefaultValueLabel,
@@ -14,6 +15,10 @@ import {
   normalizeInputFieldOptions,
   resolveInputFieldDefaultValue,
 } from "../../utils/workflowInputField";
+import {
+  getAttachmentRecognitionEngineLabel,
+  getEffectiveAttachmentExtensions,
+} from "../../utils/attachmentRecognition";
 
 interface UserInputPanelProps {
   activeStep: RuntimePreviewStep;
@@ -46,6 +51,9 @@ export function UserInputPanel({
   const [uploadingFields, setUploadingFields] = useState<Set<string>>(new Set());
   const [previewAttachment, setPreviewAttachment] = useState<InputAttachmentRow | null>(null);
   const [downloadingAttachmentId, setDownloadingAttachmentId] = useState("");
+  const [attachmentCapabilities, setAttachmentCapabilities] = useState<AttachmentRecognitionCapabilities | null>(null);
+  const [attachmentCapabilitiesLoading, setAttachmentCapabilitiesLoading] = useState(false);
+  const [attachmentCapabilitiesError, setAttachmentCapabilitiesError] = useState("");
 
   const fieldConfigs = useMemo((): InputFieldConfig[] => {
     const configs = activeStep.configSnapshot?.inputFields;
@@ -75,6 +83,42 @@ export function UserInputPanel({
       fieldType: "text",
     }));
   }, [activeStep.configSnapshot, activeStep.inputs, templateVariables]);
+
+  const hasFileFields = useMemo(
+    () => fieldConfigs.some((field) => field.fieldType === "file"),
+    [fieldConfigs],
+  );
+
+  useEffect(() => {
+    if (!hasFileFields) {
+      setAttachmentCapabilities(null);
+      setAttachmentCapabilitiesError("");
+      return;
+    }
+    let disposed = false;
+    setAttachmentCapabilitiesLoading(true);
+    setAttachmentCapabilitiesError("");
+    // 上传控件使用服务端当前名单过滤字段快照，系统配置变更后旧流程也不会继续放行已失效类型。
+    void attachmentApi.getRecognitionCapabilities(token)
+      .then((result) => {
+        if (!disposed) setAttachmentCapabilities(result);
+      })
+      .catch((error) => {
+        if (disposed) return;
+        console.warn("[workbench] 附件识别能力加载失败", {
+          code: error instanceof AgentumApiError ? error.code : "UNKNOWN",
+          requestId: error instanceof AgentumApiError ? error.requestId : undefined,
+        });
+        setAttachmentCapabilities(null);
+        setAttachmentCapabilitiesError(error instanceof AgentumApiError ? error.message : "附件类型规则加载失败");
+      })
+      .finally(() => {
+        if (!disposed) setAttachmentCapabilitiesLoading(false);
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [hasFileFields, token]);
 
   useEffect(() => {
     const initial: Record<string, string> = {};
@@ -147,6 +191,10 @@ export function UserInputPanel({
 
   async function uploadFiles(field: InputFieldConfig, files: FileList | null) {
     if (!files?.length) return;
+    if (!attachmentCapabilities) {
+      onError(attachmentCapabilitiesError || "附件类型规则尚未加载完成，请稍后重试");
+      return;
+    }
     const current = attachments[field.id] ?? [];
     const selected = Array.from(files);
     const maxFiles = field.maxFiles ?? 5;
@@ -154,10 +202,14 @@ export function UserInputPanel({
       onError(`「${field.label}」最多上传 ${maxFiles} 个附件`);
       return;
     }
-    const allowed = new Set((field.allowedExtensions ?? []).map((value) => value.toLowerCase()));
+    const effectiveExtensions = getEffectiveAttachmentExtensions(field.allowedExtensions, attachmentCapabilities);
+    const allowed = new Set(effectiveExtensions);
     const invalid = selected.find((file) => !allowed.has(file.name.split(".").pop()?.toLowerCase() ?? ""));
     if (invalid) {
-      onError(`文件「${invalid.name}」不在允许的扩展名范围内`);
+      const allowedScope = attachmentCapabilities.recognitionEnabled
+        ? `当前${getAttachmentRecognitionEngineLabel(attachmentCapabilities)}`
+        : "当前字段";
+      onError(`文件「${invalid.name}」不在${allowedScope}允许的扩展名范围内`);
       return;
     }
     const oversized = selected.find((file) => file.size > (field.maxFileSizeMb ?? 20) * 1024 * 1024);
@@ -240,6 +292,14 @@ export function UserInputPanel({
               const options = normalizeInputFieldOptions(field.options, field.placeholder);
               const systemValueLocked = field.defaultValueSource === "system" && field.allowManualOverride === false;
               const inputDisabled = readOnly || activeStep.state !== "waiting" || systemValueLocked;
+              const effectiveAttachmentExtensions = attachmentCapabilities
+                ? getEffectiveAttachmentExtensions(field.allowedExtensions, attachmentCapabilities)
+                : [];
+              const attachmentRuleUnavailable = field.fieldType === "file"
+                && (attachmentCapabilitiesLoading || !attachmentCapabilities || Boolean(attachmentCapabilitiesError));
+              const attachmentInputDisabled = inputDisabled
+                || attachmentRuleUnavailable
+                || (field.fieldType === "file" && effectiveAttachmentExtensions.length === 0);
               const datePickerGranularity = field.defaultValueSource === "system"
                 ? field.systemDefaultValue === "current_year"
                   ? "year"
@@ -262,11 +322,19 @@ export function UserInputPanel({
 
                   {field.fieldType === "file" ? (
                     <div className="space-y-2">
-                      <label className={`flex min-h-24 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50/60 p-4 text-center transition hover:border-blue-400 dark:border-slate-700 dark:bg-slate-900/40 ${inputDisabled ? "pointer-events-none opacity-60" : ""}`}>
+                      <label className={`flex min-h-24 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50/60 p-4 text-center transition hover:border-blue-400 dark:border-slate-700 dark:bg-slate-900/40 ${attachmentInputDisabled ? "pointer-events-none opacity-60" : ""}`}>
                         {uploadingFields.has(field.id) ? <Loader2 className="mb-2 animate-spin text-blue-500" size={22} /> : <Upload className="mb-2 text-blue-500" size={22} />}
                         <strong className="text-sm text-slate-700 dark:text-slate-300">{uploadingFields.has(field.id) ? "附件上传中…" : field.placeholder || "选择附件"}</strong>
-                        <span className="mt-1 text-xs text-slate-400">{(field.allowedExtensions ?? []).map((value) => `.${value}`).join("、")} · 最多 {field.maxFiles ?? 5} 个 · 单个不超过 {field.maxFileSizeMb ?? 20} MB</span>
-                        <input type="file" className="hidden" multiple={(field.maxFiles ?? 5) > 1} accept={(field.allowedExtensions ?? []).map((value) => `.${value}`).join(",")} disabled={inputDisabled || uploadingFields.has(field.id)} onChange={(event) => { void uploadFiles(field, event.target.files); event.currentTarget.value = ""; }} />
+                        <span className={`mt-1 text-xs ${attachmentCapabilitiesError ? "text-rose-500" : "text-slate-400"}`}>
+                          {attachmentCapabilitiesLoading
+                            ? "正在加载允许的文件类型…"
+                            : attachmentCapabilitiesError
+                              ? `${attachmentCapabilitiesError}，请刷新后重试`
+                              : effectiveAttachmentExtensions.length > 0
+                                ? `${effectiveAttachmentExtensions.map((value) => `.${value}`).join("、")} · 最多 ${field.maxFiles ?? 5} 个 · 单个不超过 ${field.maxFileSizeMb ?? 20} MB`
+                                : "当前系统识别配置下没有可上传的文件类型"}
+                        </span>
+                        <input type="file" className="hidden" multiple={(field.maxFiles ?? 5) > 1} accept={effectiveAttachmentExtensions.map((value) => `.${value}`).join(",")} disabled={attachmentInputDisabled || uploadingFields.has(field.id)} onChange={(event) => { void uploadFiles(field, event.target.files); event.currentTarget.value = ""; }} />
                       </label>
                       {(attachments[field.id] ?? []).map((attachment) => (
                         <div key={attachment.id} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">

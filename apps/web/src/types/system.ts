@@ -3,6 +3,7 @@ import type { PageResponse } from "./organization";
 export type AttachmentRecognitionSettings = {
   recognitionEnabled: boolean;
   recognitionEngine: "local" | "mineru";
+  localSupportedExtensions: string[];
   maxFileSizeMb: number;
   maxFilesPerField: number;
   maxExtractedChars: number;
@@ -21,9 +22,15 @@ export type AttachmentRecognitionSettings = {
   updatedAt: string;
 };
 
-export type UpdateAttachmentRecognitionSettingsRequest = Omit<AttachmentRecognitionSettings, "mineruApiKeyConfigured" | "updatedAt"> & {
+export type UpdateAttachmentRecognitionSettingsRequest = Omit<AttachmentRecognitionSettings, "localSupportedExtensions" | "mineruApiKeyConfigured" | "updatedAt"> & {
   mineruApiKey?: string;
   clearMineruApiKey: boolean;
+};
+
+export type AttachmentRecognitionCapabilities = {
+  recognitionEnabled: boolean;
+  recognitionEngine: "local" | "mineru";
+  supportedExtensions: string[];
 };
 
 export type AttachmentRecognitionTestResult = {

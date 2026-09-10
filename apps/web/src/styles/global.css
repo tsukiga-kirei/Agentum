@@ -4911,6 +4911,45 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
   color: var(--color-primary);
 }
 
+.attachment-supported-types {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-hover);
+}
+
+.attachment-supported-types__label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.attachment-supported-types__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.attachment-supported-types__list > span {
+  padding: 3px 8px;
+  border: 1px solid var(--color-border-light);
+  border-radius: 999px;
+  background: var(--color-bg-card);
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.attachment-supported-types > p {
+  margin-top: 8px;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
 /* 表单内紧凑 Segmented：与页签菜单同语言，高度适配字段区 */
 .form-option-segmented.login-portal-segmented {
   --login-portal-color: var(--color-primary);

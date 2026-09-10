@@ -62,6 +62,16 @@ public class AttachmentRecognitionSettingsService {
         return toSettings(requireEntity());
     }
 
+    @Transactional(readOnly = true)
+    public AttachmentRecognitionApi.Capabilities getCapabilities() {
+        AttachmentRecognitionSettingEntity entity = requireEntity();
+        return new AttachmentRecognitionApi.Capabilities(
+            entity.isRecognitionEnabled(),
+            entity.getRecognitionEngine(),
+            AttachmentRecognitionPolicy.supportedExtensions(entity)
+        );
+    }
+
     @Transactional
     public AttachmentRecognitionApi.Settings update(AttachmentRecognitionApi.UpdateSettingsRequest request, UUID operatorUserId) {
         String engine = normalize(request.recognitionEngine());
@@ -150,7 +160,7 @@ public class AttachmentRecognitionSettingsService {
 
     private AttachmentRecognitionApi.Settings toSettings(AttachmentRecognitionSettingEntity entity) {
         return new AttachmentRecognitionApi.Settings(
-            entity.isRecognitionEnabled(), entity.getRecognitionEngine(), entity.getMaxFileSizeMb(),
+            entity.isRecognitionEnabled(), entity.getRecognitionEngine(), AttachmentRecognitionPolicy.localSupportedExtensions(), entity.getMaxFileSizeMb(),
             entity.getMaxFilesPerField(), entity.getMaxExtractedChars(), entity.getRetentionPolicy(), entity.getRetentionDays(),
             entity.getMineruSupportedExtensions(), entity.getMineruEndpoint(),
             entity.getEncryptedMineruApiKey() != null && !entity.getEncryptedMineruApiKey().isBlank(),

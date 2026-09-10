@@ -57,6 +57,7 @@ import type {
   UpdateTenantAdminProfileRequest,
   UpdateTenantAdminStatusRequest,
   AttachmentRecognitionSettings,
+  AttachmentRecognitionCapabilities,
   AttachmentRecognitionTestRequest,
   AttachmentRecognitionTestResult,
   TestMcpDraftRequest,
@@ -553,6 +554,11 @@ export const systemApi = {
     apiRequest<TenantModelAssignmentRow>("/api/system/tenant-model-assignments", { method: "POST", token, body }),
   updateTenantModelAssignmentStatus: (token: string, assignmentId: string, body: UpdateTenantModelAssignmentStatusRequest) =>
     apiRequest<TenantModelAssignmentRow>(`/api/system/tenant-model-assignments/${assignmentId}/status`, { method: "PATCH", token, body }),
+};
+
+export const attachmentApi = {
+  getRecognitionCapabilities: (token: string) =>
+    apiRequest<AttachmentRecognitionCapabilities>("/api/attachment-recognition/capabilities", { token }),
 };
 
 export const assetApi = {

@@ -43,11 +43,12 @@ import { SysImpactConfirmModal } from "../../components/common/SysImpactConfirmM
 import { SysModalMask } from "../../components/common/SysModalMask";
 import { DocumentDeliveryStyleSections } from "../../components/document/DocumentDeliveryStyleSections";
 import { readLineSpacingMode, readSpacingUnit, type DocumentDeliveryStyleValues, type ParagraphRule } from "../../constants/documentDeliveryStyleOptions";
-import { AgentumApiError, assetApi, workflowApi } from "../../services/apiClient";
+import { AgentumApiError, assetApi, attachmentApi, workflowApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import { getThemedDrawerRootClassName } from "../../utils/theme";
 import { formatTemplateVariable, insertTemplateToken } from "../../utils/templateTextInsertion";
 import type { AssetType, MyAssetRow, SystemCapabilityAssetRow } from "../../types/asset";
+import type { AttachmentRecognitionCapabilities } from "../../types/system";
 import type {
   AgentRuntimeLimits,
   WorkflowBrickTemplate,
@@ -91,6 +92,11 @@ import {
   resolveDeliveryTriggerContextMeta,
 } from "./deliveryTriggerContext";
 import type { InputFieldConfig } from "../../types/runtime-types";
+import {
+  getAttachmentRecognitionEngineLabel,
+  getUnsupportedAttachmentExtensions,
+  normalizeAttachmentExtensions,
+} from "../../utils/attachmentRecognition";
 import {
   createInputFieldOption,
   createInputField,
@@ -205,6 +211,12 @@ type WorkflowCapabilityOption = {
 
 type WorkflowCapabilityState = {
   capabilities: WorkflowCapabilityOption[];
+  loading: boolean;
+  error: string;
+};
+
+type AttachmentPolicyState = {
+  capabilities: AttachmentRecognitionCapabilities | null;
   loading: boolean;
   error: string;
 };
@@ -555,6 +567,9 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
   const [capabilityOptions, setCapabilityOptions] = useState<WorkflowCapabilityOption[]>([]);
   const [capabilitiesLoading, setCapabilitiesLoading] = useState(false);
   const [capabilityError, setCapabilityError] = useState("");
+  const [attachmentCapabilities, setAttachmentCapabilities] = useState<AttachmentRecognitionCapabilities | null>(null);
+  const [attachmentCapabilitiesLoading, setAttachmentCapabilitiesLoading] = useState(false);
+  const [attachmentCapabilitiesError, setAttachmentCapabilitiesError] = useState("");
   const [declaredVariables, setDeclaredVariables] = useState<WorkflowVariable[]>([]);
   const [isAddBrickModalOpen, setIsAddBrickModalOpen] = useState(false);
   const [impactConfirm, setImpactConfirm] = useState<WorkflowImpactConfirmState | null>(null);
@@ -658,6 +673,36 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
         if (!cancelled) {
           setCapabilitiesLoading(false);
         }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token, user?.tenantId, workflow.id]);
+
+  useEffect(() => {
+    if (!token) {
+      setAttachmentCapabilities(null);
+      setAttachmentCapabilitiesError("");
+      return;
+    }
+
+    let cancelled = false;
+    setAttachmentCapabilitiesLoading(true);
+    setAttachmentCapabilitiesError("");
+    // 附件扩展名必须以后端当前识别能力为准，避免设计器与运行上传分别维护硬编码名单。
+    void attachmentApi.getRecognitionCapabilities(token)
+      .then((result) => {
+        if (!cancelled) setAttachmentCapabilities(result);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.warn("[workflow] 附件识别能力加载失败", getWorkflowEditorErrorContext(error, user?.tenantId ?? undefined, workflow.id));
+        setAttachmentCapabilities(null);
+        setAttachmentCapabilitiesError(error instanceof AgentumApiError ? error.message : "无法加载附件类型规则");
+      })
+      .finally(() => {
+        if (!cancelled) setAttachmentCapabilitiesLoading(false);
       });
 
     return () => {
@@ -1068,6 +1113,11 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
               capabilities={capabilityOptions}
               capabilitiesLoading={capabilitiesLoading}
               capabilityError={capabilityError}
+              attachmentPolicy={{
+                capabilities: attachmentCapabilities,
+                loading: attachmentCapabilitiesLoading,
+                error: attachmentCapabilitiesError,
+              }}
               agentRuntimeLimits={designerCatalog.agentRuntimeLimits}
               modelOptions={designerCatalog.modelOptions}
               onUpdateNode={updateSelectedNode}
@@ -1323,6 +1373,7 @@ function NodeConfigPanel({
   capabilities,
   capabilitiesLoading,
   capabilityError,
+  attachmentPolicy,
   agentRuntimeLimits,
   modelOptions,
   onUpdateNode,
@@ -1336,6 +1387,7 @@ function NodeConfigPanel({
   capabilities: WorkflowCapabilityOption[];
   capabilitiesLoading: boolean;
   capabilityError: string;
+  attachmentPolicy: AttachmentPolicyState;
   agentRuntimeLimits: AgentRuntimeLimits;
   modelOptions: WorkflowModelOption[];
   onUpdateNode: (patch: Partial<EditorNodeData>) => void;
@@ -1369,6 +1421,7 @@ function NodeConfigPanel({
             node={node}
             brickType={brickType}
             availableVariables={availableVariables}
+            attachmentPolicy={attachmentPolicy}
             onUpdateNode={onUpdateNode}
             onUpdateConfig={onUpdateConfig}
           />
@@ -1501,12 +1554,14 @@ function BasicInfoPanel({
   node,
   brickType,
   availableVariables,
+  attachmentPolicy,
   onUpdateNode,
   onUpdateConfig,
 }: {
   node: WorkflowEditorNode;
   brickType: VisibleWorkflowBrickType;
   availableVariables: WorkflowVariable[];
+  attachmentPolicy: AttachmentPolicyState;
   onUpdateNode: (patch: Partial<EditorNodeData>) => void;
   onUpdateConfig: (nextConfig: Record<string, unknown>) => void;
 }) {
@@ -1537,6 +1592,7 @@ function BasicInfoPanel({
         <InputFieldsManager
           node={node}
           availableVariables={availableVariables}
+          attachmentPolicy={attachmentPolicy}
           onUpdateConfig={onUpdateConfig}
           onUpdateNode={onUpdateNode}
         />
@@ -1583,11 +1639,13 @@ function OutcomeVariableField({
 function InputFieldsManager({
   node,
   availableVariables,
+  attachmentPolicy,
   onUpdateConfig,
   onUpdateNode,
 }: {
   node: WorkflowEditorNode;
   availableVariables: WorkflowVariable[];
+  attachmentPolicy: AttachmentPolicyState;
   onUpdateConfig: (nextConfig: Record<string, unknown>) => void;
   onUpdateNode: (patch: Partial<EditorNodeData>) => void;
 }) {
@@ -1650,6 +1708,7 @@ function InputFieldsManager({
         <InputFieldModal
           field={editingField}
           availableVariables={availableVariables}
+          attachmentPolicy={attachmentPolicy}
           onClose={() => setEditingField(null)}
           onSave={(field) => {
             const exists = fields.some((item) => item.id === field.id);
@@ -4172,11 +4231,13 @@ const INPUT_FIELD_CONFIG_SECTIONS: AgentConfigSectionDef<InputFieldConfigSection
 function InputFieldModal({
   field,
   availableVariables,
+  attachmentPolicy,
   onClose,
   onSave,
 }: {
   field: InputFieldConfig;
   availableVariables: WorkflowVariable[];
+  attachmentPolicy: AttachmentPolicyState;
   onClose: () => void;
   onSave: (field: InputFieldConfig) => void;
 }) {
@@ -4188,6 +4249,11 @@ function InputFieldModal({
   const scrollIdleTimerRef = useRef<number | null>(null);
   const isSelectField = draft.fieldType === "select";
   const isFileField = draft.fieldType === "file";
+  const attachmentCapabilities = attachmentPolicy.capabilities;
+  const supportedAttachmentExtensions = normalizeAttachmentExtensions(attachmentCapabilities?.supportedExtensions);
+  const unsupportedAttachmentExtensions = attachmentCapabilities
+    ? getUnsupportedAttachmentExtensions(draft.allowedExtensions, attachmentCapabilities)
+    : [];
 
   useEffect(() => () => {
     if (scrollIdleTimerRef.current !== null) {
@@ -4218,6 +4284,14 @@ function InputFieldModal({
     }
 
     if (fieldType === "file") {
+      if (attachmentPolicy.loading || !attachmentCapabilities) {
+        message.warning(attachmentPolicy.error || "附件类型规则尚未加载完成，请稍后重试");
+        return;
+      }
+      const preferredDefaults = ["pdf", "docx", "xlsx", "txt"];
+      const defaultExtensions = attachmentCapabilities.recognitionEnabled
+        ? preferredDefaults.filter((extension) => supportedAttachmentExtensions.includes(extension))
+        : preferredDefaults;
       setDraft((current) => ({
         ...current,
         fieldType,
@@ -4225,7 +4299,11 @@ function InputFieldModal({
         defaultValue: "",
         defaultValueSource: "none",
         options: undefined,
-        allowedExtensions: current.allowedExtensions?.length ? current.allowedExtensions : ["pdf", "docx", "xlsx", "txt"],
+        allowedExtensions: current.allowedExtensions?.length
+          ? current.allowedExtensions
+          : defaultExtensions.length > 0
+            ? defaultExtensions
+            : supportedAttachmentExtensions.slice(0, 4),
         maxFiles: current.maxFiles ?? 5,
         maxFileSizeMb: current.maxFileSizeMb ?? 20,
         recognitionRequired: current.recognitionRequired ?? true,
@@ -4275,6 +4353,17 @@ function InputFieldModal({
     if (validationError) {
       message.warning(validationError);
       return;
+    }
+    if (isFileField) {
+      if (attachmentPolicy.loading || !attachmentCapabilities) {
+        message.warning(attachmentPolicy.error || "附件类型规则尚未加载完成，请稍后重试");
+        return;
+      }
+      const unsupported = getUnsupportedAttachmentExtensions(nextField.allowedExtensions, attachmentCapabilities);
+      if (unsupported.length > 0) {
+        message.warning(`当前${getAttachmentRecognitionEngineLabel(attachmentCapabilities)}不支持：${unsupported.map((value) => `.${value}`).join("、")}`);
+        return;
+      }
     }
     onSave(nextField);
   }
@@ -4462,21 +4551,38 @@ function InputFieldModal({
                       <Select
                         className="agent-admin-select attachment-extension-select w-full"
                         classNames={workflowSelectClassNames}
-                        mode="tags"
-                        open={false}
+                        mode={attachmentCapabilities?.recognitionEnabled ? "multiple" : "tags"}
+                        open={attachmentCapabilities?.recognitionEnabled ? undefined : false}
                         value={draft.allowedExtensions ?? []}
-                        placeholder="输入扩展名后按回车，例如 pdf"
-                        suffixIcon={null}
+                        options={attachmentCapabilities?.recognitionEnabled
+                          ? supportedAttachmentExtensions.map((extension) => ({ value: extension, label: `.${extension}` }))
+                          : undefined}
+                        disabled={attachmentPolicy.loading || !attachmentCapabilities}
+                        status={unsupportedAttachmentExtensions.length > 0 ? "error" : undefined}
+                        placeholder={attachmentPolicy.loading ? "正在加载系统允许的文件类型" : "请选择允许上传的文件类型"}
+                        suffixIcon={attachmentCapabilities?.recognitionEnabled ? workflowSelectSuffixIcon : null}
                         tokenSeparators={[",", "，", " ", "\n"]}
                         onChange={(values) => setDraft({
                           ...draft,
-                          allowedExtensions: Array.from(new Set(values
+                          allowedExtensions: normalizeAttachmentExtensions(values
                             .flatMap((value) => value.split(/[，,\s]+/))
-                            .map((value) => value.trim().toLowerCase().replace(/^\./, ""))
-                            .filter(Boolean))),
+                          ),
                         })}
                       />
-                      <span className="sys-field-hint">输入后按回车，可粘贴逗号分隔的列表，不写点号；复杂识别仅接受系统已配置的类型。</span>
+                      {attachmentPolicy.error ? (
+                        <span className="sys-field-hint text-rose-500">{attachmentPolicy.error}，暂时不能配置附件类型。</span>
+                      ) : attachmentCapabilities?.recognitionEnabled ? (
+                        <span className="sys-field-hint">
+                          当前为{getAttachmentRecognitionEngineLabel(attachmentCapabilities)}，只能从系统支持的 {supportedAttachmentExtensions.length} 种扩展名中选择。
+                        </span>
+                      ) : (
+                        <span className="sys-field-hint">附件识别已关闭，可输入扩展名后按回车；文件只保存原件，不生成识别正文。</span>
+                      )}
+                      {unsupportedAttachmentExtensions.length > 0 ? (
+                        <span className="sys-field-hint text-rose-500">
+                          当前识别方式不支持：{unsupportedAttachmentExtensions.map((extension) => `.${extension}`).join("、")}，请移除后保存。
+                        </span>
+                      ) : null}
                     </label>
                     <div className="sys-field-row">
                       <label className="sys-field">
