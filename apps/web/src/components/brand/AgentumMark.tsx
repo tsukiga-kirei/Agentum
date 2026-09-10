@@ -1,6 +1,5 @@
 type AgentumMarkProps = {
   className?: string;
-  variant?: "full" | "mono";
 };
 
 export function AgentumMark({ className }: AgentumMarkProps) {

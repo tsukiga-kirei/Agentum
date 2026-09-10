@@ -88,7 +88,7 @@ export function SetupPage() {
           <div className="login-branding setup-branding">
             <div className="login-brand-content">
               <div className="login-brand-mark" data-motion="brand-mark">
-                <AgentumMark className="h-full w-full" variant="full" />
+                <AgentumMark className="h-full w-full" />
               </div>
               <AnimatedBrandTitle text="Agentum" className="login-brand-title" />
               <p className="login-brand-subtitle" data-motion="brand-subtitle">初始化平台治理入口</p>
