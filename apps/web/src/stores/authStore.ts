@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { AgentumApiError, authApi, configureAuthSessionBridge } from "../services/apiClient";
 import type { AuthUser, LoginResponse, MenuItem, PortalType, RoleInfo, SsoProviderOption, TenantOption, ThemeMode } from "../types/auth";
-import { clearAuthToken, persistAuthToken, readStoredAuthToken } from "./authSession";
+import { clearAuthToken, consumeSsoCallback, persistAuthToken, readStoredAuthToken } from "./authSession";
 import { THEME_MODES } from "../utils/theme";
 
 // 认证状态管理负责前端会话缓存，真实身份、租户和角色上下文全部以后端 auth API 为准。
@@ -287,6 +287,13 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       } catch (error) {
         // 初始化状态接口失败时继续走常规会话恢复，让登录页展示更具体的后端连接错误。
         console.warn("[auth] 初始化状态检查失败，继续尝试恢复会话", getErrorLogContext(error));
+      }
+
+      // OA 等外部系统会把 SSO 结果带回应用根路径，未必经过登录页；初始化时优先消费，防止回调残留到首次退出。
+      const ssoResponse = consumeSsoCallback();
+      if (ssoResponse) {
+        get().completeSsoLogin(ssoResponse);
+        return;
       }
 
       const stored = readStoredAuthToken();

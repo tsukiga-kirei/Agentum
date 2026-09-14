@@ -1,4 +1,4 @@
-import type { PortalType } from "../types/auth";
+import type { LoginResponse, PortalType } from "../types/auth";
 
 /** 持久化 Access Token 的 key；是否保存账号偏好不影响此项。 */
 export const AUTH_STORAGE_KEY = "agentum_auth";
@@ -6,6 +6,8 @@ export const AUTH_STORAGE_KEY = "agentum_auth";
 export const AUTH_SESSION_STORAGE_KEY = "agentum_auth_session";
 /** 登录页表单偏好（勾选“记住账号”时才保存用户名；始终不保存密码或 Token） */
 export const LOGIN_PREFS_KEY = "agentum_login_prefs";
+/** SSO 回调页跨窗口或整页跳转时暂存的一次性登录结果。 */
+export const SSO_CALLBACK_STORAGE_KEY = "agentum_sso_callback";
 
 type StoredAuthPayload = {
   token: string;
@@ -44,7 +46,30 @@ export function readStoredAuthToken(): { token: string; persist: boolean } | nul
 /** 登出或凭据失效时清理全部 token 缓存 */
 export function clearAuthToken(): void {
   window.localStorage.removeItem(AUTH_STORAGE_KEY);
+  // 单点直达可能尚未经过登录页消费回调；退出时必须一起清理，避免旧 Access Token 把用户重新登录。
+  window.localStorage.removeItem(SSO_CALLBACK_STORAGE_KEY);
   window.sessionStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+}
+
+/**
+ * 读取并立即删除一次性 SSO 回调，避免应用通过 Refresh Cookie 恢复后仍残留可重放的登录结果。
+ */
+export function consumeSsoCallback(): LoginResponse | null {
+  const raw = window.localStorage.getItem(SSO_CALLBACK_STORAGE_KEY);
+
+  if (!raw) {
+    return null;
+  }
+
+  window.localStorage.removeItem(SSO_CALLBACK_STORAGE_KEY);
+
+  try {
+    const response = JSON.parse(raw) as LoginResponse;
+    return typeof response?.token === "string" && response.token.length > 0 ? response : null;
+  } catch (error) {
+    console.warn("[auth] 企业 SSO 回调缓存解析失败", { message: error instanceof Error ? error.message : "unknown" });
+    return null;
+  }
 }
 
 export function readLoginPrefs(): LoginPrefs | null {

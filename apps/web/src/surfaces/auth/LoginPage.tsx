@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Button, Checkbox, ConfigProvider, Form, Input, Select, Segmented, message, theme as antdTheme } from "antd";
 import { Building2, KeyRound, LayoutDashboard, LockKeyhole, ServerCog, Settings, Shield, User } from "lucide-react";
 import { useAuthStore } from "../../stores/authStore";
-import { readLoginPrefs, saveLoginPrefs } from "../../stores/authSession";
+import { consumeSsoCallback, readLoginPrefs, saveLoginPrefs } from "../../stores/authSession";
 import { ThemeToggle } from "../../components/ThemeToggle";
 import { AgentumMark } from "../../components/brand/AgentumMark";
 import { AnimatedBrandTitle } from "../../components/brand/AnimatedBrandTitle";
@@ -261,18 +261,9 @@ export function LoginPage() {
   }, [activePortal, completeSsoLogin, form, selectedTenantId, shouldSelectTenant]);
 
   useEffect(() => {
-    const raw = window.localStorage.getItem("agentum_sso_callback");
-    if (!raw) {
-      return;
-    }
-    window.localStorage.removeItem("agentum_sso_callback");
-    try {
-      const response = JSON.parse(raw) as LoginResponse;
-      if (response.token) {
-        completeSsoLogin(response, Boolean(form.getFieldValue("rememberMe")));
-      }
-    } catch (error) {
-      console.warn("[auth] 企业 SSO 回调缓存解析失败", { message: error instanceof Error ? error.message : "unknown" });
+    const response = consumeSsoCallback();
+    if (response) {
+      completeSsoLogin(response, Boolean(form.getFieldValue("rememberMe")));
     }
   }, [completeSsoLogin, form]);
 
