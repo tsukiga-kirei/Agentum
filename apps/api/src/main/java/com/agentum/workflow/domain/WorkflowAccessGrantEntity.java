@@ -20,8 +20,11 @@ public class WorkflowAccessGrantEntity {
     @Column(name = "workflow_id", nullable = false)
     private UUID workflowId;
 
-    @Column(name = "grantee_user_id", nullable = false)
-    private UUID granteeUserId;
+    @Column(name = "principal_type", nullable = false, length = 20)
+    private String principalType;
+
+    @Column(name = "principal_id", nullable = false)
+    private UUID principalId;
 
     @Column(name = "access_level", nullable = false, length = 20)
     private String accessLevel;
@@ -38,7 +41,8 @@ public class WorkflowAccessGrantEntity {
     public static WorkflowAccessGrantEntity create(
         UUID tenantId,
         UUID workflowId,
-        UUID granteeUserId,
+        String principalType,
+        UUID principalId,
         String accessLevel,
         UUID operatorUserId,
         Instant now
@@ -47,7 +51,8 @@ public class WorkflowAccessGrantEntity {
         entity.id = UUID.randomUUID();
         entity.tenantId = tenantId;
         entity.workflowId = workflowId;
-        entity.granteeUserId = granteeUserId;
+        entity.principalType = principalType;
+        entity.principalId = principalId;
         entity.accessLevel = accessLevel;
         entity.createdBy = operatorUserId;
         entity.createdAt = now;
@@ -58,8 +63,12 @@ public class WorkflowAccessGrantEntity {
         return workflowId;
     }
 
-    public UUID getGranteeUserId() {
-        return granteeUserId;
+    public String getPrincipalType() {
+        return principalType;
+    }
+
+    public UUID getPrincipalId() {
+        return principalId;
     }
 
     public String getAccessLevel() {

@@ -121,6 +121,16 @@ public class WorkflowDraftController {
         return ApiResponse.success(workflowDraftService.listShareableMembers(tenantId, principal.userId()), RequestIds.current(request));
     }
 
+    @GetMapping("/access-catalog")
+    public ApiResponse<WorkflowDraftApi.WorkflowAccessCatalog> getAccessCatalog(
+        @PathVariable UUID tenantId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal,
+        HttpServletRequest request
+    ) {
+        workflowDesignAccess.assertCanDesign(principal, tenantId);
+        return ApiResponse.success(workflowDraftService.getAccessCatalog(tenantId, principal.userId()), RequestIds.current(request));
+    }
+
     @GetMapping("/{workflowId}")
     public ApiResponse<WorkflowDraftApi.WorkflowDraftDetail> getDraft(
         @PathVariable UUID tenantId,

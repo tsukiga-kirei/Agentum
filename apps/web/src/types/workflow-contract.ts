@@ -14,6 +14,12 @@ export type ApiResponse<TData> = {
 export type WorkflowStatus = "draft" | "published" | "review";
 export type CollaborationAccessScope = "self" | "specified" | "all";
 export type CollaborationAccessLevel = "none" | "read" | "edit" | "owner";
+export type WorkflowPrincipalType = "role" | "department" | "user";
+
+export type WorkflowPrincipalRef = {
+  principalType: WorkflowPrincipalType;
+  principalId: string;
+};
 
 export type WorkflowDraftRow = {
   id: string;
@@ -39,7 +45,7 @@ export type CreateWorkflowDraftRequest = {
   description?: string;
   readScope?: CollaborationAccessScope;
   editScope?: CollaborationAccessScope;
-  readUserIds?: string[];
+  readPrincipals?: WorkflowPrincipalRef[];
   editUserIds?: string[];
 };
 
@@ -51,8 +57,15 @@ export type UpdateWorkflowDraftRequest = {
 export type UpdateWorkflowAccessRequest = {
   readScope: CollaborationAccessScope;
   editScope: CollaborationAccessScope;
-  readUserIds?: string[];
+  readPrincipals?: WorkflowPrincipalRef[];
   editUserIds?: string[];
+};
+
+export type WorkflowEffectiveReaderRow = {
+  userId: string;
+  username: string;
+  displayName: string;
+  sources: string[];
 };
 
 export type WorkflowShareableMemberRow = {
@@ -62,8 +75,15 @@ export type WorkflowShareableMemberRow = {
 };
 
 export type WorkflowAccessDetail = UpdateWorkflowAccessRequest & {
+  effectiveReaders: WorkflowEffectiveReaderRow[];
   accessLevel: CollaborationAccessLevel;
   canManageAccess: boolean;
+};
+
+export type WorkflowAccessCatalog = {
+  roles: Array<{ id: string; code: string; name: string; description: string; status: string }>;
+  departments: Array<{ id: string; parentId: string | null; name: string; code: string; sortOrder: number; status: string }>;
+  members: Array<{ id: string; username: string; displayName: string; email: string; status: string }>;
 };
 
 export type WorkflowNodeDraft = {

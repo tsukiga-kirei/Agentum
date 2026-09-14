@@ -5,7 +5,6 @@ import com.agentum.auth.application.CurrentUserPrincipal;
 import com.agentum.auth.domain.UserAccount;
 import com.agentum.auth.infrastructure.UserAccountRepository;
 import com.agentum.notification.application.NotificationService;
-import com.agentum.permission.application.CollaborationAccessPolicy;
 import com.agentum.permission.application.CollaborationAccessPolicy.AccessLevel;
 import com.agentum.schedule.domain.WorkflowScheduleEntity;
 import com.agentum.schedule.domain.WorkflowScheduleExecutionEntity;
@@ -24,6 +23,7 @@ import com.agentum.tenant.infrastructure.TenantRepository;
 import com.agentum.workbench.application.WorkbenchRuntimeService;
 import com.agentum.workbench.interfaces.WorkbenchApi;
 import com.agentum.workflow.application.WorkflowInputDefaultValueResolver;
+import com.agentum.workflow.application.WorkflowAccessService;
 import com.agentum.workflow.domain.WorkflowAccessGrantEntity;
 import com.agentum.workflow.domain.WorkflowDefinitionEntity;
 import com.agentum.workflow.domain.WorkflowRunEntity;
@@ -72,7 +72,7 @@ public class WorkflowScheduleService {
     private final WorkflowAccessGrantRepository workflowAccessGrantRepository;
     private final WorkflowRunRepository workflowRunRepository;
     private final UserAccountRepository userAccountRepository;
-    private final CollaborationAccessPolicy collaborationAccessPolicy;
+    private final WorkflowAccessService workflowAccessService;
     private final WorkbenchRuntimeService workbenchRuntimeService;
     private final NotificationService notificationService;
     private final AuditService auditService;
@@ -88,7 +88,7 @@ public class WorkflowScheduleService {
         WorkflowAccessGrantRepository workflowAccessGrantRepository,
         WorkflowRunRepository workflowRunRepository,
         UserAccountRepository userAccountRepository,
-        CollaborationAccessPolicy collaborationAccessPolicy,
+        WorkflowAccessService workflowAccessService,
         WorkbenchRuntimeService workbenchRuntimeService,
         NotificationService notificationService,
         AuditService auditService,
@@ -103,7 +103,7 @@ public class WorkflowScheduleService {
         this.workflowAccessGrantRepository = workflowAccessGrantRepository;
         this.workflowRunRepository = workflowRunRepository;
         this.userAccountRepository = userAccountRepository;
-        this.collaborationAccessPolicy = collaborationAccessPolicy;
+        this.workflowAccessService = workflowAccessService;
         this.workbenchRuntimeService = workbenchRuntimeService;
         this.notificationService = notificationService;
         this.auditService = auditService;
@@ -549,22 +549,7 @@ public class WorkflowScheduleService {
     }
 
     private AccessLevel resolveAccess(WorkflowDefinitionEntity definition, UUID operatorUserId, List<WorkflowAccessGrantEntity> grants) {
-        Set<UUID> readUserIds = grants.stream()
-            .filter(grant -> "read".equals(grant.getAccessLevel()))
-            .map(WorkflowAccessGrantEntity::getGranteeUserId)
-            .collect(Collectors.toSet());
-        Set<UUID> editUserIds = grants.stream()
-            .filter(grant -> "edit".equals(grant.getAccessLevel()))
-            .map(WorkflowAccessGrantEntity::getGranteeUserId)
-            .collect(Collectors.toSet());
-        return collaborationAccessPolicy.resolve(
-            definition.getCreatedBy(),
-            operatorUserId,
-            definition.getReadScope(),
-            readUserIds,
-            definition.getEditScope(),
-            editUserIds
-        );
+        return workflowAccessService.resolve(definition, operatorUserId, grants);
     }
 
     private void validateRequiredInputs(WorkflowVersionEntity version, Map<String, Object> inputPayload) {

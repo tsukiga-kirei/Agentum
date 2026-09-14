@@ -30,7 +30,26 @@ public interface WorkflowDefinitionRepository extends JpaRepository<WorkflowDefi
             or definition.editScope = 'all'
             or exists (
               select grant.id from WorkflowAccessGrantEntity grant
-              where grant.workflowId = definition.id and grant.granteeUserId = :operatorUserId
+              where grant.workflowId = definition.id
+                and (
+                  (grant.principalType = 'user' and grant.principalId = :operatorUserId)
+                  or (grant.principalType = 'department' and grant.principalId in (
+                    select membership.departmentId from UserMembershipEntity membership
+                    where membership.tenantId = :tenantId
+                      and membership.userId = :operatorUserId
+                      and membership.status = 'active'
+                  ))
+                  or (grant.principalType = 'role' and grant.principalId in (
+                    select membershipRole.roleId from UserMembershipRoleEntity membershipRole
+                    where membershipRole.status = 'active'
+                      and membershipRole.membershipId in (
+                        select membership.id from UserMembershipEntity membership
+                        where membership.tenantId = :tenantId
+                          and membership.userId = :operatorUserId
+                          and membership.status = 'active'
+                      )
+                  ))
+                )
             )
           )
           and definition.launchEnabled = true
@@ -54,7 +73,26 @@ public interface WorkflowDefinitionRepository extends JpaRepository<WorkflowDefi
             or definition.editScope = 'all'
             or exists (
               select grant.id from WorkflowAccessGrantEntity grant
-              where grant.workflowId = definition.id and grant.granteeUserId = :operatorUserId
+              where grant.workflowId = definition.id
+                and (
+                  (grant.principalType = 'user' and grant.principalId = :operatorUserId)
+                  or (grant.principalType = 'department' and grant.principalId in (
+                    select membership.departmentId from UserMembershipEntity membership
+                    where membership.tenantId = :tenantId
+                      and membership.userId = :operatorUserId
+                      and membership.status = 'active'
+                  ))
+                  or (grant.principalType = 'role' and grant.principalId in (
+                    select membershipRole.roleId from UserMembershipRoleEntity membershipRole
+                    where membershipRole.status = 'active'
+                      and membershipRole.membershipId in (
+                        select membership.id from UserMembershipEntity membership
+                        where membership.tenantId = :tenantId
+                          and membership.userId = :operatorUserId
+                          and membership.status = 'active'
+                      )
+                  ))
+                )
             )
           )
           and (:onlyMine = false or definition.createdBy = :operatorUserId)
@@ -87,7 +125,26 @@ public interface WorkflowDefinitionRepository extends JpaRepository<WorkflowDefi
             or definition.editScope = 'all'
             or exists (
               select grant.id from WorkflowAccessGrantEntity grant
-              where grant.workflowId = definition.id and grant.granteeUserId = :operatorUserId
+              where grant.workflowId = definition.id
+                and (
+                  (grant.principalType = 'user' and grant.principalId = :operatorUserId)
+                  or (grant.principalType = 'department' and grant.principalId in (
+                    select membership.departmentId from UserMembershipEntity membership
+                    where membership.tenantId = :tenantId
+                      and membership.userId = :operatorUserId
+                      and membership.status = 'active'
+                  ))
+                  or (grant.principalType = 'role' and grant.principalId in (
+                    select membershipRole.roleId from UserMembershipRoleEntity membershipRole
+                    where membershipRole.status = 'active'
+                      and membershipRole.membershipId in (
+                        select membership.id from UserMembershipEntity membership
+                        where membership.tenantId = :tenantId
+                          and membership.userId = :operatorUserId
+                          and membership.status = 'active'
+                      )
+                  ))
+                )
             )
           )
           and definition.launchEnabled = true

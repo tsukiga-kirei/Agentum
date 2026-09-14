@@ -19,7 +19,7 @@ import type {
 } from "../../types/organization";
 import { SysModalMask } from "./SysModalMask";
 
-type PrincipalSelectionKey = `${PrincipalType}:${string}`;
+export type PrincipalSelectionKey = `${PrincipalType}:${string}`;
 type PrincipalPickerTab = {
   key: PrincipalType;
   label: string;

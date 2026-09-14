@@ -12,7 +12,5 @@ public interface WorkflowAccessGrantRepository extends JpaRepository<WorkflowAcc
 
     List<WorkflowAccessGrantEntity> findByWorkflowIdIn(Collection<UUID> workflowIds);
 
-    List<WorkflowAccessGrantEntity> findByWorkflowIdInAndGranteeUserId(Collection<UUID> workflowIds, UUID granteeUserId);
-
     void deleteByWorkflowId(UUID workflowId);
 }

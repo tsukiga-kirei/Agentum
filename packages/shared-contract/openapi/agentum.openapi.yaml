@@ -1577,6 +1577,33 @@ paths:
       responses:
         "200":
           description: 当前租户可授权成员
+  /api/tenants/{tenantId}/workflows/drafts/access-catalog:
+    get:
+      summary: 查询流程协作权限可选对象
+      description: 返回当前租户内可用于流程读取授权的角色、部门和人员。
+      tags:
+        - Workflow
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 流程协作权限对象目录
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/WorkflowAccessCatalog"
   /api/tenants/{tenantId}/workflows/drafts/{workflowId}:
     get:
       summary: 获取工作流草稿详情
@@ -7213,11 +7240,10 @@ components:
           $ref: "#/components/schemas/CollaborationAccessScope"
         editScope:
           $ref: "#/components/schemas/CollaborationAccessScope"
-        readUserIds:
+        readPrincipals:
           type: array
           items:
-            type: string
-            format: uuid
+            $ref: "#/components/schemas/WorkflowPrincipalRef"
         editUserIds:
           type: array
           items:
@@ -7243,11 +7269,10 @@ components:
           $ref: "#/components/schemas/CollaborationAccessScope"
         editScope:
           $ref: "#/components/schemas/CollaborationAccessScope"
-        readUserIds:
+        readPrincipals:
           type: array
           items:
-            type: string
-            format: uuid
+            $ref: "#/components/schemas/WorkflowPrincipalRef"
         editUserIds:
           type: array
           items:
@@ -7261,13 +7286,94 @@ components:
         - $ref: "#/components/schemas/UpdateWorkflowAccessRequest"
         - type: object
           properties:
+            effectiveReaders:
+              type: array
+              items:
+                $ref: "#/components/schemas/WorkflowEffectiveReaderRow"
             accessLevel:
               $ref: "#/components/schemas/CollaborationAccessLevel"
             canManageAccess:
               type: boolean
           required:
+            - effectiveReaders
             - accessLevel
             - canManageAccess
+    WorkflowPrincipalRef:
+      type: object
+      properties:
+        principalType:
+          type: string
+          enum: [role, department, user]
+        principalId:
+          type: string
+          format: uuid
+      required:
+        - principalType
+        - principalId
+    WorkflowAccessCatalog:
+      type: object
+      properties:
+        roles:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowAccessRoleRow"
+        departments:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowAccessDepartmentRow"
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowAccessMemberRow"
+      required:
+        - roles
+        - departments
+        - members
+    WorkflowAccessRoleRow:
+      allOf:
+        - $ref: "#/components/schemas/OrganizationRole"
+    WorkflowAccessDepartmentRow:
+      allOf:
+        - $ref: "#/components/schemas/Department"
+    WorkflowAccessMemberRow:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        displayName:
+          type: string
+        email:
+          type: string
+        status:
+          type: string
+      required:
+        - id
+        - username
+        - displayName
+        - email
+        - status
+    WorkflowEffectiveReaderRow:
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+        username:
+          type: string
+        displayName:
+          type: string
+        sources:
+          type: array
+          items:
+            type: string
+      required:
+        - userId
+        - username
+        - displayName
+        - sources
     WorkflowDraftDetail:
       type: object
       properties:

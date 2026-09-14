@@ -19,6 +19,11 @@ import com.agentum.system.infrastructure.SystemCapabilityRepository;
 import com.agentum.auth.domain.UserAccount;
 import com.agentum.auth.infrastructure.UserAccountRepository;
 import com.agentum.permission.application.CollaborationAccessPolicy;
+import com.agentum.permission.application.TenantPrincipalResolver;
+import com.agentum.organization.infrastructure.UserMembershipRepository;
+import com.agentum.organization.infrastructure.UserMembershipRoleRepository;
+import com.agentum.organization.infrastructure.DepartmentRepository;
+import com.agentum.permission.infrastructure.RoleRepository;
 import com.agentum.shared.api.ApiException;
 import com.agentum.tenant.domain.TenantEntity;
 import com.agentum.tenant.infrastructure.TenantRepository;
@@ -42,6 +47,7 @@ import com.agentum.workflow.infrastructure.WorkflowRunRepository;
 import com.agentum.workflow.infrastructure.WorkflowVersionRepository;
 import com.agentum.workflow.infrastructure.WorkflowVariableSnapshotRepository;
 import com.agentum.workflow.infrastructure.WorkflowWaitingEventRepository;
+import com.agentum.workflow.application.WorkflowAccessService;
 import com.agentum.runtime.cancel.RunCancellationGuard;
 import com.agentum.runtime.execution.RuntimeExecutionProperties;
 import com.agentum.runtime.lease.RunExecutionLeaseService;
@@ -1272,6 +1278,8 @@ class WorkbenchRuntimeServiceTest {
         when(transactionManager.getTransaction(org.mockito.ArgumentMatchers.any(TransactionDefinition.class)))
             .thenReturn(new SimpleTransactionStatus());
         InputAttachmentService inputAttachmentService = mock(InputAttachmentService.class);
+        UserMembershipRepository membershipRepository = mock(UserMembershipRepository.class);
+        UserMembershipRoleRepository membershipRoleRepository = mock(UserMembershipRoleRepository.class);
         when(inputAttachmentService.resolveSubmittedPayload(any(), any(), any(), any()))
             .thenAnswer(invocation -> invocation.getArgument(3));
         return new WorkbenchRuntimeService(
@@ -1285,7 +1293,14 @@ class WorkbenchRuntimeServiceTest {
             workflowRunEventRepository,
             workflowVariableSnapshotRepository,
             userAccountRepository,
-            new CollaborationAccessPolicy(),
+            new WorkflowAccessService(
+                membershipRepository,
+                mock(RoleRepository.class),
+                mock(DepartmentRepository.class),
+                userAccountRepository,
+                new TenantPrincipalResolver(membershipRepository, membershipRoleRepository),
+                new CollaborationAccessPolicy()
+            ),
             new ObjectMapper(),
             workflowRuntimeExecutor,
             Clock.fixed(NOW, ZoneOffset.UTC),

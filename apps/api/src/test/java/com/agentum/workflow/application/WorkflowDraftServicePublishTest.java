@@ -11,7 +11,11 @@ import com.agentum.audit.application.AuditService;
 import com.agentum.auth.infrastructure.UserAccountRepository;
 import com.agentum.organization.domain.UserMembershipEntity;
 import com.agentum.organization.infrastructure.UserMembershipRepository;
+import com.agentum.organization.infrastructure.UserMembershipRoleRepository;
+import com.agentum.organization.infrastructure.DepartmentRepository;
 import com.agentum.permission.application.CollaborationAccessPolicy;
+import com.agentum.permission.application.TenantPrincipalResolver;
+import com.agentum.permission.infrastructure.RoleRepository;
 import com.agentum.shared.api.ApiException;
 import com.agentum.tenant.domain.TenantEntity;
 import com.agentum.tenant.infrastructure.TenantRepository;
@@ -81,6 +85,12 @@ class WorkflowDraftServicePublishTest {
     private WorkflowNodeConfigValidator workflowNodeConfigValidator;
     @Mock
     private UserMembershipRepository userMembershipRepository;
+    @Mock
+    private UserMembershipRoleRepository userMembershipRoleRepository;
+    @Mock
+    private DepartmentRepository departmentRepository;
+    @Mock
+    private RoleRepository roleRepository;
     @Mock
     private AuditService auditService;
 
@@ -285,7 +295,7 @@ class WorkflowDraftServicePublishTest {
         WorkflowDefinitionEntity definition = draft();
         definition.updateAccess("self", "specified", USER_ID, NOW);
         WorkflowAccessGrantEntity editGrant = WorkflowAccessGrantEntity.create(
-            TENANT_ID, definition.getId(), COLLABORATOR_ID, "edit", USER_ID, NOW
+            TENANT_ID, definition.getId(), "user", COLLABORATOR_ID, "edit", USER_ID, NOW
         );
         stubDefinitionLookup(definition);
         when(workflowAccessGrantRepository.findByWorkflowId(definition.getId())).thenReturn(List.of(editGrant));
@@ -456,7 +466,7 @@ class WorkflowDraftServicePublishTest {
     void shouldReplaceWorkflowAccessGrantsAfterFlushWhenUpdatingAccess() {
         WorkflowDefinitionEntity definition = draft();
         WorkflowAccessGrantEntity existingReadGrant = WorkflowAccessGrantEntity.create(
-            TENANT_ID, definition.getId(), COLLABORATOR_ID, "read", USER_ID, NOW
+            TENANT_ID, definition.getId(), "user", COLLABORATOR_ID, "read", USER_ID, NOW
         );
         stubDefinitionLookup(definition);
         when(workflowAccessGrantRepository.findByWorkflowId(definition.getId())).thenReturn(List.of(existingReadGrant));
@@ -470,7 +480,12 @@ class WorkflowDraftServicePublishTest {
             TENANT_ID,
             USER_ID,
             definition.getId(),
-            new WorkflowDraftApi.UpdateWorkflowAccessRequest("specified", "self", List.of(COLLABORATOR_ID), List.of())
+            new WorkflowDraftApi.UpdateWorkflowAccessRequest(
+                "specified",
+                "self",
+                List.of(new WorkflowDraftApi.WorkflowPrincipalRef("user", COLLABORATOR_ID)),
+                List.of()
+            )
         );
 
         verify(workflowAccessGrantRepository).deleteByWorkflowId(definition.getId());
@@ -478,7 +493,8 @@ class WorkflowDraftServicePublishTest {
         verify(workflowAccessGrantRepository).save(any(WorkflowAccessGrantEntity.class));
         assertThat(detail.access().readScope()).isEqualTo("specified");
         assertThat(detail.access().editScope()).isEqualTo("self");
-        assertThat(detail.access().readUserIds()).containsExactly(COLLABORATOR_ID);
+        assertThat(detail.access().readPrincipals())
+            .containsExactly(new WorkflowDraftApi.WorkflowPrincipalRef("user", COLLABORATOR_ID));
         assertThat(detail.access().editUserIds()).isEmpty();
     }
 
@@ -487,7 +503,7 @@ class WorkflowDraftServicePublishTest {
         WorkflowDefinitionEntity definition = draft();
         definition.updateAccess("specified", "self", USER_ID, NOW);
         WorkflowAccessGrantEntity readGrant = WorkflowAccessGrantEntity.create(
-            TENANT_ID, definition.getId(), COLLABORATOR_ID, "read", USER_ID, NOW
+            TENANT_ID, definition.getId(), "user", COLLABORATOR_ID, "read", USER_ID, NOW
         );
         when(tenantRepository.findByIdAndStatus(TENANT_ID, "active")).thenReturn(Optional.of(TenantEntity.create("租户", "tenant", NOW)));
         when(workflowDefinitionRepository.findByIdAndTenantId(definition.getId(), TENANT_ID)).thenReturn(Optional.of(definition));
@@ -556,11 +572,23 @@ class WorkflowDraftServicePublishTest {
             workflowVariableDeclarationValidator,
             workflowPublishValidator,
             workflowNodeConfigValidator,
-            userMembershipRepository,
             new CollaborationAccessPolicy(),
+            workflowAccessService(),
             new ObjectMapper(),
             Clock.fixed(NOW, ZoneOffset.UTC),
             auditService
+        );
+    }
+
+    private WorkflowAccessService workflowAccessService() {
+        TenantPrincipalResolver principalResolver = new TenantPrincipalResolver(userMembershipRepository, userMembershipRoleRepository);
+        return new WorkflowAccessService(
+            userMembershipRepository,
+            roleRepository,
+            departmentRepository,
+            userAccountRepository,
+            principalResolver,
+            new CollaborationAccessPolicy()
         );
     }
 

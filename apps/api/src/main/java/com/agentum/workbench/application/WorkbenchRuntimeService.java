@@ -5,7 +5,6 @@ import com.agentum.attachment.application.InputAttachmentService;
 import com.agentum.auth.application.CurrentUserPrincipal;
 import com.agentum.auth.domain.UserAccount;
 import com.agentum.auth.infrastructure.UserAccountRepository;
-import com.agentum.permission.application.CollaborationAccessPolicy;
 import com.agentum.permission.application.CollaborationAccessPolicy.AccessLevel;
 import com.agentum.runtime.cancel.RunCancellationGuard;
 import com.agentum.runtime.execution.RuntimeExecutionProperties;
@@ -45,6 +44,7 @@ import com.agentum.workflow.infrastructure.WorkflowWaitingEventRepository;
 import com.agentum.shared.platform.AgentumTimezones;
 import com.agentum.workflow.application.WorkflowRuntimeSystemVariables;
 import com.agentum.workflow.application.WorkflowInputDefaultValueResolver;
+import com.agentum.workflow.application.WorkflowAccessService;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -111,7 +111,7 @@ public class WorkbenchRuntimeService {
     private final WorkflowRunEventRepository workflowRunEventRepository;
     private final WorkflowVariableSnapshotRepository workflowVariableSnapshotRepository;
     private final UserAccountRepository userAccountRepository;
-    private final CollaborationAccessPolicy collaborationAccessPolicy;
+    private final WorkflowAccessService workflowAccessService;
     private final ObjectMapper objectMapper;
     private final WorkflowRuntimeExecutor workflowRuntimeExecutor;
     private final Clock clock;
@@ -138,7 +138,7 @@ public class WorkbenchRuntimeService {
         WorkflowRunEventRepository workflowRunEventRepository,
         WorkflowVariableSnapshotRepository workflowVariableSnapshotRepository,
         UserAccountRepository userAccountRepository,
-        CollaborationAccessPolicy collaborationAccessPolicy,
+        WorkflowAccessService workflowAccessService,
         ObjectMapper objectMapper,
         WorkflowRuntimeExecutor workflowRuntimeExecutor,
         Clock clock,
@@ -164,7 +164,7 @@ public class WorkbenchRuntimeService {
         this.workflowRunEventRepository = workflowRunEventRepository;
         this.workflowVariableSnapshotRepository = workflowVariableSnapshotRepository;
         this.userAccountRepository = userAccountRepository;
-        this.collaborationAccessPolicy = collaborationAccessPolicy;
+        this.workflowAccessService = workflowAccessService;
         this.objectMapper = objectMapper;
         this.workflowRuntimeExecutor = workflowRuntimeExecutor;
         this.clock = clock;
@@ -2440,22 +2440,7 @@ public class WorkbenchRuntimeService {
     }
 
     private AccessLevel resolveAccess(WorkflowDefinitionEntity definition, UUID operatorUserId, List<WorkflowAccessGrantEntity> grants) {
-        Set<UUID> readUserIds = grants.stream()
-            .filter(grant -> "read".equals(grant.getAccessLevel()))
-            .map(WorkflowAccessGrantEntity::getGranteeUserId)
-            .collect(Collectors.toSet());
-        Set<UUID> editUserIds = grants.stream()
-            .filter(grant -> "edit".equals(grant.getAccessLevel()))
-            .map(WorkflowAccessGrantEntity::getGranteeUserId)
-            .collect(Collectors.toSet());
-        return collaborationAccessPolicy.resolve(
-            definition.getCreatedBy(),
-            operatorUserId,
-            definition.getReadScope(),
-            readUserIds,
-            definition.getEditScope(),
-            editUserIds
-        );
+        return workflowAccessService.resolve(definition, operatorUserId, grants);
     }
 
     private VersionSnapshot readSnapshot(WorkflowVersionEntity version) {

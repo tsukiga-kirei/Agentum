@@ -6,6 +6,7 @@ import {
   Bot,
   CheckCircle2,
   ChevronDown,
+  ChevronUp,
   ClipboardCheck,
   Clock3,
   Copy,
@@ -14,6 +15,7 @@ import {
   GitBranch,
   GitMerge,
   History,
+  Eye,
   Inbox,
   ListChecks,
   PanelRightOpen,
@@ -35,6 +37,7 @@ import type { LucideIcon } from "lucide-react";
 import { Drawer, Pagination, Segmented, Select, message } from "antd";
 import { SurfacePageLayout } from "../../components/workbench/SurfacePageLayout";
 import { SysModalMask } from "../../components/common/SysModalMask";
+import { GrantPrincipalPicker, type PrincipalSelectionKey } from "../../components/common/GrantPrincipalPicker";
 import { AgentumApiError, workflowApi } from "../../services/apiClient";
 import { useFlipText } from "../../motion/useFlipText";
 import { useAuthStore } from "../../stores/authStore";
@@ -44,11 +47,14 @@ import type {
   WorkflowExportDocument,
   WorkflowNodeDraft,
   WorkflowPublishValidationResult,
-  WorkflowShareableMemberRow,
+  WorkflowAccessCatalog,
+  WorkflowEffectiveReaderRow,
+  WorkflowPrincipalRef,
   WorkflowVersionRow,
   WorkflowStatus,
   CollaborationAccessScope,
 } from "../../types/workflow-contract";
+import type { TenantOrganizationOverview } from "../../types/organization";
 import { parsePositiveInt, paths } from "../../routes/paths";
 import { getThemedDrawerRootClassName } from "../../utils/theme";
 import { WorkflowDesignStatusBadge } from "./WorkflowDesignStatusBadge";
@@ -76,7 +82,7 @@ type WorkflowStatusFilter = WorkflowStatus | "all" | "active";
 type WorkflowAccessDraft = {
   readScope: CollaborationAccessScope;
   editScope: CollaborationAccessScope;
-  readUserIds: string[];
+  readPrincipalKeys: PrincipalSelectionKey[];
   editUserIds: string[];
 };
 
@@ -131,10 +137,10 @@ export function WorkflowDraftsPage() {
   const [draftAccess, setDraftAccess] = useState({
     readScope: "self" as CollaborationAccessScope,
     editScope: "self" as CollaborationAccessScope,
-    readUserIds: [] as string[],
+    readPrincipalKeys: [] as PrincipalSelectionKey[],
     editUserIds: [] as string[],
   });
-  const [shareableMembers, setShareableMembers] = useState<WorkflowShareableMemberRow[]>([]);
+  const [accessCatalog, setAccessCatalog] = useState<WorkflowAccessCatalog | null>(null);
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
   const [submitting, setSubmitting] = useState(false);
@@ -154,12 +160,13 @@ export function WorkflowDraftsPage() {
   const [drawerDetailLoading, setDrawerDetailLoading] = useState(false);
   const [workflowVersions, setWorkflowVersions] = useState<WorkflowVersionRow[]>([]);
   const [activatingVersionId, setActivatingVersionId] = useState("");
+  const [versionsExpanded, setVersionsExpanded] = useState(false);
   const [detailName, setDetailName] = useState("");
   const [detailDescription, setDetailDescription] = useState("");
   const [detailAccess, setDetailAccess] = useState({
     readScope: "self" as CollaborationAccessScope,
     editScope: "self" as CollaborationAccessScope,
-    readUserIds: [] as string[],
+    readPrincipalKeys: [] as PrincipalSelectionKey[],
     editUserIds: [] as string[],
   });
   const [searchDraft, setSearchDraft] = useState(searchValue);
@@ -181,9 +188,18 @@ export function WorkflowDraftsPage() {
   const currentUserId = user?.id ?? "";
   const currentScope: WorkflowListScope = activeTab === "mine" ? "mine" : activeTab === "all" ? "shared" : "all";
   const shareableMemberOptions = useMemo(
-    () => shareableMembers.map((member) => ({ value: member.userId, label: `${member.displayName} · ${member.username}` })),
-    [shareableMembers],
+    () => (accessCatalog?.members ?? []).map((member) => ({ value: member.id, label: `${member.displayName} · ${member.username}` })),
+    [accessCatalog],
   );
+  const principalPickerOverview = useMemo<TenantOrganizationOverview | null>(() => accessCatalog ? ({
+    tenantId: user?.tenantId ?? "",
+    tenantName: "",
+    tenantCode: "",
+    members: accessCatalog.members.map((member) => ({ ...member, lastLoginAt: "" })),
+    departments: accessCatalog.departments,
+    roles: accessCatalog.roles,
+    memberships: [],
+  }) : null, [accessCatalog, user?.tenantId]);
 
   const loadDrafts = useCallback(async (nextPage = 1, keyword = searchValue, nextPageSize = pageSize, scope: WorkflowListScope = currentScope, status: WorkflowStatusFilter = workflowStatusFilter) => {
     if (!token || !user?.tenantId) {
@@ -209,10 +225,13 @@ export function WorkflowDraftsPage() {
   useEffect(() => {
     if (!token || !user?.tenantId) return;
     const tenantId = user.tenantId;
-    void workflowApi.listShareableMembers(tenantId, token)
-      .then(setShareableMembers)
-      .catch((error) => console.warn("[workflow] 加载可授权成员失败", getWorkflowErrorContext(error, tenantId)));
-  }, [token, user?.tenantId]);
+    void workflowApi.getAccessCatalog(tenantId, token)
+      .then(setAccessCatalog)
+      .catch((error) => {
+        console.warn("[workflow] 加载协作权限对象失败", getWorkflowErrorContext(error, tenantId));
+        messageApi.error(error instanceof AgentumApiError ? error.message : "无法加载角色、部门和人员");
+      });
+  }, [messageApi, token, user?.tenantId]);
 
   useEffect(() => {
     setSearchDraft(searchValue);
@@ -227,6 +246,7 @@ export function WorkflowDraftsPage() {
       setDrawerDetail(null);
       setDrawerDetailLoading(false);
       setWorkflowVersions([]);
+      setVersionsExpanded(false);
       return;
     }
 
@@ -253,7 +273,7 @@ export function WorkflowDraftsPage() {
           setDetailAccess({
             readScope: detail.access.readScope,
             editScope: detail.access.editScope,
-            readUserIds: detail.access.readUserIds ?? [],
+            readPrincipalKeys: (detail.access.readPrincipals ?? []).map(principalRefToKey),
             editUserIds: detail.access.editUserIds ?? [],
           });
           setWorkflowVersions(versions);
@@ -298,6 +318,10 @@ export function WorkflowDraftsPage() {
   );
   const sharedWorkflows = useMemo(() => workflows.filter((workflow) => !isWorkflowOwnedByCurrentUser(workflow, currentUserId)), [currentUserId, workflows]);
   const myOwnedWorkflows = useMemo(() => workflows.filter((workflow) => isWorkflowOwnedByCurrentUser(workflow, currentUserId)), [currentUserId, workflows]);
+  const displayedWorkflowVersions = useMemo(
+    () => versionsExpanded ? workflowVersions : compactWorkflowVersions(workflowVersions),
+    [versionsExpanded, workflowVersions],
+  );
 
   const neverPublishedCount = workflows.filter((workflow) => workflow.latestVersionNumber === 0).length;
   const publishedCount = workflows.filter((workflow) => workflow.latestVersionNumber > 0).length;
@@ -355,12 +379,12 @@ export function WorkflowDraftsPage() {
         description,
         readScope: draftAccess.readScope,
         editScope: draftAccess.editScope,
-        readUserIds: draftAccess.readScope === "specified" ? draftAccess.readUserIds : [],
+        readPrincipals: draftAccess.readScope === "specified" ? draftAccess.readPrincipalKeys.map(principalKeyToRef) : [],
         editUserIds: draftAccess.editScope === "specified" ? draftAccess.editUserIds : [],
       });
       setDraftName("");
       setDraftDescription("");
-      setDraftAccess({ readScope: "self", editScope: "self", readUserIds: [], editUserIds: [] });
+      setDraftAccess({ readScope: "self", editScope: "self", readPrincipalKeys: [], editUserIds: [] });
       setIsCreating(false);
       await loadDrafts(1, searchValue);
       messageApi.success("工作流草稿已保存");
@@ -388,7 +412,7 @@ export function WorkflowDraftsPage() {
         detail = await workflowApi.updateAccess(user.tenantId, detailWorkflow.id, token, {
           readScope: detailAccess.readScope,
           editScope: detailAccess.editScope,
-          readUserIds: detailAccess.readScope === "specified" ? detailAccess.readUserIds : [],
+          readPrincipals: detailAccess.readScope === "specified" ? detailAccess.readPrincipalKeys.map(principalKeyToRef) : [],
           editUserIds: detailAccess.editScope === "specified" ? detailAccess.editUserIds : [],
         });
       }
@@ -984,7 +1008,7 @@ export function WorkflowDraftsPage() {
                     <span className="sys-info-tag sys-info-tag--info">当前 v{detailWorkflow.activeVersionNumber}</span>
                   </div>
                   <div className="workflow-version-list">
-                    {workflowVersions.map((version) => (
+                    {displayedWorkflowVersions.map((version) => (
                       <article key={version.id} className={`workflow-version-item${version.active ? " workflow-version-item--active" : ""}`}>
                         <div className="workflow-version-item-main">
                           <div>
@@ -1008,6 +1032,17 @@ export function WorkflowDraftsPage() {
                       </article>
                     ))}
                   </div>
+                  {workflowVersions.length > displayedWorkflowVersions.length || versionsExpanded ? (
+                    <button
+                      type="button"
+                      className="workflow-version-expand"
+                      aria-expanded={versionsExpanded}
+                      onClick={() => setVersionsExpanded((expanded) => !expanded)}
+                    >
+                      {versionsExpanded ? <ChevronUp size={14} aria-hidden="true" /> : <ChevronDown size={14} aria-hidden="true" />}
+                      {versionsExpanded ? "收起版本记录" : `展开全部 ${workflowVersions.length} 个版本`}
+                    </button>
+                  ) : null}
                 </section>
               ) : null}
 
@@ -1016,6 +1051,8 @@ export function WorkflowDraftsPage() {
                   readOnly={!drawerDetail.access.canManageAccess}
                   access={detailAccess}
                   memberOptions={shareableMemberOptions}
+                  principalOverview={principalPickerOverview}
+                  effectiveReaders={drawerDetail.access.effectiveReaders}
                   onChange={setDetailAccess}
                 />
               ) : null}
@@ -1103,7 +1140,13 @@ export function WorkflowDraftsPage() {
                   <span className="sys-field-label">说明</span>
                   <textarea value={draftDescription} onChange={(event) => setDraftDescription(event.target.value)} className="sys-field-textarea" placeholder="描述流程适用场景、输入材料和最终交付物" />
                 </label>
-                <WorkflowAccessFields access={draftAccess} memberOptions={shareableMemberOptions} onChange={setDraftAccess} />
+                <WorkflowAccessFields
+                  access={draftAccess}
+                  memberOptions={shareableMemberOptions}
+                  principalOverview={principalPickerOverview}
+                  effectiveReaders={[]}
+                  onChange={setDraftAccess}
+                />
               </div>
               <div className="sys-modal-footer">
                 <button type="button" onClick={() => setIsCreating(false)} className="sys-btn sys-btn--default">取消</button>
@@ -1396,14 +1439,20 @@ function WorkflowDrawerStep({ node, index }: { node: WorkflowNodeDraft; index: n
 function WorkflowAccessFields({
   access,
   memberOptions,
+  principalOverview,
+  effectiveReaders,
   readOnly = false,
   onChange,
 }: {
   access: WorkflowAccessDraft;
   memberOptions: Array<{ value: string; label: string }>;
+  principalOverview: TenantOrganizationOverview | null;
+  effectiveReaders: WorkflowEffectiveReaderRow[];
   readOnly?: boolean;
   onChange: (access: WorkflowAccessDraft) => void;
 }) {
+  const [viewerModalOpen, setViewerModalOpen] = useState(false);
+
   return (
     <section className="workflow-drawer-block">
       <h3>协作权限</h3>
@@ -1416,31 +1465,22 @@ function WorkflowAccessFields({
           disabled={readOnly}
           value={access.readScope}
           options={accessScopeOptions}
-          onChange={(readScope) => onChange({ ...access, readScope, readUserIds: readScope === "specified" ? access.readUserIds : [] })}
+          onChange={(readScope) => onChange({ ...access, readScope, readPrincipalKeys: readScope === "specified" ? access.readPrincipalKeys : [] })}
         />
       </div>
       {access.readScope === "specified" ? (
         <div className="sys-field">
-          <label className="sys-field-label sys-field-label--required">指定可读取同事</label>
-          <Select
-            mode="multiple"
-            className="agent-admin-select agent-member-search-select w-full"
-            classNames={workflowSelectClassNames}
-            suffixIcon={workflowSelectSuffixIcon}
-            disabled={readOnly}
-            showSearch
-            allowClear
-            optionFilterProp="label"
-            autoClearSearchValue
-            maxTagCount={2}
-            maxTagTextLength={18}
-            value={access.readUserIds}
-            options={memberOptions}
-            placeholder="搜索姓名或账号后选择"
-            notFoundContent="未找到匹配同事"
-            onChange={(readUserIds) => onChange({ ...access, readUserIds })}
-          />
-          <div className="sys-field-hint">支持按姓名或账号搜索，可连续选择多位同事。</div>
+          <label className="sys-field-label sys-field-label--required">指定可读取对象</label>
+          {readOnly ? (
+            <div className="workflow-access-readonly-note">角色、部门和人员范围仅流程负责人可调整。</div>
+          ) : (
+            <GrantPrincipalPicker
+              value={access.readPrincipalKeys}
+              overview={principalOverview}
+              onChange={(readPrincipalKeys) => onChange({ ...access, readPrincipalKeys })}
+            />
+          )}
+          <div className="sys-field-hint">支持按角色、部门或人员授权；组织成员变化后，可见人员会自动更新。</div>
         </div>
       ) : null}
       <div className="sys-field">
@@ -1480,6 +1520,54 @@ function WorkflowAccessFields({
           <div className="sys-field-hint">支持按姓名或账号搜索，可连续选择多位同事。</div>
         </div>
       ) : null}
+      {effectiveReaders.length > 0 ? (
+        <>
+          <button type="button" className="workflow-access-viewers-trigger" onClick={() => setViewerModalOpen(true)}>
+            <span className="workflow-access-viewers-icon"><Eye size={17} aria-hidden="true" /></span>
+            <span className="workflow-access-viewers-copy">
+              <strong>当前已保存权限：共 {effectiveReaders.length} 人可查看</strong>
+              <small>包含负责人、可编辑同事，以及角色和部门覆盖的成员</small>
+            </span>
+            <span className="workflow-access-viewers-avatars" aria-hidden="true">
+              {effectiveReaders.slice(0, 4).map((reader) => (
+                <span key={reader.userId}>{reader.displayName.slice(0, 1)}</span>
+              ))}
+            </span>
+            <span className="workflow-access-viewers-action">查看全部</span>
+          </button>
+
+          {viewerModalOpen ? (
+            <SysModalMask onClose={() => setViewerModalOpen(false)} className="sys-modal-mask--over-drawer">
+              <div className="sys-modal workflow-access-viewers-modal" role="dialog" aria-modal="true" aria-labelledby="workflow-access-viewers-title">
+                <div className="sys-modal-header workflow-access-viewers-header">
+                  <div>
+                    <h2 id="workflow-access-viewers-title" className="sys-modal-title">全部可查看人员</h2>
+                    <p>共 {effectiveReaders.length} 人，授权来源已合并展示。</p>
+                  </div>
+                  <button type="button" className="sys-modal-close" aria-label="关闭可查看人员窗口" onClick={() => setViewerModalOpen(false)}><X size={18} /></button>
+                </div>
+                <div className="sys-modal-body workflow-access-viewers-body">
+                  {effectiveReaders.map((reader) => (
+                    <article key={reader.userId} className="workflow-access-viewer-row">
+                      <span className="workflow-access-viewer-avatar" aria-hidden="true">{reader.displayName.slice(0, 1)}</span>
+                      <span className="workflow-access-viewer-main">
+                        <strong>{reader.displayName}</strong>
+                        <small>{reader.username}</small>
+                      </span>
+                      <span className="workflow-access-viewer-sources">
+                        {reader.sources.map((source) => <span key={source}>{source}</span>)}
+                      </span>
+                    </article>
+                  ))}
+                </div>
+                <div className="sys-modal-footer">
+                  <button type="button" className="sys-btn sys-btn--primary" onClick={() => setViewerModalOpen(false)}>知道了</button>
+                </div>
+              </div>
+            </SysModalMask>
+          ) : null}
+        </>
+      ) : null}
     </section>
   );
 }
@@ -1513,6 +1601,28 @@ function formatDateTime(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function principalRefToKey(principal: WorkflowPrincipalRef): PrincipalSelectionKey {
+  return `${principal.principalType}:${principal.principalId}`;
+}
+
+function principalKeyToRef(key: PrincipalSelectionKey): WorkflowPrincipalRef {
+  const separatorIndex = key.indexOf(":");
+  return {
+    principalType: key.slice(0, separatorIndex) as WorkflowPrincipalRef["principalType"],
+    principalId: key.slice(separatorIndex + 1),
+  };
+}
+
+/** 默认只露出最近版本，同时保证被回切的当前可用版本不会被折叠隐藏。 */
+function compactWorkflowVersions(versions: WorkflowVersionRow[]): WorkflowVersionRow[] {
+  const compact = versions.slice(0, 3);
+  const activeVersion = versions.find((version) => version.active);
+  if (activeVersion && !compact.some((version) => version.id === activeVersion.id)) {
+    return [...compact.slice(0, 2), activeVersion];
+  }
+  return compact;
 }
 
 function sortDrawerNodes(nodes: WorkflowNodeDraft[]) {

@@ -68,6 +68,7 @@ import type {
   CreateWorkflowDraftRequest,
   ImportWorkflowDraftRequest,
   WorkflowDesignerCatalog,
+  WorkflowAccessCatalog,
   WorkflowDraftDetail,
   WorkflowEdgeDraft,
   WorkflowExportDocument,
@@ -828,6 +829,8 @@ export const workflowApi = {
     apiRequest<WorkflowDesignerCatalog>(`/api/tenants/${tenantId}/workflows/drafts/designer-catalog`, { token }),
   listShareableMembers: (tenantId: string, token: string) =>
     apiRequest<WorkflowShareableMemberRow[]>(`/api/tenants/${tenantId}/workflows/drafts/shareable-members`, { token }),
+  getAccessCatalog: (tenantId: string, token: string) =>
+    apiRequest<WorkflowAccessCatalog>(`/api/tenants/${tenantId}/workflows/drafts/access-catalog`, { token }),
   listDrafts: (tenantId: string, token: string, page = 1, size = 10, keyword = "", scope: "all" | "mine" | "shared" = "all", status: "active" | "all" | "draft" | "published" | "review" = "active", sort = "updatedAt,desc") => {
     const params = new URLSearchParams({
       page: String(page),

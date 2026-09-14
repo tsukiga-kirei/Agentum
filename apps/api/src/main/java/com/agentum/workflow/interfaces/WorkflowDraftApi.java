@@ -46,11 +46,37 @@ public final class WorkflowDraftApi {
     public record WorkflowAccessDetail(
         String readScope,
         String editScope,
-        List<UUID> readUserIds,
+        List<WorkflowPrincipalRef> readPrincipals,
         List<UUID> editUserIds,
+        List<WorkflowEffectiveReaderRow> effectiveReaders,
         String accessLevel,
         boolean canManageAccess
     ) {
+    }
+
+    public record WorkflowPrincipalRef(
+        @NotBlank @Size(max = 20) String principalType,
+        @NotNull UUID principalId
+    ) {
+    }
+
+    public record WorkflowAccessCatalog(
+        List<WorkflowAccessRoleRow> roles,
+        List<WorkflowAccessDepartmentRow> departments,
+        List<WorkflowAccessMemberRow> members
+    ) {
+    }
+
+    public record WorkflowAccessRoleRow(UUID id, String code, String name, String description, String status) {
+    }
+
+    public record WorkflowAccessDepartmentRow(UUID id, UUID parentId, String name, String code, int sortOrder, String status) {
+    }
+
+    public record WorkflowAccessMemberRow(UUID id, String username, String displayName, String email, String status) {
+    }
+
+    public record WorkflowEffectiveReaderRow(UUID userId, String username, String displayName, List<String> sources) {
     }
 
     public record ShareableMemberRow(UUID userId, String username, String displayName) {
@@ -200,7 +226,7 @@ public final class WorkflowDraftApi {
         @Size(max = 1000) String description,
         @Size(max = 30) String readScope,
         @Size(max = 30) String editScope,
-        List<UUID> readUserIds,
+        List<@Valid WorkflowPrincipalRef> readPrincipals,
         List<UUID> editUserIds
     ) {
     }
@@ -214,7 +240,7 @@ public final class WorkflowDraftApi {
     public record UpdateWorkflowAccessRequest(
         @NotBlank @Size(max = 30) String readScope,
         @NotBlank @Size(max = 30) String editScope,
-        List<UUID> readUserIds,
+        List<@Valid WorkflowPrincipalRef> readPrincipals,
         List<UUID> editUserIds
     ) {
     }
