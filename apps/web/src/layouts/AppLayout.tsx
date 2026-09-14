@@ -422,7 +422,7 @@ export function AppLayout() {
                   className="workbench-sidebar-compact-brand"
                   aria-label="打开边栏"
                 >
-                  <span className="workbench-sidebar-mark-slot overflow-hidden rounded-lg shadow-sm">
+                  <span className="workbench-sidebar-mark-slot">
                     <AgentumMark className="workbench-sidebar-mark-logo h-9 w-9 shrink-0 object-contain" />
                     <span className="workbench-sidebar-mark-toggle" aria-hidden="true">
                       <PanelLeft className="h-4 w-4" />
@@ -436,8 +436,8 @@ export function AppLayout() {
             ) : (
               <>
                 <div ref={sidebarBrandRef} className="workbench-sidebar-brand" data-motion="sidebar-brand">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg shadow-sm">
-                    <AgentumMark className="h-9 w-9 shrink-0 object-contain" />
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center">
+                    <AgentumMark className="workbench-sidebar-mark-logo h-9 w-9 shrink-0 object-contain" />
                   </div>
                   <div className={`workbench-sidebar-text ${showSidebarText ? "workbench-sidebar-text--visible" : ""}`}>
                     <p className="text-lg font-bold text-[var(--color-sidebar-logo-text)]">Agentum</p>

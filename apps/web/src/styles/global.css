@@ -729,6 +729,10 @@ textarea:focus-visible {
     transform var(--transition-fast);
 }
 
+.workbench-sidebar-mark-logo {
+  filter: drop-shadow(0 4px 7px rgba(79, 70, 229, 0.18));
+}
+
 .workbench-sidebar-mark-toggle {
   position: absolute;
   inset: 0;
@@ -2714,7 +2718,6 @@ textarea:focus-visible {
   width: 76px;
   height: 76px;
   margin-bottom: 22px;
-  border-radius: 17px;
   isolation: isolate;
 }
 
@@ -2734,24 +2737,10 @@ textarea:focus-visible {
   animation: login-brand-breathe 4.8s ease-in-out infinite;
 }
 
-.login-brand-mark::after {
-  content: "";
-  position: absolute;
-  inset: -1px;
-  border-radius: 18px;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.04) 52%, rgba(103, 232, 249, 0.22));
-  opacity: 0.45;
-  pointer-events: none;
-  mix-blend-mode: screen;
-}
-
 .login-brand-mark img {
   position: relative;
   z-index: 1;
-  border-radius: 17px;
-  box-shadow:
-    0 18px 42px rgba(17, 24, 39, 0.24),
-    0 0 0 1px rgba(255, 255, 255, 0.08);
+  filter: drop-shadow(0 14px 20px rgba(17, 24, 39, 0.2));
 }
 
 @keyframes login-brand-breathe {
