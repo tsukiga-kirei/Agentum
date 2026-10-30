@@ -137,12 +137,15 @@ public class NodeExecutionService {
         }
 
         String workerId = "worker-" + UUID.randomUUID();
-        if (!tryAcquireExecutionLease(runId, workerId, command)) {
-            // 同一 run 已有 Worker 持有 Redis 租约并在执行（含模型长耗时）。丢弃本条重复消息即可，
-            // 切勿再次入队——否则多 consumers 会复制命令，形成日志风暴且无法推进。
+        if (!leaseService.tryAcquire(runId, workerId)) {
+            // 作业仍在排队时延后单次重投，避免前一 Worker 收尾窗口吞掉下一作业。
+            // 已 running 的重复消息直接丢弃；绝不根据暂未落库的状态强拆其他 Worker 的租约。
             WorkflowRunExecutionJobEntity latest = jobRepository.findById(command.jobId()).orElse(null);
-            String jobStatus = latest == null ? "missing" : latest.getStatus();
-            log.info("执行租约被占用，跳过重复消费 runId={} jobId={} jobStatus={}", runId, command.jobId(), jobStatus);
+            if (latest != null && WorkflowRunExecutionJobEntity.STATUS_QUEUED.equals(latest.getStatus())) {
+                heartbeatScheduler.schedule(() -> {
+                    try (LogContext.Scope ignored = LogContext.openForExecution(command)) { commandPublisher.publish(command); }
+                }, 1, TimeUnit.SECONDS);
+            }
             return;
         }
 
@@ -164,6 +167,7 @@ public class NodeExecutionService {
 
             Instant now = clock.instant();
             job.markRunning(workerId, now);
+            job.resetDeadline(now.plusSeconds(properties.getExecution().getNodeTimeoutSeconds()));
             jobRepository.save(job);
             if (job.getDeadlineAt() != null) {
                 cancellationGuard.markDeadline(runId, job.getDeadlineAt().toEpochMilli());
@@ -204,8 +208,8 @@ public class NodeExecutionService {
                 return;
             }
             cancellationGuard.assertExecutable(runId);
-            workbenchRuntimeService.saveNodeSuccess(runId, nodeRunId, outputs, command.operatorUserId());
-            boolean scheduledRun = workbenchRuntimeService.isScheduledRun(runId);
+            if (!workbenchRuntimeService.saveActiveJobSuccess(runId, nodeRunId, command.jobId(), outputs, command.operatorUserId())) { return; }
+            boolean automaticRun = workbenchRuntimeService.shouldAutomaticallyContinue(runId);
             WorkflowNodeRunEntity nodeAfterSave = workflowNodeRunRepository.findById(nodeRunId).orElse(null);
             if (nodeAfterSave == null || !"completed".equals(nodeAfterSave.getState())) {
                 log.info(
@@ -217,8 +221,8 @@ public class NodeExecutionService {
             finalizeJobSucceeded(command.jobId());
 
             progress.emit(nodeRunId, "node_completed", Map.of("outputs", outputs));
-            if (scheduledRun) {
-                workbenchRuntimeService.continueScheduledRunAfterJob(runId, command.operatorUserId());
+            if (automaticRun) {
+                workbenchRuntimeService.continueAutomaticRunAfterJob(runId, command.operatorUserId());
             } else {
                 emitPostCompletionState(progress, nodeRunId);
             }
@@ -242,31 +246,6 @@ public class NodeExecutionService {
             }
             leaseService.release(runId, workerId);
         }
-    }
-
-    /**
-     * 获取执行租约。若 Redis 有锁但 DB 无 running 作业，视为孤儿锁清理后重试一次，
-     * 与 WorkbenchRuntimeService 入队前清理互为兜底（MQ 重复投递或 API/Worker 竞态）。
-     */
-    private boolean tryAcquireExecutionLease(UUID runId, String workerId, NodeExecuteCommand command) {
-        if (leaseService.tryAcquire(runId, workerId)) {
-            return true;
-        }
-        boolean hasRunningJob = !jobRepository.findByRunIdAndStatusIn(
-            runId,
-            List.of(WorkflowRunExecutionJobEntity.STATUS_RUNNING)
-        ).isEmpty();
-        if (hasRunningJob) {
-            return false;
-        }
-        log.warn(
-            "执行租约被占且无 running 作业，按孤儿锁清理后重试 runId={} jobId={} requestId={}",
-            runId,
-            command.jobId(),
-            command.requestId()
-        );
-        leaseService.forceRelease(runId);
-        return leaseService.tryAcquire(runId, workerId);
     }
 
     private Map<String, Object> dispatch(
@@ -473,7 +452,7 @@ public class NodeExecutionService {
             // 单独重跑必须沿用原执行范围：协同/接力复用其他成功结果，意图分派不重新分类，
             // 防止同一次业务运行因分类模型波动把重跑请求派给另一组智能体。
             Set<Integer> requested = new LinkedHashSet<>(requestedAgentIndexes);
-            resultSlots = slots.stream().filter(slot -> requested.contains(slot.index())).toList();
+            resultSlots = slots.stream().filter(slot -> requested.contains(slot.index()) || outputsByIndex.containsKey(slot.index())).toList();
             if (resultSlots.isEmpty()) {
                 throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_CLUSTER_AGENT_SCOPE_INVALID", "子智能体重新执行范围已失效");
             }
@@ -551,6 +530,8 @@ public class NodeExecutionService {
             summaryEntry.put("summary", summarizeText(displayText));
             summaryEntry.put("tokenUsage", output.getOrDefault("tokenUsage", Map.of()));
             summaryEntry.put("chatMessages", output.getOrDefault("chatMessages", List.of()));
+            summaryEntry.put("resultSelectionRequired", output.getOrDefault("resultSelectionRequired", false));
+            if (output.containsKey("selectedResultMessageIndex")) summaryEntry.put("selectedResultMessageIndex", output.get("selectedResultMessageIndex"));
             summaries.add(summaryEntry);
         }
         result.put("clusterAgents", summaries);
@@ -720,6 +701,7 @@ public class NodeExecutionService {
                         abortException = abort;
                     } else {
                         log.error("集群子智能体并行任务异常 runId={} nodeRunId={}", run.getId(), node.getId(), exception);
+                        failures.add(ClusterAgentOutcome.failure(-1, "子智能体初始化", "CLUSTER_AGENT_FAILED", "子智能体执行异常，结果未完整生成"));
                     }
                 }
             }
@@ -1013,7 +995,7 @@ public class NodeExecutionService {
         if (node == null || !"running".equals(node.getState())) {
             return;
         }
-        clusterAgentRunRepository.save(row);
+        workbenchRuntimeService.saveActiveClusterRow(row.getRunId(), nodeRunId, jobId, row);
     }
 
     // ------------------------------------------------------------------
@@ -1029,11 +1011,13 @@ public class NodeExecutionService {
             return;
         }
 
+        // 旧轮次已取消或被替换时，即使返回可重试错误也不得创建新作业。
+        if (!isJobStillActive(command.jobId())) { return; }
         boolean retryable = RETRYABLE_ERROR_CODES.contains(errorCode)
             && command.attempt() < properties.getExecution().getMaxAttempts()
             && !cancellationGuard.isCancelled(runId);
         if (retryable) {
-            requeueForRetry(command, errorCode, errorMessage);
+            workbenchRuntimeService.retryActiveJob(runId, command.jobId(), () -> requeueForRetry(command, errorCode, errorMessage));
             return;
         }
 
@@ -1048,13 +1032,7 @@ public class NodeExecutionService {
             "节点执行失败 tenantId={} runId={} nodeRunId={} jobId={} errorCode={} attempt={} requestId={}",
             command.tenantId(), runId, command.nodeRunId(), command.jobId(), errorCode, command.attempt(), command.requestId()
         );
-        jobRepository.findById(command.jobId()).ifPresent(job -> {
-            if (!job.isTerminal()) {
-                job.markFailed(errorCode, errorMessage, clock.instant());
-                jobRepository.save(job);
-            }
-        });
-        workbenchRuntimeService.failNodeIfActive(runId, command.nodeRunId(), errorCode, errorMessage);
+        if (!workbenchRuntimeService.failActiveJob(runId, command.nodeRunId(), command.jobId(), errorCode, errorMessage)) { return; }
         JobProgressEmitter progress = new JobProgressEmitter(runId, command.jobId());
         progress.emit(command.nodeRunId(), "node_failed", Map.of(
             "errorCode", errorCode,
@@ -1088,12 +1066,16 @@ public class NodeExecutionService {
         );
         jobRepository.save(retryJob);
         // 自动重试属于同一轮执行，保留既有进度，但切换 activeJob 栅栏，旧 attempt 不得继续写流。
-        streamWriter.activateJob(command.runId(), retryJob.getId(), false);
-        JobProgressEmitter retryProgress = new JobProgressEmitter(command.runId(), retryJob.getId());
-        retryProgress.emit(command.nodeRunId(), "agent_thinking", Map.of(
-            "phase", "model_calling",
-            "message", "模型调用出现瞬时故障，正在自动重试（第 " + nextAttempt + " 次尝试）..."
-        ));
+        org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(new org.springframework.transaction.support.TransactionSynchronization() {
+            @Override public void afterCommit() {
+                streamWriter.activateJob(command.runId(), retryJob.getId(), false);
+                // 新作业提交并切换栅栏后再写提示，否则会被旧作业身份检查丢弃。
+                new JobProgressEmitter(command.runId(), retryJob.getId()).emit(command.nodeRunId(), "agent_thinking", Map.of(
+                    "phase", "model_calling",
+                    "message", "模型调用出现瞬时故障，正在自动重试（第 " + nextAttempt + " 次尝试）..."
+                ));
+            }
+        });
         NodeExecuteCommand retryCommand = command.clusterAgentIndexes() == null || command.clusterAgentIndexes().isEmpty()
             ? NodeExecuteCommand.of(
                 retryJob.getId(), command.tenantId(), command.runId(), command.nodeRunId(), command.nodeType(),
@@ -1103,7 +1085,9 @@ public class NodeExecutionService {
                 retryJob.getId(), command.tenantId(), command.runId(), command.nodeRunId(), command.nodeType(),
                 command.operatorUserId(), command.requestId(), nextAttempt, command.clusterAgentIndexes(), now
             );
-        commandPublisher.publish(retryCommand);
+        org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(new org.springframework.transaction.support.TransactionSynchronization() {
+            @Override public void afterCommit() { commandPublisher.publish(retryCommand); }
+        });
         log.info(
             "节点执行瞬时失败，已自动重试 runId={} nodeRunId={} errorCode={} nextAttempt={} requestId={}",
             command.runId(), command.nodeRunId(), errorCode, nextAttempt, command.requestId()

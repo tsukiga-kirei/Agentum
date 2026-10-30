@@ -79,6 +79,8 @@ export type WorkbenchAvailableWorkflowPreview = {
   workflowId: string;
   versionNumber: number;
   nodes: WorkbenchAvailableWorkflowNodeRow[];
+  allowAutoExecution: boolean;
+  inputFields: Array<{ id: string; nodeName: string; variable: string; label: string; fieldType?: string; dateGranularity?: string; defaultValue?: string; options?: Array<{label: string; value: string}> }>;
 };
 
 export type InputAttachmentRow = {
@@ -184,6 +186,8 @@ export type WorkbenchRunDetail = {
   events: WorkbenchRunEventRow[];
   openTodo: WorkbenchPendingTodoRow | null;
   activeJob: WorkbenchActiveJob | null;
+  autoExecution: boolean;
+  manualTakeover: boolean;
 };
 
 export type WorkbenchTaskRunPage = PageResponse<WorkbenchTaskRunRow>;

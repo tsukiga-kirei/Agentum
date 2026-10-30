@@ -83,6 +83,10 @@ apps/
   api/          Spring Boot 后端 API
 ```
 
+`apps/web/src/components/runtime/ResultSelectionModal.tsx` 承载追问后推进前的回答选择；聊天各回答块可显式选为正式结果，聊天末尾可整理完整结果。
+
+`apps/api/src/main/java/com/agentum/runtime/AutomaticRunReconciler.java` 负责自动执行在服务重启或节点交接窗口后的补偿推进。
+
 ### 3.1 apps/web — 前端
 
 | 路径 | 职责 |

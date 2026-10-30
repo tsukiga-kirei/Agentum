@@ -3915,6 +3915,76 @@ paths:
                     properties:
                       data:
                         $ref: "#/components/schemas/AuditToolCallPageResponse"
+  /api/tenants/{tenantId}/workbench/runs/{runId}/automation:
+    post:
+      summary: 主动接管或继续自动执行
+      tags: [Workbench]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: runId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkbenchAutomationRequest"
+      responses:
+        "200":
+          description: 更新后的运行详情
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/WorkbenchRunDetail"
+  /api/tenants/{tenantId}/workbench/runs/{runId}/nodes/{nodeRunId}/adopt-answer:
+    post:
+      summary: 采用已保存的智能体回复作为正式结果
+      tags: [Workbench]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: runId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: nodeRunId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkbenchAdoptAnswerRequest"
+      responses:
+        "200":
+          description: 更新后的运行详情
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/WorkbenchRunDetail"
 components:
   securitySchemes:
     bearerAuth:
@@ -5522,6 +5592,15 @@ components:
     WorkbenchAvailableWorkflowPreview:
       type: object
       properties:
+        allowAutoExecution:
+          type: boolean
+          description: 当前发布版本是否允许发起人选择自动执行，由系统触发节点配置决定
+        inputFields:
+          type: array
+          description: 按输入节点分组的预填字段；附件在运行时上传
+          items:
+            type: object
+            additionalProperties: true
         workflowId:
           type: string
           format: uuid
@@ -5538,6 +5617,14 @@ components:
     WorkbenchCreateRunRequest:
       type: object
       properties:
+        autoExecution:
+          type: boolean
+          default: false
+          description: 选择自动确认；后端复核发布版本中的 allowAutoExecution
+        inputPayload:
+          type: object
+          additionalProperties: true
+          description: 发起时预填的输入变量，缺少必填资料或附件时生成待办
         workflowId:
           type: string
           format: uuid
@@ -5545,6 +5632,17 @@ components:
           type: string
       required:
         - workflowId
+    WorkbenchAutomationRequest:
+      type: object
+      properties:
+        takeover: { type: boolean, description: true 接管，false 交还自动执行控制权 }
+      required: [takeover]
+    WorkbenchAdoptAnswerRequest:
+      type: object
+      properties:
+        agentIndex: { type: integer, minimum: 0, nullable: true, description: 子智能体索引，单智能体省略 }
+        messageIndex: { type: integer, minimum: 0, description: 已持久化聊天列表中的智能体回答索引 }
+      required: [messageIndex]
     WorkbenchCompleteTodoRequest:
       type: object
       properties:
@@ -5948,6 +6046,8 @@ components:
     WorkbenchRunDetail:
       type: object
       properties:
+        autoExecution: { type: boolean }
+        manualTakeover: { type: boolean, description: 已主动接管，保留当前执行但停止后续自动推进 }
         id:
           type: string
           format: uuid

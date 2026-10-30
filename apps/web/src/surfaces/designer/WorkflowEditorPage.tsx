@@ -1090,6 +1090,11 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
         </button>
       </div>
 
+      <label className="flex items-center gap-3 border-b border-[var(--color-border-light)] bg-[var(--color-bg-card)] px-4 py-3 text-sm text-[var(--color-text-primary)]">
+        <input type="checkbox" className="accent-blue-500" checked={nodes.some(n => n.data.nodeType === "trigger" && n.data.rawConfig?.allowAutoExecution === true)}
+          onChange={e => { const checked = e.target.checked; setNodes(current => current.map(n => n.data.nodeType === "trigger" ? { ...n, data: { ...n.data, rawConfig: { ...n.data.rawConfig, allowAutoExecution: checked } } } : n)); }} />
+        <span>允许发起人选择自动执行 <small className="ml-2 text-[var(--color-text-tertiary)]">发布后生效；成功自动继续，报错停止，可随时接管</small></span>
+      </label>
       <div className="grid min-h-0 flex-1 grid-cols-[280px_minmax(0,1fr)]">
         <main className="workflow-step-sidebar min-h-0 overflow-y-auto border-r border-[var(--color-border-light)] p-3">
           <WorkflowStepBuilder

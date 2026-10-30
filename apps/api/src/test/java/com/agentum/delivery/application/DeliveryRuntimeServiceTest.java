@@ -83,6 +83,42 @@ class DeliveryRuntimeServiceTest {
     }
 
     @Test
+    void shouldReuseSucceededItemWhenRestoringDeliveryNode() {
+        DeliveryRuntimeRequest request = buildRequest(Map.of("deliveryMode", "direct", "deliveryType", "direct", "deliveryContent", "完整报告"), Map.of());
+        java.util.ArrayList<com.agentum.delivery.domain.DeliveryRecordEntity> records = new java.util.ArrayList<>();
+        when(deliveryRecordRepository.save(any())).thenAnswer(call -> { var record = (com.agentum.delivery.domain.DeliveryRecordEntity) call.getArgument(0); if (records.isEmpty()) records.add(record); return record; });
+        when(deliveryRecordRepository.findByNodeRunIdOrderByCreatedAtDesc(request.nodeRun().getId())).thenAnswer(call -> List.copyOf(records));
+        DeliveryRuntimeResult first = service.execute(request);
+        org.mockito.Mockito.clearInvocations(deliveryRecordRepository);
+        DeliveryRuntimeResult restored = service.execute(request);
+        assertThat(restored.outputs().get("deliveryRecordId")).isEqualTo(first.outputs().get("deliveryRecordId"));
+        org.mockito.Mockito.verify(deliveryRecordRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void shouldSkipSuccessfulFirstItemWhenLaterDeliveryFailsAndIsRecovered() {
+        DeliveryRuntimeRequest request = buildRequest(Map.of(
+            "deliveryConfigMode", "multiple",
+            "deliveryItems", List.of(
+                Map.of("id", "first", "name", "已完成交付", "config", Map.of("deliveryMode", "direct", "deliveryType", "direct", "deliveryContent", "完整报告")),
+                Map.of("id", "second", "name", "失败交付", "config", Map.of("deliveryMode", "capability", "deliveryCapabilityId", "missing"))
+            )
+        ), Map.of());
+        java.util.List<com.agentum.delivery.domain.DeliveryRecordEntity> records = new java.util.ArrayList<>();
+        when(deliveryRecordRepository.save(any())).thenAnswer(call -> {
+            var record = (com.agentum.delivery.domain.DeliveryRecordEntity) call.getArgument(0);
+            if (records.stream().noneMatch(existing -> existing.getId().equals(record.getId()))) records.add(record);
+            return record;
+        });
+        when(deliveryRecordRepository.findByNodeRunIdOrderByCreatedAtDesc(request.nodeRun().getId())).thenAnswer(call -> List.copyOf(records));
+        assertThatThrownBy(() -> service.execute(request)).isInstanceOf(ApiException.class);
+        assertThat(records).hasSize(1);
+        org.mockito.Mockito.clearInvocations(deliveryRecordRepository);
+        assertThatThrownBy(() -> service.execute(request)).isInstanceOf(ApiException.class);
+        org.mockito.Mockito.verify(deliveryRecordRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
     void shouldRejectCapabilityDeliveryWithoutConcreteCapability() {
         DeliveryRuntimeRequest request = buildRequest(Map.of(
             "deliveryMode", "capability",

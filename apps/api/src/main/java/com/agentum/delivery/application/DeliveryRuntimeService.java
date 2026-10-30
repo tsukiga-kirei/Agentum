@@ -130,6 +130,22 @@ public class DeliveryRuntimeService {
         return new DeliveryRuntimeResult(outputs);
     }
 
+    private DeliveryRuntimeResult reuseSuccessfulDelivery(DeliveryRuntimeRequest request, Map<String, Object> payload) {
+        Map<String, Object> safePayload = sanitizeMap(payload);
+        for (DeliveryRecordEntity record : deliveryRecordRepository.findByNodeRunIdOrderByCreatedAtDesc(request.nodeRun().getId())) {
+            if ("success".equals(record.getStatus()) && safePayload.equals(record.getPayload())) {
+                log.info("复用已成功交付，避免恢复时重复发送 tenantId={} userId={} runId={} nodeRunId={} recordId={} requestId={}", request.run().getTenantId(), request.operatorUserId(), request.run().getId(), request.nodeRun().getId(), record.getId(), RequestIds.current());
+                Map<String, Object> outputs = new LinkedHashMap<>();
+                outputs.put("deliveryRecordId", record.getId().toString());
+                outputs.put("deliveryStatus", "success");
+                outputs.put("deliveryResult", record.getResultSnapshot());
+                outputs.put("summary", "已复用本交付项的成功记录");
+                return new DeliveryRuntimeResult(outputs);
+            }
+        }
+        return null;
+    }
+
     private DeliveryRuntimeResult executeDeliveryItem(
         DeliveryRuntimeRequest request,
         Map<String, Object> itemConfig,
@@ -156,6 +172,9 @@ public class DeliveryRuntimeService {
             "delivery"
         );
         Map<String, Object> payload = buildPayload(request, nodeConfig, enrichRuntimeVariables(request), null);
+        payload.put("_deliveryItemId", itemId);
+        DeliveryRuntimeResult previous = reuseSuccessfulDelivery(request, payload);
+        if (previous != null) { return previous; }
         String title = firstNonBlank(stringValue(nodeConfig.get("subject")), stringValue(nodeConfig.get("title")), itemName, request.run().getTitle());
         String target = firstNonBlank(stringValue(nodeConfig.get("deliveryTarget")), stringValue(capability.getConfig().get("endpointUrl")), "业务交付目标");
         DeliveryRecordEntity record = DeliveryRecordEntity.started(
@@ -172,7 +191,9 @@ public class DeliveryRuntimeService {
         deliveryRecordRepository.save(record);
 
         try {
-            Map<String, Object> result = dispatchCapability(capability, deliveryType, title, payload, request, nodeConfig, record.getId());
+            Map<String, Object> externalPayload = new LinkedHashMap<>(payload);
+            externalPayload.remove("_deliveryItemId");
+            Map<String, Object> result = dispatchCapability(capability, deliveryType, title, externalPayload, request, nodeConfig, record.getId());
             record.succeed(result, clock.instant());
             deliveryRecordRepository.save(record);
             Map<String, Object> outputs = new LinkedHashMap<>();
@@ -229,6 +250,9 @@ public class DeliveryRuntimeService {
             request.run().getTitle()
         );
         Map<String, Object> payload = buildPayload(request, nodeConfig, variables, content);
+        payload.put("_deliveryItemId", itemId);
+        DeliveryRuntimeResult previous = reuseSuccessfulDelivery(request, payload);
+        if (previous != null) { return previous; }
         DeliveryRecordEntity record = DeliveryRecordEntity.started(
             request.run(),
             request.nodeRun(),
@@ -358,7 +382,7 @@ public class DeliveryRuntimeService {
                     .body(String.class);
                 return Map.of("adapter", "webhook", "status", "success", "responsePreview", truncate(body, 500));
             } catch (RestClientException exception) {
-                throw new ApiException(HttpStatus.BAD_GATEWAY, "DELIVERY_WEBHOOK_FAILED", "交付 Webhook 调用失败");
+                throw new ApiException(HttpStatus.BAD_GATEWAY, "DELIVERY_WEBHOOK_FAILED", "交付 Webhook 调用失败，发送结果未确认；请先核对目标系统，确认未收到后再恢复，避免重复发送");
             }
         }
         throw new ApiException(HttpStatus.BAD_REQUEST, "DELIVERY_ADAPTER_NOT_CONFIGURED", "交付能力未配置邮箱或 Webhook 适配器");

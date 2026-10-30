@@ -1,3 +1,4 @@
+import { CONSOLIDATE_RESULT_PROMPT } from "./ResultSelectionModal";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { message } from "antd";
 import {
@@ -11,6 +12,7 @@ import {
   Loader2,
   MessageSquarePlus,
   PencilLine,
+  FileText,
   Sigma,
 } from "lucide-react";
 import type { AgentExecutionStep, RuntimeChatMessage, RuntimePreviewStep, RuntimeTokenUsage } from "../../types/runtime-types";
@@ -43,6 +45,7 @@ interface SingleAgentPanelProps {
   scrollToLatestAnswerWhenDone?: boolean;
   /** 完成/失败态滚到回答时的对齐方式；详情抽屉常用 end 以露出最底部回复。 */
   scrollAnswerBlockWhenDone?: ScrollLogicalPosition;
+  onAdoptAnswer?: (messageIndex: number) => void | Promise<void>;
   onSaveAnswer?: (content: string) => void | Promise<void>;
   onFollowUp?: (followUpMessage: string) => void | Promise<void>;
 }
@@ -307,10 +310,11 @@ function ToolStepRow({
   }
 
   return (
-    <div className="agent-tool-step">
+    <div className="agent-tool-step" data-kind={step.kind} data-status={step.status}>
       <button
         type="button"
         className="agent-tool-step-head"
+        aria-expanded={hasDetail ? expanded : undefined}
         onClick={hasDetail ? onToggle : undefined}
         disabled={!hasDetail}
       >
@@ -321,12 +325,15 @@ function ToolStepRow({
             step.status === "running" ? <Loader2 size={12} className="animate-spin text-indigo-500" /> : <BrainCircuit size={12} className="text-indigo-500" />
           ) : step.kind === "model_output" ? (
             step.status === "running" ? <Loader2 size={12} className="animate-spin text-emerald-500" /> : <Cpu size={12} className="text-emerald-500" />
+          ) : step.status === "running" ? (
+            <Loader2 size={12} className="animate-spin text-blue-500" />
           ) : (
             <CheckCircle2 size={12} className="text-emerald-500" />
           )}
         </span>
         <span className="agent-tool-step-title">{step.title}</span>
         {step.summary ? <span className="agent-tool-step-summary">{step.summary}</span> : null}
+        <span className="agent-tool-step-status">{step.status === "running" ? "进行中" : step.status === "error" ? "失败" : "完成"}</span>
         {hasDetail ? (
           <span className="agent-tool-step-chevron">
             {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
@@ -357,7 +364,8 @@ function ToolStepsBlock({
   running: boolean;
   headerActions?: React.ReactNode;
 }) {
-  const [expanded, setExpanded] = useState(true);
+  const [manualExpanded, setManualExpanded] = useState<boolean | null>(null);
+  const expanded = manualExpanded ?? running;
   const [expandedStepIds, setExpandedStepIds] = useState<Record<string, boolean>>({});
 
   if (steps.length === 0 && !running) {
@@ -373,7 +381,23 @@ function ToolStepsBlock({
   }
 
   function toggleStep(stepId: string) {
-    setExpandedStepIds((prev) => ({ ...prev, [stepId]: !prev[stepId] }));
+    setExpandedStepIds((prev) => ({ ...prev, [stepId]: !(prev[stepId] ?? steps.find(s => s.id === stepId)?.status === "running") }));
+  }
+
+  // 只有推理时用一行摘要直接展开，避免“步骤总览 → 推理卡片 → 内容”三层重复折叠。
+  if (steps.length === 1 && steps[0].kind === "reasoning") {
+    const reasoning = steps[0];
+    return (
+      <div className="agent-turn-tools agent-turn-tools--reasoning-only">
+        <div className="flex items-start gap-3">
+          <div className="min-w-0 flex-1">
+            <ToolStepRow step={{ ...reasoning, title: reasoning.status === "error" ? "思考中断" : running ? "正在思考" : "思考完成", summary: running ? "正在分析资料…" : "查看分析过程" }}
+              expanded={expandedStepIds[reasoning.id] ?? running} onToggle={() => toggleStep(reasoning.id)} />
+          </div>
+          {headerActions ? <div className="agent-turn-tools-actions">{headerActions}</div> : null}
+        </div>
+      </div>
+    );
   }
 
   const shouldShowList = expanded && (steps.length > 0 || !running);
@@ -381,7 +405,7 @@ function ToolStepsBlock({
   return (
     <div className="agent-turn-tools">
       <div className="agent-turn-tools-toggle">
-        <button type="button" className="agent-turn-tools-toggle-main" onClick={() => setExpanded((value) => !value)}>
+        <button type="button" className="agent-turn-tools-toggle-main" aria-expanded={expanded} onClick={() => setManualExpanded(!expanded)}>
           {running ? (
             <Loader2 size={14} className="animate-spin text-blue-500" />
           ) : (
@@ -401,7 +425,7 @@ function ToolStepsBlock({
               <ToolStepRow
                 key={step.id}
                 step={step}
-                expanded={step.status === "running" || !!expandedStepIds[step.id]}
+                expanded={expandedStepIds[step.id] ?? step.status === "running"}
                 onToggle={() => toggleStep(step.id)}
               />
             ))
@@ -462,6 +486,7 @@ function ConversationTurnBlock({
   answerStartRef,
   answerEndRef,
   answerBodyRef,
+  resultAction,
 }: {
   turn: ConversationTurn;
   showRunningHero: boolean;
@@ -473,6 +498,7 @@ function ConversationTurnBlock({
   answerEndRef?: React.Ref<HTMLDivElement>;
   /** 最终回复正文起点（已完成待推进时滚到这里） */
   answerBodyRef?: React.Ref<HTMLDivElement>;
+  resultAction?: React.ReactNode;
 }) {
   const running = turn.current && showRunningHero;
   const headerTitle = summarizeToolSteps(turn.toolSteps, elapsedLabel, running);
@@ -512,6 +538,7 @@ function ConversationTurnBlock({
         ) : waitingForAnswer && turn.toolSteps.length === 0 ? (
           <div className="agent-turn-waiting">智能体正在生成回复…</div>
         ) : null}
+        {resultAction ? <div className="agent-turn-result-choice">{resultAction}</div> : null}
         <div ref={answerEndRef} aria-hidden="true" />
       </div>
     </section>
@@ -542,10 +569,12 @@ export function SingleAgentPanel({
   scrollToLatestAnswerWhenDone = false,
   scrollAnswerBlockWhenDone = "start",
   onSaveAnswer,
+  onAdoptAnswer,
   onFollowUp,
 }: SingleAgentPanelProps) {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [followUpModalOpen, setFollowUpModalOpen] = useState(false);
+  const [selectingResultIndex, setSelectingResultIndex] = useState<number | null>(null);
   const [elapsedLabel, setElapsedLabel] = useState("");
   const stepInterrupted = activeStep.state === "canceled";
 
@@ -557,7 +586,11 @@ export function SingleAgentPanel({
     () => mergeExecutionSteps(persistedSteps, executionSteps, isLiveForStep),
     [persistedSteps, executionSteps, isLiveForStep],
   );
-  const finalAnswer = readFinalAnswer(activeStep, streamingText);
+  const formalAnswer = readFinalAnswer(activeStep, "");
+  const hasFollowUp = (activeStep.chatMessages ?? []).filter(m => m.role === "assistant").length > 1;
+  const selectedResult = readStepOutput(activeStep, ["selectedResultMessageIndex"]);
+  const latestChat = [...(activeStep.chatMessages ?? [])].reverse().find(m => m.role === "assistant");
+  const finalAnswer = isStreaming ? streamingText : latestChat?.content || formalAnswer;
   const hasAnswerContent = !!finalAnswer.trim();
   const showRunningHero = !stepInterrupted
     && (activeStep.state === "running" || activeStep.state === "pending" || isStreaming);
@@ -754,6 +787,7 @@ export function SingleAgentPanel({
             追问
           </button>
         ) : null}
+
         {canEditAnswer && hasAnswerContent ? (
           <button type="button" className="sys-btn sys-btn--default sys-btn--sm" onClick={() => setEditModalOpen(true)}>
             <PencilLine size={14} aria-hidden="true" />
@@ -773,6 +807,12 @@ export function SingleAgentPanel({
         </div>
       ) : null}
 
+      {!showRunningHero && formalAnswer && activeStep.chatMessages && (activeStep.chatMessages.filter(m => m.role === "assistant").length > 1 || formalAnswer !== latestChat?.content) ? (
+        <details className="mb-4 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-3 text-sm text-[var(--color-text-primary)]">
+          <summary className="cursor-pointer">本步正式结果 · 下游使用此内容，追问回复不会自动替换</summary>
+          <MarkdownRenderer content={formalAnswer} compact />
+        </details>
+      ) : null}
       <section className={`agent-run-body${stepInterrupted ? " agent-run-body--interrupted" : ""}`}>
         {stepInterrupted ? (
           <AgentInterruptedState scope={interruptedScope} />
@@ -790,6 +830,17 @@ export function SingleAgentPanel({
                   showRunningHero={showRunningHero}
                   elapsedLabel={elapsedLabel}
                   headerActions={turn.current ? turnHeaderActions : undefined}
+                  resultAction={hasFollowUp && activeStep.state === "done" && !showRunningHero && !readOnly && onAdoptAnswer && permissions.allowQuestion ? (() => {
+                    const messageIndex = (activeStep.chatMessages ?? []).findIndex(m => `turn-${m.id}` === turn.id);
+                    if (messageIndex < 0) return null;
+                    const selected = selectedResult !== "" && Number(selectedResult) === messageIndex;
+                    return <button type="button" disabled={selectingResultIndex !== null} className={`sys-btn sys-btn--sm ${selected ? "sys-btn--primary" : "sys-btn--default"}`} onClick={async () => {
+                      setSelectingResultIndex(messageIndex);
+                      try { await onAdoptAnswer(messageIndex); } finally { setSelectingResultIndex(null); }
+                    }}>
+                      <CheckCircle2 size={14} />{selectingResultIndex === messageIndex ? "正在选择…" : selected ? "已选为本步结果" : "选为本步结果"}
+                    </button>;
+                  })() : undefined}
                   answerStartRef={index === conversationTurns.length - 1 ? latestAnswerStartRef : undefined}
                   answerEndRef={index === conversationTurns.length - 1 ? latestAnswerEndRef : undefined}
                   answerBodyRef={index === conversationTurns.length - 1 ? latestAnswerBodyRef : undefined}
@@ -800,9 +851,14 @@ export function SingleAgentPanel({
         )}
       </section>
 
+      {hasFollowUp && canFollowUp && !showRunningHero ? (
+        <div className="flex justify-end border-t border-[var(--color-border-light)] pt-4 mt-4">
+          <button type="button" className="sys-btn sys-btn--default" onClick={() => void onFollowUp(CONSOLIDATE_RESULT_PROMPT)}><FileText size={14} />整理完整结果</button>
+        </div>
+      ) : null}
       <AnswerEditModal
         open={editModalOpen}
-        initialValue={finalAnswer}
+        initialValue={formalAnswer}
         onClose={() => setEditModalOpen(false)}
         onSave={handleSaveEditedAnswer}
       />

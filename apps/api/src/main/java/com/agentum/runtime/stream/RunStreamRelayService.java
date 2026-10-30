@@ -87,6 +87,20 @@ public class RunStreamRelayService {
         }
 
         try {
+            // 节点身份单独保留；长回复裁剪掉 node_started 后仍能先建立前端节点上下文。
+            if (replay) {
+                String start = redisTemplate.opsForValue().get(RunProgressStreamWriter.startKey(runId));
+                if (start != null && !sendEvent(emitter, open, null, "node_started", start)) { return; }
+                // 每种过程状态单独保留最后快照，补齐已被 Stream 裁剪的推理、工具与子智能体内容。
+                var snapshots = redisTemplate.opsForHash().values(RunProgressStreamWriter.snapshotKey(runId)).stream()
+                    .map(value -> value.toString().split("\n", 3)).filter(value -> value.length == 3)
+                    .sorted(java.util.Comparator.comparingLong((String[] value) -> Long.parseLong(value[0].split("-")[0]))
+                        .thenComparingLong(value -> Long.parseLong(value[0].split("-")[1])))
+                    .toList();
+                for (String[] snapshot : snapshots) {
+                    if (!sendEvent(emitter, open, null, snapshot[1], snapshot[2])) { return; }
+                }
+            }
             while (open.get()) {
                 List<MapRecord<String, Object, Object>> records = redisTemplate.opsForStream().range(
                     streamKey,

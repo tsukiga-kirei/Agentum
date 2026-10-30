@@ -1,3 +1,4 @@
+import { ResultSelectionModal, CONSOLIDATE_RESULT_PROMPT, type ResultSelectionGroup } from "./ResultSelectionModal";
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { message, Segmented } from "antd";
 import type { 
@@ -95,6 +96,8 @@ export function TaskRunWorkspace({
   const [activeRunTab, setActiveRunTab] = useState<RunWorkspaceTab>(() => resolveInitialRunTab(initialRun));
   const [selectedTraceStepIndex, setSelectedTraceStepIndex] = useState<number | null>(null);
   const [isAdvancing, setIsAdvancing] = useState(false);
+  const [resultChoiceOpen, setResultChoiceOpen] = useState(false);
+  const resultContinuationRef = useRef<"advance" | "automation">("advance");
   const [advanceError, setAdvanceError] = useState<string | null>(null);
   // 前端看门狗只描述“页面进度流失联”，不能把浏览器断流等同于后台执行失败。
   // 后台是否失败由 activeJob / 节点事实状态决定，只有后端确认 failed 后才能恢复进度。
@@ -107,15 +110,21 @@ export function TaskRunWorkspace({
   useChromeEnter({ scopeRef: chromeRef, deps: [runDetail.title] });
 
   const stream = useRunStream(tenantId, runDetail.id, token);
+  useEffect(() => { if (runDetail.activeJob) stream.clearStepStreamTerminal(); }, [runDetail.activeJob?.jobId]);
 
+  const reloadSequenceRef = useRef(0);
   async function reloadRunDetail(): Promise<WorkbenchRunDetail | null> {
     try {
+      const sequence = ++reloadSequenceRef.current;
       const updated = await workbenchApi.getRun(tenantId, token, runDetail.id);
+      if (sequence !== reloadSequenceRef.current) return null;
+      ++reloadSequenceRef.current;
       setRunDetail(updated);
       onReload(updated);
       return updated;
     } catch (error: unknown) {
       console.error("刷新任务运行态失败", error);
+      setAdvanceError("刷新任务状态失败，请检查连接后重试");
       return null;
     }
   }
@@ -317,7 +326,7 @@ export function TaskRunWorkspace({
   // activeJob 轮询兜底：后台执行期间每 10s 拉一次任务详情，即使 SSE 完全失效，
   // 节点完成/失败的状态也能收敛到前端（同时为看门狗提供探测样本）。
   useEffect(() => {
-    if (runDetail.readOnly || !activeJobAlive) {
+    if (runDetail.readOnly || (!activeJobAlive && !(runDetail.autoExecution && !runDetail.manualTakeover))) {
       return;
     }
     const timer = window.setInterval(() => {
@@ -327,7 +336,7 @@ export function TaskRunWorkspace({
       window.clearInterval(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runDetail.readOnly, runDetail.id, activeJobAlive]);
+  }, [runDetail.readOnly, runDetail.id, activeJobAlive, runDetail.autoExecution, runDetail.manualTakeover]);
 
   // 前端看门狗：满足任一条件即判定“本页面进度连接异常”。
   // 1) SSE 连续重连失败达到阈值（前后端关联失效）；
@@ -422,7 +431,7 @@ export function TaskRunWorkspace({
     if (initialAutoStartRef.current) {
       return;
     }
-    if (runDetail.readOnly || isAdvancing || isLiveExecuting || activeJobAlive) {
+    if (runDetail.manualTakeover || runDetail.autoExecution || runDetail.readOnly || isAdvancing || isLiveExecuting || activeJobAlive) {
       return;
     }
     if (activeStep.state !== "pending") {
@@ -532,10 +541,45 @@ export function TaskRunWorkspace({
     isFlowCompleted,
   ]);
 
+  function pendingResultGroups(): ResultSelectionGroup[] {
+    const node = runDetail.nodes.find(n => n.id === activeStep.nodeRunId);
+    if (!node) return [];
+    const group = (output: Record<string, unknown>, title: string, agentIndex?: number): ResultSelectionGroup | null => {
+      const messages = Array.isArray(output.chatMessages) ? output.chatMessages : [];
+      const replies = messages.flatMap((raw: unknown, index: number) => isRuntimeRecord(raw) && raw.role === "assistant" && String(raw.content ?? "").trim() ? [{ index, content: String(raw.content) }] : []);
+      return replies.length > 1 && output.resultSelectionRequired === true ? { title, agentIndex, replies } : null;
+    };
+    if (node.nodeType === "agent") { const value = group(node.outputs, node.name); return value ? [value] : []; }
+    const summaries = Array.isArray(node.outputs.clusterAgents) ? node.outputs.clusterAgents : [];
+    const groups = summaries.flatMap((raw: unknown) => { if (!isRuntimeRecord(raw)) return []; const value = group(raw, String(raw.name ?? "子智能体"), Number(raw.agentIndex)); return value ? [value] : []; });
+    return node.config.executionMode === "relay" ? groups.slice(0, 1) : groups;
+  }
+
+  async function handleAutomation(takeover: boolean, skipResultChoice = false) {
+    if (!takeover && !skipResultChoice && pendingResultGroups().length) { resultContinuationRef.current = "automation"; setResultChoiceOpen(true); return; }
+    setIsAdvancing(true);
+    ++reloadSequenceRef.current;
+    try {
+      const updated = await workbenchApi.setAutomation(tenantId, token, runDetail.id, takeover);
+      setRunDetail(updated); onReload(updated); setAdvanceError(null);
+      if (!takeover) { stream.clearStepStreamTerminal(); stream.disconnect(); await stream.connect({ replay: true }); }
+    } catch (error) { messageApi.error(error instanceof Error ? error.message : "切换执行方式失败"); }
+    finally { setIsAdvancing(false); }
+  }
+
+  async function handleAdoptAnswer(messageIndex: number, agentIndex?: number) {
+    if (!activeStep.nodeRunId) return null;
+    try {
+      const updated = await workbenchApi.adoptAnswer(tenantId, token, runDetail.id, activeStep.nodeRunId, messageIndex, agentIndex);
+      setRunDetail(updated); onReload(updated); messageApi.success("已选择本步结果"); return updated;
+    } catch (error) { messageApi.error(error instanceof Error ? error.message : "采用结果失败"); return null; }
+  }
+
   // 4. Action Handlers: Advance Step
   // advance 仅创建执行作业并立即返回（202 语义），真实进度由 SSE 事件与 activeJob 轮询驱动，
   // 不再阻塞等待节点完成。
-  async function handleAdvanceStep() {
+  async function handleAdvanceStep(skipResultChoice = false) {
+    if (!skipResultChoice && pendingResultGroups().length) { resultContinuationRef.current = "advance"; setResultChoiceOpen(true); return; }
     if (isAdvancing) {
       return;
     }
@@ -574,6 +618,7 @@ export function TaskRunWorkspace({
         runDetail.openTodo.openTodoId, 
         payload
       );
+      ++reloadSequenceRef.current;
       setRunDetail(updated);
       onReload(updated);
       // 输入类待办完成后，若下一步为待执行智能体，则自动启动（仍不等同于完成后自动跳步）。
@@ -581,7 +626,8 @@ export function TaskRunWorkspace({
       const nextStepIndex = resolveActiveStepIndex(nextPreview.steps, updated);
       const nextStep = nextPreview.steps[nextStepIndex];
       if (
-        nextStep
+        !updated.autoExecution
+        && nextStep
         && (nextStep.kind === "agent" || nextStep.kind === "multiAgent")
         && nextStep.state === "pending"
       ) {
@@ -590,6 +636,8 @@ export function TaskRunWorkspace({
       }
     } catch (e: unknown) {
       console.error("提交资料失败", e);
+      setAdvanceError(e instanceof Error ? e.message : "提交资料失败");
+      messageApi.error(e instanceof Error ? e.message : "提交资料失败");
     }
   }
 
@@ -604,28 +652,13 @@ export function TaskRunWorkspace({
         comment, 
         { approved: true }
       );
+      ++reloadSequenceRef.current;
       setRunDetail(updated);
       onReload(updated);
     } catch (e: any) {
       console.error("审核通过操作失败", e);
-    }
-  }
-
-  // Handle human review rejection
-  async function handleReject(comment: string) {
-    if (!runDetail.openTodo?.openTodoId) return;
-    try {
-      const updated = await workbenchApi.completeTodo(
-        tenantId, 
-        token, 
-        runDetail.openTodo.openTodoId, 
-        comment, 
-        { approved: false }
-      );
-      setRunDetail(updated);
-      onReload(updated);
-    } catch (e: any) {
-      console.error("驳回操作失败", e);
+      setAdvanceError(e instanceof Error ? e.message : "审核通过操作失败");
+      messageApi.error(e instanceof Error ? e.message : "审核通过操作失败");
     }
   }
 
@@ -637,6 +670,7 @@ export function TaskRunWorkspace({
     setWatchdogStaleMessage(null);
     try {
       const updated = await workbenchApi.interruptRun(tenantId, token, runDetail.id);
+      ++reloadSequenceRef.current;
       setRunDetail(updated);
       onReload(updated);
     } catch (error: unknown) {
@@ -659,6 +693,7 @@ export function TaskRunWorkspace({
     stream.disconnect();
     try {
       const updated = await workbenchApi.restartNode(tenantId, token, runDetail.id, activeStep.nodeRunId);
+      ++reloadSequenceRef.current;
       setRunDetail(updated);
       onReload(updated);
       // restart 已重置 Redis Stream，回放即可拿到新一轮 node_started 起的全部事件。
@@ -685,6 +720,7 @@ export function TaskRunWorkspace({
     stream.disconnect();
     try {
       const updated = await workbenchApi.recoverNode(tenantId, token, runDetail.id, activeStep.nodeRunId);
+      ++reloadSequenceRef.current;
       setRunDetail(updated);
       onReload(updated);
       await stream.connect({ replay: true });
@@ -746,6 +782,7 @@ export function TaskRunWorkspace({
         targetStep.nodeRunId,
         content,
       );
+      ++reloadSequenceRef.current;
       setRunDetail(updated);
       onReload(updated);
     } catch (error: unknown) {
@@ -774,6 +811,7 @@ export function TaskRunWorkspace({
         agentIndex,
         content,
       );
+      ++reloadSequenceRef.current;
       setRunDetail(updated);
       onReload(updated);
       message.success("子智能体答案已保存");
@@ -808,6 +846,7 @@ export function TaskRunWorkspace({
         agentIndex,
         followUpMessage,
       );
+      ++reloadSequenceRef.current;
       setRunDetail(updated);
       onReload(updated);
       message.success("子智能体追问已提交");
@@ -850,6 +889,7 @@ export function TaskRunWorkspace({
         targetStep.nodeRunId,
         agentIndex,
       );
+      ++reloadSequenceRef.current;
       setRunDetail(updated);
       onReload(updated);
       message.success("子智能体已开始重新执行");
@@ -888,6 +928,7 @@ export function TaskRunWorkspace({
         targetStep.nodeRunId,
         followUpMessage,
       );
+      ++reloadSequenceRef.current;
       setRunDetail(updated);
       onReload(updated);
       await stream.connect({ replay: true });
@@ -923,6 +964,7 @@ export function TaskRunWorkspace({
     try {
       // 重新执行：清空对话历史与输出后整步重跑，不再走 rollback+advance（会残留追问上下文）。
       const updated = await workbenchApi.restartNode(tenantId, token, runDetail.id, targetStep.nodeRunId);
+      ++reloadSequenceRef.current;
       setRunDetail(updated);
       onReload(updated);
       await stream.connect({ replay: true });
@@ -945,6 +987,7 @@ export function TaskRunWorkspace({
   async function handleRollback(nodeRunId: string) {
     try {
       const updated = await workbenchApi.rollbackRun(tenantId, token, runDetail.id, nodeRunId);
+      ++reloadSequenceRef.current;
       setRunDetail(updated);
       onReload(updated);
       // 回退成功后流程回到目标节点，顺势切回“当前处理”页签并清除历史选中，
@@ -986,6 +1029,13 @@ export function TaskRunWorkspace({
   return (
     <section className="workbench-task-workspace sys-fade-in flex flex-col h-full bg-[var(--color-bg-page)] overflow-hidden" aria-label="任务处理工作区">
       {messageContextHolder}
+      {resultChoiceOpen ? <ResultSelectionModal groups={pendingResultGroups()} onClose={() => setResultChoiceOpen(false)}
+        onConsolidate={agentIndex => { setResultChoiceOpen(false); if (agentIndex === undefined) void handleFollowUpStep(CONSOLIDATE_RESULT_PROMPT); else void handleFollowUpClusterAgent(agentIndex, CONSOLIDATE_RESULT_PROMPT); }}
+        onConfirm={async choices => {
+          for (const choice of choices) { if (!await handleAdoptAnswer(choice.messageIndex, choice.agentIndex)) return; }
+          setResultChoiceOpen(false);
+          if (resultContinuationRef.current === "automation") await handleAutomation(false, true); else await handleAdvanceStep(true);
+        }} /> : null}
       {/* 5a. Topbar bar actions */}
       <header ref={chromeRef} className="surface-page-chrome pb-4 border-b border-[var(--color-border-light)] flex flex-col gap-4">
         {/* Row 1: Title, Page Actions, and Global Actions (Theme/Role switcher) */}
@@ -1012,6 +1062,12 @@ export function TaskRunWorkspace({
           </div>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-3 sm:pt-0.5">
             <div className="workbench-run-actions flex items-center gap-2 shrink-0">
+              {runDetail.autoExecution && !runDetail.readOnly ? <>
+                <span className="text-xs text-[var(--color-text-secondary)]">{runDetail.manualTakeover ? "已接管 · 等待你处理" : "自动执行"}</span>
+                <button type="button" className="sys-btn sys-btn--primary" disabled={isAdvancing || (runDetail.manualTakeover && !!runDetail.openTodo)} onClick={() => void handleAutomation(!runDetail.manualTakeover)}>
+                  {runDetail.manualTakeover ? "继续自动执行" : "主动接管"}
+                </button>
+              </> : null}
               {!runDetail.saved && (
                 <button type="button" className="sys-btn sys-btn--primary flex items-center gap-1.5 text-xs px-3 py-1.5" onClick={onSave}>
                   <Save size={14} />
@@ -1120,11 +1176,13 @@ export function TaskRunWorkspace({
                     streamStartedAt={stream.streamStartedAt}
                     readOnly={runDetail.readOnly}
                     scrollToLatestAnswerWhenDone={!isFlowCompleted && (activeStep.state === "done" || activeStep.state === "failed")}
+                    onAdoptAnswer={async index => { await handleAdoptAnswer(index); }}
                     onSaveAnswer={(content) => handleSaveAnswer(content)}
                     onFollowUp={(followUpMessage) => handleFollowUpStep(followUpMessage)}
                   />
                 ) : activeStep.kind === "multiAgent" ? (
                   <MultiAgentPanel
+                    readOnly={runDetail.readOnly}
                     activeStep={activeStep}
                     clusterAgents={clusterAgentsForPanel}
                     clusterIntent={stream.activeNodeInfo?.nodeRunId === activeStep.nodeRunId ? stream.clusterIntent : undefined}
@@ -1136,6 +1194,7 @@ export function TaskRunWorkspace({
                       ? (agentIndex) => handleRestartClusterAgent(agentIndex)
                       : undefined}
                     onFollowUpAgent={(agentIndex, followUpMessage) => handleFollowUpClusterAgent(agentIndex, followUpMessage)}
+                    onAdoptAgentAnswer={async (agentIndex, messageIndex) => { await handleAdoptAnswer(messageIndex, agentIndex); }}
                     onSaveAgentAnswer={(agentIndex, content) => handleSaveClusterAgentAnswer(agentIndex, content)}
                   />
                 ) : activeStep.kind === "approval" ? (
@@ -1209,10 +1268,9 @@ export function TaskRunWorkspace({
               streamDisconnected={!!watchdogStaleMessage}
               failureMessage={watchdogStaleMessage ?? stepErrorMessage}
               readOnly={runDetail.readOnly}
-              onAdvance={handleAdvanceStep}
+              onAdvance={() => void handleAdvanceStep()}
               onCompleteTodo={(comment) => handleCompleteTodo({ comment })}
               onApprove={handleApprove}
-              onReject={handleReject}
               onRetry={handleRegenerateStep}
               onBack={onBack}
               onInterrupt={handleInterruptStream}

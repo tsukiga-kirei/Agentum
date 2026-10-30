@@ -37,6 +37,8 @@ public class RunProgressStreamWriter {
         redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2])
         if ARGV[3] == '1' then
           redis.call('DEL', KEYS[2])
+          redis.call('DEL', KEYS[3])
+          redis.call('DEL', KEYS[4])
         end
         return 1
         """, Long.class);
@@ -47,7 +49,12 @@ public class RunProgressStreamWriter {
         if redis.call('GET', KEYS[1]) ~= ARGV[1] then
           return 0
         end
-        redis.call('XADD', KEYS[2], 'MAXLEN', '~', ARGV[2], '*', 'event', ARGV[3], 'payload', ARGV[4])
+        if ARGV[3] == 'node_started' then redis.call('SET', KEYS[3], ARGV[4], 'EX', 86400) end
+        local id = redis.call('XADD', KEYS[2], 'MAXLEN', '~', ARGV[2], '*', 'event', ARGV[3], 'payload', ARGV[4])
+        if ARGV[5] ~= '' then
+          redis.call('HSET', KEYS[4], ARGV[5], id .. '\\n' .. ARGV[3] .. '\\n' .. ARGV[4])
+          redis.call('EXPIRE', KEYS[4], 86400)
+        end
         return 1
         """, Long.class);
 
@@ -99,7 +106,7 @@ public class RunProgressStreamWriter {
         try {
             redisTemplate.execute(
                 ACTIVATE_JOB_SCRIPT,
-                List.of(activeJobKey(runId), streamKey(runId)),
+                List.of(activeJobKey(runId), streamKey(runId), startKey(runId), snapshotKey(runId)),
                 jobId.toString(),
                 Long.toString(ttlMillis),
                 resetStream ? "1" : "0"
@@ -122,11 +129,12 @@ public class RunProgressStreamWriter {
         try {
             Long appended = redisTemplate.execute(
                 APPEND_IF_ACTIVE_JOB_SCRIPT,
-                List.of(activeJobKey(runId), streamKey(runId)),
+                List.of(activeJobKey(runId), streamKey(runId), startKey(runId), snapshotKey(runId)),
                 jobId.toString(),
                 Long.toString(properties.getRedis().getStreamMaxLen()),
                 eventName,
-                payloadText
+                payloadText,
+                snapshotField(eventName, payload)
             );
             return Long.valueOf(1L).equals(appended);
         } catch (Exception exception) {
@@ -151,6 +159,15 @@ public class RunProgressStreamWriter {
     private static String activeJobKey(UUID runId) {
         return "run:" + runId + ":active-job";
     }
+
+    private String snapshotField(String eventName, Object payload) {
+        if (!(payload instanceof Map<?, ?> map) || !List.of("node_started", "agent_prompt_prepared", "agent_thinking", "agent_streaming", "agent_tool_call", "cluster_agent", "cluster_intent").contains(eventName)) { return ""; }
+        return eventName + ":" + map.getOrDefault("agentIndex", null) + ":" + map.getOrDefault("eventType", null) + ":" + map.getOrDefault("streamKind", null) + ":" + map.getOrDefault("toolName", null);
+    }
+
+    public static String snapshotKey(UUID runId) { return "run:" + runId + ":progress-snapshot"; }
+
+    public static String startKey(UUID runId) { return "run:" + runId + ":node-start"; }
 
     public static String streamKey(UUID runId) {
         return "run:" + runId + ":events";

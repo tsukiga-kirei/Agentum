@@ -103,6 +103,8 @@ public class WorkflowRunExecutionJobEntity {
         return entity;
     }
 
+    public void resetDeadline(Instant deadline) { this.deadlineAt = deadline; }
+
     public void markRunning(String workerId, Instant now) {
         this.status = STATUS_RUNNING;
         this.workerId = workerId;

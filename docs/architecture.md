@@ -362,6 +362,10 @@ pending -> running -> paused -> resumed -> running -> completed
 
 运行态已重构为「RabbitMQ 执行 + Redis Stream 进度回放」：`POST /advance` 仅创建执行作业（`workflow_run_execution_jobs`）并投递 `NodeExecuteCommand`，同 JVM 的 `NodeExecutionService` Worker 消费执行；执行租约、取消信号、节点超时（`AGENTUM_RUNTIME_NODE_TIMEOUT_SECONDS`）与进度事件均放 Redis，PostgreSQL 仍为事实源。SSE 由 `RunStreamRelayService` 从 Redis Stream 中继，支持 `lastEventId` 断线续传与 `replay` 整步回放，刷新/重进页面无感恢复。`StaleExecutionReaper` 定时回收超时与失联作业。原 `@Async` + 内存 SSE 路径已删除，后端强依赖 Redis 与 RabbitMQ。中断/恢复语义：主动中断 → 节点 `canceled` 并清空该步数据，只能「重新执行」整步重跑；被动失败 → 节点 `failed`，已落库的子智能体结果（`workflow_cluster_agent_runs`）保留，「恢复进度」只重跑失败/未完成部分。已完成的集群节点还支持单个子智能体重新执行：协同处理只删除目标结果，接力处理删除目标及后序依赖结果，意图分派通过 `NodeExecuteCommand.clusterAgentIndexes` 冻结原命中范围，避免重新分类导致路由漂移。智能体集群节点支持协同处理、接力处理与意图分派；意图分派只执行命中的子智能体，多个命中按意图清单顺序写入集群输出模板。历史 `parallel` / `sequential` 数据由迁移脚本清洗。详见 [运行态异步执行设计](./runtime-async-execution-design.md)。
 
+自动执行在 `workflow_runs.auto_execution` 固化发起选择，`manual_takeover` 记录接管状态。节点成功落库、自动重试和接管切换在运行行锁下串行化，并复核作业身份，防止旧 Worker 覆盖新执行。`AutomaticRunReconciler` 从数据库恢复节点完成后尚未推进的自动任务，不重跑在途作业或待办。排队时限独立配置 `AGENTUM_RUNTIME_QUEUE_TIMEOUT_SECONDS`（默认 86400 秒），节点执行时限从实际启动计算。
+
+Redis Stream 裁剪之外保留当前节点身份及各类过程的最新快照，刷新时先恢复上下文和快照，再回放增量。追问使用 `_formalAnswer` 锚定正式内容，`candidate_answer` 仅供展示，不参与业务变量合并；采用结果由后端选择已持久化的回答并记录审计。
+
 ### 5.6 智能体运行时
 
 智能体运行时不是一次模型调用，而是一条可审计管线。

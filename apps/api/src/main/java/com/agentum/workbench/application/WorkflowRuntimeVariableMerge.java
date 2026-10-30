@@ -32,6 +32,9 @@ final class WorkflowRuntimeVariableMerge {
         "tokenUsage",
         "reasoning_content",
         "chatMessages",
+        "candidate_answer",
+        "resultSelectionRequired",
+        "selectedResultMessageIndex",
         "clusterAgents",
         "intentRouting"
     );

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { DatePicker, Select } from "antd";
 import dayjs from "dayjs";
 import "dayjs/locale/zh-cn";
@@ -48,6 +48,7 @@ export function UserInputPanel({
   onError,
 }: UserInputPanelProps) {
   const [formValues, setFormValues] = useState<Record<string, string>>({});
+  const initializedNodeRef = useRef<string | undefined>(undefined);
   const [attachments, setAttachments] = useState<Record<string, InputAttachmentRow[]>>({});
   const [uploadingFields, setUploadingFields] = useState<Set<string>>(new Set());
   const [previewAttachment, setPreviewAttachment] = useState<InputAttachmentRow | null>(null);
@@ -135,7 +136,10 @@ export function UserInputPanel({
       }
       initial[field.id] = candidateValue;
     });
-    setFormValues(initial);
+    // 自动运行的状态轮询会重建字段对象，同一待办内必须保留尚未提交的用户输入。
+    const preserveDraft = initializedNodeRef.current === activeStep.nodeRunId && activeStep.state === "waiting";
+    initializedNodeRef.current = activeStep.nodeRunId;
+    setFormValues(previous => preserveDraft ? { ...initial, ...previous } : initial);
   }, [activeStep.nodeRunId, fieldConfigs, activeStep.inputs]);
 
   useEffect(() => {

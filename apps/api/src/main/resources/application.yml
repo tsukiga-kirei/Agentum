@@ -36,6 +36,7 @@ agentum:
       max-iterations-per-turn: ${AGENTUM_AGENT_MAX_ITERATIONS_PER_TURN:20}
     execution:
       node-timeout-seconds: ${AGENTUM_RUNTIME_NODE_TIMEOUT_SECONDS:1800}
+      queue-timeout-seconds: ${AGENTUM_RUNTIME_QUEUE_TIMEOUT_SECONDS:86400}
       worker-concurrency: ${AGENTUM_RUNTIME_WORKER_CONCURRENCY:4}
       max-attempts: 3
       cluster-parallelism: ${AGENTUM_RUNTIME_CLUSTER_PARALLELISM:4}

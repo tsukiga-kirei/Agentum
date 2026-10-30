@@ -73,7 +73,7 @@ class StaleExecutionReaperTest {
     @Test
     void shouldFailRunningJobPastDeadlineAndRequestCancel() {
         WorkflowRunExecutionJobEntity job = runningJob(
-            NOW.minusSeconds(4000), NOW.minusSeconds(3900), NOW.minusSeconds(10)
+            NOW.minusSeconds(4000), NOW.minusSeconds(3900), NOW.minusSeconds(2000)
         );
         when(jobRepository.findByStatusInAndEnqueuedAtBefore(anyList(), any())).thenReturn(List.of(job));
         when(workbenchRuntimeService.failNodeIfActive(eq(RUN_ID), eq(NODE_RUN_ID), anyString(), anyString())).thenReturn(true);
@@ -118,10 +118,10 @@ class StaleExecutionReaperTest {
     }
 
     @Test
-    void shouldFailQueuedJobStuckBeyondNodeTimeout() {
+    void shouldFailQueuedJobBeyondIndependentQueueTimeout() {
         // queued 超过节点超时（默认 1800s）仍未被消费：MQ 消息丢失或 Worker 长期不可用。
         WorkflowRunExecutionJobEntity job = WorkflowRunExecutionJobEntity.queued(
-            TENANT_ID, RUN_ID, NODE_RUN_ID, 1, null, "req-1", NOW.plusSeconds(3600), NOW.minusSeconds(2000)
+            TENANT_ID, RUN_ID, NODE_RUN_ID, 1, null, "req-1", NOW.plusSeconds(3600), NOW.minusSeconds(90000)
         );
         when(jobRepository.findByStatusInAndEnqueuedAtBefore(anyList(), any())).thenReturn(List.of(job));
         when(workbenchRuntimeService.failNodeIfActive(eq(RUN_ID), eq(NODE_RUN_ID), anyString(), anyString())).thenReturn(true);
@@ -129,7 +129,7 @@ class StaleExecutionReaperTest {
         reaper.reap();
 
         assertThat(job.getStatus()).isEqualTo(WorkflowRunExecutionJobEntity.STATUS_FAILED);
-        assertThat(job.getErrorCode()).isEqualTo("WORKBENCH_NODE_EXECUTION_STALE");
+        assertThat(job.getErrorCode()).isEqualTo("WORKBENCH_QUEUE_TIMEOUT");
     }
 
     @Test

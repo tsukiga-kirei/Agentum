@@ -366,10 +366,13 @@ class WorkbenchRuntimeServiceTest {
         verify(workflowWaitingEventRepository, never()).save(any(WorkflowWaitingEventEntity.class));
     }
 
-    @Test
-    void shouldInterruptRunningNodeClearDataAndCancelInFlightJobs() {
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void shouldInterruptRunningNodeClearDataAndCancelInFlightJobs(boolean automatic) {
         WorkbenchRuntimeService service = newService();
         WorkflowRunEntity run = ownedRun();
+        if (automatic) { run.enableAutoExecution(); }
+        when(workflowRunRepository.lockById(run.getId())).thenReturn(Optional.of(run));
         WorkflowNodeRunEntity node = clusterNode(run);
         node.start(NOW);
         WorkflowRunExecutionJobEntity job = WorkflowRunExecutionJobEntity.queued(
@@ -392,6 +395,9 @@ class WorkbenchRuntimeServiceTest {
         assertThat(node.getState()).isEqualTo("canceled");
         assertThat(node.getOutputSnapshot()).isEmpty();
         assertThat(run.getState()).isEqualTo("paused");
+        assertThat(run.isManualTakeover()).isEqualTo(automatic);
+        service.continueAutomaticRunAfterJob(run.getId(), OPERATOR_ID);
+        verify(commandPublisher, never()).publish(any());
         verify(cancellationGuard).requestCancel(run.getId());
         verify(leaseService).forceRelease(run.getId());
         verify(workflowVariableSnapshotRepository).deleteByRunIdAndNodeRunIdIn(run.getId(), List.of(node.getId()));
@@ -668,10 +674,13 @@ class WorkbenchRuntimeServiceTest {
         assertThat(commandCaptor.getValue().clusterAgentIndexes()).containsExactly(1);
     }
 
-    @Test
-    void shouldRollbackToClusterNodeFromFreshStateWithoutFollowUpHistory() {
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void shouldRollbackToClusterNodeFromFreshStateWithoutFollowUpHistory(boolean automatic) {
         WorkbenchRuntimeService service = newService();
         WorkflowRunEntity run = ownedRun(4);
+        if (automatic) { run.enableAutoExecution(); }
+        when(workflowRunRepository.lockById(run.getId())).thenReturn(Optional.of(run));
         run.markSaved(NOW);
         run.pauseAt("delivery_report", "交付结果", "delivery", 3, NOW);
 
@@ -714,6 +723,9 @@ class WorkbenchRuntimeServiceTest {
         assertThat(deliveryNode.getOutputSnapshot()).isEmpty();
         assertThat(run.getState()).isEqualTo("paused");
         assertThat(run.getCurrentNodeName()).isEqualTo("智能体集群分析");
+        assertThat(run.isManualTakeover()).isEqualTo(automatic);
+        service.continueAutomaticRunAfterJob(run.getId(), OPERATOR_ID);
+        verify(commandPublisher, never()).publish(any());
 
         ArgumentCaptor<List<UUID>> resetNodeIdsCaptor = ArgumentCaptor.forClass(List.class);
         verify(clusterAgentRunRepository).deleteByRunIdAndNodeRunIdIn(eq(run.getId()), resetNodeIdsCaptor.capture());
@@ -735,7 +747,7 @@ class WorkbenchRuntimeServiceTest {
             OPERATOR_ID,
             "req-stale",
             NOW.plusSeconds(1800),
-            NOW.minusSeconds(120)
+            NOW.minusSeconds(90000)
         );
 
         stubTenant();
@@ -915,7 +927,7 @@ class WorkbenchRuntimeServiceTest {
         assertThat(agentNode.getOutputSnapshot().get("final_answer")).isEqualTo("修改后的答案");
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> chatMessages = (List<Map<String, Object>>) agentNode.getOutputSnapshot().get("chatMessages");
-        assertThat(chatMessages.get(1).get("content")).isEqualTo("修改后的答案");
+        assertThat(chatMessages.get(1).get("content")).isEqualTo("原始答案");
         verify(workflowVariableSnapshotRepository).deleteByRunIdAndNodeRunIdIn(run.getId(), List.of(agentNode.getId()));
         verify(commandPublisher, never()).publish(any());
     }
@@ -976,7 +988,7 @@ class WorkbenchRuntimeServiceTest {
             .containsExactly("user", "assistant", "user");
         assertThat(history.get(2).get("content")).isEqualTo("那它和 Spring IOC 有什么关系？");
         assertThat(agentNode.getState()).isEqualTo("running");
-        assertThat(agentNode.getOutputSnapshot()).isEmpty();
+        assertThat(agentNode.getOutputSnapshot()).containsKey("final_answer");
         verify(cancellationGuard).clearCancel(run.getId());
         verify(commandPublisher).publish(any(NodeExecuteCommand.class));
     }
@@ -1316,6 +1328,109 @@ class WorkbenchRuntimeServiceTest {
             workflowScheduleService,
             inputAttachmentService
         );
+    }
+
+    @Test
+    void shouldRejectAutomaticLaunchWhenPublishedWorkflowDoesNotAllowIt() {
+        WorkbenchRuntimeService service = newService();
+        WorkflowDefinitionEntity definition = publishedDefinition("手动流程", DESIGNER_ID, "all");
+        WorkflowVersionEntity version = version(definition, 1, snapshotJson());
+        stubTenant();
+        when(workflowDefinitionRepository.findByIdAndTenantId(definition.getId(), TENANT_ID)).thenReturn(Optional.of(definition));
+        when(workflowVersionRepository.findByIdAndWorkflowIdAndTenantId(version.getId(), definition.getId(), TENANT_ID)).thenReturn(Optional.of(version));
+        assertThatThrownBy(() -> service.createRun(TENANT_ID, businessPrincipal(), new WorkbenchApi.CreateRunRequest(definition.getId(), "测试", true)))
+            .isInstanceOf(ApiException.class).hasMessageContaining("未允许自动执行");
+        verify(workflowRunRepository, never()).save(any());
+    }
+
+    @Test
+    void shouldPersistTakeoverWithoutCancelingRunningJob() {
+        WorkbenchRuntimeService service = newService();
+        WorkflowRunEntity run = ownedRun(); run.enableAutoExecution();
+        stubTenant();
+        when(workflowRunRepository.findByIdAndTenantId(run.getId(), TENANT_ID)).thenReturn(Optional.of(run));
+        when(workflowRunRepository.lockById(run.getId())).thenReturn(Optional.of(run));
+        WorkbenchApi.RunDetail detail = service.setAutomation(TENANT_ID, businessPrincipal(), run.getId(), true);
+        assertThat(detail.manualTakeover()).isTrue();
+        assertThat(run.isAutoAdvancing()).isFalse();
+        verify(cancellationGuard, never()).requestCancel(any());
+        verify(commandPublisher, never()).publish(any());
+    }
+
+    @Test
+    void shouldNotRetryReplacedJob() {
+        WorkbenchRuntimeService service = newService();
+        WorkflowRunEntity run = ownedRun();
+        WorkflowRunExecutionJobEntity job = WorkflowRunExecutionJobEntity.queued(TENANT_ID, run.getId(), UUID.randomUUID(), 1, OPERATOR_ID, "test", NOW.plusSeconds(300), NOW);
+        job.markCanceled(NOW);
+        when(jobRepository.findById(job.getId())).thenReturn(Optional.of(job));
+        Runnable retry = mock(Runnable.class);
+        service.retryActiveJob(run.getId(), job.getId(), retry);
+        verify(retry, never()).run();
+    }
+
+    @Test
+    void shouldRejectRemovedReviewActionWithoutAdvancing() {
+        WorkbenchRuntimeService service = newService();
+        WorkflowRunEntity run = ownedRun();
+        WorkflowNodeRunEntity node = WorkflowNodeRunEntity.pending(run.getId(), TENANT_ID, run.getWorkflowId(), run.getWorkflowVersionId(), "review", "human_review", "人工审核", Map.of(), Map.of(), Map.of(), 0, NOW);
+        node.waitForInput(NOW); run.pauseAt("review", "人工审核", "human_review", 0, NOW);
+        WorkflowWaitingEventEntity todo = WorkflowWaitingEventEntity.openForUser(run.getId(), node.getId(), TENANT_ID, run.getWorkflowId(), "review", "人工审核", "等待审核", OPERATOR_ID, "提交审核", Map.of(), NOW);
+        stubTenant();
+        when(workflowWaitingEventRepository.findByIdAndTenantIdAndStatus(todo.getId(), TENANT_ID, "open")).thenReturn(Optional.of(todo));
+        when(workflowRunRepository.findByIdAndTenantId(run.getId(), TENANT_ID)).thenReturn(Optional.of(run));
+        when(workflowNodeRunRepository.findByIdAndRunId(node.getId(), run.getId())).thenReturn(Optional.of(node));
+        when(workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(run.getId())).thenReturn(List.of(node));
+        assertThatThrownBy(() -> service.completeTodo(TENANT_ID, businessPrincipal(), todo.getId(), new WorkbenchApi.CompleteTodoRequest("reject", "需要补充资料", Map.of("approved", false))))
+            .isInstanceOf(ApiException.class).hasFieldOrPropertyWithValue("code", "WORKBENCH_REVIEW_REJECT_UNSUPPORTED");
+        assertThat(node.getState()).isEqualTo("waiting");
+        assertThat(todo.getStatus()).isEqualTo("open");
+        assertThat(run.getState()).isEqualTo("paused");
+        verify(commandPublisher, never()).publish(any());
+    }
+
+    @Test
+    void shouldRequireExplicitResultSelectionBeforeAdvancingAfterFollowUp() {
+        WorkbenchRuntimeService service = newService(); WorkflowRunEntity run = ownedRun();
+        WorkflowNodeRunEntity node = nodeAt(run, "agent", "agent", "报告智能体", 0, NOW);
+        node.complete(Map.of("resultSelectionRequired", true, "final_answer", "原正式报告"), NOW);
+        stubTenant();
+        when(workflowRunRepository.findByIdAndTenantId(run.getId(), TENANT_ID)).thenReturn(Optional.of(run));
+        when(workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(run.getId())).thenReturn(List.of(node));
+        assertThatThrownBy(() -> service.advanceRun(TENANT_ID, businessPrincipal(), run.getId()))
+            .isInstanceOf(ApiException.class).hasFieldOrPropertyWithValue("code", "WORKBENCH_RESULT_SELECTION_REQUIRED");
+        verify(commandPublisher, never()).publish(any());
+    }
+
+    @Test
+    void shouldRecordExplicitSelectionEvenWhenTwoRepliesHaveIdenticalContent() {
+        WorkbenchRuntimeService service = newService(); WorkflowRunEntity run = ownedRun();
+        WorkflowNodeRunEntity node = nodeAt(run, "agent", "agent", "报告智能体", 0, NOW);
+        node.replaceConfigSnapshot(Map.of("allowQuestion", true), NOW);
+        node.complete(Map.of("resultSelectionRequired", true, "final_answer", "完整报告", "chatMessages", List.of(
+            Map.of("role", "user", "content", "生成报告"), Map.of("role", "assistant", "content", "完整报告"),
+            Map.of("role", "user", "content", "整理完整结果"), Map.of("role", "assistant", "content", "完整报告")
+        )), NOW);
+        stubTenant();
+        when(workflowRunRepository.lockById(run.getId())).thenReturn(Optional.of(run));
+        when(workflowRunRepository.findByIdAndTenantId(run.getId(), TENANT_ID)).thenReturn(Optional.of(run));
+        when(workflowNodeRunRepository.findByIdAndRunId(node.getId(), run.getId())).thenReturn(Optional.of(node));
+        when(workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(run.getId())).thenReturn(List.of(node));
+        service.adoptAnswer(TENANT_ID, businessPrincipal(), run.getId(), node.getId(), null, 1);
+        assertThat(node.getOutputSnapshot()).containsEntry("selectedResultMessageIndex", 1).containsEntry("resultSelectionRequired", false);
+        service.adoptAnswer(TENANT_ID, businessPrincipal(), run.getId(), node.getId(), null, 3);
+        assertThat(node.getOutputSnapshot()).containsEntry("selectedResultMessageIndex", 3).containsEntry("final_answer", "完整报告");
+    }
+
+    @Test
+    void shouldApplyFixedInputDefaultsDuringAutomaticExecution() {
+        WorkbenchRuntimeService service = newService(); WorkflowRunEntity run = ownedRun(1); run.enableAutoExecution();
+        WorkflowNodeRunEntity node = inputNode(run, List.of(Map.of("variable", "company", "label", "企业", "required", true, "defaultValueSource", "fixed", "defaultValue", "默认公司")));
+        when(workflowRunRepository.findByIdAndTenantId(run.getId(), TENANT_ID)).thenReturn(Optional.of(run));
+        when(workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(run.getId())).thenReturn(List.of(node));
+        service.prepareNextNode(TENANT_ID, run.getId(), OPERATOR_ID);
+        assertThat(node.getState()).isEqualTo("completed");
+        assertThat(node.getOutputSnapshot()).containsEntry("company", "默认公司");
     }
 
     private void stubTenant() {

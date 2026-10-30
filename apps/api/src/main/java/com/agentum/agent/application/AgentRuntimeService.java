@@ -616,6 +616,10 @@ public class AgentRuntimeService {
     ) {
         List<ModelChatClient.ChatMessage> messages = new ArrayList<>();
         messages.add(new ModelChatClient.ChatMessage("system", renderedSystemPrompt));
+        if (config.containsKey("_formalAnswer")) {
+            // 正式资料作为用户数据提供，不抬升为系统指令；原任务始终保留在追问上下文中。
+            messages.add(new ModelChatClient.ChatMessage("user", "本节点原始任务：\n" + renderedUserPrompt + "\n当前已确认的完整结果（供本轮追问参考）：\n" + stringValue(config.get("_formalAnswer"))));
+        }
         List<Map<String, Object>> history = readConversationHistory(config);
         if (history.isEmpty()) {
             messages.add(new ModelChatClient.ChatMessage("user", renderedUserPrompt));
@@ -767,6 +771,16 @@ public class AgentRuntimeService {
         ));
         if (!modelCallLogIds.isEmpty()) {
             outputs.put("modelCallLogId", modelCallLogIds.getLast());
+        }
+        // 追问答案是候选内容，正式输出须由用户显式采用，解释性回复不得覆盖下游业务资料。
+        if (config.containsKey("_formalAnswer")) {
+            String formal = stringValue(config.get("_formalAnswer"));
+            outputs.put("candidate_answer", finalAnswer);
+            outputs.put("resultSelectionRequired", true);
+            outputs.put(outputName, formal);
+            outputs.put("final_answer", formal);
+            outputs.put("agent_response", formal);
+            outputs.put("summary", summarizeText(formal));
         }
         return outputs;
     }

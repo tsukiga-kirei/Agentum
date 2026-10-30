@@ -222,7 +222,8 @@ async function apiRequest<T>(path: string, options: RequestOptions = {}): Promis
   } catch (error) {
     // API client 是前端统一出入口，诊断日志只记录路径和错误摘要，禁止打印 body、Authorization 或 token。
     console.error("[api] 请求异常", { path, message: error instanceof Error ? error.message : "unknown" });
-    throw error;
+    if (error instanceof Error && error.name === "AbortError") throw error;
+    throw new AgentumApiError("暂时无法连接服务，请稍后重试", "SYSTEM_NETWORK_ERROR", "req_unknown");
   }
 
   let envelope: ApiEnvelope<T>;
@@ -653,11 +654,11 @@ export const workbenchApi = {
       `/api/tenants/${tenantId}/workbench/available-workflows/${workflowId}/preview`,
       { token },
     ),
-  createRun: (tenantId: string, token: string, workflowId: string, title: string) =>
+  createRun: (tenantId: string, token: string, workflowId: string, title: string, autoExecution = false, inputPayload: Record<string, unknown> = {}) =>
     apiRequest<WorkbenchRunDetail>(`/api/tenants/${tenantId}/workbench/runs`, {
       method: "POST",
       token,
-      body: { workflowId, title },
+      body: { workflowId, title, autoExecution, inputPayload },
     }),
   listActiveRuns: (
     tenantId: string,
@@ -715,6 +716,10 @@ export const workbenchApi = {
       token,
       body: { action: "complete", comment, payload },
     }),
+  setAutomation: (tenantId: string, token: string, runId: string, takeover: boolean) =>
+    apiRequest<WorkbenchRunDetail>(`/api/tenants/${tenantId}/workbench/runs/${runId}/automation`, { method: "POST", token, body: { takeover } }),
+  adoptAnswer: (tenantId: string, token: string, runId: string, nodeRunId: string, messageIndex: number, agentIndex?: number) =>
+    apiRequest<WorkbenchRunDetail>(`/api/tenants/${tenantId}/workbench/runs/${runId}/nodes/${nodeRunId}/adopt-answer`, { method: "POST", token, body: { messageIndex, agentIndex } }),
   advanceStep: (tenantId: string, token: string, runId: string) =>
     apiRequest<WorkbenchRunDetail>(`/api/tenants/${tenantId}/workbench/runs/${runId}/advance`, {
       method: "POST",

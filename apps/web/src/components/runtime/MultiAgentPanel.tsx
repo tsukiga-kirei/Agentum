@@ -19,8 +19,10 @@ interface MultiAgentPanelProps {
   streamStartedAt?: number | null;
   /** 当前步已完成/失败、尚未点「执行下一步」时：切回滚到最近完成或失败的子智能体卡片 */
   scrollToLatestAnswerWhenDone?: boolean;
+  readOnly?: boolean;
   onRestartAgent?: (agentIndex: number) => void | Promise<void>;
   onFollowUpAgent?: (agentIndex: number, message: string) => void | Promise<void>;
+  onAdoptAgentAnswer?: (agentIndex: number, messageIndex: number) => void | Promise<void>;
   onSaveAgentAnswer?: (agentIndex: number, content: string) => void | Promise<void>;
 }
 
@@ -43,6 +45,7 @@ type DrawerAgent = {
   skillNames: string[];
   mcpNames: string[];
   conversationHistory: RuntimeChatMessage[];
+  selectedResultMessageIndex?: number;
   tokenUsage?: RuntimeTokenUsage;
   allowQuestion: boolean;
   allowUserEdit: boolean;
@@ -59,9 +62,11 @@ export function MultiAgentPanel({
   isStreaming = false,
   streamStartedAt = null,
   scrollToLatestAnswerWhenDone = false,
+  readOnly = false,
   onRestartAgent,
   onFollowUpAgent,
   onSaveAgentAnswer,
+  onAdoptAgentAnswer,
 }: MultiAgentPanelProps) {
   const [selectedAgentIndex, setSelectedAgentIndex] = useState<number | null>(null);
   const [restartingAgentIndex, setRestartingAgentIndex] = useState<number | null>(null);
@@ -134,6 +139,7 @@ export function MultiAgentPanel({
         conversationHistory: persistedMessages.length > 0
           ? persistedMessages
           : readAgentConversationHistory(config, agent.name, String(activeStep.nodeRunId ?? `cluster-${agent.index}`), templateVariables),
+        selectedResultMessageIndex: typeof persistedAgent?.selectedResultMessageIndex === "number" ? persistedAgent.selectedResultMessageIndex : undefined,
         tokenUsage: readTokenUsage(persistedAgent?.tokenUsage),
         allowQuestion: readAgentFollowUpAllowed(config, activeStep.configSnapshot),
         allowUserEdit: readAgentEditAllowed(config, activeStep.configSnapshot),
@@ -491,6 +497,8 @@ export function MultiAgentPanel({
           }}
         >
           <SingleAgentPanel
+            onAdoptAnswer={onAdoptAgentAnswer ? index => onAdoptAgentAnswer(selectedAgent.index, index) : undefined}
+            readOnly={readOnly}
             key={`cluster-agent-${selectedAgent.index}-${drawerScrollReady ? "ready" : "mount"}`}
             activeStep={buildAgentDetailStep(activeStep, selectedAgent, templateVariables)}
             isStreaming={!stepCanceled && selectedAgent.status === "running"}
@@ -961,6 +969,7 @@ function buildAgentDetailStep(
   const outputs = [
     ...(finalContent ? [{ label: "final_answer", value: finalContent }, { label: "model_content", value: finalContent }] : []),
     { label: "final_answer_source", value: "model_content" },
+    ...(agent.selectedResultMessageIndex !== undefined ? [{ label: "selectedResultMessageIndex", value: String(agent.selectedResultMessageIndex) }] : []),
   ];
 
   return {
@@ -1006,6 +1015,7 @@ function buildAgentChatMessages(
     return messages;
   }
 
+  if (agent.status === "completed" && agent.conversationHistory.length > 0) { return messages; }
   const lastMessage = messages[messages.length - 1];
   if (lastMessage?.role === "assistant" && lastMessage.content.trim() === finalContent.trim()) {
     messages[messages.length - 1] = {

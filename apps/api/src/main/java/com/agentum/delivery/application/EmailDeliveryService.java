@@ -59,7 +59,7 @@ public class EmailDeliveryService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "DELIVERY_EMAIL_MESSAGE_INVALID", "邮件内容或附件无法组装");
         } catch (Exception ex) {
             log.warn("邮箱交付发送失败 capabilityId={} host={} port={} requestId={}", capability.getId(), smtp.host(), smtp.port(), RequestIds.current());
-            throw new ApiException(HttpStatus.BAD_GATEWAY, "DELIVERY_EMAIL_SEND_FAILED", "邮件发送失败，请检查 SMTP 配置或网络连通性");
+            throw new ApiException(HttpStatus.BAD_GATEWAY, "DELIVERY_EMAIL_SEND_FAILED", "邮件发送失败，请检查 SMTP 配置或网络连通性；发送结果未确认时，请先核对收件箱，确认未收到后再恢复");
         }
     }
 
