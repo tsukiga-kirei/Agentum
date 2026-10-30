@@ -22,6 +22,7 @@ public class AttachmentParseResultEntity {
     @Column(nullable = false, length = 30) private String status;
     @Column(name = "error_code", length = 100) private String errorCode;
     @Column(name = "error_message", length = 500) private String errorMessage;
+    @Column(name = "fallback_reason", length = 100) private String fallbackReason;
     @Column(name = "created_at", nullable = false) private Instant createdAt;
     @Column(name = "updated_at", nullable = false) private Instant updatedAt;
 
@@ -58,10 +59,18 @@ public class AttachmentParseResultEntity {
         updatedAt = now;
     }
 
+    /** 记录实际解析路径；即使后备服务失败，也保留已尝试的解析器和回退原因。 */
+    public void recordParser(String parserType, String fallbackReason) {
+        this.parserType = parserType;
+        this.fallbackReason = fallbackReason;
+    }
+
     public UUID getId() { return id; }
     public UUID getAttachmentId() { return attachmentId; }
     public String getContentStorageKey() { return contentStorageKey; }
     public String getStatus() { return status; }
+    public String getParserType() { return parserType; }
+    public String getFallbackReason() { return fallbackReason; }
     public int getCharacterCount() { return characterCount; }
     public boolean isTruncated() { return truncated; }
 }

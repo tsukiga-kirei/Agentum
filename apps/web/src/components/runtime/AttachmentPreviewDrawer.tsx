@@ -30,7 +30,7 @@ export function AttachmentPreviewDrawer(props: AttachmentPreviewDrawerProps) {
   if (["xlsx", "xls"].includes(extension)) {
     return <ExcelWorkbookPreviewDrawer {...props} fileName={props.attachment.fileName} loadDocument={loadOriginal} />;
   }
-  if (extension === "docx") {
+  if (extension === "docx" && props.attachment.contentType !== "application/msword") {
     return <WordDocumentPreviewDrawer {...props} fileName={props.attachment.fileName} loadDocument={loadOriginal} />;
   }
   return <GenericAttachmentPreviewDrawer {...props} loadOriginal={loadOriginal} />;

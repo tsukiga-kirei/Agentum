@@ -1283,7 +1283,7 @@ paths:
                       data: { $ref: "#/components/schemas/InputAttachmentList" }
     post:
       summary: 上传输入节点附件
-      description: 原件保存到对象存储；启用识别时异步进入简单识别或 MinerU 复杂识别队列。
+      description: 原件保存到对象存储；启用识别时异步按本地、MinerU 或混合策略解析，混合策略本地优先并按白名单升级。
       tags: [Workbench]
       security: [{ bearerAuth: [] }]
       parameters:
@@ -3008,7 +3008,7 @@ paths:
                       data: { $ref: "#/components/schemas/AttachmentRecognitionSettings" }
     put:
       summary: 更新附件识别系统配置
-      description: 复杂识别模式下，白名单中的所有附件均发送给 MinerU，不做本地预解析或失败回退。
+      description: local 仅本地提取，mineru 将白名单内文件直接发送至 MinerU，hybrid 本地优先并在失败或无文字时按 MinerU 白名单升级；图片等本地不支持的类型直接调用 MinerU。
       tags: [System]
       security: [{ bearerAuth: [] }]
       requestBody:
@@ -4856,7 +4856,7 @@ components:
       type: object
       properties:
         recognitionEnabled: { type: boolean }
-        recognitionEngine: { type: string, enum: [local, mineru] }
+        recognitionEngine: { type: string, enum: [local, mineru, hybrid] }
         localSupportedExtensions:
           type: array
           items: { type: string }
@@ -4884,7 +4884,7 @@ components:
       type: object
       properties:
         recognitionEnabled: { type: boolean }
-        recognitionEngine: { type: string, enum: [local, mineru] }
+        recognitionEngine: { type: string, enum: [local, mineru, hybrid] }
         supportedExtensions:
           type: array
           items: { type: string }
@@ -4898,7 +4898,7 @@ components:
       type: object
       properties:
         recognitionEnabled: { type: boolean }
-        recognitionEngine: { type: string, enum: [local, mineru] }
+        recognitionEngine: { type: string, enum: [local, mineru, hybrid] }
         maxFileSizeMb: { type: integer, minimum: 1, maximum: 200 }
         maxFilesPerField: { type: integer, minimum: 1, maximum: 20 }
         maxExtractedChars: { type: integer, minimum: 1000, maximum: 2000000 }
@@ -5566,13 +5566,20 @@ components:
         extension: { type: string }
         contentType: { type: string }
         sizeBytes: { type: integer, format: int64 }
-        recognitionEngine: { type: string, enum: [none, local, mineru] }
+        recognitionEngine: { type: string, enum: [none, local, mineru, hybrid] }
         status: { type: string, enum: [queued, parsing, ready, failed, rejected] }
         errorCode: { type: [string, "null"] }
         errorMessage: { type: [string, "null"] }
         parseResultId: { type: [string, "null"], format: uuid }
         characterCount: { type: [integer, "null"] }
         truncated: { type: [boolean, "null"] }
+        parserType:
+          type: [string, "null"]
+          description: 实际最后使用或尝试的解析器，如 local-docx、local-doc、mineru。
+        fallbackReason:
+          type: [string, "null"]
+          enum: [DOCX_AS_DOC, LOCAL_UNSUPPORTED, LOCAL_TEXT_EMPTY, LOCAL_PARSE_FAILED, null]
+          description: 兼容解析或升级复杂识别的原因；未发生回退时为空。
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
       required: [id, fieldId, variableKey, fileName, extension, contentType, sizeBytes, recognitionEngine, status, createdAt, updatedAt]

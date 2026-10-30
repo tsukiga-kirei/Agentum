@@ -144,6 +144,7 @@ apps/
 | `src/main/resources/logback-spring.xml` | 系统 / 租户运行日志分流、滚动与格式配置 |
 | `src/main/resources/db/migration/` | Flyway 迁移，见下文 |
 | `src/test/java/` | 单元与集成测试（与 `main` 包结构对应） |
+| `src/test/resources/attachments/` | 附件识别真实样例及第三方来源、许可证说明 |
 | `build.gradle.kts` | API 模块依赖与测试配置 |
 
 #### 数据库迁移
@@ -182,7 +183,7 @@ apps/api/src/main/resources/db/
 | `runtime` | 异步执行：RabbitMQ 命令、Redis 租约/流、取消与回收 |
 | `mcp` | MCP 网关：连通性测试、工具发现、`tools/call` |
 | `delivery` | 交付：邮件、Webhook、Word、Excel、文件存储 |
-| `attachment` | 输入附件：系统识别配置、上传保存、本地 / MinerU 解析、预览下载与保留期清理 |
+| `attachment` | 输入附件：系统识别配置、上传保存、本地 / MinerU / 混合识别、Word 兼容解析、预览下载与保留期清理 |
 | `audit` | 运行审计查询、证据聚合 |
 | `schedule` | 流程定时任务与执行记录 |
 | `notification` | 站内通知与消息中心 |

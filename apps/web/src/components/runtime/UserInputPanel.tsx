@@ -17,6 +17,7 @@ import {
 } from "../../utils/workflowInputField";
 import {
   getAttachmentRecognitionEngineLabel,
+  getAttachmentParseSummary,
   getEffectiveAttachmentExtensions,
 } from "../../utils/attachmentRecognition";
 
@@ -340,7 +341,7 @@ export function UserInputPanel({
                       {(attachments[field.id] ?? []).map((attachment) => (
                         <div key={attachment.id} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
                           <Paperclip size={17} className="shrink-0 text-blue-500" />
-                          <div className="min-w-0 flex-1"><strong className="block truncate text-sm text-slate-700 dark:text-slate-300" title={attachment.fileName}>{attachment.fileName}</strong><span className={`text-xs ${attachment.status === "failed" ? "text-rose-500" : attachment.status === "ready" ? "text-emerald-500" : "text-amber-500"}`}>{attachment.status === "queued" ? "等待识别" : attachment.status === "parsing" ? "识别中" : attachment.status === "ready" ? (attachment.recognitionEngine === "none" ? "已保存" : "识别完成") : attachment.errorMessage || "识别失败"} · {formatFileSize(attachment.sizeBytes)}</span></div>
+                          <div className="min-w-0 flex-1"><strong className="block truncate text-sm text-slate-700 dark:text-slate-300" title={attachment.fileName}>{attachment.fileName}</strong><span className={`text-xs ${attachment.status === "failed" ? "text-rose-500" : attachment.status === "ready" ? "text-emerald-500" : "text-amber-500"}`}>{attachment.status === "queued" ? "等待识别" : attachment.status === "parsing" ? "识别中" : attachment.status === "ready" ? (attachment.recognitionEngine === "none" ? "已保存" : "识别完成") : attachment.errorMessage || "识别失败"} · {formatFileSize(attachment.sizeBytes)}</span>{attachment.status === "ready" && attachment.parserType ? <span className="block text-xs text-slate-500 dark:text-slate-400">{getAttachmentParseSummary(attachment.parserType, attachment.fallbackReason)}</span> : null}</div>
                           <button type="button" className="agent-button h-8 px-2 text-xs" onClick={() => setPreviewAttachment(attachment)}><Eye size={14} />预览</button>
                           <button type="button" className="agent-button h-8 px-2 text-xs" disabled={downloadingAttachmentId === attachment.id} onClick={() => void downloadAttachment(attachment)}><Download size={14} /></button>
                           {!inputDisabled ? <button type="button" className="agent-button h-8 px-2 text-xs text-rose-500" onClick={() => void deleteAttachment(field.id, attachment.id)}><Trash2 size={14} /></button> : null}

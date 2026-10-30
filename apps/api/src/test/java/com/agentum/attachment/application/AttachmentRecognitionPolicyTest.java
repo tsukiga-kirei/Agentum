@@ -30,4 +30,13 @@ class AttachmentRecognitionPolicyTest {
         assertThat(AttachmentRecognitionPolicy.blockedExtensions())
             .contains("exe", "js", "sh", "vbs");
     }
+
+    @Test
+    void hybridUsesLocalAndMineruUnionWithoutDuplicatesOrDangerousTypes() {
+        AttachmentRecognitionSettingEntity settings = mock(AttachmentRecognitionSettingEntity.class);
+        when(settings.getRecognitionEngine()).thenReturn("hybrid");
+        when(settings.getMineruSupportedExtensions()).thenReturn(List.of("pdf", "png", "exe"));
+        assertThat(AttachmentRecognitionPolicy.supportedExtensions(settings))
+            .containsExactly("txt", "md", "csv", "pdf", "doc", "docx", "xls", "xlsx", "png");
+    }
 }

@@ -123,7 +123,8 @@ public class InputAttachmentService {
         String engine = recognitionEnabled ? settings.getRecognitionEngine() : "none";
         String initialStatus = recognitionEnabled ? "queued" : "ready";
         UUID attachmentId = UUID.randomUUID();
-        String contentType = normalizeContentType(extension);
+        // 保留原文件名和字段白名单语义，MIME 则反映真实 DOC，前端据此使用识别正文预览。
+        String contentType = normalizeContentType("docx".equals(extension) && AttachmentFileFormat.isLegacyWord(bytes) ? "doc" : extension);
         String storageKey = storage.storeOriginal(tenantId, attachmentId, fileName, contentType, bytes);
         Instant now = clock.instant();
         InputAttachmentEntity attachment = InputAttachmentEntity.create(
@@ -282,7 +283,7 @@ public class InputAttachmentService {
 
     /**
      * 提交输入节点时只接受本节点已登记的附件 ID，并把客户端数组转换为不可伪造的附件引用。
-     * 复杂识别没有本地回退；标记为识别必需的字段必须等待 MinerU 成功后才能继续流程。
+     * 标记为识别必需的字段必须等待所选策略完成后才能继续，回退失败不能伪装成成功。
      */
     public Map<String, Object> resolveSubmittedPayload(
         UUID tenantId,
@@ -330,6 +331,10 @@ public class InputAttachmentService {
                 reference.put("contentType", attachment.getContentType());
                 reference.put("sizeBytes", attachment.getSizeBytes());
                 reference.put("status", attachment.getStatus());
+                if (result != null) {
+                    reference.put("parserType", result.getParserType());
+                    reference.put("fallbackReason", result.getFallbackReason());
+                }
                 if (result != null && "ready".equals(result.getStatus())) {
                     reference.put("parseResultId", result.getId().toString());
                     reference.put("truncated", result.isTruncated());
@@ -414,6 +419,9 @@ public class InputAttachmentService {
         if ("local".equals(settings.getRecognitionEngine()) && !AttachmentRecognitionPolicy.localSupportedExtensions().contains(extension)) {
             throw new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "ATTACHMENT_LOCAL_EXTENSION_NOT_SUPPORTED", "简单识别暂不支持该类型文件");
         }
+        if ("hybrid".equals(settings.getRecognitionEngine()) && !AttachmentRecognitionPolicy.supportedExtensions(settings).contains(extension)) {
+            throw new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "ATTACHMENT_HYBRID_EXTENSION_NOT_SUPPORTED", "混合识别暂不支持该类型文件");
+        }
     }
 
     private InputAttachmentEntity requireAttachment(UUID tenantId, UUID runId, UUID nodeRunId, UUID attachmentId) {
@@ -485,7 +493,7 @@ public class InputAttachmentService {
         };
     }
 
-    private static void validateFileSignature(String extension, byte[] bytes) {
+    static void validateFileSignature(String extension, byte[] bytes) {
         boolean valid = switch (extension) {
             case "pdf" -> startsWith(bytes, "%PDF-".getBytes(StandardCharsets.US_ASCII));
             case "png" -> startsWith(bytes, new byte[] {(byte) 0x89, 0x50, 0x4e, 0x47});
@@ -497,7 +505,9 @@ public class InputAttachmentService {
             case "webp" -> bytes.length >= 12
                 && startsWith(bytes, "RIFF".getBytes(StandardCharsets.US_ASCII))
                 && new String(bytes, 8, 4, StandardCharsets.US_ASCII).equals("WEBP");
-            case "docx", "xlsx" -> startsWith(bytes, new byte[] {0x50, 0x4b});
+            // DOCX 额外接受经容器目录确认的旧 Word；XLSX 保持原签名约束。
+            case "docx" -> startsWith(bytes, new byte[] {0x50, 0x4b}) || AttachmentFileFormat.isLegacyWord(bytes);
+            case "xlsx" -> startsWith(bytes, new byte[] {0x50, 0x4b});
             case "doc", "xls" -> startsWith(bytes, new byte[] {(byte) 0xd0, (byte) 0xcf, 0x11, (byte) 0xe0});
             case "txt", "md", "csv" -> !containsNullByte(bytes);
             default -> true;
@@ -570,6 +580,7 @@ public class InputAttachmentService {
             attachment.getExtension(), attachment.getContentType(), attachment.getSizeBytes(), attachment.getRecognitionEngine(),
             attachment.getStatus(), attachment.getErrorCode(), attachment.getErrorMessage(), result == null ? null : result.getId(),
             result == null ? null : result.getCharacterCount(), result == null ? null : result.isTruncated(),
+            result == null ? null : result.getParserType(), result == null ? null : result.getFallbackReason(),
             attachment.getCreatedAt(), attachment.getUpdatedAt()
         );
     }

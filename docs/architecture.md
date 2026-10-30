@@ -452,9 +452,11 @@ GET    /api/tenants/{tenantId}/workbench/runs/{runId}/nodes/{nodeRunId}/attachme
 
 前端附件预览复用交付文档预览的抽屉和 Word / Excel 渲染器，并按扩展名增加 PDF、图片、文本和识别正文通道。原件接口统一返回受保护字节流和服务端确定的 MIME，前端不接收 MinIO 对象键；不支持的格式只允许下载，不把用户上送的 MIME 作为内联渲染依据。
 
-MinerU 只作为解析适配器，不直接承担 Agentum 的文件治理。系统识别方式使用 `local`、`mineru` 两个稳定协议值：`local` 只调用 Java 本地解析器；`mineru` 对命中 `mineruSupportedExtensions` 的全部文件调用 MinerU，包括 TXT、CSV 等本地本可直接读取的格式。复杂识别不做本地预解析，MinerU 失败后也不做本地回退，失败是否阻断输入节点由字段发布快照中的 `recognitionRequired` 决定。
+MinerU 只作为解析适配器，不直接承担 Agentum 的文件治理。系统识别方式使用 `local`、`mineru`、`hybrid` 三个协议值：`local` 只调用 Java 本地解析器；`mineru` 对命中 `mineruSupportedExtensions` 的全部文件调用 MinerU，包括 TXT、CSV 等本地本可直接读取的格式。复杂识别不做本地预解析。混合识别 `hybrid` 优先本地解析，非空结果直接使用；本地提取失败或正文为空时，仅当扩展名命中 MinerU 白名单才升级识别；本地不支持的白名单类型直接调用 MinerU。不做循环重试，MinerU 失败后保留失败状态，是否阻断输入节点由字段发布快照中的 `recognitionRequired` 决定。
 
-MinerU 端点和 API Key 是平台级敏感配置，API Key 使用现有字段加密服务保存。`mineruSupportedExtensions` 采用系统管理员可编辑白名单，不由 Agentum 根据某个 MinerU 版本硬编码限制；这允许客户封装端点、在线 API 或未来 MinerU 版本接收 `doc`、`xls` 等格式。平台仍应提示当前开源自部署版与在线 API 的格式口径存在差异，并提供逐格式真实解析测试。管理员配置的扩展名代表明确的运行路由意图，而不是平台对 MinerU 成功率的保证。
+MinerU 端点和 API Key 是平台级敏感配置，API Key 使用现有字段加密服务保存。`mineruSupportedExtensions` 采用系统管理员可编辑白名单，不由 Agentum 根据某个 MinerU 版本硬编码限制；这允许客户封装端点、在线 API 或未来 MinerU 版本接收 `doc`、`xls` 等格式。平台仍应提示当前开源自部署版与在线 API 的格式口径存在差异，并提供逐格式真实解析测试。管理员配置的扩展名代表允许向 MinerU 发送的边界，而不是平台对 MinerU 成功率的保证。混合模式的可上传类型取本地能力与该白名单的合集，不能据此扩大外发范围。
+
+DOCX 上传允许经 OLE 目录确认的旧 Word，不能仅凭 OLE 文件头放行任意格式或加密 Office。保持原文件名和扩展名，服务端 MIME 按实际 DOC 确定，前端使用受保护的解析正文预览。本地 DOCX 解析失败后，在同一原件上尝试 DOC 解析器；两者失败仍报错。`attachment_parse_results.parser_type` 记录实际最后使用或尝试的解析器，`fallback_reason` 记录 `DOCX_AS_DOC`、`LOCAL_UNSUPPORTED`、`LOCAL_TEXT_EMPTY` 或 `LOCAL_PARSE_FAILED`，对成功和失败均留痕并通过附件接口返回。解析器版本升级为 v2，配置哈希包含白名单、端点及解析参数；不记录密钥或原始供应商响应。
 
 日志只记录 requestId、tenantId、runId、nodeRunId、attachmentId、解析器、耗时和状态，禁止记录文件正文、密钥、完整原始响应和对象存储签名地址。下载原文件、读取完整解析正文和解析测试均作为敏感操作写入审计。
 

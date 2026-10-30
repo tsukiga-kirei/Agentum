@@ -2,7 +2,7 @@ import type { PageResponse } from "./organization";
 
 export type AttachmentRecognitionSettings = {
   recognitionEnabled: boolean;
-  recognitionEngine: "local" | "mineru";
+  recognitionEngine: "local" | "mineru" | "hybrid";
   localSupportedExtensions: string[];
   maxFileSizeMb: number;
   maxFilesPerField: number;
@@ -29,7 +29,7 @@ export type UpdateAttachmentRecognitionSettingsRequest = Omit<AttachmentRecognit
 
 export type AttachmentRecognitionCapabilities = {
   recognitionEnabled: boolean;
-  recognitionEngine: "local" | "mineru";
+  recognitionEngine: "local" | "mineru" | "hybrid";
   supportedExtensions: string[];
   blockedExtensions: string[];
 };

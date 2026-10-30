@@ -465,7 +465,8 @@ public class WorkflowNodeConfigValidator {
                 .toList();
             if (!unsupported.isEmpty()) {
                 String policyLabel = attachmentCapabilities.recognitionEnabled()
-                    ? ("mineru".equals(attachmentCapabilities.recognitionEngine()) ? "复杂识别" : "简单识别")
+                    ? ("hybrid".equals(attachmentCapabilities.recognitionEngine()) ? "混合识别"
+                        : "mineru".equals(attachmentCapabilities.recognitionEngine()) ? "复杂识别" : "简单识别")
                     : "平台";
                 issues.add(issue(
                     "WORKFLOW_VALIDATION_ATTACHMENT_EXTENSIONS_UNSUPPORTED",

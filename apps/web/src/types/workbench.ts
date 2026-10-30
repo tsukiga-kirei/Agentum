@@ -89,13 +89,15 @@ export type InputAttachmentRow = {
   extension: string;
   contentType: string;
   sizeBytes: number;
-  recognitionEngine: "none" | "local" | "mineru";
+  recognitionEngine: "none" | "local" | "mineru" | "hybrid";
   status: "queued" | "parsing" | "ready" | "failed" | "rejected";
   errorCode: string | null;
   errorMessage: string | null;
   parseResultId: string | null;
   characterCount: number | null;
   truncated: boolean | null;
+  parserType: string | null;
+  fallbackReason: string | null;
   createdAt: string;
   updatedAt: string;
 };

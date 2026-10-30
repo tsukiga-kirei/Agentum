@@ -1,0 +1,6 @@
+legacy-word.doc is Apache POI's SampleDoc.doc test fixture, used to verify
+that an actual binary Word document mislabeled as DOCX can be extracted.
+Source: https://github.com/apache/poi/blob/REL_5_2_5/test-data/document/SampleDoc.doc
+Apache POI - Copyright The Apache Software Foundation.
+Licensed under the Apache License, Version 2.0; see Apache-2.0.txt.
+No changes have been made to the fixture.
