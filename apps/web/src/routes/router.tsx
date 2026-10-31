@@ -67,6 +67,7 @@ export const appRouter = createBrowserRouter([
                   { index: true, element: <AssetsPage /> },
                   { path: "open", element: <AssetsPage /> },
                   { path: "mine", element: <AssetsPage /> },
+                  { path: "templates", element: <AssetsPage /> },
                 ],
               },
 

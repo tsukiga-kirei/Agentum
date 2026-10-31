@@ -154,6 +154,7 @@ sequenceDiagram
 - 运行态：用户输入、人工审核、单智能体、多智能体集群、追问、重新执行、失败恢复。
 - 智能体运行：模型调用、Skill 读取、MCP 工具调用、推理内容、Token 用量和最终答案留痕。
 - 基础交付：邮箱、Webhook、Word 文档和 Excel 工作簿生成下载。
+- 新增文件模板交付：上传 Word / Excel 原件、配置字段与 Sheet 样式、绑定多个上游来源、固定模板版本及试填；旧内容生成方式保留。
 - 审计证据链：运行事件、变量快照、模型调用、MCP 调用和交付记录。
 
 ### 近期补充（2026-07）
@@ -434,8 +435,8 @@ docs/                     产品、架构和进度文档
 | [AI 运行态接入说明](./docs/ai-runtime-integration.md) | 模型、MCP、Skill、提示词模板与流程运行时 |
 | [Skill 与 MCP 运行机制](./docs/skill-mcp-runtime-guide.md) | Skill 读取、MCP 工具发现与调用、参数 Schema、失败恢复和审计 |
 | [运行态异步执行设计](./docs/runtime-async-execution-design.md) | 执行解耦、SSE 回放与中断/恢复语义 |
-| [Word 文档交付说明](./docs/word-document-delivery.md) | 系统内置 Word 交付的配置、预览和下载 |
-| [Excel 工作簿交付说明](./docs/excel-workbook-delivery.md) | 系统内置 Excel 交付的 Sheet 模板、宽容解析和下载 |
+| [Word 文档交付说明](./docs/word-document-delivery.md) | 系统内置 Word 交付、文件模板填充、格式配置与下载 |
+| [Excel 工作簿交付说明](./docs/excel-workbook-delivery.md) | 系统内置 Excel 交付、文件模板、多 Sheet 格式与下载 |
 | [企业 SSO 对接说明](./docs/sso-integration.md) | OIDC 单点登录边界与当前实现 |
 | [OA Basic 单点登录示例](./docs/oa-basic-sso-integration.md) | OA 服务端 Basic 换取一次性浏览器地址的配置、Java 示例与联调说明 |
 | [当前进度](./docs/progress/README.md) | 阶段计划、完成状态和后续开发说明 |

@@ -44,6 +44,10 @@ public class DeliveryRuntimeService {
     private final DeliveryContentTemplateRenderer contentTemplateRenderer;
     private final RestClient restClient;
     private final Clock clock;
+    private com.agentum.delivery.template.DeliveryTemplateService templateService;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setTemplateService(com.agentum.delivery.template.DeliveryTemplateService service) { this.templateService = service; }
 
     public DeliveryRuntimeService(
         SystemCapabilityRepository systemCapabilityRepository,
@@ -173,6 +177,14 @@ public class DeliveryRuntimeService {
         );
         Map<String, Object> payload = buildPayload(request, nodeConfig, enrichRuntimeVariables(request), null);
         payload.put("_deliveryItemId", itemId);
+        if ("file_template".equals(nodeConfig.get("generationMode"))) {
+            // 新模式的复用标识包含固定模板版本、来源绑定和格式覆盖，避免配置变化后误用旧文件。
+            payload.put("_fileTemplateConfig", Map.of(
+                "version", nodeConfig.getOrDefault("templateVersionId", ""),
+                "bindings", nodeConfig.getOrDefault("templateBindings", List.of()),
+                "styles", nodeConfig.getOrDefault("templateLocationStyles", Map.of()),
+                "fileName", nodeConfig.getOrDefault("fileNameTemplate", "")));
+        }
         DeliveryRuntimeResult previous = reuseSuccessfulDelivery(request, payload);
         if (previous != null) { return previous; }
         String title = firstNonBlank(stringValue(nodeConfig.get("subject")), stringValue(nodeConfig.get("title")), itemName, request.run().getTitle());
@@ -193,7 +205,9 @@ public class DeliveryRuntimeService {
         try {
             Map<String, Object> externalPayload = new LinkedHashMap<>(payload);
             externalPayload.remove("_deliveryItemId");
-            Map<String, Object> result = dispatchCapability(capability, deliveryType, title, externalPayload, request, nodeConfig, record.getId());
+            Map<String, Object> result = "file_template".equals(nodeConfig.get("generationMode"))
+                ? templateService.generate(request, record.getId(), capability, nodeConfig, externalPayload)
+                : dispatchCapability(capability, deliveryType, title, externalPayload, request, nodeConfig, record.getId());
             record.succeed(result, clock.instant());
             deliveryRecordRepository.save(record);
             Map<String, Object> outputs = new LinkedHashMap<>();

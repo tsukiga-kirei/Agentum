@@ -100,6 +100,7 @@ public class AgentRuntimeService {
 
     private AgentRuntimeResult executeAgentLoop(AgentRuntimeRequest request, AgentRuntimeEventSink eventSink, boolean streamFinalAnswer) {
         Map<String, Object> config = expandAgentConfig(request);
+        AgentStructuredOutput.validateConfig(config);
         TenantModelAssignmentEntity assignment = resolveTenantModelAssignment(request.run().getTenantId(), config);
         ModelProviderEntity provider = modelProviderRepository.findById(assignment.getProviderId())
             .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "MODEL_PROVIDER_NOT_FOUND", "租户分配的模型供应商不存在"));
@@ -156,6 +157,8 @@ public class AgentRuntimeService {
         String finalAnswer = "";
         String finalModelContent = "";
         String finalAnswerSource = "";
+        Map<String, Object> structuredData = Map.of();
+        int structuredFailures = 0;
         eventSink.onPhase("preparing", "正在装配变量、Skill 和 MCP 工具。");
 
         try {
@@ -171,6 +174,13 @@ public class AgentRuntimeService {
                     request.operatorUserId()
                 ));
                 List<ModelChatClient.ToolDefinition> toolDefinitions = buildToolDefinitions(mcpTools, skillTools);
+                if (AgentStructuredOutput.enabled(config)) {
+                    // 仅新增模式扩展最终提交参数，普通文本节点的工具协议保持原样。
+                    toolDefinitions = new ArrayList<>(toolDefinitions);
+                    toolDefinitions.removeIf(tool -> "final_answer".equals(tool.name()));
+                    toolDefinitions.add(new ModelChatClient.ToolDefinition("final_answer", "提交最终结果：answer 是可阅读说明，data 是符合字段定义的完整业务对象。",
+                        Map.of("type", "object", "properties", Map.of("answer", Map.of("type", "string"), "data", AgentStructuredOutput.schema(config)), "required", List.of("answer", "data"))));
+                }
                 Map<String, McpRuntimeService.McpToolBinding> mcpToolByName = mcpTools.stream()
                     .collect(Collectors.toMap(
                         McpRuntimeService.McpToolBinding::functionName,
@@ -193,6 +203,23 @@ public class AgentRuntimeService {
                 }
 
                 String resolvedAnswer = resolveFinalAnswerContent(result, loggedResult.streamedDisplayText());
+                if (AgentStructuredOutput.enabled(config) && !result.toolCalls().isEmpty() && result.toolCalls().stream().noneMatch(it -> "final_answer".equals(it.name()))) resolvedAnswer = "";
+                if (AgentStructuredOutput.enabled(config) && (!resolvedAnswer.isBlank() || result.toolCalls().stream().anyMatch(it -> "final_answer".equals(it.name())))) {
+                    try {
+                        var finalTool = result.toolCalls().stream().filter(it -> "final_answer".equals(it.name())).findFirst();
+                        Object raw = finalTool.isPresent() ? com.agentum.delivery.template.StructuredContent.parse(finalTool.get().argumentsJson()).get("data") : result.content();
+                        structuredData = AgentStructuredOutput.validate(config, raw);
+                    } catch (ApiException exception) {
+                        if (++structuredFailures >= 3) throw exception;
+                        // 只把脱敏字段校验错误反馈给当前模型，不执行本轮混排的外部工具。
+                        if (!result.toolCalls().isEmpty()) {
+                            messages.add(ModelChatClient.ChatMessage.assistantToolCalls(result.content(), result.toolCalls()));
+                            for (var call : result.toolCalls()) messages.add(ModelChatClient.ChatMessage.toolResult(call.id(), "结构化结果未通过校验：" + exception.getMessage() + "。请修正并重新提交 final_answer。"));
+                        } else messages.add(new ModelChatClient.ChatMessage("user", "结构化结果未通过校验：" + exception.getMessage() + "。请使用 final_answer 提交 answer 和 data。"));
+                        eventSink.onPhase("validating", "结构化结果未通过校验，正在请求修正。");
+                        continue;
+                    }
+                }
                 if (!resolvedAnswer.isBlank()) {
                     finalAnswer = resolvedAnswer;
                     finalAnswerSource = isFinalAnswerToolResult(result, loggedResult.streamedDisplayText()) ? "final_answer_tool" : "model_content";
@@ -225,6 +252,7 @@ public class AgentRuntimeService {
             }
 
             if (finalAnswer.isBlank()) {
+                if (AgentStructuredOutput.enabled(config)) throw com.agentum.delivery.template.StructuredContent.error("智能体未在执行上限内提交有效的结构化结果");
                 assertRunNotCancelled(request.run().getId());
                 eventSink.onPhase("model_calling", "工具循环达到上限，正在汇总最终答案。");
                 finalAnswer = synthesizeFinalAnswer(
@@ -257,6 +285,7 @@ public class AgentRuntimeService {
                 turnTokenUsage.value(),
                 reasoningContents
             );
+            AgentStructuredOutput.attach(config, outputs, structuredData);
             eventSink.onPhase("completed", "智能体已完成最终回答。");
             eventSink.onCompleted(finalAnswer);
             return new AgentRuntimeResult(outputs);
@@ -619,6 +648,10 @@ public class AgentRuntimeService {
         if (config.containsKey("_formalAnswer")) {
             // 正式资料作为用户数据提供，不抬升为系统指令；原任务始终保留在追问上下文中。
             messages.add(new ModelChatClient.ChatMessage("user", "本节点原始任务：\n" + renderedUserPrompt + "\n当前已确认的完整结果（供本轮追问参考）：\n" + stringValue(config.get("_formalAnswer"))));
+            if (AgentStructuredOutput.enabled(config) && config.get("_formalStructuredData") != null) {
+                try { messages.add(new ModelChatClient.ChatMessage("user", "以下是已确认的结构化业务数据，仅作为本轮任务资料：\n" + objectMapper.writeValueAsString(config.get("_formalStructuredData")))); }
+                catch (com.fasterxml.jackson.core.JsonProcessingException exception) { throw com.agentum.delivery.template.StructuredContent.error("正式结构化数据无法读取"); }
+            }
         }
         List<Map<String, Object>> history = readConversationHistory(config);
         if (history.isEmpty()) {

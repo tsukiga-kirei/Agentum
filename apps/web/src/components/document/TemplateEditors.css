@@ -1,0 +1,106 @@
+.template-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.template-field-list,
+.template-style-editor {
+  display: grid;
+  gap: 16px;
+}
+.template-field-card {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-bg-card, var(--color-bg-primary));
+}
+.template-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.template-section-heading > strong {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text-primary);
+}
+.template-section-heading > .agent-admin-select {
+  max-width: 240px;
+}
+.template-table-row {
+  display: grid;
+  gap: 12px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.template-error {
+  color: var(--color-error, #c53030);
+  padding: 12px 16px;
+  background: var(--color-bg-hover);
+  border-radius: 8px;
+}
+.template-binding-list {
+  display: grid;
+  gap: 16px;
+}
+.template-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.template-file-input {
+  display: block;
+  padding: 12px;
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  color: var(--color-text-primary);
+  background: var(--color-bg-hover);
+}
+.template-file-input::file-selector-button {
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  padding: 6px 12px;
+  margin-right: 12px;
+  background: var(--color-bg-card, var(--color-bg-primary));
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+.template-tabs {
+  margin-bottom: 20px;
+}
+@media (max-width: 700px) {
+  .template-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .template-section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+.template-sheet-preview {
+  overflow: auto;
+  max-height: 75vh;
+  background: #fff;
+  color: #111;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+}
+.template-sheet-preview table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: max-content;
+  min-width: 100%;
+}
+.template-sheet-preview td {
+  padding: 2px 6px;
+  overflow-wrap: anywhere;
+}

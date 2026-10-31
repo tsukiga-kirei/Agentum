@@ -21,6 +21,7 @@ export const paths = {
     root: "/app/assets",
     open: "/app/assets/open",
     mine: "/app/assets/mine",
+    templates: "/app/assets/templates",
   },
   tenant: {
     root: "/app/tenant",

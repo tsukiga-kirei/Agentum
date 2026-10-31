@@ -563,6 +563,29 @@ export const attachmentApi = {
     apiRequest<AttachmentRecognitionCapabilities>("/api/attachment-recognition/capabilities", { token }),
 };
 
+export const deliveryTemplateApi = {
+  replaceFile: (tenantId: string, token: string, id: string, file: File) => {
+    const body = new FormData(); body.append("file", file);
+    return apiRequest<import("../types/delivery-template").DeliveryTemplate>(`/api/tenants/${tenantId}/delivery-templates/${id}/file`, { method: "POST", token, body });
+  },
+  previewLayout: (tenantId: string, token: string, id: string, body: { capabilityId: string; values: Record<string, unknown>; locationStyles?: Record<string, import("../types/delivery-template").TemplateStyle>; fileName?: string }) =>
+    apiRequest<import("../types/delivery-template").TemplateWorkbookSheet[]>(`/api/tenants/${tenantId}/delivery-templates/${id}/preview-layout`, { method: "POST", token, body }),
+  list: (tenantId: string, token: string, page = 1, published = false, keyword = "") =>
+    apiRequest<PageResponse<import("../types/delivery-template").DeliveryTemplate>>(`/api/tenants/${tenantId}/delivery-templates?${new URLSearchParams({ page: String(page), size: "10", published: String(published), keyword })}`, { token }),
+  get: (tenantId: string, token: string, id: string) => apiRequest<import("../types/delivery-template").DeliveryTemplate>(`/api/tenants/${tenantId}/delivery-templates/${id}`, { token }),
+  upload: (tenantId: string, token: string, name: string, file: File) => {
+    const body = new FormData(); body.append("name", name); body.append("file", file);
+    return apiRequest<import("../types/delivery-template").DeliveryTemplate>(`/api/tenants/${tenantId}/delivery-templates`, { method: "POST", token, body });
+  },
+  save: (tenantId: string, token: string, template: import("../types/delivery-template").DeliveryTemplate) =>
+    apiRequest<import("../types/delivery-template").DeliveryTemplate>(`/api/tenants/${tenantId}/delivery-templates/${template.id}`, { method: "PUT", token, body: { name: template.name, readScope: template.readScope, spec: template.spec } }),
+  publish: (tenantId: string, token: string, id: string) => apiRequest<import("../types/delivery-template").DeliveryTemplate>(`/api/tenants/${tenantId}/delivery-templates/${id}/publish`, { method: "POST", token }),
+  copy: (tenantId: string, token: string, id: string) => apiRequest<import("../types/delivery-template").DeliveryTemplate>(`/api/tenants/${tenantId}/delivery-templates/${id}/copy`, { method: "POST", token }),
+  file: (tenantId: string, token: string, id: string) => apiFileRequest(`/api/tenants/${tenantId}/delivery-templates/${id}/file`, { token }),
+  preview: (tenantId: string, token: string, id: string, body: { capabilityId: string; values: Record<string, unknown>; locationStyles?: Record<string, import("../types/delivery-template").TemplateStyle>; fileName?: string }) =>
+    apiFileRequest(`/api/tenants/${tenantId}/delivery-templates/${id}/preview`, { method: "POST", token, body }),
+};
+
 export const assetApi = {
   summary: (tenantId: string, token: string) => apiRequest<AssetSummary>(`/api/tenants/${tenantId}/assets/summary`, { token }),
   listShareableMembers: (tenantId: string, token: string) =>

@@ -994,6 +994,72 @@ class WorkbenchRuntimeServiceTest {
     }
 
     @Test
+    void shouldPreserveStructuredFieldsWhenAppendingFollowUpHistory() {
+        WorkbenchRuntimeService service = newService();
+        WorkflowRunEntity run = ownedRun(2);
+        run.markRunning("agent_review", "智能体分析", "agent", 0, NOW);
+        Map<String, Object> agentConfig = new LinkedHashMap<>(Map.of(
+            "allowQuestion", true,
+            "userPrompt", "Spring Boot 自动装配原理是什么？"
+        ));
+        agentConfig.put("structuredOutput", Map.of("enabled", true, "variable", "analysis_data", "fields", List.of(new com.agentum.delivery.template.TemplateModels.Field("summary", "总结", "text", true, 100, null, "", List.of()))));
+        WorkflowNodeRunEntity agentNode = WorkflowNodeRunEntity.pending(
+            run.getId(),
+            TENANT_ID,
+            run.getWorkflowId(),
+            run.getWorkflowVersionId(),
+            "agent_review",
+            "agent",
+            "智能体分析",
+            Map.of(),
+            Map.of(),
+            agentConfig,
+            1,
+            NOW
+        );
+        agentNode.complete(Map.of(
+            "structuredData", Map.of("summary", "正式业务字段"),
+            "analysis_data", Map.of("summary", "正式业务字段"),
+            "final_answer", "Spring Boot 通过 @EnableAutoConfiguration...",
+            "chatMessages", List.of(
+                Map.of("role", "user", "content", "Spring Boot 自动装配原理是什么？"),
+                Map.of("role", "assistant", "content", "Spring Boot 通过 @EnableAutoConfiguration...", "structuredData", Map.of("summary", "正式业务字段"))
+            )
+        ), NOW);
+        WorkflowNodeRunEntity deliveryNode = nodeAt(run, "delivery_report", "delivery", "交付结果", 2, NOW);
+
+        stubTenant();
+        when(workflowRunRepository.findByIdAndTenantId(run.getId(), TENANT_ID)).thenReturn(Optional.of(run));
+        when(workflowNodeRunRepository.findByIdAndRunId(agentNode.getId(), run.getId())).thenReturn(Optional.of(agentNode));
+        when(workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(run.getId()))
+            .thenReturn(List.of(agentNode, deliveryNode));
+        when(jobRepository.findByRunIdAndStatusIn(eq(run.getId()), any())).thenReturn(List.of());
+        when(jobRepository.findFirstByNodeRunIdOrderByAttemptDesc(agentNode.getId())).thenReturn(Optional.empty());
+
+        service.followUpNode(
+            TENANT_ID,
+            businessPrincipal(),
+            run.getId(),
+            agentNode.getId(),
+            "那它和 Spring IOC 有什么关系？"
+        );
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> history = (List<Map<String, Object>>) agentNode.getConfigSnapshot().get("conversationHistory");
+        assertThat(history).hasSize(3);
+        assertThat(history.get(1).get("structuredData")).isEqualTo(Map.of("summary", "正式业务字段"));
+        assertThat(agentNode.getConfigSnapshot().get("_formalStructuredData")).isEqualTo(Map.of("summary", "正式业务字段"));
+        assertThat(history)
+            .extracting(message -> message.get("role"))
+            .containsExactly("user", "assistant", "user");
+        assertThat(history.get(2).get("content")).isEqualTo("那它和 Spring IOC 有什么关系？");
+        assertThat(agentNode.getState()).isEqualTo("running");
+        assertThat(agentNode.getOutputSnapshot()).containsKey("final_answer");
+        verify(cancellationGuard).clearCancel(run.getId());
+        verify(commandPublisher).publish(any(NodeExecuteCommand.class));
+    }
+
+    @Test
     void shouldPauseAtLastDeliveryNodeUntilUserConfirms() {
         WorkbenchRuntimeService service = newService();
         WorkflowRunEntity run = ownedRun(2);

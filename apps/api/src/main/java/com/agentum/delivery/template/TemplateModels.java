@@ -1,0 +1,30 @@
+package com.agentum.delivery.template;
+
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.time.Instant;
+
+/** 模板内容契约与位置样式分开保存，同一数据可以在不同位置采用不同排版。 */
+public final class TemplateModels {
+    private TemplateModels() {}
+
+    public record Field(String key, String label, String type, boolean required, Integer maxLength,
+                        Integer maxItems, String description, List<Field> columns, List<String> enumValues) {
+        public Field(String key, String label, String type, boolean required, Integer maxLength, Integer maxItems, String description, List<Field> columns) {
+            this(key, label, type, required, maxLength, maxItems, description, columns, List.of());
+        }
+    }
+    public record Location(String id, String field, String label, String sheet, Map<String, Object> style) {}
+    public record Spec(List<Field> fields, List<Location> locations, Map<String, Object> defaultStyle,
+                       Map<String, Map<String, Object>> sheetStyles) {}
+    public record Source(String sourceNodeId, String variable, String path) {}
+    public record Binding(String field, String sourceNodeId, String variable, String path,
+                          boolean constant, Object value, List<Source> additionalSources, String separator,
+                          Map<String, String> columnMappings) {}
+    public record Row(UUID id, UUID templateId, String name, String fileName, String kind, int version,
+                      String status, String readScope, UUID createdBy, Instant updatedAt, Spec spec) {}
+    public record Save(String name, String readScope, Spec spec) {}
+    public record Preview(UUID capabilityId, List<Binding> bindings, Map<String, Object> values,
+                          Map<String, Map<String, Object>> locationStyles, String fileName) {}
+}

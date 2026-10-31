@@ -7,9 +7,9 @@ import java.util.Map;
 /**
  * 统一解释 Word、Excel 交付文件保存策略。永久保存不生成到期时间，按天保存才进入清理任务扫描范围。
  */
-record DeliveryFileRetention(String policy, Integer days, Instant expiresAt) {
+public record DeliveryFileRetention(String policy, Integer days, Instant expiresAt) {
 
-    static DeliveryFileRetention from(Map<String, Object> config, Instant createdAt) {
+    public static DeliveryFileRetention from(Map<String, Object> config, Instant createdAt) {
         String policy = stringValue(config == null ? null : config.get("retentionPolicy"));
         // 历史能力只有 retentionDays，缺少策略时继续按天保存，避免升级后意外把已有交付文件改成永久。
         if (policy.isBlank()) {
@@ -22,7 +22,7 @@ record DeliveryFileRetention(String policy, Integer days, Instant expiresAt) {
         return new DeliveryFileRetention("days", days, createdAt.plus(days, ChronoUnit.DAYS));
     }
 
-    void writeTo(Map<String, Object> result) {
+    public void writeTo(Map<String, Object> result) {
         result.put("retentionPolicy", policy);
         if ("days".equals(policy)) {
             result.put("retentionDays", days);

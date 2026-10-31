@@ -3985,6 +3985,378 @@ paths:
                     properties:
                       data:
                         $ref: "#/components/schemas/WorkbenchRunDetail"
+  /api/tenants/{tenantId}/delivery-templates:
+    get:
+      summary: 分页查询可见交付模板版本
+      tags:
+        - Delivery
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 10
+        - name: published
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: keyword
+          in: query
+          schema:
+            type: string
+            default: ''
+      responses:
+        '200':
+          description: 操作成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          items:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/DeliveryTemplateVersion'
+                          page:
+                            type: integer
+                          size:
+                            type: integer
+                          total:
+                            type: integer
+                          totalPages:
+                            type: integer
+    post:
+      summary: 上传模板草稿（docx/xlsx，最大20MB）
+      tags:
+        - Delivery
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                name:
+                  type: string
+      responses:
+        '200':
+          description: 操作成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DeliveryTemplateVersion'
+  /api/tenants/{tenantId}/delivery-templates/{id}:
+    get:
+      summary: 读取模板版本
+      tags:
+        - Delivery
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 操作成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DeliveryTemplateVersion'
+    put:
+      summary: 保存创建者的草稿，发布版本不可修改
+      tags:
+        - Delivery
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - readScope
+                - spec
+              properties:
+                name:
+                  type: string
+                readScope:
+                  enum:
+                    - self
+                    - all
+                spec:
+                  $ref: ../schemas/file-template.schema.json
+      responses:
+        '200':
+          description: 操作成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DeliveryTemplateVersion'
+  /api/tenants/{tenantId}/delivery-templates/{id}/publish:
+    post:
+      summary: 发布不可变模板版本
+      tags:
+        - Delivery
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 操作成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DeliveryTemplateVersion'
+  /api/tenants/{tenantId}/delivery-templates/{id}/copy:
+    post:
+      summary: 复制为新草稿；本人模板生成下一版本，共享模板建立独立副本
+      tags:
+        - Delivery
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 操作成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DeliveryTemplateVersion'
+  /api/tenants/{tenantId}/delivery-templates/{id}/file:
+    get:
+      summary: 下载有权访问的模板原件
+      tags:
+        - Delivery
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 受保护文件字节流
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+    post:
+      summary: 替换草稿原件并重新识别字段与格式
+      tags:
+        - Delivery
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                name:
+                  type: string
+      responses:
+        '200':
+          description: 操作成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DeliveryTemplateVersion'
+  /api/tenants/{tenantId}/delivery-templates/{id}/preview:
+    post:
+      summary: 试填文件，不产生正式交付记录
+      tags:
+        - Delivery
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeliveryTemplatePreviewRequest'
+      responses:
+        '200':
+          description: 受保护文件字节流
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+  /api/tenants/{tenantId}/delivery-templates/{id}/preview-layout:
+    post:
+      summary: Excel受控样式预览，最多200行40列
+      tags:
+        - Delivery
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeliveryTemplatePreviewRequest'
+      responses:
+        '200':
+          description: 操作成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/DeliveryTemplatePreviewSheet'
+
 components:
   securitySchemes:
     bearerAuth:
@@ -3995,6 +4367,91 @@ components:
       type: http
       scheme: basic
   schemas:
+    DeliveryTemplateVersion:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        templateId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        fileName:
+          type: string
+        kind:
+          enum:
+            - word
+            - excel
+        version:
+          type: integer
+        status:
+          enum:
+            - draft
+            - published
+        readScope:
+          enum:
+            - self
+            - all
+        createdBy:
+          type: string
+          format: uuid
+        updatedAt:
+          type: string
+          format: date-time
+        spec:
+          $ref: ../schemas/file-template.schema.json
+    DeliveryTemplatePreviewRequest:
+      type: object
+      required:
+        - capabilityId
+        - values
+      properties:
+        capabilityId:
+          type: string
+          format: uuid
+        values:
+          type: object
+        locationStyles:
+          type: object
+          additionalProperties:
+            $ref: ../schemas/file-template.schema.json#/$defs/style
+        fileName:
+          type: string
+    DeliveryTemplatePreviewSheet:
+      type: object
+      properties:
+        name:
+          type: string
+        widths:
+          type: array
+          items:
+            type: number
+        rows:
+          type: array
+          items:
+            type: object
+            properties:
+              height:
+                type: number
+              cells:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    text:
+                      type: string
+                    column:
+                      type: integer
+                    rowSpan:
+                      type: integer
+                    colSpan:
+                      type: integer
+                    style:
+                      type: object
+        truncated:
+          type: boolean
     ApiError:
       type: object
       properties:

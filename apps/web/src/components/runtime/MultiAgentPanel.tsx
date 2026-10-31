@@ -1,3 +1,4 @@
+import type { StructuredOutputConfig } from "../../types/delivery-template";
 import React, { useMemo, useState, useEffect, useRef } from "react";
 import type { AgentExecutionStep, RuntimeCapabilityItem, RuntimeChatMessage, RuntimePreviewStep, RuntimeTokenUsage, RunStreamState } from "../../types/runtime-types";
 import { AlertCircle, Bot, BrainCircuit, CheckCircle2, ChevronRight, Loader2, MessageSquarePlus, PencilLine, RotateCw, Settings2, Sparkles, Users, Wrench } from "lucide-react";
@@ -27,6 +28,7 @@ interface MultiAgentPanelProps {
 }
 
 type DrawerAgent = {
+  structuredOutput?: StructuredOutputConfig;
   index: number;
   name: string;
   status: "pending" | "running" | "completed" | "failed" | "skipped";
@@ -141,6 +143,7 @@ export function MultiAgentPanel({
           : readAgentConversationHistory(config, agent.name, String(activeStep.nodeRunId ?? `cluster-${agent.index}`), templateVariables),
         selectedResultMessageIndex: typeof persistedAgent?.selectedResultMessageIndex === "number" ? persistedAgent.selectedResultMessageIndex : undefined,
         tokenUsage: readTokenUsage(persistedAgent?.tokenUsage),
+        structuredOutput: config?.structuredOutput as StructuredOutputConfig | undefined,
         allowQuestion: readAgentFollowUpAllowed(config, activeStep.configSnapshot),
         allowUserEdit: readAgentEditAllowed(config, activeStep.configSnapshot),
       };
@@ -967,6 +970,7 @@ function buildAgentDetailStep(
   const processSteps = buildAgentExecutionSteps(agent);
   const chatMessages = buildAgentChatMessages(parentStep, agent, prompt, finalContent, processSteps);
   const outputs = [
+    ...(agent.structuredOutput?.enabled ? [{ label: agent.structuredOutput.variable, value: readStepOutput(parentStep, [agent.structuredOutput.variable]) }] : []),
     ...(finalContent ? [{ label: "final_answer", value: finalContent }, { label: "model_content", value: finalContent }] : []),
     { label: "final_answer_source", value: "model_content" },
     ...(agent.selectedResultMessageIndex !== undefined ? [{ label: "selectedResultMessageIndex", value: String(agent.selectedResultMessageIndex) }] : []),
@@ -986,6 +990,7 @@ function buildAgentDetailStep(
     allowsRegenerate: agent.allowUserEdit,
     configSnapshot: {
       ...(parentStep.configSnapshot ?? {}),
+      ...(agent.structuredOutput ? { structuredOutput: agent.structuredOutput } : {}),
       userPrompt: prompt,
       prompt,
       allowQuestion: agent.allowQuestion,

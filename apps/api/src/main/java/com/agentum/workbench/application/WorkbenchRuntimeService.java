@@ -963,6 +963,7 @@ public class WorkbenchRuntimeService {
             conversationHistory.add(Map.of("role", "user", "content", followUpMessage));
             nextConfig.put("conversationHistory", conversationHistory);
             nextConfig.put("_formalAnswer", stringValue(node.getOutputSnapshot().get("final_answer")));
+            if (com.agentum.agent.application.AgentStructuredOutput.enabled(nextConfig)) nextConfig.put("_formalStructuredData", node.getOutputSnapshot().getOrDefault("structuredData", Map.of()));
             if (run.isAutoExecution()) { run.setManualTakeover(true, now); }
             node.prepareForFollowUp(nextConfig, now);
             workflowNodeRunRepository.save(node);
@@ -1195,6 +1196,7 @@ public class WorkbenchRuntimeService {
         Instant now = clock.instant();
         invalidateFollowingResults(run, node, principal.userId(), now);
         if (agentIndex == null) {
+            if (com.agentum.agent.application.AgentStructuredOutput.enabled(node.getConfigSnapshot())) node.patchOutputSnapshot(Map.of("selectedResultMessageIndex", messageIndex), now);
             applyFinalAnswerUpdate(run, node, answer, principal.userId());
             node.patchOutputSnapshot(Map.of("selectedResultMessageIndex", messageIndex, "resultSelectionRequired", false), now);
             workflowNodeRunRepository.save(node);
@@ -1241,6 +1243,8 @@ public class WorkbenchRuntimeService {
         Instant now = clock.instant();
         Map<String, Object> config = node.getConfigSnapshot() == null ? Map.of() : node.getConfigSnapshot();
         Map<String, Object> outputs = new LinkedHashMap<>(node.getOutputSnapshot() == null ? Map.of() : node.getOutputSnapshot());
+        com.agentum.agent.application.AgentStructuredOutput.adoptForAnswer(config, outputs, answer);
+        answer = com.agentum.agent.application.AgentStructuredOutput.readableEditedAnswer(config, outputs, answer);
         String outputName = firstNonBlank(
             stringValue(config.get("output")),
             stringValue(config.get("outputVariable")),
@@ -1285,6 +1289,10 @@ public class WorkbenchRuntimeService {
         }
 
         Map<String, Object> agentOutput = new LinkedHashMap<>(clusterAgent.getOutput() == null ? Map.of() : clusterAgent.getOutput());
+        if (node.getConfigSnapshot().get("clusterAgents") instanceof List<?> agentConfigs && agentConfigs.get(agentIndex) instanceof Map<?, ?> agentConfig) {
+            com.agentum.agent.application.AgentStructuredOutput.adoptForAnswer((Map<String, Object>) agentConfig, agentOutput, answer);
+            answer = com.agentum.agent.application.AgentStructuredOutput.readableEditedAnswer((Map<String, Object>) agentConfig, agentOutput, answer);
+        }
         agentOutput.put("final_answer", answer);
         agentOutput.put("agent_response", answer);
         agentOutput.put("summary", summarizeAnswer(answer));
@@ -1326,6 +1334,7 @@ public class WorkbenchRuntimeService {
             String variable = stringValue(summary.get("outputVariable"));
             if (!variable.isBlank() && summary.containsKey("final_answer")) { outputs.put(variable, summary.get("final_answer")); }
         }
+        for (var agentRow : rows) if (agentRow.isSucceeded() && agentRow.getOutput().get("structuredVariable") instanceof String variable) outputs.put(variable, agentRow.getOutput().get("structuredData"));
         String finalAnswer = ClusterOutputSupport.finalAnswer(node.getConfigSnapshot(), outputs, summaries);
         outputs.put("clusterAgents", summaries);
         outputs.put("final_answer", finalAnswer);
@@ -1572,6 +1581,7 @@ public class WorkbenchRuntimeService {
         boolean changed = false;
         Map<String, Object> nextConfig = new LinkedHashMap<>(config);
         nextConfig.remove("_formalAnswer");
+        nextConfig.remove("_formalStructuredData");
         if (nextConfig.remove("conversationHistory") != null) {
             changed = true;
         }
@@ -1583,6 +1593,7 @@ public class WorkbenchRuntimeService {
                 if (agent instanceof Map<?, ?> rawAgent) {
                     Map<String, Object> nextAgent = new LinkedHashMap<>((Map<String, Object>) rawAgent);
                     nextAgent.remove("_formalAnswer");
+                    nextAgent.remove("_formalStructuredData");
                     if (nextAgent.remove("conversationHistory") != null) {
                         changed = true;
                     }
@@ -1619,7 +1630,8 @@ public class WorkbenchRuntimeService {
                 continue;
             }
             Map<String, Object> nextAgent = new LinkedHashMap<>((Map<String, Object>) rawMap);
-            if (rerunIndexes.contains(index)) { nextAgent.remove("_formalAnswer"); }
+            if (rerunIndexes.contains(index)) { nextAgent.remove("_formalAnswer");
+                    nextAgent.remove("_formalStructuredData"); }
             if (rerunIndexes.contains(index) && nextAgent.remove("conversationHistory") != null) {
                 changed = true;
             }
@@ -1841,11 +1853,13 @@ public class WorkbenchRuntimeService {
         history.add(Map.of("role", "user", "content", followUpMessage));
         agentConfig.put("conversationHistory", history);
         agentConfig.put("_formalAnswer", stringValue(clusterAgent.getOutput().get("final_answer")));
+        if (com.agentum.agent.application.AgentStructuredOutput.enabled(agentConfig)) agentConfig.put("_formalStructuredData", clusterAgent.getOutput().getOrDefault("structuredData", Map.of()));
         return agentConfig;
     }
 
     @SuppressWarnings("unchecked")
     private static List<Map<String, Object>> readClusterAgentHistory(Map<String, Object> agentConfig, Map<String, Object> output) {
+        if (com.agentum.agent.application.AgentStructuredOutput.enabled(agentConfig)) return readChatMessagesForFollowUp(output, agentConfig);
         Object rawHistory = agentConfig.get("conversationHistory");
         List<Map<String, Object>> history = new ArrayList<>();
         if (rawHistory instanceof List<?> items) {
@@ -1910,6 +1924,7 @@ public class WorkbenchRuntimeService {
                         Map<String, Object> message = new LinkedHashMap<>();
                         message.put("role", role);
                         message.put("content", content);
+                        if (com.agentum.agent.application.AgentStructuredOutput.enabled(config) && rawMap.get("structuredData") instanceof Map<?, ?> data) message.put("structuredData", data);
                         if (rawMap.get("processSteps") instanceof List<?> processSteps) {
                             message.put("processSteps", processSteps);
                         }

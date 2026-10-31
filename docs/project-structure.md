@@ -186,7 +186,7 @@ apps/api/src/main/resources/db/
 | `agent` | 智能体运行时：模型调用、ReAct、Skill/MCP 工具装配 |
 | `runtime` | 异步执行：RabbitMQ 命令、Redis 租约/流、取消与回收 |
 | `mcp` | MCP 网关：连通性测试、工具发现、`tools/call` |
-| `delivery` | 交付：邮件、Webhook、Word、Excel、文件存储 |
+| `delivery` | 交付：邮件、Webhook、Word、Excel、文件存储；`template/` 独立承接文件模板版本、来源绑定和原件填充 |
 | `attachment` | 输入附件：系统识别配置、上传保存、本地 / MinerU / 混合识别、Word 兼容解析、预览下载与保留期清理 |
 | `audit` | 运行审计查询、证据聚合 |
 | `schedule` | 流程定时任务与执行记录 |
@@ -208,6 +208,7 @@ packages/shared-contract/
     agentum.openapi.yaml       REST API 主契约（持续补齐中）
   schemas/
     workflow-node.schema.json  工作流节点配置结构
+    file-template.schema.json  文件模板、位置样式、字段绑定与新增结构化输出
     variable.schema.json       变量声明
     agent.schema.json          智能体模板
     mcp.schema.json            MCP 服务描述

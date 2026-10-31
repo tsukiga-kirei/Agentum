@@ -41,6 +41,9 @@ import {
 } from "lucide-react";
 import { SysImpactConfirmModal } from "../../components/common/SysImpactConfirmModal";
 import { SysModalMask } from "../../components/common/SysModalMask";
+import { TemplateDeliverySection } from "../../components/document/TemplateDeliverySection";
+import { StructuredOutputEditor, TemplateSelect } from "../../components/document/TemplateEditors";
+import type { StructuredOutputConfig, TemplateField } from "../../types/delivery-template";
 import { DocumentDeliveryStyleSections } from "../../components/document/DocumentDeliveryStyleSections";
 import { readLineSpacingMode, readSpacingUnit, type DocumentDeliveryStyleValues, type ParagraphRule } from "../../constants/documentDeliveryStyleOptions";
 import { AgentumApiError, assetApi, attachmentApi, workflowApi } from "../../services/apiClient";
@@ -142,6 +145,7 @@ type WorkflowEditorEdge = {
 };
 
 type WorkflowVariable = {
+  fields?: TemplateField[];
   name: string;
   sourceNodeId: string;
   sourceNodeName: string;
@@ -174,6 +178,7 @@ type IntentRouteConfig = {
 };
 
 type ClusterAgentConfig = {
+  structuredOutput?: StructuredOutputConfig;
   id: string;
   name: string;
   agentAssetId: string;
@@ -3269,7 +3274,8 @@ function DeliveryCapabilityConfigDrawer({
                 当前主体还没有可用的交付能力。请先由系统管理员开放对应能力，再由租户管理员分配给当前用户、部门或角色。
               </p>
             ) : null}
-            {isWordDelivery ? (
+            {(isWordDelivery || isExcelDelivery) && <div className="sys-field"><label className="sys-field-label">生成方式</label><TemplateSelect value={String(config.generationMode ?? "content")} options={[{ value: "content", label: "按内容生成（原方式）" }, { value: "file_template", label: "填写文件模板" }]} onChange={generationMode => onConfigChange({ generationMode })} /></div>}
+            {(isWordDelivery || isExcelDelivery) && config.generationMode === "file_template" ? <TemplateDeliverySection config={config} variables={workflowVariables} kind={isExcelDelivery ? "excel" : "word"} capabilityId={selectedCapabilityId} onChange={onConfigChange} /> : isWordDelivery ? (
               <>
                 <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-hover)] p-5">
                   <div className="mb-3">
@@ -4634,6 +4640,7 @@ function InputFieldModal({
 }
 
 type SingleAgentConfigDraft = {
+  structuredOutput?: StructuredOutputConfig;
   agentAssetId: string;
   systemPromptTemplateId: string;
   userPromptTemplateId: string;
@@ -4656,6 +4663,7 @@ function buildSingleAgentConfigDraft(node: WorkflowEditorNode, agentRuntimeLimit
   const selectedModel = modelOptions.find((model) => model.providerId === configuredProviderId);
   return {
     agentAssetId: readString(config.agentAssetId, "custom"),
+    structuredOutput: config.structuredOutput as StructuredOutputConfig | undefined,
     systemPromptTemplateId: readString(config.systemPromptTemplateId, readString(config.promptTemplateId, "none")),
     userPromptTemplateId: readString(config.userPromptTemplateId, "none"),
     systemPrompt: readString(config.systemPrompt, ""),
@@ -4674,6 +4682,7 @@ function buildSingleAgentConfigDraft(node: WorkflowEditorNode, agentRuntimeLimit
 
 function buildSingleAgentConfigPayload(draft: SingleAgentConfigDraft): Record<string, unknown> {
   return {
+    ...(draft.structuredOutput ? { structuredOutput: draft.structuredOutput } : {}),
     agentAssetId: draft.agentAssetId,
     agentSource: draft.agentAssetId === "custom" ? "custom" : "asset",
     promptTemplateId: draft.systemPromptTemplateId,
@@ -4691,8 +4700,9 @@ function buildSingleAgentConfigPayload(draft: SingleAgentConfigDraft): Record<st
   };
 }
 
-function buildSingleAgentNodePatch(draft: SingleAgentConfigDraft): Partial<EditorNodeData> {
+function buildSingleAgentNodePatch(draft: SingleAgentConfigDraft, node: WorkflowEditorNode): Partial<EditorNodeData> {
   return {
+    ...(draft.structuredOutput ? { outputVariables: [node.data.outputVariables[0], ...(draft.structuredOutput.enabled ? [draft.structuredOutput.variable] : [])].filter(Boolean) } : {}),
     toolCount: draft.mcpIds.length + draft.skillIds.length,
     allowUserEdit: draft.allowUserEdit,
     allowQuestion: draft.allowQuestion,
@@ -4837,6 +4847,7 @@ function SingleAgentConfigModal({
 
           {activeSection === "runtime" ? (
             <div className="workflow-agent-runtime-panel">
+              <StructuredOutputEditor value={draft.structuredOutput} onChange={structuredOutput => setDraft({ ...draft, structuredOutput })} />
               <AgentRuntimeLimitsRow
                 maxTokens={draft.maxTokens}
                 maxAgentIterationsPerTurn={draft.maxAgentIterationsPerTurn}
@@ -4871,7 +4882,7 @@ function SingleAgentConfigModal({
                 return;
               }
               // 与集群智能体保持一致：抽屉内只维护临时草稿，点击“完成”后才写回节点；取消不产生隐式修改。
-              onConfigChange(buildSingleAgentConfigPayload(draft), buildSingleAgentNodePatch(draft));
+              onConfigChange(buildSingleAgentConfigPayload(draft), buildSingleAgentNodePatch(draft, node));
               onClose();
             }}
           >
@@ -5022,6 +5033,7 @@ function ClusterAgentModal({
 
           {activeSection === "runtime" ? (
             <div className="workflow-agent-runtime-panel">
+              <StructuredOutputEditor value={draft.structuredOutput} onChange={structuredOutput => setDraft({ ...draft, structuredOutput })} />
               <AgentRuntimeLimitsRow
                 maxTokens={draft.maxTokens}
                 maxAgentIterationsPerTurn={draft.maxAgentIterationsPerTurn}
@@ -6055,9 +6067,9 @@ function readClusterOutputVariable(value: unknown) {
 function buildClusterOutputVariables(mode: ClusterExecutionMode, agents: ClusterAgentConfig[], outputVariable: string) {
   const clusterOutput = readClusterOutputVariable(outputVariable);
   if (mode === "intent") {
-    return [clusterOutput];
+    return [clusterOutput, ...agents.filter(agent => agent.structuredOutput?.enabled).map(agent => agent.structuredOutput!.variable).filter(Boolean)];
   }
-  return [clusterOutput, ...agents.map((agent) => agent.output).filter(Boolean)]
+  return [clusterOutput, ...agents.map((agent) => agent.output).filter(Boolean), ...agents.filter(agent => agent.structuredOutput?.enabled).map(agent => agent.structuredOutput!.variable).filter(Boolean)]
     .filter((value, index, values) => values.indexOf(value) === index);
 }
 
@@ -6407,7 +6419,7 @@ function toWorkflowNodeDraft(node: WorkflowEditorNode): WorkflowNodeDraft {
     positionX: node.position.x,
     positionY: node.position.y,
     inputVariables: node.data.inputVariables,
-    outputVariables: node.data.outputVariables,
+    outputVariables: [...new Set([...node.data.outputVariables, ...buildWorkflowVariables([node]).map(variable => variable.name)])],
     config: {
       ...configWithOutput,
       typeLabel: node.data.typeLabel,
@@ -6454,7 +6466,10 @@ function buildWorkflowVariables(nodes: WorkflowEditorNode[], metadataByName: Rec
     const inputFields = node.data.nodeType === "user_input"
       ? readInputFields(node.data.rawConfig?.inputFields, node.data.outputVariables)
       : [];
-    return node.data.outputVariables.map((name) => {
+    const structured = [node.data.rawConfig?.structuredOutput as StructuredOutputConfig | undefined, ...((node.data.rawConfig?.clusterAgents ?? []) as ClusterAgentConfig[]).map(agent => agent.structuredOutput)].filter((item): item is StructuredOutputConfig => Boolean(item?.enabled));
+    const variableNames = [...new Set([...node.data.outputVariables, ...structured.map(item => item.variable).filter(Boolean)])];
+    return variableNames.map((name) => {
+      const output = structured.find(item => item.variable === name);
       const metadata = metadataByName[name] ?? {
         type: "string" as const,
         sensitive: false,
@@ -6465,7 +6480,8 @@ function buildWorkflowVariables(nodes: WorkflowEditorNode[], metadataByName: Rec
         name,
         sourceNodeId: node.id,
         sourceNodeName: node.data.label,
-        type: inputFields.find((field) => field.variable === name)?.fieldType === "file" ? "file" : metadata.type,
+        type: output ? "object" : inputFields.find((field) => field.variable === name)?.fieldType === "file" ? "file" : metadata.type,
+        fields: output?.fields,
         sensitive: metadata.sensitive,
         deliverable: metadata.deliverable,
         description: metadata.description,
@@ -6498,7 +6514,9 @@ function isSystemRuntimeVariable(variable: WorkflowVariable) {
 function toWorkflowVariables(variables: WorkflowVariableDraft[], nodes: WorkflowEditorNode[]): WorkflowVariable[] {
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
 
+  const derived = buildWorkflowVariables(nodes);
   return variables.map((variable) => ({
+    fields: derived.find(item => item.name === variable.name)?.fields,
     name: variable.name,
     sourceNodeId: variable.sourceNode,
     sourceNodeName: nodesById.get(variable.sourceNode)?.data.label ?? variable.sourceNode,

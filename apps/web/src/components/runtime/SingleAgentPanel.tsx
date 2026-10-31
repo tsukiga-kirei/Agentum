@@ -17,6 +17,8 @@ import {
 } from "lucide-react";
 import type { AgentExecutionStep, RuntimeChatMessage, RuntimePreviewStep, RuntimeTokenUsage } from "../../types/runtime-types";
 import { MarkdownRenderer } from "./MarkdownRenderer";
+import { StructuredResultEditDrawer } from "./StructuredResultEditDrawer";
+import type { StructuredOutputConfig } from "../../types/delivery-template";
 import { AnswerEditModal } from "./AnswerEditModal";
 import { FollowUpModal } from "./FollowUpModal";
 import {
@@ -580,6 +582,7 @@ export function SingleAgentPanel({
 
   const config = (activeStep.configSnapshot ?? {}) as Record<string, unknown>;
   const permissions = readAgentPermissions(config);
+  const structured = config.structuredOutput as StructuredOutputConfig | undefined;
   const persistedSteps = useMemo(() => buildPersistedExecutionSteps(activeStep), [activeStep]);
   const isLiveForStep = isStreaming;
   const steps = useMemo(
@@ -856,12 +859,14 @@ export function SingleAgentPanel({
           <button type="button" className="sys-btn sys-btn--default" onClick={() => void onFollowUp(CONSOLIDATE_RESULT_PROMPT)}><FileText size={14} />整理完整结果</button>
         </div>
       ) : null}
+      {structured?.enabled ? <StructuredResultEditDrawer open={editModalOpen} initialValue={readStepOutput(activeStep, [structured.variable])} fields={structured.fields} onClose={() => setEditModalOpen(false)} onSave={handleSaveEditedAnswer} /> : (
       <AnswerEditModal
         open={editModalOpen}
         initialValue={formalAnswer}
         onClose={() => setEditModalOpen(false)}
         onSave={handleSaveEditedAnswer}
       />
+      )}
       <FollowUpModal
         open={followUpModalOpen}
         onClose={() => setFollowUpModalOpen(false)}

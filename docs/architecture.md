@@ -535,6 +535,12 @@ DOCX 上传允许经 OLE 目录确认的旧 Word，不能仅凭 OLE 文件头放
 
 当前运行态已支持四类能力化交付：系统内置邮箱发送、Webhook 调用、Word 文档生成和 Excel 工作簿生成。Word 初版由 API 内轻量渲染器把 AI Markdown 转为 `.docx`；Excel 由 API 内轻量渲染器按多 Sheet 模板宽容识别 Markdown 表格、列表、键值块和普通文本并生成 `.xlsx`。文件写入 MinIO/S3 兼容对象存储，并通过 `delivery_records` 记录下载入口；复杂模板、图片、目录、页眉页脚和大文档后续应迁移到 Worker。所有交付动作都会写入 `delivery_records`，并关联租户、运行、节点、流程定义和发布版本；失败时节点和运行进入失败状态。
 
+文件模板模式由独立的 `delivery/template` 包承接，不改写现有渲染器。`delivery_template_versions` 保存租户内模板原件、字段契约、位置样式及状态，发布行不可变，原件不受运行附件清理任务影响。流程版本固定保存 `templateVersionId`、`templateBindings`、`templateLocationStyles`。原件在数据库独立保存，后续可在接口不变的前提下迁移到独立对象存储生命周期；正式产物继续走 MinIO、文件保留策略与 `delivery_records`。
+
+运行时按固定来源节点读取已完成的输出快照，禁止后序来源和仅靠全局同名变量猜测来源；子智能体采用独立、唯一的对象结果变量。数据组装、类型检查、明细投影、模板渲染均在服务端执行。交付复用标识在新模式中包含模板版本、来源绑定、位置样式和文件名。模板发布先以最小有效数据编译，流程发布再校验模板授权、上游变量、字段路径、类型及明细列映射，实际内容仍须运行时复核。
+
+`AgentStructuredOutput` 只对新增 opt-in 配置扩展 `final_answer` 的 `data` 参数；原 `answer` 和文本变量保持字符串。额外业务对象独立落库，候选回答记录关联其结构化数据，采用、手工修改和清除追问上下文时同步处理。不得使用旧文本解析中的截断回退作为结构化结果。模板与结构化字段契约见 `packages/shared-contract/schemas/file-template.schema.json`。
+
 ### 5.11 系统管理模块
 
 系统管理负责平台级配置：

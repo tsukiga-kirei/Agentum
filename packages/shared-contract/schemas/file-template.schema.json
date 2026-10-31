@@ -1,0 +1,345 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentum.local/schemas/file-template.schema.json",
+  "title": "文件交付模板",
+  "description": "新增文件模板与结构化结果专用契约，不改变原有文本输出和内容交付。",
+  "type": "object",
+  "properties": {
+    "fields": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": {
+        "$ref": "#/$defs/field"
+      }
+    },
+    "locations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "field": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "sheet": {
+            "type": "string"
+          },
+          "style": {
+            "$ref": "#/$defs/style"
+          }
+        },
+        "required": [
+          "id",
+          "field",
+          "label",
+          "sheet",
+          "style"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "defaultStyle": {
+      "$ref": "#/$defs/style"
+    },
+    "sheetStyles": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/style"
+      }
+    }
+  },
+  "required": [
+    "fields",
+    "locations",
+    "defaultStyle",
+    "sheetStyles"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "field": {
+      "type": "object",
+      "required": [
+        "key",
+        "label",
+        "type",
+        "required",
+        "columns"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,79}$"
+        },
+        "label": {
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "text",
+            "paragraphs",
+            "markdown",
+            "number",
+            "date",
+            "boolean",
+            "table"
+          ]
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "maxLength": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 200000
+        },
+        "maxItems": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "columns": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/field"
+          }
+        },
+        "enumValues": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "maxItems": 100
+        }
+      },
+      "additionalProperties": false
+    },
+    "style": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "fontSize": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 400
+        },
+        "firstLineChars": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 400
+        },
+        "leftIndentCm": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 400
+        },
+        "lineSpacing": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 400
+        },
+        "spacingBefore": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 400
+        },
+        "spacingAfter": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 400
+        },
+        "rowHeight": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 400
+        },
+        "columnWidth": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "indent": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 400
+        },
+        "cellPaddingPt": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 400
+        },
+        "bold": {
+          "type": "boolean"
+        },
+        "italic": {
+          "type": "boolean"
+        },
+        "wrapText": {
+          "type": "boolean"
+        },
+        "border": {
+          "type": "boolean"
+        },
+        "fontFamily": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "numberFormat": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "color": {
+          "type": "string",
+          "pattern": "^#?[0-9A-Fa-f]{6}$"
+        },
+        "backgroundColor": {
+          "type": "string",
+          "pattern": "^#?[0-9A-Fa-f]{6}$"
+        },
+        "alignment": {
+          "enum": [
+            "left",
+            "center",
+            "right",
+            "both"
+          ]
+        },
+        "verticalAlignment": {
+          "enum": [
+            "top",
+            "center",
+            "bottom"
+          ]
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "sourceNodeId": {
+          "type": "string"
+        },
+        "variable": {
+          "type": "string"
+        },
+        "path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "sourceNodeId",
+        "variable",
+        "path"
+      ],
+      "additionalProperties": false
+    },
+    "binding": {
+      "type": "object",
+      "properties": {
+        "field": {
+          "type": "string"
+        },
+        "constant": {
+          "type": "boolean"
+        },
+        "value": {},
+        "sourceNodeId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "variable": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "additionalSources": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/source"
+          },
+          "maxItems": 19
+        },
+        "separator": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 100
+        },
+        "columnMappings": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "field",
+        "constant"
+      ],
+      "additionalProperties": false
+    },
+    "structuredOutput": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "variable": {
+          "type": "string"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/field"
+          }
+        }
+      },
+      "required": [
+        "enabled",
+        "variable",
+        "fields"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
