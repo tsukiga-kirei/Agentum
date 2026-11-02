@@ -32,6 +32,9 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class WorkflowNodeConfigValidator {
+    private com.agentum.delivery.template.DeliveryTemplateService templateService;
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setTemplateService(com.agentum.delivery.template.DeliveryTemplateService service) { this.templateService = service; }
 
     private static final Set<String> SENTINEL_VALUES = Set.of("custom", "none", "");
     private static final String ACTIVE_STATUS = "active";
@@ -87,6 +90,26 @@ public class WorkflowNodeConfigValidator {
             }
 
             String nodeType = node.nodeType();
+            validateAddedOutput(config, node, issues);
+                if ("parallel_group".equals(nodeType) && extractMapList(config, "clusterAgents").stream().anyMatch(com.agentum.agent.application.AgentStructuredOutput::enabled)) {
+                Set<String> declared = new java.util.HashSet<>();
+                declared.add(rawString(config.get("clusterOutputVariable")).isBlank() ? "cluster_result" : rawString(config.get("clusterOutputVariable")));
+                for (var agent : extractMapList(config, "clusterAgents")) {
+                    validateAddedOutput(agent, node, issues);
+                    String textOutput = rawString(agent.get("output"));
+                    if (!textOutput.isBlank() && !declared.add(textOutput)) issues.add(issue("WORKFLOW_VALIDATION_STRUCTURED_OUTPUT", "集群输出变量不能重复", node));
+                    if (com.agentum.agent.application.AgentStructuredOutput.enabled(agent) && !declared.add(com.agentum.agent.application.AgentStructuredOutput.variable(agent))) issues.add(issue("WORKFLOW_VALIDATION_STRUCTURED_OUTPUT", "结构化结果变量不能与其他子智能体输出重名", node));
+                }
+            }
+            if ("delivery".equals(nodeType)) {
+                if ("multiple".equals(config.get("deliveryConfigMode"))) {
+                    for (var item : extractMapList(config, "deliveryItems")) {
+                        if (Boolean.FALSE.equals(item.get("enabled"))) continue;
+                        Object raw = item.get("config");
+                        if (raw instanceof Map<?, ?> map) validateTemplateBindings(tenantId, operatorUserId, (Map<String, Object>) map, node, nodes, issues);
+                    }
+                } else validateTemplateBindings(tenantId, operatorUserId, config, node, nodes, issues);
+            }
             if ("user_input".equals(nodeType)) {
                 validateInputNodeConfig(config, node, attachmentCapabilities, issues);
             } else if ("agent".equals(nodeType)) {
@@ -256,6 +279,10 @@ public class WorkflowNodeConfigValidator {
         }
         String deliveryType = rawString(config.get("deliveryType"));
         String documentKind = rawString(config.get("documentKind"));
+        if ("file_template".equals(config.get("generationMode"))) {
+            if (!Set.of("word", "excel").contains(documentKind)) issues.add(issue("WORKFLOW_VALIDATION_TEMPLATE_KIND", subject + "仅 Word/Excel 支持文件模板", node));
+            return;
+        }
         if ("word_document".equals(deliveryType) || "word".equals(documentKind)) {
             String markdownContent = rawString(config.get("markdownContent"));
             if (markdownContent.isBlank()) {
@@ -283,6 +310,51 @@ public class WorkflowNodeConfigValidator {
                 }
             }
         }
+    }
+
+    private void validateAddedOutput(Map<String, Object> config, WorkflowDraftApi.WorkflowNodeRow node, List<WorkflowDraftApi.WorkflowValidationIssue> issues) {
+        if (!com.agentum.agent.application.AgentStructuredOutput.enabled(config)) return;
+        try {
+            com.agentum.agent.application.AgentStructuredOutput.validateConfig(config);
+            String variable = com.agentum.agent.application.AgentStructuredOutput.variable(config);
+            if (!node.outputVariables().contains(variable)) throw com.agentum.delivery.template.StructuredContent.error("结构化结果变量未声明：" + variable);
+        } catch (com.agentum.shared.api.ApiException ex) { issues.add(issue("WORKFLOW_VALIDATION_STRUCTURED_OUTPUT", ex.getMessage(), node)); }
+    }
+
+    private void validateTemplateBindings(UUID tenant, UUID user, Map<String, Object> config, WorkflowDraftApi.WorkflowNodeRow node,
+        List<WorkflowDraftApi.WorkflowNodeRow> nodes, List<WorkflowDraftApi.WorkflowValidationIssue> issues) {
+        if (!"file_template".equals(config.get("generationMode")) || "direct".equals(config.get("deliveryMode")) || "direct".equals(config.get("deliveryType"))) return;
+        try {
+            if (templateService == null) throw com.agentum.delivery.template.StructuredContent.error("模板服务不可用");
+            templateService.validateReference(tenant, user, config);
+            int currentIndex = nodes.indexOf(node);
+            for (var binding : templateService.bindings(config)) {
+                if (binding.constant()) continue;
+                for (var reference : templateService.sources(binding)) {
+                    if ("system".equals(reference.sourceNodeId())) continue;
+                    var source = nodes.stream().filter(it -> it.nodeId().equals(reference.sourceNodeId())).findFirst().orElseThrow(() -> com.agentum.delivery.template.StructuredContent.error("字段来源节点已删除"));
+                    if (nodes.indexOf(source) >= currentIndex || !source.outputVariables().contains(reference.variable())) throw com.agentum.delivery.template.StructuredContent.error("字段必须引用上游已声明的输出变量：" + binding.field());
+                    List<Map<String, Object>> candidates = new ArrayList<>(); candidates.add(source.config()); candidates.addAll(extractMapList(source.config(), "clusterAgents"));
+                    var structured = candidates.stream().filter(it -> com.agentum.agent.application.AgentStructuredOutput.enabled(it) && reference.variable().equals(com.agentum.agent.application.AgentStructuredOutput.variable(it))).findFirst();
+                    if (reference.path() != null && !reference.path().isBlank()) {
+                        if (structured.isEmpty()) throw com.agentum.delivery.template.StructuredContent.error("来源变量没有可用的结构化字段定义");
+                        var field = com.agentum.agent.application.AgentStructuredOutput.fields(structured.get()).stream().filter(it -> reference.path().equals(it.key())).findFirst().orElseThrow(() -> com.agentum.delivery.template.StructuredContent.error("来源字段已删除或路径不存在：" + reference.path()));
+                        var target = templateService.get(tenant, user, UUID.fromString(rawString(config.get("templateVersionId")))).spec().fields().stream().filter(it -> it.key().equals(binding.field())).findFirst().orElseThrow();
+                        if (!compatibleTemplateType(target.type(), field.type())) throw com.agentum.delivery.template.StructuredContent.error("字段「" + target.label() + "」与来源内容类型不一致");
+                        if ("table".equals(target.type())) for (var column : target.columns()) {
+                            String mapped = binding.columnMappings() == null ? column.key() : binding.columnMappings().getOrDefault(column.key(), column.key());
+                            var sourceColumn = field.columns().stream().filter(it -> it.key().equals(mapped)).findFirst();
+                            if (sourceColumn.isEmpty() && column.required()) throw com.agentum.delivery.template.StructuredContent.error("请绑定明细列：" + column.label());
+                            if (sourceColumn.isPresent() && !compatibleTemplateType(column.type(), sourceColumn.get().type())) throw com.agentum.delivery.template.StructuredContent.error("明细列内容类型不一致：" + column.label());
+                        }
+                    } else if (structured.isPresent()) throw com.agentum.delivery.template.StructuredContent.error("请选择对象中的具体字段，不能将整个对象填入文字或明细位置");
+                }
+            }
+        } catch (com.agentum.shared.api.ApiException ex) { issues.add(issue("WORKFLOW_VALIDATION_FILE_TEMPLATE", ex.getMessage(), node)); }
+    }
+
+    private boolean compatibleTemplateType(String target, String source) {
+        return target.equals(source) || (Set.of("text", "markdown", "date").contains(target) && Set.of("text", "markdown", "date").contains(source));
     }
 
     private void validateDeliveryTrigger(
@@ -465,7 +537,8 @@ public class WorkflowNodeConfigValidator {
                 .toList();
             if (!unsupported.isEmpty()) {
                 String policyLabel = attachmentCapabilities.recognitionEnabled()
-                    ? ("mineru".equals(attachmentCapabilities.recognitionEngine()) ? "复杂识别" : "简单识别")
+                    ? ("hybrid".equals(attachmentCapabilities.recognitionEngine()) ? "混合识别"
+                        : "mineru".equals(attachmentCapabilities.recognitionEngine()) ? "复杂识别" : "简单识别")
                     : "平台";
                 issues.add(issue(
                     "WORKFLOW_VALIDATION_ATTACHMENT_EXTENSIONS_UNSUPPORTED",

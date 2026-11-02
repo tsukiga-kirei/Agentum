@@ -83,6 +83,10 @@ apps/
   api/          Spring Boot 后端 API
 ```
 
+`apps/web/src/components/runtime/ResultSelectionModal.tsx` 承载追问后推进前的回答选择；聊天各回答块可显式选为正式结果，聊天末尾可整理完整结果。
+
+`apps/api/src/main/java/com/agentum/runtime/AutomaticRunReconciler.java` 负责自动执行在服务重启或节点交接窗口后的补偿推进。
+
 ### 3.1 apps/web — 前端
 
 | 路径 | 职责 |
@@ -144,6 +148,7 @@ apps/
 | `src/main/resources/logback-spring.xml` | 系统 / 租户运行日志分流、滚动与格式配置 |
 | `src/main/resources/db/migration/` | Flyway 迁移，见下文 |
 | `src/test/java/` | 单元与集成测试（与 `main` 包结构对应） |
+| `src/test/resources/attachments/` | 附件识别真实样例及第三方来源、许可证说明 |
 | `build.gradle.kts` | API 模块依赖与测试配置 |
 
 #### 数据库迁移
@@ -181,8 +186,8 @@ apps/api/src/main/resources/db/
 | `agent` | 智能体运行时：模型调用、ReAct、Skill/MCP 工具装配 |
 | `runtime` | 异步执行：RabbitMQ 命令、Redis 租约/流、取消与回收 |
 | `mcp` | MCP 网关：连通性测试、工具发现、`tools/call` |
-| `delivery` | 交付：邮件、Webhook、Word、Excel、文件存储 |
-| `attachment` | 输入附件：系统识别配置、上传保存、本地 / MinerU 解析、预览下载与保留期清理 |
+| `delivery` | 交付：邮件、Webhook、Word、Excel、文件存储；`template/` 独立承接文件模板版本、来源绑定和原件填充 |
+| `attachment` | 输入附件：系统识别配置、上传保存、本地 / MinerU / 混合识别、Word 兼容解析、预览下载与保留期清理 |
 | `audit` | 运行审计查询、证据聚合 |
 | `schedule` | 流程定时任务与执行记录 |
 | `notification` | 站内通知与消息中心 |
@@ -203,6 +208,7 @@ packages/shared-contract/
     agentum.openapi.yaml       REST API 主契约（持续补齐中）
   schemas/
     workflow-node.schema.json  工作流节点配置结构
+    file-template.schema.json  文件模板、位置样式、字段绑定与新增结构化输出
     variable.schema.json       变量声明
     agent.schema.json          智能体模板
     mcp.schema.json            MCP 服务描述

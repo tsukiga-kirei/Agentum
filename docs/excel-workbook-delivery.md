@@ -130,3 +130,10 @@ Sheet 默认样式
 - 上传客户 Excel 模板并按命名区域填充。
 - 更严格的列完整性、枚举和必填校验模式。
 - 大文件或复杂格式迁移到 Worker。
+
+
+## 新增：填写文件模板
+
+交付项选择“填写文件模板”后，使用 `generationMode=file_template`，固定引用已发布的 `templateVersionId`，用 `templateBindings` 保存字段来源及明细列映射，用 `templateLocationStyles` 保存本交付项的位置样式覆盖。不设置此模式时，本文已有的内容生成配置与执行方式不变。
+
+模板上传、字段及 Sheet 格式、结构化结果、多来源组装、试填与边界统一见 [系统介绍：新增文件模板交付](./system-overview.md#新增文件模板交付)。模板接口前缀为 `/api/tenants/{tenantId}/delivery-templates`，原件、试填、下载均经过服务端租户和资源授权；具体请求模型见共享 OpenAPI 与 `file-template.schema.json`。

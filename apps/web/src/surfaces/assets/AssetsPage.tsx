@@ -11,9 +11,11 @@ import { useFlipText } from "../../motion/useFlipText";
 import { paths } from "../../routes/paths";
 import { useAuthStore } from "../../stores/authStore";
 import type { AccessScope, AssetSummary, AssetType, CreatableAssetType, CreateMyAssetRequest, MyAssetDetail, MyAssetRow, ShareableMemberRow, SystemCapabilityAssetRow, UpdateMyAssetRequest } from "../../types/asset";
+import { DeliveryTemplatesPanel } from "../../components/document/DeliveryTemplatesPanel";
 import { getThemedDrawerRootClassName } from "../../utils/theme";
 
-type AssetTab = "overview" | "system" | "mine";
+type AssetTab = "overview" | "system" | "mine" | "templates";
+
 
 type PageState = {
   page: number;
@@ -72,6 +74,7 @@ const assetTabs: Array<{ key: AssetTab; label: string; icon: LucideIcon; descrip
   { key: "overview", label: "总览", icon: Library, description: "查看系统能力、租户分配和自建资产的整体勾稽" },
   { key: "system", label: "对我开放", icon: Boxes, description: "查看租户管理分配的系统能力，以及同事共享给你的已发布能力" },
   { key: "mine", label: "我的能力", icon: Bot, description: "管理我创建的提示词模板草稿、智能体模板草稿和已发布能力" },
+  { key: "templates", label: "交付模板", icon: FileText, description: "管理 Word、Excel 文件模板、字段、Sheet 格式与固定发布版本" },
 ];
 
 const adminSelectClassNames = { popup: { root: "agent-select-dropdown agent-admin-select-dropdown" } };
@@ -81,6 +84,7 @@ export function AssetsPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const activeTab = useMemo<AssetTab>(() => {
+    if (location.pathname.startsWith(paths.assets.templates)) return "templates";
     if (location.pathname.startsWith(paths.assets.open)) {
       return "system";
     }
@@ -558,6 +562,7 @@ export function AssetsPage() {
               onChange={(value) => {
                 if (value === "overview") navigate(paths.assets.root);
                 else if (value === "system") navigate(paths.assets.open);
+                else if (value === "templates") navigate(paths.assets.templates);
                 else navigate(paths.assets.mine);
               }}
               options={tabSegmentedOptions}
@@ -570,6 +575,7 @@ export function AssetsPage() {
         </div>
 
         <Spin spinning={loading}>
+          {activeTab === "templates" ? <DeliveryTemplatesPanel /> : null}
           {activeTab === "overview" ? (
             <OverviewPanel
               summary={summary}

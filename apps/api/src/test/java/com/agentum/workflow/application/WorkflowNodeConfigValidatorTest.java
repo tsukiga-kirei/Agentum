@@ -706,6 +706,15 @@ class WorkflowNodeConfigValidatorTest {
         ));
     }
 
+    @Test
+    void shouldKeepDirectDeliveryIndependentOfInactiveFileTemplateConfiguration() {
+        var node = new WorkflowDraftApi.WorkflowNodeRow("delivery", "delivery", "交付", 0, 0, List.of(), List.of(), Map.of(
+            "deliveryMode", "direct", "deliveryType", "direct", "deliveryContent", "直接交付内容",
+            "generationMode", "file_template", "templateVersionId", "不可访问的旧选择"
+        ));
+        assertThat(validator().validateCapabilityReferences(TENANT_ID, USER_ID, List.of(node))).isEmpty();
+    }
+
     private WorkflowNodeConfigValidator validatorWithCapabilities(AttachmentRecognitionApi.Capabilities capabilities) {
         when(attachmentRecognitionSettingsService.getCapabilities()).thenReturn(capabilities);
         return new WorkflowNodeConfigValidator(

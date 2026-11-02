@@ -53,6 +53,7 @@ class NodeExecutionServiceTest {
     private RunExecutionLeaseService leaseService;
     private RunCancellationGuard cancellationGuard;
     private NodeExecutionService service;
+    private WorkflowClusterAgentRunRepository clusterRepository;
 
     @BeforeEach
     void setUp() {
@@ -64,12 +65,13 @@ class NodeExecutionServiceTest {
         streamWriter = mock(RunProgressStreamWriter.class);
         leaseService = mock(RunExecutionLeaseService.class);
         cancellationGuard = mock(RunCancellationGuard.class);
+        clusterRepository = mock(WorkflowClusterAgentRunRepository.class);
         service = new NodeExecutionService(
             workbenchRuntimeService,
             workflowRunRepository,
             workflowNodeRunRepository,
             jobRepository,
-            mock(WorkflowClusterAgentRunRepository.class),
+            clusterRepository,
             mock(AgentRuntimeService.class),
             mock(DeliveryRuntimeService.class),
             workflowRuntimeExecutor,
@@ -120,6 +122,39 @@ class NodeExecutionServiceTest {
         verify(streamWriter, never()).appendIfActiveJob(eq(RUN_ID), eq(jobId), eq("node_completed"), any());
         verify(streamWriter, never()).appendIfActiveJob(RUN_ID, jobId, "message", "[DONE]");
         verify(streamWriter, never()).append(eq(RUN_ID), anyString(), any());
+    }
+
+    @Test
+    void shouldDiscardRetryableFailureFromCanceledWorker() {
+        WorkflowRunExecutionJobEntity job = queuedJob();
+        when(jobRepository.findById(job.getId())).thenReturn(Optional.of(job));
+        when(leaseService.tryAcquire(eq(RUN_ID), anyString())).thenReturn(true);
+        when(workflowNodeRunRepository.findById(NODE_RUN_ID)).thenReturn(Optional.of(runningNode()));
+        when(workflowRunRepository.findById(RUN_ID)).thenReturn(Optional.of(runningRun()));
+        when(workflowRuntimeExecutor.execute(any())).thenAnswer(call -> {
+            job.markCanceled(NOW);
+            throw new com.agentum.shared.api.ApiException(org.springframework.http.HttpStatus.BAD_GATEWAY, "MODEL_CALL_FAILED", "旧请求失败");
+        });
+        service.execute(NodeExecuteCommand.of(job.getId(), TENANT_ID, RUN_ID, NODE_RUN_ID, "condition", OPERATOR_ID, "test", 1, NOW));
+        verify(workbenchRuntimeService, never()).retryActiveJob(any(), any(), any());
+        verify(workbenchRuntimeService, never()).failNodeIfActive(any(), any(), anyString(), anyString());
+    }
+
+    @Test
+    void shouldFailWholeClusterWhenAgentInitializationThrows() {
+        WorkflowRunExecutionJobEntity job = queuedJob();
+        WorkflowRunEntity run = runningRun();
+        WorkflowNodeRunEntity node = WorkflowNodeRunEntity.pending(RUN_ID, TENANT_ID, UUID.randomUUID(), UUID.randomUUID(), "cluster", "parallel_group", "集群",
+            Map.of(), Map.of(), Map.of("clusterAgents", List.of(Map.of("name", "采集智能体")), "executionMode", "collaborative"), 0, NOW);
+        node.start(NOW);
+        when(jobRepository.findById(job.getId())).thenReturn(Optional.of(job));
+        when(leaseService.tryAcquire(eq(RUN_ID), anyString())).thenReturn(true);
+        when(workflowNodeRunRepository.findById(NODE_RUN_ID)).thenReturn(Optional.of(node));
+        when(workflowRunRepository.findById(RUN_ID)).thenReturn(Optional.of(run));
+        when(clusterRepository.findByNodeRunIdAndAgentIndex(any(), org.mockito.ArgumentMatchers.anyInt())).thenThrow(new IllegalStateException("模拟初始化数据库故障"));
+        service.execute(NodeExecuteCommand.of(job.getId(), TENANT_ID, RUN_ID, NODE_RUN_ID, "parallel_group", OPERATOR_ID, "test", 1, NOW));
+        verify(workbenchRuntimeService).failActiveJob(eq(RUN_ID), eq(NODE_RUN_ID), eq(job.getId()), eq("CLUSTER_AGENT_FAILED"), anyString());
+        verify(workbenchRuntimeService, never()).saveActiveJobSuccess(any(), any(), any(), any(), any());
     }
 
     private WorkflowRunExecutionJobEntity queuedJob() {

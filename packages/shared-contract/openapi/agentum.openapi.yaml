@@ -1283,7 +1283,7 @@ paths:
                       data: { $ref: "#/components/schemas/InputAttachmentList" }
     post:
       summary: 上传输入节点附件
-      description: 原件保存到对象存储；启用识别时异步进入简单识别或 MinerU 复杂识别队列。
+      description: 原件保存到对象存储；启用识别时异步按本地、MinerU 或混合策略解析，混合策略本地优先并按白名单升级。
       tags: [Workbench]
       security: [{ bearerAuth: [] }]
       parameters:
@@ -3008,7 +3008,7 @@ paths:
                       data: { $ref: "#/components/schemas/AttachmentRecognitionSettings" }
     put:
       summary: 更新附件识别系统配置
-      description: 复杂识别模式下，白名单中的所有附件均发送给 MinerU，不做本地预解析或失败回退。
+      description: local 仅本地提取，mineru 将白名单内文件直接发送至 MinerU，hybrid 本地优先并在失败或无文字时按 MinerU 白名单升级；图片等本地不支持的类型直接调用 MinerU。
       tags: [System]
       security: [{ bearerAuth: [] }]
       requestBody:
@@ -3915,6 +3915,448 @@ paths:
                     properties:
                       data:
                         $ref: "#/components/schemas/AuditToolCallPageResponse"
+  /api/tenants/{tenantId}/workbench/runs/{runId}/automation:
+    post:
+      summary: 主动接管或继续自动执行
+      tags: [Workbench]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: runId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkbenchAutomationRequest"
+      responses:
+        "200":
+          description: 更新后的运行详情
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/WorkbenchRunDetail"
+  /api/tenants/{tenantId}/workbench/runs/{runId}/nodes/{nodeRunId}/adopt-answer:
+    post:
+      summary: 采用已保存的智能体回复作为正式结果
+      tags: [Workbench]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: runId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: nodeRunId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkbenchAdoptAnswerRequest"
+      responses:
+        "200":
+          description: 更新后的运行详情
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/WorkbenchRunDetail"
+  /api/tenants/{tenantId}/delivery-templates:
+    get:
+      summary: 分页查询可见交付模板版本
+      tags:
+        - Delivery
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 10
+        - name: published
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: keyword
+          in: query
+          schema:
+            type: string
+            default: ''
+      responses:
+        '200':
+          description: 操作成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          items:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/DeliveryTemplateVersion'
+                          page:
+                            type: integer
+                          size:
+                            type: integer
+                          total:
+                            type: integer
+                          totalPages:
+                            type: integer
+    post:
+      summary: 上传模板草稿（docx/xlsx，最大20MB）
+      tags:
+        - Delivery
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                name:
+                  type: string
+      responses:
+        '200':
+          description: 操作成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DeliveryTemplateVersion'
+  /api/tenants/{tenantId}/delivery-templates/{id}:
+    get:
+      summary: 读取模板版本
+      tags:
+        - Delivery
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 操作成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DeliveryTemplateVersion'
+    put:
+      summary: 保存创建者的草稿，发布版本不可修改
+      tags:
+        - Delivery
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - readScope
+                - spec
+              properties:
+                name:
+                  type: string
+                readScope:
+                  enum:
+                    - self
+                    - all
+                spec:
+                  $ref: ../schemas/file-template.schema.json
+      responses:
+        '200':
+          description: 操作成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DeliveryTemplateVersion'
+  /api/tenants/{tenantId}/delivery-templates/{id}/publish:
+    post:
+      summary: 发布不可变模板版本
+      tags:
+        - Delivery
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 操作成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DeliveryTemplateVersion'
+  /api/tenants/{tenantId}/delivery-templates/{id}/copy:
+    post:
+      summary: 复制为新草稿；本人模板生成下一版本，共享模板建立独立副本
+      tags:
+        - Delivery
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 操作成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DeliveryTemplateVersion'
+  /api/tenants/{tenantId}/delivery-templates/{id}/file:
+    get:
+      summary: 下载有权访问的模板原件
+      tags:
+        - Delivery
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 受保护文件字节流
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+    post:
+      summary: 替换草稿原件并重新识别字段与格式
+      tags:
+        - Delivery
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                name:
+                  type: string
+      responses:
+        '200':
+          description: 操作成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/DeliveryTemplateVersion'
+  /api/tenants/{tenantId}/delivery-templates/{id}/preview:
+    post:
+      summary: 试填文件，不产生正式交付记录
+      tags:
+        - Delivery
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeliveryTemplatePreviewRequest'
+      responses:
+        '200':
+          description: 受保护文件字节流
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+  /api/tenants/{tenantId}/delivery-templates/{id}/preview-layout:
+    post:
+      summary: Excel受控样式预览，最多200行40列
+      tags:
+        - Delivery
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeliveryTemplatePreviewRequest'
+      responses:
+        '200':
+          description: 操作成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/DeliveryTemplatePreviewSheet'
+
 components:
   securitySchemes:
     bearerAuth:
@@ -3925,6 +4367,91 @@ components:
       type: http
       scheme: basic
   schemas:
+    DeliveryTemplateVersion:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        templateId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        fileName:
+          type: string
+        kind:
+          enum:
+            - word
+            - excel
+        version:
+          type: integer
+        status:
+          enum:
+            - draft
+            - published
+        readScope:
+          enum:
+            - self
+            - all
+        createdBy:
+          type: string
+          format: uuid
+        updatedAt:
+          type: string
+          format: date-time
+        spec:
+          $ref: ../schemas/file-template.schema.json
+    DeliveryTemplatePreviewRequest:
+      type: object
+      required:
+        - capabilityId
+        - values
+      properties:
+        capabilityId:
+          type: string
+          format: uuid
+        values:
+          type: object
+        locationStyles:
+          type: object
+          additionalProperties:
+            $ref: ../schemas/file-template.schema.json#/$defs/style
+        fileName:
+          type: string
+    DeliveryTemplatePreviewSheet:
+      type: object
+      properties:
+        name:
+          type: string
+        widths:
+          type: array
+          items:
+            type: number
+        rows:
+          type: array
+          items:
+            type: object
+            properties:
+              height:
+                type: number
+              cells:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    text:
+                      type: string
+                    column:
+                      type: integer
+                    rowSpan:
+                      type: integer
+                    colSpan:
+                      type: integer
+                    style:
+                      type: object
+        truncated:
+          type: boolean
     ApiError:
       type: object
       properties:
@@ -4856,7 +5383,7 @@ components:
       type: object
       properties:
         recognitionEnabled: { type: boolean }
-        recognitionEngine: { type: string, enum: [local, mineru] }
+        recognitionEngine: { type: string, enum: [local, mineru, hybrid] }
         localSupportedExtensions:
           type: array
           items: { type: string }
@@ -4884,7 +5411,7 @@ components:
       type: object
       properties:
         recognitionEnabled: { type: boolean }
-        recognitionEngine: { type: string, enum: [local, mineru] }
+        recognitionEngine: { type: string, enum: [local, mineru, hybrid] }
         supportedExtensions:
           type: array
           items: { type: string }
@@ -4898,7 +5425,7 @@ components:
       type: object
       properties:
         recognitionEnabled: { type: boolean }
-        recognitionEngine: { type: string, enum: [local, mineru] }
+        recognitionEngine: { type: string, enum: [local, mineru, hybrid] }
         maxFileSizeMb: { type: integer, minimum: 1, maximum: 200 }
         maxFilesPerField: { type: integer, minimum: 1, maximum: 20 }
         maxExtractedChars: { type: integer, minimum: 1000, maximum: 2000000 }
@@ -5522,6 +6049,15 @@ components:
     WorkbenchAvailableWorkflowPreview:
       type: object
       properties:
+        allowAutoExecution:
+          type: boolean
+          description: 当前发布版本是否允许发起人选择自动执行，由系统触发节点配置决定
+        inputFields:
+          type: array
+          description: 按输入节点分组的预填字段；附件在运行时上传
+          items:
+            type: object
+            additionalProperties: true
         workflowId:
           type: string
           format: uuid
@@ -5538,6 +6074,14 @@ components:
     WorkbenchCreateRunRequest:
       type: object
       properties:
+        autoExecution:
+          type: boolean
+          default: false
+          description: 选择自动确认；后端复核发布版本中的 allowAutoExecution
+        inputPayload:
+          type: object
+          additionalProperties: true
+          description: 发起时预填的输入变量，缺少必填资料或附件时生成待办
         workflowId:
           type: string
           format: uuid
@@ -5545,6 +6089,17 @@ components:
           type: string
       required:
         - workflowId
+    WorkbenchAutomationRequest:
+      type: object
+      properties:
+        takeover: { type: boolean, description: true 接管，false 交还自动执行控制权 }
+      required: [takeover]
+    WorkbenchAdoptAnswerRequest:
+      type: object
+      properties:
+        agentIndex: { type: integer, minimum: 0, nullable: true, description: 子智能体索引，单智能体省略 }
+        messageIndex: { type: integer, minimum: 0, description: 已持久化聊天列表中的智能体回答索引 }
+      required: [messageIndex]
     WorkbenchCompleteTodoRequest:
       type: object
       properties:
@@ -5566,13 +6121,20 @@ components:
         extension: { type: string }
         contentType: { type: string }
         sizeBytes: { type: integer, format: int64 }
-        recognitionEngine: { type: string, enum: [none, local, mineru] }
+        recognitionEngine: { type: string, enum: [none, local, mineru, hybrid] }
         status: { type: string, enum: [queued, parsing, ready, failed, rejected] }
         errorCode: { type: [string, "null"] }
         errorMessage: { type: [string, "null"] }
         parseResultId: { type: [string, "null"], format: uuid }
         characterCount: { type: [integer, "null"] }
         truncated: { type: [boolean, "null"] }
+        parserType:
+          type: [string, "null"]
+          description: 实际最后使用或尝试的解析器，如 local-docx、local-doc、mineru。
+        fallbackReason:
+          type: [string, "null"]
+          enum: [DOCX_AS_DOC, LOCAL_UNSUPPORTED, LOCAL_TEXT_EMPTY, LOCAL_PARSE_FAILED, null]
+          description: 兼容解析或升级复杂识别的原因；未发生回退时为空。
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
       required: [id, fieldId, variableKey, fileName, extension, contentType, sizeBytes, recognitionEngine, status, createdAt, updatedAt]
@@ -5941,6 +6503,8 @@ components:
     WorkbenchRunDetail:
       type: object
       properties:
+        autoExecution: { type: boolean }
+        manualTakeover: { type: boolean, description: 已主动接管，保留当前执行但停止后续自动推进 }
         id:
           type: string
           format: uuid

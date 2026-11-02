@@ -32,6 +32,10 @@ public class RuntimeExecutionProperties {
         private long nodeTimeoutSeconds = 1800;
         /** MQ 消费者并发数：决定同时可执行的节点作业数量。 */
         private int workerConcurrency = 4;
+        /** 排队最长等待时间，与节点实际执行时限分开。 */
+        private long queueTimeoutSeconds = 86400;
+        public long getQueueTimeoutSeconds() { return queueTimeoutSeconds; }
+        public void setQueueTimeoutSeconds(long value) { queueTimeoutSeconds = value; }
         /** 同一节点作业最大尝试次数（模型 429/5xx 自动重试上限）。 */
         private int maxAttempts = 3;
         /** 智能体集群并行执行时的最大并发子智能体数量。 */

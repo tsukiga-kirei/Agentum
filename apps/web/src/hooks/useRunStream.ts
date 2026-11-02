@@ -298,10 +298,13 @@ export function useRunStream(
                     eventId: currentEventId || undefined,
                   } as StreamEvent;
 
-                  setEvents((prev) => [...prev, streamEvent]);
+                  // 只保留状态变更通知；逐 token 保存事件数组会让长回复和集群运行持续占用内存。
+                  if (["node_completed", "node_failed", "run_paused", "run_completed"].includes(streamEvent.type)) {
+                    setEvents((prev) => [...prev, streamEvent]);
+                  }
                   handleStreamEvent(streamEvent);
                 } catch (e) {
-                  console.error("Failed to parse SSE data line:", dataStr, e);
+                  console.error("运行进度事件解析失败", { eventType: currentEventType, eventId: currentEventId, error: e instanceof Error ? e.name : "UNKNOWN" });
                 }
 
                 currentEventType = "";
@@ -330,9 +333,10 @@ export function useRunStream(
           reconnectFailuresRef.current += 1;
           setReconnectFailures(reconnectFailuresRef.current);
           setConnectionState("error");
-          setError(err instanceof Error ? err.message : "连接断开");
+          const connectionMessage = err instanceof TypeError ? "进度连接暂时断开，正在尝试重新连接" : err instanceof Error ? err.message : "连接断开";
+          setError(connectionMessage);
           resolvePendingConnectors();
-          rejectReady(err instanceof Error ? err : new Error("SSE 连接失败"));
+          rejectReady(new Error(connectionMessage));
 
           if (!controller.signal.aborted) {
             setConnectionState("reconnecting");
@@ -727,6 +731,10 @@ export function useRunStream(
 
   useEffect(() => {
     stepStreamTerminalRef.current = false;
+    setEvents([]);
+    setError(null);
+    reconnectFailuresRef.current = 0;
+    setReconnectFailures(0);
     return () => {
       disconnect();
     };

@@ -180,6 +180,11 @@ export function collectRuntimeTemplateTextFields(
           push(`deliveryItems.${index}.config.body`, `${itemName}交付内容`, itemConfig.body);
           return;
         }
+        if (itemConfig.generationMode === "file_template") {
+          push(`deliveryItems.${index}.config.fileNameTemplate`, `${itemName}文件名模板`, itemConfig.fileNameTemplate);
+          readMapList(itemConfig.templateBindings).filter(binding => !binding.constant).flatMap(binding => [binding, ...readMapList(binding.additionalSources)]).forEach((binding, i) => push(`deliveryItems.${index}.config.templateBindings.${i}`, `${itemName}字段来源`, "{{" + String(binding.variable ?? "") + "}}"));
+          return;
+        }
         if (isWordCapabilityDeliveryConfig(itemConfig)) {
           push(`deliveryItems.${index}.config.markdownContent`, `${itemName}正文模板`, itemConfig.markdownContent);
           push(`deliveryItems.${index}.config.fileNameTemplate`, `${itemName}文件名模板`, itemConfig.fileNameTemplate);
@@ -203,6 +208,11 @@ export function collectRuntimeTemplateTextFields(
       push("deliveryContent", "直接交付内容", source.deliveryContent);
       push("deliveryTarget", "直接交付内容", source.deliveryTarget);
       push("body", "直接交付内容", source.body);
+      return fields;
+    }
+    if (source.generationMode === "file_template") {
+      push("fileNameTemplate", "文件名模板", source.fileNameTemplate);
+      readMapList(source.templateBindings).filter(binding => !binding.constant).flatMap(binding => [binding, ...readMapList(binding.additionalSources)]).forEach((binding, i) => push(`templateBindings.${i}`, "模板字段来源", "{{" + String(binding.variable ?? "") + "}}"));
       return fields;
     }
     if (isWordCapabilityDeliveryConfig(source)) {
@@ -630,10 +640,10 @@ function validateDeliveryNode(
         if (isSentinelId(capabilityId)) {
           issues.push(issue("WORKFLOW_NODE_DELIVERY_CAPABILITY_REQUIRED", `${itemName}必须选择交付能力`));
         }
-        if (isWordDeliveryConfig(itemConfig) && !readString(itemConfig.markdownContent)) {
+        if (itemConfig.generationMode !== "file_template" && isWordDeliveryConfig(itemConfig) && !readString(itemConfig.markdownContent)) {
           issues.push(issue("WORKFLOW_NODE_DELIVERY_MARKDOWN_REQUIRED", `${itemName}必须配置 Word 交付正文模板`));
         }
-        if (isExcelDeliveryConfig(itemConfig)) {
+        if (itemConfig.generationMode !== "file_template" && isExcelDeliveryConfig(itemConfig)) {
           const sheets = readMapList(itemConfig.excelSheets);
           if (sheets.length === 0) {
             issues.push(issue("WORKFLOW_NODE_DELIVERY_EXCEL_SHEETS_REQUIRED", `${itemName}必须至少配置一个 Excel Sheet 页`));
@@ -681,13 +691,13 @@ function validateDeliveryNode(
     if (isSentinelId(capabilityId)) {
       issues.push(issue("WORKFLOW_NODE_DELIVERY_CAPABILITY_REQUIRED", "必须选择交付能力"));
     }
-    if (isWordDeliveryConfig(config)) {
+    if (config.generationMode !== "file_template" && isWordDeliveryConfig(config)) {
       const markdownContent = readString(config.markdownContent);
       if (!markdownContent) {
         issues.push(issue("WORKFLOW_NODE_DELIVERY_MARKDOWN_REQUIRED", "必须配置 Word 交付正文模板"));
       }
     }
-    if (isExcelDeliveryConfig(config)) {
+    if (config.generationMode !== "file_template" && isExcelDeliveryConfig(config)) {
       const sheets = readMapList(config.excelSheets);
       if (sheets.length === 0) {
         issues.push(issue("WORKFLOW_NODE_DELIVERY_EXCEL_SHEETS_REQUIRED", "必须至少配置一个 Excel Sheet 页"));

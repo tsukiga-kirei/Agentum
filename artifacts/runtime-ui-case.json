@@ -1,0 +1,8 @@
+{
+  "url": "http://127.0.0.1:15173/app/workbench/runs/ef177cd5-f019-406b-bade-9832c3ffb7ef",
+  "runId": "ef177cd5-f019-406b-bade-9832c3ffb7ef",
+  "checks": [
+    "追问完成要求显式选择",
+    "后端阻止未选择就推进"
+  ]
+}

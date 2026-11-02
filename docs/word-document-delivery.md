@@ -217,3 +217,10 @@ MinIO 默认配置：
 - 接入 reference.docx 模板、页眉页脚、目录、图片和附件。
 - 将复杂文档生成迁移到 Worker，避免大文档阻塞 API 线程。
 - 与高风险交付审批、运行审计页和交付物资源范围进一步勾稽。
+
+
+## 新增：填写文件模板
+
+交付项选择“填写文件模板”后，使用 `generationMode=file_template`，固定引用已发布的 `templateVersionId`，用 `templateBindings` 保存字段来源及明细列映射，用 `templateLocationStyles` 保存本交付项的位置样式覆盖。不设置此模式时，本文已有的内容生成配置与执行方式不变。
+
+模板上传、字段及 Sheet 格式、结构化结果、多来源组装、试填与边界统一见 [系统介绍：新增文件模板交付](./system-overview.md#新增文件模板交付)。模板接口前缀为 `/api/tenants/{tenantId}/delivery-templates`，原件、试填、下载均经过服务端租户和资源授权；具体请求模型见共享 OpenAPI 与 `file-template.schema.json`。

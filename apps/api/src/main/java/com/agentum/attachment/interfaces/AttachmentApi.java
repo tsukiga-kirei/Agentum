@@ -25,6 +25,8 @@ public final class AttachmentApi {
         UUID parseResultId,
         Integer characterCount,
         Boolean truncated,
+        String parserType,
+        String fallbackReason,
         Instant createdAt,
         Instant updatedAt
     ) {

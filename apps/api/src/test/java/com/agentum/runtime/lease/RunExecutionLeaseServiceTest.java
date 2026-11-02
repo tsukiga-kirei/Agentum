@@ -59,7 +59,8 @@ class RunExecutionLeaseServiceTest {
 
         leaseService.renew(RUN_ID, "worker-a");
 
-        verify(redisTemplate).expire(eq(LEASE_KEY), any(Duration.class));
+        verify(redisTemplate).execute(any(org.springframework.data.redis.core.script.RedisScript.class), eq(java.util.List.of(LEASE_KEY)), eq("worker-a"), eq("300000"));
+        verify(valueOperations, never()).get(anyString());
     }
 
     @Test

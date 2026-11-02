@@ -362,6 +362,10 @@ pending -> running -> paused -> resumed -> running -> completed
 
 运行态已重构为「RabbitMQ 执行 + Redis Stream 进度回放」：`POST /advance` 仅创建执行作业（`workflow_run_execution_jobs`）并投递 `NodeExecuteCommand`，同 JVM 的 `NodeExecutionService` Worker 消费执行；执行租约、取消信号、节点超时（`AGENTUM_RUNTIME_NODE_TIMEOUT_SECONDS`）与进度事件均放 Redis，PostgreSQL 仍为事实源。SSE 由 `RunStreamRelayService` 从 Redis Stream 中继，支持 `lastEventId` 断线续传与 `replay` 整步回放，刷新/重进页面无感恢复。`StaleExecutionReaper` 定时回收超时与失联作业。原 `@Async` + 内存 SSE 路径已删除，后端强依赖 Redis 与 RabbitMQ。中断/恢复语义：主动中断 → 节点 `canceled` 并清空该步数据，只能「重新执行」整步重跑；被动失败 → 节点 `failed`，已落库的子智能体结果（`workflow_cluster_agent_runs`）保留，「恢复进度」只重跑失败/未完成部分。已完成的集群节点还支持单个子智能体重新执行：协同处理只删除目标结果，接力处理删除目标及后序依赖结果，意图分派通过 `NodeExecuteCommand.clusterAgentIndexes` 冻结原命中范围，避免重新分类导致路由漂移。智能体集群节点支持协同处理、接力处理与意图分派；意图分派只执行命中的子智能体，多个命中按意图清单顺序写入集群输出模板。历史 `parallel` / `sequential` 数据由迁移脚本清洗。详见 [运行态异步执行设计](./runtime-async-execution-design.md)。
 
+自动执行在 `workflow_runs.auto_execution` 固化发起选择，`manual_takeover` 记录接管状态。节点成功落库、自动重试和接管切换在运行行锁下串行化，并复核作业身份，防止旧 Worker 覆盖新执行。`AutomaticRunReconciler` 从数据库恢复节点完成后尚未推进的自动任务，不重跑在途作业或待办。排队时限独立配置 `AGENTUM_RUNTIME_QUEUE_TIMEOUT_SECONDS`（默认 86400 秒），节点执行时限从实际启动计算。
+
+Redis Stream 裁剪之外保留当前节点身份及各类过程的最新快照，刷新时先恢复上下文和快照，再回放增量。追问使用 `_formalAnswer` 锚定正式内容，`candidate_answer` 仅供展示，不参与业务变量合并；采用结果由后端选择已持久化的回答并记录审计。
+
 ### 5.6 智能体运行时
 
 智能体运行时不是一次模型调用，而是一条可审计管线。
@@ -452,9 +456,11 @@ GET    /api/tenants/{tenantId}/workbench/runs/{runId}/nodes/{nodeRunId}/attachme
 
 前端附件预览复用交付文档预览的抽屉和 Word / Excel 渲染器，并按扩展名增加 PDF、图片、文本和识别正文通道。原件接口统一返回受保护字节流和服务端确定的 MIME，前端不接收 MinIO 对象键；不支持的格式只允许下载，不把用户上送的 MIME 作为内联渲染依据。
 
-MinerU 只作为解析适配器，不直接承担 Agentum 的文件治理。系统识别方式使用 `local`、`mineru` 两个稳定协议值：`local` 只调用 Java 本地解析器；`mineru` 对命中 `mineruSupportedExtensions` 的全部文件调用 MinerU，包括 TXT、CSV 等本地本可直接读取的格式。复杂识别不做本地预解析，MinerU 失败后也不做本地回退，失败是否阻断输入节点由字段发布快照中的 `recognitionRequired` 决定。
+MinerU 只作为解析适配器，不直接承担 Agentum 的文件治理。系统识别方式使用 `local`、`mineru`、`hybrid` 三个协议值：`local` 只调用 Java 本地解析器；`mineru` 对命中 `mineruSupportedExtensions` 的全部文件调用 MinerU，包括 TXT、CSV 等本地本可直接读取的格式。复杂识别不做本地预解析。混合识别 `hybrid` 优先本地解析，非空结果直接使用；本地提取失败或正文为空时，仅当扩展名命中 MinerU 白名单才升级识别；本地不支持的白名单类型直接调用 MinerU。不做循环重试，MinerU 失败后保留失败状态，是否阻断输入节点由字段发布快照中的 `recognitionRequired` 决定。
 
-MinerU 端点和 API Key 是平台级敏感配置，API Key 使用现有字段加密服务保存。`mineruSupportedExtensions` 采用系统管理员可编辑白名单，不由 Agentum 根据某个 MinerU 版本硬编码限制；这允许客户封装端点、在线 API 或未来 MinerU 版本接收 `doc`、`xls` 等格式。平台仍应提示当前开源自部署版与在线 API 的格式口径存在差异，并提供逐格式真实解析测试。管理员配置的扩展名代表明确的运行路由意图，而不是平台对 MinerU 成功率的保证。
+MinerU 端点和 API Key 是平台级敏感配置，API Key 使用现有字段加密服务保存。`mineruSupportedExtensions` 采用系统管理员可编辑白名单，不由 Agentum 根据某个 MinerU 版本硬编码限制；这允许客户封装端点、在线 API 或未来 MinerU 版本接收 `doc`、`xls` 等格式。平台仍应提示当前开源自部署版与在线 API 的格式口径存在差异，并提供逐格式真实解析测试。管理员配置的扩展名代表允许向 MinerU 发送的边界，而不是平台对 MinerU 成功率的保证。混合模式的可上传类型取本地能力与该白名单的合集，不能据此扩大外发范围。
+
+DOCX 上传允许经 OLE 目录确认的旧 Word，不能仅凭 OLE 文件头放行任意格式或加密 Office。保持原文件名和扩展名，服务端 MIME 按实际 DOC 确定，前端使用受保护的解析正文预览。本地 DOCX 解析失败后，在同一原件上尝试 DOC 解析器；两者失败仍报错。`attachment_parse_results.parser_type` 记录实际最后使用或尝试的解析器，`fallback_reason` 记录 `DOCX_AS_DOC`、`LOCAL_UNSUPPORTED`、`LOCAL_TEXT_EMPTY` 或 `LOCAL_PARSE_FAILED`，对成功和失败均留痕并通过附件接口返回。解析器版本升级为 v2，配置哈希包含白名单、端点及解析参数；不记录密钥或原始供应商响应。
 
 日志只记录 requestId、tenantId、runId、nodeRunId、attachmentId、解析器、耗时和状态，禁止记录文件正文、密钥、完整原始响应和对象存储签名地址。下载原文件、读取完整解析正文和解析测试均作为敏感操作写入审计。
 
@@ -528,6 +534,12 @@ MinerU 端点和 API Key 是平台级敏感配置，API Key 使用现有字段�
 交付能力分为系统内置和自定义适配器。系统内置交付能力由 API / Worker 原生实现，例如邮箱发送、Webhook 调用、Word 文档生成和 Excel 工作簿生成；自定义交付适配器放在 `capabilities/delivery/<delivery-key>/`，通过 Manifest 声明 `runtime`、`entry`、`configSchema`、`inputSchema`、`outputSchema` 和风险等级。OA、PDF、IM、数据库写入等强依赖客户环境和版式规范的通道进入后续个性化集成阶段，不作为阶段一基础治理验收项。高风险交付能力必须走权限校验、审批或二次确认。
 
 当前运行态已支持四类能力化交付：系统内置邮箱发送、Webhook 调用、Word 文档生成和 Excel 工作簿生成。Word 初版由 API 内轻量渲染器把 AI Markdown 转为 `.docx`；Excel 由 API 内轻量渲染器按多 Sheet 模板宽容识别 Markdown 表格、列表、键值块和普通文本并生成 `.xlsx`。文件写入 MinIO/S3 兼容对象存储，并通过 `delivery_records` 记录下载入口；复杂模板、图片、目录、页眉页脚和大文档后续应迁移到 Worker。所有交付动作都会写入 `delivery_records`，并关联租户、运行、节点、流程定义和发布版本；失败时节点和运行进入失败状态。
+
+文件模板模式由独立的 `delivery/template` 包承接，不改写现有渲染器。`delivery_template_versions` 保存租户内模板原件、字段契约、位置样式及状态，发布行不可变，原件不受运行附件清理任务影响。流程版本固定保存 `templateVersionId`、`templateBindings`、`templateLocationStyles`。原件在数据库独立保存，后续可在接口不变的前提下迁移到独立对象存储生命周期；正式产物继续走 MinIO、文件保留策略与 `delivery_records`。
+
+运行时按固定来源节点读取已完成的输出快照，禁止后序来源和仅靠全局同名变量猜测来源；子智能体采用独立、唯一的对象结果变量。数据组装、类型检查、明细投影、模板渲染均在服务端执行。交付复用标识在新模式中包含模板版本、来源绑定、位置样式和文件名。模板发布先以最小有效数据编译，流程发布再校验模板授权、上游变量、字段路径、类型及明细列映射，实际内容仍须运行时复核。
+
+`AgentStructuredOutput` 只对新增 opt-in 配置扩展 `final_answer` 的 `data` 参数；原 `answer` 和文本变量保持字符串。额外业务对象独立落库，候选回答记录关联其结构化数据，采用、手工修改和清除追问上下文时同步处理。不得使用旧文本解析中的截断回退作为结构化结果。模板与结构化字段契约见 `packages/shared-contract/schemas/file-template.schema.json`。
 
 ### 5.11 系统管理模块
 

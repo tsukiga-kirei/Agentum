@@ -79,8 +79,8 @@ export function AttachmentRecognitionSettingsPanel() {
     if (!token) return;
     const body = buildRequest();
     if (!body) return;
-    if (body.recognitionEngine === "mineru" && !body.mineruEndpoint?.trim()) {
-      messageApi.error("复杂识别必须填写 MinerU 服务地址");
+    if (body.recognitionEngine !== "local" && !body.mineruEndpoint?.trim()) {
+      messageApi.error("复杂识别和混合识别必须填写 MinerU 服务地址");
       return;
     }
     if (body.mineruSupportedExtensions.length === 0) {
@@ -146,12 +146,17 @@ export function AttachmentRecognitionSettingsPanel() {
                     options={[
                       { value: "local", label: "简单识别" },
                       { value: "mineru", label: "复杂识别（MinerU）" },
+                      { value: "hybrid", label: "混合识别（本地优先）" },
                     ]}
                   />
                   <div className="sys-field-hint">
-                    简单识别由服务端直接解析常见文档；复杂识别会把白名单内的所有附件交给 MinerU，不执行本地预解析或失败回退。
+                    {settings.recognitionEngine === "hybrid"
+                      ? "常见文档优先本地提取；提取失败或无文字时，按 MinerU 白名单升级识别。图片等本地不支持的格式直接交给 MinerU。"
+                      : settings.recognitionEngine === "local"
+                        ? "只在本地提取正文，不调用外部识别服务；扩展名误标的旧 Word 会尝试兼容解析。"
+                        : "白名单内的所有附件直接交给 MinerU，适合统一要求版面识别的场景。"}
                   </div>
-                  {settings.recognitionEngine === "local" ? (
+                  {settings.recognitionEngine !== "mineru" ? (
                     <div className="attachment-supported-types" aria-label="简单识别支持的扩展名">
                       <span className="attachment-supported-types__label">支持扩展名</span>
                       <div className="attachment-supported-types__list">
@@ -159,7 +164,9 @@ export function AttachmentRecognitionSettingsPanel() {
                           <span key={extension}>.{extension}</span>
                         ))}
                       </div>
-                      <p>PDF 仅提取电子文本，不支持扫描件 OCR；图片和 PowerPoint 文件不支持简单识别。</p>
+                      <p>{settings.recognitionEngine === "hybrid"
+                        ? "以上格式优先本地处理；扫描 PDF 可升级 OCR。最终支持范围为本地类型与 MinerU 白名单的合集，只有白名单内的类型允许发送至 MinerU。"
+                        : "PDF 仅提取电子文本，不支持扫描件 OCR；图片和 PowerPoint 文件不支持简单识别。"}</p>
                     </div>
                   ) : null}
                 </div>
@@ -188,10 +195,10 @@ export function AttachmentRecognitionSettingsPanel() {
               </div>
             </section>
 
-            {settings.recognitionEngine === "mineru" ? (
+            {settings.recognitionEngine !== "local" ? (
               <section className="sys-section-card">
                 <div className="sys-section-card-header">
-                  <div><h3><ServerCog size={17} className="attachment-section-icon" /> MinerU 配置</h3><p>扩展名白名单可自定义；列表内文件全部走复杂识别。</p></div>
+                  <div><h3><ServerCog size={17} className="attachment-section-icon" /> MinerU 配置</h3><p>{settings.recognitionEngine === "hybrid" ? "白名单决定哪些类型可直接或在本地失败后发送给 MinerU。" : "扩展名白名单可自定义；列表内文件全部走复杂识别。"}</p></div>
                 </div>
                 <div className="sys-section-card-body space-y-5">
                   <div className="sys-field">
@@ -252,7 +259,7 @@ export function AttachmentRecognitionSettingsPanel() {
             ) : null}
 
             <div className="flex justify-end gap-2">
-              {settings.recognitionEngine === "mineru" ? <button type="button" className="sys-btn sys-btn--default" disabled={testing} title="测试当前页面中尚未保存的 MinerU 地址、密钥和超时配置" onClick={() => void testConnection()}><PlayCircle size={15} />{testing ? "测试中" : "测试当前配置"}</button> : null}
+              {settings.recognitionEngine !== "local" ? <button type="button" className="sys-btn sys-btn--default" disabled={testing} title="测试当前页面中尚未保存的 MinerU 地址、密钥和超时配置" onClick={() => void testConnection()}><PlayCircle size={15} />{testing ? "测试中" : "测试当前配置"}</button> : null}
               <button type="button" className="sys-btn sys-btn--primary" disabled={saving} onClick={() => void save()}><Save size={15} />{saving ? "保存中" : "保存配置"}</button>
             </div>
           </div>

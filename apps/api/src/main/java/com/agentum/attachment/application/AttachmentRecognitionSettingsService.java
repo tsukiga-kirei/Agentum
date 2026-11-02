@@ -29,7 +29,7 @@ public class AttachmentRecognitionSettingsService {
 
     private static final Logger log = LoggerFactory.getLogger(AttachmentRecognitionSettingsService.class);
     private static final short SETTINGS_ID = 1;
-    private static final Set<String> ENGINES = Set.of("local", "mineru");
+    private static final Set<String> ENGINES = Set.of("local", "mineru", "hybrid");
     private static final Set<String> PARSE_METHODS = Set.of("auto", "txt", "ocr");
     private static final Set<String> MINERU_BACKENDS = Set.of(
         "pipeline", "vlm-auto-engine", "vlm-http-client", "hybrid-auto-engine", "hybrid-http-client"
@@ -77,7 +77,7 @@ public class AttachmentRecognitionSettingsService {
     public AttachmentRecognitionApi.Settings update(AttachmentRecognitionApi.UpdateSettingsRequest request, UUID operatorUserId) {
         String engine = normalize(request.recognitionEngine());
         if (!ENGINES.contains(engine)) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "ATTACHMENT_ENGINE_INVALID", "识别方式只能选择简单识别或复杂识别");
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ATTACHMENT_ENGINE_INVALID", "识别方式只能选择简单识别、复杂识别或混合识别");
         }
         String parseMethod = normalize(request.mineruParseMethod());
         if (!PARSE_METHODS.contains(parseMethod)) {
@@ -92,8 +92,8 @@ public class AttachmentRecognitionSettingsService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "ATTACHMENT_RETENTION_POLICY_INVALID", "文件默认保存时间只能选择永久或按天保存");
         }
         String endpoint = trimToNull(request.mineruEndpoint());
-        if ("mineru".equals(engine) && endpoint == null) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "ATTACHMENT_MINERU_ENDPOINT_REQUIRED", "复杂识别必须配置 MinerU 端点");
+        if (!"local".equals(engine) && endpoint == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ATTACHMENT_MINERU_ENDPOINT_REQUIRED", "复杂识别和混合识别必须配置 MinerU 端点");
         }
         List<String> extensions = normalizeExtensions(request.mineruSupportedExtensions());
         AttachmentRecognitionSettingEntity entity = requireEntity();
@@ -177,6 +177,9 @@ public class AttachmentRecognitionSettingsService {
             String extension = normalize(raw).replaceFirst("^\\.", "");
             if (!EXTENSION.matcher(extension).matches()) {
                 throw new ApiException(HttpStatus.BAD_REQUEST, "ATTACHMENT_EXTENSION_INVALID", "扩展名只能包含小写字母、数字、下划线或短横线");
+            }
+            if (AttachmentRecognitionPolicy.blockedExtensions().contains(extension)) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "ATTACHMENT_EXTENSION_BLOCKED", "识别白名单不能包含平台禁止的危险扩展名");
             }
             normalized.add(extension);
         }

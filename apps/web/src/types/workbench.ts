@@ -79,6 +79,8 @@ export type WorkbenchAvailableWorkflowPreview = {
   workflowId: string;
   versionNumber: number;
   nodes: WorkbenchAvailableWorkflowNodeRow[];
+  allowAutoExecution: boolean;
+  inputFields: Array<{ id: string; nodeName: string; variable: string; label: string; fieldType?: string; dateGranularity?: string; defaultValue?: string; options?: Array<{label: string; value: string}> }>;
 };
 
 export type InputAttachmentRow = {
@@ -89,13 +91,15 @@ export type InputAttachmentRow = {
   extension: string;
   contentType: string;
   sizeBytes: number;
-  recognitionEngine: "none" | "local" | "mineru";
+  recognitionEngine: "none" | "local" | "mineru" | "hybrid";
   status: "queued" | "parsing" | "ready" | "failed" | "rejected";
   errorCode: string | null;
   errorMessage: string | null;
   parseResultId: string | null;
   characterCount: number | null;
   truncated: boolean | null;
+  parserType: string | null;
+  fallbackReason: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -182,6 +186,8 @@ export type WorkbenchRunDetail = {
   events: WorkbenchRunEventRow[];
   openTodo: WorkbenchPendingTodoRow | null;
   activeJob: WorkbenchActiveJob | null;
+  autoExecution: boolean;
+  manualTakeover: boolean;
 };
 
 export type WorkbenchTaskRunPage = PageResponse<WorkbenchTaskRunRow>;

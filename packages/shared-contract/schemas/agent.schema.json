@@ -37,12 +37,28 @@
     },
     "interactionMode": {
       "type": "string",
-      "enum": ["once", "ask_then_confirm", "pause_then_continue"]
+      "enum": [
+        "once",
+        "ask_then_confirm",
+        "pause_then_continue"
+      ]
     },
     "outputSchema": {
       "type": "object"
+    },
+    "structuredOutput": {
+      "$ref": "file-template.schema.json#/$defs/structuredOutput"
     }
   },
-  "required": ["id", "name", "version", "skills", "mcpServices", "promptTemplates", "modelConfig", "interactionMode"],
+  "required": [
+    "id",
+    "name",
+    "version",
+    "skills",
+    "mcpServices",
+    "promptTemplates",
+    "modelConfig",
+    "interactionMode"
+  ],
   "additionalProperties": false
 }

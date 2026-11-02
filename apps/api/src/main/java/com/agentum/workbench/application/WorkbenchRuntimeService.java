@@ -96,11 +96,6 @@ public class WorkbenchRuntimeService {
         )
     );
     private static final SortWhitelist RUN_SORT = SortWhitelist.of("updatedAt", "title", "workflowName", "state", "startedAt", "updatedAt");
-    /** 与前端看门狗（60s 无心跳）对齐：超过该时长仍未启动的 queued 作业视为僵死。 */
-    private static final long RECOVER_STALE_JOB_SECONDS = 60;
-    /** queued 且从未 markRunning，超过该窗口仍占租约/无消费，判定为僵尸作业。 */
-    private static final long QUEUED_ZOMBIE_JOB_SECONDS = 30;
-
     private final TenantRepository tenantRepository;
     private final WorkflowDefinitionRepository workflowDefinitionRepository;
     private final WorkflowVersionRepository workflowVersionRepository;
@@ -264,7 +259,7 @@ public class WorkbenchRuntimeService {
                 sortOrder++
             ));
         }
-        return new WorkbenchApi.AvailableWorkflowPreview(workflowId, version.getVersionNumber(), nodes);
+        return new WorkbenchApi.AvailableWorkflowPreview(workflowId, version.getVersionNumber(), nodes, allowsAutoExecution(snapshot), previewInputFields(snapshot));
     }
 
     @Transactional
@@ -295,6 +290,9 @@ public class WorkbenchRuntimeService {
 
         VersionSnapshot snapshot = readSnapshot(version);
         List<SnapshotNode> snapshotNodes = snapshot.nodes() == null ? List.of() : snapshot.nodes();
+        if (request.autoExecution() && !allowsAutoExecution(snapshot)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "WORKBENCH_AUTO_EXECUTION_FORBIDDEN", "该流程未允许自动执行");
+        }
         String title = normalizeTitle(request.title(), definition.getName());
         Instant now = clock.instant();
         WorkflowRunEntity run = WorkflowRunEntity.create(
@@ -309,6 +307,7 @@ public class WorkbenchRuntimeService {
             generateRunNumber(now),
             now
         );
+        if (request.autoExecution()) { run.enableAutoExecution(); run.setInputPayload(request.inputPayload()); }
         workflowRunRepository.save(run);
 
         List<WorkflowNodeRunEntity> nodeRuns = new ArrayList<>();
@@ -362,6 +361,13 @@ public class WorkbenchRuntimeService {
             run.getState(),
             RequestIds.current()
         );
+        if (run.isAutoAdvancing()) {
+            NextNodeResult next = prepareNextNode(tenantId, run.getId(), principal.userId());
+            if (next.hasNext() && !next.paused() && requiresManualAdvance(next.nodeType())) {
+                enqueueExecution(tenantId, run.getId(), next.nodeRunId(), next.nodeType(), principal.userId());
+            }
+        }
+        if (run.isAutoExecution()) { return getRunDetail(tenantId, principal, run.getId()); }
         return toRunDetail(run, nodeRuns, events, openTodo, loadUsersById(Set.of(principal.userId())));
     }
 
@@ -615,9 +621,7 @@ public class WorkbenchRuntimeService {
         UUID runId,
         WorkbenchApi.RollbackRunRequest request
     ) {
-        ensureActiveTenant(tenantId);
-        ensureAuthenticated(principal);
-        WorkflowRunEntity run = requireOwnedRun(tenantId, principal, runId);
+        WorkflowRunEntity run = requireLockedOwnedRun(tenantId, principal, runId);
         if (!run.isSaved()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_RUN_NOT_SAVED", "请先保存任务后再执行回退");
         }
@@ -640,6 +644,10 @@ public class WorkbenchRuntimeService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_ROLLBACK_NODE_INVALID", "只能回退到已执行过的步骤");
         }
         Instant now = clock.instant();
+        // 回退后由用户检查并重做，补偿轮询不能立即抢先把重置节点再次运行。
+        if (run.isAutoExecution()) {
+            run.setManualTakeover(true, now);
+        }
         int targetIndex = targetNode.getSortOrder();
         List<UUID> resetNodeIds = new ArrayList<>();
         for (WorkflowNodeRunEntity node : nodes) {
@@ -694,6 +702,7 @@ public class WorkbenchRuntimeService {
      */
     @Transactional
     public WorkbenchApi.RunDetail interruptRun(UUID tenantId, CurrentUserPrincipal principal, UUID runId) {
+        workflowRunRepository.lockById(runId);
         ensureActiveTenant(tenantId);
         ensureAuthenticated(principal);
         WorkflowRunEntity run = requireOwnedRun(tenantId, principal, runId);
@@ -704,6 +713,11 @@ public class WorkbenchRuntimeService {
         // 终态化在途作业：Worker 退出时据此识别「已被中断」，不再覆盖节点状态。
         abortLingeringExecution(runId);
         Instant now = clock.instant();
+        // 主动中断必须持久化交还用户控制，否则自动运行补偿会将 canceled 节点重新入队。
+        if (run.isAutoExecution()) {
+            run.setManualTakeover(true, now);
+            workflowRunRepository.save(run);
+        }
 
         List<WorkflowNodeRunEntity> nodes = workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(runId);
         WorkflowNodeRunEntity runningNode = nodes.stream()
@@ -761,10 +775,12 @@ public class WorkbenchRuntimeService {
      * 推进执行下一节点：等待类节点同步落待办；智能体/集群/交付节点创建执行作业并投递 MQ（202 语义），
      * 真实执行由 Worker 完成，进度通过 Redis Stream + SSE 中继回放。
      */
+    @Transactional
     public WorkbenchApi.RunDetail advanceRun(UUID tenantId, CurrentUserPrincipal principal, UUID runId) {
         ensureActiveTenant(tenantId);
         ensureAuthenticated(principal);
         WorkflowRunEntity run = requireOwnedRun(tenantId, principal, runId);
+        workflowRunRepository.lockById(runId);
         if (!"completed".equals(run.getState())) {
             assertNoExecutionInFlight(runId);
             cancellationGuard.clearCancel(runId);
@@ -793,6 +809,7 @@ public class WorkbenchRuntimeService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_NODE_RESTART_INVALID", "当前步骤状态不支持重新执行");
         }
         transactionTemplate.executeWithoutResult(status -> {
+            workflowRunRepository.lockById(runId);
             terminateRecoverableStaleJobs(runId);
             abortLingeringExecution(runId);
             assertNoExecutionInFlight(runId);
@@ -842,6 +859,7 @@ public class WorkbenchRuntimeService {
         String executionMode = ClusterIntentRoutingSupport.normalizeExecutionMode(node.getConfigSnapshot().get("executionMode"));
 
         transactionTemplate.executeWithoutResult(status -> {
+            workflowRunRepository.lockById(runId);
             terminateRecoverableStaleJobs(runId);
             abortLingeringExecution(runId);
             assertNoExecutionInFlight(runId);
@@ -947,6 +965,7 @@ public class WorkbenchRuntimeService {
         }
 
         transactionTemplate.executeWithoutResult(status -> {
+            workflowRunRepository.lockById(runId);
             assertNoExecutionInFlight(runId);
             Instant now = clock.instant();
             cancellationGuard.clearCancel(run.getId());
@@ -954,6 +973,9 @@ public class WorkbenchRuntimeService {
             List<Map<String, Object>> conversationHistory = readChatMessagesForFollowUp(node.getOutputSnapshot(), nextConfig);
             conversationHistory.add(Map.of("role", "user", "content", followUpMessage));
             nextConfig.put("conversationHistory", conversationHistory);
+            nextConfig.put("_formalAnswer", stringValue(node.getOutputSnapshot().get("final_answer")));
+            if (com.agentum.agent.application.AgentStructuredOutput.enabled(nextConfig)) nextConfig.put("_formalStructuredData", node.getOutputSnapshot().getOrDefault("structuredData", Map.of()));
+            if (run.isAutoExecution()) { run.setManualTakeover(true, now); }
             node.prepareForFollowUp(nextConfig, now);
             workflowNodeRunRepository.save(node);
 
@@ -1014,6 +1036,7 @@ public class WorkbenchRuntimeService {
         }
 
         transactionTemplate.executeWithoutResult(status -> {
+            workflowRunRepository.lockById(runId);
             assertNoExecutionInFlight(runId);
             Instant now = clock.instant();
             cancellationGuard.clearCancel(run.getId());
@@ -1024,12 +1047,13 @@ public class WorkbenchRuntimeService {
             }
 
             Map<String, Object> nextConfig = new LinkedHashMap<>(node.getConfigSnapshot());
+            if (run.isAutoExecution()) { run.setManualTakeover(true, now); }
             Map<String, Object> nextAgentConfig = appendClusterAgentFollowUp(nextConfig, agentIndex, clusterAgent, followUpMessage);
             nextConfig.put("clusterAgents", replaceClusterAgentConfig(nextConfig.get("clusterAgents"), agentIndex, nextAgentConfig));
 
             String executionMode = stringValue(nextConfig.get("executionMode"));
             for (WorkflowClusterAgentRunEntity row : clusterAgentRunRepository.findByNodeRunIdOrderByAgentIndexAsc(node.getId())) {
-                boolean shouldDelete = "relay".equals(executionMode) ? row.getAgentIndex() >= agentIndex : row.getAgentIndex() == agentIndex;
+                boolean shouldDelete = row.getAgentIndex() == agentIndex;
                 if (shouldDelete) {
                     clusterAgentRunRepository.delete(row);
                 }
@@ -1058,7 +1082,7 @@ public class WorkbenchRuntimeService {
                 metadata,
                 now
             ));
-            enqueueExecution(tenantId, runId, node.getId(), node.getNodeType(), principal.userId());
+            enqueueExecution(tenantId, runId, node.getId(), node.getNodeType(), principal.userId(), List.of(agentIndex));
         });
         log.info(
             "用户追问子智能体 tenantId={} userId={} runId={} nodeRunId={} agentIndex={} requestId={}",
@@ -1099,7 +1123,11 @@ public class WorkbenchRuntimeService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_FINAL_ANSWER_FORBIDDEN", "流程未开启「允许修改」，无法保存最终答案");
         }
 
-        transactionTemplate.executeWithoutResult(status -> applyFinalAnswerUpdate(run, node, answer, principal.userId()));
+        transactionTemplate.executeWithoutResult(status -> {
+            workflowRunRepository.lockById(runId); assertNoExecutionInFlight(runId);
+            invalidateFollowingResults(run, node, principal.userId(), clock.instant());
+            applyFinalAnswerUpdate(run, node, answer, principal.userId());
+        });
         log.info(
             "用户修改最终答案 tenantId={} userId={} runId={} nodeRunId={} requestId={}",
             tenantId, principal.userId(), runId, nodeRunId, RequestIds.current()
@@ -1137,12 +1165,84 @@ public class WorkbenchRuntimeService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_CLUSTER_AGENT_ANSWER_FORBIDDEN", "该子智能体未开启「允许修改」");
         }
 
-        transactionTemplate.executeWithoutResult(status -> applyClusterAgentAnswerUpdate(run, node, agentIndex, answer, principal.userId()));
+        transactionTemplate.executeWithoutResult(status -> {
+            workflowRunRepository.lockById(runId); assertNoExecutionInFlight(runId);
+            invalidateFollowingResults(run, node, principal.userId(), clock.instant());
+            applyClusterAgentAnswerUpdate(run, node, agentIndex, answer, principal.userId());
+        });
         log.info(
             "用户修改子智能体最终答案 tenantId={} userId={} runId={} nodeRunId={} agentIndex={} requestId={}",
             tenantId, principal.userId(), runId, nodeRunId, agentIndex, RequestIds.current()
         );
         return getRunDetail(tenantId, principal, runId);
+    }
+
+    @Transactional
+    public WorkbenchApi.RunDetail adoptAnswer(UUID tenantId, CurrentUserPrincipal principal, UUID runId, UUID nodeRunId, Integer agentIndex, int messageIndex) {
+        WorkflowRunEntity run = requireLockedOwnedRun(tenantId, principal, runId);
+        assertNoExecutionInFlight(runId);
+        WorkflowNodeRunEntity node = workflowNodeRunRepository.findByIdAndRunId(nodeRunId, runId).orElseThrow();
+        if (!"completed".equals(node.getState()) || "completed".equals(run.getState())) {
+            throw new ApiException(HttpStatus.CONFLICT, "WORKBENCH_RESULT_INVALID", "仅未结束任务的已完成步骤可以采用结果");
+        }
+        Map<String, Object> output;
+        if (agentIndex == null) {
+            if (!"agent".equals(node.getNodeType()) || !isFollowUpAllowed(node.getConfigSnapshot())) { throw new ApiException(HttpStatus.FORBIDDEN, "WORKBENCH_RESULT_FORBIDDEN", "该步骤不允许采用追问结果"); }
+            output = node.getOutputSnapshot();
+        } else {
+            if (!isClusterAgentFollowUpAllowed(node.getConfigSnapshot(), agentIndex)) { throw new ApiException(HttpStatus.FORBIDDEN, "WORKBENCH_RESULT_FORBIDDEN", "该子智能体不允许采用追问结果"); }
+            output = clusterAgentRunRepository.findByNodeRunIdAndAgentIndex(nodeRunId, agentIndex).orElseThrow().getOutput();
+        }
+        Object raw = output.get("chatMessages");
+        if (!(raw instanceof List<?> messages) || messageIndex < 0 || messageIndex >= messages.size()
+            || !(messages.get(messageIndex) instanceof Map<?, ?> selected) || !"assistant".equals(selected.get("role"))) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_RESULT_MESSAGE_INVALID", "请选择已保存的智能体回答");
+        }
+        String answer = stringValue(selected.get("content"));
+        if (answer.isBlank()) { throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_RESULT_EMPTY", "回答内容不能为空"); }
+        if (!Boolean.TRUE.equals(output.get("resultSelectionRequired")) && output.get("selectedResultMessageIndex") instanceof Number selectedIndex && selectedIndex.intValue() == messageIndex) {
+            return getRunDetail(tenantId, principal, runId);
+        }
+        // 回看旧节点并采用新结果时，已有下游结果失效；已发生的外部交付保留历史证据。
+        Instant now = clock.instant();
+        invalidateFollowingResults(run, node, principal.userId(), now);
+        if (agentIndex == null) {
+            if (com.agentum.agent.application.AgentStructuredOutput.enabled(node.getConfigSnapshot())) node.patchOutputSnapshot(Map.of("selectedResultMessageIndex", messageIndex), now);
+            applyFinalAnswerUpdate(run, node, answer, principal.userId());
+            node.patchOutputSnapshot(Map.of("selectedResultMessageIndex", messageIndex, "resultSelectionRequired", false), now);
+            workflowNodeRunRepository.save(node);
+        }
+        else {
+            var selectedAgent = clusterAgentRunRepository.findByNodeRunIdAndAgentIndex(nodeRunId, agentIndex).orElseThrow();
+            Map<String, Object> chosen = new LinkedHashMap<>(selectedAgent.getOutput());
+            chosen.put("selectedResultMessageIndex", messageIndex); chosen.put("resultSelectionRequired", false);
+            selectedAgent.patchOutput(chosen, now); clusterAgentRunRepository.save(selectedAgent);
+            applyClusterAgentAnswerUpdate(run, node, agentIndex, answer, principal.userId());
+            if ("relay".equals(node.getConfigSnapshot().get("executionMode"))) {
+                List<Integer> invalidated = new ArrayList<>();
+                for (var row : clusterAgentRunRepository.findByNodeRunIdOrderByAgentIndexAsc(nodeRunId)) {
+                    if (row.getAgentIndex() > agentIndex) { invalidated.add(row.getAgentIndex()); clusterAgentRunRepository.delete(row); }
+                }
+                if (!invalidated.isEmpty()) {
+                    clearClusterAgentConversationHistory(node, invalidated, now);
+                    node.resetToPending(now); workflowNodeRunRepository.save(node);
+                    workflowVariableSnapshotRepository.deleteByRunIdAndNodeRunIdIn(runId, List.of(nodeRunId));
+                }
+            }
+        }
+        log.info("用户采用本步结果 tenantId={} userId={} runId={} nodeRunId={} agentIndex={} requestId={}", tenantId, principal.userId(), runId, nodeRunId, agentIndex, RequestIds.current());
+        return getRunDetail(tenantId, principal, runId);
+    }
+
+    private void invalidateFollowingResults(WorkflowRunEntity run, WorkflowNodeRunEntity node, UUID operatorUserId, Instant now) {
+        resolveOpenTodos(run.getId(), operatorUserId, now);
+        List<WorkflowNodeRunEntity> downstream = workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(run.getId()).stream().filter(n -> n.getSortOrder() > node.getSortOrder()).toList();
+        for (WorkflowNodeRunEntity next : downstream) { next.resetToPending(now); clusterAgentRunRepository.deleteByNodeRunId(next.getId()); }
+        workflowNodeRunRepository.saveAll(downstream);
+        if (!downstream.isEmpty()) { workflowVariableSnapshotRepository.deleteByRunIdAndNodeRunIdIn(run.getId(), downstream.stream().map(WorkflowNodeRunEntity::getId).toList()); }
+        run.pauseAt(node.getNodeKey(), node.getName(), node.getNodeType(), node.getSortOrder() + 1, now);
+        if (run.isAutoExecution()) { run.setManualTakeover(true, now); }
+        workflowRunRepository.save(run);
     }
 
     private void applyFinalAnswerUpdate(
@@ -1154,6 +1254,8 @@ public class WorkbenchRuntimeService {
         Instant now = clock.instant();
         Map<String, Object> config = node.getConfigSnapshot() == null ? Map.of() : node.getConfigSnapshot();
         Map<String, Object> outputs = new LinkedHashMap<>(node.getOutputSnapshot() == null ? Map.of() : node.getOutputSnapshot());
+        com.agentum.agent.application.AgentStructuredOutput.adoptForAnswer(config, outputs, answer);
+        answer = com.agentum.agent.application.AgentStructuredOutput.readableEditedAnswer(config, outputs, answer);
         String outputName = firstNonBlank(
             stringValue(config.get("output")),
             stringValue(config.get("outputVariable")),
@@ -1162,8 +1264,11 @@ public class WorkbenchRuntimeService {
         outputs.put(outputName, answer);
         outputs.put("final_answer", answer);
         outputs.put("summary", summarizeAnswer(answer));
-        outputs.put("chatMessages", updateChatMessagesWithAnswer(outputs.get("chatMessages"), answer));
-        node.patchOutputSnapshot(outputs, now);
+        outputs.remove("candidate_answer");
+        outputs.put("resultSelectionRequired", false);
+        outputs.remove("selectedResultMessageIndex");
+        outputs.put("agent_response", answer);
+        node.replaceOutputSnapshot(outputs, now);
         workflowNodeRunRepository.save(node);
         workflowVariableSnapshotRepository.deleteByRunIdAndNodeRunIdIn(run.getId(), List.of(node.getId()));
         persistVariableSnapshots(run, node, outputs, now);
@@ -1195,9 +1300,17 @@ public class WorkbenchRuntimeService {
         }
 
         Map<String, Object> agentOutput = new LinkedHashMap<>(clusterAgent.getOutput() == null ? Map.of() : clusterAgent.getOutput());
+        if (node.getConfigSnapshot().get("clusterAgents") instanceof List<?> agentConfigs && agentConfigs.get(agentIndex) instanceof Map<?, ?> agentConfig) {
+            com.agentum.agent.application.AgentStructuredOutput.adoptForAnswer((Map<String, Object>) agentConfig, agentOutput, answer);
+            answer = com.agentum.agent.application.AgentStructuredOutput.readableEditedAnswer((Map<String, Object>) agentConfig, agentOutput, answer);
+        }
         agentOutput.put("final_answer", answer);
         agentOutput.put("agent_response", answer);
         agentOutput.put("summary", summarizeAnswer(answer));
+        agentOutput.remove("candidate_answer");
+        agentOutput.put("resultSelectionRequired", false);
+        String businessOutput = clusterAgentOutputVariable(node.getConfigSnapshot(), agentIndex);
+        if (!businessOutput.isBlank()) { agentOutput.put(businessOutput, answer); }
         clusterAgent.patchOutput(agentOutput, now);
         clusterAgentRunRepository.save(clusterAgent);
 
@@ -1209,6 +1322,10 @@ public class WorkbenchRuntimeService {
             summary.put("name", row.getName());
             summary.put("outputVariable", clusterAgentOutputVariable(node.getConfigSnapshot(), row.getAgentIndex()));
             summary.put("status", row.isSucceeded() ? "completed" : row.getStatus());
+            if (row.getOutput() != null) {
+                summary.put("resultSelectionRequired", row.getOutput().getOrDefault("resultSelectionRequired", false));
+                if (row.getOutput().containsKey("selectedResultMessageIndex")) summary.put("selectedResultMessageIndex", row.getOutput().get("selectedResultMessageIndex"));
+            }
             if (row.isSucceeded()) {
                 String body = row.getOutput() == null ? "" : stringValue(row.getOutput().get("final_answer"));
                 summary.put("final_answer", body);
@@ -1224,6 +1341,11 @@ public class WorkbenchRuntimeService {
         }
 
         Map<String, Object> outputs = new LinkedHashMap<>(node.getOutputSnapshot() == null ? Map.of() : node.getOutputSnapshot());
+        for (Map<String, Object> summary : summaries) {
+            String variable = stringValue(summary.get("outputVariable"));
+            if (!variable.isBlank() && summary.containsKey("final_answer")) { outputs.put(variable, summary.get("final_answer")); }
+        }
+        for (var agentRow : rows) if (agentRow.isSucceeded() && agentRow.getOutput().get("structuredVariable") instanceof String variable) outputs.put(variable, agentRow.getOutput().get("structuredData"));
         String finalAnswer = ClusterOutputSupport.finalAnswer(node.getConfigSnapshot(), outputs, summaries);
         outputs.put("clusterAgents", summaries);
         outputs.put("final_answer", finalAnswer);
@@ -1231,7 +1353,7 @@ public class WorkbenchRuntimeService {
         outputs.put(ClusterOutputSupport.outputVariable(node.getConfigSnapshot()), finalAnswer);
         outputs.put(ClusterIntentRoutingSupport.DEFAULT_INTENT_OUTPUT_VARIABLE, finalAnswer);
         outputs.put("summary", "智能体集群已完成 " + summaries.stream().filter(item -> "completed".equals(item.get("status"))).count() + " 个子智能体。");
-        node.patchOutputSnapshot(outputs, now);
+        node.replaceOutputSnapshot(outputs, now);
         workflowNodeRunRepository.save(node);
         workflowVariableSnapshotRepository.deleteByRunIdAndNodeRunIdIn(run.getId(), List.of(node.getId()));
         persistVariableSnapshots(run, node, outputs, now);
@@ -1267,6 +1389,7 @@ public class WorkbenchRuntimeService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_NODE_RECOVER_INVALID", "当前步骤状态不支持恢复进度");
         }
         transactionTemplate.executeWithoutResult(status -> {
+            workflowRunRepository.lockById(runId);
             terminateRecoverableStaleJobs(runId);
             // 页面 SSE 断流不代表 Worker 失败。仍有健康 queued/running 作业时必须拒绝恢复，
             // 否则释放租约并创建第二个作业会让两轮模型输出互相抢占。
@@ -1468,6 +1591,8 @@ public class WorkbenchRuntimeService {
         }
         boolean changed = false;
         Map<String, Object> nextConfig = new LinkedHashMap<>(config);
+        nextConfig.remove("_formalAnswer");
+        nextConfig.remove("_formalStructuredData");
         if (nextConfig.remove("conversationHistory") != null) {
             changed = true;
         }
@@ -1478,6 +1603,8 @@ public class WorkbenchRuntimeService {
             for (Object agent : agents) {
                 if (agent instanceof Map<?, ?> rawAgent) {
                     Map<String, Object> nextAgent = new LinkedHashMap<>((Map<String, Object>) rawAgent);
+                    nextAgent.remove("_formalAnswer");
+                    nextAgent.remove("_formalStructuredData");
                     if (nextAgent.remove("conversationHistory") != null) {
                         changed = true;
                     }
@@ -1514,6 +1641,8 @@ public class WorkbenchRuntimeService {
                 continue;
             }
             Map<String, Object> nextAgent = new LinkedHashMap<>((Map<String, Object>) rawMap);
+            if (rerunIndexes.contains(index)) { nextAgent.remove("_formalAnswer");
+                    nextAgent.remove("_formalStructuredData"); }
             if (rerunIndexes.contains(index) && nextAgent.remove("conversationHistory") != null) {
                 changed = true;
             }
@@ -1568,11 +1697,7 @@ public class WorkbenchRuntimeService {
 
     private boolean isRecoverablyStaleJob(WorkflowRunExecutionJobEntity job, Instant now) {
         if (WorkflowRunExecutionJobEntity.STATUS_QUEUED.equals(job.getStatus())) {
-            if (job.getEnqueuedAt().isBefore(now.minusSeconds(RECOVER_STALE_JOB_SECONDS))) {
-                return true;
-            }
-            return job.getStartedAt() == null
-                && job.getEnqueuedAt().isBefore(now.minusSeconds(QUEUED_ZOMBIE_JOB_SECONDS));
+            return job.getEnqueuedAt().isBefore(now.minusSeconds(runtimeProperties.getExecution().getQueueTimeoutSeconds()));
         }
         if (WorkflowRunExecutionJobEntity.STATUS_RUNNING.equals(job.getStatus())) {
             return !leaseService.hasActiveLease(job.getRunId())
@@ -1738,11 +1863,14 @@ public class WorkbenchRuntimeService {
         List<Map<String, Object>> history = readClusterAgentHistory(agentConfig, clusterAgent.getOutput());
         history.add(Map.of("role", "user", "content", followUpMessage));
         agentConfig.put("conversationHistory", history);
+        agentConfig.put("_formalAnswer", stringValue(clusterAgent.getOutput().get("final_answer")));
+        if (com.agentum.agent.application.AgentStructuredOutput.enabled(agentConfig)) agentConfig.put("_formalStructuredData", clusterAgent.getOutput().getOrDefault("structuredData", Map.of()));
         return agentConfig;
     }
 
     @SuppressWarnings("unchecked")
     private static List<Map<String, Object>> readClusterAgentHistory(Map<String, Object> agentConfig, Map<String, Object> output) {
+        if (com.agentum.agent.application.AgentStructuredOutput.enabled(agentConfig)) return readChatMessagesForFollowUp(output, agentConfig);
         Object rawHistory = agentConfig.get("conversationHistory");
         List<Map<String, Object>> history = new ArrayList<>();
         if (rawHistory instanceof List<?> items) {
@@ -1807,6 +1935,7 @@ public class WorkbenchRuntimeService {
                         Map<String, Object> message = new LinkedHashMap<>();
                         message.put("role", role);
                         message.put("content", content);
+                        if (com.agentum.agent.application.AgentStructuredOutput.enabled(config) && rawMap.get("structuredData") instanceof Map<?, ?> data) message.put("structuredData", data);
                         if (rawMap.get("processSteps") instanceof List<?> processSteps) {
                             message.put("processSteps", processSteps);
                         }
@@ -1901,6 +2030,7 @@ public class WorkbenchRuntimeService {
         if (!isTenantManager(principal) && (!"user".equals(todo.getWaitingForType()) || !principal.userId().equals(todo.getWaitingForId()))) {
             throw new ApiException(HttpStatus.FORBIDDEN, "WORKBENCH_TODO_HANDLE_FORBIDDEN", "当前账号不能处理该待办");
         }
+        workflowRunRepository.lockById(todo.getRunId());
         WorkflowRunEntity run = workflowRunRepository.findByIdAndTenantId(todo.getRunId(), tenantId)
             .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_RUN_NOT_FOUND", "任务运行不存在"));
         List<WorkflowNodeRunEntity> nodes = workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(run.getId());
@@ -1924,6 +2054,12 @@ public class WorkbenchRuntimeService {
         Map<String, Object> output = new HashMap<>(requestPayload);
         if (request != null && request.comment() != null && !request.comment().isBlank()) {
             output.put("comment", request.comment().trim());
+        }
+        // 当前产品已移除无修改去向的驳回操作；旧客户端不得借此绕过审核继续推进。
+        if ("human_review".equals(nodeRun.getNodeType())
+            && (Boolean.FALSE.equals(output.get("approved")) || (request != null && "reject".equals(request.action())))) {
+            log.warn("审核请求包含已移除的驳回动作 tenantId={} userId={} runId={} requestId={}", tenantId, principal.userId(), run.getId(), RequestIds.current());
+            throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_REVIEW_REJECT_UNSUPPORTED", "当前审核只支持确认通过");
         }
         nodeRun.complete(output, now);
         todo.resolve(principal.userId(), now);
@@ -1959,7 +2095,18 @@ public class WorkbenchRuntimeService {
                 now
             ));
         }
+        if (run.isAutoExecution()) {
+            Map<String, Object> inputs = scheduledInputPayload(run); inputs.putAll(requestPayload); run.setInputPayload(inputs);
+        }
+        // 自动运行被接管后提交待办，视为用户交还控制权。
+        if (run.isAutoExecution()) { run.setManualTakeover(false, now); }
         workflowRunRepository.save(run);
+        if (run.isAutoAdvancing() && !"completed".equals(run.getState())) {
+            NextNodeResult next = prepareNextNode(tenantId, run.getId(), principal.userId());
+            if (next.hasNext() && !next.paused() && requiresManualAdvance(next.nodeType())) {
+                enqueueExecution(tenantId, run.getId(), next.nodeRunId(), next.nodeType(), principal.userId());
+            }
+        }
         return getRunDetail(tenantId, principal, run.getId());
     }
 
@@ -2172,11 +2319,16 @@ public class WorkbenchRuntimeService {
         String errorMessage,
         List<WorkflowRunEventEntity> inMemoryEvents
     ) {
-        Map<String, Object> failureOutput = Map.of(
+        Map<String, Object> failureOutput = new LinkedHashMap<>(Map.of(
             "errorCode", errorCode == null ? "WORKBENCH_NODE_EXECUTION_FAILED" : errorCode,
             "errorMessage", errorMessage == null ? "节点执行失败" : errorMessage,
             "summary", errorMessage == null ? "节点执行失败，流程已停止。" : errorMessage
-        );
+        ));
+        if (node.getConfigSnapshot().containsKey("_formalAnswer")) {
+            failureOutput.putAll(node.getOutputSnapshot());
+            failureOutput.put("errorCode", errorCode == null ? "WORKBENCH_NODE_EXECUTION_FAILED" : errorCode);
+            failureOutput.put("errorMessage", errorMessage == null ? "追问执行失败，原正式结果已保留" : errorMessage);
+        }
         node.fail(failureOutput, now);
         workflowNodeRunRepository.save(node);
         run.failAt(node.getNodeKey(), node.getName(), node.getNodeType(), completed, now);
@@ -2267,7 +2419,9 @@ public class WorkbenchRuntimeService {
             nodes.stream().map(this::toNodeRunRow).toList(),
             events.stream().map(this::toRunEventRow).toList(),
             openTodo == null ? null : toOpenTodoRow(openTodo, run),
-            activeJobInfo(run.getId())
+            activeJobInfo(run.getId()),
+            run.isAutoExecution(),
+            run.isManualTakeover()
         );
     }
 
@@ -2410,6 +2564,10 @@ public class WorkbenchRuntimeService {
             summary.put("agentIndex", row.getAgentIndex());
             summary.put("name", row.getName());
             summary.put("status", row.isSucceeded() ? "completed" : row.getStatus());
+            if (row.getOutput() != null) {
+                summary.put("resultSelectionRequired", row.getOutput().getOrDefault("resultSelectionRequired", false));
+                if (row.getOutput().containsKey("selectedResultMessageIndex")) summary.put("selectedResultMessageIndex", row.getOutput().get("selectedResultMessageIndex"));
+            }
             if (row.isSucceeded()) {
                 Object finalAnswer = row.getOutput() == null ? null : row.getOutput().get("final_answer");
                 summary.put("final_answer", finalAnswer == null ? "" : finalAnswer.toString());
@@ -2662,6 +2820,16 @@ public class WorkbenchRuntimeService {
         return datePrefix + "-" + suffix;
     }
 
+    private WorkflowRunEntity requireLockedOwnedRun(UUID tenantId, CurrentUserPrincipal principal, UUID runId) {
+        ensureActiveTenant(tenantId); ensureAuthenticated(principal);
+        WorkflowRunEntity run = workflowRunRepository.lockById(runId).filter(r -> tenantId.equals(r.getTenantId()))
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_RUN_NOT_FOUND", "任务运行不存在"));
+        if (!isTenantManager(principal) && !principal.userId().equals(run.getCreatedBy())) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "WORKBENCH_RUN_WRITE_FORBIDDEN", "当前账号不能操作该任务");
+        }
+        return run;
+    }
+
     private WorkflowRunEntity requireOwnedRun(UUID tenantId, CurrentUserPrincipal principal, UUID runId) {
         WorkflowRunEntity run = workflowRunRepository.findByIdAndTenantId(runId, tenantId)
             .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_RUN_NOT_FOUND", "任务运行不存在"));
@@ -2777,6 +2945,90 @@ public class WorkbenchRuntimeService {
         }
     }
 
+    @Transactional
+    public boolean failActiveJob(UUID runId, UUID nodeRunId, UUID jobId, String code, String message) {
+        workflowRunRepository.lockById(runId);
+        WorkflowRunExecutionJobEntity job = jobRepository.findById(jobId).orElse(null);
+        if (job == null || !"running".equals(job.getStatus())) { return false; }
+        job.markFailed(code, message, clock.instant()); jobRepository.save(job);
+        return failNodeIfActive(runId, nodeRunId, code, message);
+    }
+
+    @Transactional
+    public void saveActiveClusterRow(UUID runId, UUID nodeRunId, UUID jobId, com.agentum.workflow.domain.WorkflowClusterAgentRunEntity row) {
+        workflowRunRepository.lockById(runId);
+        if (jobRepository.findById(jobId).filter(j -> "running".equals(j.getStatus())).isPresent()
+            && workflowNodeRunRepository.findById(nodeRunId).filter(n -> "running".equals(n.getState())).isPresent()) { clusterAgentRunRepository.save(row); }
+    }
+
+    @Transactional
+    public boolean saveActiveJobSuccess(UUID runId, UUID nodeRunId, UUID jobId, Map<String, Object> outputs, UUID userId) {
+        workflowRunRepository.lockById(runId);
+        if (jobRepository.findById(jobId).filter(j -> "running".equals(j.getStatus())).isEmpty()) { return false; }
+        saveNodeSuccess(runId, nodeRunId, outputs, userId);
+        return true;
+    }
+
+    @Transactional
+    public void retryActiveJob(UUID runId, UUID jobId, Runnable retry) {
+        workflowRunRepository.lockById(runId);
+        if (jobRepository.findById(jobId).filter(j -> "running".equals(j.getStatus())).isPresent()) { retry.run(); }
+    }
+
+    private void requireSelectedFollowUpResults(UUID runId) {
+        for (WorkflowNodeRunEntity node : workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(runId)) {
+            if (!"completed".equals(node.getState())) continue;
+            boolean unresolved = "agent".equals(node.getNodeType()) && Boolean.TRUE.equals(node.getOutputSnapshot().get("resultSelectionRequired"));
+            if ("parallel_group".equals(node.getNodeType())) {
+                unresolved = clusterAgentRunRepository.findByNodeRunIdOrderByAgentIndexAsc(node.getId()).stream()
+                    .anyMatch(row -> row.getOutput() != null && Boolean.TRUE.equals(row.getOutput().get("resultSelectionRequired")));
+            }
+            if (unresolved) {
+                log.warn("追问结果尚未选择，停止推进 runId={} nodeRunId={} requestId={}", runId, node.getId(), RequestIds.current());
+                throw new ApiException(HttpStatus.CONFLICT, "WORKBENCH_RESULT_SELECTION_REQUIRED", "追问后请选择一条回答作为本步结果，或先整理完整结果");
+            }
+        }
+    }
+
+    private List<Map<String, Object>> previewInputFields(VersionSnapshot snapshot) {
+        List<Map<String, Object>> fields = new ArrayList<>();
+        if (snapshot.nodes() == null) { return fields; }
+        for (SnapshotNode node : snapshot.nodes()) {
+            if (!"user_input".equals(node.nodeType()) || !(node.config().get("inputFields") instanceof List<?> configured)) { continue; }
+            for (Object raw : configured) {
+                if (raw instanceof Map<?, ?> field) {
+                    Map<String, Object> copy = new LinkedHashMap<>(); field.forEach((k, v) -> copy.put(String.valueOf(k), v));
+                    copy.put("nodeName", node.name()); fields.add(copy);
+                }
+            }
+        }
+        return fields;
+    }
+
+    private boolean allowsAutoExecution(VersionSnapshot snapshot) {
+        return snapshot.nodes() != null && snapshot.nodes().stream().anyMatch(n -> "trigger".equals(n.nodeType()) && Boolean.TRUE.equals(n.config().get("allowAutoExecution")));
+    }
+
+    @Transactional
+    public WorkbenchApi.RunDetail setAutomation(UUID tenantId, CurrentUserPrincipal principal, UUID runId, boolean takeover) {
+        WorkflowRunEntity run = requireLockedOwnedRun(tenantId, principal, runId);
+        if (!takeover && "failed".equals(run.getState())) { throw new ApiException(HttpStatus.CONFLICT, "WORKBENCH_AUTOMATION_FAILED", "当前步骤执行失败，请先恢复进度或重新执行"); }
+        if (!run.isAutoExecution() || "completed".equals(run.getState())) {
+            throw new ApiException(HttpStatus.CONFLICT, "WORKBENCH_AUTOMATION_INVALID", "当前任务不能切换自动执行状态");
+        }
+        if (!takeover) { requireSelectedFollowUpResults(runId); }
+        run.setManualTakeover(takeover, clock.instant());
+        workflowRunRepository.save(run);
+        workflowRunEventRepository.save(WorkflowRunEventEntity.create(runId, tenantId, takeover ? "manual_takeover" : "automation_resumed",
+            takeover ? "用户已接管" : "继续自动执行", takeover ? "当前执行将保留，完成后等待用户处理" : "用户已交还自动执行控制权", run.getCurrentNodeKey(), principal.userId(), Map.of(), clock.instant()));
+        log.info("切换自动执行控制权 tenantId={} userId={} runId={} takeover={} requestId={}", tenantId, principal.userId(), runId, takeover, RequestIds.current());
+        if (!takeover && !"failed".equals(run.getState()) && jobRepository.findByRunIdAndStatusIn(runId, List.of("queued", "running")).isEmpty()) {
+            NextNodeResult next = prepareNextNode(tenantId, runId, principal.userId());
+            if (next.hasNext() && !next.paused() && requiresManualAdvance(next.nodeType())) { enqueueExecution(tenantId, runId, next.nodeRunId(), next.nodeType(), principal.userId()); }
+        }
+        return getRunDetail(tenantId, principal, runId);
+    }
+
     public record NextNodeResult(boolean hasNext, UUID nodeRunId, String nodeType, String nodeName, boolean paused) {}
 
     @Transactional
@@ -2789,6 +3041,7 @@ public class WorkbenchRuntimeService {
             return new NextNodeResult(false, null, null, null, false);
         }
 
+        requireSelectedFollowUpResults(runId);
         List<WorkflowNodeRunEntity> nodeRuns = workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(runId);
         WorkflowNodeRunEntity nextNode = null;
         int completed = 0;
@@ -2807,6 +3060,24 @@ public class WorkbenchRuntimeService {
         }
 
         if (isWaitable(nextNode.getNodeType())) {
+            if (run.isAutoExecution() && run.isAutoAdvancing() && "user_input".equals(nextNode.getNodeType())) {
+                Map<String, Object> values = WorkflowInputDefaultValueResolver.applyScheduledOverrides(nextNode.getConfigSnapshot(), scheduledInputPayload(run), run.getStartedAt(), currentVariables(run, nodeRuns));
+                values = WorkflowInputDefaultValueResolver.apply(nextNode.getConfigSnapshot(), values, run.getStartedAt(), false);
+                Object fields = nextNode.getConfigSnapshot().get("inputFields");
+                boolean hasFiles = fields instanceof List<?> list && list.stream().anyMatch(f -> f instanceof Map<?, ?> field && "file".equals(field.get("fieldType")));
+                try {
+                    validateRequiredInputFields(nextNode, values);
+                    if (!hasFiles) {
+                        nextNode.complete(values, now); workflowNodeRunRepository.save(nextNode);
+                        persistVariableSnapshots(run, nextNode, values, now); resolveOpenTodos(runId, operatorUserId, now);
+                        workflowRunEventRepository.save(WorkflowRunEventEntity.create(runId, tenantId, "auto_input_applied", "预填资料已提交", "系统使用发起时填写的资料和字段默认值继续执行", nextNode.getNodeKey(), operatorUserId, Map.of("nodeType", "user_input"), now));
+                        return prepareNextNode(tenantId, runId, operatorUserId);
+                    }
+                } catch (ApiException missing) {
+                    if (!"WORKBENCH_INPUT_REQUIRED".equals(missing.getCode())) { throw missing; }
+                    // 缺少用户输入只生成待办，不把整次自动运行标记为失败。
+                }
+            }
             if (run.isScheduledTrigger() && "user_input".equals(nextNode.getNodeType())) {
                 Map<String, Object> scheduledInput = scheduledInputPayload(run);
                 validateRequiredInputFields(nextNode, scheduledInput);
@@ -2957,7 +3228,7 @@ public class WorkbenchRuntimeService {
         List<WorkflowNodeRunEntity> nodes = workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(runId);
         int completed = (int) nodes.stream().filter(n -> "completed".equals(n.getState())).count();
 
-        if (run.isScheduledTrigger()) {
+        if (run.isAutoAdvancing()) {
             workflowRunEventRepository.save(WorkflowRunEventEntity.create(
                 run.getId(),
                 run.getTenantId(),
@@ -3003,14 +3274,18 @@ public class WorkbenchRuntimeService {
     }
 
     @Transactional(readOnly = true)
-    public boolean isScheduledRun(UUID runId) {
-        return workflowRunRepository.findById(runId).map(WorkflowRunEntity::isScheduledTrigger).orElse(false);
+    public boolean shouldAutomaticallyContinue(UUID runId) {
+        return workflowRunRepository.findById(runId).map(WorkflowRunEntity::isAutoAdvancing).orElse(false);
     }
 
     @Transactional
-    public void continueScheduledRunAfterJob(UUID runId, UUID operatorUserId) {
-        WorkflowRunEntity run = workflowRunRepository.findById(runId).orElse(null);
-        if (run == null || !run.isScheduledTrigger() || "completed".equals(run.getState()) || "failed".equals(run.getState())) {
+    public void continueAutomaticRunAfterJob(UUID runId, UUID operatorUserId) {
+        WorkflowRunEntity run = workflowRunRepository.lockById(runId).orElse(null);
+        if (run == null || !run.isAutoAdvancing() || "completed".equals(run.getState()) || "failed".equals(run.getState())) {
+            return;
+        }
+        // 完成回调、补偿轮询和用户恢复可能同时到达，运行行锁下再次检查在途作业和待办。
+        if (hasOpenTodo(runId) || !jobRepository.findByRunIdAndStatusIn(runId, List.of("queued", "running")).isEmpty()) {
             return;
         }
         NextNodeResult next = prepareNextNode(run.getTenantId(), runId, operatorUserId);

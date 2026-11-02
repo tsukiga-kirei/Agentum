@@ -2,6 +2,7 @@ package com.agentum.attachment.application;
 
 import com.agentum.attachment.domain.AttachmentRecognitionSettingEntity;
 import java.util.List;
+import java.util.stream.Stream;
 
 /**
  * 附件识别扩展名策略的单一事实来源，供系统配置展示、流程发布校验和运行态上传共同复用。
@@ -28,6 +29,10 @@ public final class AttachmentRecognitionPolicy {
     }
 
     public static List<String> supportedExtensions(AttachmentRecognitionSettingEntity settings) {
+        if ("hybrid".equals(settings.getRecognitionEngine())) {
+            return Stream.concat(LOCAL_SUPPORTED_EXTENSIONS.stream(), settings.getMineruSupportedExtensions().stream())
+                .distinct().filter(extension -> !BLOCKED_EXTENSIONS.contains(extension)).toList();
+        }
         return "mineru".equals(settings.getRecognitionEngine())
             ? settings.getMineruSupportedExtensions()
             : LOCAL_SUPPORTED_EXTENSIONS;

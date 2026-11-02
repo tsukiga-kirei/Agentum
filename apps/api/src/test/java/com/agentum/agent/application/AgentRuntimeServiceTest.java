@@ -177,6 +177,120 @@ class AgentRuntimeServiceTest {
     }
 
     @Test
+    void shouldKeepFormalOutputWhenFollowUpReturnsOnlyExplanation() {
+        TenantModelAssignmentRepository assignmentRepository = mock(TenantModelAssignmentRepository.class);
+        ModelProviderRepository providerRepository = mock(ModelProviderRepository.class);
+        SystemCapabilityRepository capabilityRepository = mock(SystemCapabilityRepository.class);
+        TenantAssetCapabilityRepository assetRepository = mock(TenantAssetCapabilityRepository.class);
+        McpRuntimeService mcpRuntimeService = mock(McpRuntimeService.class);
+        SkillRuntimeService skillRuntimeService = mock(SkillRuntimeService.class);
+        FieldEncryptionService encryptionService = mock(FieldEncryptionService.class);
+        ModelCallLogRepository callLogRepository = mock(ModelCallLogRepository.class);
+        ScriptedModelChatClient modelChatClient = new ScriptedModelChatClient();
+        AgentRuntimeService service = new AgentRuntimeService(
+            assignmentRepository,
+            providerRepository,
+            assetRepository,
+            mcpRuntimeService,
+            skillRuntimeService,
+            encryptionService,
+            callLogRepository,
+            modelChatClient,
+            new ObjectMapper(),
+            Clock.fixed(NOW, ZoneOffset.UTC),
+            mock(RunCancellationGuard.class),
+            new PromptContentResolver(capabilityRepository, assetRepository),
+            runtimeProperties(),
+            attachmentVariableContentResolver()
+        );
+
+        ModelProviderEntity provider = ModelProviderEntity.create(
+            "OpenAI 兼容",
+            "openai-compatible",
+            "https://example.test",
+            "gpt-4o-mini",
+            true,
+            "active",
+            NOW
+        );
+        provider.getSettings().put("maxTokens", 8192);
+        TenantModelAssignmentEntity assignment = TenantModelAssignmentEntity.create(TENANT_ID, provider.getId(), "gpt-4o-mini", "enabled", NOW);
+        WorkflowRunEntity run = WorkflowRunEntity.create(
+            TENANT_ID,
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            1,
+            "授信复核",
+            "授信报告流程",
+            OPERATOR_ID,
+            2,
+            "20260605-TEST",
+            NOW
+        );
+        WorkflowNodeRunEntity nodeRun = WorkflowNodeRunEntity.pending(
+            run.getId(),
+            TENANT_ID,
+            run.getWorkflowId(),
+            run.getWorkflowVersionId(),
+            "agent_review",
+            "agent",
+            "智能体分析",
+            Map.of(),
+            Map.of(),
+            Map.of(
+                "systemPrompt", "你是授信分析智能体",
+                "userPrompt", "请分析 {{company}}",
+                "skillIds", List.of("skill-id"),
+                "_formalAnswer", "完整业务报告",
+                "enableThinking", false,
+                "maxAgentIterationsPerTurn", 4
+            ),
+            1,
+            NOW
+        );
+        SkillRuntimeService.SkillToolBinding skillBinding = new SkillRuntimeService.SkillToolBinding(
+            "skill_credit_read",
+            UUID.randomUUID(),
+            "credit",
+            "授信分析 Skill",
+            "授信分析方法",
+            "capabilities/credit/SKILL.md"
+        );
+
+        when(assignmentRepository.findByTenantIdOrderByCreatedAtDesc(TENANT_ID)).thenReturn(List.of(assignment));
+        when(providerRepository.findById(provider.getId())).thenReturn(Optional.of(provider));
+        when(mcpRuntimeService.resolveMcpTools(any())).thenReturn(List.of());
+        when(skillRuntimeService.resolveSkillTools(TENANT_ID, nodeRun.getConfigSnapshot())).thenReturn(List.of(skillBinding));
+        when(skillRuntimeService.readSkill(any(), any())).thenReturn(new SkillRuntimeService.SkillReadResult(
+            "credit",
+            "授信分析 Skill",
+            "SKILL.md",
+            "按主体、现金流和担保条件综合判断。",
+            false
+        ));
+        when(callLogRepository.save(any(ModelCallLogEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        List<String> preparedPrompts = new ArrayList<>();
+        AgentRuntimeResult result = service.executeStreaming(new AgentRuntimeRequest(
+            run,
+            nodeRun,
+            nodeRun.getConfigSnapshot(),
+            Map.of("company", "云程科技"),
+            Map.of(),
+            OPERATOR_ID
+        ), new AgentRuntimeService.AgentRuntimeEventSink() {
+            @Override
+            public void onPromptPrepared(String renderedUserPrompt) {
+                preparedPrompts.add(renderedUserPrompt);
+            }
+        });
+
+        assertThat(result.outputs()).containsEntry("final_answer", "完整业务报告").containsEntry("agent_response", "完整业务报告").containsEntry("resultSelectionRequired", true);
+        assertThat(result.outputs().get("candidate_answer")).isNotEqualTo("完整业务报告");
+        assertThat(result.outputs().get("chatMessages").toString()).doesNotContain("完整业务报告");
+    }
+
+    @Test
     void shouldContinueConversationFromFollowUpHistory() {
         TenantModelAssignmentRepository assignmentRepository = mock(TenantModelAssignmentRepository.class);
         ModelProviderRepository providerRepository = mock(ModelProviderRepository.class);

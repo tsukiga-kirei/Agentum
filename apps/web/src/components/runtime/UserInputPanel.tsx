@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { DatePicker, Select } from "antd";
 import dayjs from "dayjs";
 import "dayjs/locale/zh-cn";
@@ -17,6 +17,7 @@ import {
 } from "../../utils/workflowInputField";
 import {
   getAttachmentRecognitionEngineLabel,
+  getAttachmentParseSummary,
   getEffectiveAttachmentExtensions,
 } from "../../utils/attachmentRecognition";
 
@@ -47,6 +48,7 @@ export function UserInputPanel({
   onError,
 }: UserInputPanelProps) {
   const [formValues, setFormValues] = useState<Record<string, string>>({});
+  const initializedNodeRef = useRef<string | undefined>(undefined);
   const [attachments, setAttachments] = useState<Record<string, InputAttachmentRow[]>>({});
   const [uploadingFields, setUploadingFields] = useState<Set<string>>(new Set());
   const [previewAttachment, setPreviewAttachment] = useState<InputAttachmentRow | null>(null);
@@ -134,7 +136,10 @@ export function UserInputPanel({
       }
       initial[field.id] = candidateValue;
     });
-    setFormValues(initial);
+    // 自动运行的状态轮询会重建字段对象，同一待办内必须保留尚未提交的用户输入。
+    const preserveDraft = initializedNodeRef.current === activeStep.nodeRunId && activeStep.state === "waiting";
+    initializedNodeRef.current = activeStep.nodeRunId;
+    setFormValues(previous => preserveDraft ? { ...initial, ...previous } : initial);
   }, [activeStep.nodeRunId, fieldConfigs, activeStep.inputs]);
 
   useEffect(() => {
@@ -340,7 +345,7 @@ export function UserInputPanel({
                       {(attachments[field.id] ?? []).map((attachment) => (
                         <div key={attachment.id} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
                           <Paperclip size={17} className="shrink-0 text-blue-500" />
-                          <div className="min-w-0 flex-1"><strong className="block truncate text-sm text-slate-700 dark:text-slate-300" title={attachment.fileName}>{attachment.fileName}</strong><span className={`text-xs ${attachment.status === "failed" ? "text-rose-500" : attachment.status === "ready" ? "text-emerald-500" : "text-amber-500"}`}>{attachment.status === "queued" ? "等待识别" : attachment.status === "parsing" ? "识别中" : attachment.status === "ready" ? (attachment.recognitionEngine === "none" ? "已保存" : "识别完成") : attachment.errorMessage || "识别失败"} · {formatFileSize(attachment.sizeBytes)}</span></div>
+                          <div className="min-w-0 flex-1"><strong className="block truncate text-sm text-slate-700 dark:text-slate-300" title={attachment.fileName}>{attachment.fileName}</strong><span className={`text-xs ${attachment.status === "failed" ? "text-rose-500" : attachment.status === "ready" ? "text-emerald-500" : "text-amber-500"}`}>{attachment.status === "queued" ? "等待识别" : attachment.status === "parsing" ? "识别中" : attachment.status === "ready" ? (attachment.recognitionEngine === "none" ? "已保存" : "识别完成") : attachment.errorMessage || "识别失败"} · {formatFileSize(attachment.sizeBytes)}</span>{attachment.status === "ready" && attachment.parserType ? <span className="block text-xs text-slate-500 dark:text-slate-400">{getAttachmentParseSummary(attachment.parserType, attachment.fallbackReason)}</span> : null}</div>
                           <button type="button" className="agent-button h-8 px-2 text-xs" onClick={() => setPreviewAttachment(attachment)}><Eye size={14} />预览</button>
                           <button type="button" className="agent-button h-8 px-2 text-xs" aria-label="下载附件" title="下载附件" disabled={downloadingAttachmentId === attachment.id} onClick={() => void downloadAttachment(attachment)}><Download size={14} /></button>
                           {!inputDisabled ? <button type="button" className="agent-button h-8 px-2 text-xs text-rose-500" onClick={() => void deleteAttachment(field.id, attachment.id)}><Trash2 size={14} /></button> : null}

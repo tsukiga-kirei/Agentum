@@ -149,6 +149,12 @@ public class WorkflowNodeRunEntity {
         this.updatedAt = now;
     }
 
+    /** 用户确认正式结果时替换完整输出，确保已清除的候选与选择标记不会因增量合并残留。 */
+    public void replaceOutputSnapshot(Map<String, Object> output, Instant now) {
+        this.outputSnapshot = output == null ? new HashMap<>() : new HashMap<>(output);
+        this.updatedAt = now;
+    }
+
     /** 整步重新执行时还原配置快照（如清除追问对话历史）。 */
     public void replaceConfigSnapshot(Map<String, Object> nextConfigSnapshot, Instant now) {
         this.configSnapshot = nextConfigSnapshot == null ? new HashMap<>() : new HashMap<>(nextConfigSnapshot);
@@ -184,7 +190,8 @@ public class WorkflowNodeRunEntity {
      */
     public void prepareForFollowUp(Map<String, Object> nextConfigSnapshot, Instant now) {
         this.configSnapshot = nextConfigSnapshot == null ? new HashMap<>() : new HashMap<>(nextConfigSnapshot);
-        this.outputSnapshot = new HashMap<>();
+        if (this.outputSnapshot == null) { this.outputSnapshot = new HashMap<>(); }
+        this.outputSnapshot.remove("candidate_answer");
         this.state = "running";
         this.stateLabel = "运行中";
         this.completedAt = null;

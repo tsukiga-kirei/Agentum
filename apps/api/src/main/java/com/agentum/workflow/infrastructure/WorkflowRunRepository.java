@@ -14,6 +14,12 @@ public interface WorkflowRunRepository extends JpaRepository<WorkflowRunEntity, 
 
     Optional<WorkflowRunEntity> findByIdAndTenantId(UUID id, UUID tenantId);
 
+    java.util.List<WorkflowRunEntity> findTop100ByAutoExecutionTrueAndManualTakeoverFalseAndStateInOrderByUpdatedAtAsc(Collection<String> states);
+
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select r from WorkflowRunEntity r where r.id = :id")
+    Optional<WorkflowRunEntity> lockById(@Param("id") UUID id);
+
     boolean existsByWorkflowId(UUID workflowId);
 
     @Query("""

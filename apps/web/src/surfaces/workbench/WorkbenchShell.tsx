@@ -1,3 +1,4 @@
+import { SysModalMask } from "../../components/common/SysModalMask";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Activity,
@@ -34,7 +35,8 @@ import {
   X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { Drawer, Empty, Pagination, Segmented, Select, message } from "antd";
+import { DatePicker, Drawer, Empty, Pagination, Segmented, Select, message } from "antd";
+import dayjs from "dayjs";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { SurfacePageLayout } from "../../components/workbench/SurfacePageLayout";
 import { TaskRunWorkspace } from "../../components/runtime/TaskRunWorkspace";
@@ -467,7 +469,11 @@ export function WorkbenchShell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runId, tenantId, token]);
 
-  async function handleLaunchTask(workflow: WorkbenchAvailableWorkflowRow) {
+  const [launchFields, setLaunchFields] = useState<import("../../types/workbench").WorkbenchAvailableWorkflowPreview["inputFields"]>([]);
+  const [launchInputs, setLaunchInputs] = useState<Record<string, string>>({});
+  const [launchConfiguring, setLaunchConfiguring] = useState(false);
+  const [launchChoice, setLaunchChoice] = useState<WorkbenchAvailableWorkflowRow | null>(null);
+  async function handleLaunchTask(workflow: WorkbenchAvailableWorkflowRow, autoExecution?: boolean) {
     if (!tenantId || !token) {
       return;
     }
@@ -478,9 +484,21 @@ export function WorkbenchShell() {
 
     setCreatingWorkflowId(workflow.id);
     try {
-      const detail = await workbenchApi.createRun(tenantId, token, workflow.id, workflow.name);
+      if (autoExecution === undefined) {
+        const preview = await workbenchApi.getAvailableWorkflowPreview(tenantId, token, workflow.id);
+        if (preview.allowAutoExecution) {
+          setLaunchFields(preview.inputFields);
+          setLaunchInputs({});
+          setLaunchConfiguring(false);
+          setWorkflowDrawer(null);
+          setLaunchChoice(workflow);
+          return;
+        }
+      }
+      const detail = await workbenchApi.createRun(tenantId, token, workflow.id, workflow.name, autoExecution === true, autoExecution ? launchInputs : {});
+      setLaunchChoice(null);
       setWorkflowDrawer(null);
-      messageApi.success(`已发起「${detail.title}」，请先保存后才会进入待办`);
+      messageApi.success(detail.autoExecution ? `已发起「${detail.title}」，输入提交后将自动执行` : `已发起「${detail.title}」，请先保存后才会进入待办`);
       navigate(paths.workbench.run(detail.id));
     } catch (error) {
       const reason = error instanceof AgentumApiError ? error.message : "任务创建失败";
@@ -1084,6 +1102,67 @@ export function WorkbenchShell() {
 
           </>
         )}
+        {launchChoice ? (
+          <SysModalMask onClose={() => { if (!creatingWorkflowId) setLaunchChoice(null); }}>
+            <section role="dialog" aria-modal="true" aria-labelledby="launch-mode-title" className="sys-modal workbench-launch-mode-modal">
+              <div className="sys-modal-header"><h3 id="launch-mode-title" className="sys-modal-title">{launchConfiguring ? "填写运行资料" : "选择执行方式"}</h3></div>
+              <div className="sys-modal-body text-sm text-[var(--color-text-secondary)]">
+                {launchConfiguring ? <p>已选择自动执行。为「{launchChoice.name}」预填资料后，即可开始。</p> : <>
+                  <p>选择「{launchChoice.name}」本次运行的推进方式。</p>
+                  <div className="workbench-launch-mode-options">
+                    <div><strong>逐步确认</strong><p>每步查看结果，确认后再继续。</p></div>
+                    <div><strong>自动执行</strong><p>步骤成功后自动继续，报错停止，可随时主动接管。</p></div>
+                  </div>
+                </>}
+                {launchConfiguring && launchFields.length ? <div className="workbench-launch-mode-fields">
+                  <p className="text-xs text-[var(--color-text-tertiary)]">可提前填写输入资料；留空的必填项和附件将在运行到对应步骤时暂停等待。</p>
+                  {launchFields.map(field => (
+                    <div key={`${field.nodeName}-${field.id}`} className="sys-field workbench-launch-mode-field">
+                      <div className="workbench-launch-mode-label">
+                        <label htmlFor={`launch-input-${field.variable}`} className="sys-field-label">{field.label}</label>
+                        <span>{field.nodeName}</span>
+                      </div>
+                      {field.fieldType === "file" ? (
+                        <p className="text-xs text-[var(--color-text-tertiary)]">附件请在对应输入步骤上传</p>
+                      ) : field.fieldType === "select" ? (
+                        <Select id={`launch-input-${field.variable}`} className="agent-admin-select w-full"
+                          classNames={{ popup: { root: "agent-select-dropdown agent-admin-select-dropdown" } }}
+                          suffixIcon={<ChevronDown size={16} aria-hidden="true" />}
+                          placeholder="选择选项，或使用流程默认值" allowClear options={field.options}
+                          value={launchInputs[field.variable] || undefined}
+                          onChange={value => setLaunchInputs(old => ({ ...old, [field.variable]: value ?? "" }))} />
+                      ) : field.fieldType === "date" ? (
+                        <DatePicker id={`launch-input-${field.variable}`} className="workbench-user-input-date-picker w-full"
+                          classNames={{ popup: { root: "workbench-user-input-date-picker-popup" } }} inputReadOnly
+                          picker={field.dateGranularity === "year" ? "year" : field.dateGranularity === "month" ? "month" : "date"}
+                          placeholder="选择日期，或使用流程默认值"
+                          value={launchInputs[field.variable] ? dayjs(launchInputs[field.variable]) : null}
+                          onChange={value => setLaunchInputs(old => ({ ...old, [field.variable]: value ? value.format(field.dateGranularity === "year" ? "YYYY" : field.dateGranularity === "month" ? "YYYY-MM" : "YYYY-MM-DD") : "" }))} />
+                      ) : (
+                        <div className="sys-field-input-wrap">
+                          <FileText size={16} className="sys-field-prefix" aria-hidden="true" />
+                          <input id={`launch-input-${field.variable}`} className="sys-field-input" value={launchInputs[field.variable] ?? ""}
+                            placeholder={field.defaultValue || "请输入内容，留空使用流程默认值"}
+                            onChange={e => setLaunchInputs(old => ({ ...old, [field.variable]: e.target.value }))} />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div> : null}
+              </div>
+              <div className="sys-modal-footer flex-wrap">
+                <button className="sys-btn sys-btn--default" disabled={!!creatingWorkflowId} onClick={() => setLaunchChoice(null)}>取消</button>
+                {launchConfiguring ? <>
+                  <button className="sys-btn sys-btn--default" disabled={!!creatingWorkflowId} onClick={() => setLaunchConfiguring(false)}>上一步</button>
+                  <button className="sys-btn sys-btn--primary" disabled={!!creatingWorkflowId} onClick={() => void handleLaunchTask(launchChoice, true)}>{creatingWorkflowId ? "正在创建…" : "开始自动执行"}</button>
+                </> : <>
+                  <button className="sys-btn sys-btn--default" disabled={!!creatingWorkflowId} onClick={() => void handleLaunchTask(launchChoice, false)}>逐步确认</button>
+                  <button className="sys-btn sys-btn--primary" disabled={!!creatingWorkflowId} onClick={() => launchFields.length ? setLaunchConfiguring(true) : void handleLaunchTask(launchChoice, true)}>自动执行</button>
+                </>}
+              </div>
+            </section>
+          </SysModalMask>
+        ) : null}
         <WorkflowLaunchDrawer
           workflow={workflowDrawer}
           rootClassName={drawerRootClassName}

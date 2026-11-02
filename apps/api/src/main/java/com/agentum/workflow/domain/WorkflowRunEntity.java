@@ -88,6 +88,19 @@ public class WorkflowRunEntity {
     @Column(name = "trigger_payload", nullable = false, columnDefinition = "jsonb")
     private Map<String, Object> triggerPayload;
 
+    @Column(name = "auto_execution", nullable = false)
+    private boolean autoExecution;
+    @Column(name = "manual_takeover", nullable = false)
+    private boolean manualTakeover;
+
+    public boolean isAutoExecution() { return autoExecution; }
+    public boolean isManualTakeover() { return manualTakeover; }
+    public boolean isAutoAdvancing() { return (autoExecution || isScheduledTrigger()) && !manualTakeover; }
+    public void setInputPayload(Map<String, Object> inputs) { this.triggerPayload.put("inputPayload", inputs == null ? Map.of() : new LinkedHashMap<>(inputs)); }
+    public void enableAutoExecution() { autoExecution = true; saved = true; }
+    // 接管只停止后续推进，保留正在执行的节点及其结果。
+    public void setManualTakeover(boolean value, Instant now) { manualTakeover = value; updatedAt = now; }
+
     protected WorkflowRunEntity() {
     }
 

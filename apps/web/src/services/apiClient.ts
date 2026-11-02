@@ -222,7 +222,8 @@ async function apiRequest<T>(path: string, options: RequestOptions = {}): Promis
   } catch (error) {
     // API client 是前端统一出入口，诊断日志只记录路径和错误摘要，禁止打印 body、Authorization 或 token。
     console.error("[api] 请求异常", { path, message: error instanceof Error ? error.message : "unknown" });
-    throw error;
+    if (error instanceof Error && error.name === "AbortError") throw error;
+    throw new AgentumApiError("暂时无法连接服务，请稍后重试", "SYSTEM_NETWORK_ERROR", "req_unknown");
   }
 
   let envelope: ApiEnvelope<T>;
@@ -562,6 +563,29 @@ export const attachmentApi = {
     apiRequest<AttachmentRecognitionCapabilities>("/api/attachment-recognition/capabilities", { token }),
 };
 
+export const deliveryTemplateApi = {
+  replaceFile: (tenantId: string, token: string, id: string, file: File) => {
+    const body = new FormData(); body.append("file", file);
+    return apiRequest<import("../types/delivery-template").DeliveryTemplate>(`/api/tenants/${tenantId}/delivery-templates/${id}/file`, { method: "POST", token, body });
+  },
+  previewLayout: (tenantId: string, token: string, id: string, body: { capabilityId: string; values: Record<string, unknown>; locationStyles?: Record<string, import("../types/delivery-template").TemplateStyle>; fileName?: string }) =>
+    apiRequest<import("../types/delivery-template").TemplateWorkbookSheet[]>(`/api/tenants/${tenantId}/delivery-templates/${id}/preview-layout`, { method: "POST", token, body }),
+  list: (tenantId: string, token: string, page = 1, published = false, keyword = "") =>
+    apiRequest<PageResponse<import("../types/delivery-template").DeliveryTemplate>>(`/api/tenants/${tenantId}/delivery-templates?${new URLSearchParams({ page: String(page), size: "10", published: String(published), keyword })}`, { token }),
+  get: (tenantId: string, token: string, id: string) => apiRequest<import("../types/delivery-template").DeliveryTemplate>(`/api/tenants/${tenantId}/delivery-templates/${id}`, { token }),
+  upload: (tenantId: string, token: string, name: string, file: File) => {
+    const body = new FormData(); body.append("name", name); body.append("file", file);
+    return apiRequest<import("../types/delivery-template").DeliveryTemplate>(`/api/tenants/${tenantId}/delivery-templates`, { method: "POST", token, body });
+  },
+  save: (tenantId: string, token: string, template: import("../types/delivery-template").DeliveryTemplate) =>
+    apiRequest<import("../types/delivery-template").DeliveryTemplate>(`/api/tenants/${tenantId}/delivery-templates/${template.id}`, { method: "PUT", token, body: { name: template.name, readScope: template.readScope, spec: template.spec } }),
+  publish: (tenantId: string, token: string, id: string) => apiRequest<import("../types/delivery-template").DeliveryTemplate>(`/api/tenants/${tenantId}/delivery-templates/${id}/publish`, { method: "POST", token }),
+  copy: (tenantId: string, token: string, id: string) => apiRequest<import("../types/delivery-template").DeliveryTemplate>(`/api/tenants/${tenantId}/delivery-templates/${id}/copy`, { method: "POST", token }),
+  file: (tenantId: string, token: string, id: string) => apiFileRequest(`/api/tenants/${tenantId}/delivery-templates/${id}/file`, { token }),
+  preview: (tenantId: string, token: string, id: string, body: { capabilityId: string; values: Record<string, unknown>; locationStyles?: Record<string, import("../types/delivery-template").TemplateStyle>; fileName?: string }) =>
+    apiFileRequest(`/api/tenants/${tenantId}/delivery-templates/${id}/preview`, { method: "POST", token, body }),
+};
+
 export const assetApi = {
   summary: (tenantId: string, token: string) => apiRequest<AssetSummary>(`/api/tenants/${tenantId}/assets/summary`, { token }),
   listShareableMembers: (tenantId: string, token: string) =>
@@ -653,11 +677,11 @@ export const workbenchApi = {
       `/api/tenants/${tenantId}/workbench/available-workflows/${workflowId}/preview`,
       { token },
     ),
-  createRun: (tenantId: string, token: string, workflowId: string, title: string) =>
+  createRun: (tenantId: string, token: string, workflowId: string, title: string, autoExecution = false, inputPayload: Record<string, unknown> = {}) =>
     apiRequest<WorkbenchRunDetail>(`/api/tenants/${tenantId}/workbench/runs`, {
       method: "POST",
       token,
-      body: { workflowId, title },
+      body: { workflowId, title, autoExecution, inputPayload },
     }),
   listActiveRuns: (
     tenantId: string,
@@ -715,6 +739,10 @@ export const workbenchApi = {
       token,
       body: { action: "complete", comment, payload },
     }),
+  setAutomation: (tenantId: string, token: string, runId: string, takeover: boolean) =>
+    apiRequest<WorkbenchRunDetail>(`/api/tenants/${tenantId}/workbench/runs/${runId}/automation`, { method: "POST", token, body: { takeover } }),
+  adoptAnswer: (tenantId: string, token: string, runId: string, nodeRunId: string, messageIndex: number, agentIndex?: number) =>
+    apiRequest<WorkbenchRunDetail>(`/api/tenants/${tenantId}/workbench/runs/${runId}/nodes/${nodeRunId}/adopt-answer`, { method: "POST", token, body: { messageIndex, agentIndex } }),
   advanceStep: (tenantId: string, token: string, runId: string) =>
     apiRequest<WorkbenchRunDetail>(`/api/tenants/${tenantId}/workbench/runs/${runId}/advance`, {
       method: "POST",

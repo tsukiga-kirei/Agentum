@@ -111,9 +111,16 @@ public final class WorkbenchApi {
 
     public record CreateRunRequest(
         UUID workflowId,
-        String title
+        String title,
+        boolean autoExecution,
+        Map<String, Object> inputPayload
     ) {
+        public CreateRunRequest(UUID workflowId, String title) { this(workflowId, title, false, Map.of()); }
+        public CreateRunRequest(UUID workflowId, String title, boolean autoExecution) { this(workflowId, title, autoExecution, Map.of()); }
     }
+
+    public record AutomationRequest(boolean takeover) {}
+    public record AdoptAnswerRequest(Integer agentIndex, int messageIndex) {}
 
     public record CompleteTodoRequest(
         String action,
@@ -165,7 +172,9 @@ public final class WorkbenchApi {
         List<NodeRunRow> nodes,
         List<RunEventRow> events,
         PendingTodoRow openTodo,
-        ActiveJobInfo activeJob
+        ActiveJobInfo activeJob,
+        boolean autoExecution,
+        boolean manualTakeover
     ) {
     }
 
@@ -242,7 +251,9 @@ public final class WorkbenchApi {
     public record AvailableWorkflowPreview(
         UUID workflowId,
         int versionNumber,
-        List<AvailableWorkflowNodeRow> nodes
+        List<AvailableWorkflowNodeRow> nodes,
+        boolean allowAutoExecution,
+        List<Map<String, Object>> inputFields
     ) {
     }
 }

@@ -88,6 +88,20 @@ public class RuntimeSseController {
         );
     }
 
+    @PostMapping("/runs/{runId}/nodes/{nodeRunId}/adopt-answer")
+    public ApiResponse<WorkbenchApi.RunDetail> adoptAnswer(@PathVariable UUID tenantId, @PathVariable UUID runId, @PathVariable UUID nodeRunId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal, @RequestBody WorkbenchApi.AdoptAnswerRequest body) {
+        workbenchAccess.assertCanAccessWorkbench(principal, tenantId);
+        return ApiResponse.success(workbenchRuntimeService.adoptAnswer(tenantId, principal, runId, nodeRunId, body.agentIndex(), body.messageIndex()), RequestIds.current());
+    }
+
+    @PostMapping("/runs/{runId}/automation")
+    public ApiResponse<WorkbenchApi.RunDetail> automation(@PathVariable UUID tenantId, @PathVariable UUID runId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal, @RequestBody WorkbenchApi.AutomationRequest body) {
+        workbenchAccess.assertCanAccessWorkbench(principal, tenantId);
+        return ApiResponse.success(workbenchRuntimeService.setAutomation(tenantId, principal, runId, body.takeover()), RequestIds.current());
+    }
+
     /**
      * 主动中断当前执行：节点置为 canceled 并清空该步骤全部运行数据。
      */

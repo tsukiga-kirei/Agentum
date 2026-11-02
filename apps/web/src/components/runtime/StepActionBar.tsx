@@ -1,6 +1,6 @@
 import React from "react";
 import type { RuntimePreviewStep } from "../../types/runtime-types";
-import { Play, RotateCw, Check, X, Ban, Send, History } from "lucide-react";
+import { Play, RotateCw, Check, Ban, Send, History } from "lucide-react";
 
 interface StepActionBarProps {
   activeStep: RuntimePreviewStep;
@@ -22,7 +22,6 @@ interface StepActionBarProps {
   onAdvance: () => void;
   onCompleteTodo: (comment: string) => void;
   onApprove: (comment: string) => void;
-  onReject: (comment: string) => void;
   onRetry: () => void;
   onBack: () => void;
   onInterrupt?: () => void;
@@ -49,7 +48,6 @@ export function StepActionBar({
   onAdvance,
   onCompleteTodo: _onCompleteTodo,
   onApprove,
-  onReject,
   onRetry,
   onBack,
   onInterrupt,
@@ -231,14 +229,6 @@ export function StepActionBar({
   if (activeStep.state === "waiting" && activeStep.kind === "approval") {
     return (
       <div className="step-action-bar flex justify-end gap-3 p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
-        <button
-          type="button"
-          className="sys-btn sys-btn--danger flex items-center gap-2 text-xs"
-          onClick={() => onReject("审核不通过")}
-          disabled={isAdvancing}
-        >
-          <X size={14} /> 驳回
-        </button>
         <button
           type="button"
           className="sys-btn sys-btn--primary flex items-center gap-2 text-xs"

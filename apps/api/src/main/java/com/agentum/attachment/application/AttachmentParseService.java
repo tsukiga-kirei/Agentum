@@ -12,6 +12,7 @@ import java.security.MessageDigest;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.HexFormat;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -53,25 +54,28 @@ public class AttachmentParseService {
         Instant now = clock.instant();
         attachment.markParsing(now);
         attachmentRepository.save(attachment);
-        String configHash = sha256(attachment.getRecognitionEngine() + "|" + settings.getMineruBackend() + "|" + settings.getMineruParseMethod() + "|" + settings.getMineruLanguage());
+        String configHash = sha256(attachment.getRecognitionEngine() + "|" + settings.getMineruEndpoint()
+            + "|" + settings.getMineruSupportedExtensions() + "|" + settings.getMineruBackend()
+            + "|" + settings.getMineruParseMethod() + "|" + settings.getMineruLanguage()
+            + "|" + settings.isMineruEnableTable() + "|" + settings.isMineruEnableFormula()
+            + "|" + settings.getMaxExtractedChars());
         AttachmentParseResultEntity result = resultRepository.findByAttachmentId(attachmentId)
-            .orElseGet(() -> AttachmentParseResultEntity.parsing(attachmentId, attachment.getRecognitionEngine(), "v1", configHash, now));
+            .orElseGet(() -> AttachmentParseResultEntity.parsing(attachmentId, attachment.getRecognitionEngine(), "v2", configHash, now));
         resultRepository.save(result);
         try {
             byte[] bytes = storage.read(attachment.getStorageKey());
-            String parsed = "mineru".equals(attachment.getRecognitionEngine())
-                ? mineruParser.parse(settings, attachment.getOriginalFileName(), bytes)
-                : localParser.parse(attachment.getExtension(), bytes);
+            String parsed = parseContent(attachment, result, settings, bytes);
+            // 必须在添加截断提示前判断正文，避免大量空白被提示文字伪装成识别成功。
+            if (parsed == null || parsed.isBlank()) throw new ApiException(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY, "ATTACHMENT_PARSE_EMPTY", "附件未提取到可用文本");
             int originalLength = parsed.length();
             boolean truncated = originalLength > settings.getMaxExtractedChars();
             String finalContent = truncated ? parsed.substring(0, settings.getMaxExtractedChars()) + "\n\n> 内容已按系统上限截断。" : parsed;
-            if (finalContent.isBlank()) throw new ApiException(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY, "ATTACHMENT_PARSE_EMPTY", "附件未提取到可用文本");
             String key = storage.storeParsedContent(attachment.getTenantId(), attachment.getId(), finalContent);
             result.ready(key, originalLength, truncated, clock.instant());
             attachment.markReady(clock.instant());
             resultRepository.save(result);
             attachmentRepository.save(attachment);
-            log.info("附件解析成功 tenantId={} runId={} nodeRunId={} attachmentId={} engine={} characterCount={} truncated={} requestId={}", attachment.getTenantId(), attachment.getRunId(), attachment.getNodeRunId(), attachment.getId(), attachment.getRecognitionEngine(), originalLength, truncated, RequestIds.current());
+            log.info("附件解析成功 tenantId={} runId={} nodeRunId={} attachmentId={} engine={} parserType={} fallbackReason={} characterCount={} truncated={} requestId={}", attachment.getTenantId(), attachment.getRunId(), attachment.getNodeRunId(), attachment.getId(), attachment.getRecognitionEngine(), result.getParserType(), result.getFallbackReason(), originalLength, truncated, RequestIds.current());
         } catch (ApiException exception) {
             fail(attachment, result, exception.getCode(), exception.getMessage());
         } catch (Exception exception) {
@@ -80,13 +84,56 @@ public class AttachmentParseService {
         }
     }
 
+    private String parseContent(InputAttachmentEntity attachment, AttachmentParseResultEntity result,
+                                AttachmentRecognitionSettingEntity settings, byte[] bytes) {
+        String extension = attachment.getExtension();
+        if ("mineru".equals(attachment.getRecognitionEngine())) {
+            result.recordParser("mineru", null);
+            return mineruParser.parse(settings, attachment.getOriginalFileName(), bytes);
+        }
+        boolean hybrid = "hybrid".equals(attachment.getRecognitionEngine());
+        String fallbackReason = "LOCAL_UNSUPPORTED";
+        if (AttachmentRecognitionPolicy.localSupportedExtensions().contains(extension)) {
+            result.recordParser("local-" + extension, null);
+            try {
+                LocalAttachmentParser.ParsedContent parsed = localParser.parseContent(extension, bytes);
+                result.recordParser(parsed.parserType(), parsed.fallbackReason());
+                if (parsed.content().isBlank()) {
+                    throw new ApiException(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,
+                        "ATTACHMENT_PARSE_EMPTY", "附件未提取到可用文本");
+                }
+                return parsed.content();
+            } catch (ApiException exception) {
+                if (exception.getDetails().get("parserType") instanceof String parserType
+                    && exception.getDetails().get("fallbackReason") instanceof String reason) {
+                    result.recordParser(parserType, reason);
+                }
+                // 只有明确的提取失败或空正文可以升级 OCR，权限、配额等业务异常不能通过后备服务绕过。
+                if (!hybrid || !Set.of("ATTACHMENT_LOCAL_PARSE_FAILED", "ATTACHMENT_PARSE_EMPTY").contains(exception.getCode())) throw exception;
+                fallbackReason = "ATTACHMENT_PARSE_EMPTY".equals(exception.getCode()) ? "LOCAL_TEXT_EMPTY" : "LOCAL_PARSE_FAILED";
+            }
+        } else if (!hybrid) {
+            return localParser.parse(extension, bytes);
+        }
+        // 管理员白名单仍是外发边界；混合模式支持本地类型，不代表允许将这些文档全部外发。
+        if (!settings.getMineruSupportedExtensions().contains(extension)) {
+            result.recordParser(result.getParserType(), fallbackReason);
+            throw new ApiException(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,
+                "ATTACHMENT_FALLBACK_NOT_ALLOWED", "本地识别未获得可用正文，且该类型未获准发送至 MinerU");
+        }
+        result.recordParser("mineru", fallbackReason);
+        log.info("附件切换至复杂识别 tenantId={} runId={} nodeRunId={} attachmentId={} fallbackReason={} requestId={}",
+            attachment.getTenantId(), attachment.getRunId(), attachment.getNodeRunId(), attachment.getId(), fallbackReason, RequestIds.current());
+        return mineruParser.parse(settings, attachment.getOriginalFileName(), bytes);
+    }
+
     private void fail(InputAttachmentEntity attachment, AttachmentParseResultEntity result, String code, String message) {
         Instant now = clock.instant();
         result.failed(code, message, now);
         attachment.markFailed(code, message, now);
         resultRepository.save(result);
         attachmentRepository.save(attachment);
-        log.warn("附件解析失败 tenantId={} runId={} nodeRunId={} attachmentId={} engine={} errorCode={} requestId={}", attachment.getTenantId(), attachment.getRunId(), attachment.getNodeRunId(), attachment.getId(), attachment.getRecognitionEngine(), code, RequestIds.current());
+        log.warn("附件解析失败 tenantId={} runId={} nodeRunId={} attachmentId={} engine={} parserType={} fallbackReason={} errorCode={} requestId={}", attachment.getTenantId(), attachment.getRunId(), attachment.getNodeRunId(), attachment.getId(), attachment.getRecognitionEngine(), result.getParserType(), result.getFallbackReason(), code, RequestIds.current());
     }
 
     private static String sha256(String text) {

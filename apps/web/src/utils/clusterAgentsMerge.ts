@@ -178,7 +178,7 @@ export function mergeClusterAgents(options: {
       return {
         index: base.index,
         name: base.name,
-        status: stepState === "failed" ? "failed" : "completed",
+        status: "pending",
         streamingText: "",
         outputSummary: "",
         toolCalls: [],

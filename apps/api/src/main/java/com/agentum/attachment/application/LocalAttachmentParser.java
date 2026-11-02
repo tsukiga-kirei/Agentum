@@ -4,6 +4,7 @@ import com.agentum.shared.api.ApiException;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
+import java.util.Map;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.apache.poi.hwpf.HWPFDocument;
@@ -24,21 +25,44 @@ import org.springframework.stereotype.Component;
 public class LocalAttachmentParser {
 
     public String parse(String extension, byte[] bytes) {
+        return parseContent(extension, bytes).content();
+    }
+
+    public ParsedContent parseContent(String extension, byte[] bytes) {
         String type = extension == null ? "" : extension.toLowerCase(Locale.ROOT);
         try {
-            return switch (type) {
+            if ("docx".equals(type)) {
+                try {
+                    return new ParsedContent(parseDocx(bytes), "local-docx", null);
+                } catch (Exception primaryFailure) {
+                    // OA 附件可能只改了扩展名；原字节确认为旧 Word 时才尝试 DOC，不转换或修改原件。
+                    if (!AttachmentFileFormat.isLegacyWord(bytes)) throw primaryFailure;
+                    try {
+                        return new ParsedContent(parseDoc(bytes), "local-doc", "DOCX_AS_DOC");
+                    } catch (Exception fallbackFailure) {
+                        primaryFailure.addSuppressed(fallbackFailure);
+                        // 两个解析器均失败时仍保留实际尝试路径，正文和底层异常不进入用户错误消息。
+                        throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "ATTACHMENT_LOCAL_PARSE_FAILED",
+                            "DOCX 与旧版 Word 兼容解析均失败", Map.of("parserType", "local-doc", "fallbackReason", "DOCX_AS_DOC"));
+                    }
+                }
+            }
+            String content = switch (type) {
                 case "txt", "md", "csv" -> decodeText(bytes);
-                case "docx" -> parseDocx(bytes);
                 case "doc" -> parseDoc(bytes);
                 case "xlsx", "xls" -> parseWorkbook(bytes);
                 case "pdf" -> parsePdf(bytes);
                 default -> throw new ApiException(HttpStatus.BAD_REQUEST, "ATTACHMENT_LOCAL_TYPE_UNSUPPORTED", "简单识别暂不支持该文件类型");
             };
+            return new ParsedContent(content, "local-" + type, null);
         } catch (ApiException exception) {
             throw exception;
         } catch (Exception exception) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "ATTACHMENT_LOCAL_PARSE_FAILED", "文件内容无法使用简单识别解析");
         }
+    }
+
+    public record ParsedContent(String content, String parserType, String fallbackReason) {
     }
 
     private static String decodeText(byte[] bytes) {
