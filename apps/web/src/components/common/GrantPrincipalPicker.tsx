@@ -50,6 +50,7 @@ const paginationLocale = {
 type GrantPrincipalPickerProps = {
   value: PrincipalSelectionKey[];
   overview: TenantOrganizationOverview | null;
+  disabled?: boolean;
   onChange: (value: PrincipalSelectionKey[]) => void;
 };
 
@@ -57,7 +58,7 @@ type GrantPrincipalPickerProps = {
  * 分配对象独立选择器：将角色、部门、人员拆成清晰维度，并对长人员列表做搜索与分页。
  * 弹窗内先维护临时选择，只有点击“确认选择”才写回抽屉表单，避免误触立即改变权限。
  */
-export function GrantPrincipalPicker({ value, overview, onChange }: GrantPrincipalPickerProps) {
+export function GrantPrincipalPicker({ value, overview, disabled = false, onChange }: GrantPrincipalPickerProps) {
   const [open, setOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<PrincipalType>("role");
   const [keyword, setKeyword] = useState("");
@@ -112,6 +113,7 @@ export function GrantPrincipalPicker({ value, overview, onChange }: GrantPrincip
   const currentPageAllSelected = visibleOptions.length > 0 && visibleOptions.every((option) => draftValue.includes(option.key));
 
   function handleOpen() {
+    if (disabled) return;
     setDraftValue(value);
     setActiveTab("role");
     setKeyword("");
@@ -148,7 +150,12 @@ export function GrantPrincipalPicker({ value, overview, onChange }: GrantPrincip
 
   return (
     <>
-      <button type="button" className="tenant-principal-picker-trigger" onClick={handleOpen}>
+      <button
+        type="button"
+        className={`tenant-principal-picker-trigger ${disabled ? "tenant-principal-picker-trigger--disabled" : ""}`}
+        disabled={disabled}
+        onClick={handleOpen}
+      >
         <span className="tenant-principal-picker-trigger-icon"><UserRoundCog size={17} aria-hidden="true" /></span>
         {value.length === 0 ? (
           <span className="tenant-principal-picker-trigger-placeholder">选择角色、部门或人员</span>
@@ -285,7 +292,7 @@ function buildDepartmentOptions(departments: OrganizationDepartment[]): Principa
   return departments.map((department) => ({
     key: `department:${department.id}`,
     label: department.name,
-    description: `部门编码：${department.code}`,
+    description: department.code ? `部门编码：${department.code}` : "未设置编码",
     status: department.status,
   }));
 }

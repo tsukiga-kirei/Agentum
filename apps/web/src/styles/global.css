@@ -5214,7 +5214,7 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
   cursor: pointer;
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background-color var(--transition-fast);
 }
-.tenant-principal-picker-trigger:hover {
+.tenant-principal-picker-trigger:hover:not(:disabled):not(.tenant-principal-picker-trigger--disabled) {
   border-color: var(--color-primary);
   background: var(--color-bg-card);
 }
@@ -5222,6 +5222,16 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
   outline: none;
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+.tenant-principal-picker-trigger:disabled,
+.tenant-principal-picker-trigger--disabled {
+  opacity: 0.72;
+  cursor: not-allowed;
+  background: var(--color-bg-hover);
+}
+.tenant-principal-picker-trigger:disabled .tenant-principal-picker-trigger-action,
+.tenant-principal-picker-trigger--disabled .tenant-principal-picker-trigger-action {
+  display: none;
 }
 .tenant-principal-picker-trigger-icon {
   width: 32px;

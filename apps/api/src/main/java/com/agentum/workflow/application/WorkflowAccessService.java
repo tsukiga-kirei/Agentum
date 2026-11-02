@@ -209,10 +209,17 @@ public class WorkflowAccessService {
         return sourcesByUser.entrySet().stream()
             .map(entry -> {
                 UserAccount user = usersById.get(entry.getKey());
+                String username = user == null ? "" : user.getUsername();
+                String displayName = user == null
+                    ? "已失效成员"
+                    : (user.getDisplayName() != null && !user.getDisplayName().isBlank() ? user.getDisplayName() : user.getUsername());
+                if (user != null && !ACTIVE_STATUS.equals(user.getStatus())) {
+                    displayName = displayName + "（已停用）";
+                }
                 return new WorkflowDraftApi.WorkflowEffectiveReaderRow(
                     entry.getKey(),
-                    user == null ? "" : user.getUsername(),
-                    user == null ? "已失效成员" : user.getDisplayName(),
+                    username,
+                    displayName,
                     List.copyOf(entry.getValue())
                 );
             })

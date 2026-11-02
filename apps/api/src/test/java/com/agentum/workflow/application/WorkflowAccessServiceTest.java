@@ -5,7 +5,9 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.mockito.ArgumentMatchers.anyCollection;
 
+import com.agentum.auth.domain.UserAccount;
 import com.agentum.auth.infrastructure.UserAccountRepository;
+import com.agentum.organization.domain.DepartmentEntity;
 import com.agentum.organization.domain.UserMembershipEntity;
 import com.agentum.organization.domain.UserMembershipRoleEntity;
 import com.agentum.organization.infrastructure.DepartmentRepository;
@@ -13,9 +15,11 @@ import com.agentum.organization.infrastructure.UserMembershipRepository;
 import com.agentum.organization.infrastructure.UserMembershipRoleRepository;
 import com.agentum.permission.application.CollaborationAccessPolicy;
 import com.agentum.permission.application.TenantPrincipalResolver;
+import com.agentum.permission.domain.RoleEntity;
 import com.agentum.permission.infrastructure.RoleRepository;
 import com.agentum.workflow.domain.WorkflowAccessGrantEntity;
 import com.agentum.workflow.domain.WorkflowDefinitionEntity;
+import com.agentum.workflow.interfaces.WorkflowDraftApi;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -32,11 +36,14 @@ class WorkflowAccessServiceTest {
 
     private final UserMembershipRepository membershipRepository = mock(UserMembershipRepository.class);
     private final UserMembershipRoleRepository membershipRoleRepository = mock(UserMembershipRoleRepository.class);
+    private final RoleRepository roleRepository = mock(RoleRepository.class);
+    private final DepartmentRepository departmentRepository = mock(DepartmentRepository.class);
+    private final UserAccountRepository userAccountRepository = mock(UserAccountRepository.class);
     private final WorkflowAccessService service = new WorkflowAccessService(
         membershipRepository,
-        mock(RoleRepository.class),
-        mock(DepartmentRepository.class),
-        mock(UserAccountRepository.class),
+        roleRepository,
+        departmentRepository,
+        userAccountRepository,
         new TenantPrincipalResolver(membershipRepository, membershipRoleRepository),
         new CollaborationAccessPolicy()
     );
@@ -71,6 +78,45 @@ class WorkflowAccessServiceTest {
         );
 
         assertThat(access).isEqualTo(CollaborationAccessPolicy.AccessLevel.READ);
+    }
+
+    @Test
+    void shouldResolveEffectiveReadersWithSourcesAndMarkInactiveAccounts() {
+        WorkflowDefinitionEntity definition = specifiedReadDefinition();
+        UserMembershipEntity ownerMembership = UserMembershipEntity.create(TENANT_ID, OWNER_ID, null);
+        UserMembershipEntity userMembership = UserMembershipEntity.create(TENANT_ID, USER_ID, null);
+
+        when(membershipRepository.findByTenantIdAndStatus(TENANT_ID, "active"))
+            .thenReturn(List.of(ownerMembership, userMembership));
+        when(membershipRoleRepository.findByMembershipIdInAndStatus(anyCollection(), org.mockito.ArgumentMatchers.eq("active")))
+            .thenReturn(List.of());
+
+        UserAccount owner = mock(UserAccount.class);
+        when(owner.getId()).thenReturn(OWNER_ID);
+        when(owner.getUsername()).thenReturn("owner");
+        when(owner.getDisplayName()).thenReturn("流程拥有者");
+        when(owner.getStatus()).thenReturn("active");
+
+        UserAccount reader = mock(UserAccount.class);
+        when(reader.getId()).thenReturn(USER_ID);
+        when(reader.getUsername()).thenReturn("reader");
+        when(reader.getDisplayName()).thenReturn("已停用成员");
+        when(reader.getStatus()).thenReturn("disabled");
+
+        when(userAccountRepository.findAllById(anyCollection())).thenReturn(List.of(owner, reader));
+        when(roleRepository.findByTenantIdOrderByNameAsc(TENANT_ID)).thenReturn(List.of());
+        when(departmentRepository.findByTenantIdOrderBySortOrderAscNameAsc(TENANT_ID)).thenReturn(List.of());
+
+        List<WorkflowDraftApi.WorkflowEffectiveReaderRow> readers = service.resolveEffectiveReaders(
+            definition,
+            List.of(WorkflowAccessGrantEntity.create(TENANT_ID, definition.getId(), "user", USER_ID, "read", OWNER_ID, NOW))
+        );
+
+        assertThat(readers).hasSize(2);
+        assertThat(readers.get(0).displayName()).isEqualTo("流程拥有者");
+        assertThat(readers.get(0).sources()).contains("流程负责人");
+        assertThat(readers.get(1).displayName()).isEqualTo("已停用成员（已停用）");
+        assertThat(readers.get(1).sources()).contains("读取 · 单独指定");
     }
 
     private static WorkflowDefinitionEntity specifiedReadDefinition() {

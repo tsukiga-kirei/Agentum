@@ -371,6 +371,15 @@ export function WorkflowDraftsPage() {
       return;
     }
 
+    if (draftAccess.readScope === "specified" && draftAccess.readPrincipalKeys.length === 0) {
+      messageApi.warning("读取权限选择指定对象时，必须至少选择一个有效角色、部门或人员");
+      return;
+    }
+    if (draftAccess.editScope === "specified" && draftAccess.editUserIds.length === 0) {
+      messageApi.warning("编辑权限选择指定同事时，必须至少选择一名有效成员");
+      return;
+    }
+
     setSubmitting(true);
 
     try {
@@ -402,6 +411,16 @@ export function WorkflowDraftsPage() {
       messageApi.warning("请输入工作流名称");
       return;
     }
+    if (drawerDetail?.access.canManageAccess) {
+      if (detailAccess.readScope === "specified" && detailAccess.readPrincipalKeys.length === 0) {
+        messageApi.warning("读取权限选择指定对象时，必须至少选择一个有效角色、部门或人员");
+        return;
+      }
+      if (detailAccess.editScope === "specified" && detailAccess.editUserIds.length === 0) {
+        messageApi.warning("编辑权限选择指定同事时，必须至少选择一名有效成员");
+        return;
+      }
+    }
     setSubmitting(true);
     try {
       let detail = await workflowApi.updateDraft(user.tenantId, detailWorkflow.id, token, {
@@ -418,6 +437,12 @@ export function WorkflowDraftsPage() {
       }
       setDrawerDetail(detail);
       setDetailWorkflow(detail.draft);
+      setDetailAccess({
+        readScope: detail.access.readScope,
+        editScope: detail.access.editScope,
+        readPrincipalKeys: (detail.access.readPrincipals ?? []).map(principalRefToKey),
+        editUserIds: detail.access.editUserIds ?? [],
+      });
       setWorkflows((items) => items.map((item) => item.id === detail.draft.id ? detail.draft : item));
       messageApi.success("流程信息已保存");
     } catch (error) {
@@ -1471,16 +1496,15 @@ function WorkflowAccessFields({
       {access.readScope === "specified" ? (
         <div className="sys-field">
           <label className="sys-field-label sys-field-label--required">指定可读取对象</label>
-          {readOnly ? (
-            <div className="workflow-access-readonly-note">角色、部门和人员范围仅流程负责人可调整。</div>
-          ) : (
-            <GrantPrincipalPicker
-              value={access.readPrincipalKeys}
-              overview={principalOverview}
-              onChange={(readPrincipalKeys) => onChange({ ...access, readPrincipalKeys })}
-            />
-          )}
-          <div className="sys-field-hint">支持按角色、部门或人员授权；组织成员变化后，可见人员会自动更新。</div>
+          <GrantPrincipalPicker
+            value={access.readPrincipalKeys}
+            overview={principalOverview}
+            disabled={readOnly}
+            onChange={(readPrincipalKeys) => onChange({ ...access, readPrincipalKeys })}
+          />
+          <div className="sys-field-hint">
+            {readOnly ? "角色、部门和人员范围仅流程负责人可调整。" : "支持按角色、部门或人员授权；组织成员变化后，可见人员会自动更新。"}
+          </div>
         </div>
       ) : null}
       <div className="sys-field">
@@ -1530,7 +1554,7 @@ function WorkflowAccessFields({
             </span>
             <span className="workflow-access-viewers-avatars" aria-hidden="true">
               {effectiveReaders.slice(0, 4).map((reader) => (
-                <span key={reader.userId}>{reader.displayName.slice(0, 1)}</span>
+                <span key={reader.userId}>{(reader.displayName || reader.username || "?").slice(0, 1)}</span>
               ))}
             </span>
             <span className="workflow-access-viewers-action">查看全部</span>
@@ -1549,9 +1573,11 @@ function WorkflowAccessFields({
                 <div className="sys-modal-body workflow-access-viewers-body">
                   {effectiveReaders.map((reader) => (
                     <article key={reader.userId} className="workflow-access-viewer-row">
-                      <span className="workflow-access-viewer-avatar" aria-hidden="true">{reader.displayName.slice(0, 1)}</span>
+                      <span className="workflow-access-viewer-avatar" aria-hidden="true">
+                        {(reader.displayName || reader.username || "?").slice(0, 1)}
+                      </span>
                       <span className="workflow-access-viewer-main">
-                        <strong>{reader.displayName}</strong>
+                        <strong>{reader.displayName || reader.username}</strong>
                         <small>{reader.username}</small>
                       </span>
                       <span className="workflow-access-viewer-sources">

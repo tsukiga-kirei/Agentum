@@ -166,6 +166,7 @@ class WorkbenchRuntimeServiceTest {
         stubTenant();
         when(workflowDefinitionRepository.findByIdAndTenantId(open.getId(), TENANT_ID)).thenReturn(Optional.of(open));
         when(workflowVersionRepository.findByIdAndWorkflowIdAndTenantId(openVersion.getId(), open.getId(), TENANT_ID)).thenReturn(Optional.of(openVersion));
+        when(workflowAccessGrantRepository.findByWorkflowId(open.getId())).thenReturn(List.of());
 
         WorkbenchApi.AvailableWorkflowPreview preview = service.getAvailableWorkflowPreview(
             TENANT_ID,
@@ -178,6 +179,26 @@ class WorkbenchRuntimeServiceTest {
             .containsExactly("user_input", "agent", "delivery");
         assertThat(preview.nodes()).extracting(WorkbenchApi.AvailableWorkflowNodeRow::name)
             .containsExactly("补充授信资料", "智能体分析", "交付报告");
+    }
+
+    @Test
+    void shouldRejectLockedWorkflowWhenPreviewingNodes() {
+        WorkbenchRuntimeService service = newService();
+        WorkflowDefinitionEntity locked = publishedDefinition("未开放流程", DESIGNER_ID, "self");
+        stubTenant();
+        when(workflowDefinitionRepository.findByIdAndTenantId(locked.getId(), TENANT_ID)).thenReturn(Optional.of(locked));
+        WorkflowVersionEntity lockedVersion = version(locked, 1, snapshotJson());
+        when(workflowVersionRepository.findByIdAndWorkflowIdAndTenantId(lockedVersion.getId(), locked.getId(), TENANT_ID))
+            .thenReturn(Optional.of(lockedVersion));
+        when(workflowAccessGrantRepository.findByWorkflowId(locked.getId())).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.getAvailableWorkflowPreview(
+            TENANT_ID,
+            businessPrincipal(),
+            locked.getId()
+        ))
+            .extracting("code")
+            .isEqualTo("WORKBENCH_WORKFLOW_PREVIEW_FORBIDDEN");
     }
 
     @Test

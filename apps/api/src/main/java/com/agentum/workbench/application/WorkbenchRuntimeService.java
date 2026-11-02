@@ -237,6 +237,17 @@ public class WorkbenchRuntimeService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_WORKFLOW_RECALLED", "该流程入口已被收回，暂不能查看发布节点");
         }
         WorkflowVersionEntity version = requireActiveVersion(definition, "流程尚未发布，无法预览节点");
+        AccessLevel access = resolveAccess(definition, principal.userId(), workflowAccessGrantRepository.findByWorkflowId(workflowId));
+        if (!isTenantManager(principal) && !access.canRead()) {
+            log.warn(
+                "流程节点预览被拒绝：流程未开放 tenantId={} workflowId={} userId={} requestId={}",
+                tenantId,
+                workflowId,
+                principal.userId(),
+                RequestIds.current()
+            );
+            throw new ApiException(HttpStatus.FORBIDDEN, "WORKBENCH_WORKFLOW_PREVIEW_FORBIDDEN", "当前账号没有查看该流程发布节点的权限");
+        }
         VersionSnapshot snapshot = readSnapshot(version);
         List<SnapshotNode> snapshotNodes = snapshot.nodes() == null ? List.of() : snapshot.nodes();
         List<WorkbenchApi.AvailableWorkflowNodeRow> nodes = new ArrayList<>();

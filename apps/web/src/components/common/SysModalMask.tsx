@@ -1,4 +1,5 @@
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
+import { pushModalCloseHandler } from "./sysModalStack";
 
 type SysModalMaskProps = {
   children: ReactNode;
@@ -8,7 +9,7 @@ type SysModalMaskProps = {
   closeOnBackdrop?: boolean;
 };
 
-/** 系统弹窗外层遮罩：仅在遮罩上按下鼠标时关闭，避免输入框拖选误关；支持 Esc 关闭。 */
+/** 系统弹窗外层遮罩：仅在遮罩上按下鼠标时关闭，避免输入框拖选误关；支持 Esc 按层级逐级关闭。 */
 export function SysModalMask({
   children,
   onClose,
@@ -16,20 +17,16 @@ export function SysModalMask({
   closeOnEscape = true,
   closeOnBackdrop = true,
 }: SysModalMaskProps) {
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     if (!closeOnEscape) {
       return undefined;
     }
 
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [closeOnEscape, onClose]);
+    return pushModalCloseHandler(() => onCloseRef.current());
+  }, [closeOnEscape]);
 
   function handleBackdropMouseDown(event: React.MouseEvent<HTMLDivElement>) {
     if (!closeOnBackdrop) {
