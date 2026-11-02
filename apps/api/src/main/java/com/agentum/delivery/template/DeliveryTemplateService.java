@@ -84,7 +84,8 @@ public class DeliveryTemplateService {
     public TemplateModels.Row copy(UUID tenant, UUID user, UUID id) {
         var source = read(tenant, user, id, false);
         // 同一创建者复制生成下一版本，共享模板复制则创建独立资源，不能修改原创建者的版本链。
-        repository.lockVersion(source.templateId, tenant).orElseThrow();
+        repository.lockVersion(source.templateId, tenant)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "DELIVERY_TEMPLATE_NOT_FOUND", "模板不存在或不可访问"));
         var entity = new DeliveryTemplateEntity();
         entity.id = UUID.randomUUID(); entity.templateId = entity.id; entity.tenantId = tenant;
         entity.name = validName(source.name.length() > 150 ? source.name.substring(0, 150) + " 副本" : source.name + " 副本");
@@ -177,7 +178,8 @@ public class DeliveryTemplateService {
                     }
                 }
             }
-            var destination = spec(entity).fields().stream().filter(it -> it.key().equals(binding.field())).findFirst().orElseThrow();
+            var destination = spec(entity).fields().stream().filter(it -> it.key().equals(binding.field())).findFirst()
+                .orElseThrow(() -> StructuredContent.error("绑定的模板字段不存在：" + binding.field()));
             if (!binding.constant() && "table".equals(destination.type()) && value instanceof List<?> list) {
                 List<Map<String, Object>> projected = new ArrayList<>();
                 for (Object raw : list) {
@@ -271,7 +273,8 @@ public class DeliveryTemplateService {
             if (!a.field().equals(b.field()) || !a.sheet().equals(b.sheet())) throw StructuredContent.error("填写位置与模板原件不匹配");
         }
         for (var old : original.fields()) {
-            var current = spec.fields().stream().filter(it -> it.key().equals(old.key())).findFirst().orElseThrow();
+            var current = spec.fields().stream().filter(it -> it.key().equals(old.key())).findFirst()
+                .orElseThrow(() -> StructuredContent.error("字段定义缺失：" + old.key()));
             if ("table".equals(old.type()) != "table".equals(current.type())) throw StructuredContent.error("重复表格字段不能修改为普通字段");
             if ("table".equals(old.type()) && !old.columns().stream().map(TemplateModels.Field::key).toList().equals(current.columns().stream().map(TemplateModels.Field::key).toList())) throw StructuredContent.error("表格列必须与样板行标记一致");
         }

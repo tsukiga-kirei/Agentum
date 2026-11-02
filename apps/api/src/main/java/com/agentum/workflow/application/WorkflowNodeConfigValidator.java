@@ -339,7 +339,7 @@ public class WorkflowNodeConfigValidator {
                     if (reference.path() != null && !reference.path().isBlank()) {
                         if (structured.isEmpty()) throw com.agentum.delivery.template.StructuredContent.error("来源变量没有可用的结构化字段定义");
                         var field = com.agentum.agent.application.AgentStructuredOutput.fields(structured.get()).stream().filter(it -> reference.path().equals(it.key())).findFirst().orElseThrow(() -> com.agentum.delivery.template.StructuredContent.error("来源字段已删除或路径不存在：" + reference.path()));
-                        var target = templateService.get(tenant, user, UUID.fromString(rawString(config.get("templateVersionId")))).spec().fields().stream().filter(it -> it.key().equals(binding.field())).findFirst().orElseThrow();
+                        var target = templateService.get(tenant, user, UUID.fromString(rawString(config.get("templateVersionId")))).spec().fields().stream().filter(it -> it.key().equals(binding.field())).findFirst().orElseThrow(() -> com.agentum.delivery.template.StructuredContent.error("绑定的模板字段不存在或已删除：" + binding.field()));
                         if (!compatibleTemplateType(target.type(), field.type())) throw com.agentum.delivery.template.StructuredContent.error("字段「" + target.label() + "」与来源内容类型不一致");
                         if ("table".equals(target.type())) for (var column : target.columns()) {
                             String mapped = binding.columnMappings() == null ? column.key() : binding.columnMappings().getOrDefault(column.key(), column.key());

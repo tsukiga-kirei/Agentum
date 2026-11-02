@@ -1181,7 +1181,8 @@ public class WorkbenchRuntimeService {
     public WorkbenchApi.RunDetail adoptAnswer(UUID tenantId, CurrentUserPrincipal principal, UUID runId, UUID nodeRunId, Integer agentIndex, int messageIndex) {
         WorkflowRunEntity run = requireLockedOwnedRun(tenantId, principal, runId);
         assertNoExecutionInFlight(runId);
-        WorkflowNodeRunEntity node = workflowNodeRunRepository.findByIdAndRunId(nodeRunId, runId).orElseThrow();
+        WorkflowNodeRunEntity node = workflowNodeRunRepository.findByIdAndRunId(nodeRunId, runId)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_NODE_RUN_NOT_FOUND", "节点运行不存在"));
         if (!"completed".equals(node.getState()) || "completed".equals(run.getState())) {
             throw new ApiException(HttpStatus.CONFLICT, "WORKBENCH_RESULT_INVALID", "仅未结束任务的已完成步骤可以采用结果");
         }
@@ -1191,7 +1192,9 @@ public class WorkbenchRuntimeService {
             output = node.getOutputSnapshot();
         } else {
             if (!isClusterAgentFollowUpAllowed(node.getConfigSnapshot(), agentIndex)) { throw new ApiException(HttpStatus.FORBIDDEN, "WORKBENCH_RESULT_FORBIDDEN", "该子智能体不允许采用追问结果"); }
-            output = clusterAgentRunRepository.findByNodeRunIdAndAgentIndex(nodeRunId, agentIndex).orElseThrow().getOutput();
+            output = clusterAgentRunRepository.findByNodeRunIdAndAgentIndex(nodeRunId, agentIndex)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_CLUSTER_AGENT_RUN_NOT_FOUND", "子智能体运行记录不存在"))
+                .getOutput();
         }
         Object raw = output.get("chatMessages");
         if (!(raw instanceof List<?> messages) || messageIndex < 0 || messageIndex >= messages.size()
@@ -1213,7 +1216,8 @@ public class WorkbenchRuntimeService {
             workflowNodeRunRepository.save(node);
         }
         else {
-            var selectedAgent = clusterAgentRunRepository.findByNodeRunIdAndAgentIndex(nodeRunId, agentIndex).orElseThrow();
+            var selectedAgent = clusterAgentRunRepository.findByNodeRunIdAndAgentIndex(nodeRunId, agentIndex)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_CLUSTER_AGENT_RUN_NOT_FOUND", "子智能体运行记录不存在"));
             Map<String, Object> chosen = new LinkedHashMap<>(selectedAgent.getOutput());
             chosen.put("selectedResultMessageIndex", messageIndex); chosen.put("resultSelectionRequired", false);
             selectedAgent.patchOutput(chosen, now); clusterAgentRunRepository.save(selectedAgent);

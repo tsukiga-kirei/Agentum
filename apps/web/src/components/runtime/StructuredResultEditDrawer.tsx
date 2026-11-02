@@ -23,6 +23,7 @@ export function StructuredResultEditDrawer({
   const theme = useAuthStore((state) => state.themeMode);
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
   useEffect(() => {
     if (open) {
       try {
@@ -34,6 +35,19 @@ export function StructuredResultEditDrawer({
       }
     }
   }, [open, initialValue]);
+
+  const handleSave = async () => {
+    if (saving) return;
+    setSaving(true);
+    setError("");
+    try {
+      await onSave(JSON.stringify(values));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "保存业务字段失败，请稍后重试");
+    } finally {
+      setSaving(false);
+    }
+  };
   return (
     <Drawer
       open={open}
@@ -62,18 +76,18 @@ export function StructuredResultEditDrawer({
         ))}
       </div>
       <div className="sys-drawer-footer">
-        <button type="button" className="sys-btn sys-btn--default" onClick={onClose}>
+        <button type="button" className="sys-btn sys-btn--default" disabled={saving} onClick={onClose}>
           取消
         </button>
         <div className="sys-drawer-footer-right">
           <button
             type="button"
             className="sys-btn sys-btn--primary"
-            disabled={Boolean(error)}
-            onClick={() => void onSave(JSON.stringify(values))}
+            disabled={Boolean(error) || saving}
+            onClick={() => void handleSave()}
           >
             <Save size={15} />
-            保存字段
+            {saving ? "正在保存…" : "保存字段"}
           </button>
         </div>
       </div>

@@ -34,7 +34,9 @@ export function TemplateDeliverySection({
   onChange: (patch: Record<string, unknown>) => void;
 }) {
   const token = useAuthStore((state) => state.token);
-  const tenantId = useAuthStore((state) => state.activeRole?.tenantId);
+  const user = useAuthStore((state) => state.user);
+  const activeRole = useAuthStore((state) => state.activeRole);
+  const tenantId = activeRole?.tenantId || user?.tenantId || "";
   const theme = useAuthStore((state) => state.themeMode);
   const [items, setItems] = useState<DeliveryTemplate[]>([]);
   const [template, setTemplate] = useState<DeliveryTemplate | null>(null);

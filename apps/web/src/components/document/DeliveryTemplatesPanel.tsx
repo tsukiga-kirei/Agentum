@@ -115,7 +115,8 @@ export function DeliveryTemplatesPanel({
 }) {
   const token = useAuthStore((state) => state.token);
   const user = useAuthStore((state) => state.user);
-  const tenantId = useAuthStore((state) => state.activeRole?.tenantId);
+  const activeRole = useAuthStore((state) => state.activeRole);
+  const tenantId = activeRole?.tenantId || user?.tenantId || "";
   const theme = useAuthStore((state) => state.themeMode);
   const [items, setItems] = useState<DeliveryTemplate[]>([]);
   const [page, setPage] = useState(1);

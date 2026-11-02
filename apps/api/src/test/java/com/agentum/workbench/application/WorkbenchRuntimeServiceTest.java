@@ -1510,6 +1510,24 @@ class WorkbenchRuntimeServiceTest {
     }
 
     @Test
+    void shouldThrowNotFoundApiExceptionWhenAdoptingAnswerForNonexistentNode() {
+        WorkbenchRuntimeService service = newService();
+        WorkflowRunEntity run = ownedRun(1);
+        stubTenant();
+        UUID nonexistentNodeId = UUID.randomUUID();
+        when(workflowRunRepository.lockById(run.getId())).thenReturn(Optional.of(run));
+        when(workflowNodeRunRepository.findByIdAndRunId(nonexistentNodeId, run.getId())).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.adoptAnswer(TENANT_ID, businessPrincipal(), run.getId(), nonexistentNodeId, null, 1))
+            .isInstanceOf(ApiException.class)
+            .satisfies(ex -> {
+                ApiException apiException = (ApiException) ex;
+                assertThat(apiException.getStatus()).isEqualTo(HttpStatus.NOT_FOUND);
+                assertThat(apiException.getCode()).isEqualTo("WORKBENCH_NODE_RUN_NOT_FOUND");
+            });
+    }
+
+    @Test
     void shouldApplyFixedInputDefaultsDuringAutomaticExecution() {
         WorkbenchRuntimeService service = newService(); WorkflowRunEntity run = ownedRun(1); run.enableAutoExecution();
         WorkflowNodeRunEntity node = inputNode(run, List.of(Map.of("variable", "company", "label", "企业", "required", true, "defaultValueSource", "fixed", "defaultValue", "默认公司")));
