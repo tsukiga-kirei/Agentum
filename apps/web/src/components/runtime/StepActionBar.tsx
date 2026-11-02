@@ -231,12 +231,22 @@ export function StepActionBar({
   if (activeStep.state === "waiting" && activeStep.kind === "approval") {
     return (
       <div className="step-action-bar flex justify-end gap-3 p-4 border-t border-slate-100 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur-md rounded-b-xl">
-        <button type="button" className="sys-btn sys-btn--danger flex items-center gap-2 text-xs" onClick={() => onReject("拒绝并通过")}>
-            <X size={14} /> 驳回
-          </button>
-          <button type="button" className="sys-btn sys-btn--primary flex items-center gap-2 text-xs" onClick={() => onApprove("审核通过")}>
-            <Check size={14} /> 审核通过
-          </button>
+        <button
+          type="button"
+          className="sys-btn sys-btn--danger flex items-center gap-2 text-xs"
+          onClick={() => onReject("审核不通过")}
+          disabled={isAdvancing}
+        >
+          <X size={14} /> 驳回
+        </button>
+        <button
+          type="button"
+          className="sys-btn sys-btn--primary flex items-center gap-2 text-xs"
+          onClick={() => onApprove("审核通过")}
+          disabled={isAdvancing}
+        >
+          <Check size={14} /> 审核通过
+        </button>
       </div>
     );
   }

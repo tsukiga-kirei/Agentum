@@ -566,7 +566,10 @@ export function TaskRunWorkspace({
 
   // Submit User Input payload
   async function handleCompleteTodo(payload: Record<string, unknown>) {
-    if (!runDetail.openTodo?.openTodoId) return;
+    if (!runDetail.openTodo?.openTodoId || isAdvancing) return;
+    setIsAdvancing(true);
+    setAdvanceError(null);
+    let shouldAutoAdvance = false;
     try {
       const updated = await workbenchApi.completeTodoWithPayload(
         tenantId, 
@@ -585,17 +588,27 @@ export function TaskRunWorkspace({
         && (nextStep.kind === "agent" || nextStep.kind === "multiAgent")
         && nextStep.state === "pending"
       ) {
-        initialAutoStartRef.current = true;
-        await handleAdvanceStep();
+        shouldAutoAdvance = true;
       }
     } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "提交资料失败";
       console.error("提交资料失败", e);
+      setAdvanceError(message);
+      setActiveRunTab("current");
+    } finally {
+      setIsAdvancing(false);
+    }
+    if (shouldAutoAdvance) {
+      initialAutoStartRef.current = true;
+      await handleAdvanceStep();
     }
   }
 
   // Handle human review approval
   async function handleApprove(comment: string) {
-    if (!runDetail.openTodo?.openTodoId) return;
+    if (!runDetail.openTodo?.openTodoId || isAdvancing) return;
+    setIsAdvancing(true);
+    setAdvanceError(null);
     try {
       const updated = await workbenchApi.completeTodo(
         tenantId, 
@@ -606,14 +619,21 @@ export function TaskRunWorkspace({
       );
       setRunDetail(updated);
       onReload(updated);
-    } catch (e: any) {
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "审核通过操作失败";
       console.error("审核通过操作失败", e);
+      setAdvanceError(message);
+      setActiveRunTab("current");
+    } finally {
+      setIsAdvancing(false);
     }
   }
 
   // Handle human review rejection
   async function handleReject(comment: string) {
-    if (!runDetail.openTodo?.openTodoId) return;
+    if (!runDetail.openTodo?.openTodoId || isAdvancing) return;
+    setIsAdvancing(true);
+    setAdvanceError(null);
     try {
       const updated = await workbenchApi.completeTodo(
         tenantId, 
@@ -624,8 +644,13 @@ export function TaskRunWorkspace({
       );
       setRunDetail(updated);
       onReload(updated);
-    } catch (e: any) {
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "驳回操作失败";
       console.error("驳回操作失败", e);
+      setAdvanceError(message);
+      setActiveRunTab("current");
+    } finally {
+      setIsAdvancing(false);
     }
   }
 

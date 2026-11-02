@@ -412,11 +412,32 @@ public class WorkflowScheduleService {
                     executionRepository.save(execution);
                     markScheduleState(execution.getScheduleId(), "aborted", now);
                     notifyScheduleResult(execution, run, false, "定时任务执行中止", "流程运行失败，已保存到任务中心待办，可进入后查看失败节点并恢复。");
-                } else if ("paused".equals(run.getState()) && "human_review".equals(run.getCurrentNodeType())) {
-                    execution.abort("定时任务等待人工审核，已保存到待办。", now);
+                } else if ("paused".equals(run.getState())) {
+                    String currentNodeType = run.getCurrentNodeType();
+                    String abortMessage;
+                    String notifyTitle;
+                    String notifyBody;
+                    if ("human_review".equals(currentNodeType)) {
+                        abortMessage = "定时任务等待人工审核，已保存到待办。";
+                        notifyTitle = "定时任务等待人工处理";
+                        notifyBody = "流程已推进到人工审核节点，系统无法继续自动执行，已保存到任务中心待办。";
+                    } else if ("user_input".equals(currentNodeType)) {
+                        abortMessage = "定时任务等待补充输入，已保存到待办。";
+                        notifyTitle = "定时任务等待补充输入";
+                        notifyBody = "流程已推进到输入资料节点，系统无法继续自动执行，已保存到任务中心待办。";
+                    } else if ("delivery".equals(currentNodeType)) {
+                        abortMessage = "定时任务等待交付确认，已保存到待办。";
+                        notifyTitle = "定时任务等待交付确认";
+                        notifyBody = "流程已推进到交付确认节点，系统无法继续自动执行，已保存到任务中心待办。";
+                    } else {
+                        abortMessage = "定时任务执行中止，已保存到任务记录。";
+                        notifyTitle = "定时任务执行中止";
+                        notifyBody = "流程运行已暂停或被中断，系统无法继续自动执行，已保存到任务记录。";
+                    }
+                    execution.abort(abortMessage, now);
                     executionRepository.save(execution);
                     markScheduleState(execution.getScheduleId(), "aborted", now);
-                    notifyScheduleResult(execution, run, false, "定时任务等待人工处理", "流程已推进到人工审核节点，系统无法继续自动执行，已保存到任务中心待办。");
+                    notifyScheduleResult(execution, run, false, notifyTitle, notifyBody);
                 }
             }
         }
