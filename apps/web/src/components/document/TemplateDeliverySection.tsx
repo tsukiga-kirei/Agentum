@@ -283,6 +283,10 @@ export function TemplateDeliverySection({
                     }}
                     placeholder="选择来源节点及字段"
                   />
+                  {field.type === "table" && <details className="mt-3"><summary>绑定 MCP 数据集</summary><div className="grid gap-3 mt-2">
+                    <TemplateSelect value={binding?.sourceNodeId ?? ""} options={[...new Map(variables.filter(v => !v.sourceNodeId.startsWith("__")).map(v => [v.sourceNodeId, { value: v.sourceNodeId, label: v.sourceNodeName }])).values()]} placeholder="选择上游取数步骤" onChange={sourceNodeId => updateBinding(field.key, { sourceNodeId, variable: "mcp_datasets", constant: false })} />
+                    <TemplateInput label="数据集标识" value={binding?.variable === "mcp_datasets" ? binding.path : ""} onChange={path => updateBinding(field.key, { path, variable: "mcp_datasets", constant: false })} />
+                  </div></details>}
                   {binding && !binding.constant && field.type === "table" && (
                     <div className="template-form-grid">
                       {field.columns.map((column) => {

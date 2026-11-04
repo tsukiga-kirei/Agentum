@@ -14,6 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -32,19 +33,23 @@ public class McpRuntimeService {
     private final McpCallLogRepository mcpCallLogRepository;
     private final McpRuntimeClient mcpRuntimeClient;
     private final Clock clock;
+    private final McpDatasetService datasets;
+    private final com.fasterxml.jackson.databind.ObjectMapper mapper;
+    private final com.agentum.runtime.cancel.RunCancellationGuard cancellation;
 
     public McpRuntimeService(
         SystemCapabilityRepository systemCapabilityRepository,
         TenantCapabilityGrantRepository tenantCapabilityGrantRepository,
         McpCallLogRepository mcpCallLogRepository,
         McpRuntimeClient mcpRuntimeClient,
-        Clock clock
+        Clock clock, McpDatasetService datasets, com.fasterxml.jackson.databind.ObjectMapper mapper,
+        com.agentum.runtime.cancel.RunCancellationGuard cancellation
     ) {
         this.systemCapabilityRepository = systemCapabilityRepository;
         this.tenantCapabilityGrantRepository = tenantCapabilityGrantRepository;
         this.mcpCallLogRepository = mcpCallLogRepository;
         this.mcpRuntimeClient = mcpRuntimeClient;
-        this.clock = clock;
+        this.clock = clock; this.datasets = datasets; this.mapper = mapper; this.cancellation = cancellation;
     }
 
     public List<McpToolBinding> resolveMcpTools(McpRuntimeRequest request) {
@@ -165,6 +170,16 @@ public class McpRuntimeService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "MCP_TOOL_NAME_REQUIRED", "MCP 节点未配置工具名称");
         }
         Map<String, Object> arguments = unwrapArguments(rawArguments);
+        var initialPolicy = McpResultPolicy.map(McpResultPolicy.map(capability.getConfig().get("toolResultPolicies")).get(toolName));
+        McpResultPolicy.validatePolicies(Map.of(toolName, initialPolicy));
+        var paging = McpResultPolicy.map(initialPolicy.get("pagination"));
+        if (!"direct".equals(initialPolicy.getOrDefault("mode", "direct")) && "page".equals(paging.get("type"))) {
+            String pageParam = Objects.toString(paging.getOrDefault("pageParam", "page"));
+            String sizeParam = Objects.toString(paging.getOrDefault("pageSizeParam", "pageSize"));
+            if (arguments.containsKey(pageParam) && !"1".equals(arguments.get(pageParam).toString())) throw McpResultPolicy.error("完整数据采集必须从第一页开始");
+            arguments.put(pageParam, 1);
+            arguments.put(sizeParam, McpResultPolicy.integer(paging, "pageSize", 500, 10000));
+        }
         Instant now = clock.instant();
         McpCallLogEntity callLog = McpCallLogEntity.started(request.run(), request.nodeRun(), capability, toolName, requestPayload(toolName, arguments), now);
         mcpCallLogRepository.save(callLog);
@@ -185,7 +200,7 @@ public class McpRuntimeService {
                     firstNonBlank(stringValue(result.responsePayload().get("text")), "MCP 工具返回执行失败")
                 );
             }
-            Map<String, Object> sanitizedResponse = sanitizeMap(result.responsePayload());
+            Map<String, Object> sanitizedResponse = processResult(request, capability, binding, arguments, result, callLog.getId());
             callLog.succeed(sanitizedResponse, result.latencyMs(), clock.instant());
             mcpCallLogRepository.save(callLog);
             log.info(
@@ -214,6 +229,96 @@ public class McpRuntimeService {
             );
             throw exception;
         }
+    }
+
+    /** 在进入日志、SSE 和模型消息之前处理整个响应，避免 structuredContent 或文本原文绕过预览策略。 */
+    private Map<String, Object> processResult(McpRuntimeRequest request, SystemCapabilityEntity capability, McpToolBinding binding,
+        Map<String, Object> arguments, McpRuntimeClient.ToolResult first, UUID callId) {
+        var policy = McpResultPolicy.map(McpResultPolicy.map(capability.getConfig().get("toolResultPolicies")).get(binding.remoteToolName()));
+        McpResultPolicy.validatePolicies(Map.of(binding.remoteToolName(), policy));
+        String mode = stringValue(policy.getOrDefault("mode", "direct"));
+        Map<String, Object> response = sanitizeMap(first.responsePayload());
+        int bytes = encodedSize(response);
+        if ("direct".equals(mode) || ("auto".equals(mode) && bytes <= McpResultPolicy.integer(policy, "inlineBytes", 32000, 256000)
+            && !policy.containsKey("fields") && !"page".equals(McpResultPolicy.map(policy.get("pagination")).get("type")))) {
+            if (bytes > 256000) throw McpResultPolicy.error("MCP 完整结果超过 256 KB，请配置数据集模式");
+            return response;
+        }
+        List<Map<String, Object>> rows = new ArrayList<>();
+        Map<String, Object> paging = McpResultPolicy.map(policy.get("pagination"));
+        boolean paginate = "page".equals(paging.get("type"));
+        String pageParam = Objects.toString(paging.getOrDefault("pageParam", "page"));
+        String sizeParam = Objects.toString(paging.getOrDefault("pageSizeParam", "pageSize"));
+        if (paginate && arguments.containsKey(pageParam) && !"1".equals(arguments.get(pageParam).toString())) throw McpResultPolicy.error("全量采集必须从第一页开始");
+        int maxPages = McpResultPolicy.integer(paging, "maxPages", 200, 1000);
+        int maxRows = McpResultPolicy.integer(policy, "maxRows", 100000, 100000);
+        Set<String> seenPages = new java.util.HashSet<>();
+        Map<String, Object> current = response;
+        Integer expectedTotal = null;
+        int page = 1, sizeBytes = 0;
+        Instant deadline = clock.instant().plusSeconds(120);
+        while (true) {
+            cancellation.assertExecutable(request.run().getId());
+            Object root = decoded(current, policy);
+            List<Map<String, Object>> items = McpResultPolicy.rows(McpResultPolicy.path(root, Objects.toString(policy.getOrDefault("rowsPath", "$.rows"))));
+            if (policy.containsKey("totalPath")) {
+                Object total = McpResultPolicy.path(root, policy.get("totalPath").toString());
+                int parsed;
+                try { parsed = Integer.parseInt(Objects.toString(total)); } catch (NumberFormatException ex) { throw McpResultPolicy.error("分页总数不是有效整数"); }
+                if (parsed < 0 || (expectedTotal != null && expectedTotal != parsed)) throw McpResultPolicy.error("分页总数发生变化，请重新取数");
+                expectedTotal = parsed;
+            }
+            boolean more = false;
+            if (policy.containsKey("hasMorePath")) {
+                Object value = McpResultPolicy.path(root, policy.get("hasMorePath").toString());
+                if (!(value instanceof Boolean)) throw McpResultPolicy.error("hasMore 必须是布尔值");
+                more = Boolean.TRUE.equals(value);
+            }
+            if (items.isEmpty() && more) throw McpResultPolicy.error("中间页为空但接口声明仍有下一页");
+            if (!items.isEmpty() && paginate && !seenPages.add(pageHash(items))) throw McpResultPolicy.error("分页重复，已停止采集以避免重复明细");
+            rows.addAll(items); sizeBytes += encodedSize(items);
+            if (rows.size() > maxRows || sizeBytes > 20 * 1024 * 1024) throw McpResultPolicy.error("数据采集超过行数或 20 MB 上限");
+            if (!more) break;
+            if (!paginate) throw McpResultPolicy.error("接口返回尚有下一页，必须配置自动分页才能形成完整数据集");
+            if (page >= maxPages || clock.instant().isAfter(deadline)) throw McpResultPolicy.error("数据采集超过页数或耗时上限，未保存不完整数据");
+            Map<String, Object> next = new LinkedHashMap<>(arguments);
+            next.put(pageParam, ++page); next.put(sizeParam, arguments.getOrDefault(sizeParam, McpResultPolicy.integer(paging, "pageSize", 500, 10000)));
+            var result = mcpRuntimeClient.callTool(new McpRuntimeClient.ToolCall(capability.getId(), binding.transportType(), binding.endpointUrl(), binding.remoteToolName(), next));
+            if (Boolean.TRUE.equals(result.responsePayload().get("isError"))) throw McpResultPolicy.error("MCP 分页调用失败，未保存不完整数据");
+            current = sanitizeMap(result.responsePayload());
+        }
+        if (expectedTotal != null && rows.size() != expectedTotal) throw McpResultPolicy.error("已获取条数与接口总数不一致，未保存不完整数据");
+        return datasets.save(request, capability.getId(), callId, Objects.toString(policy.getOrDefault("datasetKey", binding.remoteToolName())), rows, policy);
+    }
+    private Object decoded(Map<String, Object> response, Map<String, Object> policy) {
+        String source = Objects.toString(policy.getOrDefault("source", "structuredContent"));
+        if ("response".equals(source)) return response;
+        if ("text_json".equals(source)) {
+            Object content = response.get("content");
+            if (!(content instanceof List<?> parts)) throw McpResultPolicy.error("MCP 响应没有文本内容");
+            var texts = parts.stream().map(McpResultPolicy::map).filter(p -> "text".equals(p.get("type"))).toList();
+            if (texts.size() != 1) throw McpResultPolicy.error("JSON 文本解析要求唯一 text 块，请使用结构化响应");
+            try { return mapper.readValue(Objects.toString(texts.getFirst().get("text")), Object.class); }
+            catch (java.io.IOException ex) { throw McpResultPolicy.error("工具文本不是完整 JSON"); }
+        }
+        if (!response.containsKey("structuredContent")) throw McpResultPolicy.error("MCP 响应缺少 structuredContent，请调整解析来源");
+        return response.get("structuredContent");
+    }
+    private String pageHash(Object value) {
+        try { return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(mapper.writeValueAsBytes(value))); }
+        catch (java.security.NoSuchAlgorithmException | java.io.IOException ex) { throw McpResultPolicy.error("分页校验失败"); }
+    }
+    private int encodedSize(Object value) {
+        try { return mapper.writeValueAsBytes(value).length; } catch (java.io.IOException ex) { throw McpResultPolicy.error("工具响应无法序列化"); }
+    }
+    public Map<String, Object> datasetReferences(UUID nodeRunId, List<Map<String, Object>> calls) { return datasets.references(nodeRunId, calls.stream().map(c -> Objects.toString(c.get("callLogId"), "")).collect(java.util.stream.Collectors.toSet())); }
+    public Map<String, Object> queryDataset(McpRuntimeRequest request, Map<String, Object> args) {
+        Set<UUID> allowed = new java.util.HashSet<>();
+        for (String id : readStringList(request.nodeConfig(), "mcpIds", "mcpServices", "mcpId")) {
+            UUID capabilityId = parseUuid(id).orElseThrow(() -> McpResultPolicy.error("MCP 能力标识不合法"));
+            resolveCapability(request, capabilityId); allowed.add(capabilityId);
+        }
+        return datasets.query(request, allowed, args);
     }
 
     private SystemCapabilityEntity resolveCapability(McpRuntimeRequest request, UUID capabilityId) {

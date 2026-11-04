@@ -1257,6 +1257,8 @@ public class SystemManagementService {
             if (tools instanceof List<?>) {
                 result.put("tools", tools);
             }
+            var policies = com.agentum.mcp.application.McpResultPolicy.validatePolicies(config.get("toolResultPolicies"));
+            if (!policies.isEmpty()) result.put("toolResultPolicies", policies);
             return result;
         }
         if ("delivery".equals(capabilityType)) {

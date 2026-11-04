@@ -17,7 +17,13 @@ public final class TemplateModels {
     }
     public record Location(String id, String field, String label, String sheet, Map<String, Object> style) {}
     public record Spec(List<Field> fields, List<Location> locations, Map<String, Object> defaultStyle,
-                       Map<String, Map<String, Object>> sheetStyles) {}
+                       Map<String, Map<String, Object>> sheetStyles, List<ExcelRegion> excelRegions) {
+        public Spec(List<Field> fields, List<Location> locations, Map<String, Object> defaultStyle, Map<String, Map<String, Object>> sheetStyles) {
+            this(fields, locations, defaultStyle, sheetStyles, List.of());
+        }
+        public Spec { excelRegions = excelRegions == null ? List.of() : List.copyOf(excelRegions); }
+    }
+    public record ExcelRegion(String sheet, String field, String startCell) {}
     public record Source(String sourceNodeId, String variable, String path) {}
     public record Binding(String field, String sourceNodeId, String variable, String path,
                           boolean constant, Object value, List<Source> additionalSources, String separator,

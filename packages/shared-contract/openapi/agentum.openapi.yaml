@@ -7046,6 +7046,11 @@ components:
           type: string
           enum: [text, number, currency, percent, date, datetime, boolean]
           default: text
+        regions:
+          type: array
+          maxItems: 30
+          items:
+            $ref: "#/components/schemas/ExcelDataRegion"
         bodyTemplate:
           type: string
           description: Sheet 正文模板，可使用 {{变量名}} 引用上游模型输出或运行变量。
@@ -7065,7 +7070,40 @@ components:
             $ref: "#/components/schemas/ExcelCellRule"
       required:
         - name
-        - bodyTemplate
+    ExcelDataRegion:
+      type: object
+      description: 独立向下写入的列区域；同一 Sheet 内不能重叠或覆盖固定内容。
+      properties:
+        startCell:
+          type: string
+          example: H3
+        sourceNodeId:
+          type: string
+          description: 已完成的上游节点标识。数据集来源必须指定。
+        sourcePath:
+          type: string
+          example: mcp_datasets.fund_details
+        header:
+          type: boolean
+          default: true
+        columns:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              label:
+                type: string
+              type:
+                type: string
+                enum: [text, number, date, boolean]
+              format:
+                type: string
+            required: [field, label, type]
+      required: [startCell, sourcePath, columns]
     ExcelTableStyle:
       type: object
       properties:

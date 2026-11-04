@@ -52,6 +52,31 @@
       "additionalProperties": {
         "$ref": "#/$defs/style"
       }
+    },
+    "excelRegions": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "properties": {
+          "sheet": {
+            "type": "string"
+          },
+          "field": {
+            "type": "string"
+          },
+          "startCell": {
+            "type": "string",
+            "pattern": "^[A-Z]{1,3}[1-9][0-9]{0,5}$"
+          }
+        },
+        "required": [
+          "sheet",
+          "field",
+          "startCell"
+        ],
+        "additionalProperties": false
+      }
     }
   },
   "required": [
@@ -107,7 +132,7 @@
             "null"
           ],
           "minimum": 1,
-          "maximum": 1000
+          "maximum": 100000
         },
         "description": {
           "type": [

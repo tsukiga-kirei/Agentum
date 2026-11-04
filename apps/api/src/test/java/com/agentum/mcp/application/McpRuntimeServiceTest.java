@@ -39,6 +39,7 @@ class McpRuntimeServiceTest {
     private final WorkflowNodeRunEntity nodeRun = mock(WorkflowNodeRunEntity.class);
     private final List<McpCallLogEntity> savedLogs = new ArrayList<>();
 
+    private final McpDatasetService datasets = mock(McpDatasetService.class);
     private McpRuntimeService service;
     private SystemCapabilityEntity capability;
 
@@ -88,7 +89,7 @@ class McpRuntimeServiceTest {
             grantRepository,
             callLogRepository,
             runtimeClient,
-            Clock.fixed(NOW, ZoneOffset.UTC)
+            Clock.fixed(NOW, ZoneOffset.UTC), datasets, new com.fasterxml.jackson.databind.ObjectMapper(), mock(com.agentum.runtime.cancel.RunCancellationGuard.class)
         );
         when(runtimeClient.listTools(any())).thenReturn(new McpRuntimeClient.ToolListResult(
             List.of(
@@ -200,4 +201,51 @@ class McpRuntimeServiceTest {
             UUID.randomUUID()
         );
     }
+    @Test void collectsPagesOutsideModelAndLogsOnlyReference() {
+        var binding = service.resolveMcpTools(request()).getFirst();
+        var policy = Map.<String, Object>of("mode", "dataset", "rowsPath", "$.data.records", "hasMorePath", "$.hasMore", "totalPath", "$.total", "pagination", Map.of("type", "page", "pageSize", 1));
+        var config = new java.util.HashMap<>(capability.getConfig()); config.put("toolResultPolicies", Map.of(binding.remoteToolName(), policy));
+        capability.updateProfile("mcp", capability.getName(), "v1", "", "medium", "active", config, true, NOW);
+        when(runtimeClient.callTool(any())).thenReturn(
+            new McpRuntimeClient.ToolResult(Map.of("structuredContent", Map.of("data", Map.of("records", List.of(Map.of("balance", 10))), "total", 2, "hasMore", true)), 1),
+            new McpRuntimeClient.ToolResult(Map.of("content", List.of(Map.of("type", "text", "text", "原始敏感明细")), "structuredContent", Map.of("data", Map.of("records", List.of(Map.of("balance", 20))), "total", 2, "hasMore", false)), 1));
+        when(datasets.save(any(), any(), any(), any(), any(), any())).thenReturn(Map.of("datasetId", "ref", "rowCount", 2));
+        var result = service.executeResolvedTool(request(), binding, Map.of("pdt", "20260831"));
+        assertThat(result.responsePayload()).containsEntry("rowCount", 2).doesNotContainKey("structuredContent");
+        assertThat(savedLogs.getLast().getResponsePayload().toString()).doesNotContain("balance", "原始敏感明细");
+        org.mockito.Mockito.verify(datasets).save(any(), any(), any(), any(), org.mockito.ArgumentMatchers.argThat(rows -> rows.size() == 2), any());
+        org.mockito.Mockito.verify(runtimeClient).callTool(org.mockito.ArgumentMatchers.argThat(call -> Integer.valueOf(2).equals(call.arguments().get("page"))));
+    }
+    @Test void rejectsMissingRowsPathInsteadOfPretendingEmptySuccess() {
+        var binding = service.resolveMcpTools(request()).getFirst();
+        var config = new java.util.HashMap<>(capability.getConfig()); config.put("toolResultPolicies", Map.of(binding.remoteToolName(), Map.of("mode", "dataset", "rowsPath", "$.missing")));
+        capability.updateProfile("mcp", capability.getName(), "v1", "", "medium", "active", config, true, NOW);
+        when(runtimeClient.callTool(any())).thenReturn(new McpRuntimeClient.ToolResult(Map.of("structuredContent", Map.of("rows", List.of())), 1));
+        assertThatThrownBy(() -> service.executeResolvedTool(request(), binding, Map.of())).hasMessageContaining("路径不存在");
+        assertThat(savedLogs.getLast().getStatus()).isEqualTo("failed");
+    }
+
+    @Test void refusesIncompleteOrRepeatedPagesWithoutSavingDataset() {
+        var binding = service.resolveMcpTools(request()).getFirst();
+        var config = new java.util.HashMap<>(capability.getConfig());
+        config.put("toolResultPolicies", Map.of(binding.remoteToolName(), Map.of("mode", "dataset", "rowsPath", "$.rows", "hasMorePath", "$.hasMore", "pagination", Map.of("type", "page", "pageSize", 1))));
+        capability.updateProfile("mcp", capability.getName(), "v1", "", "medium", "active", config, true, NOW);
+        when(runtimeClient.callTool(any())).thenReturn(new McpRuntimeClient.ToolResult(Map.of("structuredContent", Map.of("rows", List.of(Map.of("no", "same")), "hasMore", true)), 1));
+        assertThatThrownBy(() -> service.executeResolvedTool(request(), binding, Map.of())).hasMessageContaining("分页重复");
+        org.mockito.Mockito.verifyNoInteractions(datasets);
+    }
+    @Test void autoModePreservesSmallResultsAndTextJsonSupportsRootArray() {
+        var binding = service.resolveMcpTools(request()).getFirst();
+        var config = new java.util.HashMap<>(capability.getConfig());
+        config.put("toolResultPolicies", Map.of(binding.remoteToolName(), Map.of("mode", "auto")));
+        capability.updateProfile("mcp", capability.getName(), "v1", "", "medium", "active", config, true, NOW);
+        when(runtimeClient.callTool(any())).thenReturn(new McpRuntimeClient.ToolResult(Map.of("text", "小结果"), 1));
+        assertThat(service.executeResolvedTool(request(), binding, Map.of()).responsePayload()).containsEntry("text", "小结果");
+        config.put("toolResultPolicies", Map.of(binding.remoteToolName(), Map.of("mode", "dataset", "source", "text_json", "rowsPath", "$")));
+        capability.updateProfile("mcp", capability.getName(), "v1", "", "medium", "active", config, true, NOW);
+        when(runtimeClient.callTool(any())).thenReturn(new McpRuntimeClient.ToolResult(Map.of("content", List.of(Map.of("type", "text", "text", "[{\"no\":\"001\"}]"))), 1));
+        when(datasets.save(any(), any(), any(), any(), any(), any())).thenReturn(Map.of("datasetId", "ref"));
+        assertThat(service.executeResolvedTool(request(), binding, Map.of()).responsePayload()).containsEntry("datasetId", "ref");
+    }
+
 }

@@ -305,7 +305,7 @@ public class WorkflowNodeConfigValidator {
                 if (sheetName.isBlank()) {
                     issues.add(issue("WORKFLOW_VALIDATION_DELIVERY_EXCEL_SHEET_NAME_REQUIRED", subject + "的第 " + (index + 1) + " 个 Sheet 必须填写名称", node));
                 }
-                if (template.isBlank()) {
+                if (template.isBlank() && extractMapList(sheet, "regions").isEmpty()) {
                     issues.add(issue("WORKFLOW_VALIDATION_DELIVERY_EXCEL_SHEET_TEMPLATE_REQUIRED", subject + "的 Sheet「" + (sheetName.isBlank() ? index + 1 : sheetName) + "」必须配置正文模板", node));
                 }
             }
@@ -323,7 +323,21 @@ public class WorkflowNodeConfigValidator {
 
     private void validateTemplateBindings(UUID tenant, UUID user, Map<String, Object> config, WorkflowDraftApi.WorkflowNodeRow node,
         List<WorkflowDraftApi.WorkflowNodeRow> nodes, List<WorkflowDraftApi.WorkflowValidationIssue> issues) {
-        if (!"file_template".equals(config.get("generationMode")) || "direct".equals(config.get("deliveryMode")) || "direct".equals(config.get("deliveryType"))) return;
+        if (!"file_template".equals(config.get("generationMode"))) {
+            for (var sheet : extractMapList(config, "excelSheets")) for (var region : extractMapList(sheet, "regions")) {
+                String start = rawString(region.get("startCell"));
+                var columns = extractMapList(region, "columns");
+                if (!start.matches("[A-Z]{1,3}[1-9][0-9]{0,5}") || columns.isEmpty() || columns.size() > 100 || rawString(region.get("sourcePath")).isBlank()) issues.add(issue("WORKFLOW_VALIDATION_EXCEL_REGION", "数据区域必须配置开始位置、来源路径和 1～100 个列", node));
+                for (var column : columns) if (rawString(column.get("field")).isBlank() || !Set.of("text", "number", "date", "boolean").contains(rawString(column.getOrDefault("type", "text")))) issues.add(issue("WORKFLOW_VALIDATION_EXCEL_REGION", "区域数据列必须有来源字段和有效类型", node));
+                String sourceId = rawString(region.get("sourceNodeId"));
+                if (!sourceId.isBlank()) {
+                    var source = nodes.stream().filter(n -> sourceId.equals(n.nodeId())).findFirst();
+                    if (source.isEmpty() || nodes.indexOf(source.get()) >= nodes.indexOf(node)) issues.add(issue("WORKFLOW_VALIDATION_EXCEL_REGION", "区域必须引用存在的上游节点", node));
+                } else if (rawString(region.get("sourcePath")).startsWith("mcp_datasets")) issues.add(issue("WORKFLOW_VALIDATION_EXCEL_REGION", "数据集区域必须选择上游来源节点", node));
+            }
+            return;
+        }
+        if ("direct".equals(config.get("deliveryMode")) || "direct".equals(config.get("deliveryType"))) return;
         try {
             if (templateService == null) throw com.agentum.delivery.template.StructuredContent.error("模板服务不可用");
             templateService.validateReference(tenant, user, config);
@@ -333,6 +347,12 @@ public class WorkflowNodeConfigValidator {
                 for (var reference : templateService.sources(binding)) {
                     if ("system".equals(reference.sourceNodeId())) continue;
                     var source = nodes.stream().filter(it -> it.nodeId().equals(reference.sourceNodeId())).findFirst().orElseThrow(() -> com.agentum.delivery.template.StructuredContent.error("字段来源节点已删除"));
+                    if ("mcp_datasets".equals(reference.variable())) {
+                        if (nodes.indexOf(source) >= currentIndex || !"agent".equals(source.nodeType()) || reference.path() == null || reference.path().isBlank()) throw com.agentum.delivery.template.StructuredContent.error("数据集必须引用上游单智能体节点及数据集标识");
+                        var target = templateService.get(tenant, user, UUID.fromString(rawString(config.get("templateVersionId")))).spec().fields().stream().filter(f -> f.key().equals(binding.field())).findFirst().orElseThrow();
+                        if (!"table".equals(target.type())) throw com.agentum.delivery.template.StructuredContent.error("数据集只能绑定表格明细字段");
+                        continue;
+                    }
                     if (nodes.indexOf(source) >= currentIndex || !source.outputVariables().contains(reference.variable())) throw com.agentum.delivery.template.StructuredContent.error("字段必须引用上游已声明的输出变量：" + binding.field());
                     List<Map<String, Object>> candidates = new ArrayList<>(); candidates.add(source.config()); candidates.addAll(extractMapList(source.config(), "clusterAgents"));
                     var structured = candidates.stream().filter(it -> com.agentum.agent.application.AgentStructuredOutput.enabled(it) && reference.variable().equals(com.agentum.agent.application.AgentStructuredOutput.variable(it))).findFirst();

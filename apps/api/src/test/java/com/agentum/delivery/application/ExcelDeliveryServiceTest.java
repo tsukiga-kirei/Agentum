@@ -33,7 +33,7 @@ class ExcelDeliveryServiceTest {
     void setUp() {
         renderer = mock(ExcelWorkbookRenderer.class);
         storage = mock(DocumentDeliveryStorage.class);
-        service = new ExcelDeliveryService(renderer, storage, Clock.fixed(NOW, ZoneOffset.UTC));
+        service = new ExcelDeliveryService(renderer, storage, Clock.fixed(NOW, ZoneOffset.UTC), mock(com.agentum.mcp.application.McpDatasetService.class), mock(com.agentum.workflow.infrastructure.WorkflowNodeRunRepository.class));
     }
 
     @Test

@@ -40,7 +40,7 @@ public final class StructuredContent {
             if (!TYPES.contains(field.type())) throw error("字段「" + field.key() + "」的内容类型不支持");
             if (depth > 0 && Set.of("table", "markdown", "paragraphs").contains(field.type())) throw error("表格数据列仅支持文字、数字、日期和布尔值");
             if (field.maxLength() != null && (field.maxLength() < 1 || field.maxLength() > 200000)) throw error("字段字数上限应为 1～200000");
-            if (field.maxItems() != null && (field.maxItems() < 1 || field.maxItems() > 1000)) throw error("字段条目上限应为 1～1000");
+            if (field.maxItems() != null && (field.maxItems() < 1 || field.maxItems() > 100000)) throw error("字段条目上限应为 1～100000");
             if (field.enumValues() != null && !field.enumValues().isEmpty() && (!"text".equals(field.type()) || field.enumValues().size() > 100 || field.enumValues().stream().anyMatch(it -> it == null || it.length() > 100))) throw error("枚举仅支持文字字段，最多 100 项，每项最多 100 字");
             if ("table".equals(field.type())) validateFields(field.columns(), depth + 1);
         }

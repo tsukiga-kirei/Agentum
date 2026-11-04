@@ -18,6 +18,7 @@ export type TemplateLocation = {
   style: TemplateStyle;
 };
 export type TemplateSpec = {
+  excelRegions?: { sheet: string; field: string; startCell: string }[];
   fields: TemplateField[];
   locations: TemplateLocation[];
   defaultStyle: TemplateStyle;

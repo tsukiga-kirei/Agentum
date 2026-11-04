@@ -29,11 +29,12 @@ public class DeliveryTemplateService {
     private final AssetManagementService assets;
     private final SystemCapabilityRepository capabilities;
     private final Clock clock;
+    private final com.agentum.mcp.application.McpDatasetService datasets;
     public DeliveryTemplateService(DeliveryTemplateRepository repository, TemplateFileRenderer renderer, ObjectMapper mapper,
         DocumentDeliveryStorage storage, WorkflowNodeRunRepository nodes, AssetManagementService assets,
-        SystemCapabilityRepository capabilities, Clock clock) {
+        SystemCapabilityRepository capabilities, Clock clock, com.agentum.mcp.application.McpDatasetService datasets) {
         this.repository = repository; this.renderer = renderer; this.mapper = mapper; this.storage = storage;
-        this.nodes = nodes; this.assets = assets; this.capabilities = capabilities; this.clock = clock;
+        this.nodes = nodes; this.assets = assets; this.capabilities = capabilities; this.clock = clock; this.datasets = datasets;
     }
     @Transactional(readOnly = true)
     public PageResponse<TemplateModels.Row> list(UUID tenant, UUID user, int page, int size, boolean published, String keyword) {
@@ -155,6 +156,7 @@ public class DeliveryTemplateService {
         var upstream = nodes.findByRunIdOrderBySortOrderAsc(request.run().getId());
         for (var binding : bindings(config)) {
             Object value = binding.value();
+            boolean datasetSource = false;
             if (!binding.constant()) {
                 Map<String, Object> source = variables;
                 if (binding.sourceNodeId() != null && !binding.sourceNodeId().isBlank() && !"system".equals(binding.sourceNodeId())) {
@@ -163,6 +165,11 @@ public class DeliveryTemplateService {
                     source = node.getOutputSnapshot();
                 }
                 value = path(source.get(binding.variable()), binding.path());
+                if (value instanceof Map<?, ?> reference && reference.containsKey("datasetId")) {
+                    var sourceNode = upstream.stream().filter(it -> binding.sourceNodeId().equals(it.getNodeKey())).findFirst().orElseThrow(() -> StructuredContent.error("数据集必须绑定明确的上游节点"));
+                    datasetSource = true;
+                    value = datasets.readRows(request.run().getTenantId(), request.run().getId(), sourceNode.getId(), request.operatorUserId(), value);
+                }
                 if (binding.additionalSources() != null && !binding.additionalSources().isEmpty()) {
                     List<Object> parts = new ArrayList<>(); parts.add(value);
                     for (var extra : binding.additionalSources()) {
@@ -185,7 +192,10 @@ public class DeliveryTemplateService {
                 for (Object raw : list) {
                     if (!(raw instanceof Map<?, ?>)) throw StructuredContent.error("明细来源中的每一项必须是对象");
                     Map<String, Object> row = new LinkedHashMap<>();
-                    for (var column : destination.columns()) row.put(column.key(), path(raw, binding.columnMappings() == null ? column.key() : binding.columnMappings().getOrDefault(column.key(), column.key())));
+                    for (var column : destination.columns()) {
+                        Object cell = path(raw, binding.columnMappings() == null ? column.key() : binding.columnMappings().getOrDefault(column.key(), column.key()));
+                        row.put(column.key(), datasetSource ? datasetCell(cell, column) : cell);
+                    }
                     projected.add(row);
                 }
                 value = projected;
@@ -211,6 +221,15 @@ public class DeliveryTemplateService {
         event("模板交付生成成功", entity, request.operatorUserId());
         return result;
     }
+    // 中台常以十进制字符串返回金额，按模板显式类型转换；空值保持缺失，避免被误填成零。
+    private Object datasetCell(Object value, TemplateModels.Field field) {
+        if (value == null || value instanceof String text && text.isBlank()) return null;
+        try {
+            if ("number".equals(field.type())) return new java.math.BigDecimal(value.toString());
+            if (Set.of("text", "date").contains(field.type()) && (value instanceof String || value instanceof Number)) return value.toString();
+            return value;
+        } catch (NumberFormatException ex) { throw StructuredContent.error("数据集金额字段不能转换为数字：" + field.label()); }
+    }
     public static Object path(Object value, String path) {
         validatePath(path);
         if (path == null || path.isBlank()) return value;
@@ -221,7 +240,7 @@ public class DeliveryTemplateService {
         return value;
     }
     private static void validatePath(String path) {
-        if (path != null && !path.isBlank() && !path.matches("[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*")) throw StructuredContent.error("字段路径只能使用已声明的对象字段");
+        if (path != null && !path.isBlank() && !path.matches("[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*")) throw StructuredContent.error("字段路径只能使用已声明的对象字段");
     }
     public List<TemplateModels.Binding> bindings(Map<String, Object> config) { return mapper.convertValue(config.getOrDefault("templateBindings", List.of()), new TypeReference<>() {}); }
     public List<TemplateModels.Source> sources(TemplateModels.Binding binding) {
@@ -265,6 +284,12 @@ public class DeliveryTemplateService {
     private void validateSpec(DeliveryTemplateEntity entity, TemplateModels.Spec spec) {
         if (spec == null || spec.locations() == null) throw StructuredContent.error("模板字段配置不能为空");
         StructuredContent.validateFields(spec.fields());
+        if (!"excel".equals(entity.kind) && !spec.excelRegions().isEmpty()) throw StructuredContent.error("只有 Excel 支持独立数据区域");
+        if (spec.excelRegions().size() > 100) throw StructuredContent.error("独立区域不能超过 100 个");
+        for (var region : spec.excelRegions()) {
+            if (region.sheet() == null || region.startCell() == null || !region.startCell().matches("[A-Z]{1,3}[1-9][0-9]{0,5}") || spec.fields().stream().noneMatch(f -> f.key().equals(region.field()) && "table".equals(f.type()))) throw StructuredContent.error("独立区域的 Sheet、明细字段或开始位置无效");
+            if (spec.locations().stream().noneMatch(l -> region.sheet().equals(l.sheet()) && region.field().equals(l.field()))) throw StructuredContent.error("区域的 Sheet 与模板明细位置不匹配");
+        }
         var original = renderer.inspect(entity.fileBytes, entity.kind);
         if (!original.fields().stream().map(TemplateModels.Field::key).collect(java.util.stream.Collectors.toSet()).equals(spec.fields().stream().map(TemplateModels.Field::key).collect(java.util.stream.Collectors.toSet()))) throw StructuredContent.error("字段标识必须与文件中的填写标记一致");
         if (!original.locations().stream().map(TemplateModels.Location::id).toList().equals(spec.locations().stream().map(TemplateModels.Location::id).toList())) throw StructuredContent.error("填写位置不能脱离模板原件修改");

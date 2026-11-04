@@ -31,15 +31,17 @@ public class ExcelDeliveryService {
     private final ExcelWorkbookRenderer renderer;
     private final DocumentDeliveryStorage storage;
     private final Clock clock;
+    private final com.agentum.mcp.application.McpDatasetService datasets;
+    private final com.agentum.workflow.infrastructure.WorkflowNodeRunRepository nodes;
 
     public ExcelDeliveryService(
         ExcelWorkbookRenderer renderer,
         DocumentDeliveryStorage storage,
-        Clock clock
+        Clock clock, com.agentum.mcp.application.McpDatasetService datasets, com.agentum.workflow.infrastructure.WorkflowNodeRunRepository nodes
     ) {
         this.renderer = renderer;
         this.storage = storage;
-        this.clock = clock;
+        this.clock = clock; this.datasets = datasets; this.nodes = nodes;
     }
 
     public Map<String, Object> generateRuntimeWorkbook(
@@ -56,7 +58,8 @@ public class ExcelDeliveryService {
         Map<String, Object> variables = payload == null ? Map.of() : payload;
         Map<String, Object> config = nodeConfig == null ? Map.of() : nodeConfig;
         Map<String, Object> templateVariables = enrichTemplateVariables(variables);
-        List<ExcelSheetRenderSpec> sheets = readSheetSpecs(config, templateVariables);
+        templateVariables.put("operatorUserId", operatorUserId.toString());
+        List<ExcelSheetRenderSpec> sheets = readSheetSpecs(config, templateVariables, tenantId);
         String fileName = renderTextTemplate(firstNonBlank(stringValue(config.get("fileNameTemplate")), "交付表格-{{runNumber}}.xlsx"), templateVariables);
         ExcelWorkbookRenderResult workbook = renderer.render(sheets);
         enforceMaxFileSize(capability, workbook.bytes().length, tenantId, operatorUserId, recordId);
@@ -90,7 +93,7 @@ public class ExcelDeliveryService {
         return result;
     }
 
-    private List<ExcelSheetRenderSpec> readSheetSpecs(Map<String, Object> config, Map<String, Object> variables) {
+    private List<ExcelSheetRenderSpec> readSheetSpecs(Map<String, Object> config, Map<String, Object> variables, UUID tenantId) {
         List<Map<String, Object>> rawSheets = readMapList(firstNonNull(config.get("excelSheets"), config.get("sheets")));
         if (rawSheets.isEmpty()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "DELIVERY_EXCEL_SHEETS_REQUIRED", "Excel 交付必须至少配置一个 Sheet 页");
@@ -103,7 +106,7 @@ public class ExcelDeliveryService {
                 stringValue(sheet.get("bodyTemplate")),
                 stringValue(sheet.get("markdownContent")),
                 stringValue(sheet.get("body")),
-                "暂无内容。"
+                sheet.containsKey("regions") ? "" : "暂无内容。"
             );
             String body = renderTextTemplate(template, variables);
             result.add(new ExcelSheetRenderSpec(
@@ -114,8 +117,38 @@ public class ExcelDeliveryService {
                 readMap(sheet.get("tableStyle")),
                 readMapList(sheet.get("columnRules")),
                 readMapList(sheet.get("rowRules")),
-                readMapList(sheet.get("cellRules"))
+                readMapList(sheet.get("cellRules")),
+                readRegions(sheet, variables, tenantId)
             ));
+        }
+        return result;
+    }
+
+    private List<ExcelDataRegionWriter.Region> readRegions(Map<String, Object> sheet, Map<String, Object> variables, UUID tenantId) {
+        List<ExcelDataRegionWriter.Region> result = new ArrayList<>();
+        var raw = readMapList(sheet.get("regions"));
+        if (raw.size() > 30) throw com.agentum.delivery.template.StructuredContent.error("一个 Sheet 最多配置 30 个数据区域");
+        for (var region : raw) {
+            Object value;
+            String sourceNode = stringValue(region.get("sourceNodeId"));
+            if (!sourceNode.isBlank()) {
+                UUID runId = UUID.fromString(stringValue(variables.get("runId")));
+                UUID nodeId = UUID.fromString(stringValue(variables.get("nodeRunId")));
+                var upstream = nodes.findByRunIdOrderBySortOrderAsc(runId);
+                var current = upstream.stream().filter(n -> n.getId().equals(nodeId)).findFirst().orElseThrow(() -> com.agentum.delivery.template.StructuredContent.error("当前交付节点不存在"));
+                var source = upstream.stream().filter(n -> sourceNode.equals(n.getNodeKey())).findFirst().orElseThrow(() -> com.agentum.delivery.template.StructuredContent.error("数据来源节点不存在"));
+                if (source.getSortOrder() >= current.getSortOrder() || !"completed".equals(source.getState())) throw com.agentum.delivery.template.StructuredContent.error("数据来源必须是已完成的上游节点");
+                value = com.agentum.mcp.application.McpResultPolicy.path(source.getOutputSnapshot(), stringValue(region.get("sourcePath")));
+                if (value instanceof Map<?, ?> ref && ref.containsKey("datasetId")) value = datasets.readRows(tenantId, runId, source.getId(), UUID.fromString(stringValue(variables.get("operatorUserId"))), value);
+            } else {
+                value = com.agentum.mcp.application.McpResultPolicy.path(variables, stringValue(region.get("sourcePath")));
+                if (value instanceof Map<?, ?> ref && ref.containsKey("datasetId")) throw com.agentum.delivery.template.StructuredContent.error("数据集来源必须指定上游节点");
+            }
+            var rows = com.agentum.mcp.application.McpResultPolicy.rows(value);
+            var columns = readMapList(region.get("columns")).stream().map(c -> new ExcelDataRegionWriter.Column(
+                stringValue(c.get("field")), firstNonBlank(stringValue(c.get("label")), stringValue(c.get("field"))),
+                firstNonBlank(stringValue(c.get("type")), "text"), stringValue(c.get("format")))).toList();
+            result.add(new ExcelDataRegionWriter.Region(firstNonBlank(stringValue(region.get("startCell")), "A1"), !Boolean.FALSE.equals(region.get("header")), columns, rows));
         }
         return result;
     }

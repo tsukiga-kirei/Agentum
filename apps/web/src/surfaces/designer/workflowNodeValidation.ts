@@ -182,7 +182,7 @@ export function collectRuntimeTemplateTextFields(
         }
         if (itemConfig.generationMode === "file_template") {
           push(`deliveryItems.${index}.config.fileNameTemplate`, `${itemName}文件名模板`, itemConfig.fileNameTemplate);
-          readMapList(itemConfig.templateBindings).filter(binding => !binding.constant).flatMap(binding => [binding, ...readMapList(binding.additionalSources)]).forEach((binding, i) => push(`deliveryItems.${index}.config.templateBindings.${i}`, `${itemName}字段来源`, "{{" + String(binding.variable ?? "") + "}}"));
+          readMapList(itemConfig.templateBindings).filter(binding => !binding.constant && binding.variable !== "mcp_datasets").flatMap(binding => [binding, ...readMapList(binding.additionalSources)]).forEach((binding, i) => push(`deliveryItems.${index}.config.templateBindings.${i}`, `${itemName}字段来源`, "{{" + String(binding.variable ?? "") + "}}"));
           return;
         }
         if (isWordCapabilityDeliveryConfig(itemConfig)) {
@@ -212,7 +212,7 @@ export function collectRuntimeTemplateTextFields(
     }
     if (source.generationMode === "file_template") {
       push("fileNameTemplate", "文件名模板", source.fileNameTemplate);
-      readMapList(source.templateBindings).filter(binding => !binding.constant).flatMap(binding => [binding, ...readMapList(binding.additionalSources)]).forEach((binding, i) => push(`templateBindings.${i}`, "模板字段来源", "{{" + String(binding.variable ?? "") + "}}"));
+      readMapList(source.templateBindings).filter(binding => !binding.constant && binding.variable !== "mcp_datasets").flatMap(binding => [binding, ...readMapList(binding.additionalSources)]).forEach((binding, i) => push(`templateBindings.${i}`, "模板字段来源", "{{" + String(binding.variable ?? "") + "}}"));
       return fields;
     }
     if (isWordCapabilityDeliveryConfig(source)) {
@@ -653,7 +653,7 @@ function validateDeliveryNode(
             if (!readString(sheet.name)) {
               issues.push(issue("WORKFLOW_NODE_DELIVERY_EXCEL_SHEET_NAME_REQUIRED", `${itemName}的第 ${sheetIndex + 1} 个 Sheet 必须填写名称`));
             }
-            if (!readString(sheet.bodyTemplate)) {
+            if (!readString(sheet.bodyTemplate) && readMapList(sheet.regions).length === 0) {
               issues.push(issue("WORKFLOW_NODE_DELIVERY_EXCEL_SHEET_TEMPLATE_REQUIRED", `${itemName}的 Sheet「${sheetName}」必须配置正文模板`));
             }
           });
@@ -707,7 +707,7 @@ function validateDeliveryNode(
         if (!readString(sheet.name)) {
           issues.push(issue("WORKFLOW_NODE_DELIVERY_EXCEL_SHEET_NAME_REQUIRED", `第 ${index + 1} 个 Sheet 必须填写名称`));
         }
-        if (!readString(sheet.bodyTemplate)) {
+        if (!readString(sheet.bodyTemplate) && readMapList(sheet.regions).length === 0) {
           issues.push(issue("WORKFLOW_NODE_DELIVERY_EXCEL_SHEET_TEMPLATE_REQUIRED", `Sheet「${sheetName}」必须配置正文模板`));
         }
       });

@@ -137,3 +137,12 @@ Sheet 默认样式
 交付项选择“填写文件模板”后，使用 `generationMode=file_template`，固定引用已发布的 `templateVersionId`，用 `templateBindings` 保存字段来源及明细列映射，用 `templateLocationStyles` 保存本交付项的位置样式覆盖。不设置此模式时，本文已有的内容生成配置与执行方式不变。
 
 模板上传、字段及 Sheet 格式、结构化结果、多来源组装、试填与边界统一见 [系统介绍：新增文件模板交付](./system-overview.md#新增文件模板交付)。模板接口前缀为 `/api/tenants/{tenantId}/delivery-templates`，原件、试填、下载均经过服务端租户和资源授权；具体请求模型见共享 OpenAPI 与 `file-template.schema.json`。
+
+
+## 独立数据区域与 MCP 数据集
+
+内容生成方式支持 `excelSheets[].regions`，每个区域指定 `startCell`、`sourceNodeId`、`sourcePath`、`header` 和 `columns`。来源路径相对于该上游节点输出，例如 `mcp_datasets.credit_details`；无来源节点时相对于交付变量，但数据集引用必须绑定明确的上游节点。列配置使用 field（来源字段路径）、label、type（text/number/date/boolean）和可选 format。正文可留空，仅使用数据区域生成工作表。
+
+文件模板方式在模板 Spec 设置 `excelRegions: [{sheet, field, startCell}]`，field 为已有明细字段，起点必须与原件样板行的填写标记位置及列顺序一致。在交付字段绑定处选择“绑定 MCP 数据集”，指定上游单智能体节点和 datasetKey，程序从节点 `mcp_datasets` 中读取引用并应用 columnMappings。设置明细 maxItems 时应覆盖预期数据量，最多 100000 条。
+
+两种方式使用相同区域写入器，支持同一 Sheet 左右不同条数的列表。模板沿用样板行单元格样式及位置覆盖；不支持区域内合并单元格、向下写入时自动搬移小计/固定内容。冲突、路径或类型错误明确失败。数据集/区域交付重新执行会重新生成文件，避免复用已变化来源的旧附件。

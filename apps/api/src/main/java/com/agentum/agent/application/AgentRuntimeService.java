@@ -285,6 +285,7 @@ public class AgentRuntimeService {
                 turnTokenUsage.value(),
                 reasoningContents
             );
+            outputs.put("mcp_datasets", mcpRuntimeService.datasetReferences(request.nodeRun().getId(), toolCallSummaries));
             AgentStructuredOutput.attach(config, outputs, structuredData);
             eventSink.onPhase("completed", "智能体已完成最终回答。");
             eventSink.onCompleted(finalAnswer);
@@ -326,6 +327,14 @@ public class AgentRuntimeService {
                 mcpTool.parameters()
             ));
         }
+        if (!mcpTools.isEmpty()) tools.add(new ModelChatClient.ToolDefinition(
+            "mcp_dataset_query", "查看当前运行已保存的 MCP 数据集。action 可为 describe 或 query；预览不是全部记录，使用字段选择、equals 筛选和 offset/limit 分页。",
+            Map.of("type", "object", "properties", Map.of(
+                "datasetId", Map.of("type", "string"), "action", Map.of("type", "string", "enum", List.of("describe", "query")),
+                "fields", Map.of("type", "array", "items", Map.of("type", "string")), "equals", Map.of("type", "object"),
+                "offset", Map.of("type", "integer", "minimum", 0), "limit", Map.of("type", "integer", "minimum", 1, "maximum", 100)
+            ), "required", List.of("datasetId", "action"))
+        ));
         tools.add(new ModelChatClient.ToolDefinition(
             "final_answer",
             "提交完整最终答案。将完整回复写入 answer 字段，并作为最后一次工具调用。",
@@ -349,6 +358,10 @@ public class AgentRuntimeService {
         AgentRuntimeEventSink eventSink
     ) {
         Map<String, Object> arguments = parseJsonObject(toolCall.argumentsJson());
+        if ("mcp_dataset_query".equals(toolCall.name())) {
+            String observation = toJson(mcpRuntimeService.queryDataset(new McpRuntimeRequest(request.run(), request.nodeRun(), request.nodeConfig(), request.variables(), request.operatorUserId()), arguments));
+            return new ToolExecution(observation, Map.of("toolName", "查看 MCP 数据集", "toolType", "dataset", "status", "completed", "summary", "数据集查询完成"));
+        }
         if (mcpToolByName.containsKey(toolCall.name())) {
             McpRuntimeService.McpToolBinding binding = mcpToolByName.get(toolCall.name());
             eventSink.onToolCall(binding.displayName(), "mcp", "started", "", 0L);

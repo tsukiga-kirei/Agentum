@@ -114,6 +114,7 @@ public class ExcelWorkbookRenderer {
                 }
             }
         }
+        ExcelDataRegionWriter.write(sheet, spec.regions(), false);
         for (Map<String, Object> rule : spec.columnRules()) {
             int width = intValue(rule.get("width"), -1);
             if (width > 0) {
@@ -859,8 +860,14 @@ public class ExcelWorkbookRenderer {
         Map<String, Object> tableStyle,
         List<Map<String, Object>> columnRules,
         List<Map<String, Object>> rowRules,
-        List<Map<String, Object>> cellRules
+        List<Map<String, Object>> cellRules,
+        List<ExcelDataRegionWriter.Region> regions
     ) {
+        public ExcelSheetRenderSpec(String name, String body, String startCell, String defaultCellType, Map<String, Object> tableStyle,
+            List<Map<String, Object>> columnRules, List<Map<String, Object>> rowRules, List<Map<String, Object>> cellRules) {
+            this(name, body, startCell, defaultCellType, tableStyle, columnRules, rowRules, cellRules, List.of());
+        }
+        public ExcelSheetRenderSpec { regions = regions == null ? List.of() : List.copyOf(regions); }
     }
 
     private record Position(int row, int column) {

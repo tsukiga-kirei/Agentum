@@ -456,3 +456,11 @@ agentum/
 ## 12. 维护说明
 
 - 目录发生结构性变化（新增顶层目录、前后端分层调整、Worker 启用）时，请同步更新本文档与 [README.md](../README.md) 目录索引。
+
+
+### MCP 数据集及独立 Excel 区域补充
+
+- `apps/api/.../mcp/application/McpResultPolicy.java`：工具结果策略、受限路径与配置校验。
+- `apps/api/.../mcp/application/McpDatasetService.java`：运行数据集保存、引用、授权查询及过期清理；领域实体和仓库分别位于 mcp/domain、mcp/infrastructure。
+- `apps/api/.../delivery/application/ExcelDataRegionWriter.java`：两种 Excel 生成方式共用的独立列区域写入器。
+- `apps/web/src/components/document/McpResultPolicyEditor.tsx`、`ExcelRegionsEditor.tsx`：工具结果规则及内容生成区域配置。

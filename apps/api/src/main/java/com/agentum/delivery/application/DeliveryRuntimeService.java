@@ -185,7 +185,10 @@ public class DeliveryRuntimeService {
                 "styles", nodeConfig.getOrDefault("templateLocationStyles", Map.of()),
                 "fileName", nodeConfig.getOrDefault("fileNameTemplate", "")));
         }
-        DeliveryRuntimeResult previous = reuseSuccessfulDelivery(request, payload);
+        // 数据集来源从节点快照读取，不全在 payload 内；重新生成文件以免上游重新取数后误用旧附件。
+        boolean datasetBound = templateService != null && templateService.bindings(nodeConfig).stream().anyMatch(b -> "mcp_datasets".equals(b.variable()));
+        boolean regionBound = nodeConfig.get("excelSheets") instanceof List<?> sheets && sheets.stream().anyMatch(sheet -> sheet instanceof Map<?, ?> map && map.get("regions") instanceof List<?> regions && !regions.isEmpty());
+        DeliveryRuntimeResult previous = datasetBound || regionBound ? null : reuseSuccessfulDelivery(request, payload);
         if (previous != null) { return previous; }
         String title = firstNonBlank(stringValue(nodeConfig.get("subject")), stringValue(nodeConfig.get("title")), itemName, request.run().getTitle());
         String target = firstNonBlank(stringValue(nodeConfig.get("deliveryTarget")), stringValue(capability.getConfig().get("endpointUrl")), "业务交付目标");

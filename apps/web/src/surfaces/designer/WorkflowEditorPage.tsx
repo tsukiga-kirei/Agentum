@@ -1,3 +1,4 @@
+import { ExcelRegionsEditor, type ExcelDataRegion } from "../../components/document/ExcelRegionsEditor";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { App, Drawer, Select, Tooltip } from "antd";
@@ -295,6 +296,7 @@ type ExcelCellRuleDraft = {
 };
 
 type ExcelSheetDraft = {
+  regions: ExcelDataRegion[];
   id: string;
   name: string;
   startCell: string;
@@ -3464,6 +3466,7 @@ function ExcelDeliverySheetSections({
               onChange={(value) => updateSheet(sheet.id, { defaultCellType: readExcelCellType(value) })}
             />
           </div>
+          <ExcelRegionsEditor value={sheet.regions} sources={[...new Map(workflowVariables.filter(v => !v.sourceNodeId.startsWith("__")).map(v => [v.sourceNodeId, { value: v.sourceNodeId, label: v.sourceNodeName }])).values()]} onChange={regions => updateSheet(sheet.id, { regions })} />
           <div className="mt-4 grid gap-3 md:grid-cols-3">
             <SelectLikeField
               label="字体"
@@ -3498,7 +3501,7 @@ function ExcelDeliverySheetSections({
               value={sheet.bodyTemplate}
               availableVariables={workflowVariables}
               triggerVariables={triggerVariables}
-              defaultOnBlur={defaultBodyTemplate}
+              defaultOnBlur={sheet.regions.length ? "" : defaultBodyTemplate}
               onChange={(value) => updateSheet(sheet.id, { bodyTemplate: value })}
               placeholder="可直接写 Markdown 表格、编号列表、键值块，也可用 {{输出内容标识}} 引用模型输出"
               textareaClassName="min-h-[180px]"
@@ -5618,8 +5621,9 @@ function readExcelSheet(raw: Record<string, unknown>, index: number, defaultBody
     id: readString(raw.id, `sheet_${index}_${Date.now().toString(36)}`),
     name: typeof raw.name === "string" ? raw.name : `Sheet${index}`,
     startCell: readString(raw.startCell, "A1").toUpperCase(),
+    regions: Array.isArray(raw.regions) ? raw.regions as ExcelDataRegion[] : [],
     defaultCellType: readExcelCellType(raw.defaultCellType),
-    bodyTemplate: resolveEditableText([raw.bodyTemplate, raw.markdownContent, raw.body], defaultBodyTemplate),
+    bodyTemplate: Array.isArray(raw.regions) && raw.regions.length ? String(raw.bodyTemplate ?? "") : resolveEditableText([raw.bodyTemplate, raw.markdownContent, raw.body], defaultBodyTemplate),
     tableStyle: {
       headerBold: readBooleanLike(tableStyle.headerBold, true),
       freezeHeader: readBooleanLike(tableStyle.freezeHeader, true),
@@ -5639,6 +5643,7 @@ function createExcelSheetDraft(index: number, bodyTemplate = "| 项目 | 内容 
     id: `sheet_${Date.now().toString(36)}_${index}`,
     name: index === 1 ? "分析结果" : `Sheet${index}`,
     startCell: "A1",
+    regions: [],
     defaultCellType: "text",
     bodyTemplate,
     tableStyle: {

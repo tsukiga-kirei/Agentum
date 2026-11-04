@@ -132,4 +132,23 @@ class TemplateFileRendererTest {
             assertThat(doc.getTables().getFirst().getRow(0).getCell(0).getText()).isEmpty();
         }
     }
+    @Test void fillsTwoExplicitRegionsOnSameRowWithoutShiftingOtherList() throws Exception {
+        byte[] source;
+        try (var book = new XSSFWorkbook(); var out = new ByteArrayOutputStream()) {
+            var sheet = book.createSheet("投资"); var row = sheet.createRow(2);
+            row.createCell(0).setCellValue("{{bonds[].name}}"); row.createCell(7).setCellValue("{{funds[].name}}");
+            book.write(out); source = out.toByteArray();
+        }
+        var original = renderer.inspect(source, "excel");
+        var spec = new TemplateModels.Spec(original.fields(), original.locations(), Map.of(), Map.of(), List.of(
+            new TemplateModels.ExcelRegion("投资", "bonds", "A3"), new TemplateModels.ExcelRegion("投资", "funds", "H3")));
+        byte[] result = renderer.render(source, "excel", spec, Map.of("bonds", List.of(Map.of("name", "债券1"), Map.of("name", "债券2")), "funds", List.of(Map.of("name", "基金"))), Map.of());
+        try (var book = new XSSFWorkbook(new ByteArrayInputStream(result))) {
+            var sheet = book.getSheetAt(0);
+            assertThat(sheet.getRow(3).getCell(0).getStringCellValue()).isEqualTo("债券2");
+            assertThat(sheet.getRow(2).getCell(7).getStringCellValue()).isEqualTo("基金");
+            assertThat(sheet.getRow(3).getCell(7)).isNull();
+        }
+    }
+
 }

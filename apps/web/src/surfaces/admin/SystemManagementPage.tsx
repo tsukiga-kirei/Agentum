@@ -1,3 +1,4 @@
+import { McpResultPolicyEditor } from "../../components/document/McpResultPolicyEditor";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
@@ -273,6 +274,7 @@ function buildCapabilityFormValues(capability: SystemCapabilityRow): Record<stri
     status: capability.status,
     transport: readConfigString(capability.config, "transport") || "sse",
     sseUrl: readConfigString(capability.config, "sseUrl"),
+    toolResultPolicies: JSON.stringify(capability.config.toolResultPolicies ?? {}),
     sourceType: readConfigString(capability.config, "sourceType") || "builtin",
     deliveryChannel: readConfigString(capability.config, "deliveryChannel") === "document" && readConfigString(capability.config, "documentKind") === "excel"
       ? "excel"
@@ -907,6 +909,8 @@ export function SystemManagementPage() {
     if (capabilityType === "mcp") {
       const transport = selectedMcpTransport || "sse";
       config.transport = transport;
+      try { config.toolResultPolicies = JSON.parse(d.toolResultPolicies || "{}"); }
+      catch { messageApi.warning("工具结果处理配置格式不正确"); return; }
       if (transport === "streamable_http") {
         config.endpointUrl = d.endpointUrl?.trim() || "";
         if (!config.endpointUrl) {
@@ -2159,6 +2163,7 @@ export function SystemManagementPage() {
                   </div>
                 </div>
               )}
+              <McpResultPolicyEditor tools={capabilityTestResult?.tools.map(tool => tool.name) ?? []} key={editingCapability?.id ?? "new"} value={JSON.parse(capRef.current.toolResultPolicies || "{}")} onChange={policies => { capRef.current.toolResultPolicies = JSON.stringify(policies); }} />
             </>
           )}
           {selectedCapabilityType === "skill" && (

@@ -26,7 +26,7 @@ class DeliveryTemplateServiceTest {
     private final AssetManagementService assets = mock(AssetManagementService.class);
     private final SystemCapabilityRepository capabilities = mock(SystemCapabilityRepository.class);
     private final Instant now = Instant.parse("2026-10-31T00:00:00Z");
-    private final DeliveryTemplateService service = new DeliveryTemplateService(repository, renderer, mapper, storage, nodes, assets, capabilities, Clock.fixed(now, ZoneOffset.UTC));
+    private final DeliveryTemplateService service = new DeliveryTemplateService(repository, renderer, mapper, storage, nodes, assets, capabilities, Clock.fixed(now, ZoneOffset.UTC), mock(com.agentum.mcp.application.McpDatasetService.class));
     private DeliveryTemplateEntity template;
     @BeforeEach void setup() throws Exception {
         byte[] bytes;

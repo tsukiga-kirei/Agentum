@@ -28,15 +28,130 @@
     },
     "riskLevel": {
       "type": "string",
-      "enum": ["low", "medium", "high"]
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ]
     },
     "requiresApproval": {
       "type": "boolean"
     },
     "auditRequired": {
       "type": "boolean"
+    },
+    "toolResultPolicies": {
+      "type": "object",
+      "maxProperties": 100,
+      "additionalProperties": {
+        "$ref": "#/$defs/resultPolicy"
+      }
     }
   },
-  "required": ["id", "name", "version", "authorizedRoles", "riskLevel", "auditRequired"],
-  "additionalProperties": false
+  "required": [
+    "id",
+    "name",
+    "version",
+    "authorizedRoles",
+    "riskLevel",
+    "auditRequired"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "resultPolicy": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "enum": [
+            "direct",
+            "dataset",
+            "auto"
+          ]
+        },
+        "source": {
+          "enum": [
+            "structuredContent",
+            "response",
+            "text_json"
+          ]
+        },
+        "rowsPath": {
+          "type": "string"
+        },
+        "datasetKey": {
+          "type": "string"
+        },
+        "preview": {
+          "enum": [
+            "summary",
+            "head",
+            "tail",
+            "head_tail"
+          ]
+        },
+        "previewRows": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "fields": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "string"
+          }
+        },
+        "retentionDays": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 365
+        },
+        "inlineBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256000
+        },
+        "maxRows": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000
+        },
+        "totalPath": {
+          "type": "string"
+        },
+        "hasMorePath": {
+          "type": "string"
+        },
+        "pagination": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "enum": [
+                "none",
+                "page"
+              ]
+            },
+            "pageParam": {
+              "type": "string"
+            },
+            "pageSizeParam": {
+              "type": "string"
+            },
+            "pageSize": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000
+            },
+            "maxPages": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  }
 }

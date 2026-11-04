@@ -476,6 +476,16 @@ export function DeliveryTemplatesPanel({
                     }}
                   />
                 </div>
+                {editing.kind === "excel" && <section className="grid gap-3">
+                  <strong>独立明细区域</strong><p className="sys-field-hint">同一 Sheet 可以配置多个开始位置，按字段定义的列顺序向下写入。使用区域的 Sheet 必须配置其中全部明细，样板行以下的目标区域应留空。</p>
+                  {(editing.spec.excelRegions ?? []).map((region, index) => <div key={index} className="template-form-grid">
+                    <TemplateSelect value={region.sheet} options={[...new Set(editing.spec.locations.map(l => l.sheet).filter(Boolean))].map(sheet => ({ value: sheet, label: sheet }))} onChange={sheet => setEditing({ ...editing, spec: { ...editing.spec, excelRegions: editing.spec.excelRegions!.map((r, i) => i === index ? { ...r, sheet } : r) } })} />
+                    <TemplateSelect value={region.field} options={editing.spec.fields.filter(f => f.type === "table").map(f => ({ value: f.key, label: f.label || f.key }))} onChange={field => setEditing({ ...editing, spec: { ...editing.spec, excelRegions: editing.spec.excelRegions!.map((r, i) => i === index ? { ...r, field } : r) } })} />
+                    <TemplateInput label="数据开始单元格" value={region.startCell} onChange={startCell => setEditing({ ...editing, spec: { ...editing.spec, excelRegions: editing.spec.excelRegions!.map((r, i) => i === index ? { ...r, startCell: startCell.toUpperCase() } : r) } })} />
+                    <button type="button" className="sys-btn sys-btn--default" onClick={() => setEditing({ ...editing, spec: { ...editing.spec, excelRegions: editing.spec.excelRegions!.filter((_, i) => i !== index) } })}>删除区域</button>
+                  </div>)}
+                  <button type="button" className="sys-btn sys-btn--default" onClick={() => setEditing({ ...editing, spec: { ...editing.spec, excelRegions: [...(editing.spec.excelRegions ?? []), { sheet: "", field: "", startCell: "A3" }] } })}>添加独立区域</button>
+                </section>}
                 <TemplateFieldsEditor
                   lockedKeys
                   fields={editing.spec.fields}

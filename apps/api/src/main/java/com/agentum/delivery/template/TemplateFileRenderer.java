@@ -107,7 +107,11 @@ public class TemplateFileRenderer {
             } else {
                 try (XSSFWorkbook book = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {
                     Map<String, XSSFCellStyle> styleCache = new HashMap<>();
-                    for (var sheet : book) renderSheet((XSSFSheet) sheet, spec, data, overrides, styleCache);
+                    for (var sheet : book) {
+                        var regions = spec.excelRegions().stream().filter(region -> region.sheet().equals(sheet.getSheetName())).toList();
+                        if (regions.isEmpty()) renderSheet((XSSFSheet) sheet, spec, data, overrides, styleCache);
+                        else renderIndependentRegions((XSSFSheet) sheet, spec, data, overrides, styleCache, regions);
+                    }
                     book.setForceFormulaRecalculation(true);
                     book.write(output);
                 }
@@ -372,6 +376,39 @@ public class TemplateFileRenderer {
         }
     }
 
+    private void renderIndependentRegions(XSSFSheet sheet, TemplateModels.Spec spec, Map<String, Object> data,
+        Map<String, Map<String, Object>> overrides, Map<String, XSSFCellStyle> styles, List<TemplateModels.ExcelRegion> regions) {
+        Set<String> configured = new HashSet<>();
+        Set<String> positions = new HashSet<>();
+        List<ExcelDataRegionWriter.Region> writes = new ArrayList<>();
+        for (var region : regions) {
+            var definition = field(spec, region.field());
+            if (!"table".equals(definition.type()) || !configured.add(region.field())) throw StructuredContent.error("每个独立区域必须绑定一个不同的明细字段");
+            var anchor = new org.apache.poi.ss.util.CellReference(region.startCell());
+            for (int c = 0; c < definition.columns().size(); c++) positions.add(new org.apache.poi.ss.util.CellReference(anchor.getRow(), anchor.getCol() + c).formatAsString() + ":" + region.field() + "." + definition.columns().get(c).key());
+            writes.add(new ExcelDataRegionWriter.Region(region.startCell(), false,
+                definition.columns().stream().map(c -> new ExcelDataRegionWriter.Column(c.key(), c.label(), c.type(), null)).toList(), rows(data, region.field())));
+        }
+        // 区域模式显式接管本 Sheet 的所有明细，避免混用整行扩展和列区域填充导致位置漂移。
+        for (var row : sheet) for (var raw : row) if (raw.getCellType() == CellType.STRING) {
+            Matcher matcher = TOKEN.matcher(raw.getStringCellValue());
+            while (matcher.find()) if (matcher.group(2) != null && !positions.contains(raw.getAddress().formatAsString() + ":" + matcher.group(1) + "." + matcher.group(2))) throw StructuredContent.error("明细标记与独立区域的开始位置或列顺序不一致");
+        }
+        // 先处理标量并跳过明细标记，随后一次性写入明细；业务文字中的 {{ 不会再次作为模板解析。
+        for (var row : sheet) renderExcelRow((XSSFRow) row, row.getRowNum(), spec, data, Map.of(), overrides, styles, configured);
+        for (var region : regions) {
+            var start = new org.apache.poi.ss.util.CellReference(region.startCell());
+            var row = sheet.getRow(start.getRow());
+            if (row == null) row = sheet.createRow(start.getRow());
+            var definition = field(spec, region.field());
+            for (int c = 0; c < definition.columns().size(); c++) {
+                var cell = row.getCell(start.getCol() + c); if (cell == null) cell = row.createCell(start.getCol() + c);
+                applyCellStyle(cell, style(spec, sheet.getSheetName() + "!" + cell.getAddress(), region.field() + "." + definition.columns().get(c).key(), sheet.getSheetName(), overrides), styles);
+            }
+        }
+        ExcelDataRegionWriter.write(sheet, writes);
+    }
+
     private void renderSheet(XSSFSheet sheet, TemplateModels.Spec spec, Map<String, Object> data, Map<String, Map<String, Object>> overrides, Map<String, XSSFCellStyle> styleCache) {
         // 自下向上扩展区域，保持原始位置标识不随上方插入行漂移。
         for (int r = sheet.getLastRowNum(); r >= 0; r--) {
@@ -422,6 +459,9 @@ public class TemplateFileRenderer {
         }
     }
     private void renderExcelRow(XSSFRow row, int originalRow, TemplateModels.Spec spec, Map<String, Object> data, Map<String, Object> item, Map<String, Map<String, Object>> overrides, Map<String, XSSFCellStyle> styleCache) {
+        renderExcelRow(row, originalRow, spec, data, item, overrides, styleCache, Set.of());
+    }
+    private void renderExcelRow(XSSFRow row, int originalRow, TemplateModels.Spec spec, Map<String, Object> data, Map<String, Object> item, Map<String, Map<String, Object>> overrides, Map<String, XSSFCellStyle> styleCache, Set<String> excluded) {
         for (var raw : row) {
             XSSFCell cell = (XSSFCell) raw;
             if (cell.getCellType() != CellType.STRING) continue;
@@ -429,6 +469,7 @@ public class TemplateFileRenderer {
             Matcher matcher = TOKEN.matcher(source);
             if (!matcher.find()) continue;
             String key = matcher.group(1), column = matcher.group(2);
+            if (excluded.contains(key)) continue;
             var definition = field(spec, key);
             if (column != null) definition = definition.columns().stream().filter(it -> it.key().equals(column)).findFirst().orElseThrow();
             String address = new org.apache.poi.ss.util.CellReference(originalRow, cell.getColumnIndex()).formatAsString();
