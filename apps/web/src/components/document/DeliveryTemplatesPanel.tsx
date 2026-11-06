@@ -1,7 +1,7 @@
 import { downloadTemplateFile } from "../../utils/deliveryTemplateFile";
 import type { CSSProperties } from "react";
 import { useCallback, useEffect, useState } from "react";
-import { Drawer, Empty, Pagination, Segmented, Spin } from "antd";
+import { App, Drawer, Empty, Pagination, Segmented, Spin } from "antd";
 import { Copy, Download, Eye, FileText, Plus, Save, Search, Send, Upload } from "lucide-react";
 import { assetApi, deliveryTemplateApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
@@ -113,6 +113,7 @@ export function DeliveryTemplatesPanel({
 }: {
   onPublished?: (template: DeliveryTemplate) => void;
 }) {
+  const { message } = App.useApp();
   const token = useAuthStore((state) => state.token);
   const user = useAuthStore((state) => state.user);
   const activeRole = useAuthStore((state) => state.activeRole);
@@ -124,7 +125,6 @@ export function DeliveryTemplatesPanel({
   const [keyword, setKeyword] = useState("");
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
   const [name, setName] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -145,17 +145,16 @@ export function DeliveryTemplatesPanel({
   const load = useCallback(async () => {
     if (!token || !tenantId) return;
     setBusy(true);
-    setError("");
     try {
       const result = await deliveryTemplateApi.list(tenantId, token, page, false, search);
       setItems(result.items);
       setTotal(result.total);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "模板列表加载失败");
+      void message.error(err instanceof Error ? err.message : "模板列表加载失败", 6);
     } finally {
       setBusy(false);
     }
-  }, [token, tenantId, page, search]);
+  }, [message, token, tenantId, page, search]);
   useEffect(() => {
     void load();
   }, [load]);
@@ -177,19 +176,19 @@ export function DeliveryTemplatesPanel({
         );
       })
       .catch((err) => {
-        if (!disposed) setError(err instanceof Error ? err.message : "交付能力加载失败");
+        if (!disposed) void message.error(err instanceof Error ? err.message : "交付能力加载失败", 6);
       });
     return () => {
       disposed = true;
     };
-  }, [token, tenantId, editing?.id]);
+  }, [message, token, tenantId, editing?.id]);
   const action = async (work: () => Promise<void>) => {
     setBusy(true);
-    setError("");
     try {
       await work();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "模板操作失败");
+      // 上传、保存及试填可能在多层抽屉中失败，统一在顶部反馈，避免错误落到遮罩后的列表。
+      void message.error(err instanceof Error ? err.message : "模板操作失败", 6);
     } finally {
       setBusy(false);
     }
@@ -227,11 +226,6 @@ export function DeliveryTemplatesPanel({
   };
   return (
     <div className="template-library">
-      {error && (
-        <div role="alert" className="template-error mb-4">
-          {error}
-        </div>
-      )}
       <div className="template-toolbar">
         <div className="sys-field-input-wrap">
           <Search className="sys-field-prefix" size={16} />
@@ -355,6 +349,10 @@ export function DeliveryTemplatesPanel({
             }}
           />
           <p className="sys-field-hint">
+            请先在 Word 正文、表格或 Excel 单元格中标出需要自动填写的位置，例如：公司名称：
+            {"{{company_name}}"}。字段标识以小写英文字母开头，仅包含小写字母、数字和下划线。
+          </p>
+          <p className="sys-field-hint">
             在原文件中使用 {"{{risk_summary}}"} 标记文字位置；重复表格样板行使用{" "}
             {"{{risk_items[].category}}"}、{"{{risk_items[].level}}"}{" "}
             等标记。同一行只放一个列表的字段。最大 20 MB。
@@ -414,11 +412,6 @@ export function DeliveryTemplatesPanel({
                 下载原模板
               </button>
             </div>
-            {error && (
-              <div role="alert" className="template-error mb-4">
-                {error}
-              </div>
-            )}
             <Segmented
               className="login-portal-segmented template-tabs"
               value={tab}

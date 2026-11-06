@@ -8,9 +8,43 @@ import org.apache.poi.xssf.usermodel.*;
 import org.apache.poi.xwpf.usermodel.*;
 import org.apache.poi.ss.usermodel.*;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class TemplateFileRendererTest {
     private final TemplateFileRenderer renderer = new TemplateFileRenderer(new MarkdownDocxRenderer());
+
+    @ParameterizedTest
+    @ValueSource(strings = {"word", "excel"})
+    void rejectsFilesWithoutMarkersAndAcceptsTheSuggestedMarkerAfterCorrection(String kind) throws Exception {
+        // 普通文件不能作为可填模板；用户按提示补充标记后，应能重新上传并识别字段。
+        byte[] source = templateWithText(kind, "公司名称：");
+        assertThatThrownBy(() -> renderer.inspect(source, kind))
+            .isInstanceOf(com.agentum.shared.api.ApiException.class)
+            .hasMessageContaining("{{company_name}}")
+            .hasMessageContaining("重新上传");
+
+        var corrected = renderer.inspect(templateWithText(kind, "公司名称：{{company_name}}"), kind);
+        assertThat(corrected.fields()).extracting(TemplateModels.Field::key).containsExactly("company_name");
+    }
+
+    private byte[] templateWithText(String kind, String text) throws IOException {
+        try (var output = new ByteArrayOutputStream()) {
+            if ("word".equals(kind)) {
+                try (var document = new XWPFDocument()) {
+                    document.createParagraph().createRun().setText(text);
+                    document.write(output);
+                }
+            } else {
+                try (var workbook = new XSSFWorkbook()) {
+                    workbook.createSheet("概览").createRow(0).createCell(0).setCellValue(text);
+                    workbook.write(output);
+                }
+            }
+            return output.toByteArray();
+        }
+    }
+
     @Test void fillsSplitRunsPreservesFixedTextAndAppliesLocalStyles() throws Exception {
         byte[] source;
         try (var doc = new XWPFDocument(); var output = new ByteArrayOutputStream()) {

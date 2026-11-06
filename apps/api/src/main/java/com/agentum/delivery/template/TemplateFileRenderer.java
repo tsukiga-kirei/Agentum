@@ -45,7 +45,7 @@ public class TemplateFileRenderer {
             }
         } catch (com.agentum.shared.api.ApiException ex) { throw ex; }
         catch (Exception ex) { throw StructuredContent.error("无法读取模板，请上传未加密且完整的 docx 或 xlsx 文件"); }
-        if (fields.isEmpty()) throw StructuredContent.error("未发现填写标记，请使用 {{字段名}} 或 {{明细字段[].列名}}");
+        if (fields.isEmpty()) throw StructuredContent.error("模板中没有可填写位置，请先在原文件中添加 {{company_name}} 或 {{items[].name}} 等标记，再重新上传");
         StructuredContent.validateFields(new ArrayList<>(fields.values()));
         return new TemplateModels.Spec(new ArrayList<>(fields.values()), locations, Map.of(), Map.of());
     }
