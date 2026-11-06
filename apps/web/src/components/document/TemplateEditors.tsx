@@ -20,9 +20,44 @@ export function TemplateFieldLocations({ field, column, spec, onChange }: { fiel
   const directions = [{ value: "vertical", label: "纵向 · 向下" }, { value: "horizontal", label: "横向 · 向右" }];
   const growthOptions = [{ value: "shift", label: "推移后续内容，自动留出空间" }, { value: "fixed", label: "仅使用已有空白，冲突时报错" }];
   const patch = (region: typeof regions[number], change: Partial<typeof region>) => onChange({ ...spec, excelRegions: spec.excelRegions?.map(item => item === region ? { ...item, ...change } : item) });
+  const allSame = regions.length > 0 && regions.every(region => region.direction === regions[0].direction);
+  const [separateMode, setSeparateMode] = useState<boolean | null>(null);
+  const isSeparate = separateMode === true || (!allSame && separateMode !== false);
+
   return <section className="template-location-list">{!column && <>
-    <div className="template-section-heading"><strong>填写位置与扩展方向</strong><TemplateSelect value={regions.every(region => region.direction === regions[0].direction) ? regions[0].direction ?? "vertical" : "mixed"} options={[...directions, { value: "mixed", label: "各位置分别设置" }]} onChange={direction => { if (direction !== "mixed") onChange({ ...spec, excelRegions: spec.excelRegions?.map(region => region.field === field.key ? { ...region, direction: direction as "vertical" | "horizontal" } : region) }); }} /></div>
+    <div className="template-section-heading">
+      <strong>填写位置与扩展方向</strong>
+      <TemplateSelect
+        value={isSeparate ? "mixed" : (regions[0]?.direction ?? "vertical")}
+        options={[...directions, { value: "mixed", label: "各位置分别设置" }]}
+        onChange={direction => {
+          if (direction === "mixed") {
+            setSeparateMode(true);
+          } else {
+            setSeparateMode(false);
+            onChange({ ...spec, excelRegions: spec.excelRegions?.map(region => region.field === field.key ? { ...region, direction: direction as "vertical" | "horizontal" } : region) });
+          }
+        }}
+      />
+    </div>
     <p className="sys-field-hint">已识别 {regions.length} 个位置。各位置按同一数组索引填写，空值留空；自动推移会插入整行或整列，保持后续内容整体对齐。</p>
+    {isSeparate && (
+      <div className="template-separate-locations">
+        {regions.map(region => (
+          <div className="template-location-row" key={`${region.sheet}:${region.startCell}:${region.column}`}>
+            <div>
+              <strong>{field.columns.find(item => item.key === region.column)?.label || region.column}</strong>
+              <span>{region.sheet} · {region.startCell}</span>
+            </div>
+            <TemplateSelect
+              value={region.direction ?? "vertical"}
+              options={directions}
+              onChange={dir => patch(region, { direction: dir as "vertical" | "horizontal" })}
+            />
+          </div>
+        ))}
+      </div>
+    )}
   </>}
     {column && regions.map(region => <div className="template-location-entry" key={`${region.sheet}:${region.startCell}:${region.column}`}>
       <div className="template-location-row"><div><strong>{field.columns.find(item => item.key === region.column)?.label || region.column}</strong><span>{region.sheet} · {region.startCell}</span></div><TemplateSelect value={region.direction ?? "vertical"} options={directions} onChange={direction => patch(region, { direction: direction as "vertical" | "horizontal" })} /></div>
@@ -363,22 +398,6 @@ export function TemplateFieldsEditor({
                 onChange={(next) => update(index, { required: next === "true" })}
               />
             </div>
-            {["text", "markdown", "paragraphs"].includes(field.type) && (
-              <TemplateInput
-                label="最大字数"
-                type="number"
-                value={field.maxLength ?? ""}
-                onChange={(next) => update(index, { maxLength: next ? Number(next) : undefined })}
-              />
-            )}
-            {["table", "paragraphs"].includes(field.type) && (
-              <TemplateInput
-                label="最多条数 / 段数"
-                type="number"
-                value={field.maxItems ?? ""}
-                onChange={(next) => update(index, { maxItems: next ? Number(next) : undefined })}
-              />
-            )}
           </div>
           <details className="template-column-details"><summary>补充说明与选项限制（选填）</summary>
           <TemplateInput

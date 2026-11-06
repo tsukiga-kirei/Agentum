@@ -93,8 +93,6 @@ export const newTemplateField = (key = ""): TemplateField => ({
   label: "",
   type: "text",
   required: true,
-  maxLength: 20000,
-  maxItems: 200,
   description: "",
   columns: [],
 });

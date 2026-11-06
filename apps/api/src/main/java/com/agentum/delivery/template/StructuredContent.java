@@ -22,7 +22,7 @@ public final class StructuredContent {
             if (!value.matches("(?s)^```(?:json)?\\s*\\R.*\\R```$")) throw error("JSON 代码围栏不完整");
             value = value.substring(value.indexOf('\n') + 1, value.lastIndexOf("```" )).strip();
         }
-        if (value.length() > 1_000_000) throw error("结构化结果超过长度限制");
+        if (value.length() > 50_000_000) throw error("结构化结果超过长度限制");
         try {
             Object parsed = JSON.readValue(value, Object.class);
             if (!(parsed instanceof Map<?, ?>)) throw error("结构化结果必须是 JSON 对象");
@@ -39,8 +39,6 @@ public final class StructuredContent {
             if (field.key() == null || !field.key().matches("[a-z][a-z0-9_]{0,79}") || !keys.add(field.key())) throw error("字段标识必须唯一，使用小写字母、数字和下划线");
             if (!TYPES.contains(field.type())) throw error("字段「" + field.key() + "」的内容类型不支持");
             if (depth > 0 && Set.of("table", "markdown", "paragraphs").contains(field.type())) throw error("表格数据列仅支持文字、数字、日期和布尔值");
-            if (field.maxLength() != null && (field.maxLength() < 1 || field.maxLength() > 200000)) throw error("字段字数上限应为 1～200000");
-            if (field.maxItems() != null && (field.maxItems() < 1 || field.maxItems() > 100000)) throw error("字段条目上限应为 1～100000");
             if (field.enumValues() != null && !field.enumValues().isEmpty() && (!"text".equals(field.type()) || field.enumValues().size() > 100 || field.enumValues().stream().anyMatch(it -> it == null || it.length() > 100))) throw error("枚举仅支持文字字段，最多 100 项，每项最多 100 字");
             if ("table".equals(field.type())) validateFields(field.columns(), depth + 1);
         }
@@ -60,13 +58,10 @@ public final class StructuredContent {
                 if (field.required()) throw error("字段「" + label + "」不能为空");
                 continue;
             }
-            int maxLength = field.maxLength() == null ? 200000 : field.maxLength();
-            int maxItems = field.maxItems() == null ? 1000 : field.maxItems();
             if (field.enumValues() != null && !field.enumValues().isEmpty() && !field.enumValues().contains(value)) throw error("字段「" + label + "」不在允许的选项中");
             switch (field.type()) {
                 case "text", "markdown", "date" -> {
                     if (!(value instanceof String text)) throw error("字段「" + label + "」必须是文字");
-                    if (text.length() > maxLength) throw error("字段「" + label + "」超过字数上限");
                     if ("date".equals(field.type())) {
                         try { java.time.LocalDate.parse(text); } catch (Exception ex) { throw error("字段「" + label + "」必须是 yyyy-MM-dd 日期"); }
                     }
@@ -76,19 +71,16 @@ public final class StructuredContent {
                 case "boolean" -> { if (!(value instanceof Boolean)) throw error("字段「" + label + "」必须是布尔值"); }
                 case "paragraphs", "table" -> {
                     if (!(value instanceof List<?> list)) throw error("字段「" + label + "」必须是列表");
-                    if (list.size() > maxItems || (field.required() && list.isEmpty())) throw error("字段「" + label + "」条目数不符合要求");
-                    int length = 0;
+                    if (field.required() && list.isEmpty()) throw error("字段「" + label + "」不能为空");
                     for (int i = 0; i < list.size(); i++) {
                         Object item = list.get(i);
                         if ("paragraphs".equals(field.type())) {
                             if (!(item instanceof String text)) throw error("字段「" + label + "」的每段必须是文字");
-                            length += text.length();
                         } else {
                             if (!(item instanceof Map<?, ?> row)) throw error("字段「" + label + "」每行必须是对象");
                             validateObject(row, field.columns(), label + "[" + (i + 1) + "].");
                         }
                     }
-                    if (length > maxLength) throw error("字段「" + label + "」超过总字数上限");
                 }
                 default -> throw error("字段内容类型无效");
             }
@@ -119,10 +111,8 @@ public final class StructuredContent {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("description", Objects.toString(field.description(), field.label() == null ? field.key() : field.label()));
             item.put("type", switch (field.type()) { case "number", "boolean" -> field.type(); case "table", "paragraphs" -> "array"; default -> "string"; });
-            if (Set.of("text", "markdown", "date").contains(field.type()) && field.maxLength() != null) item.put("maxLength", field.maxLength());
             if ("table".equals(field.type())) item.put("items", schema(field.columns()));
             if ("paragraphs".equals(field.type())) item.put("items", Map.of("type", "string"));
-            if (field.maxItems() != null && Set.of("table", "paragraphs").contains(field.type())) item.put("maxItems", field.maxItems());
             properties.put(field.key(), item);
             if (field.enumValues() != null && !field.enumValues().isEmpty()) item.put("enum", field.enumValues());
             if (field.required()) required.add(field.key());
