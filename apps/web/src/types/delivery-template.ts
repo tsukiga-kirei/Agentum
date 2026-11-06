@@ -18,7 +18,7 @@ export type TemplateLocation = {
   style: TemplateStyle;
 };
 export type TemplateSpec = {
-  excelRegions?: { sheet: string; field: string; startCell: string; column?: string; direction?: "vertical" | "horizontal" }[];
+  excelRegions?: { sheet: string; field: string; startCell: string; column?: string; growth?: "shift" | "fixed"; rangeName?: string; direction?: "vertical" | "horizontal" }[];
   fields: TemplateField[];
   locations: TemplateLocation[];
   defaultStyle: TemplateStyle;
@@ -53,7 +53,7 @@ export function inferTemplateExcelRegions(spec: TemplateSpec): NonNullable<Templ
       return other.x === position.x && other.y !== position.y && other.column !== position.column;
     });
     const previous = spec.excelRegions?.find(region => region.sheet === location.sheet && region.field === location.field && region.startCell === position.address && region.column === position.column);
-    return { sheet: location.sheet, field: location.field, column: position.column, startCell: position.address, direction: previous?.direction ?? (horizontal ? "horizontal" : "vertical") };
+    return { sheet: location.sheet, field: location.field, column: position.column, startCell: position.address, growth: previous?.growth ?? "shift", ...(previous?.rangeName ? { rangeName: previous.rangeName } : {}), direction: previous?.direction ?? (horizontal ? "horizontal" : "vertical") };
   });
 }
 export type TemplateBinding = {
@@ -118,6 +118,7 @@ export type TemplateWorkbookSheet = {
     height: number;
     cells: {
       text: string;
+      formula?: string | null;
       column: number;
       rowSpan: number;
       colSpan: number;

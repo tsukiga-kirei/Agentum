@@ -61,8 +61,7 @@ export function TemplatePreview({
         }
       >
         <div className="sys-drawer-section template-preview-content"><div className="template-preview-toolbar"><p className="sys-field-hint">
-          模板样式预览展示底色、字体、边框、合并、列宽和行高。公式在 Office
-          打开后重算；打印分页请下载验收。
+          模板样式预览展示底色、字体、边框、合并、列宽和行高。公式已在完整数据写入后计算；打印分页请下载检查。
         </p><TemplateSelect value={zoom} options={[75, 100, 125, 150].map(value => ({ value, label: `${value}%` }))} onChange={setZoom} /></div>
         <TemplateTabs
           value={sheetIndex}
@@ -88,6 +87,7 @@ export function TemplatePreview({
                       rowSpan={cell.rowSpan}
                       colSpan={cell.colSpan}
                       style={cell.style as CSSProperties}
+                      title={cell.formula ? `=${cell.formula}` : undefined}
                     >
                       {cell.text}
                     </td>
@@ -471,6 +471,7 @@ export function DeliveryTemplatesPanel({
                     }}
                   />
                 </div>
+                {editing.kind === "excel" && <details className="template-region-settings"><summary><strong>Excel 公式与动态范围说明</strong></summary><div className="grid gap-3"><p className="sys-field-hint">汇总页可直接写 Excel 公式，不需要重复绑定汇总参数。金额字段请选择“数字”，避免数字字符串被 SUM 忽略。</p><p className="sys-field-hint">跳过前两行可写 =SUM('信贷业务'!D3:D1048576)；若列内有小计或其他金额，请使用 Excel 表格列名，或下方各填写位置的“公式引用名称”。</p><p className="sys-field-hint">推移模式会为实际记录留出空间，后面的表头、合计和说明整体移动；固定模式遇到覆盖会报错。Excel 表格的数据范围、计算列和关联命名范围会更新。普通样板字段旁连续的公式视为计算列；固定汇总请放在数据区外并用空列隔开。全部 Sheet 写完后统一计算。循环引用、错误引用和无法计算的函数会明确报出位置。</p></div></details>}
                 <TemplateFieldsEditor
                   lockedKeys
                   renderLocations={editing.kind === "excel" ? (field, parent) => <TemplateFieldLocations field={parent ?? field} column={parent ? field.key : undefined} spec={editing.spec} onChange={spec => setEditing({ ...editing, spec })} /> : undefined}

@@ -466,3 +466,5 @@ agentum/
 - `apps/web/src/components/document/McpResultPolicyEditor.tsx`、`ExcelRegionsEditor.tsx`：工具结果规则及内容生成区域配置。
 
 MCP 工具完整结果下载位于 `apps/api/src/main/java/com/agentum/mcp/interfaces/McpResultController.java`；交付依赖校验位于 `agent/application/RequiredMcpResults.java`；前端来源候选构建位于 `apps/web/src/utils/mcpDatasetSources.ts`，会话结果摘要与下载组件为 `components/runtime/McpResultView.tsx`。
+
+Excel 模板统一布局规划与公式维护：`delivery/template/ExcelTemplateLayout.java`、`ExcelFormulaReferences.java`、`ExcelFormulaCalculation.java`（均位于 `apps/api/src/main/java/com/agentum/` 下），分别负责空间分配/表格、引用调整、统一计算与错误拦截。

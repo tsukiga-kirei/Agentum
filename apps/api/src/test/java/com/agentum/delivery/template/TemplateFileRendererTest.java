@@ -50,7 +50,7 @@ class TemplateFileRendererTest {
             assertThat(book.getSheetAt(0).getRow(0).getCell(2).getStringCellValue()).isEqualTo("乙");
             assertThat(book.getSheetAt(0).getRow(1).getCell(2).getStringCellValue()).isEqualTo("20");
         }
-        var wrongDirection = new TemplateModels.Spec(spec.fields(), spec.locations(), Map.of(), Map.of(), List.of(new TemplateModels.ExcelRegion("横向", "items", "B1", "vertical")));
+        var wrongDirection = new TemplateModels.Spec(spec.fields(), spec.locations(), Map.of(), Map.of(), List.of(new TemplateModels.ExcelRegion("横向", "items", "B1", "vertical", "name", "fixed", null), new TemplateModels.ExcelRegion("横向", "items", "B2", "vertical", "amount", "fixed", null)));
         assertThatThrownBy(() -> renderer.render(source, "excel", wrongDirection, data, Map.of())).hasMessageContaining("覆盖已有内容");
     }
 
@@ -174,6 +174,7 @@ class TemplateFileRendererTest {
         try (var book = new XSSFWorkbook(); var out = new ByteArrayOutputStream()) {
             var sheet = book.createSheet("预览"); sheet.createRow(0).createCell(0).setCellValue(10); sheet.getRow(0).createCell(1).setCellFormula("A1*2");
             sheet.createRow(800).createCell(30).setCellStyle(book.createCellStyle());
+            ExcelFormulaCalculation.calculate(book);
             book.write(out); source = out.toByteArray();
         }
         var layout = TemplateWorkbookPreview.read(source).getFirst();

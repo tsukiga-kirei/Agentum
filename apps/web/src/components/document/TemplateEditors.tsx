@@ -18,9 +18,18 @@ export function TemplateFieldLocations({ field, column, spec, onChange }: { fiel
   const regions = (spec.excelRegions ?? []).filter(region => region.field === field.key && (!column || region.column === column));
   if (!regions.length) return null;
   const directions = [{ value: "vertical", label: "纵向 · 向下" }, { value: "horizontal", label: "横向 · 向右" }];
-  return <section className="template-location-list">{!column && <><div className="template-section-heading"><strong>填写位置与扩展方向</strong><TemplateSelect value={regions.every(region => region.direction === regions[0].direction) ? regions[0].direction ?? "vertical" : "mixed"} options={[...directions, { value: "mixed", label: "各位置分别设置" }]} onChange={direction => { if (direction !== "mixed") onChange({ ...spec, excelRegions: spec.excelRegions?.map(region => region.field === field.key ? { ...region, direction: direction as "vertical" | "horizontal" } : region) }); }} /></div>
-    <p className="sys-field-hint">已识别 {regions.length} 个填写位置。按原数组逐条对应，空值留空；下方各明细字段可分别调整方向。</p></>}
-    {column && regions.map((region, index) => <div className="template-location-row" key={`${region.sheet}:${region.startCell}:${region.column}`}><div><strong>{field.columns.find(column => column.key === region.column)?.label || region.column}</strong><span>{region.sheet} · {region.startCell}</span></div><TemplateSelect value={region.direction ?? "vertical"} options={directions} onChange={direction => onChange({ ...spec, excelRegions: spec.excelRegions?.map(item => item === region ? { ...item, direction: direction as "vertical" | "horizontal" } : item) })} /><span className="sr-only">位置 {index + 1}</span></div>)}
+  const growthOptions = [{ value: "shift", label: "推移后续内容，自动留出空间" }, { value: "fixed", label: "仅使用已有空白，冲突时报错" }];
+  const patch = (region: typeof regions[number], change: Partial<typeof region>) => onChange({ ...spec, excelRegions: spec.excelRegions?.map(item => item === region ? { ...item, ...change } : item) });
+  return <section className="template-location-list">{!column && <>
+    <div className="template-section-heading"><strong>填写位置与扩展方向</strong><TemplateSelect value={regions.every(region => region.direction === regions[0].direction) ? regions[0].direction ?? "vertical" : "mixed"} options={[...directions, { value: "mixed", label: "各位置分别设置" }]} onChange={direction => { if (direction !== "mixed") onChange({ ...spec, excelRegions: spec.excelRegions?.map(region => region.field === field.key ? { ...region, direction: direction as "vertical" | "horizontal" } : region) }); }} /></div>
+    <p className="sys-field-hint">已识别 {regions.length} 个位置。各位置按同一数组索引填写，空值留空；自动推移会插入整行或整列，保持后续内容整体对齐。</p>
+  </>}
+    {column && regions.map(region => <div className="template-location-entry" key={`${region.sheet}:${region.startCell}:${region.column}`}>
+      <div className="template-location-row"><div><strong>{field.columns.find(item => item.key === region.column)?.label || region.column}</strong><span>{region.sheet} · {region.startCell}</span></div><TemplateSelect value={region.direction ?? "vertical"} options={directions} onChange={direction => patch(region, { direction: direction as "vertical" | "horizontal" })} /></div>
+      <div className="sys-field"><label className="sys-field-label">扩展空间</label><TemplateSelect value={region.growth ?? "shift"} options={growthOptions} onChange={growth => patch(region, { growth: growth as "shift" | "fixed" })} /></div>
+      <TemplateInput label="公式引用名称（工作簿范围）" value={region.rangeName ?? ""} onChange={rangeName => patch(region, { rangeName })} placeholder={`data_${field.key}_${region.column}`} />
+      <p className="sys-field-hint">可在 Excel 原件中使用 <code>{`=SUM(${region.rangeName || `data_${field.key}_${region.column}`})`}</code>。生成时按实际条数更新此范围，包含中间空值、不包含表头和合计。名称修改后，原件中的公式也需一致。</p>
+    </div>)}
   </section>;
 }
 

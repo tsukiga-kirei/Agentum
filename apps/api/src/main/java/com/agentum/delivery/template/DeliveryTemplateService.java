@@ -274,6 +274,7 @@ public class DeliveryTemplateService {
         if (!"excel".equals(entity.kind) && !spec.excelRegions().isEmpty()) throw StructuredContent.error("只有 Excel 支持独立数据区域");
         if (spec.excelRegions().size() > 3000) throw StructuredContent.error("明细填写位置不能超过 3000 个");
         for (var region : spec.excelRegions()) {
+            if (!Set.of("shift", "fixed").contains(region.growth())) throw StructuredContent.error("明细扩展空间设置无效");
             if (!Set.of("vertical", "horizontal").contains(region.direction())) throw StructuredContent.error("区域扩展方向必须为纵向或横向");
             if (region.sheet() == null || region.startCell() == null || !region.startCell().matches("[A-Z]{1,3}[1-9][0-9]{0,5}") || spec.fields().stream().noneMatch(f -> f.key().equals(region.field()) && "table".equals(f.type()))) throw StructuredContent.error("独立区域的 Sheet、明细字段或开始位置无效");
             if (spec.locations().stream().noneMatch(l -> region.sheet().equals(l.sheet()) && region.field().equals(l.field()))) throw StructuredContent.error("区域的 Sheet 与模板明细位置不匹配");

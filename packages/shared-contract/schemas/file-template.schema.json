@@ -81,6 +81,23 @@
           "column": {
             "type": "string",
             "description": "该填写位置对应的明细字段标识"
+          },
+          "growth": {
+            "type": "string",
+            "enum": [
+              "shift",
+              "fixed"
+            ],
+            "default": "shift",
+            "description": "推移后续整行/整列，或仅使用已有空白并在冲突时失败"
+          },
+          "rangeName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255,
+            "description": "工作簿级动态名称，实际范围包含记录空值并排除表头和合计；留空自动生成 data_列表_字段"
           }
         },
         "required": [

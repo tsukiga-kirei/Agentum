@@ -33,3 +33,9 @@ test("MCP 来源只展示上游智能体实际配置的工具，集群成员与�
   assert.deepEqual(sources[0].datasetColumns, ["name", "amount"]);
   assert.ok(sources.every(source => source.sourceNodeId === "cluster"));
 });
+
+test("重新识别保留设计者选择的扩展空间与公式引用名称", () => {
+  const source = spec([table("items", ["amount"])], [location("items", "amount", "D3", "信贷业务")]);
+  source.excelRegions = [{ sheet: "信贷业务", field: "items", column: "amount", startCell: "D3", direction: "vertical", growth: "fixed", rangeName: "credit_amounts" }];
+  assert.deepEqual(inferTemplateExcelRegions(source), source.excelRegions);
+});

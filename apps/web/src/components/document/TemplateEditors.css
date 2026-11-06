@@ -314,3 +314,7 @@
 .template-sheet-preview td { max-width: 800px; box-sizing: border-box; }
 .template-preview-content .account-drawer-module-switch { margin: 0; }
 @media(max-width: 700px) { .template-preview-content { padding: 16px !important; } }
+
+.template-location-entry { display: grid; gap: 12px; padding: 14px; border: 1px solid var(--color-border-light); border-radius: var(--radius-md); background: var(--color-bg-card); }
+.template-location-entry .template-location-row { padding-top: 0; }
+.template-location-entry code { overflow-wrap: anywhere; color: var(--color-text-primary); }

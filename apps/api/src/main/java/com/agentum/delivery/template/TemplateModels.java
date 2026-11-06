@@ -23,10 +23,14 @@ public final class TemplateModels {
         }
         public Spec { excelRegions = excelRegions == null ? List.of() : List.copyOf(excelRegions); }
     }
-    public record ExcelRegion(String sheet, String field, String startCell, String direction, String column) {
+    public record ExcelRegion(String sheet, String field, String startCell, String direction, String column, String growth, String rangeName) {
         public ExcelRegion(String sheet, String field, String startCell) { this(sheet, field, startCell, "vertical", null); }
         public ExcelRegion(String sheet, String field, String startCell, String direction) { this(sheet, field, startCell, direction, null); }
-        public ExcelRegion { direction = direction == null ? "vertical" : direction; }
+        public ExcelRegion(String sheet, String field, String startCell, String direction, String column) { this(sheet, field, startCell, direction, column, "shift", null); }
+        public ExcelRegion {
+            direction = direction == null ? "vertical" : direction;
+            growth = growth == null ? "shift" : growth;
+        }
         public boolean horizontal() { return "horizontal".equals(direction); }
     }
     public record Source(String sourceNodeId, String variable, String path) {}
