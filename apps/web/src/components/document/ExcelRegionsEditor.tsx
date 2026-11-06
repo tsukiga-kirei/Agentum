@@ -1,14 +1,15 @@
 import { TemplateInput, TemplateSelect } from "./TemplateEditors";
-export type ExcelDataRegion = { startCell: string; sourceNodeId: string; sourcePath: string; header: boolean; columns: { field: string; label: string; type: string; format?: string }[] };
+export type ExcelDataRegion = { startCell: string; sourceNodeId: string; sourcePath: string; header: boolean; direction?: "vertical" | "horizontal"; columns: { field: string; label: string; type: string; format?: string }[] };
 export function ExcelRegionsEditor({ value, sources = [], onChange }: { value: ExcelDataRegion[]; sources?: { value: string; label: string }[]; onChange: (value: ExcelDataRegion[]) => void }) {
   const patch = (index: number, change: Partial<ExcelDataRegion>) => onChange(value.map((r, i) => i === index ? { ...r, ...change } : r));
-  return <section className="mt-4 grid gap-3"><strong>独立数据区域</strong><p className="sys-field-hint">每个区域独立向下填充，可在同一 Sheet 左右并列。数据集来源路径如 mcp_datasets.credit_details；区域不能覆盖正文内容。</p>
-    {value.map((region, index) => <div key={index} className="grid gap-3 rounded-lg border border-[var(--color-border)] p-3">
+  return <section className="mt-4 grid gap-3"><strong>独立数据区域</strong><p className="sys-field-hint">每个区域可选择纵向增加行或横向增加列。数据集来源路径如 mcp_datasets.credit_details；区域不能重叠或覆盖正文内容。</p>
+    {value.map((region, index) => <div key={index} className="template-region-card">
       <div className="flex justify-between"><strong>区域 {index + 1}</strong><button type="button" className="sys-btn sys-btn--default" onClick={() => onChange(value.filter((_, i) => i !== index))}>删除区域</button></div>
       <TemplateInput label="开始单元格" value={region.startCell} onChange={startCell => patch(index, { startCell: startCell.toUpperCase() })} />
+      <div className="sys-field"><label className="sys-field-label">记录扩展方向</label><TemplateSelect value={region.direction ?? "vertical"} options={[{ value: "vertical", label: "纵向（向下增加行）" }, { value: "horizontal", label: "横向（向右增加列）" }]} onChange={direction => patch(index, { direction })} /></div>
       <TemplateSelect value={region.sourceNodeId} options={[{ value: "", label: "从交付变量读取" }, ...sources]} onChange={sourceNodeId => patch(index, { sourceNodeId })} placeholder="选择上游来源步骤" />
       <TemplateInput label="来源字段路径" value={region.sourcePath} onChange={sourcePath => patch(index, { sourcePath })} />
-      <label className="flex gap-2"><input type="checkbox" checked={region.header} onChange={e => patch(index, { header: e.target.checked })} />在开始位置生成表头，数据从下一行写入</label>
+      <label className="flex gap-2"><input type="checkbox" checked={region.header} onChange={e => patch(index, { header: e.target.checked })} />{region.direction === "horizontal" ? "在第一列生成字段名，数据从右侧一列写入" : "在第一行生成表头，数据从下一行写入"}</label>
       {region.columns.map((column, ci) => <div key={ci} className="grid gap-2 rounded border border-[var(--color-border)] p-2">
         <TemplateInput label="来源字段" value={column.field} onChange={field => patch(index, { columns: region.columns.map((c, i) => i === ci ? { ...c, field } : c) })} />
         <TemplateInput label="表头" value={column.label} onChange={label => patch(index, { columns: region.columns.map((c, i) => i === ci ? { ...c, label } : c) })} />

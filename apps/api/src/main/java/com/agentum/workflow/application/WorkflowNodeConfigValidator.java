@@ -326,6 +326,7 @@ public class WorkflowNodeConfigValidator {
         if (!"file_template".equals(config.get("generationMode"))) {
             for (var sheet : extractMapList(config, "excelSheets")) for (var region : extractMapList(sheet, "regions")) {
                 String start = rawString(region.get("startCell"));
+                if (!Set.of("vertical", "horizontal").contains(rawString(region.getOrDefault("direction", "vertical")))) issues.add(issue("WORKFLOW_VALIDATION_EXCEL_REGION", "区域扩展方向必须为纵向或横向", node));
                 var columns = extractMapList(region, "columns");
                 if (!start.matches("[A-Z]{1,3}[1-9][0-9]{0,5}") || columns.isEmpty() || columns.size() > 100 || rawString(region.get("sourcePath")).isBlank()) issues.add(issue("WORKFLOW_VALIDATION_EXCEL_REGION", "数据区域必须配置开始位置、来源路径和 1～100 个列", node));
                 for (var column : columns) if (rawString(column.get("field")).isBlank() || !Set.of("text", "number", "date", "boolean").contains(rawString(column.getOrDefault("type", "text")))) issues.add(issue("WORKFLOW_VALIDATION_EXCEL_REGION", "区域数据列必须有来源字段和有效类型", node));

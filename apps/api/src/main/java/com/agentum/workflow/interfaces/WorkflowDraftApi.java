@@ -233,8 +233,10 @@ public final class WorkflowDraftApi {
 
     public record UpdateWorkflowDraftRequest(
         @NotBlank @Size(max = 180) String name,
-        @Size(max = 1000) String description
+        @Size(max = 1000) String description,
+        Boolean allowAutoExecution
     ) {
+        public UpdateWorkflowDraftRequest(String name, String description) { this(name, description, null); }
     }
 
     public record UpdateWorkflowAccessRequest(

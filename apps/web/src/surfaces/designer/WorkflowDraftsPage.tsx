@@ -34,7 +34,7 @@ import {
   X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { Drawer, Pagination, Segmented, Select, message } from "antd";
+import { Drawer, Pagination, Segmented, Select, Switch, message } from "antd";
 import { SurfacePageLayout } from "../../components/workbench/SurfacePageLayout";
 import { SysModalMask } from "../../components/common/SysModalMask";
 import { GrantPrincipalPicker, type PrincipalSelectionKey } from "../../components/common/GrantPrincipalPicker";
@@ -163,6 +163,7 @@ export function WorkflowDraftsPage() {
   const [versionsExpanded, setVersionsExpanded] = useState(false);
   const [detailName, setDetailName] = useState("");
   const [detailDescription, setDetailDescription] = useState("");
+  const [detailAllowAutoExecution, setDetailAllowAutoExecution] = useState(false);
   const [detailAccess, setDetailAccess] = useState({
     readScope: "self" as CollaborationAccessScope,
     editScope: "self" as CollaborationAccessScope,
@@ -270,6 +271,7 @@ export function WorkflowDraftsPage() {
           setDetailWorkflow(detail.draft);
           setDetailName(detail.draft.name);
           setDetailDescription(detail.draft.description);
+          setDetailAllowAutoExecution(detail.nodes.some((node) => node.nodeType === "trigger" && node.config.allowAutoExecution === true));
           setDetailAccess({
             readScope: detail.access.readScope,
             editScope: detail.access.editScope,
@@ -426,6 +428,7 @@ export function WorkflowDraftsPage() {
       let detail = await workflowApi.updateDraft(user.tenantId, detailWorkflow.id, token, {
         name: detailName.trim(),
         description: detailDescription.trim(),
+        ...(drawerDetail && !drawerDetailLoading ? { allowAutoExecution: detailAllowAutoExecution } : {}),
       });
       if (drawerDetail?.access.canManageAccess) {
         detail = await workflowApi.updateAccess(user.tenantId, detailWorkflow.id, token, {
@@ -1022,6 +1025,17 @@ export function WorkflowDraftsPage() {
                   <span className="sys-form-value">{formatDateTime(detailWorkflow.updatedAt)}</span>
                 </div>
               </div>
+
+              <section className="workflow-execution-settings" aria-label="执行设置">
+                <div>
+                  <span className="sys-config-group-title">执行设置</span>
+                  <label htmlFor="workflow-auto-execution" className="workflow-execution-settings-label">允许发起人选择自动执行</label>
+                  <p className="sys-field-hint">保存并重新发布后生效。执行成功后自动继续；失败按流程重试策略处理，仍未成功则停止；发起人可随时接管。</p>
+                </div>
+                <Switch id="workflow-auto-execution" checked={detailAllowAutoExecution}
+                  disabled={detailWorkflow.accessLevel === "read" || drawerDetailLoading || !drawerDetail || submitting}
+                  onChange={setDetailAllowAutoExecution} />
+              </section>
 
               {workflowVersions.length > 0 ? (
                 <section className="workflow-version-panel" aria-label="发布版本记录">

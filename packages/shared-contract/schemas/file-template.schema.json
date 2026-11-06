@@ -68,6 +68,12 @@
           "startCell": {
             "type": "string",
             "pattern": "^[A-Z]{1,3}[1-9][0-9]{0,5}$"
+          },
+          "direction": {
+            "type": "string",
+            "enum": ["vertical", "horizontal"],
+            "default": "vertical",
+            "description": "纵向按样板行向下扩展；横向按样板列向右扩展"
           }
         },
         "required": [

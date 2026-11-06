@@ -4,6 +4,38 @@ import java.util.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Test;
 class ExcelDataRegionWriterTest {
+    @Test void writesHorizontalRecordsWithHeaderTypesAndSampleStyles() throws Exception {
+        try (var book = new XSSFWorkbook()) {
+            var sheet = book.createSheet();
+            var style = book.createCellStyle(); style.setDataFormat(book.createDataFormat().getFormat("0.00"));
+            sheet.createRow(1).createCell(1).setCellStyle(style);
+            var columns = List.of(new ExcelDataRegionWriter.Column("name", "名称", "text", ""), new ExcelDataRegionWriter.Column("amount", "金额", "number", "0.00"));
+            var region = new ExcelDataRegionWriter.Region("A1", true, columns, List.of(Map.of("name", "001", "amount", 12.5), Map.of("name", "002", "amount", 20)), "horizontal");
+            ExcelDataRegionWriter.write(sheet, List.of(region));
+            assertThat(sheet.getRow(0).getCell(0).getStringCellValue()).isEqualTo("名称");
+            assertThat(sheet.getRow(1).getCell(0).getStringCellValue()).isEqualTo("金额");
+            assertThat(sheet.getRow(0).getCell(1).getStringCellValue()).isEqualTo("001");
+            assertThat(sheet.getRow(0).getCell(2).getStringCellValue()).isEqualTo("002");
+            assertThat(sheet.getRow(1).getCell(2).getNumericCellValue()).isEqualTo(20);
+            assertThat(sheet.getRow(1).getCell(2).getCellStyle().getDataFormatString()).isEqualTo("0.00");
+        }
+    }
+
+    @Test void horizontalRegionsRejectFixedContentOverlapsAndColumnOverflowBeforeWriting() throws Exception {
+        try (var book = new XSSFWorkbook()) {
+            var sheet = book.createSheet();
+            var columns = List.of(new ExcelDataRegionWriter.Column("v", "值", "text", ""));
+            var rows = List.of(Map.<String, Object>of("v", "1"), Map.<String, Object>of("v", "2"));
+            var region = new ExcelDataRegionWriter.Region("A1", false, columns, rows, "horizontal");
+            sheet.createRow(0).createCell(1).setCellValue("固定正文");
+            assertThatThrownBy(() -> ExcelDataRegionWriter.write(sheet, List.of(region))).hasMessageContaining("覆盖");
+            assertThat(sheet.getRow(0).getCell(0)).isNull();
+            sheet.getRow(0).getCell(1).setBlank();
+            assertThatThrownBy(() -> ExcelDataRegionWriter.write(sheet, List.of(region, region))).hasMessageContaining("重叠");
+            assertThatThrownBy(() -> ExcelDataRegionWriter.write(sheet, List.of(new ExcelDataRegionWriter.Region("XFD1", false, columns, rows, "horizontal")))).hasMessageContaining("行列限制");
+            assertThatThrownBy(() -> ExcelDataRegionWriter.write(sheet, List.of(new ExcelDataRegionWriter.Region("A1", false, columns, rows, "diagonal")))).hasMessageContaining("方向");
+        }
+    }
     @Test void writesUnequalSideBySideListsAndPreservesLeadingZeros() throws Exception {
         try (var book = new XSSFWorkbook()) {
             var sheet = book.createSheet(); var columns = List.of(new ExcelDataRegionWriter.Column("no", "编号", "text", ""));

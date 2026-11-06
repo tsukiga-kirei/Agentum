@@ -52,6 +52,7 @@ export type CreateWorkflowDraftRequest = {
 export type UpdateWorkflowDraftRequest = {
   name: string;
   description?: string;
+  allowAutoExecution?: boolean;
 };
 
 export type UpdateWorkflowAccessRequest = {

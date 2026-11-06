@@ -148,7 +148,7 @@ public class ExcelDeliveryService {
             var columns = readMapList(region.get("columns")).stream().map(c -> new ExcelDataRegionWriter.Column(
                 stringValue(c.get("field")), firstNonBlank(stringValue(c.get("label")), stringValue(c.get("field"))),
                 firstNonBlank(stringValue(c.get("type")), "text"), stringValue(c.get("format")))).toList();
-            result.add(new ExcelDataRegionWriter.Region(firstNonBlank(stringValue(region.get("startCell")), "A1"), !Boolean.FALSE.equals(region.get("header")), columns, rows));
+            result.add(new ExcelDataRegionWriter.Region(firstNonBlank(stringValue(region.get("startCell")), "A1"), !Boolean.FALSE.equals(region.get("header")), columns, rows, stringValue(region.getOrDefault("direction", "vertical"))));
         }
         return result;
     }

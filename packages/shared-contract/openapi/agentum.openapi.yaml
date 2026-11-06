@@ -7072,8 +7072,13 @@ components:
         - name
     ExcelDataRegion:
       type: object
-      description: 独立向下写入的列区域；同一 Sheet 内不能重叠或覆盖固定内容。
+      description: 按记录方向独立写入的区域；同一 Sheet 内不能重叠或覆盖固定内容。
       properties:
+        direction:
+          type: string
+          enum: [vertical, horizontal]
+          default: vertical
+          description: 纵向每条记录占一行；横向每条记录占一列，表头在第一列。
         startCell:
           type: string
           example: H3
@@ -7856,6 +7861,9 @@ components:
     UpdateWorkflowDraftRequest:
       type: object
       properties:
+        allowAutoExecution:
+          type: boolean
+          description: 可选的发起人自动执行许可，保存到触发节点配置；变化后需重新发布，不修改当前发布版本或已有运行。
         name:
           type: string
           maxLength: 180

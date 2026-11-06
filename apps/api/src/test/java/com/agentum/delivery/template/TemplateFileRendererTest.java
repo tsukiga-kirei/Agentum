@@ -14,6 +14,46 @@ import org.junit.jupiter.params.provider.ValueSource;
 class TemplateFileRendererTest {
     private final TemplateFileRenderer renderer = new TemplateFileRenderer(new MarkdownDocxRenderer());
 
+    @Test void automaticallyRecognizesSideBySideListsWithoutManualRegionConfiguration() throws Exception {
+        byte[] source;
+        try (var book = new XSSFWorkbook(); var out = new ByteArrayOutputStream()) {
+            var sheet = book.createSheet("投资业务");
+            sheet.createRow(0).createCell(0).setCellValue("债券"); sheet.getRow(0).createCell(7).setCellValue("基金");
+            sheet.createRow(1).createCell(0).setCellValue("{{bonds[].name}}"); sheet.getRow(1).createCell(7).setCellValue("{{funds[].name}}");
+            book.write(out); source = out.toByteArray();
+        }
+        var detected = renderer.inspect(source, "excel");
+        assertThat(detected.excelRegions()).extracting(TemplateModels.ExcelRegion::startCell).containsExactly("A2", "H2");
+        // 已上传但尚未配置区域的草稿同样能直接生成，不能继续要求用户经历发布失败再手动修复。
+        var unconfigured = new TemplateModels.Spec(detected.fields(), detected.locations(), Map.of(), Map.of());
+        var duplicate = new TemplateModels.Spec(detected.fields(), detected.locations(), Map.of(), Map.of(), List.of(detected.excelRegions().getFirst(), detected.excelRegions().getFirst()));
+        assertThatThrownBy(() -> renderer.resolveExcelRegions(duplicate)).hasMessageContaining("重复配置");
+        byte[] bytes = renderer.render(source, "excel", unconfigured, Map.of("bonds", List.of(Map.of("name", "债券1")), "funds", List.of(Map.of("name", "基金1"), Map.of("name", "基金2"))), Map.of());
+        try (var book = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {
+            assertThat(book.getSheetAt(0).getRow(2).getCell(7).getStringCellValue()).isEqualTo("基金2");
+            assertThat(book.getSheetAt(0).getRow(2).getCell(0)).isNull();
+        }
+    }
+
+    @Test void recognizesSampleColumnAndExpandsRecordsHorizontally() throws Exception {
+        byte[] source;
+        try (var book = new XSSFWorkbook(); var out = new ByteArrayOutputStream()) {
+            var sheet = book.createSheet("横向");
+            sheet.createRow(0).createCell(1).setCellValue("{{items[].name}}");
+            sheet.createRow(1).createCell(1).setCellValue("{{items[].amount}}");
+            book.write(out); source = out.toByteArray();
+        }
+        var spec = renderer.inspect(source, "excel");
+        assertThat(spec.excelRegions()).containsExactly(new TemplateModels.ExcelRegion("横向", "items", "B1", "horizontal"));
+        var data = Map.<String, Object>of("items", List.of(Map.of("name", "甲", "amount", "10"), Map.of("name", "乙", "amount", "20")));
+        try (var book = new XSSFWorkbook(new ByteArrayInputStream(renderer.render(source, "excel", spec, data, Map.of())))) {
+            assertThat(book.getSheetAt(0).getRow(0).getCell(2).getStringCellValue()).isEqualTo("乙");
+            assertThat(book.getSheetAt(0).getRow(1).getCell(2).getStringCellValue()).isEqualTo("20");
+        }
+        var wrongDirection = new TemplateModels.Spec(spec.fields(), spec.locations(), Map.of(), Map.of(), List.of(new TemplateModels.ExcelRegion("横向", "items", "B1", "vertical")));
+        assertThatThrownBy(() -> renderer.render(source, "excel", wrongDirection, data, Map.of())).hasMessageContaining("顺序不一致");
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"word", "excel"})
     void rejectsFilesWithoutMarkersAndAcceptsTheSuggestedMarkerAfterCorrection(String kind) throws Exception {

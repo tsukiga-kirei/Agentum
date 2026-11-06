@@ -125,4 +125,9 @@ public class WorkflowNodeDefinitionEntity {
     public Map<String, Object> getConfig() {
         return config;
     }
+
+    public void updateConfig(Map<String, Object> config, Instant now) {
+        this.config = new HashMap<>(config);
+        this.updatedAt = now;
+    }
 }

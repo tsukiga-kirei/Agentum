@@ -23,7 +23,11 @@ public final class TemplateModels {
         }
         public Spec { excelRegions = excelRegions == null ? List.of() : List.copyOf(excelRegions); }
     }
-    public record ExcelRegion(String sheet, String field, String startCell) {}
+    public record ExcelRegion(String sheet, String field, String startCell, String direction) {
+        public ExcelRegion(String sheet, String field, String startCell) { this(sheet, field, startCell, "vertical"); }
+        public ExcelRegion { direction = direction == null ? "vertical" : direction; }
+        public boolean horizontal() { return "horizontal".equals(direction); }
+    }
     public record Source(String sourceNodeId, String variable, String path) {}
     public record Binding(String field, String sourceNodeId, String variable, String path,
                           boolean constant, Object value, List<Source> additionalSources, String separator,

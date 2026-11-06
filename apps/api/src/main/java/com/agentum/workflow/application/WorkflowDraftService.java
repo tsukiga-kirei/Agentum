@@ -394,6 +394,31 @@ public class WorkflowDraftService {
         }
         definition.updateMetadata(name, normalizeOptional(request.description()), operatorUserId, clock.instant());
         // 名称和简介属于业务元数据，不参与节点执行协议；修改后无需重新校验或生成版本。
+        if (request.allowAutoExecution() != null) {
+            // 抽屉只更新当前触发节点的执行许可，不回传整张图，避免覆盖其他设计者刚保存的节点配置。
+            var triggers = workflowNodeDefinitionRepository.findByWorkflowIdOrderBySortOrderAsc(workflowId).stream()
+                .filter(node -> "trigger".equals(node.getNodeType())).toList();
+            if (triggers.isEmpty()) {
+                log.warn("流程执行设置保存被拒绝：缺少触发节点 tenantId={} userId={} workflowId={} requestId={}", tenantId, operatorUserId, workflowId, RequestIds.current());
+                throw new ApiException(HttpStatus.BAD_REQUEST, "WORKFLOW_TRIGGER_REQUIRED", "流程缺少触发节点，无法设置自动执行");
+            }
+            boolean changed = false;
+            for (var trigger : triggers) {
+                if (Boolean.TRUE.equals(trigger.getConfig().get("allowAutoExecution")) == request.allowAutoExecution()) continue;
+                Map<String, Object> config = new LinkedHashMap<>(trigger.getConfig());
+                config.put("allowAutoExecution", request.allowAutoExecution());
+                trigger.updateConfig(config, clock.instant());
+                workflowNodeDefinitionRepository.save(trigger);
+                changed = true;
+            }
+            if (changed) {
+                // 自动执行许可属于执行协议，必须重新发布；已有运行和当前发布版本保持不变。
+                definition.markUnpublishedChanges(operatorUserId, clock.instant());
+                log.info("流程自动执行许可已更新 tenantId={} userId={} workflowId={} allowAutoExecution={} requestId={}", tenantId, operatorUserId, workflowId, request.allowAutoExecution(), RequestIds.current());
+                auditService.recordOperationLog(tenantId, operatorUserId, getOperatorName(operatorUserId), "UPDATE_EXECUTION_SETTINGS", "WORKFLOW_DEFINITION", workflowId.toString(), name,
+                    "更新流程自动执行许可", Map.of("allowAutoExecution", request.allowAutoExecution()), null);
+            }
+        }
         workflowDefinitionRepository.save(definition);
         return toDetail(definition, operatorUserId);
     }

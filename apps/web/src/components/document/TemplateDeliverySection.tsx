@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Drawer, Pagination, Segmented } from "antd";
+import { App, Drawer, Pagination, Segmented } from "antd";
 import { Eye, Library, Search } from "lucide-react";
 import { deliveryTemplateApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
@@ -18,6 +18,7 @@ import {
   TemplateSelect,
   TemplateStyleEditor,
   TemplateValueEditor,
+  TemplateValuesEditor,
 } from "./TemplateEditors";
 
 export function TemplateDeliverySection({
@@ -33,6 +34,7 @@ export function TemplateDeliverySection({
   capabilityId: string;
   onChange: (patch: Record<string, unknown>) => void;
 }) {
+  const { message } = App.useApp();
   const token = useAuthStore((state) => state.token);
   const user = useAuthStore((state) => state.user);
   const activeRole = useAuthStore((state) => state.activeRole);
@@ -44,7 +46,6 @@ export function TemplateDeliverySection({
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState("");
   const [keyword, setKeyword] = useState("");
-  const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [library, setLibrary] = useState(false);
   const [tab, setTab] = useState("bindings");
@@ -61,7 +62,6 @@ export function TemplateDeliverySection({
   useEffect(() => {
     if (!token || !tenantId) return;
     let disposed = false;
-    setError("");
     void deliveryTemplateApi
       .list(tenantId, token, page, true, search)
       .then((result) => {
@@ -71,12 +71,12 @@ export function TemplateDeliverySection({
         }
       })
       .catch((err) => {
-        if (!disposed) setError(err instanceof Error ? err.message : "模板列表加载失败");
+        if (!disposed) void message.error(err instanceof Error ? err.message : "模板列表加载失败", 6);
       });
     return () => {
       disposed = true;
     };
-  }, [token, tenantId, page, search, library]);
+  }, [message, token, tenantId, page, search, library]);
   useEffect(() => {
     if (!token || !tenantId || !id) {
       setTemplate(null);
@@ -99,16 +99,16 @@ export function TemplateDeliverySection({
       .catch((err) => {
         if (!disposed) {
           setTemplate(null);
-          setError(err instanceof Error ? err.message : "模板读取失败");
+          void message.error(err instanceof Error ? err.message : "模板读取失败", 6);
         }
       });
     return () => {
       disposed = true;
     };
-  }, [token, tenantId, id]);
+  }, [message, token, tenantId, id]);
   const selectTemplate = (next: DeliveryTemplate) => {
     if (next.kind !== kind) {
-      setError("请选择与当前交付类型一致的模板");
+      void message.error("请选择与当前交付类型一致的模板", 6);
       return;
     }
     onChange({ templateVersionId: next.id, templateBindings: [], templateLocationStyles: {} });
@@ -148,11 +148,6 @@ export function TemplateDeliverySection({
   };
   return (
     <section className="template-binding-list">
-      {error && (
-        <div role="alert" className="template-error">
-          {error}
-        </div>
-      )}
       <div className="template-section-heading">
         <strong>文件模板</strong>
         <button type="button" className="sys-btn sys-btn--default" onClick={() => setLibrary(true)}>
@@ -160,6 +155,49 @@ export function TemplateDeliverySection({
           上传 / 管理模板
         </button>
       </div>
+      <p className="sys-field-hint">
+        当前交付类型为 {kind === "excel" ? "Excel（.xlsx）" : "Word（.docx）"}。
+        请先在“上传 / 管理模板”中上传、配置并发布，再选择对应类型的已发布模板、绑定内容来源。
+        {kind === "word" && "如需填写 Excel，请先将交付能力切换为 Excel 工作簿。"}
+      </p>
+      <details className="sys-field-hint">
+        <summary className="cursor-pointer text-[var(--color-text-primary)]">
+          查看模板填写规则与数据来源说明
+        </summary>
+        <div className="mt-3 grid gap-3">
+          <p>
+            普通字段使用 {"{{company_name}}"}；明细使用 {"{{items[].name}}"}、
+            {"{{items[].amount}}"} 等标记，每列分别设置。字段标识以小写英文字母开头，
+            仅包含小写字母、数字和下划线。修改原文件后，请保存并重新选择文件上传。
+          </p>
+          {kind === "excel" ? (
+            <>
+              <p>
+                每个 Sheet 分别填写。明细从样板行按来源顺序向下展开，沿用样板单元格格式；
+                单个普通字段标记只填当前单元格；需要向右扩展时，在模板管理的明细区域中选择“横向”，并将字段标记竖排在样板列。
+                请在模板管理中设置金额、日期等字段类型，并将明细条目上限设为足够容纳实际数据量。
+              </p>
+              <p>
+                同一 Sheet 左右并列的不同明细使用不同标识，上传时会自动识别各自的独立区域，允许不同条数。
+                可在模板管理中检查或调整开始位置与扩展方向；区域应留空，避免覆盖固定内容。
+              </p>
+              <p>
+                原有公式保留，生成文件设置打开后重算；请下载到 Excel / WPS 检查计算结果。
+                网页预览显示公式。默认样板行展开仅有限调整简单汇总范围，独立区域不会自动扩展公式范围。
+              </p>
+            </>
+          ) : (
+            <p>
+              普通字段放在正文或普通表格中；明细各列标记放在同一表格样板行，按来源记录重复生成行。
+              同一样板行只使用一个明细列表，暂不支持文本框填写和嵌套重复区域。
+            </p>
+          )}
+          <p>
+            明细可选择上游结构化结果，也可在“绑定 MCP 数据集”中选择取数步骤、填写数据集标识并映射各列。
+            MCP 工具需先配置保存数据集；交付时读取完整明细，不需要模型重新抄写，也不会在交付步骤重新调用 MCP。
+          </p>
+        </div>
+      </details>
       <div className="flex gap-2">
         <div className="sys-field-input-wrap flex-1">
           <Search size={15} className="sys-field-prefix" />
@@ -218,7 +256,7 @@ export function TemplateDeliverySection({
             已固定模板版本。模板更新不会自动替换本流程；更换模板后需重新绑定字段。
           </p>
           <Segmented
-            className="login-portal-segmented"
+            className="login-portal-segmented login-portal-segmented--business system-mgmt-segmented template-tabs"
             value={tab}
             options={[
               { value: "bindings", label: "内容来源" },
@@ -284,6 +322,7 @@ export function TemplateDeliverySection({
                     placeholder="选择来源节点及字段"
                   />
                   {field.type === "table" && <details className="mt-3"><summary>绑定 MCP 数据集</summary><div className="grid gap-3 mt-2">
+                    <p className="sys-field-hint">选择本次运行的上游取数步骤，填写 MCP 工具结果策略中的“数据集标识”（例如 ckyw），并在下方配置模板列与来源字段的对应关系。</p>
                     <TemplateSelect value={binding?.sourceNodeId ?? ""} options={[...new Map(variables.filter(v => !v.sourceNodeId.startsWith("__")).map(v => [v.sourceNodeId, { value: v.sourceNodeId, label: v.sourceNodeName }])).values()]} placeholder="选择上游取数步骤" onChange={sourceNodeId => updateBinding(field.key, { sourceNodeId, variable: "mcp_datasets", constant: false })} />
                     <TemplateInput label="数据集标识" value={binding?.variable === "mcp_datasets" ? binding.path : ""} onChange={path => updateBinding(field.key, { path, variable: "mcp_datasets", constant: false })} />
                   </div></details>}
@@ -444,18 +483,8 @@ export function TemplateDeliverySection({
           )}
           {tab === "preview" && (
             <>
-              <p className="sys-field-hint">
-                以下是独立试填数据，不执行上游
-                AI，不产生正式交付记录。用于验证内容结构、位置和格式。
-              </p>
-              {template.spec.fields.map((field) => (
-                <TemplateValueEditor
-                  key={field.key}
-                  field={field}
-                  value={values[field.key]}
-                  onChange={(value) => setValues({ ...values, [field.key]: value })}
-                />
-              ))}
+              <div className="template-test-intro"><div><strong>填写试验数据</strong><p className="sys-field-hint">不执行上游 AI、不产生正式交付记录，仅检查内容、位置和格式。</p></div><span className="sys-info-tag">{template.spec.fields.length} 个字段</span></div>
+              <TemplateValuesEditor fields={template.spec.fields} values={values} onChange={setValues} />
               <button
                 type="button"
                 disabled={busy || !capabilityId}
@@ -463,7 +492,6 @@ export function TemplateDeliverySection({
                 onClick={async () => {
                   if (!token || !tenantId) return;
                   setBusy(true);
-                  setError("");
                   try {
                     const body = {
                       capabilityId,
@@ -480,7 +508,8 @@ export function TemplateDeliverySection({
                           : undefined,
                     });
                   } catch (err) {
-                    setError(err instanceof Error ? err.message : "模板试填失败");
+                    // 配置及预览均在抽屉中操作，失败统一在顶部显示，避免被滚动位置或其他抽屉遮住。
+                    void message.error(err instanceof Error ? err.message : "模板试填失败", 6);
                   } finally {
                     setBusy(false);
                   }
@@ -497,11 +526,12 @@ export function TemplateDeliverySection({
         open={library}
         title="交付模板"
         size={1100}
-        rootClassName={getThemedDrawerRootClassName(theme)}
+        rootClassName={getThemedDrawerRootClassName(theme, "template-config-drawer")}
         onClose={() => setLibrary(false)}
         destroyOnHidden
       >
-        <DeliveryTemplatesPanel onPublished={selectTemplate} />
+        <div className="sys-drawer-section template-library-scroll"><DeliveryTemplatesPanel onPublished={selectTemplate} /></div>
+        <div className="sys-drawer-footer"><div className="sys-drawer-footer-right"><button type="button" className="sys-btn sys-btn--default" onClick={() => setLibrary(false)}>关闭</button></div></div>
       </Drawer>
       {preview && <TemplatePreview file={preview} kind={kind} onClose={() => setPreview(null)} />}
     </section>

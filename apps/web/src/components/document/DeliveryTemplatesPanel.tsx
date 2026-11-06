@@ -2,7 +2,7 @@ import { downloadTemplateFile } from "../../utils/deliveryTemplateFile";
 import type { CSSProperties } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { App, Drawer, Empty, Pagination, Segmented, Spin } from "antd";
-import { Copy, Download, Eye, FileText, Plus, Save, Search, Send, Upload } from "lucide-react";
+import { Copy, Download, Eye, FileSpreadsheet, FileText, Plus, Save, Search, Send, Upload } from "lucide-react";
 import { assetApi, deliveryTemplateApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import { getThemedDrawerRootClassName } from "../../utils/theme";
@@ -11,13 +11,14 @@ import type {
   TemplateStyle,
   TemplateWorkbookSheet,
 } from "../../types/delivery-template";
-import { sampleTemplateValue } from "../../types/delivery-template";
+import { inferTemplateExcelRegions, sampleTemplateValue } from "../../types/delivery-template";
 import {
   TemplateFieldsEditor,
+  TemplateFilePicker,
   TemplateInput,
   TemplateSelect,
   TemplateStyleEditor,
-  TemplateValueEditor,
+  TemplateValuesEditor,
 } from "./TemplateEditors";
 import { WordDocumentPreviewDrawer } from "../runtime/WordDocumentPreviewDrawer";
 import { ExcelWorkbookPreviewDrawer } from "../runtime/ExcelWorkbookPreviewDrawer";
@@ -267,24 +268,22 @@ export function DeliveryTemplatesPanel({
       <Spin spinning={busy}>
         <div className="sys-card-grid">
           {items.map((item) => (
-            <article key={item.id} className="template-field-card">
-              <div className="template-section-heading">
-                <strong>
-                  <FileText size={18} />
-                  {item.name}
-                </strong>
+            <article key={item.id} className="sys-card template-library-card" tabIndex={0} role="button" aria-label={`${item.status === "draft" ? "配置" : "查看"}模板：${item.name}`}
+              onClick={() => open(item)} onKeyDown={(event) => { if (event.target === event.currentTarget && ["Enter", " "].includes(event.key)) { event.preventDefault(); open(item); } }}>
+              <div className="sys-card-header">
+                <span className="sys-card-avatar sys-card-avatar--cap">{item.kind === "excel" ? <FileSpreadsheet size={22} /> : <FileText size={22} />}</span>
+                <div className="sys-card-info"><h3 className="sys-card-name">{item.name}</h3><p className="sys-card-code">{item.kind === "word" ? "Word 文档" : "Excel 工作簿"} · v{item.version}</p></div>
                 <span
                   className={`sys-info-tag ${item.status === "published" ? "sys-info-tag--success" : "sys-info-tag--warn"}`}
                 >
                   {item.status === "published" ? "已发布" : "草稿"}
                 </span>
               </div>
-              <p className="text-sm text-[var(--color-text-secondary)]">
-                {item.kind === "word" ? "Word" : "Excel"} · v{item.version} ·{" "}
-                {item.spec.fields.length} 个字段 ·{" "}
+              <p className="template-card-meta">
+                {item.spec.fields.length} 个字段 · {new Set(item.spec.locations.map(location => location.sheet).filter(Boolean)).size || 1} {item.kind === "excel" ? "个 Sheet" : "份文档"} ·{" "}
                 {item.readScope === "all" ? "租户内共享" : "仅自己"}
               </p>
-              <div className="flex gap-2 flex-wrap">
+              <div className="template-card-actions" onClick={(event) => event.stopPropagation()}>
                 <button className="sys-btn sys-btn--default" onClick={() => open(item)}>
                   <Eye size={15} />
                   {item.status === "draft" ? "配置" : "查看"}
@@ -331,21 +330,21 @@ export function DeliveryTemplatesPanel({
         open={uploading}
         title="上传交付模板"
         size={560}
-        rootClassName={getThemedDrawerRootClassName(theme)}
+        rootClassName={getThemedDrawerRootClassName(theme, "template-config-drawer")}
         onClose={() => setUploading(false)}
         destroyOnHidden
       >
         <div className="sys-drawer-section grid gap-5">
           <TemplateInput label="模板名称" value={name} onChange={setName} />
-          <input
-            aria-label="选择模板文件"
-            type="file"
+          <TemplateFilePicker
+            key={uploading ? "upload-open" : "upload-closed"}
+            label="选择模板文件"
             accept=".docx,.xlsx"
-            className="template-file-input"
-            onChange={(event) => {
-              const next = event.target.files?.[0] ?? null;
+            fileName={file?.name}
+            disabled={busy}
+            onChange={(next) => {
               setFile(next);
-              if (next && !name) setName(next.name.replace(/\.(docx|xlsx)$/i, ""));
+              if (!name) setName(next.name.replace(/\.(docx|xlsx)$/i, ""));
             }}
           />
           <p className="sys-field-hint">
@@ -355,7 +354,7 @@ export function DeliveryTemplatesPanel({
           <p className="sys-field-hint">
             在原文件中使用 {"{{risk_summary}}"} 标记文字位置；重复表格样板行使用{" "}
             {"{{risk_items[].category}}"}、{"{{risk_items[].level}}"}{" "}
-            等标记。同一行只放一个列表的字段。最大 20 MB。
+            等标记。Excel 并列明细会自动识别为独立区域；Word 同一样板行使用同一个列表。
           </p>
         </div>
         <div className="sys-drawer-footer">
@@ -390,12 +389,12 @@ export function DeliveryTemplatesPanel({
             : "配置模板"
         }
         size={1000}
-        rootClassName={getThemedDrawerRootClassName(theme)}
+        rootClassName={getThemedDrawerRootClassName(theme, "template-config-drawer")}
         onClose={() => setEditing(null)}
         destroyOnHidden
       >
         {editing && (
-          <div className="sys-drawer-section">
+          <div className="sys-drawer-section template-editor-scroll">
             <div className="template-toolbar">
               <button
                 className="sys-btn sys-btn--default"
@@ -413,17 +412,17 @@ export function DeliveryTemplatesPanel({
               </button>
             </div>
             <Segmented
-              className="login-portal-segmented template-tabs"
+              className="login-portal-segmented login-portal-segmented--business system-mgmt-segmented template-tabs"
               value={tab}
               options={[
-                { value: "fields", label: "字段与内容要求" },
+                { value: "fields", label: "字段设置" },
                 { value: "style", label: "格式配置" },
                 { value: "preview", label: "试填与检查" },
               ]}
               onChange={(value) => setTab(String(value))}
             />
             {tab === "fields" && (
-              <fieldset disabled={!editable} className="grid gap-5">
+              <fieldset disabled={!editable} className="template-editor-fieldset grid gap-5">
                 <TemplateInput
                   label="模板名称"
                   value={editing.name}
@@ -447,14 +446,14 @@ export function DeliveryTemplatesPanel({
                   <label className="sys-field-label">
                     替换草稿原件（会重新识别并重置字段和格式）
                   </label>
-                  <input
-                    type="file"
+                  <TemplateFilePicker
+                    key={editing.id}
+                    label="选择替换模板文件"
                     accept={editing.kind === "word" ? ".docx" : ".xlsx"}
-                    className="template-file-input"
+                    fileName={editing.fileName}
                     disabled={busy || !editable}
-                    onChange={(event) => {
-                      const replacement = event.target.files?.[0];
-                      if (replacement && token && tenantId)
+                    onChange={(replacement) => {
+                      if (token && tenantId)
                         void action(async () => {
                           open(
                             await deliveryTemplateApi.replaceFile(
@@ -469,16 +468,25 @@ export function DeliveryTemplatesPanel({
                     }}
                   />
                 </div>
-                {editing.kind === "excel" && <section className="grid gap-3">
-                  <strong>独立明细区域</strong><p className="sys-field-hint">同一 Sheet 可以配置多个开始位置，按字段定义的列顺序向下写入。使用区域的 Sheet 必须配置其中全部明细，样板行以下的目标区域应留空。</p>
-                  {(editing.spec.excelRegions ?? []).map((region, index) => <div key={index} className="template-form-grid">
+                {editing.kind === "excel" && <details className="template-region-settings"><summary><strong>明细区域与扩展方向</strong><span className="sys-info-tag">{editing.spec.excelRegions?.length ? `已识别 ${editing.spec.excelRegions.length} 个区域` : "默认按样板行向下展开"}</span></summary><section className="grid gap-3">
+                  <p className="sys-field-hint">上传时自动识别并列明细和横向样板列，各列表可有不同条数。纵向标记横排在样板行、记录向下增加；横向标记竖排在样板列、记录向右增加。可在下方调整区域，方向须与原文件标记布局一致，目标区域应留空。</p>
+                  <button type="button" disabled={busy} className="sys-btn sys-btn--default template-add-action" onClick={() => void action(async () => {
+                    const excelRegions = inferTemplateExcelRegions(editing.spec);
+                    if (!excelRegions.length) throw new Error("原文件中没有明细标记，请先添加 {{items[].name}} 等标记");
+                    setEditing({ ...editing, spec: { ...editing.spec, excelRegions } });
+                    void message.success(`已识别 ${excelRegions.length} 个明细区域，请保存草稿后试填或发布`);
+                  })}><Search size={15} />重新识别区域</button>
+                  {(editing.spec.excelRegions ?? []).map((region, index) => <div key={index} className="template-region-card"><div className="template-region-heading"><strong>区域 {index + 1}</strong><button type="button" className="sys-btn sys-btn--default sys-btn--sm" onClick={() => setEditing({ ...editing, spec: { ...editing.spec, excelRegions: editing.spec.excelRegions!.filter((_, i) => i !== index) } })}>删除区域</button></div><div className="template-form-grid">
+                    <div className="sys-field"><label className="sys-field-label">Sheet 页</label>
                     <TemplateSelect value={region.sheet} options={[...new Set(editing.spec.locations.map(l => l.sheet).filter(Boolean))].map(sheet => ({ value: sheet, label: sheet }))} onChange={sheet => setEditing({ ...editing, spec: { ...editing.spec, excelRegions: editing.spec.excelRegions!.map((r, i) => i === index ? { ...r, sheet } : r) } })} />
+                    </div><div className="sys-field"><label className="sys-field-label">明细字段</label>
                     <TemplateSelect value={region.field} options={editing.spec.fields.filter(f => f.type === "table").map(f => ({ value: f.key, label: f.label || f.key }))} onChange={field => setEditing({ ...editing, spec: { ...editing.spec, excelRegions: editing.spec.excelRegions!.map((r, i) => i === index ? { ...r, field } : r) } })} />
+                    </div>
                     <TemplateInput label="数据开始单元格" value={region.startCell} onChange={startCell => setEditing({ ...editing, spec: { ...editing.spec, excelRegions: editing.spec.excelRegions!.map((r, i) => i === index ? { ...r, startCell: startCell.toUpperCase() } : r) } })} />
-                    <button type="button" className="sys-btn sys-btn--default" onClick={() => setEditing({ ...editing, spec: { ...editing.spec, excelRegions: editing.spec.excelRegions!.filter((_, i) => i !== index) } })}>删除区域</button>
-                  </div>)}
-                  <button type="button" className="sys-btn sys-btn--default" onClick={() => setEditing({ ...editing, spec: { ...editing.spec, excelRegions: [...(editing.spec.excelRegions ?? []), { sheet: "", field: "", startCell: "A3" }] } })}>添加独立区域</button>
-                </section>}
+                    <div className="sys-field"><label className="sys-field-label">记录扩展方向</label><TemplateSelect value={region.direction ?? "vertical"} options={[{ value: "vertical", label: "纵向（向下增加行）" }, { value: "horizontal", label: "横向（向右增加列）" }]} onChange={direction => setEditing({ ...editing, spec: { ...editing.spec, excelRegions: editing.spec.excelRegions!.map((r, i) => i === index ? { ...r, direction } : r) } })} /></div>
+                  </div></div>)}
+                  <button type="button" className="sys-btn sys-btn--default template-add-action" onClick={() => setEditing({ ...editing, spec: { ...editing.spec, excelRegions: [...(editing.spec.excelRegions ?? []), { sheet: "", field: "", startCell: "A2", direction: "vertical" }] } })}><Plus size={15} />添加明细区域</button>
+                </section></details>}
                 <TemplateFieldsEditor
                   lockedKeys
                   fields={editing.spec.fields}
@@ -509,7 +517,7 @@ export function DeliveryTemplatesPanel({
                   ]}
                   onChange={setStyleTarget}
                 />
-                <fieldset disabled={!editable}>
+                <fieldset disabled={!editable} className="template-editor-fieldset">
                   <TemplateStyleEditor
                     kind={editing.kind}
                     value={styleValue()}
@@ -519,26 +527,18 @@ export function DeliveryTemplatesPanel({
               </div>
             )}
             {tab === "preview" && (
-              <div className="grid gap-5">
-                <p className="sys-field-hint">
-                  填写试验数据检查字段和样式，不运行
-                  AI、不产生正式交付记录。草稿修改后先保存再试填。浏览器分页与 Office
-                  可能不同，请下载验收打印效果。
-                </p>
+              <div className="template-test-panel">
+                <div className="template-test-intro"><div><strong>填写试验数据</strong><p className="sys-field-hint">仅用于检查字段、展开效果和样式，不运行 AI、不产生正式交付记录。生成前自动保存草稿；打印和公式效果请下载检查。</p></div><span className="sys-info-tag">{editing.spec.fields.length} 个字段</span></div>
+                <div className="sys-field"><label className="sys-field-label">试填使用的交付能力</label>
                 <TemplateSelect
                   value={capabilityId || undefined}
                   options={capabilities.filter((capability) => capability.kind === editing.kind)}
                   onChange={setCapabilityId}
-                  placeholder="选择有权使用的对应交付能力"
+                  placeholder={editing.kind === "excel" ? "选择 Excel 交付能力" : "选择 Word 交付能力"}
                 />
-                {editing.spec.fields.map((field) => (
-                  <TemplateValueEditor
-                    key={field.key}
-                    field={field}
-                    value={values[field.key]}
-                    onChange={(value) => setValues({ ...values, [field.key]: value })}
-                  />
-                ))}
+                </div>
+                <TemplateValuesEditor fields={editing.spec.fields} values={values} onChange={setValues} />
+                <div className="template-test-actions">
                 <button
                   disabled={busy || !capabilityId}
                   className="sys-btn sys-btn--primary"
@@ -572,6 +572,7 @@ export function DeliveryTemplatesPanel({
                   <Eye size={15} />
                   生成试填预览
                 </button>
+                </div>
               </div>
             )}
           </div>

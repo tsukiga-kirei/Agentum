@@ -1,6 +1,6 @@
-import { useId } from "react";
-import { Select } from "antd";
-import { FileText, Hash, Plus, Trash2, Type, Settings2, Tags } from "lucide-react";
+import { useId, useRef, useState } from "react";
+import { Input, Select } from "antd";
+import { CalendarDays, FileText, FileUp, Hash, Plus, Trash2, Type, Settings2, Tags } from "lucide-react";
 import { newTemplateField, templateFieldTypes } from "../../types/delivery-template";
 import type {
   StructuredOutputConfig,
@@ -51,17 +51,19 @@ export function TemplateInput({
   placeholder?: string;
 }) {
   const id = useId();
+  const Icon = type === "number" ? Hash : type === "date" ? CalendarDays : Type;
   return (
     <div className="sys-field">
       <label className="sys-field-label" htmlFor={id}>
         {label}
       </label>
       <div className="sys-field-input-wrap">
-        <Type size={16} className="sys-field-prefix" />
+        <Icon size={16} className="sys-field-prefix" />
         <input
           id={id}
           className="sys-field-input"
           type={type}
+          step={type === "number" ? "any" : undefined}
           value={value}
           onChange={(event) => onChange(event.target.value)}
           disabled={disabled}
@@ -70,6 +72,31 @@ export function TemplateInput({
       </div>
     </div>
   );
+}
+
+export function TemplateFilePicker({ label, accept, fileName, disabled, onChange }: {
+  label: string;
+  accept: string;
+  fileName?: string;
+  disabled?: boolean;
+  onChange: (file: File) => void;
+}) {
+  const id = useId();
+  const input = useRef<HTMLInputElement>(null);
+  const [selectedName, setSelectedName] = useState("");
+  const displayName = selectedName || fileName;
+  return <div className="template-file-picker">
+    <input ref={input} id={id} type="file" accept={accept} aria-label={label} disabled={disabled} className="sr-only"
+      onChange={(event) => {
+        const file = event.target.files?.[0];
+        if (file) { setSelectedName(file.name); onChange(file); }
+        // 重新选择同一个修正后的文件也应触发处理，原生输入只负责选择，不承担文件状态展示。
+        event.target.value = "";
+      }} />
+    <span className="template-file-picker-icon" aria-hidden="true"><FileUp size={22} /></span>
+    <div className="template-file-picker-info"><strong title={displayName}>{displayName || "选择已设置字段标记的模板"}</strong><span>{accept.split(",").join(" / ")} · 最大 20 MB</span></div>
+    <button type="button" className="sys-btn sys-btn--default sys-btn--sm" disabled={disabled} onClick={() => input.current?.click()}>{displayName ? "重新选择" : "选择文件"}</button>
+  </div>;
 }
 
 export function TemplateStyleEditor({
@@ -240,37 +267,50 @@ export function TemplateFieldsEditor({
     onChange(fields.map((field, i) => (i === index ? { ...field, ...patch } : field)));
   return (
     <div className="template-field-list">
+      {!columns && <p className="sys-field-hint">
+        {lockedKeys
+          ? "字段说明用于解释含义和取数口径，供绑定来源时参考；不会自动筛选、计算或修改上游数据。必填、类型、字数和条数由对应设置校验。"
+          : "内容要求告诉智能体字段应包含什么、采用什么口径，会作为生成结构化结果时的说明。必填、类型、字数和条数由对应设置校验。"}
+      </p>}
       {fields.map((field, index) => (
-        <div className="template-field-card" key={`${index}`}>
-          <div className="template-section-heading">
+        <details className="template-field-card template-definition-card" key={`${index}`} open={!lockedKeys || index === 0}>
+          <summary className="template-section-heading">
             <strong>
               <Hash size={15} />
               {field.label || field.key || `字段 ${index + 1}`}
             </strong>
+            <span className="template-definition-meta">
+              {lockedKeys && field.label && field.label !== field.key && <code>{field.key}</code>}
+              <span>{templateFieldTypes.find(type => type.value === field.type)?.label}</span>
+              <span className={field.required ? "template-required-tag" : ""}>{field.required ? "必填" : "选填"}</span>
+            </span>
             {!lockedKeys && (
               <button
                 className="sys-btn sys-btn--default"
                 type="button"
                 aria-label="删除字段"
-                onClick={() => onChange(fields.filter((_, i) => i !== index))}
+                onClick={(event) => { event.preventDefault(); event.stopPropagation(); onChange(fields.filter((_, i) => i !== index)); }}
               >
                 <Trash2 size={14} />
               </button>
             )}
-          </div>
+          </summary>
+          <div className="template-definition-body">
           <div className="template-form-grid">
-            <TemplateInput
+            {!lockedKeys && <TemplateInput
               label="字段标识"
               value={field.key}
               onChange={(key) => update(index, { key })}
               disabled={lockedKeys}
               placeholder="例如 risk_summary"
-            />
+            />}
+            <div className={lockedKeys ? "template-full-row" : undefined}>
             <TemplateInput
               label="字段名称"
               value={field.label}
               onChange={(label) => update(index, { label })}
             />
+            </div>
             <div className="sys-field">
               <label className="sys-field-label">内容类型</label>
               <TemplateSelect
@@ -325,10 +365,11 @@ export function TemplateFieldsEditor({
           </div>
           {field.type === "text" && (
             <div className="sys-field">
-              <label className="sys-field-label">允许的选项（输入后回车，留空不限制）</label>
+              <label className="sys-field-label">允许的选项</label>
               <Select
                 prefix={<Tags size={16} className="text-[var(--color-text-tertiary)]" />}
                 mode="tags"
+                placeholder="输入选项后回车，留空不限制"
                 className="agent-admin-select w-full"
                 classNames={{
                   popup: { root: "agent-select-dropdown agent-admin-select-dropdown" },
@@ -341,20 +382,23 @@ export function TemplateFieldsEditor({
             </div>
           )}
           <TemplateInput
-            label="内容要求"
+            label={lockedKeys ? "字段说明（选填）" : "内容要求（选填）"}
             value={field.description}
             onChange={(description) => update(index, { description })}
-            placeholder="说明内容含义、依据和限制；外观格式在填写位置中设置"
+            placeholder="例如：本月末余额，单位为元，不包含已注销账户"
           />
           {field.type === "table" && (
+            <details className="template-column-details"><summary>明细字段 · {field.columns.length} 项</summary>
             <TemplateFieldsEditor
               fields={field.columns}
               onChange={(next) => update(index, { columns: next })}
               columns
               lockedKeys={lockedKeys}
             />
+            </details>
           )}
-        </div>
+          </div>
+        </details>
       ))}
       {!lockedKeys && (
         <button
@@ -424,13 +468,18 @@ export function TemplateValueEditor({
   value: unknown;
   onChange: (value: unknown) => void;
 }) {
+  const id = useId();
   if (field.type === "table") {
     const rows = Array.isArray(value) ? (value as Record<string, unknown>[]) : [];
     return (
-      <div className="template-field-card">
-        <strong>{field.label || field.key}</strong>
+      <div className="template-field-card template-value-table">
+        <div className="template-section-heading"><strong>{field.label || field.key}<span className="template-value-count">{rows.length} 条</span></strong>
+          <button type="button" className="sys-btn sys-btn--default sys-btn--sm" onClick={() => onChange([...rows, {}])}><Plus size={14} />添加明细</button>
+        </div>
+        {rows.length === 0 && <p className="sys-field-hint">暂无试填明细，可添加一条数据检查展开效果。</p>}
         {rows.map((row, index) => (
           <div className="template-table-row" key={index}>
+            <div className="template-row-heading"><span>第 {index + 1} 条</span><button type="button" aria-label={`删除第 ${index + 1} 条明细`} className="template-icon-button" onClick={() => onChange(rows.filter((_, i) => i !== index))}><Trash2 size={15} /></button></div>
             <div className="template-form-grid">
               {field.columns.map((column) => (
                 <TemplateValueEditor
@@ -445,23 +494,8 @@ export function TemplateValueEditor({
                 />
               ))}
             </div>
-            <button
-              type="button"
-              className="sys-btn sys-btn--default"
-              onClick={() => onChange(rows.filter((_, i) => i !== index))}
-            >
-              删除此行
-            </button>
           </div>
         ))}
-        <button
-          type="button"
-          className="sys-btn sys-btn--default"
-          onClick={() => onChange([...rows, {}])}
-        >
-          <Plus size={14} />
-          添加明细
-        </button>
       </div>
     );
   }
@@ -492,14 +526,15 @@ export function TemplateValueEditor({
     );
   if (["paragraphs", "markdown", "text"].includes(field.type))
     return (
-      <div className="sys-field">
-        <label className="sys-field-label">
+      <div className="sys-field template-value-field">
+        <label className="sys-field-label" htmlFor={id}>
           {field.label || field.key}
           {field.type === "paragraphs" ? "（空行分段）" : ""}
         </label>
-        <textarea
-          className="sys-field-textarea"
-          rows={3}
+        <Input.TextArea
+          id={id}
+          className={`sys-field-textarea template-value-textarea${field.type === "text" ? " template-value-textarea--short" : ""}`}
+          autoSize={{ minRows: field.type === "text" ? 1 : 3, maxRows: 8 }}
           value={Array.isArray(value) ? value.join("\n\n") : String(value ?? "")}
           onChange={(event) =>
             onChange(
@@ -521,4 +556,17 @@ export function TemplateValueEditor({
       }
     />
   );
+}
+
+/** 试填与流程内固定内容共用字段控件；短字段并列，正文和明细独占一行，避免大量空白文本框。 */
+export function TemplateValuesEditor({ fields, values, onChange }: {
+  fields: TemplateField[];
+  values: Record<string, unknown>;
+  onChange: (values: Record<string, unknown>) => void;
+}) {
+  return <div className="template-values-grid">{fields.map(field => <div key={field.key}
+    className={field.type === "table" ? "template-values-item template-values-item--wide" : `template-value-card${["paragraphs", "markdown"].includes(field.type) ? " template-values-item--wide" : ""}`}>
+    <TemplateValueEditor field={field} value={values[field.key]} onChange={value => onChange({ ...values, [field.key]: value })} />
+    {field.type !== "table" && <span className="template-value-meta">{field.label && field.label !== field.key && <code>{field.key}</code>}<span>{templateFieldTypes.find(type => type.value === field.type)?.label}{field.required ? " · 必填" : " · 选填"}</span></span>}
+  </div>)}</div>;
 }

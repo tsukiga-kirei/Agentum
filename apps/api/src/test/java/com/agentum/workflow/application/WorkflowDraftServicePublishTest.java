@@ -596,6 +596,31 @@ class WorkflowDraftServicePublishTest {
         return WorkflowDefinitionEntity.create(TENANT_ID, "需求评审", "用于验证正式发布", USER_ID, NOW);
     }
 
+    @Test void changingExecutionPermissionOnlyUpdatesTriggerAndRequiresPublication() {
+        var definition = draft();
+        definition.markPublished(UUID.randomUUID(), USER_ID, NOW);
+        stubDefinitionLookup(definition);
+        var trigger = WorkflowNodeDefinitionEntity.create(definition.getId(), "trigger", "trigger", "开始", java.math.BigDecimal.ZERO, java.math.BigDecimal.ZERO, List.of(), List.of(), Map.of("preserved", "保留其他配置"), 0, NOW);
+        when(workflowNodeDefinitionRepository.findByWorkflowIdOrderBySortOrderAsc(definition.getId())).thenReturn(List.of(trigger));
+        var detail = service().updateDraft(TENANT_ID, USER_ID, definition.getId(), new WorkflowDraftApi.UpdateWorkflowDraftRequest("流程", "说明", true));
+        assertThat(trigger.getConfig()).containsEntry("preserved", "保留其他配置").containsEntry("allowAutoExecution", true);
+        assertThat(detail.draft().status()).isEqualTo("draft");
+        verify(workflowNodeDefinitionRepository).save(trigger);
+        verify(workflowNodeDefinitionRepository, never()).deleteByWorkflowId(any());
+        verify(workflowVersionRepository, never()).save(any());
+    }
+
+    @Test void savingUnchangedExecutionPermissionDoesNotCreateUnpublishedChanges() {
+        var definition = draft();
+        definition.markPublished(UUID.randomUUID(), USER_ID, NOW);
+        stubDefinitionLookup(definition);
+        var trigger = WorkflowNodeDefinitionEntity.create(definition.getId(), "trigger", "trigger", "开始", java.math.BigDecimal.ZERO, java.math.BigDecimal.ZERO, List.of(), List.of(), Map.of("allowAutoExecution", true), 0, NOW);
+        when(workflowNodeDefinitionRepository.findByWorkflowIdOrderBySortOrderAsc(definition.getId())).thenReturn(List.of(trigger));
+        var detail = service().updateDraft(TENANT_ID, USER_ID, definition.getId(), new WorkflowDraftApi.UpdateWorkflowDraftRequest("流程", "说明", true));
+        assertThat(detail.draft().status()).isEqualTo("published");
+        verify(workflowNodeDefinitionRepository, never()).save(any());
+    }
+
     private static WorkflowDraftApi.WorkflowNodeDraft node(String nodeId, String nodeType, List<String> outputVariables) {
         return new WorkflowDraftApi.WorkflowNodeDraft(nodeId, nodeType, nodeId, 0, 0, List.of(), outputVariables, Map.of());
     }

@@ -1097,11 +1097,6 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
         </button>
       </div>
 
-      <label className="flex items-center gap-3 border-b border-[var(--color-border-light)] bg-[var(--color-bg-card)] px-4 py-3 text-sm text-[var(--color-text-primary)]">
-        <input type="checkbox" className="accent-blue-500" checked={nodes.some(n => n.data.nodeType === "trigger" && n.data.rawConfig?.allowAutoExecution === true)}
-          onChange={e => { const checked = e.target.checked; setNodes(current => current.map(n => n.data.nodeType === "trigger" ? { ...n, data: { ...n.data, rawConfig: { ...n.data.rawConfig, allowAutoExecution: checked } } } : n)); }} />
-        <span>允许发起人选择自动执行 <small className="ml-2 text-[var(--color-text-tertiary)]">发布后生效；成功自动继续，报错停止，可随时接管</small></span>
-      </label>
       <div className="grid min-h-0 flex-1 grid-cols-[280px_minmax(0,1fr)]">
         <main className="workflow-step-sidebar min-h-0 overflow-y-auto border-r border-[var(--color-border-light)] p-3">
           <WorkflowStepBuilder
@@ -3276,7 +3271,26 @@ function DeliveryCapabilityConfigDrawer({
                 当前主体还没有可用的交付能力。请先由系统管理员开放对应能力，再由租户管理员分配给当前用户、部门或角色。
               </p>
             ) : null}
-            {(isWordDelivery || isExcelDelivery) && <div className="sys-field"><label className="sys-field-label">生成方式</label><TemplateSelect value={String(config.generationMode ?? "content")} options={[{ value: "content", label: "按内容生成（原方式）" }, { value: "file_template", label: "填写文件模板" }]} onChange={generationMode => onConfigChange({ generationMode })} /></div>}
+            {(isWordDelivery || isExcelDelivery) && (
+              <div className="sys-field">
+                <label className="sys-field-label">生成方式</label>
+                <TemplateSelect
+                  value={String(config.generationMode ?? "content")}
+                  options={[
+                    { value: "content", label: "按内容生成" },
+                    { value: "file_template", label: "填写文件模板" },
+                  ]}
+                  onChange={(generationMode) => onConfigChange({ generationMode })}
+                />
+                <p className="sys-field-hint">
+                  {config.generationMode === "file_template"
+                    ? "上传已有文件，按其中的字段标记填写内容，保留模板布局和样式。"
+                    : isExcelDelivery
+                      ? "根据下方 Sheet 内容和数据区域配置，生成新的 Excel 文件。"
+                      : "根据下方正文和排版设置，生成新的 Word 文件。"}
+                </p>
+              </div>
+            )}
             {(isWordDelivery || isExcelDelivery) && config.generationMode === "file_template" ? <TemplateDeliverySection config={config} variables={workflowVariables} kind={isExcelDelivery ? "excel" : "word"} capabilityId={selectedCapabilityId} onChange={onConfigChange} /> : isWordDelivery ? (
               <>
                 <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-hover)] p-5">

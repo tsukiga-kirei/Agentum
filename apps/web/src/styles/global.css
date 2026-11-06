@@ -3334,6 +3334,20 @@ textarea:focus-visible {
   box-shadow: var(--shadow-xs);
 }
 
+.workflow-execution-settings {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  padding: 20px;
+  margin: 24px 0;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-card);
+}
+.workflow-execution-settings > div:first-child { flex: 1; min-width: 0; }
+.workflow-execution-settings-label { display: block; margin: 12px 0 8px; font-weight: 500; color: var(--color-text-primary); }
+.workflow-execution-settings .sys-field-hint { margin: 0; line-height: 1.7; }
+
 .dark .workflow-design-page-mark {
   border-color: color-mix(in srgb, #6366f1 38%, var(--color-border));
   background: color-mix(in srgb, #6366f1 16%, var(--color-bg-card));
