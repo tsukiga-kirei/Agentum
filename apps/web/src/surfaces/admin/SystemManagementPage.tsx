@@ -503,6 +503,7 @@ export function SystemManagementPage() {
   const capRef = useRef<Record<string,string>>({});
   const [modelFormKey, setModelFormKey] = useState(0);
   const [capFormKey, setCapFormKey] = useState(0);
+  const [mcpEditorTools, setMcpEditorTools] = useState<CapabilityTestResult["tools"]>([]);
   const [capabilityTestResult, setCapabilityTestResult] = useState<CapabilityTestResult | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<
     | { type: "model"; target: ModelProviderRow }
@@ -803,6 +804,7 @@ export function SystemManagementPage() {
 
   const openCapabilityModal = (capability: SystemCapabilityRow | null) => {
     setEditingCapability(capability);
+    setMcpEditorTools([]);
     const formValues = capability ? buildCapabilityFormValues(capability) : { capabilityType: "mcp", transport: "sse", documentRetentionPolicy: "days", documentRetentionDays: "180" };
     capRef.current = formValues;
     setSelectedCapabilityType(capability?.capabilityType ?? "mcp");
@@ -1166,8 +1168,9 @@ export function SystemManagementPage() {
     }
   };
 
-  const testMcpDraftConnection = async () => {
+  const testMcpDraftConnection = async (showResult = true) => {
     if (!token) return;
+    const currentForm = capRef.current;
     const transport = selectedMcpTransport === "streamable_http" ? "streamable_http" : "sse";
     const endpointUrl = transport === "streamable_http"
       ? capRef.current.endpointUrl?.trim()
@@ -1184,7 +1187,8 @@ export function SystemManagementPage() {
         transport,
         endpointUrl,
       });
-      setCapabilityTestResult(result);
+      if (capRef.current === currentForm) setMcpEditorTools(result.tools);
+      if (showResult) setCapabilityTestResult(result);
       const content = `${result.summary}（当前表单尚未保存）`;
       if (result.status === "success") messageApi.success({ content, key: messageKey });
       else messageApi.warning({ content, key: messageKey });
@@ -2163,7 +2167,7 @@ export function SystemManagementPage() {
                   </div>
                 </div>
               )}
-              <McpResultPolicyEditor tools={capabilityTestResult?.tools.map(tool => tool.name) ?? []} key={editingCapability?.id ?? "new"} value={JSON.parse(capRef.current.toolResultPolicies || "{}")} onChange={policies => { capRef.current.toolResultPolicies = JSON.stringify(policies); }} />
+              <McpResultPolicyEditor tools={mcpEditorTools} onDiscover={() => void testMcpDraftConnection(false)} key={capFormKey} value={JSON.parse(capRef.current.toolResultPolicies || "{}")} onChange={policies => { capRef.current.toolResultPolicies = JSON.stringify(policies); }} />
             </>
           )}
           {selectedCapabilityType === "skill" && (

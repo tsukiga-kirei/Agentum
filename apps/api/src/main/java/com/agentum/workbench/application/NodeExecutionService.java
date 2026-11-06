@@ -303,7 +303,7 @@ public class NodeExecutionService {
         AgentRuntimeRequest agentRequest = new AgentRuntimeRequest(
             run,
             node,
-            node.getConfigSnapshot(),
+            com.agentum.agent.application.RequiredMcpResults.config(node.getConfigSnapshot(), node, null, workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(runId)),
             variables,
             Map.of(),
             operatorUserId
@@ -526,6 +526,7 @@ public class NodeExecutionService {
             summaryEntry.put("name", slot.name());
             summaryEntry.put("outputVariable", outputVarName);
             summaryEntry.put("status", "completed");
+            summaryEntry.put("mcp_datasets", output.getOrDefault("mcp_datasets", Map.of()));
             summaryEntry.put("final_answer", displayText);
             summaryEntry.put("summary", summarizeText(displayText));
             summaryEntry.put("tokenUsage", output.getOrDefault("tokenUsage", Map.of()));
@@ -535,6 +536,9 @@ public class NodeExecutionService {
             summaries.add(summaryEntry);
         }
         result.put("clusterAgents", summaries);
+        Map<String, Object> datasetsByMember = new LinkedHashMap<>();
+        for (var summary : summaries) datasetsByMember.put("member_" + summary.get("agentIndex"), summary.getOrDefault("mcp_datasets", Map.of()));
+        result.put("mcp_datasets", datasetsByMember);
         String finalAnswer = ClusterOutputSupport.finalAnswer(node.getConfigSnapshot(), result, summaries);
         String clusterOutputVariable = ClusterOutputSupport.outputVariable(node.getConfigSnapshot());
         result.put("final_answer", finalAnswer);
@@ -745,7 +749,7 @@ public class NodeExecutionService {
 
         try {
             Map<String, Object> agentOutput = agentRuntimeService.executeStreaming(
-                new AgentRuntimeRequest(run, node, slot.config(), vars, Map.of(), operatorUserId),
+                new AgentRuntimeRequest(run, node, com.agentum.agent.application.RequiredMcpResults.config(slot.config(), node, slot.index(), workflowNodeRunRepository.findByRunIdOrderBySortOrderAsc(runId)), vars, Map.of(), operatorUserId),
                 clusterAgentEventSink(nodeRunId, slot, progress)
             ).outputs();
 

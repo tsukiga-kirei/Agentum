@@ -55,7 +55,7 @@
     },
     "excelRegions": {
       "type": "array",
-      "maxItems": 100,
+      "maxItems": 3000,
       "items": {
         "type": "object",
         "properties": {
@@ -71,15 +71,24 @@
           },
           "direction": {
             "type": "string",
-            "enum": ["vertical", "horizontal"],
+            "enum": [
+              "vertical",
+              "horizontal"
+            ],
             "default": "vertical",
-            "description": "纵向按样板行向下扩展；横向按样板列向右扩展"
+            "description": "该字段位置按原数组顺序向下或向右填写，空值不压缩"
+          },
+          "column": {
+            "type": "string",
+            "description": "该填写位置对应的明细字段标识"
           }
         },
         "required": [
           "sheet",
           "field",
-          "startCell"
+          "startCell",
+          "column",
+          "direction"
         ],
         "additionalProperties": false
       }
@@ -262,31 +271,17 @@
             "center",
             "bottom"
           ]
+        },
+        "rowHeightMode": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "inherit",
+            "fixed"
+          ],
+          "description": "明细行高默认按内容适配；可沿用模板或固定磅值"
         }
       }
-    },
-    "source": {
-      "type": "object",
-      "properties": {
-        "sourceNodeId": {
-          "type": "string"
-        },
-        "variable": {
-          "type": "string"
-        },
-        "path": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "sourceNodeId",
-        "variable",
-        "path"
-      ],
-      "additionalProperties": false
     },
     "binding": {
       "type": "object",
@@ -315,23 +310,6 @@
             "string",
             "null"
           ]
-        },
-        "additionalSources": {
-          "type": [
-            "array",
-            "null"
-          ],
-          "items": {
-            "$ref": "#/$defs/source"
-          },
-          "maxItems": 19
-        },
-        "separator": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "maxLength": 100
         },
         "columnMappings": {
           "type": [

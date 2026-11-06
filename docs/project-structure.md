@@ -464,3 +464,5 @@ agentum/
 - `apps/api/.../mcp/application/McpDatasetService.java`：运行数据集保存、引用、授权查询及过期清理；领域实体和仓库分别位于 mcp/domain、mcp/infrastructure。
 - `apps/api/.../delivery/application/ExcelDataRegionWriter.java`：两种 Excel 生成方式共用的独立列区域写入器。
 - `apps/web/src/components/document/McpResultPolicyEditor.tsx`、`ExcelRegionsEditor.tsx`：工具结果规则及内容生成区域配置。
+
+MCP 工具完整结果下载位于 `apps/api/src/main/java/com/agentum/mcp/interfaces/McpResultController.java`；交付依赖校验位于 `agent/application/RequiredMcpResults.java`；前端来源候选构建位于 `apps/web/src/utils/mcpDatasetSources.ts`，会话结果摘要与下载组件为 `components/runtime/McpResultView.tsx`。

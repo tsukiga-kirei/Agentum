@@ -1,13 +1,28 @@
 import { useId, useRef, useState } from "react";
-import { Input, Select } from "antd";
+import { Input, Select, Segmented } from "antd";
 import { CalendarDays, FileText, FileUp, Hash, Plus, Trash2, Type, Settings2, Tags } from "lucide-react";
 import { newTemplateField, templateFieldTypes } from "../../types/delivery-template";
 import type {
   StructuredOutputConfig,
   TemplateField,
   TemplateStyle,
+  TemplateSpec,
 } from "../../types/delivery-template";
 import "./TemplateEditors.css";
+
+export function TemplateTabs({ value, options, onChange }: { value: string | number; options: { value: string | number; label: string }[]; onChange: (value: string | number) => void }) {
+  return <div className="system-mgmt-module-switch account-drawer-module-switch"><div className="system-mgmt-segmented-scroll"><Segmented aria-label="配置页签" className="login-portal-segmented login-portal-segmented--business system-mgmt-segmented" value={value} options={options} onChange={onChange} /></div></div>;
+}
+
+export function TemplateFieldLocations({ field, column, spec, onChange }: { field: TemplateField; column?: string; spec: TemplateSpec; onChange: (spec: TemplateSpec) => void }) {
+  const regions = (spec.excelRegions ?? []).filter(region => region.field === field.key && (!column || region.column === column));
+  if (!regions.length) return null;
+  const directions = [{ value: "vertical", label: "纵向 · 向下" }, { value: "horizontal", label: "横向 · 向右" }];
+  return <section className="template-location-list">{!column && <><div className="template-section-heading"><strong>填写位置与扩展方向</strong><TemplateSelect value={regions.every(region => region.direction === regions[0].direction) ? regions[0].direction ?? "vertical" : "mixed"} options={[...directions, { value: "mixed", label: "各位置分别设置" }]} onChange={direction => { if (direction !== "mixed") onChange({ ...spec, excelRegions: spec.excelRegions?.map(region => region.field === field.key ? { ...region, direction: direction as "vertical" | "horizontal" } : region) }); }} /></div>
+    <p className="sys-field-hint">已识别 {regions.length} 个填写位置。按原数组逐条对应，空值留空；下方各明细字段可分别调整方向。</p></>}
+    {column && regions.map((region, index) => <div className="template-location-row" key={`${region.sheet}:${region.startCell}:${region.column}`}><div><strong>{field.columns.find(column => column.key === region.column)?.label || region.column}</strong><span>{region.sheet} · {region.startCell}</span></div><TemplateSelect value={region.direction ?? "vertical"} options={directions} onChange={direction => onChange({ ...spec, excelRegions: spec.excelRegions?.map(item => item === region ? { ...item, direction: direction as "vertical" | "horizontal" } : item) })} /><span className="sr-only">位置 {index + 1}</span></div>)}
+  </section>;
+}
 
 export function TemplateSelect<T extends string | number>({
   value,
@@ -27,6 +42,8 @@ export function TemplateSelect<T extends string | number>({
       prefix={<Settings2 size={16} className="text-[var(--color-text-tertiary)]" />}
       className="agent-admin-select w-full"
       classNames={{ popup: { root: "agent-select-dropdown agent-admin-select-dropdown" } }}
+      showSearch
+      optionFilterProp="label"
       value={value}
       options={options}
       onChange={onChange}
@@ -131,16 +148,18 @@ export function TemplateStyleEditor({
           ["columnWidth", "列宽（字符）"],
           ["indent", "单元格缩进"],
         ];
+  const presets: Record<string, TemplateStyle> = { inherit: {}, body: kind === "word" ? { fontFamily: "宋体", fontSize: 12, firstLineChars: 2, lineSpacing: 1.5 } : { fontFamily: "宋体", fontSize: 12, wrapText: true }, risk: { color: "9C2F2F", backgroundColor: "FFF1F0", wrapText: true }, amount: { numberFormat: "#,##0.00", alignment: "right" } };
+  const presetValue = Object.keys(presets).find(key => Object.keys(value).length === Object.keys(presets[key]).length && Object.entries(presets[key]).every(([name, setting]) => value[name] === setting)) ?? "custom";
   return (
     <div className="template-style-editor">
       <p className="sys-field-hint">
-        空白表示沿用原有或上层格式；填写 0 可取消缩进或段间距。格式只作用于当前范围的填充内容。
+        空白表示沿用原有或上层格式；填写 0 可取消缩进或段间距。{kind === "excel" ? "行高和列宽会作用于整行、整列。" : "格式只作用于当前范围的填充内容。"}
       </p>
       <div className="template-form-grid">
         <div className="sys-field">
           <label className="sys-field-label">样式预设</label>
           <TemplateSelect
-            value="custom"
+            value={presetValue}
             options={[
               { value: "custom", label: "当前设置 / 自定义" },
               { value: "inherit", label: "保持原有格式" },
@@ -148,30 +167,17 @@ export function TemplateStyleEditor({
               { value: "risk", label: "风险说明" },
               { value: "amount", label: "金额明细" },
             ]}
-            onChange={(preset) =>
-              onChange(
-                preset === "inherit"
-                  ? {}
-                  : preset === "body"
-                    ? kind === "word"
-                      ? { fontFamily: "宋体", fontSize: 12, firstLineChars: 2, lineSpacing: 1.5 }
-                      : { fontFamily: "宋体", fontSize: 12, wrapText: true }
-                    : preset === "risk"
-                      ? { color: "9C2F2F", backgroundColor: "FFF1F0", wrapText: true }
-                      : preset === "amount"
-                        ? { numberFormat: "#,##0.00", alignment: "right" }
-                        : value,
-              )
-            }
+            onChange={(preset) => { if (presets[preset]) onChange(presets[preset]); }}
           />
         </div>
+        {kind === "excel" && <div className="sys-field"><label className="sys-field-label">明细行高</label><TemplateSelect value={String(value.rowHeightMode ?? (value.rowHeight !== undefined ? "fixed" : "auto"))} options={[{ value: "auto", label: "按填入内容适配" }, { value: "inherit", label: "沿用原模板行高" }, { value: "fixed", label: "固定行高（下方填写磅值）" }]} onChange={mode => update("rowHeightMode", mode)} /></div>}
         <TemplateInput
           label="字体"
           value={String(value.fontFamily ?? "")}
           onChange={(next) => update("fontFamily", next)}
           placeholder="沿用已有字体"
         />
-        {numeric.map(([key, label]) => (
+        {numeric.filter(([key]) => key !== "rowHeight" || (value.rowHeightMode ?? (value.rowHeight !== undefined ? "fixed" : "auto")) === "fixed").map(([key, label]) => (
           <TemplateInput
             key={key}
             label={label}
@@ -257,11 +263,13 @@ export function TemplateFieldsEditor({
   onChange,
   lockedKeys = false,
   columns = false,
+  renderLocations,
 }: {
   fields: TemplateField[];
   onChange: (fields: TemplateField[]) => void;
   lockedKeys?: boolean;
   columns?: boolean;
+  renderLocations?: (field: TemplateField, parent?: TemplateField) => React.ReactNode;
 }) {
   const update = (index: number, patch: Partial<TemplateField>) =>
     onChange(fields.map((field, i) => (i === index ? { ...field, ...patch } : field)));
@@ -363,6 +371,13 @@ export function TemplateFieldsEditor({
               />
             )}
           </div>
+          <details className="template-column-details"><summary>补充说明与选项限制（选填）</summary>
+          <TemplateInput
+            label={lockedKeys ? "字段说明（选填）" : "内容要求（选填）"}
+            value={field.description}
+            onChange={(description) => update(index, { description })}
+            placeholder="例如：本月末余额，单位为元，不包含已注销账户"
+          />
           {field.type === "text" && (
             <div className="sys-field">
               <label className="sys-field-label">允许的选项</label>
@@ -381,16 +396,13 @@ export function TemplateFieldsEditor({
               />
             </div>
           )}
-          <TemplateInput
-            label={lockedKeys ? "字段说明（选填）" : "内容要求（选填）"}
-            value={field.description}
-            onChange={(description) => update(index, { description })}
-            placeholder="例如：本月末余额，单位为元，不包含已注销账户"
-          />
+          </details>
+          {renderLocations?.(field)}
           {field.type === "table" && (
             <details className="template-column-details"><summary>明细字段 · {field.columns.length} 项</summary>
             <TemplateFieldsEditor
               fields={field.columns}
+              renderLocations={child => renderLocations?.(child, field)}
               onChange={(next) => update(index, { columns: next })}
               columns
               lockedKeys={lockedKeys}

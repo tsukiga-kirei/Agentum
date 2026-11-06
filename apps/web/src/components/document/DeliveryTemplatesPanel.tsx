@@ -1,7 +1,7 @@
 import { downloadTemplateFile } from "../../utils/deliveryTemplateFile";
 import type { CSSProperties } from "react";
 import { useCallback, useEffect, useState } from "react";
-import { App, Drawer, Empty, Pagination, Segmented, Spin } from "antd";
+import { App, Drawer, Empty, Pagination, ConfigProvider, Spin } from "antd";
 import { Copy, Download, Eye, FileSpreadsheet, FileText, Plus, Save, Search, Send, Upload } from "lucide-react";
 import { assetApi, deliveryTemplateApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
@@ -14,6 +14,8 @@ import type {
 import { inferTemplateExcelRegions, sampleTemplateValue } from "../../types/delivery-template";
 import {
   TemplateFieldsEditor,
+  TemplateFieldLocations,
+  TemplateTabs,
   TemplateFilePicker,
   TemplateInput,
   TemplateSelect,
@@ -33,6 +35,8 @@ export function TemplatePreview({
   onClose: () => void;
 }) {
   const [sheetIndex, setSheetIndex] = useState(0);
+  const [zoom, setZoom] = useState(100);
+  const columnName = (index: number): string => index < 26 ? String.fromCharCode(65 + index) : columnName(Math.floor(index / 26) - 1) + String.fromCharCode(65 + index % 26);
   const theme = useAuthStore((state) => state.themeMode);
   const Preview = kind === "word" ? WordDocumentPreviewDrawer : ExcelWorkbookPreviewDrawer;
   const load = useCallback(async () => ({ blob: file.blob }), [file.blob]);
@@ -43,7 +47,7 @@ export function TemplatePreview({
         open
         title={file.fileName}
         size="min(1200px, 96vw)"
-        rootClassName={getThemedDrawerRootClassName(theme)}
+        rootClassName={getThemedDrawerRootClassName(theme, "template-preview-drawer")}
         onClose={onClose}
         extra={
           <button
@@ -56,12 +60,11 @@ export function TemplatePreview({
           </button>
         }
       >
-        <p className="sys-field-hint mb-4">
+        <div className="sys-drawer-section template-preview-content"><div className="template-preview-toolbar"><p className="sys-field-hint">
           模板样式预览展示底色、字体、边框、合并、列宽和行高。公式在 Office
           打开后重算；打印分页请下载验收。
-        </p>
-        <Segmented
-          className="login-portal-segmented mb-4"
+        </p><TemplateSelect value={zoom} options={[75, 100, 125, 150].map(value => ({ value, label: `${value}%` }))} onChange={setZoom} /></div>
+        <TemplateTabs
           value={sheetIndex}
           options={file.layout.map((item, index) => ({ value: index, label: item.name }))}
           onChange={(next) => setSheetIndex(Number(next))}
@@ -69,16 +72,16 @@ export function TemplatePreview({
         {sheet?.truncated && (
           <p className="sys-field-hint">仅预览前 200 行、40 列；下载文件包含完整数据。</p>
         )}
-        <div className="template-sheet-preview">
+        <div className="template-sheet-preview" tabIndex={0} aria-label={`${sheet?.name} 工作表预览`}><div style={{ zoom: zoom / 100 }}>
           <table>
-            <colgroup>
+            <colgroup><col style={{ width: 44 }} />
               {sheet?.widths.map((width, index) => (
                 <col key={index} style={{ width }} />
               ))}
             </colgroup>
-            <tbody>
+            <thead><tr><th aria-label="行号" />{sheet?.widths.map((_, index) => <th key={index}>{columnName(index)}</th>)}</tr></thead><tbody>
               {sheet?.rows.map((row, index) => (
-                <tr key={index} style={{ height: `${row.height}pt` }}>
+                <tr key={index} style={{ height: `${row.height}pt` }}><th scope="row">{index + 1}</th>
                   {row.cells.map((cell) => (
                     <td
                       key={cell.column}
@@ -93,7 +96,7 @@ export function TemplatePreview({
               ))}
             </tbody>
           </table>
-        </div>
+        </div></div></div>
       </Drawer>
     );
   }
@@ -195,7 +198,7 @@ export function DeliveryTemplatesPanel({
     }
   };
   const open = (template: DeliveryTemplate) => {
-    setEditing(structuredClone(template));
+    setEditing({ ...structuredClone(template), spec: template.kind === "excel" ? { ...structuredClone(template.spec), excelRegions: inferTemplateExcelRegions(template.spec) } : structuredClone(template.spec) });
     setTab("fields");
     setStyleTarget("default");
     setCapabilityId("");
@@ -214,7 +217,7 @@ export function DeliveryTemplatesPanel({
     return editing.spec.locations.find((location) => location.id === styleTarget)?.style ?? {};
   };
   const updateStyle = (style: TemplateStyle) => {
-    if (!editing) return;
+    if (!editing || !editable) return;
     const spec = { ...editing.spec };
     if (styleTarget === "default") spec.defaultStyle = style;
     else if (styleTarget.startsWith("sheet:"))
@@ -411,8 +414,7 @@ export function DeliveryTemplatesPanel({
                 下载原模板
               </button>
             </div>
-            <Segmented
-              className="login-portal-segmented login-portal-segmented--business system-mgmt-segmented template-tabs"
+            <TemplateTabs
               value={tab}
               options={[
                 { value: "fields", label: "字段设置" },
@@ -421,8 +423,9 @@ export function DeliveryTemplatesPanel({
               ]}
               onChange={(value) => setTab(String(value))}
             />
+            {!editable && <div className="template-readonly-notice"><div><strong>已发布模板为只读</strong><p>复制为草稿后即可调整字段、方向和格式，已发布版本保持固定。</p></div><button type="button" disabled={busy} className="sys-btn sys-btn--default" onClick={() => void action(async () => { if (token && tenantId) { open(await deliveryTemplateApi.copy(tenantId, token, editing.id)); await load(); } })}><Copy size={15} />复制为草稿</button></div>}
             {tab === "fields" && (
-              <fieldset disabled={!editable} className="template-editor-fieldset grid gap-5">
+              <ConfigProvider componentDisabled={!editable}><fieldset disabled={!editable} className="template-editor-fieldset grid gap-5">
                 <TemplateInput
                   label="模板名称"
                   value={editing.name}
@@ -468,33 +471,15 @@ export function DeliveryTemplatesPanel({
                     }}
                   />
                 </div>
-                {editing.kind === "excel" && <details className="template-region-settings"><summary><strong>明细区域与扩展方向</strong><span className="sys-info-tag">{editing.spec.excelRegions?.length ? `已识别 ${editing.spec.excelRegions.length} 个区域` : "默认按样板行向下展开"}</span></summary><section className="grid gap-3">
-                  <p className="sys-field-hint">上传时自动识别并列明细和横向样板列，各列表可有不同条数。纵向标记横排在样板行、记录向下增加；横向标记竖排在样板列、记录向右增加。可在下方调整区域，方向须与原文件标记布局一致，目标区域应留空。</p>
-                  <button type="button" disabled={busy} className="sys-btn sys-btn--default template-add-action" onClick={() => void action(async () => {
-                    const excelRegions = inferTemplateExcelRegions(editing.spec);
-                    if (!excelRegions.length) throw new Error("原文件中没有明细标记，请先添加 {{items[].name}} 等标记");
-                    setEditing({ ...editing, spec: { ...editing.spec, excelRegions } });
-                    void message.success(`已识别 ${excelRegions.length} 个明细区域，请保存草稿后试填或发布`);
-                  })}><Search size={15} />重新识别区域</button>
-                  {(editing.spec.excelRegions ?? []).map((region, index) => <div key={index} className="template-region-card"><div className="template-region-heading"><strong>区域 {index + 1}</strong><button type="button" className="sys-btn sys-btn--default sys-btn--sm" onClick={() => setEditing({ ...editing, spec: { ...editing.spec, excelRegions: editing.spec.excelRegions!.filter((_, i) => i !== index) } })}>删除区域</button></div><div className="template-form-grid">
-                    <div className="sys-field"><label className="sys-field-label">Sheet 页</label>
-                    <TemplateSelect value={region.sheet} options={[...new Set(editing.spec.locations.map(l => l.sheet).filter(Boolean))].map(sheet => ({ value: sheet, label: sheet }))} onChange={sheet => setEditing({ ...editing, spec: { ...editing.spec, excelRegions: editing.spec.excelRegions!.map((r, i) => i === index ? { ...r, sheet } : r) } })} />
-                    </div><div className="sys-field"><label className="sys-field-label">明细字段</label>
-                    <TemplateSelect value={region.field} options={editing.spec.fields.filter(f => f.type === "table").map(f => ({ value: f.key, label: f.label || f.key }))} onChange={field => setEditing({ ...editing, spec: { ...editing.spec, excelRegions: editing.spec.excelRegions!.map((r, i) => i === index ? { ...r, field } : r) } })} />
-                    </div>
-                    <TemplateInput label="数据开始单元格" value={region.startCell} onChange={startCell => setEditing({ ...editing, spec: { ...editing.spec, excelRegions: editing.spec.excelRegions!.map((r, i) => i === index ? { ...r, startCell: startCell.toUpperCase() } : r) } })} />
-                    <div className="sys-field"><label className="sys-field-label">记录扩展方向</label><TemplateSelect value={region.direction ?? "vertical"} options={[{ value: "vertical", label: "纵向（向下增加行）" }, { value: "horizontal", label: "横向（向右增加列）" }]} onChange={direction => setEditing({ ...editing, spec: { ...editing.spec, excelRegions: editing.spec.excelRegions!.map((r, i) => i === index ? { ...r, direction } : r) } })} /></div>
-                  </div></div>)}
-                  <button type="button" className="sys-btn sys-btn--default template-add-action" onClick={() => setEditing({ ...editing, spec: { ...editing.spec, excelRegions: [...(editing.spec.excelRegions ?? []), { sheet: "", field: "", startCell: "A2", direction: "vertical" }] } })}><Plus size={15} />添加明细区域</button>
-                </section></details>}
                 <TemplateFieldsEditor
                   lockedKeys
+                  renderLocations={editing.kind === "excel" ? (field, parent) => <TemplateFieldLocations field={parent ?? field} column={parent ? field.key : undefined} spec={editing.spec} onChange={spec => setEditing({ ...editing, spec })} /> : undefined}
                   fields={editing.spec.fields}
                   onChange={(fields) =>
                     setEditing({ ...editing, spec: { ...editing.spec, fields } })
                   }
                 />
-              </fieldset>
+              </fieldset></ConfigProvider>
             )}
             {tab === "style" && (
               <div className="grid gap-5">
@@ -517,13 +502,13 @@ export function DeliveryTemplatesPanel({
                   ]}
                   onChange={setStyleTarget}
                 />
-                <fieldset disabled={!editable} className="template-editor-fieldset">
+                <ConfigProvider componentDisabled={!editable}><fieldset disabled={!editable} className="template-editor-fieldset">
                   <TemplateStyleEditor
                     kind={editing.kind}
                     value={styleValue()}
                     onChange={updateStyle}
                   />
-                </fieldset>
+                </fieldset></ConfigProvider>
               </div>
             )}
             {tab === "preview" && (

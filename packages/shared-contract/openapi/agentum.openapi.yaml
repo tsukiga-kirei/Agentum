@@ -1186,6 +1186,25 @@ paths:
                     properties:
                       data:
                         $ref: "#/components/schemas/WorkbenchTaskRunPageResponse"
+  /api/tenants/{tenantId}/workbench/runs/{runId}/mcp-results/{id}/download:
+    get:
+      summary: 下载本次流程的完整 MCP 明细结果
+      description: 复核工作台入口、流程查看权限以及结果所属租户、运行和 MCP 能力；完整结果不进入模型消息。
+      tags: [Workbench]
+      parameters:
+        - { name: tenantId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: runId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: 原始顺序的完整明细对象数组（JSON 文件）
+          content:
+            application/json:
+              schema: { type: array, items: { type: object } }
+        '403':
+          description: 无权查看流程或使用来源 MCP
+        '404':
+          description: 流程或结果不存在
   /api/tenants/{tenantId}/workbench/runs/{runId}:
     get:
       summary: 获取业务任务运行详情

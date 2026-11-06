@@ -45,7 +45,6 @@ test("模板模式只读取字段来源，保留但忽略原内容模式的配�
         field: "summary",
         variable: "analysis_data",
         constant: false,
-        additionalSources: [{ variable: "finance_data" }],
       },
       { field: "name", constant: true, value: "{{literal_text}}" },
     ],
@@ -53,7 +52,6 @@ test("模板模式只读取字段来源，保留但忽略原内容模式的配�
   assert.deepEqual(collectRuntimeTemplateVariableNames(config, "delivery"), [
     "runNumber",
     "analysis_data",
-    "finance_data",
   ]);
 });
 

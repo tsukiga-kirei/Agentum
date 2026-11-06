@@ -44,14 +44,14 @@ class TemplateFileRendererTest {
             book.write(out); source = out.toByteArray();
         }
         var spec = renderer.inspect(source, "excel");
-        assertThat(spec.excelRegions()).containsExactly(new TemplateModels.ExcelRegion("横向", "items", "B1", "horizontal"));
+        assertThat(spec.excelRegions()).containsExactly(new TemplateModels.ExcelRegion("横向", "items", "B1", "horizontal", "name"), new TemplateModels.ExcelRegion("横向", "items", "B2", "horizontal", "amount"));
         var data = Map.<String, Object>of("items", List.of(Map.of("name", "甲", "amount", "10"), Map.of("name", "乙", "amount", "20")));
         try (var book = new XSSFWorkbook(new ByteArrayInputStream(renderer.render(source, "excel", spec, data, Map.of())))) {
             assertThat(book.getSheetAt(0).getRow(0).getCell(2).getStringCellValue()).isEqualTo("乙");
             assertThat(book.getSheetAt(0).getRow(1).getCell(2).getStringCellValue()).isEqualTo("20");
         }
         var wrongDirection = new TemplateModels.Spec(spec.fields(), spec.locations(), Map.of(), Map.of(), List.of(new TemplateModels.ExcelRegion("横向", "items", "B1", "vertical")));
-        assertThatThrownBy(() -> renderer.render(source, "excel", wrongDirection, data, Map.of())).hasMessageContaining("顺序不一致");
+        assertThatThrownBy(() -> renderer.render(source, "excel", wrongDirection, data, Map.of())).hasMessageContaining("覆盖已有内容");
     }
 
     @ParameterizedTest
@@ -134,6 +134,54 @@ class TemplateFileRendererTest {
             assertThat(doc.getTables().getFirst().getRow(2).getCell(0).getCTTc().xmlText()).contains("FFF000");
         }
     }
+    @Test void keepsRecordIndexesAcrossSheetsDirectionsRepeatedFieldsAndMissingCells() throws Exception {
+        byte[] source;
+        try (var book = new XSSFWorkbook(); var out = new ByteArrayOutputStream()) {
+            var a = book.createSheet("纵向"); a.createRow(1).createCell(0).setCellValue("{{items[].name}}"); a.getRow(1).createCell(3).setCellValue("{{items[].name}}");
+            a.getRow(1).setHeightInPoints(80);
+            var b = book.createSheet("横向"); b.createRow(4).createCell(2).setCellValue("{{items[].amount}}");
+            var style = book.createCellStyle(); style.setWrapText(true); a.getRow(1).getCell(0).setCellStyle(style);
+            book.write(out); source = out.toByteArray();
+        }
+        var base = renderer.inspect(source, "excel");
+        assertThat(base.excelRegions()).hasSize(3);
+        var field = new TemplateModels.Field("items", "明细", "table", true, null, 20, "", List.of(
+            new TemplateModels.Field("name", "名称", "text", false, 100, null, "", List.of()),
+            new TemplateModels.Field("amount", "金额", "number", false, null, null, "", List.of())));
+        var regions = base.excelRegions().stream().map(it -> new TemplateModels.ExcelRegion(it.sheet(), it.field(), it.startCell(), it.column().equals("amount") ? "horizontal" : "vertical", it.column())).toList();
+        var definition = new TemplateModels.Spec(List.of(field), base.locations(), Map.of(), Map.of(), regions);
+        Map<String, Object> first = new LinkedHashMap<>(); first.put("name", "甲"); first.put("amount", null);
+        var values = Map.<String, Object>of("items", List.of(first, Map.of("amount", 20), Map.of("name", "丙", "amount", 30)));
+        try (var book = new XSSFWorkbook(new ByteArrayInputStream(renderer.render(source, "excel", definition, values, Map.of())))) {
+            var a = book.getSheet("纵向"); var b = book.getSheet("横向");
+            assertThat(a.getRow(1).getCell(0).getStringCellValue()).isEqualTo("甲");
+            assertThat(a.getRow(2).getCell(0).getCellType()).isEqualTo(CellType.BLANK);
+            assertThat(a.getRow(3).getCell(0).getStringCellValue()).isEqualTo("丙");
+            assertThat(a.getRow(3).getCell(3).getStringCellValue()).isEqualTo("丙");
+            assertThat(b.getRow(4).getCell(2).getCellType()).isEqualTo(CellType.BLANK);
+            assertThat(b.getRow(4).getCell(3).getNumericCellValue()).isEqualTo(20);
+            assertThat(b.getRow(4).getCell(4).getNumericCellValue()).isEqualTo(30);
+            assertThat(a.getRow(1).getHeightInPoints()).isLessThan(40);
+        }
+        var fixed = new TemplateModels.Spec(List.of(field), base.locations(), Map.of("rowHeightMode", "fixed", "rowHeight", 28), Map.of(), regions);
+        try (var book = new XSSFWorkbook(new ByteArrayInputStream(renderer.render(source, "excel", fixed, values, Map.of())))) {
+            assertThat(book.getSheet("纵向").getRow(3).getHeightInPoints()).isEqualTo(28);
+        }
+    }
+
+    @Test void previewTrimsFormattedBlankExtentAndKeepsBorderlessCellsAndFormulaValues() throws Exception {
+        byte[] source;
+        try (var book = new XSSFWorkbook(); var out = new ByteArrayOutputStream()) {
+            var sheet = book.createSheet("预览"); sheet.createRow(0).createCell(0).setCellValue(10); sheet.getRow(0).createCell(1).setCellFormula("A1*2");
+            sheet.createRow(800).createCell(30).setCellStyle(book.createCellStyle());
+            book.write(out); source = out.toByteArray();
+        }
+        var layout = TemplateWorkbookPreview.read(source).getFirst();
+        assertThat(layout.rows()).hasSize(1); assertThat(layout.widths()).hasSize(2); assertThat(layout.truncated()).isFalse();
+        assertThat(layout.rows().getFirst().cells().getFirst().style()).containsEntry("borderTop", "none");
+        assertThat(layout.rows().getFirst().cells().get(1).text()).isEqualTo("20");
+    }
+
     @Test void fillsTypedExcelExpandsRowsAndUsesDifferentSheetStyles() throws Exception {
         byte[] source;
         try (var book = new XSSFWorkbook(); var out = new ByteArrayOutputStream()) {

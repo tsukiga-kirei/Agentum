@@ -548,6 +548,36 @@ class AgentRuntimeServiceTest {
         return resolver;
     }
 
+    @Test void requiredResultsBlockInventedFinalAnswersAndFollowUpKeepsFormalReferences() {
+        var assignments = mock(TenantModelAssignmentRepository.class); var providers = mock(ModelProviderRepository.class);
+        var capabilities = mock(SystemCapabilityRepository.class); var assets = mock(TenantAssetCapabilityRepository.class);
+        var mcp = mock(McpRuntimeService.class); var skills = mock(SkillRuntimeService.class); var logs = mock(ModelCallLogRepository.class);
+        var model = mock(ModelChatClient.class);
+        var provider = ModelProviderEntity.create("测试", "openai-compatible", "https://example.test", "test", false, "active", NOW);
+        provider.getSettings().put("maxTokens", 8192);
+        var assignment = TenantModelAssignmentEntity.create(TENANT_ID, provider.getId(), "test", "enabled", NOW);
+        when(assignments.findByTenantIdOrderByCreatedAtDesc(TENANT_ID)).thenReturn(List.of(assignment));
+        when(providers.findById(provider.getId())).thenReturn(Optional.of(provider));
+        when(mcp.resolveMcpTools(any())).thenReturn(List.of()); when(mcp.datasetReferences(any(), any())).thenReturn(Map.of());
+        when(skills.resolveSkillTools(any(), any())).thenReturn(List.of());
+        when(logs.save(any())).thenAnswer(call -> call.getArgument(0));
+        when(model.chat(any())).thenReturn(new ModelChatClient.ChatResult("已经完成", Map.of(), Map.of(), 1));
+        var service = new AgentRuntimeService(assignments, providers, assets, mcp, skills, mock(FieldEncryptionService.class), logs, model,
+            new ObjectMapper(), Clock.fixed(NOW, ZoneOffset.UTC), mock(RunCancellationGuard.class), new PromptContentResolver(capabilities, assets), runtimeProperties(), attachmentVariableContentResolver());
+        var run = WorkflowRunEntity.create(TENANT_ID, UUID.randomUUID(), UUID.randomUUID(), 1, "工具结果", "工具结果", OPERATOR_ID, 2, "RUN-RESULT", NOW);
+        var config = new LinkedHashMap<String, Object>();
+        config.put("systemPrompt", "分析数据"); config.put("userPrompt", "生成报告"); config.put("maxAgentIterationsPerTurn", 4);
+        config.put("_requiredMcpResults", List.of("cap_demo.rows"));
+        var node = WorkflowNodeRunEntity.pending(run.getId(), TENANT_ID, run.getWorkflowId(), run.getWorkflowVersionId(), "agent", "agent", "采集", Map.of(), Map.of(), config, 1, NOW);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.execute(new AgentRuntimeRequest(run, node, config, Map.of(), Map.of(), OPERATOR_ID))).hasMessageContaining("尚未产生完整结果");
+        org.mockito.Mockito.verify(model, org.mockito.Mockito.times(3)).chat(any());
+        Map<String, Object> formal = Map.of("cap_demo", Map.of("rows", Map.of("datasetId", "original")));
+        config.put("_formalAnswer", "原回答"); config.put("_formalMcpDatasets", formal);
+        var result = service.execute(new AgentRuntimeRequest(run, node, config, Map.of(), Map.of(), OPERATOR_ID));
+        assertThat(result.outputs()).containsEntry("final_answer", "原回答").containsEntry("mcp_datasets", formal);
+        assertThat((List<?>) result.outputs().get("chatMessages")).anySatisfy(raw -> assertThat(((Map<?, ?>) raw).get("mcp_datasets")).isEqualTo(formal));
+    }
+
     private static final class ScriptedModelChatClient implements ModelChatClient {
 
         private final ArrayList<ChatRequest> requests = new ArrayList<>();

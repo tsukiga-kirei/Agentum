@@ -149,6 +149,8 @@ public class McpRuntimeService {
         int index
     ) {
         String description = firstNonBlank(tool.description(), capability.getDescription(), "调用租户已授权 MCP 能力");
+        var policy = McpResultPolicy.map(McpResultPolicy.map(capability.getConfig().get("toolResultPolicies")).get(tool.name()));
+        if (Set.of("dataset", "auto").contains(Objects.toString(policy.get("mode"), "direct"))) description += "。完整结果名称：cap_" + capability.getId().toString().replace('-', '_') + "." + Objects.toString(policy.getOrDefault("datasetKey", tool.name()));
         return new McpToolBinding(
             sanitizeToolName("mcp_" + capability.getCode() + "_" + tool.name() + "_" + index),
             capability.getId(),
@@ -237,6 +239,8 @@ public class McpRuntimeService {
         var policy = McpResultPolicy.map(McpResultPolicy.map(capability.getConfig().get("toolResultPolicies")).get(binding.remoteToolName()));
         McpResultPolicy.validatePolicies(Map.of(binding.remoteToolName(), policy));
         String mode = stringValue(policy.getOrDefault("mode", "direct"));
+        String requiredPath = "cap_" + capability.getId().toString().replace('-', '_') + "." + Objects.toString(policy.getOrDefault("datasetKey", binding.remoteToolName()));
+        if ("auto".equals(mode) && com.agentum.agent.application.RequiredMcpResults.paths(request.nodeConfig()).contains(requiredPath)) mode = "dataset";
         Map<String, Object> response = sanitizeMap(first.responsePayload());
         int bytes = encodedSize(response);
         if ("direct".equals(mode) || ("auto".equals(mode) && bytes <= McpResultPolicy.integer(policy, "inlineBytes", 32000, 256000)

@@ -141,6 +141,7 @@ public class AgentRuntimeService {
         // 前端运行中必须展示与模型请求完全一致的用户消息，不能自行序列化附件引用后生成另一份内容。
         eventSink.onPromptPrepared(renderedUserPrompt);
 
+        if (!RequiredMcpResults.paths(config).isEmpty()) messages.add(new ModelChatClient.ChatMessage("system", "后续交付需要以下完整工具结果（能力及结果名称）：" + RequiredMcpResults.paths(config) + "。必须调用相应 MCP 取数工具并保存完整结果，再提交最终答案；不得编造数据或只依据预览代替完整结果。"));
         Map<String, Object> options = modelOptions(provider, config);
         if (provider.isReasoningModel()) {
             // 仅推理模型发送网关扩展参数，普通模型保持标准 OpenAI Chat Completions 请求。
@@ -159,6 +160,7 @@ public class AgentRuntimeService {
         String finalAnswerSource = "";
         Map<String, Object> structuredData = Map.of();
         int structuredFailures = 0;
+        int requiredResultFailures = 0;
         eventSink.onPhase("preparing", "正在装配变量、Skill 和 MCP 工具。");
 
         try {
@@ -217,6 +219,19 @@ public class AgentRuntimeService {
                             for (var call : result.toolCalls()) messages.add(ModelChatClient.ChatMessage.toolResult(call.id(), "结构化结果未通过校验：" + exception.getMessage() + "。请修正并重新提交 final_answer。"));
                         } else messages.add(new ModelChatClient.ChatMessage("user", "结构化结果未通过校验：" + exception.getMessage() + "。请使用 final_answer 提交 answer 和 data。"));
                         eventSink.onPhase("validating", "结构化结果未通过校验，正在请求修正。");
+                        continue;
+                    }
+                }
+                if (!resolvedAnswer.isBlank() && !RequiredMcpResults.paths(config).isEmpty()) {
+                    try { RequiredMcpResults.validate(config, resolveDatasetResults(config, request.nodeRun().getId(), toolCallSummaries)); }
+                    catch (ApiException exception) {
+                        if (++requiredResultFailures >= 3) throw exception;
+                        // 最终回答不能绕过交付的数据依赖；给模型明确的补取机会，仍缺失时令节点失败。
+                        if (!result.toolCalls().isEmpty()) {
+                            messages.add(ModelChatClient.ChatMessage.assistantToolCalls(result.content(), result.toolCalls()));
+                            for (var call : result.toolCalls()) messages.add(ModelChatClient.ChatMessage.toolResult(call.id(), exception.getMessage()));
+                        } else messages.add(new ModelChatClient.ChatMessage("user", exception.getMessage()));
+                        eventSink.onPhase("validating", "交付所需的工具结果尚未齐备，正在补充取数。");
                         continue;
                     }
                 }
@@ -285,7 +300,13 @@ public class AgentRuntimeService {
                 turnTokenUsage.value(),
                 reasoningContents
             );
-            outputs.put("mcp_datasets", mcpRuntimeService.datasetReferences(request.nodeRun().getId(), toolCallSummaries));
+            var datasetResults = resolveDatasetResults(config, request.nodeRun().getId(), toolCallSummaries);
+            RequiredMcpResults.validate(config, datasetResults);
+            if (outputs.get("chatMessages") instanceof List<?> history && !history.isEmpty() && history.getLast() instanceof Map<?, ?> message) {
+                @SuppressWarnings("unchecked") var assistant = (Map<String, Object>) message;
+                assistant.put("mcp_datasets", datasetResults);
+            }
+            outputs.put("mcp_datasets", config.containsKey("_formalAnswer") ? config.getOrDefault("_formalMcpDatasets", Map.of()) : datasetResults);
             AgentStructuredOutput.attach(config, outputs, structuredData);
             eventSink.onPhase("completed", "智能体已完成最终回答。");
             eventSink.onCompleted(finalAnswer);
@@ -306,6 +327,16 @@ public class AgentRuntimeService {
             eventSink.onFailed("AGENT_LOOP_FAILED", "智能体执行失败，请稍后重试");
             throw new ApiException(HttpStatus.BAD_GATEWAY, "AGENT_LOOP_FAILED", "智能体执行失败，请稍后重试");
         }
+    }
+
+    private Map<String, Object> resolveDatasetResults(Map<String, Object> config, UUID node, List<Map<String, Object>> calls) {
+        Map<String, Object> result = new LinkedHashMap<>(com.agentum.mcp.application.McpResultPolicy.map(config.get("_formalMcpDatasets")));
+        var current = mcpRuntimeService.datasetReferences(node, calls);
+        if (current != null) current.forEach((capability, values) -> {
+            var scoped = new LinkedHashMap<>(com.agentum.mcp.application.McpResultPolicy.map(result.get(capability)));
+            scoped.putAll(com.agentum.mcp.application.McpResultPolicy.map(values)); result.put(capability, scoped);
+        });
+        return result;
     }
 
     private List<ModelChatClient.ToolDefinition> buildToolDefinitions(

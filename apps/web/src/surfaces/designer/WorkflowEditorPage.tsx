@@ -1,3 +1,4 @@
+import { buildMcpDatasetSources } from "../../utils/mcpDatasetSources";
 import { ExcelRegionsEditor, type ExcelDataRegion } from "../../components/document/ExcelRegionsEditor";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
@@ -147,6 +148,8 @@ type WorkflowEditorEdge = {
 
 type WorkflowVariable = {
   fields?: TemplateField[];
+  datasetPath?: string;
+  datasetColumns?: string[];
   name: string;
   sourceNodeId: string;
   sourceNodeName: string;
@@ -2906,7 +2909,7 @@ function DeliveryBrickConfig({
         rootClassName={drawerRootClassName}
         title="配置单个交付项"
         config={config}
-        workflowVariables={workflowVariables}
+        workflowVariables={[...workflowVariables, ...buildMcpDatasetSources(workflowNodes, capabilityState.capabilities, node.id)]}
         deliveryAssets={deliveryAssets}
         clusterAgentTriggerOptions={clusterAgentTriggerOptions}
         inputFieldTriggerOptions={inputFieldTriggerOptions}
@@ -2929,7 +2932,7 @@ function DeliveryBrickConfig({
           triggerRule={editingItem.triggerRule}
           showTrigger={deliveryExecutionPolicy === "conditional"}
           config={editingItem.config}
-          workflowVariables={workflowVariables}
+          workflowVariables={[...workflowVariables, ...buildMcpDatasetSources(workflowNodes, capabilityState.capabilities, node.id)]}
           deliveryAssets={deliveryAssets}
           clusterAgentTriggerOptions={clusterAgentTriggerOptions}
           inputFieldTriggerOptions={inputFieldTriggerOptions}

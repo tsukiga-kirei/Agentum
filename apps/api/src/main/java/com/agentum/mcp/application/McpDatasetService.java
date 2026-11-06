@@ -32,7 +32,7 @@ public class McpDatasetService {
         entity.id = UUID.randomUUID(); entity.tenantId = request.run().getTenantId(); entity.runId = request.run().getId();
         entity.nodeRunId = request.nodeRun().getId(); entity.capabilityId = capabilityId; entity.callLogId = callId;
         entity.datasetKey = key; entity.rowCount = rows.size(); entity.policy = new LinkedHashMap<>(policy);
-        entity.createdAt = clock.instant(); entity.expiresAt = entity.createdAt.plus(Duration.ofDays(McpResultPolicy.integer(policy, "retentionDays", 7, 365)));
+        entity.createdAt = clock.instant();
         entity.storageKey = storage.storeOriginal(entity.tenantId, entity.id, "mcp-dataset.json", "application/json", bytes);
         try { repository.save(entity); }
         catch (RuntimeException ex) { storage.delete(entity.storageKey); throw ex; }
@@ -43,7 +43,11 @@ public class McpDatasetService {
     public Map<String, Object> references(UUID nodeRunId, Set<String> callIds) {
         Map<String, Object> result = new LinkedHashMap<>();
         // 同一节点显式重复取数时最后完成的结果为当前绑定，交付引用固定该 UUID，不混合历史分页。
-        for (var entity : repository.findByNodeRunIdOrderByCreatedAtAsc(nodeRunId)) if (callIds.contains(entity.callLogId.toString()) && entity.expiresAt.isAfter(clock.instant())) result.put(entity.datasetKey, reference(entity));
+        for (var entity : repository.findByNodeRunIdOrderByCreatedAtAsc(nodeRunId)) if (callIds.contains(entity.callLogId.toString())) {
+            String capability = "cap_" + entity.capabilityId.toString().replace('-', '_');
+            @SuppressWarnings("unchecked") var scoped = (Map<String, Object>) result.computeIfAbsent(capability, ignored -> new LinkedHashMap<String, Object>());
+            scoped.put(entity.datasetKey, reference(entity));
+        }
         return result;
     }
     public List<Map<String, Object>> readRows(UUID tenant, UUID run, UUID sourceNode, UUID userId, Object reference) {
@@ -52,6 +56,11 @@ public class McpDatasetService {
         if (!entity.nodeRunId.equals(sourceNode)) throw McpResultPolicy.error("数据集与绑定的来源节点不匹配");
         authorize(entity, userId);
         return load(entity);
+    }
+    public byte[] download(UUID tenant, UUID run, UUID user, String id) {
+        var entity = require(tenant, run, id); authorize(entity, user);
+        log.info("下载流程 MCP 完整结果 tenantId={} userId={} runId={} datasetId={} requestId={}", tenant, user, run, entity.id, RequestIds.current());
+        return encode(load(entity));
     }
     public Map<String, Object> query(McpRuntimeRequest request, Set<UUID> allowedCapabilities, Map<String, Object> args) {
         if (!Set.of("query", "describe").contains(Objects.toString(args.getOrDefault("action", "query")))) throw McpResultPolicy.error("数据集查询动作无效");
@@ -93,7 +102,6 @@ public class McpDatasetService {
         UUID uuid;
         try { uuid = UUID.fromString(id); } catch (IllegalArgumentException ex) { throw McpResultPolicy.error("数据集引用不合法"); }
         var entity = repository.findByIdAndTenantIdAndRunId(uuid, tenant, run).orElseThrow(() -> McpResultPolicy.error("数据集不存在或不属于本次运行"));
-        if (!entity.expiresAt.isAfter(clock.instant())) throw McpResultPolicy.error("数据集已过期，请重新取数");
         return entity;
     }
     private List<Map<String, Object>> load(McpDatasetEntity entity) {
@@ -101,8 +109,8 @@ public class McpDatasetService {
         catch (java.io.IOException ex) { throw McpResultPolicy.error("数据集内容无法读取"); }
     }
     private Map<String, Object> reference(McpDatasetEntity entity) {
-        return Map.of("datasetId", entity.id.toString(), "datasetKey", entity.datasetKey, "rowCount", entity.rowCount,
-            "expiresAt", entity.expiresAt.toString(), "complete", true);
+        return Map.of("datasetId", entity.id.toString(), "datasetKey", entity.datasetKey, "rowCount", entity.rowCount, "runId", entity.runId.toString(),
+            "complete", true);
     }
     private Map<String, Object> view(McpDatasetEntity entity, List<Map<String, Object>> rows) {
         Map<String, Object> result = new LinkedHashMap<>(reference(entity));
@@ -127,11 +135,13 @@ public class McpDatasetService {
     private byte[] encode(Object value) {
         try { return mapper.writeValueAsBytes(value); } catch (java.io.IOException ex) { throw McpResultPolicy.error("数据集序列化失败"); }
     }
+    // 完整结果与流程记录同生命周期；删除流程后清理对象，失败保留元信息以便下次重试。
     @Scheduled(fixedDelayString = "${agentum.mcp.dataset-cleanup-delay-ms:3600000}")
     public void cleanup() {
-        for (var entity : repository.findTop100ByExpiresAtBefore(clock.instant())) {
-            try { storage.delete(entity.storageKey); repository.delete(entity); }
-            catch (RuntimeException ex) { log.warn("过期 MCP 数据集清理失败 tenantId={} datasetId={} requestId={}", entity.tenantId, entity.id, RequestIds.current()); }
+        for (var entity : repository.findOrphanedRunResults()) {
+            try { storage.delete(entity.storageKey); repository.delete(entity);
+                log.info("已清理删除流程的 MCP 结果 tenantId={} runId={} datasetId={} requestId={}", entity.tenantId, entity.runId, entity.id, RequestIds.current()); }
+            catch (RuntimeException ex) { log.warn("已删除流程的 MCP 结果清理失败 tenantId={} datasetId={} requestId={}", entity.tenantId, entity.id, RequestIds.current()); }
         }
     }
 }

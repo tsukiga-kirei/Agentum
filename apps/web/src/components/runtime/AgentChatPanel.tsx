@@ -1,3 +1,4 @@
+import { McpResultView, parseMcpResult } from "./McpResultView";
 import React, { useState } from "react";
 import type { RuntimePreviewStep, RuntimeCapabilityItem, AgentPhase } from "../../types/runtime-types";
 import { Bot, Sparkles, Terminal, FileText, ChevronDown, ChevronUp } from "lucide-react";
@@ -65,6 +66,7 @@ export function AgentChatPanel({
           <div className="grid grid-cols-1 gap-3">
             {(toolCalls.length > 0 ? toolCalls : activeStep.capabilities || []).map((tool) => {
               const isExpanded = !!expandedToolIds[tool.id];
+              const dataset = parseMcpResult(tool.resultSummary);
               return (
                 <div 
                   key={tool.id} 
@@ -106,7 +108,7 @@ export function AgentChatPanel({
                       {tool.durationMs ? <div className="text-slate-400">调用耗时: {tool.durationMs}ms</div> : null}
                       <div>
                         <span className="text-slate-400 block mb-1">执行结果观察 (Observation):</span>
-                        <pre className="whitespace-pre-wrap text-[10px] bg-white dark:bg-slate-950 border border-slate-100 dark:border-slate-850 p-2 rounded leading-relaxed">{tool.resultSummary || "无返回结果"}</pre>
+                        {dataset ? <McpResultView result={dataset} /> : <pre className="whitespace-pre-wrap text-[10px] bg-white dark:bg-slate-950 border border-slate-100 dark:border-slate-850 p-2 rounded leading-relaxed">{tool.resultSummary || "无返回结果"}</pre>}
                       </div>
                     </div>
                   )}

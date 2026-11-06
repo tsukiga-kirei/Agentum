@@ -22,6 +22,5 @@ public class McpDatasetEntity {
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "result_policy", nullable = false, columnDefinition = "jsonb") public Map<String, Object> policy;
     @Column(name = "created_at", nullable = false) public Instant createdAt;
-    @Column(name = "expires_at", nullable = false) public Instant expiresAt;
     public McpDatasetEntity() {}
 }

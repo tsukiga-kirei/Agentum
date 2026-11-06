@@ -194,6 +194,7 @@ public class DefaultWorkflowRuntimeExecutor implements WorkflowRuntimeExecutor {
             "name", stringValue(agentConfig.get("name"), "子智能体"),
             "outputVariable", stringValue(agentConfig.get("output"), ""),
             "status", "completed",
+            "mcp_datasets", agentOutput.getOrDefault("mcp_datasets", Map.of()),
             "final_answer", displayText,
             "summary", summarizeText(displayText)
         );
@@ -201,6 +202,9 @@ public class DefaultWorkflowRuntimeExecutor implements WorkflowRuntimeExecutor {
 
     private Map<String, Object> clusterResult(Map<String, Object> nodeConfig, Map<String, Object> variables, List<Map<String, Object>> summaries) {
         variables.put("clusterAgents", summaries);
+        Map<String, Object> datasetsByMember = new LinkedHashMap<>();
+        for (var summary : summaries) datasetsByMember.put("member_" + summary.get("agentIndex"), summary.getOrDefault("mcp_datasets", Map.of()));
+        variables.put("mcp_datasets", datasetsByMember);
         String finalAnswer = ClusterOutputSupport.finalAnswer(nodeConfig, variables, summaries);
         variables.put("final_answer", finalAnswer);
         variables.put("agent_response", finalAnswer);

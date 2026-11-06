@@ -13318,3 +13318,15 @@ html:not(.dark) .rail-flow-line {
 .run-evidence-tab-content {
   padding-top: 12px;
 }
+
+/* MCP 结果沿用工作台主题，完整数据通过受保护接口下载，不展开巨大 JSON。 */
+.mcp-result-view { padding: 16px; color: var(--color-text-primary); background: var(--color-bg-card); }
+.mcp-result-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.mcp-result-heading > div { display: grid; gap: 6px; min-width: 0; }
+.mcp-result-heading strong { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.mcp-result-heading span, .mcp-result-view > p { color: var(--color-text-secondary); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.mcp-result-table { overflow: auto; max-height: 300px; margin-top: 14px; border: 1px solid var(--color-border-light); border-radius: var(--radius-md); }
+.mcp-result-table table { border-collapse: collapse; min-width: 100%; font-size: 12px; }
+.mcp-result-table th, .mcp-result-table td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--color-border-light); white-space: nowrap; max-width: 300px; overflow: hidden; text-overflow: ellipsis; }
+.mcp-result-table th { position: sticky; top: 0; background: var(--color-bg-page); font-weight: 500; }
+@media(max-width: 700px) { .mcp-result-heading { flex-direction: column; } }

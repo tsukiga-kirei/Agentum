@@ -33,13 +33,23 @@ class McpDatasetServiceTest {
         assertThat(response.toString()).doesNotContain("hidden", "secret", "private");
         assertThat(service.readRows(tenant, runId, nodeId, user, response)).hasSize(2);
         assertThat(service.readRows(tenant, runId, nodeId, user, response).getFirst()).containsEntry("private", "hidden");
+        when(repository.findByNodeRunIdOrderByCreatedAtAsc(nodeId)).thenReturn(new ArrayList<>(records.values()));
+        var refs = service.references(nodeId, records.values().stream().map(e -> e.callLogId.toString()).collect(java.util.stream.Collectors.toSet()));
+        assertThat(refs).containsKey("cap_" + cap.toString().replace('-', '_'));
+        assertThat(service.references(nodeId, Set.of())).isEmpty();
         var page = service.query(request, Set.of(cap), Map.of("datasetId", response.get("datasetId"), "limit", 1));
         assertThat(page).containsEntry("hasMore", true); assertThat(page.toString()).doesNotContain("hidden", "secret");
         assertThatThrownBy(() -> service.query(request, Set.of(cap), Map.of("datasetId", response.get("datasetId"), "fields", List.of("private")))).hasMessageContaining("可见范围");
         assertThatThrownBy(() -> service.readRows(tenant, UUID.randomUUID(), nodeId, user, response)).hasMessageContaining("本次运行");
         assertThatThrownBy(() -> service.readRows(tenant, runId, UUID.randomUUID(), user, response)).hasMessageContaining("来源节点");
         assertThatThrownBy(() -> service.query(request, Set.of(), Map.of("datasetId", response.get("datasetId")))).hasMessageContaining("未授权");
-        records.values().forEach(e -> e.expiresAt = now.minusSeconds(1));
-        assertThatThrownBy(() -> service.query(request, Set.of(cap), Map.of("datasetId", response.get("datasetId")))).hasMessageContaining("过期");
+        // 超过原七天期限也不丢失仍属于流程的结果；仅删除流程后回收对象。
+        var later = new McpDatasetService(repository, storage, new ObjectMapper(), Clock.fixed(now.plus(Duration.ofDays(400)), ZoneOffset.UTC), assets);
+        assertThat(later.readRows(tenant, runId, nodeId, user, response)).hasSize(2);
+        assertThat(response).doesNotContainKey("expiresAt");
+        when(repository.findOrphanedRunResults()).thenReturn(List.of());
+        later.cleanup(); verify(repository, never()).delete(any());
+        when(repository.findOrphanedRunResults()).thenReturn(new ArrayList<>(records.values()));
+        later.cleanup(); verify(repository).delete(any()); verify(storage).delete(any());
     }
 }

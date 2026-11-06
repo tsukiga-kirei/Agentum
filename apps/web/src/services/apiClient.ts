@@ -636,6 +636,7 @@ export const notificationApi = {
 };
 
 export const workbenchApi = {
+  downloadMcpResult: (tenantId: string, token: string, runId: string, datasetId: string) => apiFileRequest(`/api/tenants/${tenantId}/workbench/runs/${runId}/mcp-results/${datasetId}/download`, { token }),
   uploadInputAttachment: (tenantId: string, token: string, runId: string, nodeRunId: string, fieldId: string, file: File) => {
     const body = new FormData();
     body.append("fieldId", fieldId);

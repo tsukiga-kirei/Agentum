@@ -140,7 +140,6 @@ public class DeliveryTemplateService {
                 validatePath(source.path());
                 if ("system".equals(source.sourceNodeId()) && !com.agentum.workflow.application.WorkflowRuntimeSystemVariables.descriptions().containsKey(source.variable())) throw StructuredContent.error("系统来源只能引用平台运行变量");
             }
-            if (binding.separator() != null && binding.separator().length() > 100) throw StructuredContent.error("连接分隔符过长");
             if (binding.columnMappings() != null) binding.columnMappings().values().forEach(DeliveryTemplateService::validatePath);
         }
         for (var field : spec(entity).fields()) if (field.required() && !fields.contains(field.key())) throw StructuredContent.error("必填字段尚未绑定：" + field.label());
@@ -165,25 +164,13 @@ public class DeliveryTemplateService {
                     source = node.getOutputSnapshot();
                 }
                 value = path(source.get(binding.variable()), binding.path());
+                if ("mcp_datasets".equals(binding.variable()) && value == null) throw StructuredContent.error("本次执行没有产生所绑定的工具结果，请确认取数智能体及对应工具已执行：" + binding.field());
                 if (value instanceof Map<?, ?> reference && reference.containsKey("datasetId")) {
                     var sourceNode = upstream.stream().filter(it -> binding.sourceNodeId().equals(it.getNodeKey())).findFirst().orElseThrow(() -> StructuredContent.error("数据集必须绑定明确的上游节点"));
                     datasetSource = true;
                     value = datasets.readRows(request.run().getTenantId(), request.run().getId(), sourceNode.getId(), request.operatorUserId(), value);
                 }
-                if (binding.additionalSources() != null && !binding.additionalSources().isEmpty()) {
-                    List<Object> parts = new ArrayList<>(); parts.add(value);
-                    for (var extra : binding.additionalSources()) {
-                        var sourceNode = upstream.stream().filter(it -> Objects.equals(extra.sourceNodeId(), it.getNodeKey())).findFirst().orElseThrow(() -> StructuredContent.error("追加来源节点不存在"));
-                        if (sourceNode.getSortOrder() >= request.nodeRun().getSortOrder() || !"completed".equals(sourceNode.getState())) throw StructuredContent.error("追加来源步骤尚未完成");
-                        parts.add(path(sourceNode.getOutputSnapshot().get(extra.variable()), extra.path()));
-                    }
-                    if (parts.stream().allMatch(it -> it instanceof List<?>)) {
-                        List<Object> combined = new ArrayList<>(); parts.forEach(it -> combined.addAll((List<?>) it)); value = combined;
-                    } else {
-                        if (parts.stream().anyMatch(it -> !(it instanceof String))) throw StructuredContent.error("组合内容来源必须全部为文字或全部为同类型列表");
-                        value = String.join(binding.separator() == null ? "\n\n" : binding.separator(), parts.stream().map(Object::toString).toList());
-                    }
-                }
+
             }
             var destination = spec(entity).fields().stream().filter(it -> it.key().equals(binding.field())).findFirst()
                 .orElseThrow(() -> StructuredContent.error("绑定的模板字段不存在：" + binding.field()));
@@ -244,11 +231,7 @@ public class DeliveryTemplateService {
     }
     public List<TemplateModels.Binding> bindings(Map<String, Object> config) { return mapper.convertValue(config.getOrDefault("templateBindings", List.of()), new TypeReference<>() {}); }
     public List<TemplateModels.Source> sources(TemplateModels.Binding binding) {
-        List<TemplateModels.Source> result = new ArrayList<>();
-        result.add(new TemplateModels.Source(binding.sourceNodeId(), binding.variable(), binding.path()));
-        if (binding.additionalSources() != null) result.addAll(binding.additionalSources());
-        if (result.size() > 20) throw StructuredContent.error("一个字段最多组合 20 个来源");
-        return result;
+        return List.of(new TemplateModels.Source(binding.sourceNodeId(), binding.variable(), binding.path()));
     }
     private Map<String, Map<String, Object>> overrides(Map<String, Object> config) { return mapper.convertValue(config.getOrDefault("templateLocationStyles", Map.of()), new TypeReference<>() {}); }
     private DeliveryTemplateEntity read(UUID tenant, UUID user, UUID id, boolean published) {
@@ -289,7 +272,7 @@ public class DeliveryTemplateService {
         if (spec == null || spec.locations() == null) throw StructuredContent.error("模板字段配置不能为空");
         StructuredContent.validateFields(spec.fields());
         if (!"excel".equals(entity.kind) && !spec.excelRegions().isEmpty()) throw StructuredContent.error("只有 Excel 支持独立数据区域");
-        if (spec.excelRegions().size() > 100) throw StructuredContent.error("独立区域不能超过 100 个");
+        if (spec.excelRegions().size() > 3000) throw StructuredContent.error("明细填写位置不能超过 3000 个");
         for (var region : spec.excelRegions()) {
             if (!Set.of("vertical", "horizontal").contains(region.direction())) throw StructuredContent.error("区域扩展方向必须为纵向或横向");
             if (region.sheet() == null || region.startCell() == null || !region.startCell().matches("[A-Z]{1,3}[1-9][0-9]{0,5}") || spec.fields().stream().noneMatch(f -> f.key().equals(region.field()) && "table".equals(f.type()))) throw StructuredContent.error("独立区域的 Sheet、明细字段或开始位置无效");
@@ -320,17 +303,19 @@ public class DeliveryTemplateService {
     }
     public void validateStyle(Map<String, Object> style) {
         if (style == null) return;
+        if ("fixed".equals(style.get("rowHeightMode")) && !style.containsKey("rowHeight")) throw StructuredContent.error("固定行高需要填写磅值");
         Set<String> numeric = Set.of("fontSize", "firstLineChars", "leftIndentCm", "spacingBefore", "spacingAfter", "lineSpacing", "rowHeight", "columnWidth", "cellPaddingPt", "indent");
         Set<String> flags = Set.of("bold", "italic", "wrapText", "border");
         for (var entry : style.entrySet()) {
             String key = entry.getKey(); Object value = entry.getValue();
             if (numeric.contains(key)) {
                 if (!(value instanceof Number n) || !Double.isFinite(n.doubleValue()) || n.doubleValue() < 0 || n.doubleValue() > ("columnWidth".equals(key) ? 255 : 400)) throw StructuredContent.error("样式数值超出范围：" + key);
-                if (Set.of("fontSize", "lineSpacing").contains(key) && ((Number) value).doubleValue() == 0) throw StructuredContent.error("字号和行距必须大于 0");
+                if (Set.of("fontSize", "lineSpacing", "rowHeight").contains(key) && ((Number) value).doubleValue() == 0) throw StructuredContent.error("字号、行距和行高必须大于 0");
                 if ("indent".equals(key) && ((Number) value).doubleValue() > 250) throw StructuredContent.error("单元格缩进不能超过 250");
             } else if (flags.contains(key)) { if (!(value instanceof Boolean)) throw StructuredContent.error("样式开关无效：" + key); }
             else if (Set.of("color", "backgroundColor").contains(key)) { if (!(value instanceof String s) || !s.matches("#?[0-9A-Fa-f]{6}")) throw StructuredContent.error("颜色应为六位十六进制值"); }
             else if ("verticalAlignment".equals(key)) { if (!Set.of("top", "center", "bottom").contains(value)) throw StructuredContent.error("垂直对齐方式无效"); }
+            else if ("rowHeightMode".equals(key)) { if (!Set.of("auto", "inherit", "fixed").contains(value)) throw StructuredContent.error("行高方式无效"); }
             else if ("alignment".equals(key)) { if (!Set.of("left", "center", "right", "both").contains(value)) throw StructuredContent.error("对齐方式无效"); }
             else if (!Set.of("fontFamily", "numberFormat").contains(key) || !(value instanceof String s) || s.length() > 100) throw StructuredContent.error("不支持的样式属性：" + key);
         }

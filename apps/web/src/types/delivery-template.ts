@@ -18,7 +18,7 @@ export type TemplateLocation = {
   style: TemplateStyle;
 };
 export type TemplateSpec = {
-  excelRegions?: { sheet: string; field: string; startCell: string; direction?: "vertical" | "horizontal" }[];
+  excelRegions?: { sheet: string; field: string; startCell: string; column?: string; direction?: "vertical" | "horizontal" }[];
   fields: TemplateField[];
   locations: TemplateLocation[];
   defaultStyle: TemplateStyle;
@@ -38,31 +38,23 @@ export type DeliveryTemplate = {
   spec: TemplateSpec;
 };
 
-/** 只识别连续的样板行或样板列；遇到重复、分散标记时要求明确配置，避免自动推断写错业务区域。 */
+/** 每个明细标记保留自己的填写位置；数组顺序与字段位置分开，不压缩空值。 */
 export function inferTemplateExcelRegions(spec: TemplateSpec): NonNullable<TemplateSpec["excelRegions"]> {
-  const result: NonNullable<TemplateSpec["excelRegions"]> = [];
-  for (const sheet of new Set(spec.locations.map(location => location.sheet).filter(Boolean))) {
-    for (const field of spec.fields.filter(field => field.type === "table")) {
-      const locations = spec.locations.filter(location => location.sheet === sheet && location.field === field.key);
-      if (!locations.length) continue;
-      const positions = field.columns.map(column => {
-        const matches = locations.filter(location => location.id.endsWith(`:${field.key}.${column.key}`));
-        const address = matches.length === 1 ? matches[0].id.slice(0, matches[0].id.lastIndexOf(":")) : "";
-        const match = /!([A-Z]+)([1-9][0-9]*)$/.exec(address);
-        if (!match) throw new Error(`Sheet「${sheet}」的明细「${field.label || field.key}」存在重复或无法识别的标记位置，请手工配置区域`);
-        const columnNumber = [...match[1]].reduce((value, character) => value * 26 + character.charCodeAt(0) - 64, 0);
-        return { row: Number(match[2]), column: columnNumber, address: `${match[1]}${match[2]}` };
-      });
-      const first = positions[0];
-      if (!first) throw new Error(`明细「${field.key}」没有字段`);
-      const vertical = positions.every((position, index) => position.row === first.row && position.column === first.column + index);
-      const horizontal = positions.every((position, index) => position.column === first.column && position.row === first.row + index);
-      if (!vertical && !horizontal) throw new Error(`Sheet「${sheet}」的明细「${field.label || field.key}」标记不连续，请将字段放在同一样板行或样板列`);
-      const previous = spec.excelRegions?.find(region => region.sheet === sheet && region.field === field.key);
-      result.push({ sheet, field: field.key, startCell: first.address, direction: positions.length === 1 ? previous?.direction ?? "vertical" : vertical ? "vertical" : "horizontal" });
-    }
-  }
-  return result;
+  return spec.locations.filter(location => location.sheet && spec.fields.some(field => field.key === location.field && field.type === "table")).map(location => {
+    const parse = (id: string) => {
+      const match = /!([A-Z]+)([1-9][0-9]*):[^:]+\.([a-z][a-z0-9_]*)$/.exec(id);
+      if (!match) throw new Error("无法识别明细填写位置，请重新上传原文件");
+      return { address: `${match[1]}${match[2]}`, x: match[1], y: match[2], column: match[3] };
+    };
+    const position = parse(location.id);
+    const horizontal = spec.locations.some(peer => {
+      if (peer.id === location.id || peer.sheet !== location.sheet || peer.field !== location.field) return false;
+      const other = parse(peer.id);
+      return other.x === position.x && other.y !== position.y && other.column !== position.column;
+    });
+    const previous = spec.excelRegions?.find(region => region.sheet === location.sheet && region.field === location.field && region.startCell === position.address && region.column === position.column);
+    return { sheet: location.sheet, field: location.field, column: position.column, startCell: position.address, direction: previous?.direction ?? (horizontal ? "horizontal" : "vertical") };
+  });
 }
 export type TemplateBinding = {
   field: string;
@@ -71,8 +63,6 @@ export type TemplateBinding = {
   path: string;
   constant: boolean;
   value?: unknown;
-  additionalSources?: { sourceNodeId: string; variable: string; path: string }[];
-  separator?: string;
   columnMappings?: Record<string, string>;
 };
 export type StructuredOutputConfig = {
@@ -86,6 +76,8 @@ export type TemplateSource = {
   sourceNodeName: string;
   type: string;
   fields?: TemplateField[];
+  datasetPath?: string;
+  datasetColumns?: string[];
 };
 export const templateFieldTypes = [
   { value: "text", label: "文字" },

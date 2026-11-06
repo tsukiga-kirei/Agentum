@@ -1,3 +1,4 @@
+import { McpResultView, parseMcpResult } from "./McpResultView";
 import React, { useState } from "react";
 import { BrainCircuit, CheckCircle2, ChevronDown, ChevronRight, Cpu, Loader2 } from "lucide-react";
 import type { AgentExecutionStep } from "../../types/runtime-types";
@@ -12,6 +13,7 @@ function TraceExecutionStepRow({
   onToggle: () => void;
 }) {
   const hasDetail = !!step.detail?.trim();
+  const dataset = step.kind === "tool" ? parseMcpResult(step.detail) : null;
 
   return (
     <div className="agent-tool-step">
@@ -52,7 +54,7 @@ function TraceExecutionStepRow({
           {step.durationMs ? (
             <div className="mb-2 text-[11px] text-slate-500 dark:text-slate-400">调用耗时：{step.durationMs} ms</div>
           ) : null}
-          <pre className="agent-tool-step-detail m-0">{step.detail}</pre>
+          {dataset ? <McpResultView result={dataset} /> : <pre className="agent-tool-step-detail m-0">{step.detail}</pre>}
         </div>
       ) : null}
     </div>

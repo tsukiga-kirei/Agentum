@@ -67,7 +67,7 @@ public final class ExcelDataRegionWriter {
                     final String pattern = format;
                     target.setCellStyle(formats.computeIfAbsent(key, ignored -> { var style = sheet.getWorkbook().createCellStyle(); if (base != null) style.cloneStyleFrom(base); style.setDataFormat(sheet.getWorkbook().createDataFormat().getFormat(pattern)); return style; }));
                 }
-                Object value = region.rows().isEmpty() ? null : McpResultPolicy.path(region.rows().get(r), column.field());
+                Object value = region.rows().isEmpty() ? null : com.agentum.delivery.template.DeliveryTemplateService.path(region.rows().get(r), column.field());
                 if (value == null) { target.setBlank(); continue; }
                 try {
                     switch (Objects.toString(column.type(), "text")) {

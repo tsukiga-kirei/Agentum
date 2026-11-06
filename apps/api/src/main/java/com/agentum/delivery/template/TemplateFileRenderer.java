@@ -53,56 +53,52 @@ public class TemplateFileRenderer {
 
     private List<TemplateModels.ExcelRegion> inferExcelRegions(List<TemplateModels.Field> fields, List<TemplateModels.Location> locations) {
         List<TemplateModels.ExcelRegion> result = new ArrayList<>();
-        for (String sheet : locations.stream().map(TemplateModels.Location::sheet).filter(name -> !name.isBlank()).distinct().toList()) {
-            Map<Integer, Set<String>> rowFields = new HashMap<>();
-            List<TemplateModels.ExcelRegion> candidates = new ArrayList<>();
-            boolean horizontalFound = false, ambiguous = false;
-            for (var definition : fields) {
-                if (!"table".equals(definition.type())) continue;
-                var matches = locations.stream().filter(location -> sheet.equals(location.sheet()) && definition.key().equals(location.field())).toList();
-                if (matches.isEmpty()) continue;
-                List<org.apache.poi.ss.util.CellReference> positions = new ArrayList<>();
-                for (var column : definition.columns()) {
-                    var cells = matches.stream().filter(location -> location.id().endsWith(":" + definition.key() + "." + column.key())).toList();
-                    if (cells.size() != 1) { ambiguous = true; break; }
-                    String position = cells.getFirst().id().substring(0, cells.getFirst().id().lastIndexOf(':'));
-                    var cell = new org.apache.poi.ss.util.CellReference(position.substring(position.lastIndexOf('!') + 1));
-                    positions.add(cell);
-                    rowFields.computeIfAbsent(cell.getRow(), ignored -> new HashSet<>()).add(definition.key());
-                }
-                if (positions.size() != definition.columns().size() || positions.isEmpty()) { ambiguous = true; continue; }
-                var first = positions.getFirst();
-                boolean vertical = true, horizontal = true;
-                for (int index = 0; index < positions.size(); index++) {
-                    var position = positions.get(index);
-                    vertical &= position.getRow() == first.getRow() && position.getCol() == first.getCol() + index;
-                    horizontal &= position.getCol() == first.getCol() && position.getRow() == first.getRow() + index;
-                }
-                if (!vertical && !horizontal) { ambiguous = true; continue; }
-                boolean across = !vertical && horizontal;
-                horizontalFound |= across;
-                candidates.add(new TemplateModels.ExcelRegion(sheet, definition.key(), first.formatAsString(), across ? "horizontal" : "vertical"));
+        for (var definition : fields) {
+            if (!"table".equals(definition.type())) continue;
+            for (var location : locations) {
+                if (!definition.key().equals(location.field()) || location.sheet().isBlank()) continue;
+                String column = location.id().substring(location.id().lastIndexOf('.') + 1);
+                String address = location.id().substring(location.id().lastIndexOf('!') + 1, location.id().lastIndexOf(':'));
+                var anchor = new org.apache.poi.ss.util.CellReference(address);
+                var peers = locations.stream().filter(it -> it.sheet().equals(location.sheet()) && it.field().equals(definition.key()) && !it.id().equals(location.id())).toList();
+                // 每个标记都是独立填写位置；同列竖排的不同字段默认向右扩展，其余向下，允许逐位置调整。
+                boolean horizontal = peers.stream().anyMatch(it -> {
+                    var cell = new org.apache.poi.ss.util.CellReference(it.id().substring(it.id().lastIndexOf('!') + 1, it.id().lastIndexOf(':')));
+                    return cell.getCol() == anchor.getCol() && cell.getRow() != anchor.getRow() && !it.id().endsWith("." + column);
+                });
+                result.add(new TemplateModels.ExcelRegion(location.sheet(), definition.key(), address, horizontal ? "horizontal" : "vertical", column));
             }
-            // 同行多个列表、横向样板列自动采用独立区域，上传后即可试填和发布；不要求用户修复已能明确识别的布局。
-            // 重复或分散位置不能可靠推断，保留手工配置入口；普通单列表仍可整行扩展以延续公式范围处理。
-            if (!ambiguous && (horizontalFound || rowFields.values().stream().anyMatch(keys -> keys.size() > 1))) result.addAll(candidates);
         }
         return result;
     }
 
     public TemplateModels.Spec resolveExcelRegions(TemplateModels.Spec spec) {
-        var inferred = inferExcelRegions(spec.fields(), spec.locations());
-        if (inferred.isEmpty()) return spec;
-        // 手工调整优先；仅补齐能明确识别的其他明细，避免配置一个区域后丢失同 Sheet 的第二份列表。
         Map<String, TemplateModels.ExcelRegion> regions = new LinkedHashMap<>();
-        for (var region : inferred) regions.put(region.sheet() + "\0" + region.field(), region);
+        for (var region : inferExcelRegions(spec.fields(), spec.locations())) regions.put(regionKey(region), region);
         Set<String> explicit = new HashSet<>();
         for (var region : spec.excelRegions()) {
-            String key = region.sheet() + "\0" + region.field();
-            if (!explicit.add(key)) throw StructuredContent.error("同一 Sheet 的同一明细不能重复配置区域");
-            regions.put(key, region);
+            if (!Set.of("vertical", "horizontal").contains(region.direction())) throw StructuredContent.error("扩展方向必须为纵向或横向");
+            // 每个位置独立配置方向，数组只绑定一次；同一字段跨 Sheet、重复出现也不丢失位置。
+            var targets = region.column() != null ? List.of(region) : regions.values().stream().filter(it -> it.sheet().equals(region.sheet()) && it.field().equals(region.field())).map(it -> new TemplateModels.ExcelRegion(it.sheet(), it.field(), it.startCell(), region.direction(), it.column())).toList();
+            if (targets.isEmpty()) throw StructuredContent.error("明细填写位置不存在");
+            for (var target : targets) {
+                String key = regionKey(target);
+                if (!regions.containsKey(key)) throw StructuredContent.error("明细填写位置与原文件标记不一致");
+                if (!explicit.add(key)) throw StructuredContent.error("同一明细位置不能重复配置");
+                regions.put(key, target);
+            }
         }
         return new TemplateModels.Spec(spec.fields(), spec.locations(), spec.defaultStyle(), spec.sheetStyles(), new ArrayList<>(regions.values()));
+    }
+    private String regionKey(TemplateModels.ExcelRegion region) { return region.sheet() + "\0" + region.field() + "\0" + region.column() + "\0" + region.startCell(); }
+
+    private boolean wholeRowExpansion(List<TemplateModels.ExcelRegion> regions, TemplateModels.Spec spec) {
+        if (regions.isEmpty()) return true;
+        var first = regions.getFirst();
+        var anchor = new org.apache.poi.ss.util.CellReference(first.startCell());
+        return regions.size() == field(spec, first.field()).columns().size() && regions.stream().allMatch(it ->
+            it.field().equals(first.field()) && !it.horizontal() && new org.apache.poi.ss.util.CellReference(it.startCell()).getRow() == anchor.getRow())
+            && regions.stream().map(TemplateModels.ExcelRegion::column).distinct().count() == regions.size();
     }
     private void scanBody(IBody body, String prefix, Map<String, TemplateModels.Field> fields, List<TemplateModels.Location> locations) {
         int p = 0, t = 0;
@@ -165,8 +161,14 @@ public class TemplateFileRenderer {
                     var configuredRegions = resolveExcelRegions(spec).excelRegions();
                     for (var sheet : book) {
                         var regions = configuredRegions.stream().filter(region -> region.sheet().equals(sheet.getSheetName())).toList();
-                        if (regions.isEmpty()) renderSheet((XSSFSheet) sheet, spec, data, overrides, styleCache);
+                        if (wholeRowExpansion(regions, spec)) renderSheet((XSSFSheet) sheet, spec, data, overrides, styleCache);
                         else renderIndependentRegions((XSSFSheet) sheet, spec, data, overrides, styleCache, regions);
+                    }
+                    for (var sheet : book) fitDetailRows((XSSFSheet) sheet, spec, data, overrides, configuredRegions.stream().filter(region -> region.sheet().equals(sheet.getSheetName())).toList());
+                    // 支持的公式先计算缓存供网页展示；不支持的 Office 函数仍保留公式并交由打开文件后重算。
+                    var evaluator = book.getCreationHelper().createFormulaEvaluator();
+                    for (var sheet : book) for (var row : sheet) for (var cell : row) if (cell.getCellType() == CellType.FORMULA) {
+                        try { evaluator.evaluateFormulaCell(cell); } catch (RuntimeException ignored) { /* 外部链接及专有函数由 Office 重算。 */ }
                     }
                     book.setForceFormulaRecalculation(true);
                     book.write(output);
@@ -435,35 +437,69 @@ public class TemplateFileRenderer {
     private void renderIndependentRegions(XSSFSheet sheet, TemplateModels.Spec spec, Map<String, Object> data,
         Map<String, Map<String, Object>> overrides, Map<String, XSSFCellStyle> styles, List<TemplateModels.ExcelRegion> regions) {
         Set<String> configured = new HashSet<>();
-        Set<String> positions = new HashSet<>();
         List<ExcelDataRegionWriter.Region> writes = new ArrayList<>();
         for (var region : regions) {
-            if (!Set.of("vertical", "horizontal").contains(region.direction())) throw StructuredContent.error("区域扩展方向必须为纵向或横向");
             var definition = field(spec, region.field());
-            if (!"table".equals(definition.type()) || !configured.add(region.field())) throw StructuredContent.error("每个独立区域必须绑定一个不同的明细字段");
-            var anchor = new org.apache.poi.ss.util.CellReference(region.startCell());
-            for (int c = 0; c < definition.columns().size(); c++) positions.add(new org.apache.poi.ss.util.CellReference(anchor.getRow() + (region.horizontal() ? c : 0), anchor.getCol() + (region.horizontal() ? 0 : c)).formatAsString() + ":" + region.field() + "." + definition.columns().get(c).key());
+            var column = definition.columns().stream().filter(it -> it.key().equals(region.column())).findFirst().orElseThrow(() -> StructuredContent.error("明细字段不存在"));
+            configured.add(region.field());
+            var start = new org.apache.poi.ss.util.CellReference(region.startCell());
+            var row = sheet.getRow(start.getRow());
+            var cell = row.getCell(start.getCol());
+            applyCellStyle(cell, style(spec, sheet.getSheetName() + "!" + cell.getAddress(), region.field() + "." + column.key(), sheet.getSheetName(), overrides), styles);
+            var items = rows(data, region.field());
+            String content = cell.getStringCellValue();
+            var marker = TOKEN.matcher(content);
+            boolean standalone = marker.find() && content.strip().equals(marker.group());
+            if (!standalone) {
+                // 包含固定前后缀的单元格按整条记录插值，不丢失原件中的业务文字。
+                List<Map<String, Object>> formatted = new ArrayList<>();
+                for (var item : items) formatted.add(Map.of(column.key(), replace(content, data, item)));
+                if (items.isEmpty()) formatted.add(Map.of(column.key(), replace(content, data, Map.of())));
+                items = formatted;
+            }
             writes.add(new ExcelDataRegionWriter.Region(region.startCell(), false,
-                definition.columns().stream().map(c -> new ExcelDataRegionWriter.Column(c.key(), c.label(), c.type(), null)).toList(), rows(data, region.field()), region.direction()));
+                List.of(new ExcelDataRegionWriter.Column(column.key(), column.label(), standalone ? column.type() : "text", null)), items, region.direction()));
         }
-        // 区域模式显式接管本 Sheet 的所有明细；样板字段必须与扩展方向匹配，不能靠切换方向隐式转置原文件。
-        for (var row : sheet) for (var raw : row) if (raw.getCellType() == CellType.STRING) {
-            Matcher matcher = TOKEN.matcher(raw.getStringCellValue());
-            while (matcher.find()) if (matcher.group(2) != null && !positions.contains(raw.getAddress().formatAsString() + ":" + matcher.group(1) + "." + matcher.group(2))) throw StructuredContent.error("明细标记与独立区域的开始位置或列顺序不一致");
-        }
-        // 先处理标量并跳过明细标记，随后一次性写入明细；业务文字中的 {{ 不会再次作为模板解析。
         for (var row : sheet) renderExcelRow((XSSFRow) row, row.getRowNum(), spec, data, Map.of(), overrides, styles, configured);
+        ExcelDataRegionWriter.write(sheet, writes);
+    }
+
+    private void fitDetailRows(XSSFSheet sheet, TemplateModels.Spec spec, Map<String, Object> data,
+        Map<String, Map<String, Object>> overrides, List<TemplateModels.ExcelRegion> regions) {
+        Map<Integer, Float> heights = new HashMap<>();
+        DataFormatter formatter = new DataFormatter(Locale.CHINA);
         for (var region : regions) {
             var start = new org.apache.poi.ss.util.CellReference(region.startCell());
-            var definition = field(spec, region.field());
-            for (int c = 0; c < definition.columns().size(); c++) {
-                int r = start.getRow() + (region.horizontal() ? c : 0), col = start.getCol() + (region.horizontal() ? 0 : c);
-                var row = sheet.getRow(r); if (row == null) row = sheet.createRow(r);
-                var cell = row.getCell(col); if (cell == null) cell = row.createCell(col);
-                applyCellStyle(cell, style(spec, sheet.getSheetName() + "!" + cell.getAddress(), region.field() + "." + definition.columns().get(c).key(), sheet.getSheetName(), overrides), styles);
+            var format = style(spec, sheet.getSheetName() + "!" + region.startCell(), region.field() + "." + region.column(), sheet.getSheetName(), overrides);
+            String mode = Objects.toString(format.getOrDefault("rowHeightMode", format.containsKey("rowHeight") ? "fixed" : "auto"));
+            for (int i = 0; i < Math.max(1, rows(data, region.field()).size()); i++) {
+                int index = start.getRow() + (region.horizontal() ? 0 : i);
+                var row = sheet.getRow(index);
+                if (row == null) continue;
+                if ("inherit".equals(mode)) {
+                    var sample = sheet.getRow(start.getRow());
+                    heights.merge(index, sample.getHeightInPoints(), Math::max);
+                    continue;
+                }
+                if ("fixed".equals(mode) && format.containsKey("rowHeight")) {
+                    heights.merge(index, (float) number(format, "rowHeight"), Math::max);
+                    continue;
+                }
+                var cell = row.getCell(start.getCol() + (region.horizontal() ? i : 0));
+                if (cell == null) continue;
+                var cellStyle = cell.getCellStyle();
+                double font = cellStyle.getFont().getFontHeightInPoints();
+                String value = formatter.formatCellValue(cell);
+                double width = Math.max(10, sheet.getColumnWidthInPixels(cell.getColumnIndex()) - 12);
+                int lines = 0;
+                for (String line : value.split("\n", -1)) {
+                    double characters = line.codePoints().mapToDouble(c -> c > 255 ? 1 : .55).sum();
+                    lines += cellStyle.getWrapText() ? Math.max(1, (int) Math.ceil(characters * font * 1.333 / width)) : 1;
+                }
+                heights.merge(index, (float) Math.min(400, Math.max(20, lines * font * 1.35 + 5)), Math::max);
             }
         }
-        ExcelDataRegionWriter.write(sheet, writes);
+        heights.forEach((index, height) -> sheet.getRow(index).setHeightInPoints(height));
     }
 
     private void renderSheet(XSSFSheet sheet, TemplateModels.Spec spec, Map<String, Object> data, Map<String, Map<String, Object>> overrides, Map<String, XSSFCellStyle> styleCache) {
@@ -476,7 +512,7 @@ public class TemplateFileRenderer {
             String key;
             try { key = rowKey(combined); }
             catch (com.agentum.shared.api.ApiException ex) {
-                throw StructuredContent.error("Sheet「" + sheet.getSheetName() + "」第 " + (r + 1) + " 行包含多个明细列表，请在“明细区域与扩展方向”中按标记识别区域，或分别配置各列表的起点后再发布");
+                throw StructuredContent.error("Sheet「" + sheet.getSheetName() + "」第 " + (r + 1) + " 行包含多个明细列表，请在对应明细字段的“填写位置与扩展方向”中检查位置，避免不同列表共用整行展开");
             }
             if (key == null) renderExcelRow(row, r, spec, data, Map.of(), overrides, styleCache);
             else {
@@ -557,7 +593,7 @@ public class TemplateFileRenderer {
         if (format.isEmpty()) return;
         XSSFWorkbook book = cell.getSheet().getWorkbook();
         String cacheKey = cell.getCellStyle().getIndex() + ":" + format.toString();
-        if (format.containsKey("rowHeight")) cell.getRow().setHeightInPoints((float) number(format, "rowHeight"));
+        if (format.containsKey("rowHeight") && (!format.containsKey("rowHeightMode") || "fixed".equals(format.get("rowHeightMode")))) cell.getRow().setHeightInPoints((float) number(format, "rowHeight"));
         if (format.containsKey("columnWidth")) cell.getSheet().setColumnWidth(cell.getColumnIndex(), (int) (number(format, "columnWidth") * 256));
         if (styleCache.containsKey(cacheKey)) { cell.setCellStyle(styleCache.get(cacheKey)); return; }
         XSSFCellStyle style = book.createCellStyle(); style.cloneStyleFrom(cell.getCellStyle());
@@ -575,7 +611,7 @@ public class TemplateFileRenderer {
         if (format.containsKey("indent")) style.setIndention((short) number(format, "indent"));
         if (format.containsKey("numberFormat")) style.setDataFormat(book.createDataFormat().getFormat(format.get("numberFormat").toString()));
         if (format.containsKey("border")) { var border = Boolean.TRUE.equals(format.get("border")) ? BorderStyle.THIN : BorderStyle.NONE; style.setBorderBottom(border); style.setBorderTop(border); style.setBorderLeft(border); style.setBorderRight(border); }
-        if (format.containsKey("rowHeight")) cell.getRow().setHeightInPoints((float) number(format, "rowHeight"));
+        if (format.containsKey("rowHeight") && (!format.containsKey("rowHeightMode") || "fixed".equals(format.get("rowHeightMode")))) cell.getRow().setHeightInPoints((float) number(format, "rowHeight"));
         if (format.containsKey("columnWidth")) cell.getSheet().setColumnWidth(cell.getColumnIndex(), (int) (number(format, "columnWidth") * 256));
         cell.setCellStyle(style);
         styleCache.put(cacheKey, style);

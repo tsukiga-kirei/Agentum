@@ -23,15 +23,15 @@ public final class TemplateModels {
         }
         public Spec { excelRegions = excelRegions == null ? List.of() : List.copyOf(excelRegions); }
     }
-    public record ExcelRegion(String sheet, String field, String startCell, String direction) {
-        public ExcelRegion(String sheet, String field, String startCell) { this(sheet, field, startCell, "vertical"); }
+    public record ExcelRegion(String sheet, String field, String startCell, String direction, String column) {
+        public ExcelRegion(String sheet, String field, String startCell) { this(sheet, field, startCell, "vertical", null); }
+        public ExcelRegion(String sheet, String field, String startCell, String direction) { this(sheet, field, startCell, direction, null); }
         public ExcelRegion { direction = direction == null ? "vertical" : direction; }
         public boolean horizontal() { return "horizontal".equals(direction); }
     }
     public record Source(String sourceNodeId, String variable, String path) {}
     public record Binding(String field, String sourceNodeId, String variable, String path,
-                          boolean constant, Object value, List<Source> additionalSources, String separator,
-                          Map<String, String> columnMappings) {}
+                          boolean constant, Object value, Map<String, String> columnMappings) {}
     public record Row(UUID id, UUID templateId, String name, String fileName, String kind, int version,
                       String status, String readScope, UUID createdBy, Instant updatedAt, Spec spec) {}
     public record Save(String name, String readScope, Spec spec) {}

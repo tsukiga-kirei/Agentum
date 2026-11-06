@@ -101,11 +101,6 @@
             "type": "string"
           }
         },
-        "retentionDays": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 365
-        },
         "inlineBytes": {
           "type": "integer",
           "minimum": 1,
@@ -149,6 +144,14 @@
             }
           },
           "additionalProperties": false
+        },
+        "columns": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "string"
+          },
+          "description": "完整结果字段路径，供交付绑定选择，不限制模型视图"
         }
       },
       "additionalProperties": false

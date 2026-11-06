@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { App, Drawer, Pagination, Segmented } from "antd";
+import { App, Drawer, Pagination } from "antd";
 import { Eye, Library, Search } from "lucide-react";
 import { deliveryTemplateApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
@@ -15,6 +15,7 @@ import { sampleTemplateValue, templateFieldTypes } from "../../types/delivery-te
 import { DeliveryTemplatesPanel, TemplatePreview } from "./DeliveryTemplatesPanel";
 import {
   TemplateInput,
+  TemplateTabs,
   TemplateSelect,
   TemplateStyleEditor,
   TemplateValueEditor,
@@ -114,7 +115,7 @@ export function TemplateDeliverySection({
     onChange({ templateVersionId: next.id, templateBindings: [], templateLocationStyles: {} });
     setLibrary(false);
   };
-  const options = variables.flatMap((variable) => {
+  const options = variables.filter(variable => !variable.datasetPath).flatMap((variable) => {
     const base = {
       node: variable.sourceNodeId.startsWith("__") ? "system" : variable.sourceNodeId,
       variable: variable.name,
@@ -183,7 +184,7 @@ export function TemplateDeliverySection({
               </p>
               <p>
                 原有公式保留，生成文件设置打开后重算；请下载到 Excel / WPS 检查计算结果。
-                网页预览显示公式。默认样板行展开仅有限调整简单汇总范围，独立区域不会自动扩展公式范围。
+                网页预览显示公式。单一样板行展开可调整简单汇总范围；多位置独立扩展请在原件中预设公式范围。
               </p>
             </>
           ) : (
@@ -193,7 +194,7 @@ export function TemplateDeliverySection({
             </p>
           )}
           <p>
-            明细可选择上游结构化结果，也可在“绑定 MCP 数据集”中选择取数步骤、填写数据集标识并映射各列。
+            明细可选择上游结构化结果，也可在“绑定 MCP 数据集”中选择取数智能体及具体工具结果，并映射各列。
             MCP 工具需先配置保存数据集；交付时读取完整明细，不需要模型重新抄写，也不会在交付步骤重新调用 MCP。
           </p>
         </div>
@@ -255,8 +256,7 @@ export function TemplateDeliverySection({
           <p className="sys-field-hint">
             已固定模板版本。模板更新不会自动替换本流程；更换模板后需重新绑定字段。
           </p>
-          <Segmented
-            className="login-portal-segmented login-portal-segmented--business system-mgmt-segmented template-tabs"
+          <TemplateTabs
             value={tab}
             options={[
               { value: "bindings", label: "内容来源" },
@@ -268,7 +268,7 @@ export function TemplateDeliverySection({
           {tab === "bindings" &&
             template.spec.fields.map((field) => {
               const binding = bindings.find((item) => item.field === field.key);
-              const selected = binding?.constant
+              const selected = binding?.variable === "mcp_datasets" ? "dataset" : binding?.constant
                 ? "constant"
                 : binding?.variable
                   ? JSON.stringify({
@@ -294,9 +294,10 @@ export function TemplateDeliverySection({
                   </p>
                   <TemplateSelect
                     value={selected}
-                    options={[{ value: "constant", label: "固定内容" }, ...options]}
+                    options={[{ value: "constant", label: "固定内容" }, ...(field.type === "table" ? [{ value: "dataset", label: "MCP 工具明细结果" }] : []), ...options]}
                     onChange={(value) => {
-                      if (value === "constant")
+                      if (value === "dataset") updateBinding(field.key, { constant: false, sourceNodeId: "", variable: "mcp_datasets", path: "", columnMappings: {} });
+                      else if (value === "constant")
                         updateBinding(field.key, {
                           constant: true,
                           sourceNodeId: "",
@@ -321,14 +322,15 @@ export function TemplateDeliverySection({
                     }}
                     placeholder="选择来源节点及字段"
                   />
-                  {field.type === "table" && <details className="mt-3"><summary>绑定 MCP 数据集</summary><div className="grid gap-3 mt-2">
-                    <p className="sys-field-hint">选择本次运行的上游取数步骤，填写 MCP 工具结果策略中的“数据集标识”（例如 ckyw），并在下方配置模板列与来源字段的对应关系。</p>
-                    <TemplateSelect value={binding?.sourceNodeId ?? ""} options={[...new Map(variables.filter(v => !v.sourceNodeId.startsWith("__")).map(v => [v.sourceNodeId, { value: v.sourceNodeId, label: v.sourceNodeName }])).values()]} placeholder="选择上游取数步骤" onChange={sourceNodeId => updateBinding(field.key, { sourceNodeId, variable: "mcp_datasets", constant: false })} />
-                    <TemplateInput label="数据集标识" value={binding?.variable === "mcp_datasets" ? binding.path : ""} onChange={path => updateBinding(field.key, { path, variable: "mcp_datasets", constant: false })} />
-                  </div></details>}
+                  {field.type === "table" && binding?.variable === "mcp_datasets" && <div className="template-source-panel">
+                    <p className="sys-field-hint">选择上游智能体及其 MCP 工具结果。只有配置了保存明细结果的工具会出现在列表中；本次执行必须实际产生该结果，交付不会重新调用工具。</p>
+                    <TemplateSelect value={variables.some(v => v.sourceNodeId === binding.sourceNodeId && v.datasetPath === binding.path) ? JSON.stringify({ node: binding.sourceNodeId, path: binding.path }) : undefined} options={variables.filter(v => v.datasetPath).map(v => ({ value: JSON.stringify({ node: v.sourceNodeId, path: v.datasetPath }), label: v.sourceNodeName }))} placeholder={binding.path ? "原绑定的工具结果已变更，请重新选择" : "选择步骤 → 智能体 → MCP → 工具结果"} onChange={value => { const source = JSON.parse(value); updateBinding(field.key, { sourceNodeId: source.node, path: source.path, columnMappings: {} }); }} />
+                    {!variables.some(v => v.datasetPath) && <p className="sys-field-hint">上游暂无可绑定的工具结果。请先为相应智能体配置 MCP，并在系统管理中设置该工具保存明细结果。</p>}
+                  </div>}
                   {binding && !binding.constant && field.type === "table" && (
                     <div className="template-form-grid">
                       {field.columns.map((column) => {
+                        const datasetColumns = variables.find(v => v.sourceNodeId === binding.sourceNodeId && v.datasetPath === binding.path)?.datasetColumns;
                         const sourceField = variables
                           .find(
                             (variable) =>
@@ -341,10 +343,10 @@ export function TemplateDeliverySection({
                             <label className="sys-field-label">
                               数据列：{column.label || column.key}
                             </label>
-                            {sourceField?.columns.length ? (
+                            {(datasetColumns?.length || sourceField?.columns.length) ? (
                               <TemplateSelect
                                 value={binding.columnMappings?.[column.key] ?? column.key}
-                                options={sourceField.columns.map((sourceColumn) => ({
+                                options={(sourceField?.columns ?? datasetColumns?.map(key => ({ key, label: key })) ?? []).map((sourceColumn) => ({
                                   value: sourceColumn.key,
                                   label: sourceColumn.label || sourceColumn.key,
                                 }))}
@@ -374,79 +376,6 @@ export function TemplateDeliverySection({
                           </div>
                         );
                       })}
-                    </div>
-                  )}
-                  {binding && !binding.constant && (
-                    <div className="grid gap-3">
-                      {(binding.additionalSources ?? []).map((extra, index) => (
-                        <div className="flex gap-2" key={index}>
-                          <TemplateSelect
-                            value={JSON.stringify({
-                              node: extra.sourceNodeId,
-                              variable: extra.variable,
-                              path: extra.path,
-                            })}
-                            options={options.filter(
-                              (option) => !option.value.includes('"node":"system"'),
-                            )}
-                            onChange={(next) => {
-                              const source = JSON.parse(next) as {
-                                node: string;
-                                variable: string;
-                                path: string;
-                              };
-                              updateBinding(field.key, {
-                                additionalSources: binding.additionalSources!.map((item, i) =>
-                                  i === index
-                                    ? {
-                                        sourceNodeId: source.node,
-                                        variable: source.variable,
-                                        path: source.path,
-                                      }
-                                    : item,
-                                ),
-                              });
-                            }}
-                          />
-                          <button
-                            type="button"
-                            className="sys-btn sys-btn--default"
-                            onClick={() =>
-                              updateBinding(field.key, {
-                                additionalSources: binding.additionalSources!.filter(
-                                  (_, i) => i !== index,
-                                ),
-                              })
-                            }
-                          >
-                            移除
-                          </button>
-                        </div>
-                      ))}
-                      {["text", "markdown", "paragraphs", "table"].includes(field.type) && (
-                        <button
-                          type="button"
-                          className="sys-btn sys-btn--default"
-                          onClick={() =>
-                            updateBinding(field.key, {
-                              additionalSources: [
-                                ...(binding.additionalSources ?? []),
-                                {
-                                  sourceNodeId: binding.sourceNodeId,
-                                  variable: binding.variable,
-                                  path: binding.path,
-                                },
-                              ],
-                            })
-                          }
-                        >
-                          追加内容来源（按顺序组合）
-                        </button>
-                      )}
-                      <p className="sys-field-hint">
-                        文字按空行连接，段落或明细列表按顺序追加；不会让 AI
-                        重新改写，也不会按行号关联不同列表。
-                      </p>
                     </div>
                   )}
                   {binding?.constant && (

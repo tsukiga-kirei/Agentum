@@ -974,6 +974,7 @@ public class WorkbenchRuntimeService {
             conversationHistory.add(Map.of("role", "user", "content", followUpMessage));
             nextConfig.put("conversationHistory", conversationHistory);
             nextConfig.put("_formalAnswer", stringValue(node.getOutputSnapshot().get("final_answer")));
+            nextConfig.put("_formalMcpDatasets", node.getOutputSnapshot().getOrDefault("mcp_datasets", Map.of()));
             if (com.agentum.agent.application.AgentStructuredOutput.enabled(nextConfig)) nextConfig.put("_formalStructuredData", node.getOutputSnapshot().getOrDefault("structuredData", Map.of()));
             if (run.isAutoExecution()) { run.setManualTakeover(true, now); }
             node.prepareForFollowUp(nextConfig, now);
@@ -1211,6 +1212,7 @@ public class WorkbenchRuntimeService {
         invalidateFollowingResults(run, node, principal.userId(), now);
         if (agentIndex == null) {
             if (com.agentum.agent.application.AgentStructuredOutput.enabled(node.getConfigSnapshot())) node.patchOutputSnapshot(Map.of("selectedResultMessageIndex", messageIndex), now);
+            node.patchOutputSnapshot(Map.of("mcp_datasets", selected.get("mcp_datasets") == null ? Map.of() : selected.get("mcp_datasets")), now);
             applyFinalAnswerUpdate(run, node, answer, principal.userId());
             node.patchOutputSnapshot(Map.of("selectedResultMessageIndex", messageIndex, "resultSelectionRequired", false), now);
             workflowNodeRunRepository.save(node);
@@ -1219,6 +1221,7 @@ public class WorkbenchRuntimeService {
             var selectedAgent = clusterAgentRunRepository.findByNodeRunIdAndAgentIndex(nodeRunId, agentIndex)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "WORKBENCH_CLUSTER_AGENT_RUN_NOT_FOUND", "子智能体运行记录不存在"));
             Map<String, Object> chosen = new LinkedHashMap<>(selectedAgent.getOutput());
+            chosen.put("mcp_datasets", selected.get("mcp_datasets") == null ? Map.of() : selected.get("mcp_datasets"));
             chosen.put("selectedResultMessageIndex", messageIndex); chosen.put("resultSelectionRequired", false);
             selectedAgent.patchOutput(chosen, now); clusterAgentRunRepository.save(selectedAgent);
             applyClusterAgentAnswerUpdate(run, node, agentIndex, answer, principal.userId());
@@ -1334,6 +1337,7 @@ public class WorkbenchRuntimeService {
                 String body = row.getOutput() == null ? "" : stringValue(row.getOutput().get("final_answer"));
                 summary.put("final_answer", body);
                 summary.put("summary", summarizeAnswer(body));
+                summary.put("mcp_datasets", row.getOutput() == null ? Map.of() : row.getOutput().getOrDefault("mcp_datasets", Map.of()));
                 summary.put("tokenUsage", row.getOutput() == null ? Map.of() : row.getOutput().getOrDefault("tokenUsage", Map.of()));
                 summary.put("chatMessages", row.getOutput() == null ? List.of() : row.getOutput().getOrDefault("chatMessages", List.of()));
             } else {
@@ -1352,6 +1356,9 @@ public class WorkbenchRuntimeService {
         for (var agentRow : rows) if (agentRow.isSucceeded() && agentRow.getOutput().get("structuredVariable") instanceof String variable) outputs.put(variable, agentRow.getOutput().get("structuredData"));
         String finalAnswer = ClusterOutputSupport.finalAnswer(node.getConfigSnapshot(), outputs, summaries);
         outputs.put("clusterAgents", summaries);
+        Map<String, Object> datasetsByMember = new LinkedHashMap<>();
+        for (var summary : summaries) if ("completed".equals(summary.get("status"))) datasetsByMember.put("member_" + summary.get("agentIndex"), summary.getOrDefault("mcp_datasets", Map.of()));
+        outputs.put("mcp_datasets", datasetsByMember);
         outputs.put("final_answer", finalAnswer);
         outputs.put("agent_response", finalAnswer);
         outputs.put(ClusterOutputSupport.outputVariable(node.getConfigSnapshot()), finalAnswer);
@@ -1595,8 +1602,9 @@ public class WorkbenchRuntimeService {
         }
         boolean changed = false;
         Map<String, Object> nextConfig = new LinkedHashMap<>(config);
-        nextConfig.remove("_formalAnswer");
-        nextConfig.remove("_formalStructuredData");
+        for (String key : List.of("_formalAnswer", "_formalStructuredData", "_formalMcpDatasets")) {
+            if (nextConfig.remove(key) != null) changed = true;
+        }
         if (nextConfig.remove("conversationHistory") != null) {
             changed = true;
         }
@@ -1607,8 +1615,9 @@ public class WorkbenchRuntimeService {
             for (Object agent : agents) {
                 if (agent instanceof Map<?, ?> rawAgent) {
                     Map<String, Object> nextAgent = new LinkedHashMap<>((Map<String, Object>) rawAgent);
-                    nextAgent.remove("_formalAnswer");
-                    nextAgent.remove("_formalStructuredData");
+                    for (String key : List.of("_formalAnswer", "_formalStructuredData", "_formalMcpDatasets")) {
+                        if (nextAgent.remove(key) != null) changed = true;
+                    }
                     if (nextAgent.remove("conversationHistory") != null) {
                         changed = true;
                     }
@@ -1645,8 +1654,11 @@ public class WorkbenchRuntimeService {
                 continue;
             }
             Map<String, Object> nextAgent = new LinkedHashMap<>((Map<String, Object>) rawMap);
-            if (rerunIndexes.contains(index)) { nextAgent.remove("_formalAnswer");
-                    nextAgent.remove("_formalStructuredData"); }
+            if (rerunIndexes.contains(index)) {
+                for (String key : List.of("_formalAnswer", "_formalStructuredData", "_formalMcpDatasets")) {
+                    if (nextAgent.remove(key) != null) changed = true;
+                }
+            }
             if (rerunIndexes.contains(index) && nextAgent.remove("conversationHistory") != null) {
                 changed = true;
             }
@@ -1868,6 +1880,7 @@ public class WorkbenchRuntimeService {
         history.add(Map.of("role", "user", "content", followUpMessage));
         agentConfig.put("conversationHistory", history);
         agentConfig.put("_formalAnswer", stringValue(clusterAgent.getOutput().get("final_answer")));
+        agentConfig.put("_formalMcpDatasets", clusterAgent.getOutput().getOrDefault("mcp_datasets", Map.of()));
         if (com.agentum.agent.application.AgentStructuredOutput.enabled(agentConfig)) agentConfig.put("_formalStructuredData", clusterAgent.getOutput().getOrDefault("structuredData", Map.of()));
         return agentConfig;
     }
@@ -2577,6 +2590,7 @@ public class WorkbenchRuntimeService {
                 summary.put("final_answer", finalAnswer == null ? "" : finalAnswer.toString());
                 Object rowSummary = row.getOutput() == null ? null : row.getOutput().get("summary");
                 summary.put("summary", rowSummary == null ? "已完成" : rowSummary.toString());
+                summary.put("mcp_datasets", row.getOutput() == null ? Map.of() : row.getOutput().getOrDefault("mcp_datasets", Map.of()));
                 summary.put("tokenUsage", row.getOutput() == null ? Map.of() : row.getOutput().getOrDefault("tokenUsage", Map.of()));
                 summary.put("chatMessages", row.getOutput() == null ? List.of() : row.getOutput().getOrDefault("chatMessages", List.of()));
             } else {

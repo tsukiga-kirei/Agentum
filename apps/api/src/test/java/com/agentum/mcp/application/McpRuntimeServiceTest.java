@@ -247,5 +247,16 @@ class McpRuntimeServiceTest {
         when(datasets.save(any(), any(), any(), any(), any(), any())).thenReturn(Map.of("datasetId", "ref"));
         assertThat(service.executeResolvedTool(request(), binding, Map.of()).responsePayload()).containsEntry("datasetId", "ref");
     }
+    @Test void autoModeSavesEvenSmallResultWhenDownstreamDeliveryRequiresIt() {
+        var binding = service.resolveMcpTools(request()).getFirst();
+        var config = new java.util.HashMap<>(capability.getConfig());
+        config.put("toolResultPolicies", Map.of(binding.remoteToolName(), Map.of("mode", "auto", "datasetKey", "rows")));
+        capability.updateProfile("mcp", capability.getName(), "v1", "", "medium", "active", config, true, NOW);
+        when(runtimeClient.callTool(any())).thenReturn(new McpRuntimeClient.ToolResult(Map.of("structuredContent", Map.of("rows", List.of(Map.of("value", 1)))), 1));
+        when(datasets.save(any(), any(), any(), any(), any(), any())).thenReturn(Map.of("datasetId", "saved"));
+        var original = request();
+        var required = new McpRuntimeRequest(run, nodeRun, Map.of("mcpIds", List.of(capability.getId().toString()), "_requiredMcpResults", List.of("cap_" + capability.getId().toString().replace('-', '_') + ".rows")), Map.of(), original.operatorUserId());
+        assertThat(service.executeResolvedTool(required, binding, Map.of()).responsePayload()).containsEntry("datasetId", "saved");
+    }
 
 }

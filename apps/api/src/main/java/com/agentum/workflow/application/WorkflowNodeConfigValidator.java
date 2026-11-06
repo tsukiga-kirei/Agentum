@@ -349,7 +349,8 @@ public class WorkflowNodeConfigValidator {
                     if ("system".equals(reference.sourceNodeId())) continue;
                     var source = nodes.stream().filter(it -> it.nodeId().equals(reference.sourceNodeId())).findFirst().orElseThrow(() -> com.agentum.delivery.template.StructuredContent.error("字段来源节点已删除"));
                     if ("mcp_datasets".equals(reference.variable())) {
-                        if (nodes.indexOf(source) >= currentIndex || !"agent".equals(source.nodeType()) || reference.path() == null || reference.path().isBlank()) throw com.agentum.delivery.template.StructuredContent.error("数据集必须引用上游单智能体节点及数据集标识");
+                        if (nodes.indexOf(source) >= currentIndex || !Set.of("agent", "parallel_group").contains(source.nodeType()) || reference.path() == null || reference.path().isBlank()) throw com.agentum.delivery.template.StructuredContent.error("工具结果必须引用上游智能体及具体工具结果");
+                        validateDatasetSource(source, reference.path());
                         var target = templateService.get(tenant, user, UUID.fromString(rawString(config.get("templateVersionId")))).spec().fields().stream().filter(f -> f.key().equals(binding.field())).findFirst().orElseThrow();
                         if (!"table".equals(target.type())) throw com.agentum.delivery.template.StructuredContent.error("数据集只能绑定表格明细字段");
                         continue;
@@ -372,6 +373,31 @@ public class WorkflowNodeConfigValidator {
                 }
             }
         } catch (com.agentum.shared.api.ApiException ex) { issues.add(issue("WORKFLOW_VALIDATION_FILE_TEMPLATE", ex.getMessage(), node)); }
+    }
+
+    private void validateDatasetSource(WorkflowDraftApi.WorkflowNodeRow source, String path) {
+        var parts = path.split("\\.");
+        Map<String, Object> agent = source.config();
+        int offset = 0;
+        if ("parallel_group".equals(source.nodeType())) {
+            if (parts.length != 3 || !parts[0].matches("member_[0-9]{1,3}")) throw com.agentum.delivery.template.StructuredContent.error("请选择集群中的具体智能体及工具结果");
+            int member = Integer.parseInt(parts[0].substring(7));
+            var members = extractMapList(source.config(), "clusterAgents");
+            if (member >= members.size()) throw com.agentum.delivery.template.StructuredContent.error("绑定的集群智能体已删除");
+            agent = members.get(member); offset = 1;
+        } else if (parts.length != 2) throw com.agentum.delivery.template.StructuredContent.error("请选择具体 MCP 工具结果");
+        String capabilityId = parts[offset].startsWith("cap_") ? parts[offset].substring(4).replace('_', '-') : "";
+        UUID id;
+        try { id = UUID.fromString(capabilityId); } catch (IllegalArgumentException ex) { throw com.agentum.delivery.template.StructuredContent.error("绑定的 MCP 能力标识无效"); }
+        if (!extractStringList(agent, "mcpIds", "mcpServices").contains(capabilityId)) throw com.agentum.delivery.template.StructuredContent.error("取数智能体未配置所绑定的 MCP");
+        var capability = systemCapabilityRepository.findById(id).orElseThrow(() -> com.agentum.delivery.template.StructuredContent.error("绑定的 MCP 已删除"));
+        var rules = com.agentum.mcp.application.McpResultPolicy.map(capability.getConfig().get("toolResultPolicies"));
+        String resultKey = parts[offset + 1];
+        long matches = rules.entrySet().stream().filter(entry -> {
+            var rule = com.agentum.mcp.application.McpResultPolicy.map(entry.getValue());
+            return Set.of("dataset", "auto").contains(rawString(rule.get("mode"))) && resultKey.equals(rawString(rule.getOrDefault("datasetKey", entry.getKey())));
+        }).count();
+        if (matches != 1) throw com.agentum.delivery.template.StructuredContent.error("工具结果规则已删除、名称重复或未设置保存明细，请重新选择");
     }
 
     private boolean compatibleTemplateType(String target, String source) {

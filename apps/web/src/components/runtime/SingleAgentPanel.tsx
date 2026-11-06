@@ -1,3 +1,4 @@
+import { McpResultView, parseMcpResult } from "./McpResultView";
 import { CONSOLIDATE_RESULT_PROMPT } from "./ResultSelectionModal";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { message } from "antd";
@@ -271,6 +272,7 @@ function ToolStepRow({
   onToggle: () => void;
 }) {
   const hasDetail = !!step.detail?.trim();
+  const dataset = step.kind === "tool" ? parseMcpResult(step.detail) : null;
   const detailRef = useRef<HTMLPreElement | null>(null);
   /** 流式输出时默认跟到底；用户一旦滚离底部就取消，本轮不再强行拉回。 */
   const stickToBottomRef = useRef(true);
@@ -342,7 +344,7 @@ function ToolStepRow({
           </span>
         ) : null}
       </button>
-      {hasDetail && expanded ? (
+      {hasDetail && expanded ? dataset ? <McpResultView result={dataset} /> : (
         <pre
           ref={detailRef}
           className="agent-tool-step-detail"

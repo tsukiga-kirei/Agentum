@@ -63,7 +63,7 @@ class DeliveryTemplateServiceTest {
         assertThatThrownBy(() -> service.validateStyle(Map.of("color", "url(bad)"))).hasMessageContaining("颜色");
         assertThatThrownBy(() -> service.validateStyle(Map.of("columnWidth", 1000))).hasMessageContaining("范围");
     }
-    @Test void assemblesTwoAgentsByNodeIdentityAndDoesNotUseShadowedGlobalValue() throws Exception {
+    @Test void bindsOneAgentByNodeIdentityAndDoesNotUseShadowedGlobalValue() throws Exception {
         template.status = "published";
         var capability = SystemCapabilityEntity.create("delivery", "Word", "word", "v1", "", "low", "active", Map.of("documentKind", "word", "retentionPolicy", "permanent"), now);
         when(capabilities.findById(capability.getId())).thenReturn(Optional.of(capability));
@@ -73,16 +73,16 @@ class DeliveryTemplateServiceTest {
         var b = node(run, "b", 2); b.complete(Map.of("data", Map.of("summary", "来自 B")), now);
         var delivery = node(run, "delivery", 3);
         when(nodes.findByRunIdOrderBySortOrderAsc(run.getId())).thenReturn(List.of(a, b, delivery));
-        Map<String, Object> binding = Map.of("field", "summary", "sourceNodeId", "a", "variable", "data", "path", "summary", "constant", false, "additionalSources", List.of(Map.of("sourceNodeId", "b", "variable", "data", "path", "summary")));
+        Map<String, Object> binding = Map.of("field", "summary", "sourceNodeId", "a", "variable", "data", "path", "summary", "constant", false);
         Map<String, Object> config = Map.of("generationMode", "file_template", "templateVersionId", template.id.toString(), "documentKind", "word", "templateBindings", List.of(binding));
         when(storage.store(eq(tenant), any(), anyString(), anyString(), any())).thenAnswer(call -> {
             byte[] bytes = call.getArgument(4);
-            try (var doc = new XWPFDocument(new ByteArrayInputStream(bytes))) { assertThat(doc.getParagraphs().getFirst().getText()).isEqualTo("来自 A\n\n来自 B"); }
+            try (var doc = new XWPFDocument(new ByteArrayInputStream(bytes))) { assertThat(doc.getParagraphs().getFirst().getText()).isEqualTo("来自 A"); }
             return new DocumentDeliveryArtifact("报告.docx", "safe-key", MarkdownDocxRenderer.DOCX_CONTENT_TYPE, bytes.length);
         });
         var result = service.generate(new DeliveryRuntimeRequest(run, delivery, config, Map.of(), owner), UUID.randomUUID(), capability, config, Map.of("data", "不能使用这个覆盖值"));
         assertThat(result).containsEntry("templateVersionId", template.id.toString()).containsEntry("retentionPolicy", "permanent");
-        b.resetToPending(now);
+        a.resetToPending(now);
         assertThatThrownBy(() -> service.generate(new DeliveryRuntimeRequest(run, delivery, config, Map.of(), owner), UUID.randomUUID(), capability, config, Map.of())).hasMessageContaining("尚未完成");
     }
     private WorkflowNodeRunEntity node(WorkflowRunEntity run, String key, int order) { return WorkflowNodeRunEntity.pending(run.getId(), tenant, run.getWorkflowId(), run.getWorkflowVersionId(), key, "agent", key, Map.of(), Map.of(), Map.of(), order, now); }
