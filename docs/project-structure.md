@@ -187,7 +187,7 @@ apps/api/src/main/resources/db/
 | `runtime` | 异步执行：RabbitMQ 命令、Redis 租约/流、取消与回收 |
 | `mcp` | MCP 网关：连通性测试、工具发现、`tools/call` |
 | `delivery` | 交付：邮件、Webhook、Word、Excel、文件存储；`template/` 独立承接文件模板版本、来源绑定和原件填充 |
-| `attachment` | 输入附件：系统识别配置、上传保存、本地 / MinerU / 混合识别、Word 兼容解析、预览下载与保留期清理 |
+| `attachment` | 输入附件：系统识别配置、上传保存、本地 / MinerU / 混合识别、独立 MinerU 4.0 任务解析器、Word 兼容解析、预览下载与保留期清理 |
 | `audit` | 运行审计查询、证据聚合 |
 | `schedule` | 流程定时任务与执行记录 |
 | `notification` | 站内通知与消息中心 |

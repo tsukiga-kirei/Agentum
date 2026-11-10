@@ -25,6 +25,9 @@ public final class AttachmentRecognitionApi {
         List<String> mineruSupportedExtensions,
         String mineruEndpoint,
         boolean mineruApiKeyConfigured,
+        String mineruParser,
+        String mineruTier,
+        String mineruOcrMode,
         String mineruBackend,
         String mineruParseMethod,
         String mineruLanguage,
@@ -56,6 +59,9 @@ public final class AttachmentRecognitionApi {
         @Size(max = 800) String mineruEndpoint,
         @Size(max = 2000) String mineruApiKey,
         boolean clearMineruApiKey,
+        @NotBlank @Size(max = 20) String mineruParser,
+        @NotBlank @Size(max = 20) String mineruTier,
+        @NotBlank @Size(max = 20) String mineruOcrMode,
         @NotBlank @Size(max = 80) String mineruBackend,
         @NotBlank @Size(max = 20) String mineruParseMethod,
         @NotBlank @Size(max = 40) String mineruLanguage,
@@ -69,6 +75,7 @@ public final class AttachmentRecognitionApi {
     public record TestConnectionRequest(
         @NotBlank @Size(max = 800) String mineruEndpoint,
         @Size(max = 2000) String mineruApiKey,
+        @NotBlank @Size(max = 20) String mineruParser,
         boolean useSavedApiKey,
         @Min(1) @Max(120) int connectTimeoutSeconds
     ) {

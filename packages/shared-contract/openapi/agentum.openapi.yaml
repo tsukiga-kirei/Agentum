@@ -3027,7 +3027,7 @@ paths:
                       data: { $ref: "#/components/schemas/AttachmentRecognitionSettings" }
     put:
       summary: 更新附件识别系统配置
-      description: local 仅本地提取，mineru 将白名单内文件直接发送至 MinerU，hybrid 本地优先并在失败或无文字时按 MinerU 白名单升级；图片等本地不支持的类型直接调用 MinerU。
+      description: local 仅本地提取，mineru 将白名单内文件直接发送至 MinerU，hybrid 本地优先并按白名单升级；mineruParser 独立选择旧版或 4.0 协议，新版使用 mineruTier 与 mineruOcrMode，原生文档固定 Flash。
       tags: [System]
       security: [{ bearerAuth: [] }]
       requestBody:
@@ -3048,7 +3048,7 @@ paths:
                       data: { $ref: "#/components/schemas/AttachmentRecognitionSettings" }
   /api/system/settings/attachment-recognition/test-connection:
     post:
-      summary: 测试 MinerU 健康检查地址
+      summary: 按所选解析器测试 MinerU 健康检查地址
       tags: [System]
       security: [{ bearerAuth: [] }]
       requestBody:
@@ -5421,6 +5421,9 @@ components:
           items: { type: string }
         mineruEndpoint: { type: [string, "null"] }
         mineruApiKeyConfigured: { type: boolean }
+        mineruParser: { type: string, enum: [mineru, mineru4] }
+        mineruTier: { type: string, enum: [flash, basic, standard, advanced] }
+        mineruOcrMode: { type: string, enum: [auto, txt, ocr] }
         mineruBackend: { type: string, enum: [pipeline, vlm-auto-engine, vlm-http-client, hybrid-auto-engine, hybrid-http-client] }
         mineruParseMethod: { type: string, enum: [auto, txt, ocr] }
         mineruLanguage: { type: string }
@@ -5429,7 +5432,7 @@ components:
         mineruConnectTimeoutSeconds: { type: integer }
         mineruReadTimeoutSeconds: { type: integer }
         updatedAt: { type: string, format: date-time }
-      required: [recognitionEnabled, recognitionEngine, localSupportedExtensions, maxFileSizeMb, maxFilesPerField, maxExtractedChars, retentionPolicy, retentionDays, mineruSupportedExtensions, mineruApiKeyConfigured, mineruBackend, mineruParseMethod, mineruLanguage, mineruEnableFormula, mineruEnableTable, mineruConnectTimeoutSeconds, mineruReadTimeoutSeconds, updatedAt]
+      required: [recognitionEnabled, recognitionEngine, localSupportedExtensions, maxFileSizeMb, maxFilesPerField, maxExtractedChars, retentionPolicy, retentionDays, mineruSupportedExtensions, mineruApiKeyConfigured, mineruParser, mineruTier, mineruOcrMode, mineruBackend, mineruParseMethod, mineruLanguage, mineruEnableFormula, mineruEnableTable, mineruConnectTimeoutSeconds, mineruReadTimeoutSeconds, updatedAt]
     AttachmentRecognitionCapabilities:
       type: object
       properties:
@@ -5462,6 +5465,9 @@ components:
         mineruEndpoint: { type: [string, "null"] }
         mineruApiKey: { type: string, writeOnly: true }
         clearMineruApiKey: { type: boolean }
+        mineruParser: { type: string, enum: [mineru, mineru4] }
+        mineruTier: { type: string, enum: [flash, basic, standard, advanced] }
+        mineruOcrMode: { type: string, enum: [auto, txt, ocr] }
         mineruBackend: { type: string, enum: [pipeline, vlm-auto-engine, vlm-http-client, hybrid-auto-engine, hybrid-http-client] }
         mineruParseMethod: { type: string, enum: [auto, txt, ocr] }
         mineruLanguage: { type: string }
@@ -5469,17 +5475,18 @@ components:
         mineruEnableTable: { type: boolean }
         mineruConnectTimeoutSeconds: { type: integer, minimum: 1, maximum: 120 }
         mineruReadTimeoutSeconds: { type: integer, minimum: 10, maximum: 3600 }
-      required: [recognitionEnabled, recognitionEngine, maxFileSizeMb, maxFilesPerField, maxExtractedChars, retentionPolicy, retentionDays, mineruSupportedExtensions, clearMineruApiKey, mineruBackend, mineruParseMethod, mineruLanguage, mineruEnableFormula, mineruEnableTable, mineruConnectTimeoutSeconds, mineruReadTimeoutSeconds]
+      required: [recognitionEnabled, recognitionEngine, maxFileSizeMb, maxFilesPerField, maxExtractedChars, retentionPolicy, retentionDays, mineruSupportedExtensions, clearMineruApiKey, mineruParser, mineruTier, mineruOcrMode, mineruBackend, mineruParseMethod, mineruLanguage, mineruEnableFormula, mineruEnableTable, mineruConnectTimeoutSeconds, mineruReadTimeoutSeconds]
     AttachmentRecognitionTestRequest:
       type: object
       properties:
         mineruEndpoint: { type: string }
         mineruApiKey: { type: string, writeOnly: true }
+        mineruParser: { type: string, enum: [mineru, mineru4] }
         useSavedApiKey:
           type: boolean
           description: 临时密钥留空时是否复用已保存密钥；用户选择清除密钥后应传 false。
         connectTimeoutSeconds: { type: integer, minimum: 1, maximum: 120 }
-      required: [mineruEndpoint, useSavedApiKey, connectTimeoutSeconds]
+      required: [mineruEndpoint, mineruParser, useSavedApiKey, connectTimeoutSeconds]
     AttachmentRecognitionTestResult:
       type: object
       properties:
@@ -6153,7 +6160,7 @@ components:
         truncated: { type: [boolean, "null"] }
         parserType:
           type: [string, "null"]
-          description: 实际最后使用或尝试的解析器，如 local-docx、local-doc、mineru。
+          description: 实际最后使用或尝试的解析器，如 local-docx、local-doc、mineru、mineru4。
         fallbackReason:
           type: [string, "null"]
           enum: [DOCX_AS_DOC, LOCAL_UNSUPPORTED, LOCAL_TEXT_EMPTY, LOCAL_PARSE_FAILED, null]

@@ -30,6 +30,8 @@ public class AttachmentRecognitionSettingsService {
     private static final Logger log = LoggerFactory.getLogger(AttachmentRecognitionSettingsService.class);
     private static final short SETTINGS_ID = 1;
     private static final Set<String> ENGINES = Set.of("local", "mineru", "hybrid");
+    private static final Set<String> MINERU_PARSERS = Set.of("mineru", "mineru4");
+    private static final Set<String> TIERS = Set.of("flash", "basic", "standard", "advanced");
     private static final Set<String> PARSE_METHODS = Set.of("auto", "txt", "ocr");
     private static final Set<String> MINERU_BACKENDS = Set.of(
         "pipeline", "vlm-auto-engine", "vlm-http-client", "hybrid-auto-engine", "hybrid-http-client"
@@ -79,6 +81,16 @@ public class AttachmentRecognitionSettingsService {
         if (!ENGINES.contains(engine)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "ATTACHMENT_ENGINE_INVALID", "识别方式只能选择简单识别、复杂识别或混合识别");
         }
+        String parser = normalize(request.mineruParser());
+        validateParser(parser);
+        String tier = normalize(request.mineruTier());
+        if (!TIERS.contains(tier)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ATTACHMENT_MINERU_TIER_INVALID", "解析档位只能选择快速、基础、标准或高精度");
+        }
+        String ocrMode = normalize(request.mineruOcrMode());
+        if (!PARSE_METHODS.contains(ocrMode)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ATTACHMENT_MINERU_OCR_MODE_INVALID", "OCR 模式只能选择自动、文本或强制 OCR");
+        }
         String parseMethod = normalize(request.mineruParseMethod());
         if (!PARSE_METHODS.contains(parseMethod)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "ATTACHMENT_MINERU_PARSE_METHOD_INVALID", "MinerU 解析方式只能选择自动识别、文本解析或 OCR 识别");
@@ -95,6 +107,7 @@ public class AttachmentRecognitionSettingsService {
         if (!"local".equals(engine) && endpoint == null) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "ATTACHMENT_MINERU_ENDPOINT_REQUIRED", "复杂识别和混合识别必须配置 MinerU 端点");
         }
+        if (endpoint != null) validateEndpoint(endpoint);
         List<String> extensions = normalizeExtensions(request.mineruSupportedExtensions());
         AttachmentRecognitionSettingEntity entity = requireEntity();
         String encryptedKey = entity.getEncryptedMineruApiKey();
@@ -110,18 +123,22 @@ public class AttachmentRecognitionSettingsService {
             request.mineruEnableFormula(), request.mineruEnableTable(), request.mineruConnectTimeoutSeconds(),
             request.mineruReadTimeoutSeconds(), clock.instant()
         );
+        entity.updateMineruParser(parser, tier, ocrMode);
         repository.save(entity);
         log.info(
-            "附件识别系统配置更新成功 userId={} engine={} enabled={} retentionPolicy={} extensionCount={} requestId={}",
-            operatorUserId, engine, request.recognitionEnabled(), retentionPolicy, extensions.size(), RequestIds.current()
+            "附件识别系统配置更新成功 userId={} engine={} parser={} tier={} ocrMode={} enabled={} retentionPolicy={} extensionCount={} requestId={}",
+            operatorUserId, engine, parser, tier, ocrMode, request.recognitionEnabled(), retentionPolicy, extensions.size(), RequestIds.current()
         );
         return toSettings(entity);
     }
 
     public AttachmentRecognitionApi.TestConnectionResult testConnection(AttachmentRecognitionApi.TestConnectionRequest request, UUID operatorUserId) {
+        String parser = normalize(request.mineruParser());
+        validateParser(parser);
+        validateEndpoint(request.mineruEndpoint());
         String endpoint = request.mineruEndpoint().trim().replaceAll("/+$", "");
         HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(request.connectTimeoutSeconds())).build();
-        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(endpoint + "/health"))
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(endpoint + ("mineru4".equals(parser) ? "/v1/health" : "/health")))
             .timeout(Duration.ofSeconds(request.connectTimeoutSeconds()))
             .GET();
         String apiKey = request.mineruApiKey();
@@ -135,21 +152,27 @@ public class AttachmentRecognitionSettingsService {
         }
         long started = System.nanoTime();
         try {
-            HttpResponse<Void> response = client.send(builder.build(), HttpResponse.BodyHandlers.discarding());
+            HttpResponse<String> response = client.send(builder.build(), HttpResponse.BodyHandlers.ofString());
             long latency = (System.nanoTime() - started) / 1_000_000;
-            if (response.statusCode() >= 200 && response.statusCode() < 400) {
+            if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                if ("mineru4".equals(parser) && !"ok".equals(new com.fasterxml.jackson.databind.ObjectMapper()
+                    .readTree(response.body()).path("status").asText())) {
+                    throw new ApiException(HttpStatus.BAD_GATEWAY, "ATTACHMENT_MINERU_TEST_FAILED", "MinerU 4.0 健康状态异常");
+                }
                 log.info(
                     "MinerU 连接测试成功 userId={} status={} latencyMs={} requestId={}",
                     operatorUserId, response.statusCode(), latency, RequestIds.current()
                 );
-                return new AttachmentRecognitionApi.TestConnectionResult("success", "MinerU 服务可达", latency);
+                return new AttachmentRecognitionApi.TestConnectionResult("success", "mineru4".equals(parser) ? "MinerU 4.0 服务可达" : "MinerU 旧版服务可达", latency);
             }
             throw new ApiException(HttpStatus.BAD_GATEWAY, "ATTACHMENT_MINERU_TEST_FAILED", "MinerU 健康检查返回 HTTP " + response.statusCode());
         } catch (ApiException exception) {
+            log.warn("MinerU 连接测试失败 userId={} parser={} errorCode={} requestId={}", operatorUserId, parser, exception.getCode(), RequestIds.current());
             throw exception;
         } catch (Exception exception) {
             // 日志不记录端点中的路径和查询参数，避免意外泄露供应商部署信息或临时凭证。
-            log.warn("MinerU 连接测试失败 userId={} requestId={}", operatorUserId, RequestIds.current(), exception);
+            if (exception instanceof InterruptedException) Thread.currentThread().interrupt();
+            log.warn("MinerU 连接测试失败 userId={} parser={} requestId={}", operatorUserId, parser, RequestIds.current());
             throw new ApiException(HttpStatus.BAD_GATEWAY, "ATTACHMENT_MINERU_TEST_FAILED", "MinerU 服务不可达，请检查地址和网络");
         }
     }
@@ -165,10 +188,25 @@ public class AttachmentRecognitionSettingsService {
             entity.getMaxFilesPerField(), entity.getMaxExtractedChars(), entity.getRetentionPolicy(), entity.getRetentionDays(),
             entity.getMineruSupportedExtensions(), entity.getMineruEndpoint(),
             entity.getEncryptedMineruApiKey() != null && !entity.getEncryptedMineruApiKey().isBlank(),
+            entity.getMineruParser(), entity.getMineruTier(), entity.getMineruOcrMode(),
             entity.getMineruBackend(), entity.getMineruParseMethod(), entity.getMineruLanguage(),
             entity.isMineruEnableFormula(), entity.isMineruEnableTable(), entity.getMineruConnectTimeoutSeconds(),
             entity.getMineruReadTimeoutSeconds(), entity.getUpdatedAt()
         );
+    }
+
+    private static void validateParser(String parser) {
+        if (!MINERU_PARSERS.contains(parser)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ATTACHMENT_MINERU_PARSER_INVALID", "请选择 MinerU 旧版或 MinerU 4.0 解析器");
+        }
+    }
+
+    private static void validateEndpoint(String endpoint) {
+        try {
+            Mineru4AttachmentParser.serviceRoot(endpoint);
+        } catch (ApiException exception) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ATTACHMENT_MINERU_ENDPOINT_INVALID", "MinerU 服务地址必须是有效的 HTTP/HTTPS 根地址，不能包含账号、查询参数或片段");
+        }
     }
 
     private static List<String> normalizeExtensions(List<String> values) {

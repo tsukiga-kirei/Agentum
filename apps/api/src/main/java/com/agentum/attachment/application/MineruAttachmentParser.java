@@ -21,15 +21,19 @@ import org.springframework.stereotype.Component;
 @Component
 public class MineruAttachmentParser {
 
+    private final Mineru4AttachmentParser mineru4Parser;
     private final ObjectMapper objectMapper;
     private final AttachmentRecognitionSettingsService settingsService;
 
-    public MineruAttachmentParser(ObjectMapper objectMapper, AttachmentRecognitionSettingsService settingsService) {
+    public MineruAttachmentParser(ObjectMapper objectMapper, AttachmentRecognitionSettingsService settingsService, Mineru4AttachmentParser mineru4Parser) {
+        this.mineru4Parser = mineru4Parser;
         this.objectMapper = objectMapper;
         this.settingsService = settingsService;
     }
 
     public String parse(AttachmentRecognitionSettingEntity settings, String fileName, byte[] bytes) {
+        // 路由策略不推断服务协议；管理员显式选择 4.0 后只走新版任务链路。
+        if ("mineru4".equals(settings.getMineruParser())) return mineru4Parser.parse(settings, fileName, bytes);
         String endpoint = settings.getMineruEndpoint() == null ? "" : settings.getMineruEndpoint().replaceAll("/+$", "");
         if (endpoint.isBlank()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "ATTACHMENT_MINERU_ENDPOINT_REQUIRED", "MinerU 服务地址未配置");

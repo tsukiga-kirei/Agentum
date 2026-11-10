@@ -48,6 +48,15 @@ public class AttachmentRecognitionSettingEntity {
     @Column(name = "encrypted_mineru_api_key")
     private String encryptedMineruApiKey;
 
+    @Column(name = "mineru_parser", nullable = false, length = 20)
+    private String mineruParser;
+
+    @Column(name = "mineru_tier", nullable = false, length = 20)
+    private String mineruTier;
+
+    @Column(name = "mineru_ocr_mode", nullable = false, length = 20)
+    private String mineruOcrMode;
+
     @Column(name = "mineru_backend", nullable = false, length = 80)
     private String mineruBackend;
 
@@ -118,6 +127,15 @@ public class AttachmentRecognitionSettingEntity {
         this.updatedAt = now;
     }
 
+    public void updateMineruParser(String parser, String tier, String ocrMode) {
+        this.mineruParser = parser;
+        this.mineruTier = tier;
+        this.mineruOcrMode = ocrMode;
+    }
+
+    public String getMineruParser() { return mineruParser; }
+    public String getMineruTier() { return mineruTier; }
+    public String getMineruOcrMode() { return mineruOcrMode; }
     public boolean isRecognitionEnabled() { return recognitionEnabled; }
     public String getRecognitionEngine() { return recognitionEngine; }
     public int getMaxFileSizeMb() { return maxFileSizeMb; }

@@ -60,6 +60,28 @@ class AttachmentParseServiceTest {
     }
 
     @Test
+    void hybridRecordsSelectedMineru4Parser() throws Exception {
+        prepare("hybrid", "pdf", emptyPdf(), List.of("pdf"));
+        when(settings.getMineruParser()).thenReturn("mineru4");
+        when(mineru.parse(eq(settings), anyString(), any())).thenReturn("新版扫描件正文");
+        service.parse(attachment.getId());
+        assertThat(attachment.getStatus()).isEqualTo("ready");
+        assertThat(result.getParserType()).isEqualTo("mineru4");
+        assertThat(result.getFallbackReason()).isEqualTo("LOCAL_TEXT_EMPTY");
+    }
+
+    @Test
+    void complexRecordsSelectedMineru4Parser() {
+        prepare("mineru", "pdf", new byte[]{1}, List.of("pdf"));
+        when(settings.getMineruParser()).thenReturn("mineru4");
+        when(mineru.parse(eq(settings), anyString(), any())).thenReturn("新版正文");
+        service.parse(attachment.getId());
+        assertThat(result.getParserType()).isEqualTo("mineru4");
+        assertThat(attachment.getStatus()).isEqualTo("ready");
+        verifyNoInteractions(local);
+    }
+
+    @Test
     void hybridUpgradesLocalParseFailure() {
         prepare("hybrid", "docx", new byte[]{0x50, 0x4b, 0}, List.of("docx"));
         when(mineru.parse(eq(settings), anyString(), any())).thenReturn("后备正文");

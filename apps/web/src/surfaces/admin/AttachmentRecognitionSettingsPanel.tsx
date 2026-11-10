@@ -13,6 +13,12 @@ const BACKEND_OPTIONS = [
   { value: "hybrid-auto-engine", label: "混合自动引擎（hybrid-auto-engine）" },
   { value: "hybrid-http-client", label: "混合 HTTP 客户端（hybrid-http-client）" },
 ];
+const TIER_HINTS = {
+  flash: "快速预览与索引，优先提取原生文本；扫描件使用轻量 OCR。",
+  basic: "基础 OCR、公式与表格解析，使用小模型，可在 CPU 环境运行。",
+  standard: "结合小模型与视觉语言模型，适合复杂版面和日常高质量解析。",
+  advanced: "投入更多推理计算，适合高难度文档，耗时和资源消耗更高。",
+};
 const selectClassNames = { popup: { root: "agent-select-dropdown agent-admin-select-dropdown" } };
 
 function parseExtensions(value: string): string[] {
@@ -65,6 +71,9 @@ export function AttachmentRecognitionSettingsPanel() {
       mineruEndpoint: settings.mineruEndpoint,
       mineruApiKey: apiKey || undefined,
       clearMineruApiKey: clearApiKey,
+      mineruParser: settings.mineruParser,
+      mineruTier: settings.mineruTier,
+      mineruOcrMode: settings.mineruOcrMode,
       mineruBackend: settings.mineruBackend,
       mineruParseMethod: settings.mineruParseMethod,
       mineruLanguage: settings.mineruLanguage,
@@ -112,6 +121,7 @@ export function AttachmentRecognitionSettingsPanel() {
       const result = await systemApi.testAttachmentRecognitionConnection(token, {
         mineruEndpoint: settings.mineruEndpoint,
         mineruApiKey: apiKey || undefined,
+        mineruParser: settings.mineruParser,
         useSavedApiKey: !clearApiKey,
         connectTimeoutSeconds: settings.mineruConnectTimeoutSeconds,
       });
@@ -202,9 +212,21 @@ export function AttachmentRecognitionSettingsPanel() {
                 </div>
                 <div className="sys-section-card-body space-y-5">
                   <div className="sys-field">
+                    <label className="sys-field-label sys-field-label--required">解析器</label>
+                    <OptionSegmented
+                      value={settings.mineruParser}
+                      onChange={(value) => patch("mineruParser", value as AttachmentRecognitionSettings["mineruParser"])}
+                      options={[{ value: "mineru", label: "MinerU 旧版" }, { value: "mineru4", label: "MinerU 4.0" }]}
+                    />
+                    <div className="sys-field-hint">{settings.mineruParser === "mineru4"
+                      ? "适用于 MinerU 4.0 服务，上传后等待解析任务完成并读取正文。混合识别也使用此解析器。"
+                      : "适用于提供 /file_parse 接口的旧版 MinerU 服务。"}</div>
+                  </div>
+                  <div className="sys-field">
                     <label className="sys-field-label sys-field-label--required">服务地址</label>
                     <div className="sys-field-input-wrap"><ServerCog size={16} className="sys-field-prefix" /><input className="sys-field-input" name="mineru-service-endpoint" autoComplete="off" spellCheck={false} value={settings.mineruEndpoint ?? ""} placeholder="http://mineru.example.internal" onChange={(event) => patch("mineruEndpoint", event.target.value)} /></div>
                   </div>
+                  <div className="sys-field-hint">填写服务根地址，可包含代理路径前缀，无需添加接口路径。切换解析器后请确认地址和密钥对应所选服务。</div>
                   <div className="sys-field">
                     <label className="sys-field-label sys-field-label--required">支持扩展名</label>
                     <Select
@@ -225,34 +247,74 @@ export function AttachmentRecognitionSettingsPanel() {
                     <div className="sys-field-input-wrap"><KeyRound size={16} className="sys-field-prefix" /><input className="sys-field-input" name="mineru-api-credential" autoComplete="new-password" type="password" value={apiKey} placeholder={settings.mineruApiKeyConfigured ? "已配置，留空保持不变" : "按服务要求选填"} onChange={(event) => setApiKey(event.target.value)} /></div>
                     {settings.mineruApiKeyConfigured ? <Checkbox checked={clearApiKey} onChange={(event) => setClearApiKey(event.target.checked)}>清除已保存的 API Key</Checkbox> : null}
                   </div>
-                  <div className="sys-field-row">
-                    <div className="sys-field">
-                      <label className="sys-field-label">Backend</label>
-                      <Select
-                        className="agent-admin-select w-full"
-                        classNames={selectClassNames}
-                        value={settings.mineruBackend}
-                        options={BACKEND_OPTIONS}
-                        suffixIcon={<ChevronDown size={16} />}
-                        onChange={(value) => patch("mineruBackend", value)}
-                      />
-                    </div>
-                    <TextField label="语言" value={settings.mineruLanguage} onChange={(value) => patch("mineruLanguage", value)} />
-                  </div>
-                  <div className="sys-field-row">
-                    <div className="sys-field">
-                      <label className="sys-field-label">解析方式</label>
-                      <OptionSegmented
-                        value={settings.mineruParseMethod}
-                        onChange={(value) => patch("mineruParseMethod", value as AttachmentRecognitionSettings["mineruParseMethod"])}
-                        options={[{ value: "auto", label: "自动识别" }, { value: "txt", label: "文本解析" }, { value: "ocr", label: "OCR 识别" }]}
-                      />
-                    </div>
-                    <div className="sys-field"><label className="sys-field-label">识别能力</label><div className="flex gap-5"><Checkbox checked={settings.mineruEnableTable} onChange={(event) => patch("mineruEnableTable", event.target.checked)}>表格</Checkbox><Checkbox checked={settings.mineruEnableFormula} onChange={(event) => patch("mineruEnableFormula", event.target.checked)}>公式</Checkbox></div></div>
-                  </div>
+                  {settings.mineruParser === "mineru4" ? (
+                    <>
+                      <div className="sys-field">
+                        <label className="sys-field-label">解析档位</label>
+                        <Select
+                          className="agent-admin-select w-full"
+                          classNames={selectClassNames}
+                          prefix={<FileSearch size={16} />}
+                          value={settings.mineruTier}
+                          options={[
+                            { value: "flash", label: "快速（Flash）" },
+                            { value: "basic", label: "基础（Basic）" },
+                            { value: "standard", label: "标准（Standard）" },
+                            { value: "advanced", label: "高精度（Advanced）" },
+                          ]}
+                          suffixIcon={<ChevronDown size={16} />}
+                          onChange={(value) => patch("mineruTier", value)}
+                        />
+                        <div className="sys-field-hint">{TIER_HINTS[settings.mineruTier]}</div>
+                      </div>
+                      <div className="sys-field">
+                        <label className="sys-field-label">OCR 模式</label>
+                        <OptionSegmented
+                          value={settings.mineruOcrMode}
+                          options={[{ value: "auto", label: "自动识别" }, { value: "txt", label: "文本提取" }, { value: "ocr", label: "强制 OCR" }]}
+                          onChange={(value) => patch("mineruOcrMode", value as AttachmentRecognitionSettings["mineruOcrMode"])}
+                        />
+                        <div className="sys-field-hint">自动模式由服务判断；文本模式优先读取文本层；强制 OCR 适合扫描件或文本层异常的文件。</div>
+                      </div>
+                      <div className="attachment-supported-types">
+                        <span className="attachment-supported-types__label">档位适用范围</span>
+                        <p>PDF 与图片使用所选档位。Office、OpenDocument、RTF、EPUB、OFD、HTML、CSV / TSV 自动使用快速档整本解析。表格和公式能力随档位决定，语言由服务处理。</p>
+                        <p>所选档位需由服务端提供对应模型。白名单只控制允许发送的格式，实际支持情况请以目标服务为准。</p>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="sys-field-row">
+                        <div className="sys-field">
+                          <label className="sys-field-label">Backend</label>
+                          <Select
+                            className="agent-admin-select w-full"
+                            classNames={selectClassNames}
+                            prefix={<ServerCog size={16} />}
+                            value={settings.mineruBackend}
+                            options={BACKEND_OPTIONS}
+                            suffixIcon={<ChevronDown size={16} />}
+                            onChange={(value) => patch("mineruBackend", value)}
+                          />
+                        </div>
+                        <TextField label="语言" value={settings.mineruLanguage} onChange={(value) => patch("mineruLanguage", value)} />
+                      </div>
+                      <div className="sys-field-row">
+                        <div className="sys-field">
+                          <label className="sys-field-label">解析方式</label>
+                          <OptionSegmented
+                            value={settings.mineruParseMethod}
+                            onChange={(value) => patch("mineruParseMethod", value as AttachmentRecognitionSettings["mineruParseMethod"])}
+                            options={[{ value: "auto", label: "自动识别" }, { value: "txt", label: "文本解析" }, { value: "ocr", label: "OCR 识别" }]}
+                          />
+                        </div>
+                        <div className="sys-field"><label className="sys-field-label">识别能力</label><div className="flex gap-5"><Checkbox checked={settings.mineruEnableTable} onChange={(event) => patch("mineruEnableTable", event.target.checked)}>表格</Checkbox><Checkbox checked={settings.mineruEnableFormula} onChange={(event) => patch("mineruEnableFormula", event.target.checked)}>公式</Checkbox></div></div>
+                      </div>
+                    </>
+                  )}
                   <div className="sys-field-row">
                     <NumberField label="连接超时（秒）" value={settings.mineruConnectTimeoutSeconds} min={1} max={120} onChange={(value) => patch("mineruConnectTimeoutSeconds", value)} />
-                    <NumberField label="读取超时（秒）" value={settings.mineruReadTimeoutSeconds} min={10} max={3600} onChange={(value) => patch("mineruReadTimeoutSeconds", value)} />
+                    <NumberField label={settings.mineruParser === "mineru4" ? "解析总超时（秒）" : "读取超时（秒）"} value={settings.mineruReadTimeoutSeconds} min={10} max={3600} onChange={(value) => patch("mineruReadTimeoutSeconds", value)} />
                   </div>
                 </div>
               </section>

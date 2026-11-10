@@ -56,11 +56,12 @@ public class AttachmentParseService {
         attachmentRepository.save(attachment);
         String configHash = sha256(attachment.getRecognitionEngine() + "|" + settings.getMineruEndpoint()
             + "|" + settings.getMineruSupportedExtensions() + "|" + settings.getMineruBackend()
+            + "|" + settings.getMineruParser() + "|" + settings.getMineruTier() + "|" + settings.getMineruOcrMode()
             + "|" + settings.getMineruParseMethod() + "|" + settings.getMineruLanguage()
             + "|" + settings.isMineruEnableTable() + "|" + settings.isMineruEnableFormula()
             + "|" + settings.getMaxExtractedChars());
         AttachmentParseResultEntity result = resultRepository.findByAttachmentId(attachmentId)
-            .orElseGet(() -> AttachmentParseResultEntity.parsing(attachmentId, attachment.getRecognitionEngine(), "v2", configHash, now));
+            .orElseGet(() -> AttachmentParseResultEntity.parsing(attachmentId, attachment.getRecognitionEngine(), "v3", configHash, now));
         resultRepository.save(result);
         try {
             byte[] bytes = storage.read(attachment.getStorageKey());
@@ -88,7 +89,7 @@ public class AttachmentParseService {
                                 AttachmentRecognitionSettingEntity settings, byte[] bytes) {
         String extension = attachment.getExtension();
         if ("mineru".equals(attachment.getRecognitionEngine())) {
-            result.recordParser("mineru", null);
+            result.recordParser("mineru4".equals(settings.getMineruParser()) ? "mineru4" : "mineru", null);
             return mineruParser.parse(settings, attachment.getOriginalFileName(), bytes);
         }
         boolean hybrid = "hybrid".equals(attachment.getRecognitionEngine());
@@ -121,7 +122,7 @@ public class AttachmentParseService {
             throw new ApiException(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,
                 "ATTACHMENT_FALLBACK_NOT_ALLOWED", "本地识别未获得可用正文，且该类型未获准发送至 MinerU");
         }
-        result.recordParser("mineru", fallbackReason);
+        result.recordParser("mineru4".equals(settings.getMineruParser()) ? "mineru4" : "mineru", fallbackReason);
         log.info("附件切换至复杂识别 tenantId={} runId={} nodeRunId={} attachmentId={} fallbackReason={} requestId={}",
             attachment.getTenantId(), attachment.getRunId(), attachment.getNodeRunId(), attachment.getId(), fallbackReason, RequestIds.current());
         return mineruParser.parse(settings, attachment.getOriginalFileName(), bytes);

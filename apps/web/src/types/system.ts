@@ -12,6 +12,9 @@ export type AttachmentRecognitionSettings = {
   mineruSupportedExtensions: string[];
   mineruEndpoint: string | null;
   mineruApiKeyConfigured: boolean;
+  mineruParser: "mineru" | "mineru4";
+  mineruTier: "flash" | "basic" | "standard" | "advanced";
+  mineruOcrMode: "auto" | "txt" | "ocr";
   mineruBackend: string;
   mineruParseMethod: "auto" | "txt" | "ocr";
   mineruLanguage: string;
@@ -43,6 +46,7 @@ export type AttachmentRecognitionTestResult = {
 export type AttachmentRecognitionTestRequest = {
   mineruEndpoint: string;
   mineruApiKey?: string;
+  mineruParser: AttachmentRecognitionSettings["mineruParser"];
   useSavedApiKey: boolean;
   connectTimeoutSeconds: number;
 };

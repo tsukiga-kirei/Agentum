@@ -211,7 +211,7 @@ Agentum 不应该让所有用户进入同一个默认编排器。不同角色看
 
 所有解析器统一输出“附件元数据 + Markdown 正文 + 结构摘要 + 解析状态”，下游智能体不关心实际解析器。解析正文属于不可信业务数据，进入模型上下文时必须使用明确数据边界包裹，不能拼入 system prompt 或被解释为平台指令；超长内容按系统字符 / Token 预算截断并标明截断状态。
 
-系统管理新增“系统配置”页签，第一项为“附件识别”。它维护平台级启停、识别方式、单文件 / 单字段上限、解析文本上限，以及默认为“永久”的文件保存策略；选择“按天保存”后再配置保留天数。选择简单识别时，页面明确展示只读的内置扩展名列表 `txt/md/csv/pdf/doc/docx/xls/xlsx`，并提示扫描 PDF 不支持 OCR、图片和 PowerPoint 不支持简单识别。选择复杂识别或混合识别时，额外维护 MinerU 端点、加密 API Key、backend、解析方式、解析语言、表格 / 公式开关、连接与读取超时，以及可由系统管理员自定义的“复杂识别支持的扩展名”。
+系统管理新增“系统配置”页签，第一项为“附件识别”。它维护平台级启停、识别方式、单文件 / 单字段上限、解析文本上限，以及默认为“永久”的文件保存策略；选择“按天保存”后再配置保留天数。选择简单识别时，页面明确展示只读的内置扩展名列表 `txt/md/csv/pdf/doc/docx/xls/xlsx`，并提示扫描 PDF 不支持 OCR、图片和 PowerPoint 不支持简单识别。选择复杂识别或混合识别时，额外选择 MinerU 旧版或 MinerU 4.0 解析器，并维护服务根地址、加密 API Key 和超时；旧版显示 backend、解析方式、语言及表格 / 公式开关，4.0 显示解析档位及 OCR 模式。两者均提供由系统管理员自定义的“复杂识别支持的扩展名”。
 
 系统内置 Word、Excel 交付能力也支持“永久 / 按天保存”的文件保存策略。永久保存的交付结果不生成到期时间；按天保存仍支持 1～3650 天，并由交付文件清理任务删除到期对象。历史交付能力仅配置 `retentionDays` 时继续按天保存，避免升级后意外改变已有数据保留边界。
 
@@ -225,11 +225,16 @@ Agentum 不应该让所有用户进入同一个默认编排器。不同角色看
 | 复杂识别支持的扩展名 | `mineruSupportedExtensions` | 系统管理员自定义；复杂识别和混合识别的文件外发白名单 |
 | MinerU 端点 | `mineruEndpoint` | 自部署 MinerU 或客户兼容端点根地址 |
 | MinerU API Key | `mineruApiKey` | 可选，加密保存且不回显 |
+| MinerU 解析器 | `mineruParser` | `mineru` 旧版或 `mineru4`（4.0）；复杂及混合模式共用所选解析器 |
+| 4.0 解析档位 | `mineruTier` | `flash` 快速 / `basic` 基础 / `standard` 标准 / `advanced` 高精度，默认标准 |
+| 4.0 OCR 模式 | `mineruOcrMode` | `auto` 自动 / `txt` 文本提取 / `ocr` 强制 OCR，默认自动 |
 | MinerU Backend | `mineruBackend` | 如 `pipeline`、`vlm-auto-engine`、`vlm-http-client` 等 |
 | MinerU 解析方式 | `mineruParseMethod` | `auto` / `txt` / `ocr`；这是 MinerU 内部参数，不代表 Agentum 自动选择引擎 |
 | 解析语言 | `mineruLanguage` | 默认 `ch`，按实际 MinerU 端点支持值填写 |
-| 公式 / 表格识别 | `mineruEnableFormula` / `mineruEnableTable` | 复杂识别参数 |
+| 公式 / 表格识别 | `mineruEnableFormula` / `mineruEnableTable` | 仅旧版解析器使用；4.0 由档位决定 |
 | 超时 | `mineruConnectTimeoutSeconds` / `mineruReadTimeoutSeconds` | 连接与长耗时解析分别配置 |
+
+MinerU 4.0 按上传、提交任务、轮询、下载 Markdown 执行；解析总超时覆盖全部步骤。PDF 与图片使用所选档位；Office、OpenDocument、RTF、EPUB、OFD、HTML、CSV/TSV 按服务要求使用 Flash 整本解析。所选档位需要服务端准备对应模型，表格和公式能力由档位决定，不发送旧版 backend、语言或识别开关。4.0 与旧版共用当前服务地址、密钥和白名单，切换时应确认连接信息。新版健康测试访问 `/v1/health`，只确认服务状态，不代表文件解析和所有档位已验收。
 
 复杂识别扩展名以不带点的小写值保存，界面使用标签输入或逗号分隔输入，建议初始值为 `pdf,png,jpg,jpeg,bmp,gif,tiff,webp,docx,xlsx,txt`。在复杂模式下，该列表是 Agentum 是否接受并发送文件到 MinerU 的权威白名单，不根据内置格式表自动删减；系统管理员加入 `doc`、`xls` 或其他扩展名后，运行时同样全部发送给 MinerU。若实际 MinerU 端点不支持，解析结果进入失败态，不允许静默改用 Java 解析。输入节点的 `allowedExtensions` 只能从当前识别方式的系统支持列表中收窄。
 
