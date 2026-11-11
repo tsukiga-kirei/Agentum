@@ -54,14 +54,14 @@ public class AttachmentParseService {
         Instant now = clock.instant();
         attachment.markParsing(now);
         attachmentRepository.save(attachment);
-        String configHash = sha256(attachment.getRecognitionEngine() + "|" + settings.getMineruEndpoint()
+        String configHash = sha256(attachment.getRecognitionEngine() + "|mineru-adapter-v4|" + settings.getMineruEndpoint()
             + "|" + settings.getMineruSupportedExtensions() + "|" + settings.getMineruBackend()
             + "|" + settings.getMineruParser() + "|" + settings.getMineruTier() + "|" + settings.getMineruOcrMode()
             + "|" + settings.getMineruParseMethod() + "|" + settings.getMineruLanguage()
             + "|" + settings.isMineruEnableTable() + "|" + settings.isMineruEnableFormula()
             + "|" + settings.getMaxExtractedChars());
         AttachmentParseResultEntity result = resultRepository.findByAttachmentId(attachmentId)
-            .orElseGet(() -> AttachmentParseResultEntity.parsing(attachmentId, attachment.getRecognitionEngine(), "v3", configHash, now));
+            .orElseGet(() -> AttachmentParseResultEntity.parsing(attachmentId, attachment.getRecognitionEngine(), "v4", configHash, now));
         resultRepository.save(result);
         try {
             byte[] bytes = storage.read(attachment.getStorageKey());

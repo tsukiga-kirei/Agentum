@@ -3027,7 +3027,7 @@ paths:
                       data: { $ref: "#/components/schemas/AttachmentRecognitionSettings" }
     put:
       summary: 更新附件识别系统配置
-      description: local 仅本地提取，mineru 将白名单内文件直接发送至 MinerU，hybrid 本地优先并按白名单升级；mineruParser 独立选择旧版或 4.0 协议，新版使用 mineruTier 与 mineruOcrMode，原生文档固定 Flash。
+      description: local 仅本地提取，mineru 将白名单内文件直接发送至 MinerU，hybrid 本地优先并按白名单升级；mineruParser 独立选择旧版或 4.1.7 Tasks 协议，新版使用 mineruTier 与 mineruOcrMode，原生文档固定 Flash。
       tags: [System]
       security: [{ bearerAuth: [] }]
       requestBody:
@@ -5421,7 +5421,7 @@ components:
           items: { type: string }
         mineruEndpoint: { type: [string, "null"] }
         mineruApiKeyConfigured: { type: boolean }
-        mineruParser: { type: string, enum: [mineru, mineru4] }
+        mineruParser: { type: string, enum: [mineru, mineru4], description: "mineru 为旧版 file_parse，mineru4 为 MinerU 4.1.7 Tasks 协议" }
         mineruTier: { type: string, enum: [flash, basic, standard, advanced] }
         mineruOcrMode: { type: string, enum: [auto, txt, ocr] }
         mineruBackend: { type: string, enum: [pipeline, vlm-auto-engine, vlm-http-client, hybrid-auto-engine, hybrid-http-client] }
@@ -5465,7 +5465,7 @@ components:
         mineruEndpoint: { type: [string, "null"] }
         mineruApiKey: { type: string, writeOnly: true }
         clearMineruApiKey: { type: boolean }
-        mineruParser: { type: string, enum: [mineru, mineru4] }
+        mineruParser: { type: string, enum: [mineru, mineru4], description: "mineru 为旧版 file_parse，mineru4 为 MinerU 4.1.7 Tasks 协议" }
         mineruTier: { type: string, enum: [flash, basic, standard, advanced] }
         mineruOcrMode: { type: string, enum: [auto, txt, ocr] }
         mineruBackend: { type: string, enum: [pipeline, vlm-auto-engine, vlm-http-client, hybrid-auto-engine, hybrid-http-client] }
@@ -5481,7 +5481,7 @@ components:
       properties:
         mineruEndpoint: { type: string }
         mineruApiKey: { type: string, writeOnly: true }
-        mineruParser: { type: string, enum: [mineru, mineru4] }
+        mineruParser: { type: string, enum: [mineru, mineru4], description: "mineru 为旧版 file_parse，mineru4 为 MinerU 4.1.7 Tasks 协议" }
         useSavedApiKey:
           type: boolean
           description: 临时密钥留空时是否复用已保存密钥；用户选择清除密钥后应传 false。

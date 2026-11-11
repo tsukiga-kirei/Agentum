@@ -32,7 +32,7 @@ public class MineruAttachmentParser {
     }
 
     public String parse(AttachmentRecognitionSettingEntity settings, String fileName, byte[] bytes) {
-        // 路由策略不推断服务协议；管理员显式选择 4.0 后只走新版任务链路。
+        // 路由策略不推断服务协议；管理员显式选择 4.1.7 后只走新版任务链路。
         if ("mineru4".equals(settings.getMineruParser())) return mineru4Parser.parse(settings, fileName, bytes);
         String endpoint = settings.getMineruEndpoint() == null ? "" : settings.getMineruEndpoint().replaceAll("/+$", "");
         if (endpoint.isBlank()) {

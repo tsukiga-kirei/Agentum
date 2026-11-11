@@ -155,15 +155,23 @@ public class AttachmentRecognitionSettingsService {
             HttpResponse<String> response = client.send(builder.build(), HttpResponse.BodyHandlers.ofString());
             long latency = (System.nanoTime() - started) / 1_000_000;
             if (response.statusCode() >= 200 && response.statusCode() < 300) {
-                if ("mineru4".equals(parser) && !"ok".equals(new com.fasterxml.jackson.databind.ObjectMapper()
-                    .readTree(response.body()).path("status").asText())) {
-                    throw new ApiException(HttpStatus.BAD_GATEWAY, "ATTACHMENT_MINERU_TEST_FAILED", "MinerU 4.0 健康状态异常");
+                if ("mineru4".equals(parser)) {
+                    var health = new com.fasterxml.jackson.databind.ObjectMapper().readTree(response.body());
+                    if (health == null || !"ok".equals(health.path("status").asText())) {
+                        throw new ApiException(HttpStatus.BAD_GATEWAY, "ATTACHMENT_MINERU_TEST_FAILED", "MinerU 4.1.7 健康状态异常");
+                    }
+                    // 4.0 与 4.1 使用相同健康地址，单凭 HTTP 成功不能证明 Tasks 协议可用。
+                    String version = health.path("version").asText("").trim();
+                    if (version.matches("4\\.0(?:\\..*)?")) {
+                        throw new ApiException(HttpStatus.BAD_GATEWAY, "ATTACHMENT_MINERU_VERSION_UNSUPPORTED",
+                            "检测到 MinerU 4.0 服务，请使用 4.1.7 服务端及 Tasks 接口");
+                    }
                 }
                 log.info(
                     "MinerU 连接测试成功 userId={} status={} latencyMs={} requestId={}",
                     operatorUserId, response.statusCode(), latency, RequestIds.current()
                 );
-                return new AttachmentRecognitionApi.TestConnectionResult("success", "mineru4".equals(parser) ? "MinerU 4.0 服务可达" : "MinerU 旧版服务可达", latency);
+                return new AttachmentRecognitionApi.TestConnectionResult("success", "mineru4".equals(parser) ? "MinerU 4.1.7 服务可达" : "MinerU 旧版服务可达", latency);
             }
             throw new ApiException(HttpStatus.BAD_GATEWAY, "ATTACHMENT_MINERU_TEST_FAILED", "MinerU 健康检查返回 HTTP " + response.statusCode());
         } catch (ApiException exception) {
@@ -197,7 +205,7 @@ public class AttachmentRecognitionSettingsService {
 
     private static void validateParser(String parser) {
         if (!MINERU_PARSERS.contains(parser)) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "ATTACHMENT_MINERU_PARSER_INVALID", "请选择 MinerU 旧版或 MinerU 4.0 解析器");
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ATTACHMENT_MINERU_PARSER_INVALID", "请选择 MinerU 旧版或 MinerU 4.1.7 解析器");
         }
     }
 

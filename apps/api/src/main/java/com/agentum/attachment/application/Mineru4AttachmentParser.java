@@ -5,6 +5,8 @@ import com.agentum.shared.api.ApiException;
 import com.agentum.shared.api.RequestIds;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -23,13 +25,15 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.Flow;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
-/** 按官方 4.0 固定版本接入 uploads → parse/jobs → files；4.1 Tasks 属于另一份协议。 */
+/** 按 MinerU 4.1.7 固定版本接入 Tasks → 按需 PUT → 逐文件结果 ZIP，不保留 4.0 Jobs 路径。 */
 @Component
 public class Mineru4AttachmentParser {
 
@@ -55,58 +59,58 @@ public class Mineru4AttachmentParser {
                 .connectTimeout(Duration.ofSeconds(settings.getMineruConnectTimeoutSeconds()))
                 .followRedirects(HttpClient.Redirect.NEVER).build();
             String apiKey = settingsService.decryptMineruApiKey(settings);
-            JsonNode upload = json(client, root, apiKey, "POST", root + "/v1/uploads", Map.of(
-                "filename", fileName, "bytes", bytes.length, "purpose", "parse",
-                "mime_type", "application/octet-stream",
-                "sha256sum", HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes))
-            ), deadline);
-            String uploadId = requiredText(upload, "id");
-            if ("pending".equals(upload.path("status").asText())) {
-                String method = upload.path("upload_method").asText("PUT");
-                if (!"PUT".equals(method)) throw protocol("上传方法无效");
-                Map<String, String> headers = new LinkedHashMap<>();
-                JsonNode uploadHeaders = upload.path("upload_headers");
-                if (!uploadHeaders.isMissingNode() && !uploadHeaders.isObject()) throw protocol("上传请求头无效");
-                uploadHeaders.fields().forEachRemaining(field -> {
-                    if (!field.getValue().isTextual()) throw protocol("上传请求头无效");
-                    headers.put(field.getKey(), field.getValue().asText());
-                });
-                request(client, root, apiKey, method, requiredText(upload, "upload_url"), bytes, headers, deadline);
-                upload = json(client, root, apiKey, "POST", root + "/v1/uploads/" + encode(uploadId) + "/complete", null, deadline);
-            }
-            if (!"completed".equals(upload.path("status").asText())) throw protocol("上传未完成");
-            String fileId = requiredText(upload.path("file"), "id");
-            String extension = fileName.substring(fileName.lastIndexOf('.') + 1).toLowerCase(Locale.ROOT);
-            // 原生文档按官方约束整本走 Flash，PDF/图片才使用管理员选择的质量档位。
+            if (bytes.length == 0) throw protocol("文件内容为空");
+            String safeName = safeFileName(fileName);
+            String extension = safeName.substring(safeName.lastIndexOf('.') + 1).toLowerCase(Locale.ROOT);
+            // 原生文档固定 Flash；PDF/图片显式选档，不因远端资源不足而静默降级。
             String tier = NATIVE_EXTENSIONS.contains(extension) ? "flash" : settings.getMineruTier();
-            JsonNode job = json(client, root, apiKey, "POST", root + "/v1/parse/jobs", Map.of(
-                "files", List.of(Map.of("source", Map.of("type", "file_id", "file_id", fileId))),
-                "tier", tier, "ocr_mode", settings.getMineruOcrMode(), "output_formats", List.of("markdown")
+            JsonNode task = json(client, root, apiKey, "POST", root + "/v1/tasks", Map.of(
+                "files", List.of(Map.of("file_name", safeName, "bytes", bytes.length,
+                    "sha256sum", HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)))),
+                "tier", tier, "ocr_mode", settings.getMineruOcrMode(), "output_formats", List.of("default")
             ), deadline);
-            String jobId = requiredText(job, "job_id");
+            String taskId = requiredText(task, "task_id");
+            log.info("MinerU 4.1.7 解析任务已创建 tenantId={} userId={} taskId={} tier={} ocrMode={} requestId={}",
+                MDC.get("tenantId"), MDC.get("userId"), taskId, tier, settings.getMineruOcrMode(), RequestIds.current());
+            String fileId = null;
+            boolean uploaded = false;
+            String resultUrl;
             for (int polls = 0; ; polls++) {
-                String status = requiredText(job, "status");
-                if ("completed".equals(status)) break;
-                if (Set.of("failed", "canceled", "partial").contains(status)) {
-                    // 供应商错误可能包含正文、路径或凭证；只回传稳定终态，不透传原始 message。
-                    throw new ApiException(HttpStatus.BAD_GATEWAY, "ATTACHMENT_MINERU4_JOB_FAILED", "MinerU 4.0 解析任务未成功完成（" + status + "）");
+                // 每次响应是完整快照，文件始终按创建回执分配的 ID 关联，不能沿用旧链接或按名称猜测。
+                if (!taskId.equals(requiredText(task, "task_id"))) throw protocol("解析任务标识不匹配");
+                JsonNode file = taskFile(task);
+                String currentId = requiredText(file, "file_id");
+                if (fileId != null && !fileId.equals(currentId)) throw protocol("解析文件标识不匹配");
+                fileId = currentId;
+                String status = requiredText(file, "status");
+                if ("completed".equals(status)) {
+                    resultUrl = requiredText(file, "result_url");
+                    break;
                 }
-                if (!Set.of("queued", "running").contains(status)) throw protocol("解析任务状态无效");
+                if ("waiting-file".equals(status) && !uploaded && file.hasNonNull("upload")) {
+                    JsonNode upload = file.path("upload");
+                    Map<String, String> headers = new LinkedHashMap<>();
+                    JsonNode uploadHeaders = upload.path("headers");
+                    if (!uploadHeaders.isMissingNode() && !uploadHeaders.isObject()) throw protocol("上传请求头无效");
+                    uploadHeaders.fields().forEachRemaining(field -> {
+                        if (!field.getValue().isTextual()) throw protocol("上传请求头无效");
+                        // HTTP 客户端根据实际字节生成长度与 Host，不能沿用供应商传来的受限头。
+                        if (!Set.of("host", "content-length").contains(field.getKey().toLowerCase(Locale.ROOT))) {
+                            headers.put(field.getKey(), field.getValue().asText());
+                        }
+                    });
+                    request(client, root, apiKey, "PUT", requiredText(upload, "url"), bytes, headers, deadline);
+                    uploaded = true;
+                }
+                // waiting-file 无 upload 表示服务正在准备文件，只有轮询，不调用 complete 或重新创建任务。
                 if (polls >= 3600) throw new HttpTimeoutException("poll limit");
-                Duration remaining = remaining(deadline);
-                Thread.sleep(Math.min(1000, Math.max(1, remaining.toMillis())));
-                job = json(client, root, apiKey, "GET", root + "/v1/parse/jobs/" + encode(jobId), null, deadline);
-                if (!jobId.equals(requiredText(job, "job_id"))) throw protocol("解析任务标识不匹配");
+                Duration budget = remaining(deadline);
+                Thread.sleep(Math.min(1000, Math.max(1, budget.toMillis())));
+                task = json(client, root, apiKey, "GET", root + "/v1/tasks/" + encode(taskId), null, deadline);
             }
-            JsonNode files = job.path("files");
-            if (!files.isArray() || files.size() != 1 || !"completed".equals(files.get(0).path("status").asText())) {
-                throw protocol("任务完成但文件结果不完整");
-            }
-            String markdownId = requiredText(files.get(0).path("output_files").path("markdown"), "file_id");
-            String markdown = new String(request(client, root, apiKey, "GET",
-                root + "/v1/files/" + encode(markdownId) + "/content", null, Map.of(), deadline), StandardCharsets.UTF_8);
-            if (markdown.isBlank()) throw protocol("Markdown 产物为空");
-            log.info("MinerU 4.0 解析完成 tenantId={} userId={} tier={} ocrMode={} latencyMs={} requestId={}",
+            byte[] result = request(client, root, apiKey, "GET", resultUrl, null, Map.of(), deadline);
+            String markdown = readMarkdownZip(result, deadline);
+            log.info("MinerU 4.1.7 解析完成 tenantId={} userId={} tier={} ocrMode={} latencyMs={} requestId={}",
                 MDC.get("tenantId"), MDC.get("userId"), tier, settings.getMineruOcrMode(),
                 (System.nanoTime() - started) / 1_000_000, RequestIds.current());
             return markdown;
@@ -116,13 +120,78 @@ public class Mineru4AttachmentParser {
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             logFailure("ATTACHMENT_MINERU4_INTERRUPTED");
-            throw new ApiException(HttpStatus.BAD_GATEWAY, "ATTACHMENT_MINERU4_INTERRUPTED", "MinerU 4.0 解析已中断");
+            throw new ApiException(HttpStatus.BAD_GATEWAY, "ATTACHMENT_MINERU4_INTERRUPTED", "MinerU 4.1.7 解析已中断");
         } catch (Exception exception) {
             String code = exception instanceof HttpTimeoutException ? "ATTACHMENT_MINERU4_TIMEOUT" : "ATTACHMENT_MINERU4_CALL_FAILED";
             logFailure(code);
             throw new ApiException(HttpStatus.BAD_GATEWAY, code,
-                exception instanceof HttpTimeoutException ? "MinerU 4.0 解析超时，请检查任务排队和服务状态" : "MinerU 4.0 调用失败，请检查服务地址、协议和网络");
+                exception instanceof HttpTimeoutException ? "MinerU 4.1.7 解析超时，请检查任务排队和服务状态" : "MinerU 4.1.7 调用失败，请检查服务地址、协议和网络");
         }
+    }
+
+    private static JsonNode taskFile(JsonNode task) {
+        String parentStatus = requiredText(task, "status");
+        if (Set.of("failed", "canceled", "partial").contains(parentStatus)) throw taskFailure();
+        if (!Set.of("waiting-file", "pending", "running", "completed").contains(parentStatus)) throw protocol("解析任务状态无效");
+        JsonNode files = task.path("files");
+        if (!files.isArray() || files.size() != 1 || !files.get(0).isObject()) throw protocol("单文件任务响应必须包含一个文件状态");
+        JsonNode file = files.get(0);
+        String status = requiredText(file, "status");
+        // 不透传供应商 error.message，避免文件正文、部署路径或凭证进入界面和运行日志。
+        if (Set.of("failed", "canceled").contains(status) || file.hasNonNull("error")) throw taskFailure();
+        if (!Set.of("waiting-file", "pending", "running", "completed").contains(status)) throw protocol("解析文件状态无效");
+        if ("completed".equals(parentStatus) && !"completed".equals(status)) throw protocol("任务完成但文件结果不完整");
+        return file;
+    }
+
+    private static ApiException taskFailure() {
+        return new ApiException(HttpStatus.BAD_GATEWAY, "ATTACHMENT_MINERU4_TASK_FAILED", "MinerU 4.1.7 解析任务未成功完成，请检查服务端任务状态");
+    }
+
+    /** 只在内存读取 Markdown，不把归档路径写入磁盘；同时限制条目数与解压大小以防压缩炸弹。 */
+    static String readMarkdownZip(byte[] bytes, long deadline) throws Exception {
+        String fallback = null;
+        long expanded = 0;
+        int entries = 0;
+        try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(bytes), StandardCharsets.UTF_8)) {
+            ZipEntry entry;
+            byte[] buffer = new byte[8192];
+            while ((entry = zip.getNextEntry()) != null) {
+                remaining(deadline);
+                if (++entries > 10000) throw protocol("结果压缩包条目过多");
+                String name = entry.getName().replace('\\', '/');
+                String baseName = name.substring(name.lastIndexOf('/') + 1).toLowerCase(Locale.ROOT);
+                boolean markdown = !entry.isDirectory() && !name.startsWith("__MACOSX/") && baseName.endsWith(".md");
+                ByteArrayOutputStream content = markdown ? new ByteArrayOutputStream() : null;
+                int count;
+                while ((count = zip.read(buffer)) != -1) {
+                    remaining(deadline);
+                    expanded += count;
+                    if (expanded > 64L * 1024 * 1024) throw protocol("结果压缩包解压大小超过上限");
+                    if (content != null) {
+                        if (content.size() + count > 32 * 1024 * 1024) throw protocol("Markdown 正文超过大小上限");
+                        content.write(buffer, 0, count);
+                    }
+                }
+                if (content != null) {
+                    String text = content.toString(StandardCharsets.UTF_8);
+                    if ("markdown.md".equals(baseName)) {
+                        if (text.isBlank()) throw protocol("Markdown 产物为空");
+                        return text;
+                    }
+                    if (fallback == null && !text.isBlank()) fallback = text;
+                }
+            }
+        }
+        if (fallback == null) throw protocol("结果压缩包缺少可用 Markdown 正文");
+        return fallback;
+    }
+
+    /** Tasks 只接受纯文件名；仅规范化提交名称，Agentum 保存的原件名称保持原样。 */
+    static String safeFileName(String name) {
+        String safe = name == null ? "" : name.replace('\\', '/');
+        safe = safe.substring(safe.lastIndexOf('/') + 1).replace(':', '_').replaceAll("\\p{Cc}", "_");
+        return safe.isBlank() || Set.of(".", "..").contains(safe) ? "attachment" : safe;
     }
 
     private JsonNode json(HttpClient client, URI root, String apiKey, String method, String target, Object payload, long deadline) throws Exception {
@@ -135,14 +204,14 @@ public class Mineru4AttachmentParser {
 
     private byte[] request(HttpClient client, URI root, String apiKey, String method, String target,
                            byte[] body, Map<String, String> headers, long deadline) throws Exception {
-        URI uri = target.startsWith("/v1/") ? URI.create(root + target) : URI.create(root + "/").resolve(target);
+        URI uri = URI.create(root + "/").resolve(target);
         validateUri(uri);
         boolean attachApiKey = sameOrigin(root, uri);
         Map<String, String> currentHeaders = new LinkedHashMap<>(headers);
         for (int redirects = 0; ; redirects++) {
             HttpRequest.Builder builder = HttpRequest.newBuilder(uri).timeout(remaining(deadline));
             currentHeaders.forEach(builder::header);
-            if (attachApiKey && !apiKey.isBlank()) builder.setHeader("Authorization", "Bearer " + apiKey);
+            if (attachApiKey && !apiKey.isBlank() && currentHeaders.keySet().stream().noneMatch(key -> key.equalsIgnoreCase("Authorization"))) builder.setHeader("Authorization", "Bearer " + apiKey);
             builder.method(method, body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofByteArray(body));
             HttpResponse<byte[]> response = client.send(builder.build(), info -> limitedBody());
             int status = response.statusCode();
@@ -159,7 +228,7 @@ public class Mineru4AttachmentParser {
                 continue;
             }
             if (status < 200 || status >= 300) {
-                throw new ApiException(HttpStatus.BAD_GATEWAY, "ATTACHMENT_MINERU4_HTTP_FAILED", "MinerU 4.0 返回 HTTP " + status);
+                throw new ApiException(HttpStatus.BAD_GATEWAY, "ATTACHMENT_MINERU4_HTTP_FAILED", "MinerU 4.1.7 返回 HTTP " + status);
             }
             return response.body();
         }
@@ -238,11 +307,11 @@ public class Mineru4AttachmentParser {
     }
 
     private static ApiException protocol(String message) {
-        return new ApiException(HttpStatus.BAD_GATEWAY, "ATTACHMENT_MINERU4_PROTOCOL_INVALID", "MinerU 4.0：" + message);
+        return new ApiException(HttpStatus.BAD_GATEWAY, "ATTACHMENT_MINERU4_PROTOCOL_INVALID", "MinerU 4.1.7：" + message);
     }
 
     private static void logFailure(String code) {
-        log.warn("MinerU 4.0 解析失败 tenantId={} userId={} errorCode={} requestId={}",
+        log.warn("MinerU 4.1.7 解析失败 tenantId={} userId={} errorCode={} requestId={}",
             MDC.get("tenantId"), MDC.get("userId"), code, RequestIds.current());
     }
 }

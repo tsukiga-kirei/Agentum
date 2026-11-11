@@ -216,10 +216,10 @@ export function AttachmentRecognitionSettingsPanel() {
                     <OptionSegmented
                       value={settings.mineruParser}
                       onChange={(value) => patch("mineruParser", value as AttachmentRecognitionSettings["mineruParser"])}
-                      options={[{ value: "mineru", label: "MinerU 旧版" }, { value: "mineru4", label: "MinerU 4.0" }]}
+                      options={[{ value: "mineru", label: "MinerU 旧版" }, { value: "mineru4", label: "MinerU 4.1.7" }]}
                     />
                     <div className="sys-field-hint">{settings.mineruParser === "mineru4"
-                      ? "适用于 MinerU 4.0 服务，上传后等待解析任务完成并读取正文。混合识别也使用此解析器。"
+                      ? "适用于 MinerU 4.1.7 服务，上传后等待解析任务完成并读取正文。混合识别也使用此解析器。"
                       : "适用于提供 /file_parse 接口的旧版 MinerU 服务。"}</div>
                   </div>
                   <div className="sys-field">

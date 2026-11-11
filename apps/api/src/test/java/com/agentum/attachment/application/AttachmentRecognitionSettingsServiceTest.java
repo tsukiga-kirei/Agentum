@@ -58,15 +58,16 @@ class AttachmentRecognitionSettingsServiceTest {
     }
 
     @ParameterizedTest
-    @CsvSource({"mineru,/proxy/health", "mineru4,/proxy/v1/health"})
-    void healthUsesUnsavedParserAndConnectionWithSavedEncryptedKey(String parser, String path) throws Exception {
+    @CsvSource({"mineru,/proxy/health,4.0.12,ok,true", "mineru4,/proxy/v1/health,4.1.7,ok,true",
+        "mineru4,/proxy/v1/health,4.0.12,ok,false", "mineru4,/proxy/v1/health,4.1.7,error,false"})
+    void healthUsesUnsavedParserAndValidatesProtocolVersion(String parser, String path, String version, String healthStatus, boolean succeeds) throws Exception {
         var requestedPath = new AtomicReference<String>();
         var authorization = new AtomicReference<String>();
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/", exchange -> {
             requestedPath.set(exchange.getRequestURI().getPath());
             authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
-            byte[] body = "{\"status\":\"ok\"}".getBytes(StandardCharsets.UTF_8);
+            byte[] body = ("{\"status\":\"" + healthStatus + "\",\"version\":\"" + version + "\"}").getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(200, body.length);
             exchange.getResponseBody().write(body);
             exchange.close();
@@ -80,9 +81,16 @@ class AttachmentRecognitionSettingsServiceTest {
             when(entity.getEncryptedMineruApiKey()).thenReturn("encrypted");
             when(encryption.decrypt("encrypted")).thenReturn("saved-key");
             var service = new AttachmentRecognitionSettingsService(repository, encryption, Clock.systemUTC());
-            var result = service.testConnection(new AttachmentRecognitionApi.TestConnectionRequest(
-                "http://127.0.0.1:" + server.getAddress().getPort() + "/proxy", null, parser, true, 2), UUID.randomUUID());
-            org.assertj.core.api.Assertions.assertThat(result.status()).isEqualTo("success");
+            var request = new AttachmentRecognitionApi.TestConnectionRequest(
+                "http://127.0.0.1:" + server.getAddress().getPort() + "/proxy", null, parser, true, 2);
+            if (succeeds) {
+                var result = service.testConnection(request, UUID.randomUUID());
+                org.assertj.core.api.Assertions.assertThat(result.status()).isEqualTo("success");
+            } else {
+                assertThatThrownBy(() -> service.testConnection(request, UUID.randomUUID())).isInstanceOf(ApiException.class)
+                    .satisfies(error -> org.assertj.core.api.Assertions.assertThat(((ApiException) error).getCode())
+                        .isEqualTo(version.startsWith("4.0.") ? "ATTACHMENT_MINERU_VERSION_UNSUPPORTED" : "ATTACHMENT_MINERU_TEST_FAILED"));
+            }
             org.assertj.core.api.Assertions.assertThat(requestedPath.get()).isEqualTo(path);
             org.assertj.core.api.Assertions.assertThat(authorization.get()).isEqualTo("Bearer saved-key");
         } finally {
