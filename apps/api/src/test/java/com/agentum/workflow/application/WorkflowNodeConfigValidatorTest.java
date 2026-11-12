@@ -697,6 +697,49 @@ class WorkflowNodeConfigValidatorTest {
             .contains("WORKFLOW_VALIDATION_CLUSTER_INTENT_INPUT_REQUIRED");
     }
 
+    @Test
+    void shouldAcceptDeclaredStructuredClusterOutputsInAllExecutionModes() {
+        for (String mode : List.of("intent", "collaborative", "relay")) {
+            var outputs = "intent".equals(mode) ? List.of("cluster_result", "attachment_meta") : List.of("cluster_result", "monthly_output", "attachment_meta");
+            assertThat(validator().validateCapabilityReferences(TENANT_ID, USER_ID, List.of(structuredCluster(mode, outputs, true)))).as(mode).isEmpty();
+        }
+    }
+
+    @Test
+    void shouldStillRejectChildTextAndUnconfiguredIntentOutputs() {
+        for (String extra : List.of("monthly_output", "unconfigured_data")) {
+            var node = structuredCluster("intent", List.of("cluster_result", "attachment_meta", extra), true);
+            assertThat(validator().validateCapabilityReferences(TENANT_ID, USER_ID, List.of(node)))
+                .extracting(WorkflowDraftApi.WorkflowValidationIssue::code).contains("WORKFLOW_VALIDATION_CLUSTER_INTENT_OUTPUT_INVALID");
+        }
+        var disabled = structuredCluster("intent", List.of("cluster_result", "attachment_meta"), false);
+        assertThat(validator().validateCapabilityReferences(TENANT_ID, USER_ID, List.of(disabled)))
+            .extracting(WorkflowDraftApi.WorkflowValidationIssue::code).contains("WORKFLOW_VALIDATION_CLUSTER_INTENT_OUTPUT_INVALID");
+    }
+
+    @Test
+    void shouldRejectMissingStructuredOutputDeclarationsInAllExecutionModes() {
+        for (String mode : List.of("intent", "collaborative", "relay")) {
+            var outputs = "intent".equals(mode) ? List.of("cluster_result") : List.of("cluster_result", "monthly_output");
+            assertThat(validator().validateCapabilityReferences(TENANT_ID, USER_ID, List.of(structuredCluster(mode, outputs, true))))
+                .extracting(WorkflowDraftApi.WorkflowValidationIssue::code).contains("WORKFLOW_VALIDATION_STRUCTURED_OUTPUT");
+        }
+    }
+
+    private WorkflowDraftApi.WorkflowNodeRow structuredCluster(String mode, List<String> outputs, boolean enabled) {
+        var agent = new java.util.LinkedHashMap<>(intentAgent("月报", "monthly_report", "生成月报", "monthly_output"));
+        agent.put("structuredOutput", Map.of("enabled", enabled, "variable", "attachment_meta", "fields", List.of(Map.of(
+            "key", "data_date", "label", "截止日期", "type", "text", "required", true,
+            "maxLength", 32, "maxItems", 200, "description", "报告月末日期", "columns", List.of()
+        ))));
+        return new WorkflowDraftApi.WorkflowNodeRow("cluster_1", "parallel_group", "报告集群", 0, 0, List.of("report_year"), outputs, Map.of(
+            "executionMode", mode, "clusterOutputVariable", "cluster_result", "clusterAgents", List.of(agent),
+            "mergeRule", "{{monthly_output}}", "intentInputTemplate", "{{report_year}}", "intentSelectionMode", "single",
+            "intentFallbackMode", "fixed_reply", "fallbackReply", "未命中报告",
+            "intentRoutes", List.of(Map.of("intentCode", "monthly", "intentName", "月报", "intentDescription", "生成月报", "agentId", "monthly_report"))
+        ));
+    }
+
     private WorkflowNodeConfigValidator validator() {
         return validatorWithCapabilities(new AttachmentRecognitionApi.Capabilities(
             true,

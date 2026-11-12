@@ -431,12 +431,18 @@ function validateClusterNode(node: ValidatableWorkflowNode): WorkflowNodeValidat
 
   const declaredOutputs = new Set(node.data.outputVariables.filter(Boolean));
   const clusterOutputVariable = readString(node.data.rawConfig?.clusterOutputVariable, "cluster_result");
+  // 对象结果是显式声明的额外输出；意图分派仍禁止直接暴露可能未执行的子智能体普通文本。
+  const structuredOutputs = agents
+    .filter(agent => readMap(agent.structuredOutput).enabled === true)
+    .map(agent => readString(readMap(agent.structuredOutput).variable))
+    .filter(Boolean);
   if (executionMode === "intent") {
     if (!readString(node.data.rawConfig?.intentModelProviderId)) {
       issues.push(issue("WORKFLOW_NODE_CLUSTER_INTENT_MODEL_REQUIRED", "意图分派模式下必须选择意图识别模型"));
     }
-    if (declaredOutputs.size !== 1 || !declaredOutputs.has(clusterOutputVariable)) {
-      issues.push(issue("WORKFLOW_NODE_CLUSTER_INTENT_OUTPUT_INVALID", `意图分派模式下，下游输出必须统一为 ${clusterOutputVariable}`));
+    const expectedOutputs = new Set([clusterOutputVariable, ...structuredOutputs]);
+    if (declaredOutputs.size !== expectedOutputs.size || [...expectedOutputs].some(name => !declaredOutputs.has(name))) {
+      issues.push(issue("WORKFLOW_NODE_CLUSTER_INTENT_OUTPUT_INVALID", `意图分派模式下，普通文本统一输出为 ${clusterOutputVariable}，额外输出须为已配置的结构化结果`));
     }
     if (!readString(node.data.rawConfig?.intentInputTemplate)) {
       issues.push(issue("WORKFLOW_NODE_CLUSTER_INTENT_INPUT_REQUIRED", "意图分派模式下必须配置待判断内容"));
@@ -477,9 +483,9 @@ function validateClusterNode(node: ValidatableWorkflowNode): WorkflowNodeValidat
       issues.push(issue("WORKFLOW_NODE_CLUSTER_INTENT_FALLBACK_REPLY_REQUIRED", "其他情况固定话术不能为空"));
     }
   } else {
-    const expectedOutputs = new Set([clusterOutputVariable, ...agentOutputs]);
+    const expectedOutputs = new Set([clusterOutputVariable, ...agentOutputs, ...structuredOutputs]);
     if (expectedOutputs.size !== declaredOutputs.size || [...expectedOutputs].some((name) => !declaredOutputs.has(name))) {
-      issues.push(issue("WORKFLOW_NODE_CLUSTER_OUTPUT_MISMATCH", "集群最终输出和子智能体输出必须与节点输出变量保持一致"));
+      issues.push(issue("WORKFLOW_NODE_CLUSTER_OUTPUT_MISMATCH", "集群最终输出、子智能体文本及结构化结果必须与节点输出变量保持一致"));
     }
   }
 

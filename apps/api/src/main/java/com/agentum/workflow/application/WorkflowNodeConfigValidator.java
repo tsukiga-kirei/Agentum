@@ -91,7 +91,7 @@ public class WorkflowNodeConfigValidator {
 
             String nodeType = node.nodeType();
             validateAddedOutput(config, node, issues);
-                if ("parallel_group".equals(nodeType) && extractMapList(config, "clusterAgents").stream().anyMatch(com.agentum.agent.application.AgentStructuredOutput::enabled)) {
+            if ("parallel_group".equals(nodeType) && extractMapList(config, "clusterAgents").stream().anyMatch(com.agentum.agent.application.AgentStructuredOutput::enabled)) {
                 Set<String> declared = new java.util.HashSet<>();
                 declared.add(rawString(config.get("clusterOutputVariable")).isBlank() ? "cluster_result" : rawString(config.get("clusterOutputVariable")));
                 for (var agent : extractMapList(config, "clusterAgents")) {
@@ -681,10 +681,17 @@ public class WorkflowNodeConfigValidator {
             Set<String> expectedOutputs = new LinkedHashSet<>();
             expectedOutputs.add(clusterOutputVariable);
             expectedOutputs.addAll(agentOutputs);
+            expectedOutputs.addAll(clusterStructuredOutputs(agents));
             if (!expectedOutputs.equals(declaredOutputs)) {
-                issues.add(issue("WORKFLOW_VALIDATION_CLUSTER_OUTPUT_MISMATCH", "节点[" + node.name() + "]的最终输出和子智能体输出必须与节点输出变量保持一致", node));
+                issues.add(issue("WORKFLOW_VALIDATION_CLUSTER_OUTPUT_MISMATCH", "节点[" + node.name() + "]的最终输出、子智能体文本及结构化结果必须与节点输出变量保持一致", node));
             }
         }
+    }
+
+    private Set<String> clusterStructuredOutputs(List<Map<String, Object>> agents) {
+        return agents.stream().filter(com.agentum.agent.application.AgentStructuredOutput::enabled)
+            .map(com.agentum.agent.application.AgentStructuredOutput::variable).filter(value -> !value.isBlank())
+            .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
     private void validateIntentRoutingConfig(
@@ -695,10 +702,14 @@ public class WorkflowNodeConfigValidator {
         List<WorkflowDraftApi.WorkflowValidationIssue> issues
     ) {
         String clusterOutputVariable = rawString(config.getOrDefault("clusterOutputVariable", "cluster_result"));
-        if (!Set.of(clusterOutputVariable).equals(declaredOutputs)) {
+        // 允许已配置对象供下游绑定；未命中的成员仍不会产生值，交付继续核对实际来源与执行状态。
+        Set<String> expectedOutputs = new LinkedHashSet<>();
+        expectedOutputs.add(clusterOutputVariable);
+        expectedOutputs.addAll(clusterStructuredOutputs(agents));
+        if (!expectedOutputs.equals(declaredOutputs)) {
             issues.add(issue(
                 "WORKFLOW_VALIDATION_CLUSTER_INTENT_OUTPUT_INVALID",
-                "节点[" + node.name() + "]使用意图分派时，下游输出必须统一为 " + clusterOutputVariable + "，避免引用未命中的子智能体变量",
+                "节点[" + node.name() + "]使用意图分派时，普通文本统一输出为 " + clusterOutputVariable + "，额外输出须为已配置的结构化结果",
                 node
             ));
         }

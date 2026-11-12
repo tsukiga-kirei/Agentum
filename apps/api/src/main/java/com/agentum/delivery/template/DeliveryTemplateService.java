@@ -213,7 +213,17 @@ public class DeliveryTemplateService {
         if (value == null || value instanceof String text && text.isBlank()) return null;
         try {
             if ("number".equals(field.type())) return new java.math.BigDecimal(value.toString());
-            if (Set.of("text", "date").contains(field.type()) && (value instanceof String || value instanceof Number)) return value.toString();
+            // 同一中台日期列可能混用 20260513 与 2026-05-13；仅在填写日期字段时统一，原数据集不改写。
+            if ("date".equals(field.type()) && (value instanceof String || value instanceof Number)) {
+                String text = value.toString().strip();
+                try {
+                    return java.time.LocalDate.parse(text, text.matches("[0-9]{8}")
+                        ? java.time.format.DateTimeFormatter.BASIC_ISO_DATE : java.time.format.DateTimeFormatter.ISO_LOCAL_DATE).toString();
+                } catch (java.time.format.DateTimeParseException ex) {
+                    throw StructuredContent.error("数据集日期字段必须为有效的 yyyy-MM-dd 或 yyyyMMdd 日期：" + field.label());
+                }
+            }
+            if ("text".equals(field.type()) && (value instanceof String || value instanceof Number)) return value.toString();
             return value;
         } catch (NumberFormatException ex) { throw StructuredContent.error("数据集金额字段不能转换为数字：" + field.label()); }
     }
