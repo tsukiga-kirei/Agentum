@@ -24,6 +24,7 @@ public class DeliveryTemplateEntity {
     @Column(name = "updated_at", nullable = false) Instant updatedAt;
     @JdbcTypeCode(SqlTypes.JSON) @Column(nullable = false, columnDefinition = "jsonb") Map<String, Object> spec;
     @JdbcTypeCode(SqlTypes.VARBINARY) @Column(name = "file_bytes", nullable = false, columnDefinition = "bytea") byte[] fileBytes;
+    @Column(name = "deleted_at") Instant deletedAt;
     @Version @Column(name = "lock_version", nullable = false) long lockVersion;
     protected DeliveryTemplateEntity() {}
 }

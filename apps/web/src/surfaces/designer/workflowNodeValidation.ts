@@ -161,8 +161,11 @@ export function collectRuntimeTemplateTextFields(
 ): TemplateTextField[] {
   const source = config ?? {};
   const fields: TemplateTextField[] = [];
-  const push = (key: string, label: string, value: unknown) => {
-    const text = readString(value);
+  const push = (key: string, label: string, value: unknown, objectPaths = false) => {
+    // 文件模板命名可引用对象内的标量字段，依赖校验使用它的根变量。
+    const text = objectPaths
+      ? readString(value).replace(/\{\{\s*([a-zA-Z0-9_]+)(?:\.[a-zA-Z0-9_]+)+\s*\}\}/g, "{{$1}}")
+      : readString(value);
     if (text) {
       fields.push({ key, label, text });
     }
@@ -181,7 +184,7 @@ export function collectRuntimeTemplateTextFields(
           return;
         }
         if (itemConfig.generationMode === "file_template") {
-          push(`deliveryItems.${index}.config.fileNameTemplate`, `${itemName}文件名模板`, itemConfig.fileNameTemplate);
+          push(`deliveryItems.${index}.config.fileNameTemplate`, `${itemName}文件名模板`, itemConfig.fileNameTemplate, true);
           readMapList(itemConfig.templateBindings).filter(binding => !binding.constant && binding.variable !== "mcp_datasets").forEach((binding, i) => push(`deliveryItems.${index}.config.templateBindings.${i}`, `${itemName}字段来源`, "{{" + String(binding.variable ?? "") + "}}"));
           return;
         }
@@ -211,7 +214,7 @@ export function collectRuntimeTemplateTextFields(
       return fields;
     }
     if (source.generationMode === "file_template") {
-      push("fileNameTemplate", "文件名模板", source.fileNameTemplate);
+      push("fileNameTemplate", "文件名模板", source.fileNameTemplate, true);
       readMapList(source.templateBindings).filter(binding => !binding.constant && binding.variable !== "mcp_datasets").forEach((binding, i) => push(`templateBindings.${i}`, "模板字段来源", "{{" + String(binding.variable ?? "") + "}}"));
       return fields;
     }

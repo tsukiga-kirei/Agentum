@@ -564,6 +564,10 @@ export const attachmentApi = {
 };
 
 export const deliveryTemplateApi = {
+  versions: (tenantId: string, token: string, id: string, page = 1) =>
+    apiRequest<PageResponse<import("../types/delivery-template").DeliveryTemplate>>(`/api/tenants/${tenantId}/delivery-templates/${id}/versions?page=${page}&size=10`, { token }),
+  delete: (tenantId: string, token: string, id: string) =>
+    apiRequest<void>(`/api/tenants/${tenantId}/delivery-templates/${id}`, { method: "DELETE", token }),
   replaceFile: (tenantId: string, token: string, id: string, file: File) => {
     const body = new FormData(); body.append("file", file);
     return apiRequest<import("../types/delivery-template").DeliveryTemplate>(`/api/tenants/${tenantId}/delivery-templates/${id}/file`, { method: "POST", token, body });

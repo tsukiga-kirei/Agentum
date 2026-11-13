@@ -45,16 +45,76 @@ class DeliveryTemplateServiceTest {
         assertThatThrownBy(() -> service.get(tenant, UUID.randomUUID(), template.id)).hasMessageContaining("权限");
         template.status = "published"; assertThat(service.get(tenant, UUID.randomUUID(), template.id).name()).isEqualTo("风险报告");
     }
-    @Test void publicationFreezesOriginalAndSpecAndCopyCreatesNextVersion() {
+    @Test void savingPublishedTemplateCreatesRevisionWhileCopyCreatesIndependentResource() {
         service.publish(tenant, owner, template.id);
         var spec = service.get(tenant, owner, template.id).spec();
-        assertThatThrownBy(() -> service.save(tenant, owner, template.id, new TemplateModels.Save("修改", "self", spec))).hasMessageContaining("不可修改");
-        assertThatThrownBy(() -> service.replaceFile(tenant, owner, template.id, "新.docx", template.fileBytes)).hasMessageContaining("草稿");
         when(repository.lockVersion(template.id, tenant)).thenReturn(Optional.of(template));
         when(repository.findFirstByTemplateIdOrderByVersionDesc(template.id)).thenReturn(Optional.of(template));
+        // 无改动不会制造新版本；真实修改保存到新草稿，既有发布内容不变。
+        assertThat(service.save(tenant, owner, template.id, new TemplateModels.Save(template.name, "self", spec)).id()).isEqualTo(template.id);
+        var revision = service.save(tenant, owner, template.id, new TemplateModels.Save("修改", "self", spec));
+        assertThat(revision.id()).isNotEqualTo(template.id);
+        assertThat(revision.templateId()).isEqualTo(template.templateId);
+        assertThat(revision.version()).isEqualTo(2);
+        assertThat(revision.status()).isEqualTo("draft");
+        assertThat(template.name).isEqualTo("风险报告");
         var copy = service.copy(tenant, owner, template.id);
-        assertThat(copy.templateId()).isEqualTo(template.id); assertThat(copy.version()).isEqualTo(2); assertThat(copy.status()).isEqualTo("draft");
+        assertThat(copy.templateId()).isEqualTo(copy.id()).isNotEqualTo(template.id);
+        assertThat(copy.version()).isEqualTo(1); assertThat(copy.status()).isEqualTo("draft");
+        assertThat(copy.name()).isEqualTo("风险报告 副本");
         assertThat(template.status).isEqualTo("published");
+    }
+    @Test void numericallyEquivalentStylesDoNotCreateEmptyRevision() {
+        var spec = service.get(tenant, owner, template.id).spec();
+        var current = new TemplateModels.Spec(spec.fields(), spec.locations(), Map.of("fontSize", 11.0), spec.sheetStyles());
+        service.save(tenant, owner, template.id, new TemplateModels.Save(template.name, "self", current));
+        service.publish(tenant, owner, template.id);
+        var equivalent = new TemplateModels.Spec(spec.fields(), spec.locations(), Map.of("fontSize", 11), spec.sheetStyles());
+        assertThat(service.save(tenant, owner, template.id, new TemplateModels.Save(template.name, "self", equivalent)).id()).isEqualTo(template.id);
+        verify(repository, never()).lockVersion(any(), any());
+    }
+    @Test void replacementCreatesRevisionAndExistingDraftPreventsAccidentalOverwrite() {
+        service.publish(tenant, owner, template.id);
+        when(repository.lockVersion(template.id, tenant)).thenReturn(Optional.of(template));
+        var replaced = service.replaceFile(tenant, owner, template.id, "新版.docx", template.fileBytes);
+        assertThat(replaced.id()).isNotEqualTo(template.id);
+        assertThat(replaced.version()).isEqualTo(2); assertThat(template.fileName).isEqualTo("模板.docx");
+        when(repository.findFirstByTemplateIdAndStatusAndDeletedAtIsNullOrderByVersionDesc(template.templateId, "draft")).thenReturn(Optional.of(template));
+        var spec = service.get(tenant, owner, template.id).spec();
+        assertThatThrownBy(() -> service.save(tenant, owner, template.id, new TemplateModels.Save("不能覆盖草稿", "self", spec))).hasMessageContaining("已有未发布草稿");
+    }
+    @Test void deletionIsTenantAndOwnerProtectedKeepsPinnedVersionAndRejectsFurtherEdits() {
+        template.status = "published"; template.readScope = "all";
+        when(repository.lockVersion(template.id, tenant)).thenReturn(Optional.of(template));
+        when(repository.findByTemplateIdAndTenantId(template.templateId, tenant)).thenReturn(List.of(template));
+        assertThatThrownBy(() -> service.delete(UUID.randomUUID(), owner, template.id)).hasMessageContaining("不存在");
+        assertThatThrownBy(() -> service.delete(tenant, UUID.randomUUID(), template.id)).hasMessageContaining("只有创建者");
+        service.delete(tenant, owner, template.id);
+        assertThat(template.deletedAt).isEqualTo(now); assertThat(template.status).isEqualTo("published");
+        assertThat(service.get(tenant, owner, template.id).deleted()).isTrue();
+        assertThat(service.original(tenant, owner, template.id).bytes()).isEqualTo(template.fileBytes);
+        service.validateReference(tenant, owner, Map.of("templateVersionId", template.id.toString(), "documentKind", "word",
+            "templateBindings", List.of(Map.of("field", "summary", "constant", true, "value", "保留引用"))));
+        assertThatThrownBy(() -> service.save(tenant, owner, template.id, new TemplateModels.Save("修改", "self", service.get(tenant, owner, template.id).spec()))).hasMessageContaining("已从库中删除");
+        clearInvocations(repository); service.delete(tenant, owner, template.id); verify(repository, never()).save(any());
+    }
+    @Test void deletionIncludesAllVersionsAndHistoryChecksResourceAccess() {
+        var next = new DeliveryTemplateEntity(); next.id = UUID.randomUUID();
+        when(repository.lockVersion(template.id, tenant)).thenReturn(Optional.of(template));
+        when(repository.findByTemplateIdAndTenantId(template.templateId, tenant)).thenReturn(List.of(template, next));
+        service.delete(tenant, owner, template.id);
+        assertThat(next.deletedAt).isEqualTo(now);
+        assertThatThrownBy(() -> service.versions(tenant, UUID.randomUUID(), template.id, 1, 10)).hasMessageContaining("权限");
+        assertThatThrownBy(() -> service.versions(tenant, owner, template.id, 0, 10)).hasMessageContaining("分页");
+    }
+    @Test void fileNamesResolveScalarsAndNestedFieldsWithoutReinterpretingTheirContents() {
+        var variables = Map.<String, Object>of("report_year", "2026-10", "meta", Map.of("data_date", "2026年10月31日"), "literal", "{{runNumber}}", "count", 0, "ok", false);
+        assertThat(DeliveryTemplateService.renderFileName("月报-{{ report_year }}-{{meta.data_date}}-{{count}}-{{ok}}.xlsx", variables))
+            .isEqualTo("月报-2026-10-2026年10月31日-0-false.xlsx");
+        assertThat(DeliveryTemplateService.renderFileName("{{literal}}", variables)).isEqualTo("{{runNumber}}");
+        for (String name : List.of("missing", "meta", "meta.missing"))
+            assertThatThrownBy(() -> DeliveryTemplateService.renderFileName("{{" + name + "}}", variables)).hasMessageContaining("文件名变量缺失");
+        assertThat(DeliveryTemplateService.renderFileName("固定名称.xlsx", Map.of())).isEqualTo("固定名称.xlsx");
     }
     @Test void rejectsUnpublishedReferenceAndInvalidStylesAndUnknownFields() {
         Map<String, Object> config = Map.of("templateVersionId", template.id.toString(), "documentKind", "word", "templateBindings", List.of());
@@ -104,10 +164,10 @@ class DeliveryTemplateServiceTest {
         var source = node(run, "source", 1); source.complete(Map.of("mcp_datasets", Map.of("dates", reference)), now);
         var delivery = node(run, "delivery", 2);
         when(nodes.findByRunIdOrderBySortOrderAsc(run.getId())).thenReturn(List.of(source, delivery));
-        Map<String, Object> binding = Map.of("field", "items", "sourceNodeId", "source", "variable", "mcp_datasets", "path", "dates", "constant", false);
+        Map<String, Object> binding = Map.of("field", "items", "sourceNodeId", "source", "variable", "mcp_datasets", "path", "dates", "constant", false, "columnMappings", Map.of("start_date", "raw_date"));
         Map<String, Object> config = Map.of("templateVersionId", template.id.toString(), "documentKind", "excel", "templateBindings", List.of(binding));
-        Map<String, Object> missing = new LinkedHashMap<>(); missing.put("start_date", null);
-        List<Map<String, Object>> rows = List.of(Map.of("start_date", "20260513"), missing, Map.of("start_date", "2026-05-14"), Map.of("start_date", 20240229));
+        Map<String, Object> missing = new LinkedHashMap<>(); missing.put("raw_date", null);
+        List<Map<String, Object>> rows = List.of(Map.of("raw_date", "20260513"), missing, Map.of("raw_date", "2026-05-14"), Map.of("raw_date", 20240229));
         when(datasets.readRows(eq(tenant), eq(run.getId()), eq(source.getId()), eq(owner), eq(reference))).thenReturn(rows);
         when(storage.store(eq(tenant), any(), anyString(), anyString(), any())).thenAnswer(call -> {
             byte[] bytes = call.getArgument(4);
@@ -122,9 +182,9 @@ class DeliveryTemplateServiceTest {
         });
         var request = new DeliveryRuntimeRequest(run, delivery, config, Map.of(), owner);
         service.generate(request, UUID.randomUUID(), capability, config, Map.of());
-        assertThat(rows.getFirst().get("start_date")).isEqualTo("20260513");
+        assertThat(rows.getFirst().get("raw_date")).isEqualTo("20260513");
         for (String invalid : List.of("20260230", "2026-02-30", "bad-date")) {
-            when(datasets.readRows(eq(tenant), eq(run.getId()), eq(source.getId()), eq(owner), eq(reference))).thenReturn(List.of(Map.of("start_date", invalid)));
+            when(datasets.readRows(eq(tenant), eq(run.getId()), eq(source.getId()), eq(owner), eq(reference))).thenReturn(List.of(Map.of("raw_date", invalid)));
             assertThatThrownBy(() -> service.generate(request, UUID.randomUUID(), capability, config, Map.of())).hasMessageContaining("有效的 yyyy-MM-dd 或 yyyyMMdd");
         }
         verify(storage, times(1)).store(eq(tenant), any(), anyString(), anyString(), any());

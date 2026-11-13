@@ -1,15 +1,19 @@
 import { useState } from "react";
+import { copyMcpResultPolicy, newMcpResultKey } from "../../utils/mcpResultPolicies";
 import { TemplateInput, TemplateSelect } from "./TemplateEditors";
 
 type Policy = Record<string, unknown>;
 export function McpResultPolicyEditor({ value, tools = [], onChange, onDiscover }: { value: Record<string, Policy>; tools?: { name: string; description?: string }[]; onDiscover?: () => void; onChange: (value: Record<string, Policy>) => void }) {
-  const [policies, setPolicies] = useState(value);
+  const policies = value;
+  const [copyFrom, setCopyFrom] = useState("");
+  const [copyTarget, setCopyTarget] = useState("");
   const [tool, setTool] = useState("");
-  const update = (next: Record<string, Policy>) => { setPolicies(next); onChange(next); };
+  const update = (next: Record<string, Policy>) => onChange(next);
   const patch = (name: string, change: Policy) => update({ ...policies, [name]: { ...policies[name], ...change } });
   return <section className="grid gap-4"><div className="template-section-heading"><strong>工具结果处理</strong>{onDiscover && <button type="button" className="sys-btn sys-btn--default sys-btn--sm" onClick={onDiscover}>获取 / 刷新工具列表</button>}</div><p className="sys-field-hint">选择具体工具，为它配置结果处理。完整明细随本次流程保存，供交付读取；对话和模型只展示受限预览。分页工具可配置自动采集。</p>
     {Object.entries(policies).map(([name, p]) => <div key={name} className="grid gap-3 rounded-lg border border-[var(--color-border)] p-3">
-      <div className="flex justify-between"><div><strong className="break-all">{name}</strong><p className="sys-field-hint">{tools.find(tool => tool.name === name)?.description || (tools.length ? "工具不在当前发现列表中，请确认服务是否已变更" : "已绑定工具；获取工具列表可查看说明")}</p></div><button type="button" className="sys-btn sys-btn--default" onClick={() => update(Object.fromEntries(Object.entries(policies).filter(([key]) => key !== name)))}>移除规则</button></div>
+      <div className="template-section-heading"><div><strong className="break-all">{name}</strong><p className="sys-field-hint">{tools.find(tool => tool.name === name)?.description || (tools.length ? "工具不在当前发现列表中，请确认服务是否已变更" : "已绑定工具；获取工具列表可查看说明")}</p></div><div className="flex flex-wrap gap-2"><button type="button" className="sys-btn sys-btn--default" onClick={() => { setCopyFrom(name); setCopyTarget(""); }}>复制规则</button><button type="button" className="sys-btn sys-btn--default" onClick={() => update(Object.fromEntries(Object.entries(policies).filter(([key]) => key !== name)))}>移除规则</button></div></div>
+      {copyFrom === name && <div className="grid gap-3"><p className="sys-field-hint">选择尚未配置的目标工具，复制后可继续修改结果名称、字段和分页参数。原规则保留。</p><div className="flex flex-wrap gap-2"><TemplateSelect value={copyTarget || undefined} options={tools.filter(item => !(item.name in policies)).map(item => ({ value: item.name, label: item.name }))} placeholder="选择复制到的工具" onChange={setCopyTarget} /><button type="button" className="sys-btn sys-btn--primary" disabled={!copyTarget || copyTarget in policies} onClick={() => { update(copyMcpResultPolicy(policies, name, copyTarget)); setCopyFrom(""); setCopyTarget(""); }}>确认复制</button><button type="button" className="sys-btn sys-btn--default" onClick={() => setCopyFrom("")}>取消</button></div>{!tools.some(item => !(item.name in policies)) && <p className="sys-field-hint">暂无未配置工具，请先获取 / 刷新工具列表。</p>}</div>}
       <TemplateSelect value={String(p.mode ?? "direct")} options={[{ value: "direct", label: "完整返回给模型" }, { value: "dataset", label: "保存数据集，返回受限预览" }, { value: "auto", label: "小结果直接返回，大结果保存" }]} onChange={mode => patch(name, { mode })} />
       {p.mode !== "direct" && <>
         <TemplateInput label="结果名称（用于流程绑定）" value={String(p.datasetKey ?? name)} onChange={datasetKey => patch(name, { datasetKey })} />
@@ -27,6 +31,6 @@ export function McpResultPolicyEditor({ value, tools = [], onChange, onDiscover 
         </>}
       </>}
     </div>)}
-    <div className="flex gap-2"><TemplateSelect value={tool || undefined} options={tools.filter(item => !(item.name in policies)).map(item => ({ value: item.name, label: item.name }))} placeholder={tools.length ? "选择要配置的工具" : "请先获取工具列表"} disabled={!tools.length} onChange={setTool} /><button type="button" className="sys-btn sys-btn--default" disabled={!tool || !tools.some(item => item.name === tool) || tool in policies} onClick={() => { update({ ...policies, [tool]: { mode: "direct", datasetKey: tool.replace(/[^A-Za-z0-9_]/g, "_").replace(/^[^A-Za-z_]/, "result_").slice(0, 100) } }); setTool(""); }}>添加规则</button></div>
+    <div className="flex gap-2"><TemplateSelect value={tool || undefined} options={tools.filter(item => !(item.name in policies)).map(item => ({ value: item.name, label: item.name }))} placeholder={tools.length ? "选择要配置的工具" : "请先获取工具列表"} disabled={!tools.length} onChange={setTool} /><button type="button" className="sys-btn sys-btn--default" disabled={!tool || !tools.some(item => item.name === tool) || tool in policies} onClick={() => { update({ ...policies, [tool]: { mode: "direct", datasetKey: newMcpResultKey(tool) } }); setTool(""); }}>添加规则</button></div>
   </section>;
 }

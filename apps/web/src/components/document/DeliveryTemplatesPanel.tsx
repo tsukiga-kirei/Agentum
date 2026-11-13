@@ -2,7 +2,7 @@ import { downloadTemplateFile } from "../../utils/deliveryTemplateFile";
 import type { CSSProperties } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { App, Drawer, Empty, Pagination, ConfigProvider, Spin } from "antd";
-import { Copy, Download, Eye, FileSpreadsheet, FileText, Plus, Save, Search, Send, Upload } from "lucide-react";
+import { Copy, Download, Eye, FileSpreadsheet, FileText, Plus, Save, Search, Send, Upload, Trash2, History, CircleAlert } from "lucide-react";
 import { assetApi, deliveryTemplateApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import { getThemedDrawerRootClassName } from "../../utils/theme";
@@ -22,6 +22,7 @@ import {
   TemplateStyleEditor,
   TemplateValuesEditor,
 } from "./TemplateEditors";
+import { SysModalMask } from "../common/SysModalMask";
 import { WordDocumentPreviewDrawer } from "../runtime/WordDocumentPreviewDrawer";
 import { ExcelWorkbookPreviewDrawer } from "../runtime/ExcelWorkbookPreviewDrawer";
 
@@ -132,6 +133,11 @@ export function DeliveryTemplatesPanel({
   const [uploading, setUploading] = useState(false);
   const [name, setName] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DeliveryTemplate | null>(null);
+  const [history, setHistory] = useState<DeliveryTemplate[]>([]);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [editing, setEditing] = useState<DeliveryTemplate | null>(null);
   const [tab, setTab] = useState("fields");
   const [styleTarget, setStyleTarget] = useState("default");
@@ -200,6 +206,8 @@ export function DeliveryTemplatesPanel({
   const open = (template: DeliveryTemplate) => {
     setEditing({ ...structuredClone(template), spec: template.kind === "excel" ? { ...structuredClone(template.spec), excelRegions: inferTemplateExcelRegions(template.spec) } : structuredClone(template.spec) });
     setTab("fields");
+    setHistoryOpen(false);
+    setHistoryPage(1);
     setStyleTarget("default");
     setCapabilityId("");
     setValues(
@@ -208,7 +216,15 @@ export function DeliveryTemplatesPanel({
       ),
     );
   };
-  const editable = editing?.status === "draft" && editing.createdBy === user?.id;
+  const editable = Boolean(editing && !editing.deleted && editing.createdBy === user?.id);
+  useEffect(() => {
+    if (!historyOpen || !editing?.id || !token || !tenantId) return;
+    let disposed = false;
+    void deliveryTemplateApi.versions(tenantId, token, editing.id, historyPage).then(result => {
+      if (!disposed) { setHistory(result.items); setHistoryTotal(result.total); }
+    }).catch(error => { if (!disposed) void message.error(error instanceof Error ? error.message : "版本记录加载失败", 6); });
+    return () => { disposed = true; };
+  }, [historyOpen, historyPage, editing?.id, tenantId, token, message]);
   const styleValue = (): TemplateStyle => {
     if (!editing) return {};
     if (styleTarget === "default") return editing.spec.defaultStyle ?? {};
@@ -271,7 +287,7 @@ export function DeliveryTemplatesPanel({
       <Spin spinning={busy}>
         <div className="sys-card-grid">
           {items.map((item) => (
-            <article key={item.id} className="sys-card template-library-card" tabIndex={0} role="button" aria-label={`${item.status === "draft" ? "配置" : "查看"}模板：${item.name}`}
+            <article key={item.id} className="sys-card template-library-card" tabIndex={0} role="button" aria-label={`${item.createdBy === user?.id ? "配置" : "查看"}模板：${item.name}`}
               onClick={() => open(item)} onKeyDown={(event) => { if (event.target === event.currentTarget && ["Enter", " "].includes(event.key)) { event.preventDefault(); open(item); } }}>
               <div className="sys-card-header">
                 <span className="sys-card-avatar sys-card-avatar--cap">{item.kind === "excel" ? <FileSpreadsheet size={22} /> : <FileText size={22} />}</span>
@@ -289,7 +305,7 @@ export function DeliveryTemplatesPanel({
               <div className="template-card-actions" onClick={(event) => event.stopPropagation()}>
                 <button className="sys-btn sys-btn--default" onClick={() => open(item)}>
                   <Eye size={15} />
-                  {item.status === "draft" ? "配置" : "查看"}
+                  {item.createdBy === user?.id ? "配置" : "查看"}
                 </button>
                 <button
                   className="sys-btn sys-btn--default"
@@ -307,6 +323,7 @@ export function DeliveryTemplatesPanel({
                   <Copy size={15} />
                   复制
                 </button>
+                {item.createdBy === user?.id && <button type="button" className="sys-btn sys-btn--danger" disabled={busy} onClick={() => setDeleteTarget(item)}><Trash2 size={15} />删除</button>}
                 {onPublished && item.status === "published" && (
                   <button className="sys-btn sys-btn--primary" onClick={() => onPublished(item)}>
                     使用模板
@@ -388,7 +405,7 @@ export function DeliveryTemplatesPanel({
         open={Boolean(editing)}
         title={
           editing
-            ? `${editing.name} · ${editing.status === "published" ? "固定发布版本" : "模板草稿"}`
+            ? `${editing.name} · v${editing.version} · ${editing.status === "published" ? "已发布" : "草稿"}`
             : "配置模板"
         }
         size={1000}
@@ -399,6 +416,8 @@ export function DeliveryTemplatesPanel({
         {editing && (
           <div className="sys-drawer-section template-editor-scroll">
             <div className="template-toolbar">
+              <button type="button" className="sys-btn sys-btn--default" onClick={() => setHistoryOpen(!historyOpen)}><History size={15} />版本记录</button>
+              {editable && <button type="button" className="sys-btn sys-btn--danger" disabled={busy} onClick={() => setDeleteTarget(editing)}><Trash2 size={15} />删除模板</button>}
               <button
                 className="sys-btn sys-btn--default"
                 onClick={() =>
@@ -423,7 +442,9 @@ export function DeliveryTemplatesPanel({
               ]}
               onChange={(value) => setTab(String(value))}
             />
-            {!editable && <div className="template-readonly-notice"><div><strong>已发布模板为只读</strong><p>复制为草稿后即可调整字段、方向和格式，已发布版本保持固定。</p></div><button type="button" disabled={busy} className="sys-btn sys-btn--default" onClick={() => void action(async () => { if (token && tenantId) { open(await deliveryTemplateApi.copy(tenantId, token, editing.id)); await load(); } })}><Copy size={15} />复制为草稿</button></div>}
+            {historyOpen && <section className="template-field-card grid gap-3"><strong>版本记录</strong><p className="sys-field-hint">流程固定引用所选发布版本。修改已发布内容后保存为新草稿；发布新版本后，可在流程中明确切换。</p>{history.map(version => <div className="template-section-heading" key={version.id}><span>v{version.version} · {version.status === "published" ? "已发布" : "草稿"} · {new Date(version.updatedAt).toLocaleString()}{version.deleted ? " · 已删除" : ""}</span><button type="button" className="sys-btn sys-btn--default sys-btn--sm" disabled={busy || version.id === editing.id} onClick={() => open(version)}>打开</button></div>)}<Pagination size="small" current={historyPage} total={historyTotal} pageSize={10} showSizeChanger={false} onChange={setHistoryPage} /></section>}
+            {editable && editing.status === "published" && <p className="sys-field-hint">当前为 v{editing.version} 发布内容，可直接编辑。保存修改会创建本模板的新版本草稿，已有流程继续使用原版本。</p>}
+            {!editable && <div className="template-readonly-notice"><div><strong>{editing.deleted ? "此模板已从库中删除" : "共享模板，当前仅可查看"}</strong><p>可复制为独立模板后修改名称、字段和格式。</p></div><button type="button" disabled={busy} className="sys-btn sys-btn--default" onClick={() => void action(async () => { if (token && tenantId) { open(await deliveryTemplateApi.copy(tenantId, token, editing.id)); await load(); } })}><Copy size={15} />复制模板</button></div>}
             {tab === "fields" && (
               <ConfigProvider componentDisabled={!editable}><fieldset disabled={!editable} className="template-editor-fieldset grid gap-5">
                 <TemplateInput
@@ -447,7 +468,7 @@ export function DeliveryTemplatesPanel({
                 </div>
                 <div className="sys-field">
                   <label className="sys-field-label">
-                    替换草稿原件（会重新识别并重置字段和格式）
+                    替换模板原件（重新识别字段和格式，已发布内容另存新版本）
                   </label>
                   <TemplateFilePicker
                     key={editing.id}
@@ -531,11 +552,13 @@ export function DeliveryTemplatesPanel({
                   onClick={() =>
                     void action(async () => {
                       if (token && tenantId) {
-                        if (editable) await deliveryTemplateApi.save(tenantId, token, editing);
+                        const saved = editable ? await deliveryTemplateApi.save(tenantId, token, editing) : editing;
+                        setEditing(saved);
+                        if (saved.id !== editing.id) await load();
                         const file = await deliveryTemplateApi.preview(
                           tenantId,
                           token,
-                          editing.id,
+                          saved.id,
                           { capabilityId, values, fileName: `${editing.name}-试填` },
                         );
                         setPreview({
@@ -546,7 +569,7 @@ export function DeliveryTemplatesPanel({
                               ? await deliveryTemplateApi.previewLayout(
                                   tenantId,
                                   token,
-                                  editing.id,
+                                  saved.id,
                                   { capabilityId, values, fileName: `${editing.name}-试填` },
                                 )
                               : undefined,
@@ -583,7 +606,7 @@ export function DeliveryTemplatesPanel({
                   }
                 >
                   <Save size={15} />
-                  保存草稿
+                  {editing?.status === "published" ? "保存修改" : "保存草稿"}
                 </button>
                 <button
                   className="sys-btn sys-btn--primary"
@@ -591,11 +614,13 @@ export function DeliveryTemplatesPanel({
                   onClick={() =>
                     void action(async () => {
                       if (token && tenantId && editing) {
-                        await deliveryTemplateApi.save(tenantId, token, editing);
+                        const saved = await deliveryTemplateApi.save(tenantId, token, editing);
+                        setEditing(saved);
+                        await load();
                         const result = await deliveryTemplateApi.publish(
                           tenantId,
                           token,
-                          editing.id,
+                          saved.id,
                         );
                         setEditing(result);
                         await load();
@@ -612,6 +637,7 @@ export function DeliveryTemplatesPanel({
           </div>
         </div>
       </Drawer>
+      {deleteTarget && <SysModalMask className="agent-delete-confirm-mask" onClose={() => !busy && setDeleteTarget(null)}><div className="sys-modal agent-delete-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="delete-delivery-template-title"><div className="agent-delete-confirm-body"><div className="agent-delete-confirm-icon"><CircleAlert size={28} /></div><div className="agent-delete-confirm-content"><h2 id="delete-delivery-template-title">删除模板</h2><p>确认删除“{deleteTarget.name}”及其版本记录？模板将从库中移除；已有流程固定引用的版本保留，仍可继续交付和查看。</p></div></div><div className="agent-delete-confirm-footer"><button type="button" className="sys-btn sys-btn--default" disabled={busy} onClick={() => setDeleteTarget(null)}>取消</button><button type="button" className="sys-btn sys-btn--danger" disabled={busy} onClick={() => void action(async () => { if (!token || !tenantId) return; await deliveryTemplateApi.delete(tenantId, token, deleteTarget.id); setDeleteTarget(null); setEditing(null); void message.success("模板已删除"); if (page > 1 && items.length === 1) setPage(page - 1); else await load(); })}>删除</button></div></div></SysModalMask>}
       {preview && (
         <TemplatePreview file={preview} kind={preview.kind} onClose={() => setPreview(null)} />
       )}

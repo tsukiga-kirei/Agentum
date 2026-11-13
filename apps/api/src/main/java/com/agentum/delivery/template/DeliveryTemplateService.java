@@ -43,6 +43,29 @@ public class DeliveryTemplateService {
     }
     @Transactional(readOnly = true)
     public TemplateModels.Row get(UUID tenant, UUID user, UUID id) { return row(read(tenant, user, id, false)); }
+    @Transactional(readOnly = true)
+    public PageResponse<TemplateModels.Row> versions(UUID tenant, UUID user, UUID id, int page, int size) {
+        if (page < 1 || size < 1 || size > 100) throw StructuredContent.error("分页参数不正确");
+        var entity = read(tenant, user, id, false);
+        return PageResponse.from(repository.history(entity.templateId, tenant, user,
+            PageRequest.of(page - 1, size, Sort.by(Sort.Direction.DESC, "version"))).map(this::row));
+    }
+    @Transactional
+    public void delete(UUID tenant, UUID user, UUID id) {
+        var entity = read(tenant, user, id, false);
+        // 只删除创建者自己的库中版本；保留原件和不可变发布版本供已有流程、重试和审计读取。
+        if (!entity.createdBy.equals(user)) {
+            event("模板删除被拒绝", entity, user);
+            throw new ApiException(HttpStatus.FORBIDDEN, "DELIVERY_TEMPLATE_EDIT_DENIED", "只有创建者可以删除模板");
+        }
+        if (entity.deletedAt != null) return;
+        repository.lockVersion(entity.templateId, tenant).orElseThrow(() -> StructuredContent.error("模板不存在"));
+        // 库中以一个模板展示，删除其整条版本链；固定引用仍按版本读取，不受列表过滤影响。
+        for (var version : repository.findByTemplateIdAndTenantId(entity.templateId, tenant)) {
+            version.deletedAt = clock.instant(); version.updatedAt = clock.instant(); repository.save(version);
+        }
+        event("从模板库删除模板及版本", entity, user);
+    }
     @Transactional
     public TemplateModels.Row upload(UUID tenant, UUID user, String name, String fileName, byte[] bytes) {
         if (bytes.length == 0 || bytes.length > 20 * 1024 * 1024) throw StructuredContent.error("模板文件应为 1 字节～20 MB");
@@ -62,10 +85,20 @@ public class DeliveryTemplateService {
     @Transactional
     public TemplateModels.Row save(UUID tenant, UUID user, UUID id, TemplateModels.Save body) {
         var entity = owned(tenant, user, id);
-        if (!"draft".equals(entity.status)) throw StructuredContent.error("发布版本不可修改，请先复制为新草稿");
         validateSpec(entity, body.spec());
         if (!Set.of("self", "all").contains(body.readScope())) throw StructuredContent.error("模板可见范围无效");
-        entity.name = validName(body.name()); entity.readScope = body.readScope();
+        String name = validName(body.name());
+        if ("published".equals(entity.status)) {
+            // 没有内容变更时保存/试填不产生空版本，只有真正修改才建立后续草稿。
+            com.fasterxml.jackson.databind.JsonNode nextSpec = mapper.valueToTree(body.spec());
+            com.fasterxml.jackson.databind.JsonNode currentSpec = mapper.valueToTree(spec(entity));
+            // 浏览器可能将 11.0 序列化成 11，数值等价不应造成模板多出一个版本。
+            boolean sameSpec = currentSpec.equals((left, right) -> left.isNumber() && right.isNumber()
+                ? left.decimalValue().compareTo(right.decimalValue()) : left.equals(right) ? 0 : 1, nextSpec);
+            if (entity.name.equals(name) && entity.readScope.equals(body.readScope()) && sameSpec) return row(entity);
+            entity = revision(entity, user);
+        }
+        entity.name = name; entity.readScope = body.readScope();
         entity.spec = mapper.convertValue(body.spec(), new TypeReference<>() {}); entity.updatedAt = clock.instant();
         repository.save(entity); event("保存模板草稿", entity, user); return row(entity);
     }
@@ -84,21 +117,30 @@ public class DeliveryTemplateService {
     @Transactional
     public TemplateModels.Row copy(UUID tenant, UUID user, UUID id) {
         var source = read(tenant, user, id, false);
-        // 同一创建者复制生成下一版本，共享模板复制则创建独立资源，不能修改原创建者的版本链。
-        repository.lockVersion(source.templateId, tenant)
-            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "DELIVERY_TEMPLATE_NOT_FOUND", "模板不存在或不可访问"));
+        // 复制始终创建独立模板；原模板的后续修改通过保存自动形成版本。
         var entity = new DeliveryTemplateEntity();
         entity.id = UUID.randomUUID(); entity.templateId = entity.id; entity.tenantId = tenant;
         entity.name = validName(source.name.length() > 150 ? source.name.substring(0, 150) + " 副本" : source.name + " 副本");
         entity.fileName = source.fileName; entity.kind = source.kind; entity.version = 1; entity.status = "draft";
         entity.readScope = "self"; entity.createdBy = user; entity.updatedAt = clock.instant();
         entity.fileBytes = source.fileBytes.clone(); entity.spec = new LinkedHashMap<>(source.spec);
-        if (source.createdBy.equals(user)) {
-            entity.templateId = source.templateId;
-            entity.version = repository.findFirstByTemplateIdOrderByVersionDesc(source.templateId).map(it -> it.version + 1).orElse(2);
-            entity.name = source.name;
-        }
         repository.save(entity); event("复制模板为草稿", entity, user); return row(entity);
+    }
+    /** 修改发布版时创建新草稿，旧版本及其流程绑定始终保持不可变。 */
+    private DeliveryTemplateEntity revision(DeliveryTemplateEntity source, UUID user) {
+        var root = repository.lockVersion(source.templateId, source.tenantId)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "DELIVERY_TEMPLATE_NOT_FOUND", "模板不存在或不可访问"));
+        if (root.deletedAt != null) throw StructuredContent.error("模板已删除，请复制为独立模板后编辑");
+        if (repository.findFirstByTemplateIdAndStatusAndDeletedAtIsNullOrderByVersionDesc(source.templateId, "draft").isPresent())
+            throw StructuredContent.error("该模板已有未发布草稿，请从模板库打开草稿继续编辑");
+        var entity = new DeliveryTemplateEntity();
+        entity.id = UUID.randomUUID(); entity.templateId = source.templateId; entity.tenantId = source.tenantId;
+        entity.name = source.name; entity.fileName = source.fileName; entity.kind = source.kind;
+        entity.version = repository.findFirstByTemplateIdOrderByVersionDesc(source.templateId).map(it -> it.version + 1).orElse(source.version + 1);
+        entity.status = "draft"; entity.readScope = source.readScope; entity.createdBy = user; entity.updatedAt = clock.instant();
+        entity.fileBytes = source.fileBytes.clone(); entity.spec = new LinkedHashMap<>(source.spec);
+        event("开始模板新版本草稿", entity, user);
+        return entity;
     }
     @Transactional(readOnly = true)
     public DocumentDeliveryFile original(UUID tenant, UUID user, UUID id) {
@@ -108,9 +150,9 @@ public class DeliveryTemplateService {
     @Transactional
     public TemplateModels.Row replaceFile(UUID tenant, UUID user, UUID id, String name, byte[] bytes) {
         var entity = owned(tenant, user, id);
-        if (!"draft".equals(entity.status)) throw StructuredContent.error("只能替换草稿原件");
         if (bytes.length == 0 || bytes.length > 20 * 1024 * 1024 || !name.toLowerCase(Locale.ROOT).endsWith("word".equals(entity.kind) ? ".docx" : ".xlsx")) throw StructuredContent.error("请上传同类型、20 MB 以内的模板文件");
         var fresh = renderer.inspect(bytes, entity.kind);
+        if ("published".equals(entity.status)) entity = revision(entity, user);
         entity.spec = mapper.convertValue(fresh, new TypeReference<>() {}); entity.fileBytes = bytes;
         entity.fileName = safeName(name, entity.kind); entity.updatedAt = clock.instant(); repository.save(entity);
         event("替换模板草稿原件并重新识别字段", entity, user); return row(entity);
@@ -192,9 +234,9 @@ public class DeliveryTemplateService {
         validateOverrides(spec(entity), overrides(config));
         byte[] bytes = renderer.render(entity.fileBytes, entity.kind, spec(entity), values, overrides(config));
         enforceSize(capability, bytes.length);
-        String fileName = Objects.toString(config.get("fileNameTemplate"), "模板交付-{{runNumber}}");
-        for (var entry : variables.entrySet()) if (entry.getValue() instanceof String || entry.getValue() instanceof Number) fileName = fileName.replace("{{" + entry.getKey() + "}}", entry.getValue().toString());
-        fileName = fileName.replace("{{runNumber}}", request.run().getRunNumber());
+        Map<String, Object> nameVariables = new LinkedHashMap<>(variables);
+        nameVariables.put("runNumber", request.run().getRunNumber());
+        String fileName = renderFileName(Objects.toString(config.get("fileNameTemplate"), "模板交付-{{runNumber}}"), nameVariables);
         var artifact = storage.store(request.run().getTenantId(), recordId, safeName(fileName, entity.kind), contentType(entity.kind), bytes);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("adapter", "word".equals(entity.kind) ? "word_document" : "excel_workbook");
@@ -257,6 +299,7 @@ public class DeliveryTemplateService {
     private DeliveryTemplateEntity owned(UUID tenant, UUID user, UUID id) {
         var entity = read(tenant, user, id, false);
         if (!entity.createdBy.equals(user)) throw new ApiException(HttpStatus.FORBIDDEN, "DELIVERY_TEMPLATE_EDIT_DENIED", "只有创建者可以编辑或发布模板");
+        if (entity.deletedAt != null) throw StructuredContent.error("模板已从库中删除，不能继续编辑或发布");
         return entity;
     }
     private TemplateModels.Spec spec(DeliveryTemplateEntity entity) {
@@ -277,7 +320,7 @@ public class DeliveryTemplateService {
             default -> "例";
         };
     }
-    private TemplateModels.Row row(DeliveryTemplateEntity e) { return new TemplateModels.Row(e.id, e.templateId, e.name, e.fileName, e.kind, e.version, e.status, e.readScope, e.createdBy, e.updatedAt, spec(e)); }
+    private TemplateModels.Row row(DeliveryTemplateEntity e) { return new TemplateModels.Row(e.id, e.templateId, e.name, e.fileName, e.kind, e.version, e.status, e.readScope, e.createdBy, e.updatedAt, e.deletedAt != null, spec(e)); }
     private void validateSpec(DeliveryTemplateEntity entity, TemplateModels.Spec spec) {
         if (spec == null || spec.locations() == null) throw StructuredContent.error("模板字段配置不能为空");
         StructuredContent.validateFields(spec.fields());
@@ -343,6 +386,21 @@ public class DeliveryTemplateService {
     }
     private static UUID uuid(Object value) { try { return UUID.fromString(Objects.toString(value, "")); } catch (Exception ex) { throw StructuredContent.error("请选择有效的模板版本"); } }
     private String validName(String name) { if (name == null || name.isBlank() || name.strip().length() > 160) throw StructuredContent.error("模板名称应为 1～160 个字符"); return name.strip(); }
+    /** 文件名按单次替换处理，数据中的花括号不会被再次解释；缺值不能悄悄输出未解析的占位符。 */
+    static String renderFileName(String template, Map<String, Object> variables) {
+        var pattern = java.util.regex.Pattern.compile("\\{\\{\\s*([A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*)\\s*}}");
+        var matcher = pattern.matcher(template);
+        StringBuffer result = new StringBuffer();
+        while (matcher.find()) {
+            String key = matcher.group(1);
+            Object value = path(variables, key);
+            if (!(value instanceof String || value instanceof Number || value instanceof Boolean) || value.toString().isBlank())
+                throw StructuredContent.error("文件名变量缺失或不是文字、数字、日期：" + key);
+            matcher.appendReplacement(result, java.util.regex.Matcher.quoteReplacement(value.toString()));
+        }
+        matcher.appendTail(result);
+        return result.toString();
+    }
     private String safeName(String value, String kind) { return DocumentDeliveryStorage.sanitizeFileName(value, "模板交付" + ("word".equals(kind) ? ".docx" : ".xlsx"), "word".equals(kind) ? ".docx" : ".xlsx"); }
     private String contentType(String kind) { return "word".equals(kind) ? MarkdownDocxRenderer.DOCX_CONTENT_TYPE : ExcelWorkbookRenderer.XLSX_CONTENT_TYPE; }
     private void event(String action, DeliveryTemplateEntity e, UUID user) { log.info("{} tenantId={} userId={} templateVersionId={} requestId={}", action, e.tenantId, user, e.id, RequestIds.current()); }

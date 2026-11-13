@@ -101,3 +101,7 @@ test("多交付项按自身模式独立收集引用", () => {
     "old_table",
   ]);
 });
+
+test("模板文件名的对象字段登记根变量依赖", () => {
+  assert.deepEqual(collectRuntimeTemplateVariableNames({ deliveryMode: "capability", documentKind: "excel", generationMode: "file_template", fileNameTemplate: "月报-{{attachment_meta.data_date}}-{{report_year}}.xlsx" }, "delivery"), ["attachment_meta", "report_year"]);
+});

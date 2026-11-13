@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { App, Drawer, Pagination } from "antd";
-import { Eye, Library, Search } from "lucide-react";
+import { Eye, Library, Search, FileText } from "lucide-react";
 import { deliveryTemplateApi } from "../../services/apiClient";
 import { useAuthStore } from "../../stores/authStore";
 import { getThemedDrawerRootClassName } from "../../utils/theme";
@@ -11,7 +11,8 @@ import type {
   TemplateStyle,
   TemplateWorkbookSheet,
 } from "../../types/delivery-template";
-import { sampleTemplateValue, templateFieldTypes } from "../../types/delivery-template";
+import { sampleTemplateValue, templateFieldTypes, templateFileNameVariables } from "../../types/delivery-template";
+import { insertTemplateToken, formatTemplateVariable } from "../../utils/templateTextInsertion";
 import { DeliveryTemplatesPanel, TemplatePreview } from "./DeliveryTemplatesPanel";
 import {
   TemplateInput,
@@ -36,6 +37,8 @@ export function TemplateDeliverySection({
   onChange: (patch: Record<string, unknown>) => void;
 }) {
   const { message } = App.useApp();
+  const fileNameRef = useRef<HTMLInputElement>(null);
+  const fileNameId = useId();
   const token = useAuthStore((state) => state.token);
   const user = useAuthStore((state) => state.user);
   const activeRole = useAuthStore((state) => state.activeRole);
@@ -245,16 +248,16 @@ export function TemplateDeliverySection({
         showSizeChanger={false}
         onChange={setPage}
       />
-      <TemplateInput
-        label="文件名模板"
-        value={String(config.fileNameTemplate ?? "")}
-        onChange={(fileNameTemplate) => onChange({ fileNameTemplate })}
-        placeholder={`交付文件-{{runNumber}}.${kind === "word" ? "docx" : "xlsx"}`}
-      />
+      <div className="sys-field">
+        <label className="sys-field-label" htmlFor={fileNameId}>文件名模板</label>
+        <TemplateSelect value={undefined} options={templateFileNameVariables(variables)} placeholder="选择并插入文件名变量" onChange={name => insertTemplateToken(fileNameRef.current, String(config.fileNameTemplate ?? ""), formatTemplateVariable(name), fileNameTemplate => onChange({ fileNameTemplate }))} />
+        <div className="sys-field-input-wrap"><FileText size={16} className="sys-field-prefix" /><input id={fileNameId} ref={fileNameRef} className="sys-field-input" value={String(config.fileNameTemplate ?? "")} onChange={event => onChange({ fileNameTemplate: event.target.value })} placeholder={`交付文件-{{runNumber}}.${kind === "word" ? "docx" : "xlsx"}`} /></div>
+        <p className="sys-field-hint">选择变量插入到光标处，也可直接输入。支持输入字段、上游结构化字段和系统日期；例如 {"金融月报-{{report_year}}-{{runNumber}}"}。日期变量 date 表示运行当天，报告月份请选 report_year。</p>
+      </div>
       {template && (
         <>
           <p className="sys-field-hint">
-            已固定模板版本。模板更新不会自动替换本流程；更换模板后需重新绑定字段。
+            已固定模板版本。模板更新不会自动替换本流程；更换模板后需重新绑定字段。{template.deleted && " 此版本已从模板库删除，已有绑定仍可使用。"}
           </p>
           <TemplateTabs
             value={tab}
@@ -329,6 +332,7 @@ export function TemplateDeliverySection({
                   </div>}
                   {binding && !binding.constant && field.type === "table" && (
                     <div className="template-form-grid">
+                      <p className="sys-field-hint template-full-row">逐列选择来源字段，按字段标识取值，与来源数据的列顺序无关；同名时默认对应，名称不同时请手动调整。每条记录保持原位置，空值不会让后续记录前移。</p>
                       {field.columns.map((column) => {
                         const datasetColumns = variables.find(v => v.sourceNodeId === binding.sourceNodeId && v.datasetPath === binding.path)?.datasetColumns;
                         const sourceField = variables

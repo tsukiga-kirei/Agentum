@@ -37,7 +37,7 @@ public final class TemplateModels {
     public record Binding(String field, String sourceNodeId, String variable, String path,
                           boolean constant, Object value, Map<String, String> columnMappings) {}
     public record Row(UUID id, UUID templateId, String name, String fileName, String kind, int version,
-                      String status, String readScope, UUID createdBy, Instant updatedAt, Spec spec) {}
+                      String status, String readScope, UUID createdBy, Instant updatedAt, boolean deleted, Spec spec) {}
     public record Save(String name, String readScope, Spec spec) {}
     public record Preview(UUID capabilityId, List<Binding> bindings, Map<String, Object> values,
                           Map<String, Map<String, Object>> locationStyles, String fileName) {}

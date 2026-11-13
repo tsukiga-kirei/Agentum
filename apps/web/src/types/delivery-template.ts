@@ -35,6 +35,7 @@ export type DeliveryTemplate = {
   readScope: "self" | "all";
   createdBy: string;
   updatedAt: string;
+  deleted: boolean;
   spec: TemplateSpec;
 };
 
@@ -125,3 +126,27 @@ export type TemplateWorkbookSheet = {
   }[];
   truncated: boolean;
 };
+
+/** 批量设置包含明细列，保留类型、位置和其他约束。 */
+export function setTemplateFieldsRequired(fields: TemplateField[], required: boolean): TemplateField[] {
+  return fields.map(field => ({ ...field, required, columns: setTemplateFieldsRequired(field.columns, required) }));
+}
+
+/** 文件名仅接受标量；对象可选择具体字段，列表和完整 MCP 数据集不参与命名。 */
+export function templateFileNameVariables(sources: TemplateSource[]): { value: string; label: string }[] {
+  const items = new Map([
+    ["runNumber", { value: "runNumber", label: "运行编号 · runNumber" }],
+    ["date", { value: "date", label: "运行当天日期 · date" }],
+    ["dateCompact", { value: "dateCompact", label: "运行当天日期（紧凑） · dateCompact" }],
+  ]);
+  for (const source of sources.filter(item => !item.datasetPath)) {
+    if (["string", "text", "date", "number", "boolean"].includes(source.type))
+      items.set(source.name, { value: source.name, label: `${source.sourceNodeName} → ${source.name}` });
+    for (const field of source.fields ?? []) {
+      if (!["text", "date", "number", "boolean"].includes(field.type)) continue;
+      const value = `${source.name}.${field.key}`;
+      items.set(value, { value, label: `${source.sourceNodeName} → ${source.name} → ${field.label || field.key}` });
+    }
+  }
+  return [...items.values()];
+}

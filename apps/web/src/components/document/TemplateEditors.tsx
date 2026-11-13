@@ -1,7 +1,7 @@
 import { useId, useRef, useState } from "react";
 import { Input, Select, Segmented } from "antd";
 import { CalendarDays, FileText, FileUp, Hash, Plus, Trash2, Type, Settings2, Tags } from "lucide-react";
-import { newTemplateField, templateFieldTypes } from "../../types/delivery-template";
+import { newTemplateField, setTemplateFieldsRequired, templateFieldTypes } from "../../types/delivery-template";
 import type {
   StructuredOutputConfig,
   TemplateField,
@@ -319,6 +319,7 @@ export function TemplateFieldsEditor({
     onChange(fields.map((field, i) => (i === index ? { ...field, ...patch } : field)));
   return (
     <div className="template-field-list">
+      {fields.length > 0 && <div className="template-bulk-actions"><span className="sys-field-hint">{columns ? "本组全部明细列" : "全部字段及明细列"}</span><button type="button" className="sys-btn sys-btn--default sys-btn--sm" onClick={() => onChange(setTemplateFieldsRequired(fields, true))}>全部设为必填</button><button type="button" className="sys-btn sys-btn--default sys-btn--sm" onClick={() => onChange(setTemplateFieldsRequired(fields, false))}>全部设为选填</button></div>}
       {!columns && <p className="sys-field-hint">
         {lockedKeys
           ? "字段说明用于解释含义和取数口径，供绑定来源时参考；不会自动筛选、计算或修改上游数据。必填、类型、字数和条数由对应设置校验。"
@@ -478,10 +479,11 @@ export function StructuredOutputEditor({
           onChange={(next) => onChange({ ...current, enabled: next === "enabled" })}
         />
       </div>
+      <p className="sys-field-hint">把智能体生成的内容保存成可单独选择的业务字段，供后续步骤或文件模板使用。例如把“数据截止日期”保存为 data_date，交付时就能直接绑定这个日期。普通回答仍然保留。</p>
       {current.enabled && (
         <>
           <p className="sys-field-hint">
-            一次生成多个字段，另存为对象变量。原文本输出继续保留；字段内容经过校验后才能用于下游交付。
+            填写对象结果变量后，添加字段并写明内容要求；系统会把字段说明交给模型，并校验返回内容。MCP 的完整明细请直接绑定工具结果，无需让模型在这里重复输出。
           </p>
           <TemplateInput
             label="对象结果变量"

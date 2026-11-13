@@ -39,6 +39,19 @@ public class DeliveryTemplateController {
     public ApiResponse<TemplateModels.Row> get(@PathVariable UUID tenantId, @PathVariable UUID id, @AuthenticationPrincipal CurrentUserPrincipal user) {
         access.assertCanUseAssets(user, tenantId); return ApiResponse.success(service.get(tenantId, user.userId(), id), RequestIds.current());
     }
+    @GetMapping("/{id}/versions")
+    public ApiResponse<PageResponse<TemplateModels.Row>> versions(@PathVariable UUID tenantId, @PathVariable UUID id,
+        @AuthenticationPrincipal CurrentUserPrincipal user, @RequestParam(defaultValue = "1") int page,
+        @RequestParam(defaultValue = "10") int size) {
+        access.assertCanUseAssets(user, tenantId);
+        return ApiResponse.success(service.versions(tenantId, user.userId(), id, page, size), RequestIds.current());
+    }
+    @DeleteMapping("/{id}")
+    public ApiResponse<Void> delete(@PathVariable UUID tenantId, @PathVariable UUID id, @AuthenticationPrincipal CurrentUserPrincipal user) {
+        access.assertCanUseAssets(user, tenantId);
+        service.delete(tenantId, user.userId(), id);
+        return ApiResponse.success(null, RequestIds.current());
+    }
     @PutMapping("/{id}")
     public ApiResponse<TemplateModels.Row> save(@PathVariable UUID tenantId, @PathVariable UUID id, @AuthenticationPrincipal CurrentUserPrincipal user, @RequestBody TemplateModels.Save body) {
         access.assertCanUseAssets(user, tenantId); return ApiResponse.success(service.save(tenantId, user.userId(), id, body), RequestIds.current());

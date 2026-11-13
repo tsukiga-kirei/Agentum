@@ -4006,7 +4006,7 @@ paths:
                         $ref: "#/components/schemas/WorkbenchRunDetail"
   /api/tenants/{tenantId}/delivery-templates:
     get:
-      summary: 分页查询可见交付模板版本
+      summary: 分页查询可见模板，每个模板返回最新可见版本
       tags:
         - Delivery
       parameters:
@@ -4128,8 +4128,32 @@ paths:
                     properties:
                       data:
                         $ref: '#/components/schemas/DeliveryTemplateVersion'
+    delete:
+      summary: 删除创建者的模板及版本链，已有流程固定引用继续可用
+      tags:
+        - Delivery
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 模板已从列表移除，重复删除幂等
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
     put:
-      summary: 保存创建者的草稿，发布版本不可修改
+      summary: 保存模板修改；修改发布版本自动创建原模板的新版本草稿
       tags:
         - Delivery
       parameters:
@@ -4176,6 +4200,62 @@ paths:
                     properties:
                       data:
                         $ref: '#/components/schemas/DeliveryTemplateVersion'
+  /api/tenants/{tenantId}/delivery-templates/{id}/versions:
+    get:
+      summary: 分页查看可访问的模板历史版本，按版本降序
+      tags:
+        - Delivery
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+      responses:
+        '200':
+          description: 版本分页
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          items:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/DeliveryTemplateVersion'
+                          page:
+                            type: integer
+                          size:
+                            type: integer
+                          total:
+                            type: integer
+                          totalPages:
+                            type: integer
   /api/tenants/{tenantId}/delivery-templates/{id}/publish:
     post:
       summary: 发布不可变模板版本
@@ -4208,7 +4288,7 @@ paths:
                         $ref: '#/components/schemas/DeliveryTemplateVersion'
   /api/tenants/{tenantId}/delivery-templates/{id}/copy:
     post:
-      summary: 复制为新草稿；本人模板生成下一版本，共享模板建立独立副本
+      summary: 复制为独立模板，名称追加副本，版本从1开始
       tags:
         - Delivery
       parameters:
@@ -4263,7 +4343,7 @@ paths:
                 type: string
                 format: binary
     post:
-      summary: 替换草稿原件并重新识别字段与格式
+      summary: 替换模板原件并重新识别字段与格式，发布版自动建立新版本草稿
       tags:
         - Delivery
       parameters:
@@ -4419,6 +4499,9 @@ components:
         updatedAt:
           type: string
           format: date-time
+        deleted:
+          type: boolean
+          description: 已从模板库删除；已有固定版本引用仍可读取
         spec:
           $ref: ../schemas/file-template.schema.json
     DeliveryTemplatePreviewRequest:
