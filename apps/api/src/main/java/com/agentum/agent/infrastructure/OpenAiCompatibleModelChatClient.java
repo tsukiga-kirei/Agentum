@@ -48,8 +48,8 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
 
     public OpenAiCompatibleModelChatClient(ObjectMapper objectMapper) {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
-        requestFactory.setConnectTimeout(Duration.ofSeconds(8));
-        requestFactory.setReadTimeout(Duration.ofSeconds(120));
+        requestFactory.setConnectTimeout(Duration.ofSeconds(10));
+        requestFactory.setReadTimeout(Duration.ofSeconds(1800));
         this.restClient = RestClient.builder()
             .requestFactory(requestFactory)
             .defaultHeader(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)

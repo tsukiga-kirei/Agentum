@@ -583,7 +583,7 @@ public class AgentRuntimeService {
             }
         });
         try {
-            ModelChatClient.ChatResult result = future.get(180, TimeUnit.SECONDS);
+            ModelChatClient.ChatResult result = future.get(1800, TimeUnit.SECONDS);
             String streamedDisplay = streamedFinalAnswer.toString();
             String resolvedAnswer = resolveFinalAnswerContent(result, streamedDisplay);
             if (streamedDisplay.isBlank() && !resolvedAnswer.isBlank()) {
@@ -591,7 +591,7 @@ public class AgentRuntimeService {
             }
             return new LoggedChatResult(result, callLogId(callLog), streamedDisplay);
         } catch (TimeoutException exception) {
-            callLog.fail("MODEL_CALL_TIMEOUT", "模型流式响应超时（180秒）", clock.instant());
+            callLog.fail("MODEL_CALL_TIMEOUT", "模型流式响应超时（1800秒）", clock.instant());
             modelCallLogRepository.save(callLog);
             throw new ApiException(HttpStatus.GATEWAY_TIMEOUT, "MODEL_CALL_TIMEOUT", "模型响应超时，请检查模型服务连通性或稍后重试");
         } catch (ExecutionException exception) {
@@ -682,7 +682,7 @@ public class AgentRuntimeService {
             }
         });
         try {
-            ModelChatClient.ChatResult result = future.get(180, TimeUnit.SECONDS);
+            ModelChatClient.ChatResult result = future.get(1800, TimeUnit.SECONDS);
             modelCallLogIds.add(callLogId(callLog));
             turnTokenUsage.add(result.tokenUsage());
             if (!result.reasoningContent().isBlank()) {
@@ -690,7 +690,7 @@ public class AgentRuntimeService {
             }
             return result.content();
         } catch (TimeoutException exception) {
-            callLog.fail("MODEL_CALL_TIMEOUT", "最终答案模型流式响应超时（180秒）", clock.instant());
+            callLog.fail("MODEL_CALL_TIMEOUT", "最终答案模型流式响应超时（1800秒）", clock.instant());
             modelCallLogRepository.save(callLog);
             throw new ApiException(HttpStatus.GATEWAY_TIMEOUT, "MODEL_CALL_TIMEOUT", "最终答案生成超时，请检查模型服务连通性");
         } catch (ExecutionException exception) {
