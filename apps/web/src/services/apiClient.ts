@@ -724,6 +724,10 @@ export const workbenchApi = {
   },
   getRun: (tenantId: string, token: string, runId: string) =>
     apiRequest<WorkbenchRunDetail>(`/api/tenants/${tenantId}/workbench/runs/${runId}`, { token }),
+  heartbeatTemporaryRun: (tenantId: string, token: string, runId: string) =>
+    apiRequest<void>(`/api/tenants/${tenantId}/workbench/runs/${runId}/heartbeat`, { method: "POST", token }),
+  discardTemporaryRun: (tenantId: string, token: string, runId: string) =>
+    apiRequest<void>(`/api/tenants/${tenantId}/workbench/runs/${runId}/temporary`, { method: "DELETE", token }),
   saveRun: (tenantId: string, token: string, runId: string, title?: string) =>
     apiRequest<WorkbenchRunDetail>(`/api/tenants/${tenantId}/workbench/runs/${runId}/save`, {
       method: "POST",

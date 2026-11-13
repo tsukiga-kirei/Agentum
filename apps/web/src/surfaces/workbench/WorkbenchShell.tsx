@@ -1,3 +1,4 @@
+import { getSystemDefaultValueLabel } from "../../utils/workflowInputField";
 import { SysModalMask } from "../../components/common/SysModalMask";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
@@ -37,7 +38,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { DatePicker, Drawer, Empty, Pagination, Segmented, Select, message } from "antd";
 import dayjs from "dayjs";
-import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useBlocker, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { SurfacePageLayout } from "../../components/workbench/SurfacePageLayout";
 import { TaskRunWorkspace } from "../../components/runtime/TaskRunWorkspace";
 import { WorkflowSchedulesPanel } from "./WorkflowSchedulesPanel";
@@ -199,6 +200,109 @@ export function WorkbenchShell() {
   const [activeTasksKeywordDraft, setActiveTasksKeywordDraft] = useState(activeTasksKeyword);
   const [historyKeywordDraft, setHistoryKeywordDraft] = useState(historyKeyword);
   const [openedRunDetail, setOpenedRunDetail] = useState<WorkbenchRunDetail | null>(null);
+  const resumeKey = `agentum-temporary:${tenantId}:${user?.id}`;
+  const [temporaryResume, setTemporaryResume] = useState<{ runId: string; expiresAt: number } | null>(null);
+  useEffect(() => {
+    const readResume = () => {
+      try {
+        const value = JSON.parse(sessionStorage.getItem(resumeKey) || "null");
+        setTemporaryResume(value && typeof value.runId === "string" && value.expiresAt > Date.now() ? value : null);
+      } catch { setTemporaryResume(null); }
+    };
+    readResume();
+    const timer = window.setInterval(readResume, 15000);
+    return () => window.clearInterval(timer);
+  }, [resumeKey]);
+
+  const [leavingRun, setLeavingRun] = useState(false);
+  const allowLeaveRef = useRef(false);
+  const temporaryRun = !!runId && openedRunDetail?.id === runId && !openedRunDetail.saved && !openedRunDetail.readOnly;
+  const leaveBlocker = useBlocker(({ currentLocation, nextLocation }) =>
+    temporaryRun && !allowLeaveRef.current && currentLocation.pathname !== nextLocation.pathname);
+
+  useEffect(() => { allowLeaveRef.current = false; }, [runId]);
+
+  useEffect(() => {
+    if (!temporaryRun || !tenantId || !token || !runId) return;
+    let disposed = false;
+    let pending = false;
+    let warned = false;
+    // 保活不依赖 SSE；多标签页任一页面保持连接即可续期。关页不立即删除，给刷新留出重连时间。
+    const heartbeat = async () => {
+      if (pending) return;
+      pending = true;
+      try {
+        await workbenchApi.heartbeatTemporaryRun(tenantId, token, runId);
+        if (disposed) return;
+        warned = false;
+        try { sessionStorage.setItem(resumeKey, JSON.stringify({ runId, expiresAt: Date.now() + 120000 })); }
+        catch { /* 禁用会话存储时仍可通过原任务地址重连。 */ }
+      } catch (error) {
+        if (!disposed && !warned) {
+          warned = true;
+          messageApi.warning("临时任务连接中断，超过两分钟未恢复将停止并清理，请检查网络或保存任务");
+          console.warn("[workbench] 临时任务保活失败", { code: error instanceof AgentumApiError ? error.code : "unknown" });
+        }
+      } finally { pending = false; }
+    };
+    void heartbeat();
+    const timer = window.setInterval(() => void heartbeat(), 15000);
+    const reconnect = () => { if (document.visibilityState === "visible") void heartbeat(); };
+    const beforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", beforeUnload);
+    window.addEventListener("online", reconnect);
+    window.addEventListener("pageshow", reconnect);
+    document.addEventListener("visibilitychange", reconnect);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+      window.removeEventListener("beforeunload", beforeUnload);
+      window.removeEventListener("online", reconnect);
+      window.removeEventListener("pageshow", reconnect);
+      document.removeEventListener("visibilitychange", reconnect);
+    };
+  }, [temporaryRun, tenantId, token, runId, messageApi, resumeKey]);
+
+  async function confirmLeaveRun(save: boolean) {
+    if (!tenantId || !token || !runId || leaveBlocker.state !== "blocked") return;
+    setLeavingRun(true);
+    try {
+      if (save) {
+        const detail = await workbenchApi.saveRun(tenantId, token, runId, openedRunDetail?.title);
+        setOpenedRunDetail(detail);
+      } else {
+        await workbenchApi.discardTemporaryRun(tenantId, token, runId);
+      }
+      try { sessionStorage.removeItem(resumeKey); } catch { /* 无会话缓存时无需清理。 */ }
+      allowLeaveRef.current = true;
+      leaveBlocker.proceed();
+    } catch (error) {
+      // 另一页面保存或后台已清理时允许安全离开，不能让旧页面困在退出弹窗里。
+      if (error instanceof AgentumApiError && ["WORKBENCH_RUN_ALREADY_SAVED", "WORKBENCH_RUN_NOT_FOUND"].includes(error.code)) {
+        messageApi.info(error.code === "WORKBENCH_RUN_ALREADY_SAVED" ? "任务已在其他页面保存，已保留任务" : "临时任务已清理");
+        try { sessionStorage.removeItem(resumeKey); } catch { /* 无缓存时无需清理。 */ }
+        allowLeaveRef.current = true;
+        leaveBlocker.proceed();
+        return;
+      }
+      messageApi.error(error instanceof AgentumApiError ? error.message : "退出处理失败，请重试");
+      console.warn("[workbench] 临时任务退出失败", { code: error instanceof AgentumApiError ? error.code : "unknown" });
+    } finally { setLeavingRun(false); }
+  }
+
+  const leaveConfirmation = leaveBlocker.state === "blocked" ? (
+    <SysModalMask onClose={() => { if (!leavingRun) leaveBlocker.reset(); }}>
+      <section role="dialog" aria-modal="true" aria-labelledby="temporary-run-leave-title" className="sys-modal">
+        <div className="sys-modal-header"><h3 id="temporary-run-leave-title" className="sys-modal-title">离开临时任务？</h3></div>
+        <div className="sys-modal-body">此任务尚未保存。保存后可从待办继续；放弃将停止执行并清理临时任务，已发生的外部操作无法撤销。</div>
+        <div className="sys-modal-footer">
+          <button className="sys-btn sys-btn--default" disabled={leavingRun} onClick={() => leaveBlocker.reset()}>继续操作</button>
+          <button className="sys-btn sys-btn--default" disabled={leavingRun} onClick={() => void confirmLeaveRun(false)}>放弃并停止</button>
+          <button className="sys-btn sys-btn--primary" disabled={leavingRun} onClick={() => void confirmLeaveRun(true)}>保存并退出</button>
+        </div>
+      </section>
+    </SysModalMask>
+  ) : null;
   const [openedRunLoading, setOpenedRunLoading] = useState(false);
   const [creatingWorkflowId, setCreatingWorkflowId] = useState<string | null>(null);
   const [workflowDrawer, setWorkflowDrawer] = useState<WorkbenchAvailableWorkflowRow | null>(null);
@@ -517,10 +621,22 @@ export function WorkbenchShell() {
     try {
       const detail = await workbenchApi.getRun(tenantId, token, targetRunId);
       setOpenedRunDetail(detail);
+      if (detail.saved) {
+        try {
+          const cached = JSON.parse(sessionStorage.getItem(resumeKey) || "null");
+          if (cached?.runId === detail.id) sessionStorage.removeItem(resumeKey);
+        } catch { /* 缓存不可用不影响任务读取。 */ }
+      }
     } catch (error) {
       const reason = error instanceof AgentumApiError ? error.message : "任务详情加载失败";
       console.warn("[workbench] 任务详情加载失败", { code: error instanceof AgentumApiError ? error.code : "unknown" });
       messageApi.error(reason);
+      allowLeaveRef.current = true;
+      setOpenedRunDetail(null);
+      try {
+        const cached = JSON.parse(sessionStorage.getItem(resumeKey) || "null");
+        if (cached?.runId === targetRunId) sessionStorage.removeItem(resumeKey);
+      } catch { /* 缓存不可用不影响离开失效页面。 */ }
       navigate(paths.workbench.tasks, { replace: true });
     } finally {
       setOpenedRunLoading(false);
@@ -561,6 +677,8 @@ export function WorkbenchShell() {
     try {
       const savedDetail = await workbenchApi.saveRun(tenantId, token, openedRunDetail.id, openedRunDetail.title);
       setOpenedRunDetail(savedDetail);
+      try { sessionStorage.removeItem(resumeKey); } catch { /* 无缓存时无需清理。 */ }
+      setTemporaryResume(null);
       messageApi.success(savedDetail.readOnly ? "任务已保存，可在任务记录中查看" : "任务已保存，可在待办中继续处理");
       void loadSummary();
       if (savedDetail.readOnly) {
@@ -583,6 +701,7 @@ export function WorkbenchShell() {
     }
     try {
       await workbenchApi.deleteRun(tenantId, token, runId);
+      allowLeaveRef.current = true;
       if (openedRunDetail?.id === runId) {
         setOpenedRunDetail(null);
         if (closeWorkspace) {
@@ -624,13 +743,6 @@ export function WorkbenchShell() {
     if (!tenantId || !token || !openedRunDetail) {
       navigate(paths.workbench.tasks);
       return;
-    }
-    if (!openedRunDetail.saved) {
-      try {
-        await workbenchApi.deleteRun(tenantId, token, openedRunDetail.id);
-      } catch (error) {
-        console.warn("[workbench] 未保存任务清理失败", error);
-      }
     }
     navigate(paths.workbench.tasks);
     void loadSummary();
@@ -705,7 +817,9 @@ export function WorkbenchShell() {
     return (
       <>
         {messageContextHolder}
+        {leaveConfirmation}
         <div className="workbench-task-run-host flex flex-col h-[calc(100vh-var(--topbar-height,0px))] overflow-hidden">
+          {temporaryRun ? <div className="px-6 pt-3 text-xs text-[var(--color-text-secondary)]">临时试运行尚未保存：刷新可重连；页面断连超过两分钟将停止并清理。需要长期保留请先保存。</div> : null}
           <div className="workbench-task-run-host-inner flex-1 overflow-hidden p-6">
             <TaskRunWorkspace
               run={openedRunDetail}
@@ -737,6 +851,10 @@ export function WorkbenchShell() {
         badge="任务运行"
         description="面向业务用户的任务入口：从总览进入任务创建、待办处理和任务续办；全部开放智能体流程可查看，有创建范围的流程才可发起任务。"
       >
+        {temporaryResume ? <div className="sys-card mb-4 flex items-center justify-between gap-4 p-4">
+          <span>当前浏览器有一个尚未保存的临时任务，断连超过两分钟将自动清理。</span>
+          <button className="sys-btn sys-btn--default" onClick={() => navigate(paths.workbench.run(temporaryResume.runId))}>返回临时任务</button>
+        </div> : null}
         <div className="system-mgmt-module-switch mb-5">
           <div className="system-mgmt-segmented-scroll">
             <Segmented<WorkbenchTab>
@@ -1116,7 +1234,13 @@ export function WorkbenchShell() {
                 </>}
                 {launchConfiguring && launchFields.length ? <div className="workbench-launch-mode-fields">
                   <p className="text-xs text-[var(--color-text-tertiary)]">可提前填写输入资料；留空的必填项和附件将在运行到对应步骤时暂停等待。</p>
-                  {launchFields.map(field => (
+                  {launchFields.map(field => {
+                    const locked = field.defaultValueSource === "system" && field.allowManualOverride === false;
+                    const value = launchInputs[field.variable] ?? field.resolvedDefaultValue ?? "";
+                    const granularity = field.defaultValueSource === "system"
+                      ? field.systemDefaultValue === "current_year" ? "year" : ["current_year_month", "previous_year_month"].includes(field.systemDefaultValue ?? "") ? "month" : "day"
+                      : field.dateGranularity;
+                    return (
                     <div key={`${field.nodeName}-${field.id}`} className="sys-field workbench-launch-mode-field">
                       <div className="workbench-launch-mode-label">
                         <label htmlFor={`launch-input-${field.variable}`} className="sys-field-label">{field.label}</label>
@@ -1128,26 +1252,28 @@ export function WorkbenchShell() {
                         <Select id={`launch-input-${field.variable}`} className="agent-admin-select w-full"
                           classNames={{ popup: { root: "agent-select-dropdown agent-admin-select-dropdown" } }}
                           suffixIcon={<ChevronDown size={16} aria-hidden="true" />}
-                          placeholder="选择选项，或使用流程默认值" allowClear options={field.options}
-                          value={launchInputs[field.variable] || undefined}
+                          styles={{ popup: { root: { zIndex: 1500 } } }} placeholder="选择选项，或使用流程默认值" allowClear options={field.options}
+                          disabled={locked} value={value || undefined}
                           onChange={value => setLaunchInputs(old => ({ ...old, [field.variable]: value ?? "" }))} />
                       ) : field.fieldType === "date" ? (
                         <DatePicker id={`launch-input-${field.variable}`} className="workbench-user-input-date-picker w-full"
                           classNames={{ popup: { root: "workbench-user-input-date-picker-popup" } }} inputReadOnly
-                          picker={field.dateGranularity === "year" ? "year" : field.dateGranularity === "month" ? "month" : "date"}
+                          disabled={locked} styles={{ popup: { root: { zIndex: 1500 } } }}
+                          picker={granularity === "year" ? "year" : granularity === "month" ? "month" : "date"}
                           placeholder="选择日期，或使用流程默认值"
-                          value={launchInputs[field.variable] ? dayjs(launchInputs[field.variable]) : null}
-                          onChange={value => setLaunchInputs(old => ({ ...old, [field.variable]: value ? value.format(field.dateGranularity === "year" ? "YYYY" : field.dateGranularity === "month" ? "YYYY-MM" : "YYYY-MM-DD") : "" }))} />
+                          value={value ? dayjs(value) : null}
+                          onChange={value => setLaunchInputs(old => ({ ...old, [field.variable]: value ? value.format(granularity === "year" ? "YYYY" : granularity === "month" ? "YYYY-MM" : "YYYY-MM-DD") : "" }))} />
                       ) : (
                         <div className="sys-field-input-wrap">
                           <FileText size={16} className="sys-field-prefix" aria-hidden="true" />
-                          <input id={`launch-input-${field.variable}`} className="sys-field-input" value={launchInputs[field.variable] ?? ""}
+                          <input id={`launch-input-${field.variable}`} className="sys-field-input" disabled={locked} value={value}
                             placeholder={field.defaultValue || "请输入内容，留空使用流程默认值"}
                             onChange={e => setLaunchInputs(old => ({ ...old, [field.variable]: e.target.value }))} />
                         </div>
                       )}
+                      {field.defaultValueSource === "system" ? <p className="text-xs text-[var(--color-text-tertiary)]">默认：{getSystemDefaultValueLabel(field.systemDefaultValue as Parameters<typeof getSystemDefaultValueLabel>[0])}，按本次运行时间计算{locked ? "，不可修改" : "，可手动修改"}</p> : null}
                     </div>
-                  ))}
+                  ); })}
                 </div> : null}
               </div>
               <div className="sys-modal-footer flex-wrap">

@@ -20,6 +20,13 @@ public interface WorkflowRunRepository extends JpaRepository<WorkflowRunEntity, 
     @Query("select r from WorkflowRunEntity r where r.id = :id")
     Optional<WorkflowRunEntity> lockById(@Param("id") UUID id);
 
+    java.util.List<WorkflowRunEntity> findTop100BySavedFalseAndTemporaryLastSeenAtBeforeOrderByTemporaryLastSeenAtAsc(java.time.Instant cutoff);
+
+    // 不通过实体 save 更新心跳，避免 Worker 保存旧快照时覆盖页面的最新连接时间。
+    @org.springframework.data.jpa.repository.Modifying
+    @Query("update WorkflowRunEntity r set r.temporaryLastSeenAt = :now where r.id = :id and r.saved = false")
+    int touchTemporaryRun(@Param("id") UUID id, @Param("now") java.time.Instant now);
+
     boolean existsByWorkflowId(UUID workflowId);
 
     @Query("""

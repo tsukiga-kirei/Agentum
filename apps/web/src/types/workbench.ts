@@ -80,7 +80,7 @@ export type WorkbenchAvailableWorkflowPreview = {
   versionNumber: number;
   nodes: WorkbenchAvailableWorkflowNodeRow[];
   allowAutoExecution: boolean;
-  inputFields: Array<{ id: string; nodeName: string; variable: string; label: string; fieldType?: string; dateGranularity?: string; defaultValue?: string; options?: Array<{label: string; value: string}> }>;
+  inputFields: Array<{ id: string; nodeName: string; variable: string; label: string; fieldType?: string; dateGranularity?: string; defaultValue?: string; resolvedDefaultValue?: string; defaultValueSource?: string; systemDefaultValue?: string; allowManualOverride?: boolean; options?: Array<{label: string; value: string}> }>;
 };
 
 export type InputAttachmentRow = {

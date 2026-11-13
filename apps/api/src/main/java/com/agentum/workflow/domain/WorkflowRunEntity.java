@@ -70,7 +70,13 @@ public class WorkflowRunEntity {
     @Column(name = "completed_at")
     private Instant completedAt;
 
-    // 未保存的草稿只在发起页面临时存在，退出后删除，不进入待办列表。
+    // 临时试运行通过独立页面心跳续期；业务执行更新时间不能延长临时任务寿命。
+    @Column(name = "temporary_last_seen_at", updatable = false)
+    private Instant temporaryLastSeenAt;
+
+    public Instant getTemporaryLastSeenAt() { return temporaryLastSeenAt; }
+
+    // 未保存的草稿不进入待办列表。
     @Column(nullable = false)
     private boolean saved;
 
@@ -133,6 +139,7 @@ public class WorkflowRunEntity {
         entity.runNumber = runNumber;
         entity.triggerSource = "manual";
         entity.triggerPayload = new LinkedHashMap<>();
+        entity.temporaryLastSeenAt = now;
         entity.startedAt = now;
         entity.updatedAt = now;
         return entity;

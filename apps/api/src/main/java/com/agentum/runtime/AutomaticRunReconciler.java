@@ -15,10 +15,23 @@ public class AutomaticRunReconciler {
     private static final Logger log = LoggerFactory.getLogger(AutomaticRunReconciler.class);
     private final WorkflowRunRepository runs;
     private final WorkbenchRuntimeService runtime;
+    private final java.time.Clock clock;
 
-    public AutomaticRunReconciler(WorkflowRunRepository runs, WorkbenchRuntimeService runtime) {
+    public AutomaticRunReconciler(WorkflowRunRepository runs, WorkbenchRuntimeService runtime, java.time.Clock clock) {
         this.runs = runs;
         this.runtime = runtime;
+        this.clock = clock;
+    }
+
+    @Scheduled(fixedDelay = 10000)
+    public void expireTemporaryRuns() {
+        for (var run : runs.findTop100BySavedFalseAndTemporaryLastSeenAtBeforeOrderByTemporaryLastSeenAtAsc(clock.instant().minusSeconds(120))) {
+            try (LogContext.Scope ignored = LogContext.openTenantOperation(run.getTenantId(), run.getCreatedBy(), run.getId(), null, null, null)) {
+                runtime.expireTemporaryRun(run.getId());
+            } catch (Exception error) {
+                log.error("清理临时任务失败 tenantId={} userId={} runId={}", run.getTenantId(), run.getCreatedBy(), run.getId(), error);
+            }
+        }
     }
 
     @Scheduled(fixedDelay = 5000)

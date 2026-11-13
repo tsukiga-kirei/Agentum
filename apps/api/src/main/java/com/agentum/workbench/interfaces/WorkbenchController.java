@@ -144,6 +144,22 @@ public class WorkbenchController {
         return ApiResponse.success(workbenchRuntimeService.getRunDetail(tenantId, principal, runId), RequestIds.current(request));
     }
 
+    @PostMapping("/runs/{runId}/heartbeat")
+    public ApiResponse<Void> heartbeatTemporaryRun(@PathVariable UUID tenantId, @PathVariable UUID runId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal, HttpServletRequest request) {
+        workbenchAccess.assertCanAccessWorkbench(principal, tenantId);
+        workbenchRuntimeService.heartbeatTemporaryRun(tenantId, principal, runId);
+        return ApiResponse.success(null, RequestIds.current(request));
+    }
+
+    @DeleteMapping("/runs/{runId}/temporary")
+    public ApiResponse<Void> discardTemporaryRun(@PathVariable UUID tenantId, @PathVariable UUID runId,
+        @AuthenticationPrincipal CurrentUserPrincipal principal, HttpServletRequest request) {
+        workbenchAccess.assertCanAccessWorkbench(principal, tenantId);
+        workbenchRuntimeService.discardTemporaryRun(tenantId, principal, runId);
+        return ApiResponse.success(null, RequestIds.current(request));
+    }
+
     @PostMapping("/runs/{runId}/save")
     public ApiResponse<WorkbenchApi.RunDetail> saveRun(
         @PathVariable UUID tenantId,

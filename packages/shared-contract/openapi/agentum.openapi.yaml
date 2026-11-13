@@ -1205,6 +1205,64 @@ paths:
           description: 无权查看流程或使用来源 MCP
         '404':
           description: 流程或结果不存在
+  /api/tenants/{tenantId}/workbench/runs/{runId}/heartbeat:
+    post:
+      summary: 临时任务页面保活
+      description: 每15秒续期；已保存任务不参与回收。断连超过120秒的临时任务由后台取消执行并删除。
+      tags: [Workbench]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: runId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: 操作成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+        "403":
+          description: 无权操作该任务
+        "404":
+          description: 任务不存在或已清理
+        "409":
+          description: 任务状态已变化，请重新查看
+  /api/tenants/{tenantId}/workbench/runs/{runId}/temporary:
+    delete:
+      summary: 放弃并停止临时任务
+      description: 在任务锁下复核未保存状态，取消执行并删除；已保存任务返回409。
+      tags: [Workbench]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: runId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: 操作成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+        "403":
+          description: 无权操作该任务
+        "404":
+          description: 任务不存在或已清理
+        "409":
+          description: 任务状态已变化，请重新查看
   /api/tenants/{tenantId}/workbench/runs/{runId}:
     get:
       summary: 获取业务任务运行详情
@@ -6167,7 +6225,7 @@ components:
           description: 当前发布版本是否允许发起人选择自动执行，由系统触发节点配置决定
         inputFields:
           type: array
-          description: 按输入节点分组的预填字段；附件在运行时上传
+          description: 按输入节点分组的预填字段；resolvedDefaultValue 为服务端当前时间解析的显示值，默认规则仍按真正运行时间计算；allowManualOverride=false 的系统字段不可修改；附件在运行时上传
           items:
             type: object
             additionalProperties: true

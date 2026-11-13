@@ -556,9 +556,7 @@ public class WorkbenchRuntimeService {
 
     @Transactional
     public WorkbenchApi.RunDetail saveRun(UUID tenantId, CurrentUserPrincipal principal, UUID runId, WorkbenchApi.SaveRunRequest request) {
-        ensureActiveTenant(tenantId);
-        ensureAuthenticated(principal);
-        WorkflowRunEntity run = requireOwnedRun(tenantId, principal, runId);
+        WorkflowRunEntity run = requireLockedOwnedRun(tenantId, principal, runId);
         if (run.isSaved()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_RUN_ALREADY_SAVED", "任务已保存，无需重复保存");
         }
@@ -595,9 +593,7 @@ public class WorkbenchRuntimeService {
 
     @Transactional
     public void deleteRun(UUID tenantId, CurrentUserPrincipal principal, UUID runId) {
-        ensureActiveTenant(tenantId);
-        ensureAuthenticated(principal);
-        WorkflowRunEntity run = requireOwnedRun(tenantId, principal, runId);
+        WorkflowRunEntity run = requireLockedOwnedRun(tenantId, principal, runId);
         if ("completed".equals(run.getState())) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "WORKBENCH_RUN_DELETE_FORBIDDEN", "已完成任务只能查看，不能删除");
         }
@@ -610,8 +606,47 @@ public class WorkbenchRuntimeService {
             run.getState(),
             RequestIds.current()
         );
+        abortLingeringExecution(runId);
         workflowScheduleService.abortExecutionsForDeletedRun(runId);
         workflowRunRepository.delete(run);
+    }
+
+    /** 只有拥有任务写权限的页面可以续期；已保存任务不参与临时任务回收。 */
+    @Transactional
+    public void heartbeatTemporaryRun(UUID tenantId, CurrentUserPrincipal principal, UUID runId) {
+        WorkflowRunEntity run = requireLockedOwnedRun(tenantId, principal, runId);
+        if (!run.isSaved()) {
+            workflowRunRepository.touchTemporaryRun(runId, clock.instant());
+            log.debug("临时任务页面已续期 tenantId={} userId={} runId={} requestId={}", tenantId, principal.userId(), runId, RequestIds.current());
+        }
+    }
+
+    /** 明确放弃时重新检查 saved，避免另一标签页刚保存却被旧页面删除。 */
+    @Transactional
+    public void discardTemporaryRun(UUID tenantId, CurrentUserPrincipal principal, UUID runId) {
+        WorkflowRunEntity run = requireLockedOwnedRun(tenantId, principal, runId);
+        if (run.isSaved()) {
+            throw new ApiException(HttpStatus.CONFLICT, "WORKBENCH_RUN_ALREADY_SAVED", "任务已保存，请返回后重新查看");
+        }
+        removeTemporaryRun(run, "用户放弃");
+    }
+
+    @Transactional
+    public void expireTemporaryRun(UUID runId) {
+        WorkflowRunEntity run = workflowRunRepository.lockById(runId).orElse(null);
+        // 扫描与心跳/保存可能同时发生，必须在行锁下再次读取并判断。
+        if (run == null || run.isSaved() || run.getTemporaryLastSeenAt() == null
+            || !run.getTemporaryLastSeenAt().isBefore(clock.instant().minusSeconds(120))) {
+            return;
+        }
+        removeTemporaryRun(run, "页面断开超过两分钟");
+    }
+
+    private void removeTemporaryRun(WorkflowRunEntity run, String reason) {
+        abortLingeringExecution(run.getId());
+        workflowRunRepository.delete(run);
+        log.info("临时任务已停止并清理 tenantId={} userId={} runId={} reason={} requestId={}",
+            run.getTenantId(), run.getCreatedBy(), run.getId(), reason, RequestIds.current());
     }
 
     @Transactional
@@ -3011,11 +3046,15 @@ public class WorkbenchRuntimeService {
     private List<Map<String, Object>> previewInputFields(VersionSnapshot snapshot) {
         List<Map<String, Object>> fields = new ArrayList<>();
         if (snapshot.nodes() == null) { return fields; }
+        Instant previewTime = clock.instant();
         for (SnapshotNode node : snapshot.nodes()) {
             if (!"user_input".equals(node.nodeType()) || !(node.config().get("inputFields") instanceof List<?> configured)) { continue; }
+            Map<String, Object> defaults = WorkflowInputDefaultValueResolver.applyScheduledOverrides(node.config(), Map.of(), previewTime, Map.of());
+            defaults = WorkflowInputDefaultValueResolver.apply(node.config(), defaults, previewTime, false);
             for (Object raw : configured) {
                 if (raw instanceof Map<?, ?> field) {
                     Map<String, Object> copy = new LinkedHashMap<>(); field.forEach((k, v) -> copy.put(String.valueOf(k), v));
+                    copy.put("resolvedDefaultValue", defaults.getOrDefault(String.valueOf(field.get("variable")), ""));
                     copy.put("nodeName", node.name()); fields.add(copy);
                 }
             }

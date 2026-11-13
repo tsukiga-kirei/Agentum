@@ -139,7 +139,19 @@ export function UserInputPanel({
     // 自动运行的状态轮询会重建字段对象，同一待办内必须保留尚未提交的用户输入。
     const preserveDraft = initializedNodeRef.current === activeStep.nodeRunId && activeStep.state === "waiting";
     initializedNodeRef.current = activeStep.nodeRunId;
-    setFormValues(previous => preserveDraft ? { ...initial, ...previous } : initial);
+    let cached: Record<string, string> = {};
+    // 只在当前浏览器会话内保留未提交文字；附件原件由后端管理，不写入浏览器缓存。
+    try {
+      if (activeStep.state === "waiting") {
+        const value: unknown = JSON.parse(sessionStorage.getItem(`agentum-input:${tenantId}:${runId}:${activeStep.nodeRunId}`) || "{}");
+        if (value && typeof value === "object" && !Array.isArray(value)) {
+          cached = Object.fromEntries(Object.entries(value).filter(([, item]) => typeof item === "string"));
+        }
+      } else {
+        sessionStorage.removeItem(`agentum-input:${tenantId}:${runId}:${activeStep.nodeRunId}`);
+      }
+    } catch { /* 浏览器禁用存储时仍允许正常填写。 */ }
+    setFormValues(previous => preserveDraft ? { ...initial, ...previous } : { ...initial, ...cached });
   }, [activeStep.nodeRunId, fieldConfigs, activeStep.inputs]);
 
   useEffect(() => {
@@ -171,7 +183,10 @@ export function UserInputPanel({
   }, [activeStep.nodeRunId, activeStep.state, fieldConfigs, onError, runId, tenantId, token]);
 
   function handleInputChange(fieldId: string, val: string) {
-    setFormValues((prev) => ({ ...prev, [fieldId]: val }));
+    const next = { ...formValues, [fieldId]: val };
+    setFormValues(next);
+    try { sessionStorage.setItem(`agentum-input:${tenantId}:${runId}:${activeStep.nodeRunId}`, JSON.stringify(next)); }
+    catch { /* 会话缓存不可用不应阻止输入和提交。 */ }
   }
 
   function handleFormSubmit(e: React.FormEvent) {

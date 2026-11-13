@@ -103,6 +103,108 @@ class WorkbenchRuntimeServiceTest {
     private final WorkflowScheduleService workflowScheduleService = mock(WorkflowScheduleService.class);
 
     @Test
+    void shouldRenewTemporaryPresenceWithoutChangingBusinessProgress() {
+        WorkflowRunEntity run = ownedRun();
+        stubTenant();
+        when(workflowRunRepository.lockById(run.getId())).thenReturn(Optional.of(run));
+        newService().heartbeatTemporaryRun(TENANT_ID, businessPrincipal(), run.getId());
+        verify(workflowRunRepository).touchTemporaryRun(run.getId(), NOW);
+        verify(workflowRunRepository, never()).save(any());
+        verify(cancellationGuard, never()).requestCancel(any());
+    }
+
+    @Test
+    void shouldNotRenewSavedAutomaticTask() {
+        WorkflowRunEntity run = ownedRun();
+        run.enableAutoExecution();
+        stubTenant();
+        when(workflowRunRepository.lockById(run.getId())).thenReturn(Optional.of(run));
+        newService().heartbeatTemporaryRun(TENANT_ID, businessPrincipal(), run.getId());
+        verify(workflowRunRepository, never()).touchTemporaryRun(any(), any());
+        newService().expireTemporaryRun(run.getId());
+        verify(workflowRunRepository, never()).delete(any());
+    }
+
+    @Test
+    void shouldKeepReconnectedTaskAndExactGraceBoundary() {
+        WorkflowRunEntity run = temporaryRunAt(NOW.minusSeconds(120));
+        when(workflowRunRepository.lockById(run.getId())).thenReturn(Optional.of(run));
+        newService().expireTemporaryRun(run.getId());
+        verify(workflowRunRepository, never()).delete(any());
+        verify(cancellationGuard, never()).requestCancel(any());
+    }
+
+    @Test
+    void shouldCancelQueuedAndRunningJobsBeforeRemovingExpiredTask() {
+        WorkflowRunEntity run = temporaryRunAt(NOW.minusSeconds(121));
+        WorkflowNodeRunEntity node = clusterNode(run);
+        WorkflowRunExecutionJobEntity queued = WorkflowRunExecutionJobEntity.queued(
+            TENANT_ID, run.getId(), node.getId(), 1, OPERATOR_ID, "req-expire", NOW.plusSeconds(1800), NOW);
+        WorkflowRunExecutionJobEntity running = WorkflowRunExecutionJobEntity.queued(
+            TENANT_ID, run.getId(), node.getId(), 2, OPERATOR_ID, "req-expire", NOW.plusSeconds(1800), NOW);
+        running.markRunning("worker-a", NOW);
+        when(workflowRunRepository.lockById(run.getId())).thenReturn(Optional.of(run));
+        when(jobRepository.findByRunIdAndStatusIn(eq(run.getId()), any())).thenReturn(List.of(queued, running));
+        newService().expireTemporaryRun(run.getId());
+        assertThat(queued.getStatus()).isEqualTo("canceled");
+        assertThat(running.getStatus()).isEqualTo("canceled");
+        verify(cancellationGuard).requestCancel(run.getId());
+        verify(workflowRunRepository).delete(run);
+    }
+
+    @Test
+    void shouldRecheckSavedStateWhenExpirationRacesWithSave() {
+        WorkflowRunEntity run = temporaryRunAt(NOW.minusSeconds(121));
+        run.markSaved(NOW);
+        when(workflowRunRepository.lockById(run.getId())).thenReturn(Optional.of(run));
+        newService().expireTemporaryRun(run.getId());
+        verify(workflowRunRepository, never()).delete(any());
+        verify(cancellationGuard, never()).requestCancel(any());
+    }
+
+    @Test
+    void shouldRejectStaleDiscardAfterAnotherPageSavedTask() {
+        WorkflowRunEntity run = ownedRun();
+        run.markSaved(NOW);
+        stubTenant();
+        when(workflowRunRepository.lockById(run.getId())).thenReturn(Optional.of(run));
+        assertThatThrownBy(() -> newService().discardTemporaryRun(TENANT_ID, businessPrincipal(), run.getId()))
+            .extracting("code").isEqualTo("WORKBENCH_RUN_ALREADY_SAVED");
+        verify(workflowRunRepository, never()).delete(any());
+    }
+
+    @Test
+    void shouldDiscardTemporaryTaskImmediately() {
+        WorkflowRunEntity run = ownedRun();
+        stubTenant();
+        when(workflowRunRepository.lockById(run.getId())).thenReturn(Optional.of(run));
+        newService().discardTemporaryRun(TENANT_ID, businessPrincipal(), run.getId());
+        verify(cancellationGuard).requestCancel(run.getId());
+        verify(workflowRunRepository).delete(run);
+    }
+
+    @Test
+    void shouldRejectPresenceAndDiscardAcrossTenants() {
+        WorkflowRunEntity run = ownedRun();
+        stubTenant();
+        when(workflowRunRepository.lockById(run.getId())).thenReturn(Optional.of(run));
+        UUID otherTenant = UUID.randomUUID();
+        when(tenantRepository.findByIdAndStatus(eq(otherTenant), eq("active")))
+            .thenReturn(Optional.of(TenantEntity.create("其他租户", "OTHER", NOW)));
+        assertThatThrownBy(() -> newService().heartbeatTemporaryRun(otherTenant, businessPrincipal(), run.getId()))
+            .extracting("code").isEqualTo("WORKBENCH_RUN_NOT_FOUND");
+        assertThatThrownBy(() -> newService().discardTemporaryRun(otherTenant, businessPrincipal(), run.getId()))
+            .extracting("code").isEqualTo("WORKBENCH_RUN_NOT_FOUND");
+        verify(workflowRunRepository, never()).touchTemporaryRun(any(), any());
+        verify(workflowRunRepository, never()).delete(any());
+    }
+
+    private WorkflowRunEntity temporaryRunAt(Instant time) {
+        return WorkflowRunEntity.create(TENANT_ID, UUID.randomUUID(), UUID.randomUUID(), 1,
+            "临时试运行", "临时试运行", OPERATOR_ID, 2, "TEMP-TEST", time);
+    }
+
+    @Test
     void shouldRejectEmptyRequiredInputAndKeepLegacyFieldsRequired() {
         WorkflowRunEntity run = ownedRun(1);
         WorkflowNodeRunEntity node = inputNode(run, List.of(
