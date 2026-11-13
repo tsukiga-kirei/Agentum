@@ -1,17 +1,14 @@
 import { useId, useRef, useState } from "react";
-import { App, Input, Select, Segmented } from "antd";
-import { CalendarDays, CheckCircle2, FileText, FileUp, Hash, Plus, Trash2, Type, Settings2, Tags } from "lucide-react";
+import { Input, Select, Segmented } from "antd";
+import { CalendarDays, ChevronDown, FileText, FileUp, Hash, Plus, Trash2, Type, Tags } from "lucide-react";
 import { newTemplateField, setTemplateFieldsRequired, templateFieldTypes } from "../../types/delivery-template";
 import type {
   StructuredOutputConfig,
   TemplateField,
   TemplateStyle,
   TemplateSpec,
-  TemplateFieldPreset,
   TemplateFormatGroup,
 } from "../../types/delivery-template";
-import { recommendedTemplateFields, setTemplateFieldTypes, templateFieldPresets, templateFieldTargets } from "../../utils/templateFormatGroups";
-import { TemplateFieldPicker } from "./TemplateFieldPicker";
 import "./TemplateEditors.css";
 
 export function TemplateTabs({ value, options, onChange }: { value: string | number; options: { value: string | number; label: string }[]; onChange: (value: string | number) => void }) {
@@ -72,6 +69,8 @@ export function TemplateFieldLocations({ field, column, spec, onChange }: { fiel
   </section>;
 }
 
+const templateSelectSuffix = <ChevronDown size={16} aria-hidden="true" />;
+
 export function TemplateSelect<T extends string | number>({
   value,
   options,
@@ -87,13 +86,20 @@ export function TemplateSelect<T extends string | number>({
 }) {
   return (
     <Select
-      prefix={<Settings2 size={16} className="text-[var(--color-text-tertiary)]" />}
       className="agent-admin-select w-full"
       classNames={{ popup: { root: "agent-select-dropdown agent-admin-select-dropdown" } }}
+      popupMatchSelectWidth
+      suffixIcon={templateSelectSuffix}
       showSearch
       optionFilterProp="label"
       value={value}
       options={options}
+      optionRender={(option) => (
+        <span className="template-select-option" title={String(option.label ?? "")}>{option.label}</span>
+      )}
+      labelRender={(option) => (
+        <span className="template-select-option" title={String(option.label ?? "")}>{option.label}</span>
+      )}
       onChange={onChange}
       placeholder={placeholder}
       disabled={disabled}
@@ -314,8 +320,6 @@ export function TemplateFieldsEditor({
   lockedKeys = false,
   columns = false,
   renderLocations,
-  locations,
-  onApplyPreset,
   formatGroups,
   fieldPrefix = "",
 }: {
@@ -324,45 +328,20 @@ export function TemplateFieldsEditor({
   lockedKeys?: boolean;
   columns?: boolean;
   renderLocations?: (field: TemplateField, parent?: TemplateField) => React.ReactNode;
-  locations?: TemplateSpec["locations"];
-  onApplyPreset?: (paths: string[], preset: TemplateFieldPreset) => void;
   formatGroups?: TemplateFormatGroup[];
   fieldPrefix?: string;
 }) {
-  const { message } = App.useApp();
-  const [batchPreset, setBatchPreset] = useState<TemplateFieldPreset>("amount");
-  const [batchFields, setBatchFields] = useState<string[]>([]);
-  const [lastApplied, setLastApplied] = useState<{ preset: TemplateFieldPreset; paths: string[] } | null>(null);
-  const targets = templateFieldTargets(fields, locations);
-  const selectedFields = batchFields.filter(path => targets.some(target => target.path === path));
-  const appliedDefinition = templateFieldPresets.find(preset => preset.value === lastApplied?.preset);
-  const appliedCount = lastApplied?.paths.filter(path => targets.some(target => target.path === path && target.type === appliedDefinition?.type)
-    && (!formatGroups || formatGroups.some(group => group.preset === lastApplied.preset && group.fields.includes(path)))).length ?? 0;
-  const applyPreset = () => {
-    if (!selectedFields.length) return;
-    const label = templateFieldPresets.find(preset => preset.value === batchPreset)?.label ?? batchPreset;
-    // 应用只更新当前编辑配置，保留页签与选择；成功反馈不能误称已保存或已发布。
-    if (onApplyPreset) onApplyPreset(selectedFields, batchPreset);
-    else onChange(setTemplateFieldTypes(fields, selectedFields, batchPreset));
-    setLastApplied({ preset: batchPreset, paths: [...selectedFields] });
-    void message.success(`已将“${label}”应用到 ${selectedFields.length} 个字段，请保存配置。`, 4);
-  };
   const update = (index: number, patch: Partial<TemplateField>) =>
     onChange(fields.map((field, i) => (i === index ? { ...field, ...patch } : field)));
   return (
     <div className="template-field-list">
-      {!columns && targets.length > 0 && <details className="template-field-card template-batch-types">
-        <summary className="template-section-heading"><strong>批量设置字段预设</strong><span className="template-definition-meta">文字、金额、数字、汇率、日期</span></summary>
-        <div className="template-definition-body">
-          <p className="sys-field-hint">先选预设，再勾选字段。{onApplyPreset ? "同时设置数据类型与默认显示格式，应用后可在本页确认，无需切换页签。" : "金额和汇率使用数字类型，原有内容要求保留。"}</p>
-          {(formatGroups ?? []).some(group => group.fields.length) && <div className="template-applied-presets" aria-label="当前已应用的字段预设"><span>当前已应用</span>{formatGroups!.filter(group => group.fields.length).map(group => <span className="template-field-preset-tag" key={group.id}>{group.name} · {group.fields.length} 个字段</span>)}</div>}
-          <div className="template-format-add"><TemplateSelect value={batchPreset} options={templateFieldPresets.filter(item => item.value !== "custom").map(item => ({ value: item.value, label: `${item.label} · ${item.hint}` }))} onChange={setBatchPreset} /><button type="button" className="sys-btn sys-btn--default" onClick={() => setBatchFields([...new Set([...selectedFields, ...recommendedTemplateFields(targets, batchPreset)])])}>按名称推荐</button></div>
-          <TemplateFieldPicker targets={targets} value={selectedFields} onChange={setBatchFields} />
-          {appliedCount > 0 && <div className="template-batch-result" role="status"><CheckCircle2 size={18} aria-hidden="true" /><div><strong>已应用“{appliedDefinition?.label}”到 {appliedCount} 个字段</strong><p>{onApplyPreset ? `${appliedDefinition?.hint}。` : "字段类型已更新。"}已更新当前配置，请保存；无需切换页签确认。</p></div></div>}
-          <div className="template-test-actions"><button type="button" className="sys-btn sys-btn--primary" disabled={!selectedFields.length} onClick={applyPreset}>应用到选中 {selectedFields.length} 个字段</button></div>
+      {!columns && fields.length > 0 && (
+        <div className="template-bulk-actions">
+          <span className="sys-field-hint">全部字段，包含各明细列。先统一设置，再按字段单独调整。</span>
+          <button type="button" className="sys-btn sys-btn--default sys-btn--sm" onClick={() => onChange(setTemplateFieldsRequired(fields, true))}>全部设为必填</button>
+          <button type="button" className="sys-btn sys-btn--default sys-btn--sm" onClick={() => onChange(setTemplateFieldsRequired(fields, false))}>全部设为选填</button>
         </div>
-      </details>}
-      {fields.length > 0 && <div className="template-bulk-actions"><span className="sys-field-hint">{columns ? "本组全部明细列" : "全部字段及明细列"}</span><button type="button" className="sys-btn sys-btn--default sys-btn--sm" onClick={() => onChange(setTemplateFieldsRequired(fields, true))}>全部设为必填</button><button type="button" className="sys-btn sys-btn--default sys-btn--sm" onClick={() => onChange(setTemplateFieldsRequired(fields, false))}>全部设为选填</button></div>}
+      )}
       {!columns && <p className="sys-field-hint">
         {lockedKeys
           ? "字段说明用于解释含义和取数口径，供绑定来源时参考；不会自动筛选、计算或修改上游数据。必填、类型、字数和条数由对应设置校验。"
@@ -463,6 +442,8 @@ export function TemplateFieldsEditor({
                 classNames={{
                   popup: { root: "agent-select-dropdown agent-admin-select-dropdown" },
                 }}
+                popupMatchSelectWidth
+                suffixIcon={templateSelectSuffix}
                 value={field.enumValues ?? []}
                 tokenSeparators={[",", "，"]}
                 options={(field.enumValues ?? []).map((value) => ({ value, label: value }))}

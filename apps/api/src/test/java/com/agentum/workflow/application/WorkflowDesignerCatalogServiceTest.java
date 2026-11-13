@@ -46,7 +46,7 @@ class WorkflowDesignerCatalogServiceTest {
             "delivery_record"
         );
         assertThat(catalog.agentRuntimeLimits().suggestedIterationsPerTurn()).isEqualTo(4);
-        assertThat(catalog.agentRuntimeLimits().maxIterationsPerTurn()).isEqualTo(20);
+        assertThat(catalog.agentRuntimeLimits().maxIterationsPerTurn()).isEqualTo(100);
         assertThat(catalog.brickTemplates().stream()
             .filter(template -> "agent".equals(template.brickType()))
             .findFirst().orElseThrow().defaultConfig())

@@ -250,9 +250,23 @@ export function TemplateDeliverySection({
       />
       <div className="sys-field">
         <label className="sys-field-label" htmlFor={fileNameId}>文件名模板</label>
-        <TemplateSelect value={undefined} options={templateFileNameVariables(variables)} placeholder="选择并插入文件名变量" onChange={name => insertTemplateToken(fileNameRef.current, String(config.fileNameTemplate ?? ""), formatTemplateVariable(name), fileNameTemplate => onChange({ fileNameTemplate }))} />
+        <div className="workflow-file-template-variable-section">
+          <span className="workflow-variable-reference-title">可插入变量</span>
+          <div className="workflow-variable-reference-bar">
+            {templateFileNameVariables(variables).map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                title={item.label}
+                onClick={() => insertTemplateToken(fileNameRef.current, String(config.fileNameTemplate ?? ""), formatTemplateVariable(item.value), (fileNameTemplate) => onChange({ fileNameTemplate }))}
+              >
+                {`{{${item.value}}}`}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="sys-field-input-wrap"><FileText size={16} className="sys-field-prefix" /><input id={fileNameId} ref={fileNameRef} className="sys-field-input" value={String(config.fileNameTemplate ?? "")} onChange={event => onChange({ fileNameTemplate: event.target.value })} placeholder={`交付文件-{{runNumber}}.${kind === "word" ? "docx" : "xlsx"}`} /></div>
-        <p className="sys-field-hint">选择变量插入到光标处，也可直接输入。支持输入字段、上游结构化字段和系统日期；例如 {"金融月报-{{report_year}}-{{runNumber}}"}。日期变量 date 表示运行当天，报告月份请选 report_year。</p>
+        <p className="sys-field-hint">点击变量插入到光标处，也可直接输入。支持输入字段、上游结构化字段和系统日期；例如 {"金融月报-{{report_year}}-{{runNumber}}"}。日期变量 date 表示运行当天，报告月份请选 report_year。</p>
       </div>
       {template && (
         <>

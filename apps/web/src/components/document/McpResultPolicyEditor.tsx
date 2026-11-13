@@ -4,11 +4,15 @@ import { TemplateInput, TemplateSelect } from "./TemplateEditors";
 
 type Policy = Record<string, unknown>;
 export function McpResultPolicyEditor({ value, tools = [], onChange, onDiscover }: { value: Record<string, Policy>; tools?: { name: string; description?: string }[]; onDiscover?: () => void; onChange: (value: Record<string, Policy>) => void }) {
-  const policies = value;
+  // 能力表单把配置放在 ref 里，父组件不会因输入重渲染。结果名称若直接受控于这次传入的 value，键入会被旧值立刻盖回。
+  const [policies, setPolicies] = useState(value);
   const [copyFrom, setCopyFrom] = useState("");
   const [copyTarget, setCopyTarget] = useState("");
   const [tool, setTool] = useState("");
-  const update = (next: Record<string, Policy>) => onChange(next);
+  const update = (next: Record<string, Policy>) => {
+    setPolicies(next);
+    onChange(next);
+  };
   const patch = (name: string, change: Policy) => update({ ...policies, [name]: { ...policies[name], ...change } });
   return <section className="grid gap-4"><div className="template-section-heading"><strong>工具结果处理</strong>{onDiscover && <button type="button" className="sys-btn sys-btn--default sys-btn--sm" onClick={onDiscover}>获取 / 刷新工具列表</button>}</div><p className="sys-field-hint">选择具体工具，为它配置结果处理。完整明细随本次流程保存，供交付读取；对话和模型只展示受限预览。分页工具可配置自动采集。</p>
     {Object.entries(policies).map(([name, p]) => <div key={name} className="grid gap-3 rounded-lg border border-[var(--color-border)] p-3">

@@ -195,6 +195,7 @@ type ClusterAgentConfig = {
   userPrompt: string;
   output: string;
   maxTokens?: number;
+  temperature?: number;
   maxAgentIterationsPerTurn: number;
   allowUserEdit: boolean;
   allowQuestion: boolean;
@@ -582,6 +583,9 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
   const [attachmentCapabilitiesError, setAttachmentCapabilitiesError] = useState("");
   const [declaredVariables, setDeclaredVariables] = useState<WorkflowVariable[]>([]);
   const [isAddBrickModalOpen, setIsAddBrickModalOpen] = useState(false);
+  const [batchModelOpen, setBatchModelOpen] = useState(false);
+  const [batchProviderId, setBatchProviderId] = useState("");
+  const [batchTemperature, setBatchTemperature] = useState("0.2");
   const [impactConfirm, setImpactConfirm] = useState<WorkflowImpactConfirmState | null>(null);
   // 防止双击保存按钮导致并发 API 调用；useState 在同一渲染帧内可能未及时更新，需要额外的 ref 锁。
   const saveLockRef = useRef(false);
@@ -1054,6 +1058,60 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
     requestSaveWorkflow(nextNodes, nextEdges);
   }
 
+  function applySharedModelSettings() {
+    const model = designerCatalog?.modelOptions.find((item) => item.providerId === batchProviderId);
+    if (!model) {
+      messageApi.warning("请选择要统一使用的模型");
+      return;
+    }
+    const temperature = readOptionalTemperature(batchTemperature);
+    let updated = 0;
+    const nextNodes = nodesRef.current.map((node) => {
+      const config = { ...(node.data.rawConfig ?? {}) };
+      if (node.data.nodeType === "agent") {
+        updated += 1;
+        config.modelProviderId = model.providerId;
+        config.modelName = model.modelName;
+        config.enableThinking = model.reasoningModel ? readBoolean(config.enableThinking, false) : false;
+        if (temperature === undefined) delete config.temperature;
+        else config.temperature = temperature;
+      } else if (node.data.nodeType === "parallel_group") {
+        updated += 1;
+        config.intentModelProviderId = model.providerId;
+        config.intentModelName = model.modelName;
+        config.intentEnableThinking = model.reasoningModel ? readBoolean(config.intentEnableThinking, false) : false;
+        if (temperature === undefined) delete config.intentTemperature;
+        else config.intentTemperature = temperature;
+        if (Array.isArray(config.clusterAgents)) {
+          config.clusterAgents = config.clusterAgents.map((agent) => {
+            if (!isRecord(agent)) return agent;
+            const nextAgent: Record<string, unknown> = {
+              ...agent,
+              modelProviderId: model.providerId,
+              modelName: model.modelName,
+              enableThinking: model.reasoningModel ? readBoolean(agent.enableThinking, false) : false,
+            };
+            if (temperature === undefined) delete nextAgent.temperature;
+            else nextAgent.temperature = temperature;
+            return nextAgent;
+          });
+        }
+      } else {
+        return node;
+      }
+      return { ...node, data: { ...node.data, rawConfig: config } };
+    });
+    if (updated === 0) {
+      messageApi.info("当前流程还没有可调整的智能体步骤");
+      return;
+    }
+    nodesRef.current = nextNodes;
+    setNodes(nextNodes);
+    setDeclaredVariables(buildWorkflowVariables(nextNodes, designerCatalog?.variableMetadata));
+    setBatchModelOpen(false);
+    messageApi.success(`已统一 ${updated} 个步骤的模型与温度，保存流程后生效`);
+  }
+
   if (loading) {
     return <EditorStateShell workflowName={workflow.name} onBack={onBack} icon={<Clock3 className="h-5 w-5" aria-hidden="true" />} message="正在加载工作流草稿" />;
   }
@@ -1085,6 +1143,17 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
             placeholder="搜索积木"
           />
         </label>
+        <button
+          type="button"
+          className="agent-button h-8 px-3 text-xs"
+          onClick={() => {
+            setBatchProviderId((current) => current || designerCatalog?.modelOptions[0]?.providerId || "");
+            setBatchModelOpen(true);
+          }}
+        >
+          <DatabaseZap className="h-3.5 w-3.5" aria-hidden="true" />
+          统一模型
+        </button>
         <button
           type="button"
           onClick={() => void handleSaveWorkflow()}
@@ -1156,6 +1225,58 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
           onClose={() => setIsAddBrickModalOpen(false)}
           onSelect={handleAddBrick}
         />
+      ) : null}
+
+      {batchModelOpen ? (
+        <SysModalMask onClose={() => setBatchModelOpen(false)}>
+          <section className="sys-modal" style={{ maxWidth: 480 }} aria-labelledby="batch-model-title">
+            <div className="sys-modal-header">
+              <span id="batch-model-title" className="sys-modal-title">统一模型参数</span>
+              <button className="sys-modal-close" type="button" onClick={() => setBatchModelOpen(false)} aria-label="关闭统一模型参数">×</button>
+            </div>
+            <div className="sys-modal-body grid gap-4">
+              <p className="sys-field-hint">一次写入本流程全部单智能体、集群子智能体和意图识别模型。只改模型和温度，其他配置保持不变。保存流程后生效。</p>
+              <label className="sys-field">
+                <span className="sys-field-label">运行模型</span>
+                <Select
+                  className="agent-admin-select w-full"
+                  classNames={workflowSelectClassNames}
+                  suffixIcon={workflowSelectSuffixIcon}
+                  popupMatchSelectWidth
+                  showSearch={false}
+                  value={batchProviderId || undefined}
+                  placeholder="请选择运行模型"
+                  options={(designerCatalog?.modelOptions ?? []).map((model) => ({
+                    value: model.providerId,
+                    label: `${model.providerName} · ${model.modelName}${model.reasoningModel ? " · 推理模型" : ""}`,
+                  }))}
+                  optionRender={(option) => <span className="template-select-option" title={String(option.label ?? "")}>{option.label}</span>}
+                  onChange={setBatchProviderId}
+                />
+              </label>
+              <label className="sys-field">
+                <span className="sys-field-label">温度</span>
+                <div className="sys-field-input-wrap">
+                  <Hash size={16} className="sys-field-prefix" aria-hidden="true" />
+                  <input
+                    className="sys-field-input"
+                    type="number"
+                    min={0}
+                    max={2}
+                    step={0.1}
+                    value={batchTemperature}
+                    onChange={(event) => setBatchTemperature(event.target.value)}
+                  />
+                </div>
+                <span className="sys-field-hint">0～2。留空则恢复默认 0.2。</span>
+              </label>
+            </div>
+            <div className="sys-modal-footer">
+              <button type="button" className="sys-btn sys-btn--default" onClick={() => setBatchModelOpen(false)}>取消</button>
+              <button type="button" className="sys-btn sys-btn--primary" onClick={applySharedModelSettings}>应用到全部智能体</button>
+            </div>
+          </section>
+        </SysModalMask>
       ) : null}
 
       <SysImpactConfirmModal
@@ -2045,6 +2166,7 @@ function AgentClusterBrickConfig({
           modelOptions={modelOptions}
           intentModelProviderId={readString(config.intentModelProviderId, intentModel?.providerId ?? "")}
           intentEnableThinking={readBoolean(config.intentEnableThinking, false)}
+          intentTemperature={readOptionalTemperature(config.intentTemperature)}
           rootClassName={drawerRootClassName}
           onClose={() => setIntentDrawerOpen(false)}
           onSave={(next) => {
@@ -2058,6 +2180,7 @@ function AgentClusterBrickConfig({
               intentModelProviderId: next.intentModelProviderId,
               intentModelName: next.intentModelName,
               intentEnableThinking: next.intentEnableThinking,
+              intentTemperature: next.intentTemperature,
             });
             setIntentDrawerOpen(false);
           }}
@@ -2200,6 +2323,7 @@ function IntentRoutingDrawer({
   modelOptions,
   intentModelProviderId,
   intentEnableThinking,
+  intentTemperature,
   rootClassName,
   onClose,
   onSave,
@@ -2215,6 +2339,7 @@ function IntentRoutingDrawer({
   modelOptions: WorkflowModelOption[];
   intentModelProviderId: string;
   intentEnableThinking: boolean;
+  intentTemperature?: number;
   rootClassName: string;
   onClose: () => void;
   onSave: (next: {
@@ -2227,6 +2352,7 @@ function IntentRoutingDrawer({
     intentModelProviderId: string;
     intentModelName: string;
     intentEnableThinking: boolean;
+    intentTemperature?: number;
   }) => void;
 }) {
   const { message } = App.useApp();
@@ -2242,6 +2368,7 @@ function IntentRoutingDrawer({
     modelProviderId: initialIntentModel?.providerId ?? "",
     modelName: initialIntentModel?.modelName ?? "",
     enableThinking: initialIntentModel?.reasoningModel ? intentEnableThinking : false,
+    temperature: intentTemperature,
   });
   const agentOptions = agents.map((agent) => ({ value: agent.id, label: agent.name }));
   const intentSections: AgentConfigSectionDef<string>[] = [
@@ -2343,7 +2470,12 @@ function IntentRoutingDrawer({
                   modelOptions={modelOptions}
                   modelProviderId={draftIntentModel.modelProviderId}
                   enableThinking={draftIntentModel.enableThinking}
-                  onChange={setDraftIntentModel}
+                  onChange={(patch) => setDraftIntentModel({ ...draftIntentModel, ...patch })}
+                />
+                <TemperatureField
+                  compact={false}
+                  value={draftIntentModel.temperature}
+                  onChange={(temperature) => setDraftIntentModel({ ...draftIntentModel, temperature })}
                 />
                 <SelectLikeField
                   label="命中数量"
@@ -2520,6 +2652,7 @@ function IntentRoutingDrawer({
                 intentModelProviderId: draftIntentModel.modelProviderId,
                 intentModelName: draftIntentModel.modelName,
                 intentEnableThinking: draftIntentModel.enableThinking,
+                intentTemperature: draftIntentModel.temperature,
               });
             }}
           >
@@ -4669,6 +4802,7 @@ type SingleAgentConfigDraft = {
   mcpIds: string[];
   skillIds: string[];
   maxTokens?: number;
+  temperature?: number;
   maxAgentIterationsPerTurn: number;
   allowUserEdit: boolean;
   allowQuestion: boolean;
@@ -4691,6 +4825,7 @@ function buildSingleAgentConfigDraft(node: WorkflowEditorNode, agentRuntimeLimit
     mcpIds: readStringArray(config.mcpIds ?? config.mcpServices, []),
     skillIds: readStringArray(config.skillIds ?? config.skills, []),
     maxTokens: readOptionalInt(config.maxTokens),
+    temperature: readOptionalTemperature(config.temperature),
     maxAgentIterationsPerTurn: readAgentIterationsPerTurn(config.maxAgentIterationsPerTurn, agentRuntimeLimits),
     allowUserEdit: node.data.allowUserEdit,
     allowQuestion: node.data.allowQuestion,
@@ -4713,6 +4848,7 @@ function buildSingleAgentConfigPayload(draft: SingleAgentConfigDraft): Record<st
     mcpIds: draft.mcpIds,
     skillIds: draft.skillIds,
     ...(draft.maxTokens ? { maxTokens: draft.maxTokens } : {}),
+    ...(draft.temperature === undefined ? {} : { temperature: draft.temperature }),
     maxAgentIterationsPerTurn: draft.maxAgentIterationsPerTurn,
     modelProviderId: draft.modelProviderId,
     modelName: draft.modelName,
@@ -4870,9 +5006,11 @@ function SingleAgentConfigModal({
               <StructuredOutputEditor value={draft.structuredOutput} onChange={structuredOutput => setDraft({ ...draft, structuredOutput })} />
               <AgentRuntimeLimitsRow
                 maxTokens={draft.maxTokens}
+                temperature={draft.temperature}
                 maxAgentIterationsPerTurn={draft.maxAgentIterationsPerTurn}
                 maximumIterations={agentRuntimeLimits.maxIterationsPerTurn}
                 onMaxTokensChange={(value) => setDraft({ ...draft, maxTokens: value })}
+                onTemperatureChange={(value) => setDraft({ ...draft, temperature: value })}
                 onMaxIterationsChange={(value) => setDraft({ ...draft, maxAgentIterationsPerTurn: value })}
               />
               <AgentBehaviorCapsules
@@ -5056,9 +5194,11 @@ function ClusterAgentModal({
               <StructuredOutputEditor value={draft.structuredOutput} onChange={structuredOutput => setDraft({ ...draft, structuredOutput })} />
               <AgentRuntimeLimitsRow
                 maxTokens={draft.maxTokens}
+                temperature={draft.temperature}
                 maxAgentIterationsPerTurn={draft.maxAgentIterationsPerTurn}
                 maximumIterations={agentRuntimeLimits.maxIterationsPerTurn}
                 onMaxTokensChange={(value) => setDraft({ ...draft, maxTokens: value })}
+                onTemperatureChange={(value) => setDraft({ ...draft, temperature: value })}
                 onMaxIterationsChange={(value) => setDraft({ ...draft, maxAgentIterationsPerTurn: value })}
               />
               <AgentBehaviorCapsules
@@ -5231,15 +5371,19 @@ function AgentBehaviorCapsules({
 
 function AgentRuntimeLimitsRow({
   maxTokens,
+  temperature,
   maxAgentIterationsPerTurn,
   maximumIterations,
   onMaxTokensChange,
+  onTemperatureChange,
   onMaxIterationsChange,
 }: {
   maxTokens?: number;
+  temperature?: number;
   maxAgentIterationsPerTurn: number;
   maximumIterations: number;
   onMaxTokensChange: (value: number | undefined) => void;
+  onTemperatureChange: (value: number | undefined) => void;
   onMaxIterationsChange: (value: number) => void;
 }) {
   return (
@@ -5269,6 +5413,7 @@ function AgentRuntimeLimitsRow({
         </div>
         <span className="sys-field-hint">可选；长报告建议 8192+</span>
       </label>
+      <TemperatureField value={temperature} onChange={onTemperatureChange} />
       <label className="sys-field sys-field--compact">
         <span className="sys-field-label">单轮推理次数</span>
         <div className="sys-field-input-wrap">
@@ -5291,6 +5436,36 @@ function AgentRuntimeLimitsRow({
         <span className="sys-field-hint">1～{maximumIterations} 次，达上限后汇总答案</span>
       </label>
     </div>
+  );
+}
+
+function TemperatureField({
+  value,
+  onChange,
+  compact = true,
+}: {
+  value?: number;
+  onChange: (value: number | undefined) => void;
+  compact?: boolean;
+}) {
+  return (
+    <label className={compact ? "sys-field sys-field--compact" : "sys-field"}>
+      <span className="sys-field-label">温度</span>
+      <div className="sys-field-input-wrap">
+        <Hash size={16} className="sys-field-prefix" aria-hidden="true" />
+        <input
+          className="sys-field-input"
+          type="number"
+          min={0}
+          max={2}
+          step={0.1}
+          placeholder="默认 0.2"
+          value={value ?? ""}
+          onChange={(event) => onChange(readOptionalTemperature(event.target.value))}
+        />
+      </div>
+      <span className="sys-field-hint">0～2，留空使用 0.2。越低越稳定，越高越发散</span>
+    </label>
   );
 }
 
@@ -6704,6 +6879,7 @@ function readClusterAgents(value: unknown, agentRuntimeLimits: AgentRuntimeLimit
         systemPrompt: readString(agent.systemPrompt, DEFAULT_SYSTEM_PROMPT),
         userPrompt: readString(agent.userPrompt, DEFAULT_CLUSTER_USER_PROMPT),
         maxTokens: readOptionalInt(agent.maxTokens),
+        temperature: readOptionalTemperature(agent.temperature),
         maxAgentIterationsPerTurn: readAgentIterationsPerTurn(agent.maxAgentIterationsPerTurn, agentRuntimeLimits),
         allowUserEdit: readBoolean(agent.allowUserEdit, false),
         allowQuestion: readBoolean(agent.allowQuestion, false),
@@ -6739,6 +6915,19 @@ function readOptionalInt(value: unknown): number | undefined {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
   }
   return undefined;
+}
+
+/** 温度允许 0。留空表示沿用模型客户端默认 0.2，不把空字符串写成非法参数。 */
+function readOptionalTemperature(value: unknown): number | undefined {
+  const parsed = typeof value === "number"
+    ? value
+    : typeof value === "string" && value.trim()
+      ? Number(value.trim())
+      : Number.NaN;
+  if (!Number.isFinite(parsed)) {
+    return undefined;
+  }
+  return Math.min(2, Math.max(0, Math.round(parsed * 10) / 10));
 }
 
 function readAgentIterationsPerTurn(value: unknown, limits: AgentRuntimeLimits): number {

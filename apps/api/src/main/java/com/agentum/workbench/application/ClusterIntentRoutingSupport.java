@@ -112,6 +112,10 @@ final class ClusterIntentRoutingSupport {
         config.put("modelProviderId", firstNonBlank(rawString(nodeConfig.get("intentModelProviderId")), rawString(firstAgent.get("modelProviderId"))));
         config.put("modelName", firstNonBlank(rawString(nodeConfig.get("intentModelName")), rawString(firstAgent.get("modelName"))));
         config.put("enableThinking", booleanValue(nodeConfig.get("intentEnableThinking")));
+        // 意图识别与子智能体共用节点上的温度；未配置时由模型客户端使用 0.2。
+        if (!rawString(nodeConfig.get("intentTemperature")).isBlank()) {
+            config.put("temperature", nodeConfig.get("intentTemperature"));
+        }
         config.put("maxAgentIterationsPerTurn", DEFAULT_INTENT_ITERATIONS);
         config.put("output", "intent_router_result");
         config.put("outputVariable", "intent_router_result");
