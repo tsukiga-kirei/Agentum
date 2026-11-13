@@ -120,8 +120,8 @@ public class WorkflowNodeConfigValidator {
                 validateTenantAssetId(tenantId, operatorUserId, extractString(config, "userPromptTemplateId"), "prompt_template", "用户提示词模板", node, issues);
                 validateAgentPromptConfiguration(config, node, "节点[" + node.name() + "]", issues);
                 validateAgentIterationLimit(config, node, "节点[" + node.name() + "]", issues);
-                validateIds(tenantId, operatorUserId, extractStringList(config, "mcpIds", "mcpServices"), "mcp", "MCP", node, poolCapabilities, issues);
-                validateIds(tenantId, operatorUserId, extractStringList(config, "skillIds", "skills"), "skill", "Skill", node, poolCapabilities, issues);
+                validateIds(tenantId, operatorUserId, extractStringList(config, "mcpIds"), "mcp", "MCP", node, poolCapabilities, issues);
+                validateIds(tenantId, operatorUserId, extractStringList(config, "skillIds"), "skill", "Skill", node, poolCapabilities, issues);
             } else if ("parallel_group".equals(nodeType)) {
                 validateClusterNodeConfig(config, node, issues);
                 String executionMode = extractString(config, "executionMode");
@@ -147,8 +147,8 @@ public class WorkflowNodeConfigValidator {
                     validateTenantAssetId(tenantId, operatorUserId, extractString(agent, "userPromptTemplateId"), "prompt_template", "用户提示词模板", node, issues);
                     validateAgentPromptConfiguration(agent, node, subject, issues);
                     validateAgentIterationLimit(agent, node, subject, issues);
-                    validateIds(tenantId, operatorUserId, extractStringList(agent, "mcpIds", "mcpServices"), "mcp", "MCP", node, poolCapabilities, issues);
-                    validateIds(tenantId, operatorUserId, extractStringList(agent, "skillIds", "skills"), "skill", "Skill", node, poolCapabilities, issues);
+                    validateIds(tenantId, operatorUserId, extractStringList(agent, "mcpIds"), "mcp", "MCP", node, poolCapabilities, issues);
+                    validateIds(tenantId, operatorUserId, extractStringList(agent, "skillIds"), "skill", "Skill", node, poolCapabilities, issues);
                 }
                 if ("intent".equals(executionMode)) {
                     validateModelReference(tenantId, config, "intentModelProviderId", "intentModelName", "节点[" + node.name() + "]的意图识别", node, issues);
@@ -389,7 +389,7 @@ public class WorkflowNodeConfigValidator {
         String capabilityId = parts[offset].startsWith("cap_") ? parts[offset].substring(4).replace('_', '-') : "";
         UUID id;
         try { id = UUID.fromString(capabilityId); } catch (IllegalArgumentException ex) { throw com.agentum.delivery.template.StructuredContent.error("绑定的 MCP 能力标识无效"); }
-        if (!extractStringList(agent, "mcpIds", "mcpServices").contains(capabilityId)) throw com.agentum.delivery.template.StructuredContent.error("取数智能体未配置所绑定的 MCP");
+        if (!extractStringList(agent, "mcpIds").contains(capabilityId)) throw com.agentum.delivery.template.StructuredContent.error("取数智能体未配置所绑定的 MCP");
         var capability = systemCapabilityRepository.findById(id).orElseThrow(() -> com.agentum.delivery.template.StructuredContent.error("绑定的 MCP 已删除"));
         var rules = com.agentum.mcp.application.McpResultPolicy.map(capability.getConfig().get("toolResultPolicies"));
         String resultKey = parts[offset + 1];
@@ -1028,13 +1028,10 @@ public class WorkflowNodeConfigValidator {
     // ---- 配置解析辅助 ----
 
     /**
-     * 从 config 中提取字符串列表；支持两个候选键名以兼容前端新旧字段名。
+     * 从 config 中提取字符串列表。
      */
-    private static List<String> extractStringList(Map<String, Object> config, String primaryKey, String fallbackKey) {
-        Object value = config.get(primaryKey);
-        if (value == null) {
-            value = config.get(fallbackKey);
-        }
+    private static List<String> extractStringList(Map<String, Object> config, String key) {
+        Object value = config.get(key);
         if (!(value instanceof List<?> rawList)) {
             return List.of();
         }

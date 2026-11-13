@@ -319,9 +319,6 @@ export const PARAGRAPH_SPACING_AFTER_OPTIONS: SelectOption[] = [
   { value: "24", label: "24 pt" },
 ];
 
-/** @deprecated 使用 PARAGRAPH_SPACING_AFTER_OPTIONS */
-export const PARAGRAPH_SPACING_OPTIONS = PARAGRAPH_SPACING_AFTER_OPTIONS;
-
 export const HEADING_INDENT_OPTIONS: SelectOption[] = [
   { value: "false", label: "不应用" },
   { value: "true", label: "应用" },

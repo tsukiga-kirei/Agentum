@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { App } from "antd";
 import { Check, FileText } from "lucide-react";
 import { SysModalMask } from "../common/SysModalMask";
 
@@ -17,6 +18,7 @@ export function ResultSelectionModal({ groups, onClose, onConfirm, onConsolidate
   onConfirm: (choices: Array<{ agentIndex?: number; messageIndex: number }>) => Promise<void>;
   onConsolidate: (agentIndex?: number) => void;
 }) {
+  const { message } = App.useApp();
   const [choices, setChoices] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState(false);
   const ready = groups.every(group => choices[String(group.agentIndex ?? "single")] !== undefined);
@@ -25,7 +27,12 @@ export function ResultSelectionModal({ groups, onClose, onConfirm, onConsolidate
     setBusy(true);
     try {
       await onConfirm(groups.map(group => ({ agentIndex: group.agentIndex, messageIndex: choices[String(group.agentIndex ?? "single")] })));
-    } finally { setBusy(false); }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "提交结果选择失败，请稍后重试";
+      message.error(msg);
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (

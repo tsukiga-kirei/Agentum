@@ -28,18 +28,8 @@ public interface McpRuntimeClient {
     }
 
     record ToolCall(UUID capabilityId, String transportType, String endpointUrl, String toolName, Map<String, Object> arguments) {
-        @Deprecated
-        public ToolCall(UUID capabilityId, String sseUrl, String toolName, Map<String, Object> arguments) {
-            this(capabilityId, "sse", sseUrl, toolName, arguments);
-        }
-
         public ToolCall {
             arguments = arguments == null ? Map.of() : Map.copyOf(arguments);
-        }
-
-        @Deprecated
-        public String sseUrl() {
-            return endpointUrl;
         }
     }
 

@@ -145,6 +145,80 @@ paths:
                         $ref: "#/components/schemas/LoginResponse"
         "401":
           description: 未登录或令牌无效
+  /api/auth/me/profile:
+    put:
+      summary: 更新个人资料
+      description: 仅修改当前登录用户的显示名称，不改变账号角色或租户归属。
+      tags:
+        - Auth
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - displayName
+              properties:
+                displayName:
+                  type: string
+                  maxLength: 50
+                  description: 用户显示名称
+      responses:
+        "200":
+          description: 更新成功，返回最新登录响应
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/LoginResponse"
+        "400":
+          description: 显示名称为空或格式非法
+        "401":
+          description: 未登录或令牌无效
+  /api/auth/me/password:
+    put:
+      summary: 修改个人密码
+      description: 校验旧密码后更新密码并吊销当前 Refresh Token Cookie，要求重新登录。
+      tags:
+        - Auth
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - oldPassword
+                - newPassword
+              properties:
+                oldPassword:
+                  type: string
+                  description: 当前旧密码
+                newPassword:
+                  type: string
+                  minLength: 8
+                  maxLength: 64
+                  description: 新密码
+      responses:
+        "200":
+          description: 密码修改成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+        "400":
+          description: 原密码错误或新密码不符合复杂度要求
+        "401":
+          description: 未登录或令牌无效
   /api/auth/refresh:
     post:
       summary: 轮换 Refresh Token 并签发新的 Access Token
@@ -1637,6 +1711,24 @@ paths:
                     properties:
                       data:
                         $ref: "#/components/schemas/WorkflowDraftRow"
+  /api/tenants/{tenantId}/workflows/drafts/designer-catalog:
+    get:
+      summary: 查询工作流设计器系统元数据目录
+      description: 返回系统触发节点模板、可添加积木模板列表、变量元数据及运行限制。
+      tags:
+        - Workflow
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 设计器元数据目录
   /api/tenants/{tenantId}/workflows/drafts/shareable-members:
     get:
       summary: 查询流程可授权成员
@@ -1775,6 +1867,54 @@ paths:
       responses:
         "200":
           description: 复制成功
+  /api/tenants/{tenantId}/workflows/drafts/{workflowId}/recall-launch:
+    post:
+      summary: 收回业务发起入口
+      description: 收回流程在工作台的可发起状态，已发起的历史运行不受影响。
+      tags:
+        - Workflow
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 收回成功
+  /api/tenants/{tenantId}/workflows/drafts/{workflowId}/restore-launch:
+    post:
+      summary: 恢复业务发起入口
+      description: 恢复流程在工作台的发起入口，允许业务人员再次发起该流程。
+      tags:
+        - Workflow
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: workflowId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 恢复成功
           content:
             application/json:
               schema:
@@ -3924,6 +4064,55 @@ paths:
           description: 当前账号不是系统管理员
         "404":
           description: 模型分配不存在
+  /api/tenants/{tenantId}/audit/runs:
+    get:
+      summary: 分页查询流程运行审计记录
+      tags: [Audit]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: size
+          in: query
+          schema: { type: integer, default: 10 }
+        - name: keyword
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: 流程运行审计记录分页
+  /api/tenants/{tenantId}/audit/operations:
+    get:
+      summary: 分页查询租户操作审计日志
+      tags: [Audit]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: size
+          in: query
+          schema: { type: integer, default: 10 }
+        - name: keyword
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: 操作审计日志分页
   /api/tenants/{tenantId}/audit/runs/{runId}/evidence:
     get:
       summary: 获取运行全链路审计证据

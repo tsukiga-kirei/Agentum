@@ -160,7 +160,6 @@ public class McpRuntimeService {
             tool.name(),
             transportType,
             endpointUrl,
-            endpointUrl,
             mcpToolParameters(tool.inputSchema())
         );
     }
@@ -468,8 +467,6 @@ public class McpRuntimeService {
         String remoteToolName,
         String transportType,
         String endpointUrl,
-        @Deprecated
-        String sseUrl,
         Map<String, Object> parameters
     ) {
         public McpToolBinding {

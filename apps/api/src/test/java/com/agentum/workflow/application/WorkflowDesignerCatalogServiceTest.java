@@ -104,7 +104,7 @@ class WorkflowDesignerCatalogServiceTest {
     private static AgentRuntimeProperties runtimeProperties() {
         AgentRuntimeProperties properties = new AgentRuntimeProperties();
         properties.setSuggestedIterationsPerTurn(4);
-        properties.setMaxIterationsPerTurn(20);
+        properties.setMaxIterationsPerTurn(100);
         return properties;
     }
 }

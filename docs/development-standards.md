@@ -114,12 +114,14 @@ apps/api/src/main/java/com/agentum/
   asset/
   mcp/
   delivery/
+  attachment/
   audit/
   schedule/
   notification/
   runtime/
   system/
   shared/
+  config/
 ```
 
 阶段二「知识资产」落地时将按需新增独立业务包（如 `knowledge`），并同步契约与迁移；当前不在仓库中提前创建空包。

@@ -473,7 +473,6 @@ class AgentRuntimeServiceTest {
             "get_financial_work_report_core_kpi",
             "streamable_http",
             "http://127.0.0.1:3001/mcp",
-            "http://127.0.0.1:3001/mcp",
             Map.of(
                 "type", "object",
                 "properties", Map.of("pdt", Map.of("type", "string")),
@@ -489,7 +488,6 @@ class AgentRuntimeServiceTest {
             "get_financial_work_report_latest_kpi",
             binding.transportType(),
             binding.endpointUrl(),
-            binding.sseUrl(),
             binding.parameters()
         );
 
@@ -603,7 +601,6 @@ class AgentRuntimeServiceTest {
             "获取信贷明细",
             "get_loan_details",
             "sse",
-            "https://example.test",
             "https://example.test/sse",
             Map.of("type", "object")
         );

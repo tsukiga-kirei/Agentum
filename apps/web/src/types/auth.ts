@@ -25,20 +25,10 @@ export type SsoProviderOption = {
 export type SystemRole = "system_admin" | "tenant_admin" | "business";
 
 /**
- * 用户角色（兼容旧代码和未来租户内角色扩展）。
- * 第一阶段以系统角色为主；后续租户内自定义角色会从 tenant_org_roles 获取。
+ * 用户入口角色，对应三大系统登录入口。
+ * 租户内业务自定义角色由 tenant_org_roles 动态管理。
  */
-export type UserRole =
-  | "system_admin"
-  | "tenant_admin"
-  | "business"
-  // 以下为历史兼容，后续通过 tenant_org_roles 替代
-  | "designer"
-  | "agent_admin"
-  | "capability_admin"
-  | "reviewer"
-  | "executor"
-  | "observer";
+export type UserRole = SystemRole;
 
 /** 角色分配信息，来自 user_role_assignments 表 */
 export type RoleInfo = {

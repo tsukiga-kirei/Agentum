@@ -275,11 +275,6 @@ export function collectRuntimeTemplateVariableNames(
   return [...names];
 }
 
-/** @deprecated 请使用 collectRuntimeTemplateVariableNames，整份 config 扫描会误报设计态字段。 */
-export function collectConfigTemplateVariableNames(config: Record<string, unknown> | undefined): string[] {
-  return collectRuntimeTemplateVariableNames(config, "delivery");
-}
-
 export function collectUpstreamOutputVariables(
   visibleNodes: ValidatableWorkflowNode[],
   nodeIndex: number,
