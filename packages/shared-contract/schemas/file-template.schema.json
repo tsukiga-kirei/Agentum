@@ -109,6 +109,14 @@
         ],
         "additionalProperties": false
       }
+    },
+    "formatGroups": {
+      "type": "array",
+      "maxItems": 100,
+      "description": "先配置样式再选择完整字段标识；同一字段只归属一个方案，跨 Sheet 位置共用",
+      "items": {
+        "$ref": "#/$defs/formatGroup"
+      }
     }
   },
   "required": [
@@ -366,6 +374,52 @@
         "fields"
       ],
       "additionalProperties": false
+    },
+    "formatGroup": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "preset",
+        "fields",
+        "style"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,80}$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "preset": {
+          "enum": [
+            "text",
+            "number",
+            "amount",
+            "rate",
+            "date",
+            "boolean",
+            "custom"
+          ],
+          "description": "金额/汇率均为数字；自定义保留现有字段类型"
+        },
+        "fields": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,79}(\\.[a-z][a-z0-9_]{0,79})?$"
+          }
+        },
+        "style": {
+          "$ref": "#/$defs/style"
+        }
+      }
     }
   }
 }

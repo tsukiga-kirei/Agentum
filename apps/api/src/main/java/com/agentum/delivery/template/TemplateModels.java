@@ -16,12 +16,19 @@ public final class TemplateModels {
         }
     }
     public record Location(String id, String field, String label, String sheet, Map<String, Object> style) {}
+    public record FormatGroup(String id, String name, String preset, List<String> fields, Map<String, Object> style) {}
     public record Spec(List<Field> fields, List<Location> locations, Map<String, Object> defaultStyle,
-                       Map<String, Map<String, Object>> sheetStyles, List<ExcelRegion> excelRegions) {
+                       Map<String, Map<String, Object>> sheetStyles, List<ExcelRegion> excelRegions, List<FormatGroup> formatGroups) {
         public Spec(List<Field> fields, List<Location> locations, Map<String, Object> defaultStyle, Map<String, Map<String, Object>> sheetStyles) {
             this(fields, locations, defaultStyle, sheetStyles, List.of());
         }
-        public Spec { excelRegions = excelRegions == null ? List.of() : List.copyOf(excelRegions); }
+        public Spec(List<Field> fields, List<Location> locations, Map<String, Object> defaultStyle, Map<String, Map<String, Object>> sheetStyles, List<ExcelRegion> excelRegions) {
+            this(fields, locations, defaultStyle, sheetStyles, excelRegions, List.of());
+        }
+        public Spec {
+            excelRegions = excelRegions == null ? List.of() : List.copyOf(excelRegions);
+            formatGroups = formatGroups == null ? List.of() : List.copyOf(formatGroups);
+        }
     }
     public record ExcelRegion(String sheet, String field, String startCell, String direction, String column, String growth, String rangeName) {
         public ExcelRegion(String sheet, String field, String startCell) { this(sheet, field, startCell, "vertical", null); }

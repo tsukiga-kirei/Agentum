@@ -295,7 +295,7 @@ final class ExcelTemplateLayout {
     }
     TemplateModels.Spec relocate(TemplateModels.Spec spec, List<TemplateModels.ExcelRegion> moved) {
         var locations = spec.locations().stream().map(location -> location.sheet().isBlank() ? location : new TemplateModels.Location(moveLocationId(location.id(), location.sheet()), location.field(), location.label(), location.sheet(), location.style())).toList();
-        return new TemplateModels.Spec(spec.fields(), locations, spec.defaultStyle(), spec.sheetStyles(), moved);
+        return new TemplateModels.Spec(spec.fields(), locations, spec.defaultStyle(), spec.sheetStyles(), moved, spec.formatGroups());
     }
     Map<String, Map<String, Object>> relocateOverrides(TemplateModels.Spec spec, Map<String, Map<String, Object>> overrides) {
         Map<String, Map<String, Object>> result = new LinkedHashMap<>();

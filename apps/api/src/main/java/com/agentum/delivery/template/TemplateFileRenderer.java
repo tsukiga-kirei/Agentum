@@ -100,7 +100,7 @@ public class TemplateFileRenderer {
             if (!name.matches("[A-Za-z_][A-Za-z0-9_]{0,254}") || name.matches("(?i)[A-Z]{1,3}[1-9][0-9]*") || Set.of("R", "C").contains(name.toUpperCase(Locale.ROOT)) || !names.add(name)) throw StructuredContent.error("公式引用名称无效或重复：" + name);
             resolved.add(new TemplateModels.ExcelRegion(region.sheet(), region.field(), region.startCell(), region.direction(), region.column(), region.growth(), name));
         }
-        return new TemplateModels.Spec(spec.fields(), spec.locations(), spec.defaultStyle(), spec.sheetStyles(), resolved);
+        return new TemplateModels.Spec(spec.fields(), spec.locations(), spec.defaultStyle(), spec.sheetStyles(), resolved, spec.formatGroups());
     }
     private String regionKey(TemplateModels.ExcelRegion region) { return region.sheet() + "\0" + region.field() + "\0" + region.column() + "\0" + region.startCell(); }
 
@@ -150,6 +150,7 @@ public class TemplateFileRenderer {
     }
 
     public byte[] render(byte[] bytes, String kind, TemplateModels.Spec spec, Map<String, Object> data, Map<String, Map<String, Object>> overrides) {
+        TemplateFormatGroups.validate(spec);
         StructuredContent.validate(data, spec.fields());
         try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             if ("word".equals(kind)) {
@@ -198,6 +199,9 @@ public class TemplateFileRenderer {
         Map<String, Object> result = new LinkedHashMap<>();
         if (spec.defaultStyle() != null) result.putAll(spec.defaultStyle());
         if (spec.sheetStyles() != null && spec.sheetStyles().get(sheet) != null) result.putAll(spec.sheetStyles().get(sheet));
+        // 字段方案覆盖全局/Sheet 默认样式；具体位置和流程覆盖仍保留最高优先级。
+        spec.formatGroups().stream().filter(group -> group.fields().contains(field)).findFirst()
+            .ifPresent(group -> result.putAll(group.style()));
         String id = position + ":" + field;
         spec.locations().stream().filter(it -> it.id().equals(id)).findFirst().ifPresent(it -> { if (it.style() != null) result.putAll(it.style()); });
         if (overrides != null && overrides.get(id) != null) result.putAll(overrides.get(id));

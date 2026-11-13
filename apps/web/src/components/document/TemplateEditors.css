@@ -323,3 +323,28 @@
 
 .template-bulk-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .template-bulk-actions .sys-field-hint { margin: 0 auto 0 0; }
+
+.template-format-groups { display: grid; gap: 18px; min-width: 0; }
+.template-format-intro > strong { font-size: 15px; color: var(--color-text-primary); }
+.template-format-add { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.template-format-add > .agent-admin-select { flex: 1 1 240px; width: auto; min-width: 0; }
+.template-format-group { margin: 0; }
+.template-format-group > summary, .template-batch-types > summary { cursor: pointer; }
+.template-format-group .template-definition-body, .template-batch-types .template-definition-body { display: grid; gap: 16px; }
+.template-format-group p { overflow-wrap: anywhere; }
+.template-field-picker { display: grid; gap: 12px; min-width: 0; }
+.template-picker-toolbar, .template-picker-group { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; color: var(--color-text-secondary); font-size: 12px; }
+.template-picker-toolbar > .sys-field-input-wrap { flex: 1 1 240px; min-width: 0; }
+.template-picker-filters { display: flex; flex-wrap: wrap; gap: 6px; }
+.template-picker-list { max-height: 320px; overflow: auto; border: 1px solid var(--color-border-light); border-radius: var(--radius-lg); background: var(--color-bg-card); }
+.template-picker-group { padding: 8px 12px; background: var(--color-bg-hover); position: sticky; top: 0; z-index: 1; }
+.template-picker-item { display: flex; gap: 10px; align-items: start; padding: 10px 12px; border-top: 1px solid var(--color-border-light); cursor: pointer; }
+.template-picker-item:hover { background: var(--color-bg-hover); }
+.template-picker-item > input { margin-top: 4px; accent-color: var(--color-primary); }
+.template-picker-item > span { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 10px; row-gap: 3px; min-width: 0; font-size: 13px; }
+.template-picker-item strong { color: var(--color-text-primary); }
+.template-picker-item code, .template-picker-item small { color: var(--color-text-secondary); overflow-wrap: anywhere; }
+.template-picker-item small { flex-basis: 100%; }
+.template-batch-types .template-test-actions { margin: 0; }
+
+.template-format-selected { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }

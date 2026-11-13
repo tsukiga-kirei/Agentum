@@ -7,7 +7,10 @@ import type {
   TemplateField,
   TemplateStyle,
   TemplateSpec,
+  TemplateFieldPreset,
 } from "../../types/delivery-template";
+import { recommendedTemplateFields, setTemplateFieldTypes, templateFieldPresets, templateFieldTargets } from "../../utils/templateFormatGroups";
+import { TemplateFieldPicker } from "./TemplateFieldPicker";
 import "./TemplateEditors.css";
 
 export function TemplateTabs({ value, options, onChange }: { value: string | number; options: { value: string | number; label: string }[]; onChange: (value: string | number) => void }) {
@@ -164,10 +167,12 @@ export function TemplateStyleEditor({
   value,
   onChange,
   kind,
+  showPresets = true,
 }: {
   value: TemplateStyle;
   onChange: (value: TemplateStyle) => void;
   kind: "word" | "excel";
+  showPresets?: boolean;
 }) {
   const update = (key: string, next: string | number | boolean | undefined) => {
     const result = { ...value };
@@ -200,7 +205,7 @@ export function TemplateStyleEditor({
         空白表示沿用原有或上层格式；填写 0 可取消缩进或段间距。{kind === "excel" ? "行高和列宽会作用于整行、整列。" : "格式只作用于当前范围的填充内容。"}
       </p>
       <div className="template-form-grid">
-        <div className="sys-field">
+        {showPresets && <div className="sys-field">
           <label className="sys-field-label">样式预设</label>
           <TemplateSelect
             value={presetValue}
@@ -213,7 +218,7 @@ export function TemplateStyleEditor({
             ]}
             onChange={(preset) => { if (presets[preset]) onChange(presets[preset]); }}
           />
-        </div>
+        </div>}
         {kind === "excel" && <div className="sys-field"><label className="sys-field-label">明细行高</label><TemplateSelect value={String(value.rowHeightMode ?? (value.rowHeight !== undefined ? "fixed" : "auto"))} options={[{ value: "auto", label: "按填入内容适配" }, { value: "inherit", label: "沿用原模板行高" }, { value: "fixed", label: "固定行高（下方填写磅值）" }]} onChange={mode => update("rowHeightMode", mode)} /></div>}
         <TemplateInput
           label="字体"
@@ -308,17 +313,26 @@ export function TemplateFieldsEditor({
   lockedKeys = false,
   columns = false,
   renderLocations,
+  locations,
+  onApplyPreset,
 }: {
   fields: TemplateField[];
   onChange: (fields: TemplateField[]) => void;
   lockedKeys?: boolean;
   columns?: boolean;
   renderLocations?: (field: TemplateField, parent?: TemplateField) => React.ReactNode;
+  locations?: TemplateSpec["locations"];
+  onApplyPreset?: (paths: string[], preset: TemplateFieldPreset) => void;
 }) {
+  const [batchPreset, setBatchPreset] = useState<TemplateFieldPreset>("amount");
+  const [batchFields, setBatchFields] = useState<string[]>([]);
+  const targets = templateFieldTargets(fields, locations);
+  const selectedFields = batchFields.filter(path => targets.some(target => target.path === path));
   const update = (index: number, patch: Partial<TemplateField>) =>
     onChange(fields.map((field, i) => (i === index ? { ...field, ...patch } : field)));
   return (
     <div className="template-field-list">
+      {!columns && targets.length > 0 && <details className="template-field-card template-batch-types"><summary className="template-section-heading"><strong>批量设置字段预设</strong><span className="template-definition-meta">文字、金额、数字、汇率、日期</span></summary><div className="template-definition-body"><p className="sys-field-hint">先选预设，再勾选字段。{onApplyPreset ? "同时设置数据类型与默认显示格式。" : "金额和汇率使用数字类型，原有内容要求保留。"}</p><div className="template-format-add"><TemplateSelect value={batchPreset} options={templateFieldPresets.filter(item => item.value !== "custom").map(item => ({ value: item.value, label: `${item.label} · ${item.hint}` }))} onChange={setBatchPreset} /><button type="button" className="sys-btn sys-btn--default" onClick={() => setBatchFields([...new Set([...selectedFields, ...recommendedTemplateFields(targets, batchPreset)])])}>按名称推荐</button></div><TemplateFieldPicker targets={targets} value={selectedFields} onChange={setBatchFields} /><div className="template-test-actions"><button type="button" className="sys-btn sys-btn--primary" disabled={!selectedFields.length} onClick={() => { if (onApplyPreset) onApplyPreset(selectedFields, batchPreset); else onChange(setTemplateFieldTypes(fields, selectedFields, batchPreset)); }}>应用到选中 {selectedFields.length} 个字段</button></div></div></details>}
       {fields.length > 0 && <div className="template-bulk-actions"><span className="sys-field-hint">{columns ? "本组全部明细列" : "全部字段及明细列"}</span><button type="button" className="sys-btn sys-btn--default sys-btn--sm" onClick={() => onChange(setTemplateFieldsRequired(fields, true))}>全部设为必填</button><button type="button" className="sys-btn sys-btn--default sys-btn--sm" onClick={() => onChange(setTemplateFieldsRequired(fields, false))}>全部设为选填</button></div>}
       {!columns && <p className="sys-field-hint">
         {lockedKeys
@@ -380,6 +394,7 @@ export function TemplateFieldsEditor({
                 onChange={(type) =>
                   update(index, {
                     type: type as TemplateField["type"],
+                    enumValues: type === "text" ? field.enumValues : [],
                     columns:
                       type === "table" && !field.columns.length
                         ? [newTemplateField("name")]

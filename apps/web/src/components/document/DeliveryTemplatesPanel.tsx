@@ -10,6 +10,7 @@ import type {
   DeliveryTemplate,
   TemplateStyle,
   TemplateWorkbookSheet,
+  TemplateSpec,
 } from "../../types/delivery-template";
 import { inferTemplateExcelRegions, sampleTemplateValue } from "../../types/delivery-template";
 import {
@@ -23,6 +24,8 @@ import {
   TemplateValuesEditor,
 } from "./TemplateEditors";
 import { SysModalMask } from "../common/SysModalMask";
+import { TemplateFormatGroupsEditor } from "./TemplateFormatGroupsEditor";
+import { applyTemplateFieldPreset, reconcileTemplateFormatGroups, synchronizeTemplateTrialValues } from "../../utils/templateFormatGroups";
 import { WordDocumentPreviewDrawer } from "../runtime/WordDocumentPreviewDrawer";
 import { ExcelWorkbookPreviewDrawer } from "../runtime/ExcelWorkbookPreviewDrawer";
 
@@ -242,6 +245,11 @@ export function DeliveryTemplatesPanel({
       spec.locations = spec.locations.map((location) =>
         location.id === styleTarget ? { ...location, style } : location,
       );
+    setEditing({ ...editing, spec });
+  };
+  const updateTemplateSpec = (spec: TemplateSpec) => {
+    if (!editing || !editable) return;
+    setValues(current => synchronizeTemplateTrialValues(editing.spec.fields, spec.fields, current));
     setEditing({ ...editing, spec });
   };
   return (
@@ -495,16 +503,20 @@ export function DeliveryTemplatesPanel({
                 {editing.kind === "excel" && <details className="template-region-settings"><summary><strong>Excel 公式与动态范围说明</strong></summary><div className="grid gap-3"><p className="sys-field-hint">汇总页可直接写 Excel 公式，不需要重复绑定汇总参数。金额字段请选择“数字”，避免数字字符串被 SUM 忽略。</p><p className="sys-field-hint">跳过前两行可写 =SUM('信贷业务'!D3:D1048576)；若列内有小计或其他金额，请使用 Excel 表格列名，或下方各填写位置的“公式引用名称”。</p><p className="sys-field-hint">推移模式会为实际记录留出空间，后面的表头、合计和说明整体移动；固定模式遇到覆盖会报错。Excel 表格的数据范围、计算列和关联命名范围会更新。普通样板字段旁连续的公式视为计算列；固定汇总请放在数据区外并用空列隔开。全部 Sheet 写完后统一计算。循环引用、错误引用和无法计算的函数会明确报出位置。</p></div></details>}
                 <TemplateFieldsEditor
                   lockedKeys
+                  locations={editing.spec.locations}
+                  onApplyPreset={(paths, preset) => updateTemplateSpec(applyTemplateFieldPreset(editing.spec, paths, preset))}
                   renderLocations={editing.kind === "excel" ? (field, parent) => <TemplateFieldLocations field={parent ?? field} column={parent ? field.key : undefined} spec={editing.spec} onChange={spec => setEditing({ ...editing, spec })} /> : undefined}
                   fields={editing.spec.fields}
                   onChange={(fields) =>
-                    setEditing({ ...editing, spec: { ...editing.spec, fields } })
+                    updateTemplateSpec(reconcileTemplateFormatGroups(editing.spec, fields))
                   }
                 />
               </fieldset></ConfigProvider>
             )}
             {tab === "style" && (
               <div className="grid gap-5">
+                <ConfigProvider componentDisabled={!editable}><TemplateFormatGroupsEditor spec={editing.spec} kind={editing.kind} disabled={!editable} onChange={updateTemplateSpec} /></ConfigProvider>
+                <details className="template-region-settings"><summary><strong>高级设置：全局默认、Sheet 与单独位置</strong></summary><p className="sys-field-hint">优先级：原件 → 全局默认 → Sheet 默认 → 字段方案 → 单独位置 → 流程覆盖。通常只需配置上方方案；行高、列宽仍影响整行、整列。</p>
                 <TemplateSelect
                   value={styleTarget}
                   options={[
@@ -531,6 +543,7 @@ export function DeliveryTemplatesPanel({
                     onChange={updateStyle}
                   />
                 </fieldset></ConfigProvider>
+                </details>
               </div>
             )}
             {tab === "preview" && (

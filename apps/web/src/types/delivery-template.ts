@@ -17,7 +17,10 @@ export type TemplateLocation = {
   sheet: string;
   style: TemplateStyle;
 };
+export type TemplateFieldPreset = "text" | "number" | "amount" | "rate" | "date" | "boolean" | "custom";
+export type TemplateFormatGroup = { id: string; name: string; preset: TemplateFieldPreset; fields: string[]; style: TemplateStyle };
 export type TemplateSpec = {
+  formatGroups?: TemplateFormatGroup[];
   excelRegions?: { sheet: string; field: string; startCell: string; column?: string; growth?: "shift" | "fixed"; rangeName?: string; direction?: "vertical" | "horizontal" }[];
   fields: TemplateField[];
   locations: TemplateLocation[];

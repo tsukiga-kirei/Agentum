@@ -324,6 +324,7 @@ public class DeliveryTemplateService {
     private void validateSpec(DeliveryTemplateEntity entity, TemplateModels.Spec spec) {
         if (spec == null || spec.locations() == null) throw StructuredContent.error("模板字段配置不能为空");
         StructuredContent.validateFields(spec.fields());
+        TemplateFormatGroups.validate(spec);
         if (!"excel".equals(entity.kind) && !spec.excelRegions().isEmpty()) throw StructuredContent.error("只有 Excel 支持独立数据区域");
         if (spec.excelRegions().size() > 3000) throw StructuredContent.error("明细填写位置不能超过 3000 个");
         for (var region : spec.excelRegions()) {
@@ -346,6 +347,7 @@ public class DeliveryTemplateService {
             if ("table".equals(old.type()) && !old.columns().stream().map(TemplateModels.Field::key).toList().equals(current.columns().stream().map(TemplateModels.Field::key).toList())) throw StructuredContent.error("表格列必须与样板行标记一致");
         }
         validateStyle(spec.defaultStyle());
+        spec.formatGroups().forEach(group -> validateStyle(group.style()));
         if (spec.sheetStyles() != null) spec.sheetStyles().values().forEach(this::validateStyle);
         spec.locations().forEach(it -> validateStyle(it.style()));
     }

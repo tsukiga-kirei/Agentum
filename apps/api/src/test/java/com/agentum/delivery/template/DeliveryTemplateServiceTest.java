@@ -124,6 +124,17 @@ class DeliveryTemplateServiceTest {
         assertThatThrownBy(() -> service.validateStyle(Map.of("color", "url(bad)"))).hasMessageContaining("颜色");
         assertThatThrownBy(() -> service.validateStyle(Map.of("columnWidth", 1000))).hasMessageContaining("范围");
     }
+    @Test void savesFormatSchemesAndRejectsInvalidSchemeStylesBeforePublishing() {
+        var base = service.get(tenant, owner, template.id).spec();
+        var group = new TemplateModels.FormatGroup("text", "文字", "text", List.of("summary"), Map.of("numberFormat", "@"));
+        var spec = new TemplateModels.Spec(base.fields(), base.locations(), base.defaultStyle(), base.sheetStyles(), base.excelRegions(), List.of(group));
+        var saved = service.save(tenant, owner, template.id, new TemplateModels.Save(template.name, "self", spec));
+        assertThat(saved.spec().formatGroups()).containsExactly(group);
+        var invalid = new TemplateModels.FormatGroup("text", "文字", "text", List.of("summary"), Map.of("color", "red"));
+        var wrong = new TemplateModels.Spec(base.fields(), base.locations(), base.defaultStyle(), base.sheetStyles(), base.excelRegions(), List.of(invalid));
+        assertThatThrownBy(() -> service.save(tenant, owner, template.id, new TemplateModels.Save(template.name, "self", wrong))).hasMessageContaining("颜色");
+        assertThat(service.publish(tenant, owner, template.id).spec().formatGroups()).containsExactly(group);
+    }
     @Test void bindsOneAgentByNodeIdentityAndDoesNotUseShadowedGlobalValue() throws Exception {
         template.status = "published";
         var capability = SystemCapabilityEntity.create("delivery", "Word", "word", "v1", "", "low", "active", Map.of("documentKind", "word", "retentionPolicy", "permanent"), now);
@@ -149,13 +160,17 @@ class DeliveryTemplateServiceTest {
     @Test void datasetDatesAcceptBothDocumentedFormatsPreserveEmptySlotsAndRejectInvalidDates() throws Exception {
         try (var book = new org.apache.poi.xssf.usermodel.XSSFWorkbook(); var out = new ByteArrayOutputStream()) {
             var sheet = book.createSheet("日期"); sheet.createRow(0).createCell(0).setCellValue("开始日期");
-            sheet.createRow(1).createCell(0).setCellValue("{{items[].start_date}}"); book.write(out); template.fileBytes = out.toByteArray();
+            sheet.createRow(1).createCell(0).setCellValue("{{items[].start_date}}");
+            sheet.getRow(0).createCell(1).setCellValue("金额"); sheet.getRow(1).createCell(1).setCellValue("{{items[].amount}}");
+            var repeat = book.createSheet("重复金额"); repeat.createRow(0).createCell(0).setCellValue("重复金额"); repeat.createRow(1).createCell(0).setCellValue("{{items[].amount}}");
+            book.write(out); template.fileBytes = out.toByteArray();
         }
         template.kind = "excel"; template.fileName = "日期.xlsx"; template.status = "published";
         var inspected = renderer.inspect(template.fileBytes, "excel");
         var date = new TemplateModels.Field("start_date", "开始日期", "date", false, 100, 200, "", List.of());
-        var table = new TemplateModels.Field("items", "日期明细", "table", true, 20000, 100000, "", List.of(date));
-        template.spec = mapper.convertValue(new TemplateModels.Spec(List.of(table), inspected.locations(), Map.of(), Map.of(), inspected.excelRegions()), Map.class);
+        var amount = new TemplateModels.Field("amount", "金额", "number", false, 100, 200, "", List.of());
+        var table = new TemplateModels.Field("items", "日期明细", "table", true, 20000, 100000, "", List.of(date, amount));
+        template.spec = mapper.convertValue(new TemplateModels.Spec(List.of(table), inspected.locations(), Map.of(), Map.of(), inspected.excelRegions(), List.of(new TemplateModels.FormatGroup("amount", "金额", "amount", List.of("items.amount"), Map.of("numberFormat", "#,##0.00")))), Map.class);
         var capability = SystemCapabilityEntity.create("delivery", "Excel", "excel", "v1", "", "low", "active", Map.of("documentKind", "excel", "retentionPolicy", "permanent"), now);
         when(capabilities.findById(capability.getId())).thenReturn(Optional.of(capability));
         when(assets.canUseSystemCapabilityReference(tenant, owner, capability.getId(), "delivery")).thenReturn(true);
@@ -164,10 +179,10 @@ class DeliveryTemplateServiceTest {
         var source = node(run, "source", 1); source.complete(Map.of("mcp_datasets", Map.of("dates", reference)), now);
         var delivery = node(run, "delivery", 2);
         when(nodes.findByRunIdOrderBySortOrderAsc(run.getId())).thenReturn(List.of(source, delivery));
-        Map<String, Object> binding = Map.of("field", "items", "sourceNodeId", "source", "variable", "mcp_datasets", "path", "dates", "constant", false, "columnMappings", Map.of("start_date", "raw_date"));
+        Map<String, Object> binding = Map.of("field", "items", "sourceNodeId", "source", "variable", "mcp_datasets", "path", "dates", "constant", false, "columnMappings", Map.of("start_date", "raw_date", "amount", "raw_amount"));
         Map<String, Object> config = Map.of("templateVersionId", template.id.toString(), "documentKind", "excel", "templateBindings", List.of(binding));
         Map<String, Object> missing = new LinkedHashMap<>(); missing.put("raw_date", null);
-        List<Map<String, Object>> rows = List.of(Map.of("raw_date", "20260513"), missing, Map.of("raw_date", "2026-05-14"), Map.of("raw_date", 20240229));
+        List<Map<String, Object>> rows = List.of(Map.of("raw_date", "20260513", "raw_amount", "1234.567890000000"), missing, Map.of("raw_date", "2026-05-14", "raw_amount", "0.000000000000"), Map.of("raw_date", 20240229, "raw_amount", "10.000000000000"));
         when(datasets.readRows(eq(tenant), eq(run.getId()), eq(source.getId()), eq(owner), eq(reference))).thenReturn(rows);
         when(storage.store(eq(tenant), any(), anyString(), anyString(), any())).thenAnswer(call -> {
             byte[] bytes = call.getArgument(4);
@@ -177,6 +192,11 @@ class DeliveryTemplateServiceTest {
                 assertThat(sheet.getRow(2).getCell(0).getCellType()).isEqualTo(org.apache.poi.ss.usermodel.CellType.BLANK);
                 assertThat(sheet.getRow(3).getCell(0).getLocalDateTimeCellValue().toLocalDate()).isEqualTo(LocalDate.of(2026, 5, 14));
                 assertThat(sheet.getRow(4).getCell(0).getLocalDateTimeCellValue().toLocalDate()).isEqualTo(LocalDate.of(2024, 2, 29));
+                assertThat(sheet.getRow(1).getCell(1).getNumericCellValue()).isCloseTo(1234.56789, within(0.0000001));
+                assertThat(sheet.getRow(2).getCell(1).getCellType()).isEqualTo(org.apache.poi.ss.usermodel.CellType.BLANK);
+                assertThat(sheet.getRow(3).getCell(1).getNumericCellValue()).isZero();
+                assertThat(sheet.getRow(1).getCell(1).getCellStyle().getDataFormatString()).isEqualTo("#,##0.00");
+                assertThat(book.getSheet("重复金额").getRow(1).getCell(0).getCellStyle().getDataFormatString()).isEqualTo("#,##0.00");
             }
             return new DocumentDeliveryArtifact("日期.xlsx", "safe-key", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", bytes.length);
         });
