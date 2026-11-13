@@ -578,6 +578,92 @@ class AgentRuntimeServiceTest {
         assertThat((List<?>) result.outputs().get("chatMessages")).anySatisfy(raw -> assertThat(((Map<?, ?>) raw).get("mcp_datasets")).isEqualTo(formal));
     }
 
+    @Test
+    void shouldExecuteToolsWhenModelOutputsPreambleBeforeToolCall() {
+        var assignments = mock(TenantModelAssignmentRepository.class);
+        var providers = mock(ModelProviderRepository.class);
+        var capabilities = mock(SystemCapabilityRepository.class);
+        var assets = mock(TenantAssetCapabilityRepository.class);
+        var mcp = mock(McpRuntimeService.class);
+        var skills = mock(SkillRuntimeService.class);
+        var logs = mock(ModelCallLogRepository.class);
+        var model = mock(ModelChatClient.class);
+        var provider = ModelProviderEntity.create("测试", "openai-compatible", "https://example.test", "test", false, "active", NOW);
+        provider.getSettings().put("maxTokens", 8192);
+        var assignment = TenantModelAssignmentEntity.create(TENANT_ID, provider.getId(), "test", "enabled", NOW);
+        when(assignments.findByTenantIdOrderByCreatedAtDesc(TENANT_ID)).thenReturn(List.of(assignment));
+        when(providers.findById(provider.getId())).thenReturn(Optional.of(provider));
+        when(logs.save(any())).thenAnswer(call -> call.getArgument(0));
+
+        McpRuntimeService.McpToolBinding mcpBinding = new McpRuntimeService.McpToolBinding(
+            "mcp_financial_loan_details",
+            UUID.randomUUID(),
+            "financial",
+            "信贷明细",
+            "获取信贷明细",
+            "get_loan_details",
+            "sse",
+            "https://example.test",
+            "https://example.test/sse",
+            Map.of("type", "object")
+        );
+        when(mcp.resolveMcpTools(any())).thenReturn(List.of(mcpBinding));
+        when(mcp.executeResolvedTool(any(), any(), any())).thenReturn(
+            new McpRuntimeService.ExecutedMcpTool(
+                "mcp_financial_loan_details",
+                "get_loan_details",
+                "financial",
+                Map.of("datasetId", "ds-1", "rowCount", 10, "complete", true),
+                50L,
+                UUID.randomUUID()
+            )
+        );
+        when(mcp.datasetReferences(any(), any())).thenReturn(
+            Map.of("cap_565b398c", Map.of("loan_details", Map.of("datasetId", "ds-1", "complete", true)))
+        );
+
+        // 第 1 轮：模型输出了 content（前置说明）并调用了 mcp 工具
+        // 第 2 轮：模型输出了 final_answer 提交最终答案
+        when(model.chat(any()))
+            .thenReturn(new ModelChatClient.ChatResult(
+                "请按顺序执行。Let me start by calling the first tool for loan details.",
+                Map.of("finishReason", "tool_calls"),
+                Map.of(),
+                10L,
+                List.of(new ModelChatClient.ToolCall("call-1", "mcp_financial_loan_details", "{\"pdt\":\"20261031\"}")),
+                "tool_calls"
+            ))
+            .thenReturn(new ModelChatClient.ChatResult(
+                "",
+                Map.of("finishReason", "tool_calls"),
+                Map.of(),
+                15L,
+                List.of(new ModelChatClient.ToolCall("call-2", "final_answer", "{\"answer\":\"信贷明细已采集完成，共 10 条。\"}")),
+                "tool_calls"
+            ));
+
+        var service = new AgentRuntimeService(
+            assignments, providers, assets, mcp, skills, mock(FieldEncryptionService.class), logs, model,
+            new ObjectMapper(), Clock.fixed(NOW, ZoneOffset.UTC), mock(RunCancellationGuard.class),
+            new PromptContentResolver(capabilities, assets), runtimeProperties(), attachmentVariableContentResolver()
+        );
+        var run = WorkflowRunEntity.create(TENANT_ID, UUID.randomUUID(), UUID.randomUUID(), 1, "信贷明细", "采集流程", OPERATOR_ID, 2, "RUN-PREAMBLE", NOW);
+        var config = new LinkedHashMap<String, Object>();
+        config.put("systemPrompt", "你是数据采集智能体");
+        config.put("userPrompt", "采集 2026-10 信贷数据");
+        config.put("maxAgentIterationsPerTurn", 4);
+        config.put("_requiredMcpResults", List.of("cap_565b398c.loan_details"));
+
+        var node = WorkflowNodeRunEntity.pending(run.getId(), TENANT_ID, run.getWorkflowId(), run.getWorkflowVersionId(), "agent", "agent", "信贷采集", Map.of(), Map.of(), config, 1, NOW);
+
+        var result = service.execute(new AgentRuntimeRequest(run, node, config, Map.of(), Map.of(), OPERATOR_ID));
+
+        assertThat(result.outputs()).containsEntry("final_answer", "信贷明细已采集完成，共 10 条。");
+        // 验证 MCP 工具被真实调用，且只有 2 轮交互，没有发生误判截胡或重试拦截
+        org.mockito.Mockito.verify(mcp, org.mockito.Mockito.times(1)).executeResolvedTool(any(), any(), any());
+        org.mockito.Mockito.verify(model, org.mockito.Mockito.times(2)).chat(any());
+    }
+
     private static final class ScriptedModelChatClient implements ModelChatClient {
 
         private final ArrayList<ChatRequest> requests = new ArrayList<>();

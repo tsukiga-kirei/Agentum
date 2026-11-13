@@ -7214,18 +7214,155 @@ input[type="checkbox"]:not(.ant-checkbox-input):disabled {
   background: var(--color-bg-card);
 }
 
+/* 深度思考（思维链）卡片与现代活动时间线体系 */
+.agent-thinking-card {
+  margin-bottom: 12px;
+  border: 1px solid color-mix(in srgb, #6366f1 24%, var(--color-border));
+  border-radius: 8px;
+  background: color-mix(in srgb, #6366f1 3.5%, var(--color-bg-card));
+  overflow: hidden;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+html:not(.dark) .agent-thinking-card {
+  border-color: #e0e7ff;
+  background: #fbfbfe;
+  box-shadow: 0 1px 2px rgba(99, 102, 241, 0.04);
+}
+
+.agent-thinking-card[data-running="true"] {
+  border-color: color-mix(in srgb, #6366f1 48%, var(--color-border));
+  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.15), 0 2px 8px rgba(99, 102, 241, 0.08);
+}
+
+.agent-thinking-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 12px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+}
+
+.agent-thinking-head-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.agent-thinking-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #6366f1;
+}
+
+html.dark .agent-thinking-icon {
+  color: #818cf8;
+}
+
+.agent-thinking-icon--spin {
+  animation: loading-spin 1.4s linear infinite;
+}
+
+.agent-thinking-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+}
+
+.agent-thinking-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #4f46e5;
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  white-space: nowrap;
+}
+
+html.dark .agent-thinking-badge {
+  color: #a5b4fc;
+  background: rgba(99, 102, 241, 0.18);
+  border-color: rgba(99, 102, 241, 0.3);
+}
+
+.agent-thinking-summary {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-thinking-body {
+  margin: 0;
+  padding: 10px 14px 14px;
+  border-top: 1px solid color-mix(in srgb, #6366f1 16%, var(--color-border));
+  max-height: 380px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+html:not(.dark) .agent-thinking-body {
+  border-top-color: #e0e7ff;
+  color: #475569;
+}
+
+.agent-thinking-cursor {
+  display: inline-block;
+  width: 6px;
+  height: 12px;
+  margin-left: 4px;
+  vertical-align: -1px;
+  background: #6366f1;
+  border-radius: 1px;
+  animation: cursor-blink 1s infinite;
+}
+
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* 工具步骤与活动时间线 */
 .agent-tool-step {
   border: 1px solid color-mix(in srgb, var(--color-border) 82%, var(--color-text-primary) 8%);
   border-radius: 6px;
   background: var(--color-bg-card);
   overflow: hidden;
   box-shadow: none;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 
 html:not(.dark) .agent-tool-step {
-  border-color: #cbd5e1;
+  border-color: #e2e8f0;
   background: #ffffff;
-  box-shadow: 0 1px 0 color-mix(in srgb, #0f172a 4%, transparent);
+  box-shadow: 0 1px 1px rgba(15, 23, 42, 0.03);
+}
+
+.agent-tool-step[data-status="running"] {
+  border-color: #3b82f6;
 }
 
 .agent-tool-step-head {
@@ -7233,8 +7370,8 @@ html:not(.dark) .agent-tool-step {
   align-items: center;
   gap: 8px;
   width: 100%;
-  min-height: 34px;
-  padding: 6px 9px;
+  min-height: 36px;
+  padding: 6px 10px;
   border: none;
   background: transparent;
   text-align: left;
@@ -7246,16 +7383,81 @@ html:not(.dark) .agent-tool-step {
 }
 
 .agent-tool-step-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
 }
 
-/* 过程按时间线收纳，语义状态与正文分离；颜色由主题变量提供。 */
+.agent-tool-step-icon[data-tone="data"] {
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.08);
+}
+.agent-tool-step-icon[data-tone="knowledge"] {
+  color: #059669;
+  background: rgba(5, 150, 105, 0.08);
+}
+.agent-tool-step-icon[data-tone="code"] {
+  color: #7c3aed;
+  background: rgba(124, 58, 237, 0.08);
+}
+.agent-tool-step-icon[data-tone="tool"] {
+  color: var(--color-text-secondary);
+  background: var(--color-bg-hover);
+}
+
+/* 过程按时间线收纳，语义状态与正文分离 */
 .agent-turn-tools-list {
   position: relative;
-  border-left: 1px solid var(--color-border-light);
+  border-left: 2px solid color-mix(in srgb, var(--color-border) 65%, transparent);
   margin-left: 10px;
-  padding-left: 12px;
+  padding-left: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
+
+.agent-tool-step-type-pill {
+  flex-shrink: 0;
+  border-radius: 3px;
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  background: var(--color-bg-hover);
+  border: 1px solid var(--color-border-light);
+}
+
+.agent-tool-step-result-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #0284c7;
+  background: rgba(2, 132, 199, 0.1);
+  border: 1px solid rgba(2, 132, 199, 0.2);
+}
+
+html.dark .agent-tool-step-result-pill {
+  color: #38bdf8;
+  background: rgba(2, 132, 199, 0.18);
+  border-color: rgba(2, 132, 199, 0.3);
+}
+
+.agent-tool-step-duration {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
 .agent-tool-step-status {
   flex-shrink: 0;
   border-radius: 4px;
@@ -7264,39 +7466,20 @@ html:not(.dark) .agent-tool-step {
   color: var(--color-text-secondary);
   background: var(--color-bg-hover);
 }
-.agent-tool-step[data-status="running"] .agent-tool-step-status { color: #3b82f6; }
-.agent-tool-step[data-status="error"] .agent-tool-step-status { color: #f43f5e; }
-.agent-tool-step[data-kind="reasoning"] .agent-tool-step-detail {
-  font-family: inherit;
-  font-size: 12px;
-  line-height: 1.75;
-}
-.agent-turn-tools--reasoning-only .agent-tool-step { border: none; background: transparent; box-shadow: none; }
-.agent-turn-tools--reasoning-only .agent-tool-step-head { padding: 4px 0; min-height: 30px; }
-.agent-turn-tools--reasoning-only .agent-tool-step-status { display: none; }
-.agent-turn-tools--reasoning-only .agent-tool-step-title { color: var(--color-text-secondary); font-weight: 500; }
-.agent-turn-tools--reasoning-only .agent-tool-step-summary { font-size: 12px; color: var(--color-text-tertiary); }
-.agent-turn-tools--reasoning-only .agent-tool-step-detail {
-  margin-top: 8px;
-  padding: 4px 14px;
-  border-top: none;
-  border-left: 2px solid var(--color-border-light);
-  background: transparent;
-  max-height: 240px;
-}
 
-.agent-tool-step-dot {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  background: #f43f5e;
+.agent-tool-step[data-status="running"] .agent-tool-step-status {
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.08);
+}
+.agent-tool-step[data-status="error"] .agent-tool-step-status {
+  color: #e11d48;
+  background: rgba(225, 29, 72, 0.08);
 }
 
 .agent-tool-step-title {
   min-width: 0;
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 600;
   color: var(--color-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -7319,35 +7502,41 @@ html:not(.dark) .agent-tool-step-summary {
 
 .agent-tool-step-chevron {
   flex-shrink: 0;
-  color: var(--color-text-secondary);
+  color: var(--color-text-tertiary);
 }
 
-html:not(.dark) .agent-tool-step-chevron {
-  color: #64748b;
+.agent-tool-step-detail-container {
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 82%, var(--color-text-primary) 8%);
+  background: color-mix(in srgb, var(--color-text-primary) 2.5%, var(--color-bg-card));
+  overflow-x: auto;
+}
+
+html:not(.dark) .agent-tool-step-detail-container {
+  border-top-color: #e2e8f0;
+  background: #f8fafc;
 }
 
 .agent-tool-step-detail {
   margin: 0;
-  max-height: 180px;
+  max-height: 240px;
   overflow: auto;
-  padding: 8px 10px;
-  border-top: 1px solid color-mix(in srgb, var(--color-border) 82%, var(--color-text-primary) 8%);
-  background: color-mix(in srgb, var(--color-text-primary) 3.5%, var(--color-bg-card));
+  padding: 10px 12px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 11px;
   line-height: 1.6;
   color: var(--color-text-secondary);
   white-space: pre-wrap;
+  word-break: break-all;
 }
 
 html:not(.dark) .agent-tool-step-detail {
-  border-top-color: #cbd5e1;
-  background: #f1f5f9;
   color: #334155;
 }
 
 .agent-turn-assistant {
-  padding: 22px 28px 28px;
+  padding: 20px 24px 24px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .agent-turn-waiting {
@@ -7357,6 +7546,14 @@ html:not(.dark) .agent-tool-step-detail {
   padding: 10px 14px;
   font-size: 12px;
   color: var(--color-text-tertiary);
+}
+
+.agent-turn-tools-actions-standalone {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 8px;
 }
 
 .agent-run-progress-card .sys-btn--sm {

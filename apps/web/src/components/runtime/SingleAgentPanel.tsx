@@ -3,6 +3,7 @@ import { CONSOLIDATE_RESULT_PROMPT } from "./ResultSelectionModal";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { message } from "antd";
 import {
+  AlertCircle,
   Ban,
   Bot,
   BrainCircuit,
@@ -15,6 +16,7 @@ import {
   PencilLine,
   FileText,
   Sigma,
+  Sparkles,
 } from "lucide-react";
 import type { AgentExecutionStep, RuntimeChatMessage, RuntimePreviewStep, RuntimeTokenUsage } from "../../types/runtime-types";
 import { MarkdownRenderer } from "./MarkdownRenderer";
@@ -31,6 +33,11 @@ import {
   readFinalAnswer,
   summarizeToolSteps,
 } from "../../utils/agentExecutionSteps";
+import {
+  extractResultSummary,
+  formatFriendlyToolName,
+  getToolSemanticAppearance,
+} from "../../utils/agentActivityPresentation";
 
 interface SingleAgentPanelProps {
   activeStep: RuntimePreviewStep;
@@ -177,11 +184,13 @@ function buildConversationTurns(
 
 function normalizeTurnSteps(steps: AgentExecutionStep[], options?: { running?: boolean; hasFinalAnswerToolResult?: boolean }): AgentExecutionStep[] {
   const withoutFinalToolSteps = steps.filter((step) => step.kind !== "final_answer");
-  const hasToolResult = hasToolResultStep(withoutFinalToolSteps);
-  if (!options?.running && !hasToolResult && !options?.hasFinalAnswerToolResult) {
-    return withoutFinalToolSteps.filter((step) => step.kind !== "model_output");
-  }
-  return withoutFinalToolSteps;
+  // 当已有正文渲染时，不把冗余的 model_output 重复做成折叠项
+  return withoutFinalToolSteps.filter((step) => {
+    if (step.kind === "model_output" && (!options?.hasFinalAnswerToolResult || !options?.running)) {
+      return false;
+    }
+    return true;
+  });
 }
 
 function dedupeProcessSteps(steps: AgentExecutionStep[]): AgentExecutionStep[] {
@@ -262,6 +271,100 @@ function mergeTurnProcessSteps(messageSteps: AgentExecutionStep[], runtimeSteps:
   ];
 }
 
+/** 深度思考专用卡片组件：支持 Sparkles 微光、耗时统计、运行中平滑自动滚动、完成后默认折叠 */
+function ThinkingBlock({
+  step,
+  running,
+  elapsedLabel,
+}: {
+  step: AgentExecutionStep;
+  running: boolean;
+  elapsedLabel?: string;
+}) {
+  const [manualExpanded, setManualExpanded] = useState<boolean | null>(null);
+  const isRunning = running || step.status === "running";
+  // 运行中默认展开，完成后默认折叠以保持整洁，用户点击随时查看
+  const expanded = manualExpanded ?? isRunning;
+  const bodyRef = useRef<HTMLPreElement | null>(null);
+  const stickToBottomRef = useRef(true);
+  const ignoreScrollEventRef = useRef(false);
+
+  useEffect(() => {
+    if (isRunning) {
+      stickToBottomRef.current = true;
+    }
+  }, [isRunning]);
+
+  useEffect(() => {
+    if (!expanded || !isRunning || !bodyRef.current || !stickToBottomRef.current) {
+      return;
+    }
+    const el = bodyRef.current;
+    ignoreScrollEventRef.current = true;
+    el.scrollTop = el.scrollHeight;
+    const frame = window.requestAnimationFrame(() => {
+      ignoreScrollEventRef.current = false;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [expanded, isRunning, step.detail]);
+
+  function handleBodyScroll() {
+    if (ignoreScrollEventRef.current || !bodyRef.current) return;
+    const el = bodyRef.current;
+    const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (distanceToBottom > 16) {
+      stickToBottomRef.current = false;
+    }
+  }
+
+  const durationText = step.durationMs
+    ? `${(step.durationMs / 1000).toFixed(1)}s`
+    : isRunning && elapsedLabel
+    ? elapsedLabel
+    : "";
+
+  return (
+    <div className="agent-thinking-card" data-running={isRunning}>
+      <button
+        type="button"
+        className="agent-thinking-head"
+        aria-expanded={expanded}
+        onClick={() => setManualExpanded(!expanded)}
+      >
+        <div className="agent-thinking-head-left">
+          <span className={`agent-thinking-icon ${isRunning ? "agent-thinking-icon--spin" : ""}`}>
+            {isRunning ? <Loader2 size={14} /> : <Sparkles size={14} />}
+          </span>
+          <span className="agent-thinking-title">
+            {isRunning ? "正在深度思考..." : "已完成深度思考"}
+          </span>
+          {durationText ? (
+            <span className="agent-thinking-badge">
+              用时 {durationText}
+            </span>
+          ) : null}
+          {!expanded && step.summary && step.summary !== "可展开查看推理过程" ? (
+            <span className="agent-thinking-summary">{step.summary}</span>
+          ) : null}
+        </div>
+        <span className="agent-tool-step-chevron">
+          {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+        </span>
+      </button>
+      {expanded ? (
+        <pre
+          ref={bodyRef}
+          className="agent-thinking-body"
+          onScroll={handleBodyScroll}
+        >
+          {step.detail || "正在深入分析业务约束与输入参数..."}
+          {isRunning ? <span className="agent-thinking-cursor" aria-hidden="true" /> : null}
+        </pre>
+      ) : null}
+    </div>
+  );
+}
+
 function ToolStepRow({
   step,
   expanded,
@@ -274,12 +377,10 @@ function ToolStepRow({
   const hasDetail = !!step.detail?.trim();
   const dataset = step.kind === "tool" ? parseMcpResult(step.detail) : null;
   const detailRef = useRef<HTMLPreElement | null>(null);
-  /** 流式输出时默认跟到底；用户一旦滚离底部就取消，本轮不再强行拉回。 */
   const stickToBottomRef = useRef(true);
   const ignoreScrollEventRef = useRef(false);
   const wasRunningRef = useRef(false);
 
-  // 新一轮 running 开始时恢复自动跟底（例如下一轮推理）。
   useEffect(() => {
     const running = step.status === "running";
     if (running && !wasRunningRef.current) {
@@ -307,11 +408,22 @@ function ToolStepRow({
     }
     const el = detailRef.current;
     const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    // 用户滚离底部后取消自动跟底，避免抢滚动条。
     if (distanceToBottom > 12) {
       stickToBottomRef.current = false;
     }
   }
+
+  const { Icon, badgeLabel, tone } = getToolSemanticAppearance(step);
+  const friendlyName = formatFriendlyToolName(step.title);
+  const resultSummary = extractResultSummary(step);
+  const isRunning = step.status === "running";
+  const isError = step.status === "error";
+
+  const durationStr = step.durationMs
+    ? step.durationMs < 1000
+      ? `${step.durationMs}ms`
+      : `${(step.durationMs / 1000).toFixed(1)}s`
+    : null;
 
   return (
     <div className="agent-tool-step" data-kind={step.kind} data-status={step.status}>
@@ -322,36 +434,48 @@ function ToolStepRow({
         onClick={hasDetail ? onToggle : undefined}
         disabled={!hasDetail}
       >
-        <span className="agent-tool-step-icon">
-          {step.status === "error" ? (
-            <span className="agent-tool-step-dot agent-tool-step-dot--error" />
-          ) : step.kind === "reasoning" ? (
-            step.status === "running" ? <Loader2 size={12} className="animate-spin text-indigo-500" /> : <BrainCircuit size={12} className="text-indigo-500" />
-          ) : step.kind === "model_output" ? (
-            step.status === "running" ? <Loader2 size={12} className="animate-spin text-emerald-500" /> : <Cpu size={12} className="text-emerald-500" />
-          ) : step.status === "running" ? (
-            <Loader2 size={12} className="animate-spin text-blue-500" />
+        <span className="agent-tool-step-icon" data-tone={tone}>
+          {isRunning ? (
+            <Loader2 size={13} className="animate-spin text-blue-500" />
+          ) : isError ? (
+            <AlertCircle size={13} className="text-rose-500" />
           ) : (
-            <CheckCircle2 size={12} className="text-emerald-500" />
+            <Icon size={13} />
           )}
         </span>
-        <span className="agent-tool-step-title">{step.title}</span>
-        {step.summary ? <span className="agent-tool-step-summary">{step.summary}</span> : null}
-        <span className="agent-tool-step-status">{step.status === "running" ? "进行中" : step.status === "error" ? "失败" : "完成"}</span>
+        <span className="agent-tool-step-type-pill">{badgeLabel}</span>
+        <span className="agent-tool-step-title" title={step.title}>{friendlyName}</span>
+        {resultSummary ? (
+          <span className="agent-tool-step-result-pill">{resultSummary}</span>
+        ) : step.summary && step.summary !== "调用完成" ? (
+          <span className="agent-tool-step-summary">{step.summary}</span>
+        ) : null}
+        {durationStr ? (
+          <span className="agent-tool-step-duration">{durationStr}</span>
+        ) : null}
+        <span className="agent-tool-step-status">
+          {isRunning ? "执行中" : isError ? "失败" : "完成"}
+        </span>
         {hasDetail ? (
           <span className="agent-tool-step-chevron">
-            {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
           </span>
         ) : null}
       </button>
-      {hasDetail && expanded ? dataset ? <McpResultView result={dataset} /> : (
-        <pre
-          ref={detailRef}
-          className="agent-tool-step-detail"
-          onScroll={handleDetailScroll}
-        >
-          {step.detail}
-        </pre>
+      {hasDetail && expanded ? (
+        <div className="agent-tool-step-detail-container">
+          {dataset ? (
+            <McpResultView result={dataset} />
+          ) : (
+            <pre
+              ref={detailRef}
+              className="agent-tool-step-detail"
+              onScroll={handleDetailScroll}
+            >
+              {step.detail}
+            </pre>
+          )}
+        </div>
       ) : null}
     </div>
   );
@@ -385,38 +509,32 @@ function ToolStepsBlock({
   }
 
   function toggleStep(stepId: string) {
-    setExpandedStepIds((prev) => ({ ...prev, [stepId]: !(prev[stepId] ?? steps.find(s => s.id === stepId)?.status === "running") }));
-  }
-
-  // 只有推理时用一行摘要直接展开，避免“步骤总览 → 推理卡片 → 内容”三层重复折叠。
-  if (steps.length === 1 && steps[0].kind === "reasoning") {
-    const reasoning = steps[0];
-    return (
-      <div className="agent-turn-tools agent-turn-tools--reasoning-only">
-        <div className="flex items-start gap-3">
-          <div className="min-w-0 flex-1">
-            <ToolStepRow step={{ ...reasoning, title: reasoning.status === "error" ? "思考中断" : running ? "正在思考" : "思考完成", summary: running ? "正在分析资料…" : "查看分析过程" }}
-              expanded={expandedStepIds[reasoning.id] ?? running} onToggle={() => toggleStep(reasoning.id)} />
-          </div>
-          {headerActions ? <div className="agent-turn-tools-actions">{headerActions}</div> : null}
-        </div>
-      </div>
-    );
+    setExpandedStepIds((prev) => ({
+      ...prev,
+      [stepId]: !(prev[stepId] ?? steps.find((s) => s.id === stepId)?.status === "running"),
+    }));
   }
 
   const shouldShowList = expanded && (steps.length > 0 || !running);
 
   return (
-    <div className="agent-turn-tools">
+    <div className="agent-turn-tools mb-3">
       <div className="agent-turn-tools-toggle">
-        <button type="button" className="agent-turn-tools-toggle-main" aria-expanded={expanded} onClick={() => setManualExpanded(!expanded)}>
+        <button
+          type="button"
+          className="agent-turn-tools-toggle-main"
+          aria-expanded={expanded}
+          onClick={() => setManualExpanded(!expanded)}
+        >
           {running ? (
             <Loader2 size={14} className="animate-spin text-blue-500" />
           ) : (
             <CheckCircle2 size={14} className="text-emerald-500" />
           )}
           <span>{headerTitle}</span>
-          <span className="agent-turn-tools-chevron">{expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
+          <span className="agent-turn-tools-chevron">
+            {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </span>
         </button>
         {headerActions ? <div className="agent-turn-tools-actions">{headerActions}</div> : null}
       </div>
@@ -505,9 +623,14 @@ function ConversationTurnBlock({
   resultAction?: React.ReactNode;
 }) {
   const running = turn.current && showRunningHero;
-  const headerTitle = summarizeToolSteps(turn.toolSteps, elapsedLabel, running);
-  const waitingForAnswer = running && !turn.finalAnswer.trim();
-  const showFinalAnswerBody = !!turn.finalAnswer.trim();
+
+  // 分离深度推理步骤与真实动作/工具调用步骤
+  const reasoningStep = turn.toolSteps.find((s) => s.kind === "reasoning");
+  const actionSteps = turn.toolSteps.filter((s) => s.kind !== "reasoning");
+
+  const headerTitle = summarizeToolSteps(actionSteps, elapsedLabel, running);
+  const showFinalAnswerBody = Boolean(turn.finalAnswer.trim());
+  const waitingForAnswer = running && !showFinalAnswerBody && !reasoningStep && actionSteps.length === 0;
 
   return (
     <section className="agent-turn">
@@ -520,15 +643,31 @@ function ConversationTurnBlock({
       ) : null}
 
       <div ref={answerStartRef} className="agent-turn-assistant-panel">
-        {turn.current || turn.toolSteps.length > 0 ? (
+        {/* 1. 深度思考专用卡片（若当前轮包含 reasoning） */}
+        {reasoningStep ? (
+          <ThinkingBlock
+            step={reasoningStep}
+            running={running && reasoningStep.status === "running"}
+            elapsedLabel={elapsedLabel}
+          />
+        ) : null}
+
+        {/* 2. 工具与动作时间线 */}
+        {actionSteps.length > 0 || (running && !reasoningStep) ? (
           <ToolStepsBlock
-            steps={turn.toolSteps}
+            steps={actionSteps}
             headerTitle={headerTitle}
-            running={running}
+            running={running && actionSteps.some((s) => s.status === "running")}
             headerActions={headerActions}
           />
         ) : null}
 
+        {/* 3. 若无工具步骤但有追问/修改操作，展示独立的操作栏 */}
+        {actionSteps.length === 0 && !running && headerActions ? (
+          <div className="agent-turn-tools-actions-standalone">{headerActions}</div>
+        ) : null}
+
+        {/* 4. 实时流式回答与正式正文渲染 */}
         {showFinalAnswerBody ? (
           <>
             <div ref={answerBodyRef} className="agent-turn-assistant">
@@ -539,9 +678,13 @@ function ConversationTurnBlock({
             </div>
             {turn.tokenUsage ? <TokenUsageLine usage={turn.tokenUsage} /> : null}
           </>
-        ) : waitingForAnswer && turn.toolSteps.length === 0 ? (
-          <div className="agent-turn-waiting">智能体正在生成回复…</div>
+        ) : waitingForAnswer ? (
+          <div className="agent-turn-waiting">
+            <Loader2 size={13} className="animate-spin text-blue-500" />
+            <span>智能体正在生成回复…</span>
+          </div>
         ) : null}
+
         {resultAction ? <div className="agent-turn-result-choice">{resultAction}</div> : null}
         <div ref={answerEndRef} aria-hidden="true" />
       </div>
@@ -638,8 +781,8 @@ export function SingleAgentPanel({
   );
   const canFollowUp = permissions.allowQuestion && activeStep.allowsFollowUp !== false && activeStep.state === "done" && !readOnly && !!onFollowUp;
   const canEditAnswer = permissions.allowUserEdit && activeStep.allowsRegenerate !== false && activeStep.state === "done" && !readOnly;
-  // 运行中正文只在过程区「生成最终答案」框内流式展示，不提前画到下方最终回复区。
-  const displayFinalAnswer = showRunningHero ? "" : finalAnswer;
+  // 运行中正文直接在下方最终回复区实时流式打字展示
+  const displayFinalAnswer = finalAnswer;
   const conversationTurns = useMemo(
     () =>
       buildConversationTurns(activeStep.chatMessages, config, processSteps, {

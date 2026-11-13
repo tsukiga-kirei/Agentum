@@ -505,7 +505,7 @@ export function MultiAgentPanel({
             key={`cluster-agent-${selectedAgent.index}-${drawerScrollReady ? "ready" : "mount"}`}
             activeStep={buildAgentDetailStep(activeStep, selectedAgent, templateVariables)}
             isStreaming={!stepCanceled && selectedAgent.status === "running"}
-            streamingText=""
+            streamingText={selectedAgent.streamingText || ""}
             executionSteps={stepCanceled ? [] : buildAgentExecutionSteps(selectedAgent)}
             streamStartedAt={!stepCanceled && selectedAgent.status === "running" ? streamStartedAt : null}
             interruptedScope="clusterDrawer"

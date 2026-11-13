@@ -204,8 +204,18 @@ public class AgentRuntimeService {
                     finalModelContent = result.content();
                 }
 
-                String resolvedAnswer = resolveFinalAnswerContent(result, loggedResult.streamedDisplayText());
-                if (AgentStructuredOutput.enabled(config) && !result.toolCalls().isEmpty() && result.toolCalls().stream().noneMatch(it -> "final_answer".equals(it.name()))) resolvedAnswer = "";
+                List<ModelChatClient.ToolCall> executableToolCalls = result.toolCalls().stream()
+                    .filter(toolCall -> !"final_answer".equals(toolCall.name()))
+                    .toList();
+                boolean hasExecutableTools = !executableToolCalls.isEmpty();
+
+                // 当本轮包含外部可执行工具（如 MCP / Skill）调用时，模型处于行动阶段，
+                // 其 content 仅为伴随工具调用的过渡前置说明（Preamble），绝非最终答案。
+                // 此时清空 resolvedAnswer，阻止提前终结循环，也避免误触发交付依赖和结构化数据校验。
+                String resolvedAnswer = hasExecutableTools ? "" : resolveFinalAnswerContent(result, loggedResult.streamedDisplayText());
+                if (AgentStructuredOutput.enabled(config) && hasExecutableTools) {
+                    resolvedAnswer = "";
+                }
                 if (AgentStructuredOutput.enabled(config) && (!resolvedAnswer.isBlank() || result.toolCalls().stream().anyMatch(it -> "final_answer".equals(it.name())))) {
                     try {
                         var finalTool = result.toolCalls().stream().filter(it -> "final_answer".equals(it.name())).findFirst();
@@ -244,9 +254,6 @@ public class AgentRuntimeService {
                     break;
                 }
 
-                List<ModelChatClient.ToolCall> executableToolCalls = result.toolCalls().stream()
-                    .filter(toolCall -> !"final_answer".equals(toolCall.name()))
-                    .toList();
                 if (executableToolCalls.isEmpty()) {
                     finalAnswer = result.content();
                     finalAnswerSource = "model_content";
@@ -606,8 +613,13 @@ public class AgentRuntimeService {
     ) {
         List<ModelChatClient.ChatMessage> finalMessages = new ArrayList<>(messages);
         finalMessages.add(new ModelChatClient.ChatMessage("user", "请基于以上推理和工具观察结果，生成完整最终答案。"));
+        Map<String, Object> finalOptions = new LinkedHashMap<>(options);
+        if (provider.isReasoningModel()) {
+            // 收尾合成总结时显式关闭思考模式，避免证据已齐备时冗余深度思考耗费大量延迟与 Token
+            finalOptions.put("chat_template_kwargs", Map.of("enable_thinking", false));
+        }
         if (!streamFinalAnswer) {
-            LoggedChatResult result = callModelWithLog(request, provider, modelName, finalMessages, options, List.of());
+            LoggedChatResult result = callModelWithLog(request, provider, modelName, finalMessages, finalOptions, List.of());
             modelCallLogIds.add(result.callLogId());
             turnTokenUsage.add(result.result().tokenUsage());
             if (!result.result().reasoningContent().isBlank()) {
@@ -634,7 +646,7 @@ public class AgentRuntimeService {
             provider,
             modelName,
             finalMessages,
-            options,
+            finalOptions,
             List.of(),
             callLog.getId()
         ), new ModelChatClient.StreamingCallback() {

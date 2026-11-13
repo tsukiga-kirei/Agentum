@@ -115,7 +115,7 @@ public class McpDatasetService {
     private Map<String, Object> view(McpDatasetEntity entity, List<Map<String, Object>> rows) {
         Map<String, Object> result = new LinkedHashMap<>(reference(entity));
         List<String> fields = fields(entity.policy, rows);
-        result.put("fields", fields); result.put("summary", "完整数据已保存；预览仅为原始顺序的部分记录，不代表整体分布。可使用 mcp_dataset_query 按需查看。");
+        result.put("fields", fields); result.put("summary", "完整数据已保存；预览仅为原始顺序的部分记录，不代表整体分布。");
         String mode = Objects.toString(entity.policy.getOrDefault("preview", "summary"));
         int n = McpResultPolicy.integer(entity.policy, "previewRows", 3, 100);
         List<Map<String, Object>> preview = new ArrayList<>();

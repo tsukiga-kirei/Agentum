@@ -1,7 +1,12 @@
 import { McpResultView, parseMcpResult } from "./McpResultView";
 import React, { useState } from "react";
-import { BrainCircuit, CheckCircle2, ChevronDown, ChevronRight, Cpu, Loader2 } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Loader2 } from "lucide-react";
 import type { AgentExecutionStep } from "../../types/runtime-types";
+import {
+  extractResultSummary,
+  formatFriendlyToolName,
+  getToolSemanticAppearance,
+} from "../../utils/agentActivityPresentation";
 
 function TraceExecutionStepRow({
   step,
@@ -14,46 +19,56 @@ function TraceExecutionStepRow({
 }) {
   const hasDetail = !!step.detail?.trim();
   const dataset = step.kind === "tool" ? parseMcpResult(step.detail) : null;
+  const { Icon, badgeLabel, tone } = getToolSemanticAppearance(step);
+  const friendlyName = formatFriendlyToolName(step.title);
+  const resultSummary = extractResultSummary(step);
+  const isRunning = step.status === "running";
+  const isError = step.status === "error";
+
+  const durationStr = step.durationMs
+    ? step.durationMs < 1000
+      ? `${step.durationMs}ms`
+      : `${(step.durationMs / 1000).toFixed(1)}s`
+    : null;
 
   return (
-    <div className="agent-tool-step">
+    <div className="agent-tool-step" data-kind={step.kind} data-status={step.status}>
       <button
         type="button"
         className="agent-tool-step-head"
         onClick={hasDetail ? onToggle : undefined}
         disabled={!hasDetail}
       >
-        <span className="agent-tool-step-icon">
-          {step.status === "error" ? (
-            <span className="agent-tool-step-dot agent-tool-step-dot--error" />
-          ) : step.kind === "reasoning" ? (
-            <BrainCircuit size={12} className="text-indigo-500" />
-          ) : step.kind === "model_output" ? (
-            <Cpu size={12} className="text-emerald-500" />
+        <span className="agent-tool-step-icon" data-tone={tone}>
+          {isRunning ? (
+            <Loader2 size={13} className="animate-spin text-blue-500" />
+          ) : isError ? (
+            <AlertCircle size={13} className="text-rose-500" />
           ) : (
-            <CheckCircle2 size={12} className="text-emerald-500" />
+            <Icon size={13} />
           )}
         </span>
-        <span className="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
-          <span className="flex flex-wrap items-center gap-2">
-            {step.toolType === "mcp" || step.toolType === "skill" ? (
-              <span className="text-[10px] font-bold uppercase text-slate-400">{step.toolType}</span>
-            ) : null}
-            <span className="agent-tool-step-title">{step.title}</span>
-          </span>
-          {step.summary ? <span className="agent-tool-step-summary">{step.summary}</span> : null}
+        <span className="agent-tool-step-type-pill">{badgeLabel}</span>
+        <span className="agent-tool-step-title" title={step.title}>{friendlyName}</span>
+        {resultSummary ? (
+          <span className="agent-tool-step-result-pill">{resultSummary}</span>
+        ) : step.summary && step.summary !== "调用完成" ? (
+          <span className="agent-tool-step-summary">{step.summary}</span>
+        ) : null}
+        {durationStr ? (
+          <span className="agent-tool-step-duration">{durationStr}</span>
+        ) : null}
+        <span className="agent-tool-step-status">
+          {isRunning ? "执行中" : isError ? "失败" : "完成"}
         </span>
         {hasDetail ? (
           <span className="agent-tool-step-chevron">
-            {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
           </span>
         ) : null}
       </button>
       {hasDetail && expanded ? (
-        <div className="border-t border-slate-200 px-3 py-2 dark:border-slate-850">
-          {step.durationMs ? (
-            <div className="mb-2 text-[11px] text-slate-500 dark:text-slate-400">调用耗时：{step.durationMs} ms</div>
-          ) : null}
+        <div className="agent-tool-step-detail-container">
           {dataset ? <McpResultView result={dataset} /> : <pre className="agent-tool-step-detail m-0">{step.detail}</pre>}
         </div>
       ) : null}
