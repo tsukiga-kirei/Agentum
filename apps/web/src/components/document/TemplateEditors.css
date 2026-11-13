@@ -348,3 +348,9 @@
 .template-batch-types .template-test-actions { margin: 0; }
 
 .template-format-selected { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.template-applied-presets { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--color-text-secondary); font-size: 12px; }
+.template-field-preset-tag { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: var(--radius-md); color: var(--color-primary); background: color-mix(in srgb, var(--color-primary) 9%, var(--color-bg-card)); font-size: 12px; font-weight: 500; }
+.template-batch-result { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--color-primary) 25%, var(--color-border-light)); border-radius: var(--radius-lg); background: color-mix(in srgb, var(--color-primary) 5%, var(--color-bg-card)); color: var(--color-primary); }
+.template-batch-result > svg { flex-shrink: 0; margin-top: 2px; }
+.template-batch-result strong { font-size: 13px; }
+.template-batch-result p { margin: 4px 0 0; font-size: 12px; line-height: 1.6; color: var(--color-text-secondary); }

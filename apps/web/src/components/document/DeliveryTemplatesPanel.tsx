@@ -504,6 +504,7 @@ export function DeliveryTemplatesPanel({
                 <TemplateFieldsEditor
                   lockedKeys
                   locations={editing.spec.locations}
+                  formatGroups={editing.spec.formatGroups}
                   onApplyPreset={(paths, preset) => updateTemplateSpec(applyTemplateFieldPreset(editing.spec, paths, preset))}
                   renderLocations={editing.kind === "excel" ? (field, parent) => <TemplateFieldLocations field={parent ?? field} column={parent ? field.key : undefined} spec={editing.spec} onChange={spec => setEditing({ ...editing, spec })} /> : undefined}
                   fields={editing.spec.fields}
