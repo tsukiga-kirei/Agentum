@@ -292,7 +292,7 @@ export function WorkbenchShell() {
 
   const leaveConfirmation = leaveBlocker.state === "blocked" ? (
     <SysModalMask onClose={() => { if (!leavingRun) leaveBlocker.reset(); }}>
-      <section role="dialog" aria-modal="true" aria-labelledby="temporary-run-leave-title" className="sys-modal">
+      <section role="dialog" aria-modal="true" aria-labelledby="temporary-run-leave-title" className="sys-modal" style={{ maxWidth: 460 }}>
         <div className="sys-modal-header"><h3 id="temporary-run-leave-title" className="sys-modal-title">离开临时任务？</h3></div>
         <div className="sys-modal-body">此任务尚未保存。保存后可从待办继续；放弃将停止执行并清理临时任务，已发生的外部操作无法撤销。</div>
         <div className="sys-modal-footer">
@@ -819,7 +819,6 @@ export function WorkbenchShell() {
         {messageContextHolder}
         {leaveConfirmation}
         <div className="workbench-task-run-host flex flex-col h-[calc(100vh-var(--topbar-height,0px))] overflow-hidden">
-          {temporaryRun ? <div className="px-6 pt-3 text-xs text-[var(--color-text-secondary)]">临时试运行尚未保存：刷新可重连；页面断连超过两分钟将停止并清理。需要长期保留请先保存。</div> : null}
           <div className="workbench-task-run-host-inner flex-1 overflow-hidden p-6">
             <TaskRunWorkspace
               run={openedRunDetail}

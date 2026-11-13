@@ -1,4 +1,3 @@
-import { McpResultView, parseMcpResult } from "./McpResultView";
 import { CONSOLIDATE_RESULT_PROMPT } from "./ResultSelectionModal";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { message } from "antd";
@@ -10,6 +9,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  Copy,
   Cpu,
   Loader2,
   MessageSquarePlus,
@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import type { AgentExecutionStep, RuntimeChatMessage, RuntimePreviewStep, RuntimeTokenUsage } from "../../types/runtime-types";
 import { MarkdownRenderer } from "./MarkdownRenderer";
+import { ChatActivityTimeline } from "./ChatActivityTimeline";
 import { StructuredResultEditDrawer } from "./StructuredResultEditDrawer";
 import type { StructuredOutputConfig } from "../../types/delivery-template";
 import { AnswerEditModal } from "./AnswerEditModal";
@@ -31,13 +32,7 @@ import {
   mergeExecutionSteps,
   readAgentPermissions,
   readFinalAnswer,
-  summarizeToolSteps,
 } from "../../utils/agentExecutionSteps";
-import {
-  extractResultSummary,
-  formatFriendlyToolName,
-  getToolSemanticAppearance,
-} from "../../utils/agentActivityPresentation";
 
 interface SingleAgentPanelProps {
   activeStep: RuntimePreviewStep;
@@ -182,11 +177,19 @@ function buildConversationTurns(
   });
 }
 
-function normalizeTurnSteps(steps: AgentExecutionStep[], options?: { running?: boolean; hasFinalAnswerToolResult?: boolean }): AgentExecutionStep[] {
+function normalizeTurnSteps(
+  steps: AgentExecutionStep[],
+  options?: { running?: boolean; hasFinalAnswerToolResult?: boolean },
+): AgentExecutionStep[] {
   const withoutFinalToolSteps = steps.filter((step) => step.kind !== "final_answer");
-  // 当已有正文渲染时，不把冗余的 model_output 重复做成折叠项
+  const hasToolSteps = withoutFinalToolSteps.some((step) => step.kind === "tool");
   return withoutFinalToolSteps.filter((step) => {
-    if (step.kind === "model_output" && (!options?.hasFinalAnswerToolResult || !options?.running)) {
+    if (step.kind === "model_output") {
+      // 深度参考 WeKnora：当回合内有工具调用（或正在运行中），中间正文/前置说明顶到思维链作为思考与过渡步骤
+      if (hasToolSteps || options?.running || options?.hasFinalAnswerToolResult) {
+        return true;
+      }
+      // 纯文本无工具回合，正文已作为最终答案直接渲染，不重复生成折叠项
       return false;
     }
     return true;
@@ -271,293 +274,6 @@ function mergeTurnProcessSteps(messageSteps: AgentExecutionStep[], runtimeSteps:
   ];
 }
 
-/** 深度思考专用卡片组件：支持 Sparkles 微光、耗时统计、运行中平滑自动滚动、完成后默认折叠 */
-function ThinkingBlock({
-  step,
-  running,
-  elapsedLabel,
-}: {
-  step: AgentExecutionStep;
-  running: boolean;
-  elapsedLabel?: string;
-}) {
-  const [manualExpanded, setManualExpanded] = useState<boolean | null>(null);
-  const isRunning = running || step.status === "running";
-  // 运行中默认展开，完成后默认折叠以保持整洁，用户点击随时查看
-  const expanded = manualExpanded ?? isRunning;
-  const bodyRef = useRef<HTMLPreElement | null>(null);
-  const stickToBottomRef = useRef(true);
-  const ignoreScrollEventRef = useRef(false);
-
-  useEffect(() => {
-    if (isRunning) {
-      stickToBottomRef.current = true;
-    }
-  }, [isRunning]);
-
-  useEffect(() => {
-    if (!expanded || !isRunning || !bodyRef.current || !stickToBottomRef.current) {
-      return;
-    }
-    const el = bodyRef.current;
-    ignoreScrollEventRef.current = true;
-    el.scrollTop = el.scrollHeight;
-    const frame = window.requestAnimationFrame(() => {
-      ignoreScrollEventRef.current = false;
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [expanded, isRunning, step.detail]);
-
-  function handleBodyScroll() {
-    if (ignoreScrollEventRef.current || !bodyRef.current) return;
-    const el = bodyRef.current;
-    const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    if (distanceToBottom > 16) {
-      stickToBottomRef.current = false;
-    }
-  }
-
-  const durationText = step.durationMs
-    ? `${(step.durationMs / 1000).toFixed(1)}s`
-    : isRunning && elapsedLabel
-    ? elapsedLabel
-    : "";
-
-  return (
-    <div className="agent-thinking-card" data-running={isRunning}>
-      <button
-        type="button"
-        className="agent-thinking-head"
-        aria-expanded={expanded}
-        onClick={() => setManualExpanded(!expanded)}
-      >
-        <div className="agent-thinking-head-left">
-          <span className={`agent-thinking-icon ${isRunning ? "agent-thinking-icon--spin" : ""}`}>
-            {isRunning ? <Loader2 size={14} /> : <Sparkles size={14} />}
-          </span>
-          <span className="agent-thinking-title">
-            {isRunning ? "正在深度思考..." : "已完成深度思考"}
-          </span>
-          {durationText ? (
-            <span className="agent-thinking-badge">
-              用时 {durationText}
-            </span>
-          ) : null}
-          {!expanded && step.summary && step.summary !== "可展开查看推理过程" ? (
-            <span className="agent-thinking-summary">{step.summary}</span>
-          ) : null}
-        </div>
-        <span className="agent-tool-step-chevron">
-          {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-        </span>
-      </button>
-      {expanded ? (
-        <pre
-          ref={bodyRef}
-          className="agent-thinking-body"
-          onScroll={handleBodyScroll}
-        >
-          {step.detail || "正在深入分析业务约束与输入参数..."}
-          {isRunning ? <span className="agent-thinking-cursor" aria-hidden="true" /> : null}
-        </pre>
-      ) : null}
-    </div>
-  );
-}
-
-function ToolStepRow({
-  step,
-  expanded,
-  onToggle,
-}: {
-  step: AgentExecutionStep;
-  expanded: boolean;
-  onToggle: () => void;
-}) {
-  const hasDetail = !!step.detail?.trim();
-  const dataset = step.kind === "tool" ? parseMcpResult(step.detail) : null;
-  const detailRef = useRef<HTMLPreElement | null>(null);
-  const stickToBottomRef = useRef(true);
-  const ignoreScrollEventRef = useRef(false);
-  const wasRunningRef = useRef(false);
-
-  useEffect(() => {
-    const running = step.status === "running";
-    if (running && !wasRunningRef.current) {
-      stickToBottomRef.current = true;
-    }
-    wasRunningRef.current = running;
-  }, [step.status]);
-
-  useEffect(() => {
-    if (!expanded || step.status !== "running" || !detailRef.current || !stickToBottomRef.current) {
-      return;
-    }
-    const el = detailRef.current;
-    ignoreScrollEventRef.current = true;
-    el.scrollTop = el.scrollHeight;
-    const frame = window.requestAnimationFrame(() => {
-      ignoreScrollEventRef.current = false;
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [expanded, step.status, step.detail]);
-
-  function handleDetailScroll() {
-    if (ignoreScrollEventRef.current || !detailRef.current) {
-      return;
-    }
-    const el = detailRef.current;
-    const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    if (distanceToBottom > 12) {
-      stickToBottomRef.current = false;
-    }
-  }
-
-  const { Icon, badgeLabel, tone } = getToolSemanticAppearance(step);
-  const friendlyName = formatFriendlyToolName(step.title);
-  const resultSummary = extractResultSummary(step);
-  const isRunning = step.status === "running";
-  const isError = step.status === "error";
-
-  const durationStr = step.durationMs
-    ? step.durationMs < 1000
-      ? `${step.durationMs}ms`
-      : `${(step.durationMs / 1000).toFixed(1)}s`
-    : null;
-
-  return (
-    <div className="agent-tool-step" data-kind={step.kind} data-status={step.status}>
-      <button
-        type="button"
-        className="agent-tool-step-head"
-        aria-expanded={hasDetail ? expanded : undefined}
-        onClick={hasDetail ? onToggle : undefined}
-        disabled={!hasDetail}
-      >
-        <span className="agent-tool-step-icon" data-tone={tone}>
-          {isRunning ? (
-            <Loader2 size={13} className="animate-spin text-blue-500" />
-          ) : isError ? (
-            <AlertCircle size={13} className="text-rose-500" />
-          ) : (
-            <Icon size={13} />
-          )}
-        </span>
-        <span className="agent-tool-step-type-pill">{badgeLabel}</span>
-        <span className="agent-tool-step-title" title={step.title}>{friendlyName}</span>
-        {resultSummary ? (
-          <span className="agent-tool-step-result-pill">{resultSummary}</span>
-        ) : step.summary && step.summary !== "调用完成" ? (
-          <span className="agent-tool-step-summary">{step.summary}</span>
-        ) : null}
-        {durationStr ? (
-          <span className="agent-tool-step-duration">{durationStr}</span>
-        ) : null}
-        <span className="agent-tool-step-status">
-          {isRunning ? "执行中" : isError ? "失败" : "完成"}
-        </span>
-        {hasDetail ? (
-          <span className="agent-tool-step-chevron">
-            {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-          </span>
-        ) : null}
-      </button>
-      {hasDetail && expanded ? (
-        <div className="agent-tool-step-detail-container">
-          {dataset ? (
-            <McpResultView result={dataset} />
-          ) : (
-            <pre
-              ref={detailRef}
-              className="agent-tool-step-detail"
-              onScroll={handleDetailScroll}
-            >
-              {step.detail}
-            </pre>
-          )}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function ToolStepsBlock({
-  steps,
-  headerTitle,
-  running,
-  headerActions,
-}: {
-  steps: AgentExecutionStep[];
-  headerTitle: string;
-  running: boolean;
-  headerActions?: React.ReactNode;
-}) {
-  const [manualExpanded, setManualExpanded] = useState<boolean | null>(null);
-  const expanded = manualExpanded ?? running;
-  const [expandedStepIds, setExpandedStepIds] = useState<Record<string, boolean>>({});
-
-  if (steps.length === 0 && !running) {
-    return headerActions ? (
-      <div className="agent-turn-tools agent-turn-tools--status-only">
-        <div className="agent-turn-tools-toggle agent-turn-tools-toggle--static">
-          <CheckCircle2 size={14} className="text-emerald-500" />
-          <span>{headerTitle}</span>
-          <div className="agent-turn-tools-actions">{headerActions}</div>
-        </div>
-      </div>
-    ) : null;
-  }
-
-  function toggleStep(stepId: string) {
-    setExpandedStepIds((prev) => ({
-      ...prev,
-      [stepId]: !(prev[stepId] ?? steps.find((s) => s.id === stepId)?.status === "running"),
-    }));
-  }
-
-  const shouldShowList = expanded && (steps.length > 0 || !running);
-
-  return (
-    <div className="agent-turn-tools mb-3">
-      <div className="agent-turn-tools-toggle">
-        <button
-          type="button"
-          className="agent-turn-tools-toggle-main"
-          aria-expanded={expanded}
-          onClick={() => setManualExpanded(!expanded)}
-        >
-          {running ? (
-            <Loader2 size={14} className="animate-spin text-blue-500" />
-          ) : (
-            <CheckCircle2 size={14} className="text-emerald-500" />
-          )}
-          <span>{headerTitle}</span>
-          <span className="agent-turn-tools-chevron">
-            {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          </span>
-        </button>
-        {headerActions ? <div className="agent-turn-tools-actions">{headerActions}</div> : null}
-      </div>
-      {shouldShowList ? (
-        <div className="agent-turn-tools-list">
-          {steps.length === 0 ? (
-            <p className="agent-turn-tools-empty">工具调用与输出将显示在这里</p>
-          ) : (
-            steps.map((step) => (
-              <ToolStepRow
-                key={step.id}
-                step={step}
-                expanded={expandedStepIds[step.id] ?? step.status === "running"}
-                onToggle={() => toggleStep(step.id)}
-              />
-            ))
-          )}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 function AgentInterruptedState({ scope }: { scope: "default" | "clusterDrawer" }) {
   const isClusterDrawer = scope === "clusterDrawer";
   return (
@@ -623,85 +339,79 @@ function ConversationTurnBlock({
   resultAction?: React.ReactNode;
 }) {
   const running = turn.current && showRunningHero;
-
-  // 分离深度推理步骤与真实动作/工具调用步骤
-  const reasoningStep = turn.toolSteps.find((s) => s.kind === "reasoning");
-  const actionSteps = turn.toolSteps.filter((s) => s.kind !== "reasoning");
-
-  const headerTitle = summarizeToolSteps(actionSteps, elapsedLabel, running);
-  const showFinalAnswerBody = Boolean(turn.finalAnswer.trim());
-  const waitingForAnswer = running && !showFinalAnswerBody && !reasoningStep && actionSteps.length === 0;
+  const hasActiveTool = turn.toolSteps.some((s) => s.status === "running");
+  const showFinalAnswerBody = Boolean(turn.finalAnswer.trim()) && (!running || !hasActiveTool);
+  const hasActivities = turn.toolSteps.length > 0 || (running && !showFinalAnswerBody);
+  const waitingForAnswer = running && !showFinalAnswerBody && turn.toolSteps.length === 0;
 
   return (
-    <section className="agent-turn">
+    <article className="ai-message" aria-label={turn.userMessage ? "对话轮次" : "AI 回答"}>
       {turn.userMessage.trim() ? (
-        <div className="agent-turn-user-row">
-          <div className="agent-turn-user-bubble">
-            <p>{turn.userMessage}</p>
+        <div className="ai-message-user">
+          <div className="ai-user-bubble">
+            <p className="ai-user-content">{turn.userMessage}</p>
           </div>
         </div>
       ) : null}
 
-      <div ref={answerStartRef} className="agent-turn-assistant-panel">
-        {/* 1. 深度思考专用卡片（若当前轮包含 reasoning） */}
-        {reasoningStep ? (
-          <ThinkingBlock
-            step={reasoningStep}
-            running={running && reasoningStep.status === "running"}
+      <div ref={answerStartRef} className="ai-message-assistant">
+        {/* 思考与活动时间线：统一思维链，包含思考、中间说明、工具调用、知识检索 */}
+        {hasActivities ? (
+          <ChatActivityTimeline
+            steps={turn.toolSteps}
+            running={running && !showFinalAnswerBody}
             elapsedLabel={elapsedLabel}
-          />
-        ) : null}
-
-        {/* 2. 工具与动作时间线 */}
-        {actionSteps.length > 0 || (running && !reasoningStep) ? (
-          <ToolStepsBlock
-            steps={actionSteps}
-            headerTitle={headerTitle}
-            running={running && actionSteps.some((s) => s.status === "running")}
             headerActions={headerActions}
           />
         ) : null}
 
-        {/* 3. 若无工具步骤但有追问/修改操作，展示独立的操作栏 */}
-        {actionSteps.length === 0 && !running && headerActions ? (
-          <div className="agent-turn-tools-actions-standalone">{headerActions}</div>
-        ) : null}
-
-        {/* 4. 实时流式回答与正式正文渲染 */}
+        {/* 最终回答：纯净自然排版，不使用气泡容器 */}
         {showFinalAnswerBody ? (
           <>
-            <div ref={answerBodyRef} className="agent-turn-assistant">
-              <MarkdownRenderer
-                content={turn.finalAnswer}
-                compact
-              />
+            <div ref={answerBodyRef} className="ai-answer">
+              <MarkdownRenderer content={turn.finalAnswer} compact />
             </div>
-            {turn.tokenUsage ? <TokenUsageLine usage={turn.tokenUsage} /> : null}
+            <footer className="ai-message-footer">
+              <div className="ai-message-actions">
+                <button
+                  type="button"
+                  className="ai-action-btn"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(turn.finalAnswer)
+                      .then(() => message.success("回答已复制"))
+                      .catch(() => message.error("复制失败"));
+                  }}
+                  title="复制回答"
+                >
+                  <Copy size={13} />
+                  <span>复制</span>
+                </button>
+              </div>
+              <div className="ai-message-attribution">
+                {turn.tokenUsage ? (
+                  <span className="ai-token-badge" title="本轮包含智能体为完成回答发起的全部模型调用">
+                    <Sigma size={12} />
+                    <span>本轮 {turn.tokenUsage.totalTokens.toLocaleString("zh-CN")} tokens</span>
+                    <span className="opacity-60">
+                      （输入 {turn.tokenUsage.inputTokens.toLocaleString("zh-CN")} · 输出 {turn.tokenUsage.outputTokens.toLocaleString("zh-CN")}）
+                    </span>
+                  </span>
+                ) : null}
+                <span className="ai-badge-generated">AI 生成</span>
+              </div>
+            </footer>
           </>
         ) : waitingForAnswer ? (
-          <div className="agent-turn-waiting">
+          <div className="flex items-center gap-2 py-3 text-xs text-[var(--color-text-tertiary)]">
             <Loader2 size={13} className="animate-spin text-blue-500" />
             <span>智能体正在生成回复…</span>
           </div>
         ) : null}
 
-        {resultAction ? <div className="agent-turn-result-choice">{resultAction}</div> : null}
+        {resultAction ? <div className="mt-3 flex justify-end">{resultAction}</div> : null}
         <div ref={answerEndRef} aria-hidden="true" />
       </div>
-    </section>
-  );
-}
-
-function TokenUsageLine({ usage }: { usage: RuntimeTokenUsage }) {
-  return (
-    <div className="mt-2 flex items-center justify-end gap-1.5 text-[11px] text-[var(--color-text-tertiary)]" title="本轮包含智能体为完成回答发起的全部模型调用">
-      <Sigma size={12} aria-hidden="true" />
-      <span>本轮 {usage.totalTokens.toLocaleString("zh-CN")} tokens</span>
-      <span aria-hidden="true">·</span>
-      <span>输入 {usage.inputTokens.toLocaleString("zh-CN")}</span>
-      <span aria-hidden="true">·</span>
-      <span>输出 {usage.outputTokens.toLocaleString("zh-CN")}</span>
-    </div>
+    </article>
   );
 }
 
@@ -738,7 +448,10 @@ export function SingleAgentPanel({
   const hasFollowUp = (activeStep.chatMessages ?? []).filter(m => m.role === "assistant").length > 1;
   const selectedResult = readStepOutput(activeStep, ["selectedResultMessageIndex"]);
   const latestChat = [...(activeStep.chatMessages ?? [])].reverse().find(m => m.role === "assistant");
-  const finalAnswer = isStreaming ? streamingText : latestChat?.content || formalAnswer;
+  const hasRunningTools = steps.some(s => s.kind === "tool" && s.status === "running");
+  const finalAnswer = isStreaming
+    ? (hasRunningTools ? "" : streamingText)
+    : latestChat?.content || formalAnswer;
   const hasAnswerContent = !!finalAnswer.trim();
   const showRunningHero = !stepInterrupted
     && (activeStep.state === "running" || activeStep.state === "pending" || isStreaming);
@@ -970,7 +683,7 @@ export function SingleAgentPanel({
             <p>暂无输出内容</p>
           </div>
         ) : (
-          <div className="agent-turn-list">
+          <div className="agent-turn-list ai-thread">
             {conversationTurns.map((turn, index) => (
               <div key={turn.id} ref={index === conversationTurns.length - 1 ? latestTurnRef : undefined}>
                 <ConversationTurnBlock

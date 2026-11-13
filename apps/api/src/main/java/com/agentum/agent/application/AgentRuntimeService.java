@@ -28,6 +28,8 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -581,13 +583,17 @@ public class AgentRuntimeService {
             }
         });
         try {
-            ModelChatClient.ChatResult result = future.get();
+            ModelChatClient.ChatResult result = future.get(180, TimeUnit.SECONDS);
             String streamedDisplay = streamedFinalAnswer.toString();
             String resolvedAnswer = resolveFinalAnswerContent(result, streamedDisplay);
             if (streamedDisplay.isBlank() && !resolvedAnswer.isBlank()) {
                 emitFinalAnswer(eventSink, resolvedAnswer);
             }
             return new LoggedChatResult(result, callLogId(callLog), streamedDisplay);
+        } catch (TimeoutException exception) {
+            callLog.fail("MODEL_CALL_TIMEOUT", "模型流式响应超时（180秒）", clock.instant());
+            modelCallLogRepository.save(callLog);
+            throw new ApiException(HttpStatus.GATEWAY_TIMEOUT, "MODEL_CALL_TIMEOUT", "模型响应超时，请检查模型服务连通性或稍后重试");
         } catch (ExecutionException exception) {
             if (exception.getCause() instanceof ApiException apiException) {
                 throw apiException;
@@ -676,13 +682,17 @@ public class AgentRuntimeService {
             }
         });
         try {
-            ModelChatClient.ChatResult result = future.get();
+            ModelChatClient.ChatResult result = future.get(180, TimeUnit.SECONDS);
             modelCallLogIds.add(callLogId(callLog));
             turnTokenUsage.add(result.tokenUsage());
             if (!result.reasoningContent().isBlank()) {
                 reasoningContents.add(result.reasoningContent());
             }
             return result.content();
+        } catch (TimeoutException exception) {
+            callLog.fail("MODEL_CALL_TIMEOUT", "最终答案模型流式响应超时（180秒）", clock.instant());
+            modelCallLogRepository.save(callLog);
+            throw new ApiException(HttpStatus.GATEWAY_TIMEOUT, "MODEL_CALL_TIMEOUT", "最终答案生成超时，请检查模型服务连通性");
         } catch (ExecutionException exception) {
             if (exception.getCause() instanceof ApiException apiException) {
                 throw apiException;

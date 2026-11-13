@@ -470,7 +470,9 @@ export function useRunStream(
         }
         const { toolName, toolType, status, result, durationMs } = event.data;
         setCurrentPhase("tool_calling");
-        // 转入 Skill/MCP：推理与（若有）中间正文的进行中文案一并收尾。
+        // 转入 Skill/MCP：清空可能在工具执行前产生的过渡说明，避免被误当做最终答案提前渲染
+        setStreamingText("");
+        // 推理与（若有）中间正文的进行中文案一并收尾。
         setExecutionSteps((prev) => completeModelOutputStep(completeReasoningStep(prev)));
 
         setToolCalls((prev) => {
@@ -655,7 +657,7 @@ export function useRunStream(
             return {
               ...prev,
               status: "running",
-              streamingText: streamKind === "reasoning" ? prev.streamingText : String(accumulatedContent ?? prev.streamingText ?? ""),
+              streamingText: streamKind === "final_answer" ? String(accumulatedContent ?? prev.streamingText ?? "") : prev.streamingText,
               reasoningText: streamKind === "reasoning" ? String(accumulatedContent ?? prev.reasoningText ?? "") : prev.reasoningText,
             };
           }

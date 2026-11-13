@@ -49,7 +49,7 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
     public OpenAiCompatibleModelChatClient(ObjectMapper objectMapper) {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(Duration.ofSeconds(8));
-        requestFactory.setReadTimeout(Duration.ofSeconds(60));
+        requestFactory.setReadTimeout(Duration.ofSeconds(120));
         this.restClient = RestClient.builder()
             .requestFactory(requestFactory)
             .defaultHeader(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
@@ -226,6 +226,10 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
                                     }
                                     if (node.has("usage") && !node.get("usage").isNull()) {
                                         usage = objectMapper.convertValue(node.get("usage"), new TypeReference<Map<String, Object>>() {});
+                                    }
+                                    if (!finishReason.isBlank() && !usage.isEmpty()) {
+                                        // 终态 chunk 及 usage 均已收到，直接退出循环，避免部分网关不发 [DONE] 且保持连接导致挂起
+                                        break;
                                     }
                                 } catch (Exception e) {
                                     log.debug("解析模型流式 chunk 失败 chunk={} requestId={}",
