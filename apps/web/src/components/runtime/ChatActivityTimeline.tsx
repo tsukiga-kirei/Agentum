@@ -46,22 +46,23 @@ function ProcessIcon({ state, expanded }: { state: "running" | "error" | "done";
 
 function resolveStepAppearance(step: AgentExecutionStep) {
   if (step.kind === "reasoning") {
+    const isRunning = step.status === "running";
     return {
       Icon: Sparkles,
-      title: "思考与研判",
+      title: isRunning ? "深度推理分析中..." : (step.title || "深度推理"),
       badgeLabel: "思考",
       tone: "thinking" as const,
-      hasMoreDetail: Boolean(step.detail?.trim()),
+      hasMoreDetail: Boolean(step.detail?.trim()) || isRunning,
       displayDetail: step.detail?.trim() || "",
     };
   }
   if (step.kind === "model_output") {
-    const raw = (step.detail || step.title || "").trim();
+    const raw = (step.detail || (step.title !== "过渡说明" ? step.title : "") || "").trim();
     const lines = raw.split("\n");
     const firstLine = lines.find((l) => l.trim().length > 0)?.trim() || "";
     // 统一规则：始终提取非空第一行作为展示标题，限制在 45 个字以内，超出部分追加省略号，彻底杜绝生硬的“过渡说明”
     const maxLen = 45;
-    const title = firstLine
+    const title = firstLine && firstLine !== "过渡说明"
       ? (firstLine.length > maxLen ? `${firstLine.slice(0, maxLen)}...` : firstLine)
       : (step.title && step.title !== "过渡说明" ? step.title : "思考与分析");
     return {
@@ -187,9 +188,15 @@ function ActivityStepItem({
             {dataset ? (
               <McpResultView result={dataset} />
             ) : step.kind === "reasoning" ? (
-              <pre className="ai-activity-reasoning-body">
-                {displayDetail || "正在深入分析业务约束与输入参数..."}
-              </pre>
+              <div className="ai-activity-reasoning-body">
+                <MarkdownRenderer content={displayDetail || "正在深入分析业务约束与输入参数..."} compact />
+                {isRunning ? (
+                  <div className="inline-flex items-center gap-1.5 mt-2 text-[0.71875rem] text-indigo-500/80" aria-hidden="true">
+                    <Loader2 size={11} className="animate-spin" />
+                    <span>模型深度思考中…</span>
+                  </div>
+                ) : null}
+              </div>
             ) : step.kind === "model_output" ? (
               <div className="ai-activity-preamble-body">
                 <MarkdownRenderer content={displayDetail} compact />

@@ -167,7 +167,7 @@ class AgentRuntimeServiceTest {
             assertThat(request.options()).containsEntry("chat_template_kwargs", Map.of("enable_thinking", false));
         });
         assertThat(modelChatClient.requests().getFirst().tools()).extracting(ModelChatClient.ToolDefinition::name)
-            .contains("skill_credit_read", "final_answer");
+            .contains("skill_credit_read");
         assertThat((List<?>) result.outputs().get("chatMessages")).hasSize(2);
         assertThat(result.outputs().get("tokenUsage")).isEqualTo(Map.of(
             "inputTokens", 180L,
@@ -382,9 +382,7 @@ class AgentRuntimeServiceTest {
         ));
 
         assertThat(modelChatClient.requests()).hasSize(1);
-        assertThat(modelChatClient.requests().getFirst().tools())
-            .extracting(ModelChatClient.ToolDefinition::name)
-            .containsExactly("final_answer");
+        assertThat(modelChatClient.requests().getFirst().tools()).isEmpty();
         assertThat(modelChatClient.requests().getFirst().messages())
             .extracting(ModelChatClient.ChatMessage::role)
             .containsExactly("system", "user", "assistant", "user");

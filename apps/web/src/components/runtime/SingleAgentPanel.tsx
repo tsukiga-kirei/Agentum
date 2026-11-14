@@ -25,6 +25,7 @@ import { StructuredResultEditDrawer } from "./StructuredResultEditDrawer";
 import type { StructuredOutputConfig } from "../../types/delivery-template";
 import { AnswerEditModal } from "./AnswerEditModal";
 import { FollowUpModal } from "./FollowUpModal";
+import { copyTextToClipboard } from "../../utils/clipboard";
 import {
   buildModelOutputSteps,
   buildPersistedExecutionSteps,
@@ -85,30 +86,12 @@ function normalizeForCompare(value: string | undefined): string {
   return (value ?? "").replace(/\s+/g, " ").trim();
 }
 
-/** 兼容内网 HTTP 与非安全环境的剪贴板复制兜底工具 */
+/** 兼容内网 HTTP、局域网 IP 与非安全环境的剪贴板复制兜底工具 */
 async function safeCopyText(text: string): Promise<boolean> {
   if (!text) return false;
   try {
-    if (typeof navigator !== "undefined" && navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch {
-    // 权限受限或非 HTTPS 环境，降级到 textarea execCommand
-  }
-  try {
-    const textarea = document.createElement("textarea");
-    textarea.value = text;
-    textarea.style.position = "fixed";
-    textarea.style.left = "-9999px";
-    textarea.style.top = "-9999px";
-    textarea.style.opacity = "0";
-    document.body.appendChild(textarea);
-    textarea.focus();
-    textarea.select();
-    const success = document.execCommand("copy");
-    document.body.removeChild(textarea);
-    return success;
+    await copyTextToClipboard(text);
+    return true;
   } catch {
     return false;
   }
@@ -375,6 +358,7 @@ function ConversationTurnBlock({
   resultAction?: React.ReactNode;
 }) {
   const running = turn.current && showRunningHero;
+  const isTurnCompleted = !showRunningHero && Boolean(turn.finalAnswer.trim());
   const hasActiveTool = turn.toolSteps.some((s) => s.status === "running" && s.title !== "final_answer" && s.kind === "tool");
   const showFinalAnswerBody = Boolean(turn.finalAnswer.trim()) && (!running || !hasActiveTool);
   const hasActivities = turn.toolSteps.length > 0 || (running && !showFinalAnswerBody);
@@ -407,7 +391,7 @@ function ConversationTurnBlock({
               <MarkdownRenderer content={turn.finalAnswer} compact />
             </div>
             {/* 仅在整轮任务真正收官完成（非流式运行打字中）后，才在正文下方展示复制操作栏与标记 */}
-            {!running ? (
+            {isTurnCompleted ? (
               <footer className="ai-message-footer">
                 <div className="ai-message-actions">
                   <button

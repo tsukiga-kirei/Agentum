@@ -9,6 +9,7 @@ import type {
   AgentExecutionStep,
 } from "../types/runtime-types";
 import {
+  commitCurrentPreambleStep,
   completeReasoningStep,
   completeModelOutputStep,
   finalizeFinalAnswerStep,
@@ -103,6 +104,7 @@ export function useRunStream(
   const reconnectFailuresRef = useRef(0);
   /** 本步骤 SSE 已收到终态事件；在 reloadRunDetail 完成前阻止自动重连 */
   const stepStreamTerminalRef = useRef(false);
+  const streamingTextRef = useRef<string>("");
 
   const markStepStreamTerminal = useCallback(() => {
     stepStreamTerminalRef.current = true;
@@ -394,6 +396,7 @@ export function useRunStream(
         setCurrentPhase("preparing");
         // SSE 重连/回放会再次收到 node_started：同一节点不清空已展示的流式/集群进度。
         if (!isSameNode) {
+          streamingTextRef.current = "";
           setStreamingText("");
           setRenderedUserPrompt(null);
           setToolCalls([]);
@@ -450,9 +453,20 @@ export function useRunStream(
         if (streamKind === "reasoning") {
           // 多轮 ReAct：工具观察后可能再次进入推理，此时重新标为 running。
           setExecutionSteps((prev) => upsertReasoningStep(prev, accumulatedContent, true));
+        } else if (streamKind === "final_answer") {
+          // 若此前正文区显示的是模型在调用 final_answer 之前的过渡思考/分析说明，
+          // 及时沉淀入思维链，正文区立即顺畅切换为最终答案流式打字输出。
+          const currentText = streamingTextRef.current.trim();
+          if (currentText && !accumulatedContent.startsWith(currentText)) {
+            setExecutionSteps((prev) => commitCurrentPreambleStep(prev, currentText));
+          }
+          streamingTextRef.current = accumulatedContent;
+          setStreamingText(accumulatedContent);
+          setExecutionSteps((prev) => completeReasoningStep(prev));
         } else {
           // 模型正文/最终答案直接在主界面最终回复区流式打字渲染，
           // 不再伪造名为“生成最终答案”的步骤卡片塞入过程区。
+          streamingTextRef.current = accumulatedContent;
           setStreamingText(accumulatedContent);
           setExecutionSteps((prev) => completeReasoningStep(prev));
         }
@@ -470,7 +484,12 @@ export function useRunStream(
           break;
         }
         setCurrentPhase("tool_calling");
-        // 转入外部 Skill/MCP：清空可能在工具执行前产生的临时前置引子，避免被误当做最终答案提前渲染
+        // 转入外部 Skill/MCP：若工具前有模型输出的思考/规划分析，将其作为时间线步骤沉淀，严格保持天然时序
+        if (streamingTextRef.current.trim()) {
+          const preamble = streamingTextRef.current.trim();
+          setExecutionSteps((prev) => commitCurrentPreambleStep(prev, preamble));
+        }
+        streamingTextRef.current = "";
         setStreamingText("");
         // 推理与（若有）中间正文的进行中文案一并收尾。
         setExecutionSteps((prev) => completeModelOutputStep(completeReasoningStep(prev)));

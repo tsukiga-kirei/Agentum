@@ -156,6 +156,7 @@ public class AgentRuntimeService {
         List<String> modelCallLogIds = new ArrayList<>();
         List<Map<String, Object>> toolCallSummaries = new ArrayList<>();
         List<String> reasoningContents = new ArrayList<>();
+        List<Map<String, Object>> chronologicalProcessSteps = new ArrayList<>();
         TokenUsageAccumulator turnTokenUsage = new TokenUsageAccumulator();
         String finalAnswer = "";
         String finalModelContent = "";
@@ -201,6 +202,14 @@ public class AgentRuntimeService {
                 turnTokenUsage.add(result.tokenUsage());
                 if (!result.reasoningContent().isBlank()) {
                     reasoningContents.add(result.reasoningContent());
+                    Map<String, Object> reasoningStep = new LinkedHashMap<>();
+                    reasoningStep.put("kind", "reasoning");
+                    reasoningStep.put("title", "深度推理");
+                    reasoningStep.put("summary", "可展开查看推理过程");
+                    reasoningStep.put("status", "done");
+                    reasoningStep.put("detail", result.reasoningContent());
+                    reasoningStep.put("toolType", "reasoning");
+                    chronologicalProcessSteps.add(reasoningStep);
                 }
                 if (!firstNonBlank(result.content()).isBlank()) {
                     finalModelContent = result.content();
@@ -217,6 +226,23 @@ public class AgentRuntimeService {
                 String resolvedAnswer = hasExecutableTools ? "" : resolveFinalAnswerContent(result, loggedResult.streamedDisplayText());
                 if (AgentStructuredOutput.enabled(config) && hasExecutableTools) {
                     resolvedAnswer = "";
+                }
+
+                // 按真实自然时序记录本轮模型的前置思考/分析说明（若有且不等于最终正文）
+                String currentPreamble = result.content() == null ? "" : result.content().trim();
+                if (!currentPreamble.isBlank() && (hasExecutableTools || (!resolvedAnswer.isBlank() && !currentPreamble.equals(resolvedAnswer.trim())))) {
+                    Map<String, Object> preambleStep = new LinkedHashMap<>();
+                    preambleStep.put("kind", "model_output");
+                    String firstLine = currentPreamble.lines().findFirst().orElse("").trim();
+                    String title = !firstLine.isBlank()
+                        ? (firstLine.length() > 45 ? firstLine.substring(0, 45) + "..." : firstLine)
+                        : "思考与分析";
+                    preambleStep.put("title", title);
+                    preambleStep.put("summary", "可展开查看");
+                    preambleStep.put("status", "done");
+                    preambleStep.put("detail", currentPreamble);
+                    preambleStep.put("toolType", "model");
+                    chronologicalProcessSteps.add(preambleStep);
                 }
                 if (AgentStructuredOutput.enabled(config) && (!resolvedAnswer.isBlank() || result.toolCalls().stream().anyMatch(it -> "final_answer".equals(it.name())))) {
                     try {
@@ -272,6 +298,20 @@ public class AgentRuntimeService {
                     ToolExecution toolExecution = executeToolCall(request, toolCall, mcpToolByName, skillToolByName, eventSink);
                     toolCallSummaries.add(toolExecution.summary());
                     messages.add(ModelChatClient.ChatMessage.toolResult(toolCall.id(), toolExecution.observation()));
+
+                    String toolType = stringValue(toolExecution.summary().get("toolType"));
+                    if ("mcp".equals(toolType) || "skill".equals(toolType)) {
+                        Map<String, Object> toolStep = new LinkedHashMap<>();
+                        toolStep.put("kind", "tool");
+                        toolStep.put("title", "skill".equals(toolType)
+                            ? "读取 Skill：" + stringValue(toolExecution.summary().get("toolName"))
+                            : "调用 MCP：" + stringValue(toolExecution.summary().get("toolName")));
+                        toolStep.put("summary", stringValue(toolExecution.summary().get("summary")));
+                        toolStep.put("status", "failed".equals(stringValue(toolExecution.summary().get("status"))) ? "error" : "done");
+                        toolStep.put("detail", firstNonBlank(stringValue(toolExecution.summary().get("detail")), stringValue(toolExecution.summary().get("summary"))));
+                        toolStep.put("toolType", toolType);
+                        chronologicalProcessSteps.add(toolStep);
+                    }
                 }
             }
 
@@ -296,6 +336,11 @@ public class AgentRuntimeService {
                     finalModelContent = finalAnswer;
                 }
             }
+            if (finalAnswer == null || finalAnswer.isBlank()) {
+                log.warn("智能体未生成有效的最终回答 tenantId={} runId={} nodeRunId={}",
+                    request.run().getTenantId(), request.run().getId(), request.nodeRun().getId());
+                throw new ApiException(HttpStatus.BAD_GATEWAY, "AGENT_FINAL_ANSWER_EMPTY", "智能体执行未生成最终回答，当前节点已暂停");
+            }
             eventSink.onPhase("validating", "正在校验最终输出格式。");
             Map<String, Object> outputs = buildOutputs(
                 config,
@@ -307,7 +352,8 @@ public class AgentRuntimeService {
                 finalModelContent,
                 renderedUserPrompt,
                 turnTokenUsage.value(),
-                reasoningContents
+                reasoningContents,
+                chronologicalProcessSteps
             );
             var datasetResults = resolveDatasetResults(config, request.nodeRun().getId(), toolCallSummaries);
             RequiredMcpResults.validate(config, datasetResults);
@@ -374,18 +420,6 @@ public class AgentRuntimeService {
                 "fields", Map.of("type", "array", "items", Map.of("type", "string")), "equals", Map.of("type", "object"),
                 "offset", Map.of("type", "integer", "minimum", 0), "limit", Map.of("type", "integer", "minimum", 1, "maximum", 100)
             ), "required", List.of("datasetId", "action"))
-        ));
-        tools.add(new ModelChatClient.ToolDefinition(
-            "final_answer",
-            "提交完整最终答案。将完整回复写入 answer 字段，并作为最后一次工具调用。",
-            Map.of(
-                "type", "object",
-                "properties", Map.of("answer", Map.of(
-                    "type", "string",
-                    "description", "完整最终答案"
-                )),
-                "required", List.of("answer")
-            )
         ));
         return tools;
     }
@@ -761,6 +795,30 @@ public class AgentRuntimeService {
         TokenUsage tokenUsage,
         List<String> reasoningContents
     ) {
+        return buildChatMessages(
+            config,
+            renderedUserPrompt,
+            finalAnswer,
+            finalAnswerSource,
+            modelContent,
+            toolCallSummaries,
+            tokenUsage,
+            reasoningContents,
+            List.of()
+        );
+    }
+
+    private List<Map<String, Object>> buildChatMessages(
+        Map<String, Object> config,
+        String renderedUserPrompt,
+        String finalAnswer,
+        String finalAnswerSource,
+        String modelContent,
+        List<Map<String, Object>> toolCallSummaries,
+        TokenUsage tokenUsage,
+        List<String> reasoningContents,
+        List<Map<String, Object>> chronologicalProcessSteps
+    ) {
         List<Map<String, Object>> messages = new ArrayList<>();
         List<Map<String, Object>> history = readConversationHistory(config);
         if (history.isEmpty()) {
@@ -772,7 +830,9 @@ public class AgentRuntimeService {
         assistantMessage.put("role", "assistant");
         assistantMessage.put("content", finalAnswer);
         assistantMessage.put("tokenUsage", tokenUsage.toMap());
-        List<Map<String, Object>> processSteps = buildChatMessageProcessSteps(modelContent, finalAnswerSource, toolCallSummaries, reasoningContents);
+        List<Map<String, Object>> processSteps = chronologicalProcessSteps != null && !chronologicalProcessSteps.isEmpty()
+            ? chronologicalProcessSteps
+            : buildChatMessageProcessSteps(modelContent, finalAnswerSource, toolCallSummaries, reasoningContents);
         if (!processSteps.isEmpty()) {
             assistantMessage.put("processSteps", processSteps);
         }
@@ -803,7 +863,10 @@ public class AgentRuntimeService {
             Map<String, Object> preambleStep = new LinkedHashMap<>();
             preambleStep.put("kind", "model_output");
             String firstLine = modelContent.lines().findFirst().orElse("").trim();
-            preambleStep.put("title", !firstLine.isBlank() && firstLine.length() <= 60 ? firstLine : "过渡说明");
+            String title = !firstLine.isBlank()
+                ? (firstLine.length() > 45 ? firstLine.substring(0, 45) + "..." : firstLine)
+                : "思考与分析";
+            preambleStep.put("title", title);
             preambleStep.put("summary", "可展开查看");
             preambleStep.put("status", "done");
             preambleStep.put("detail", modelContent);
@@ -844,6 +907,34 @@ public class AgentRuntimeService {
         TokenUsage tokenUsage,
         List<String> reasoningContents
     ) {
+        return buildOutputs(
+            config,
+            modelName,
+            modelCallLogIds,
+            toolCallSummaries,
+            finalAnswer,
+            finalAnswerSource,
+            modelContent,
+            renderedUserPrompt,
+            tokenUsage,
+            reasoningContents,
+            List.of()
+        );
+    }
+
+    private Map<String, Object> buildOutputs(
+        Map<String, Object> config,
+        String modelName,
+        List<String> modelCallLogIds,
+        List<Map<String, Object>> toolCallSummaries,
+        String finalAnswer,
+        String finalAnswerSource,
+        String modelContent,
+        String renderedUserPrompt,
+        TokenUsage tokenUsage,
+        List<String> reasoningContents,
+        List<Map<String, Object>> chronologicalProcessSteps
+    ) {
         Map<String, Object> outputs = new LinkedHashMap<>();
         String outputName = firstNonBlank(stringValue(config.get("output")), stringValue(config.get("outputVariable")), "agent_response");
         outputs.put(outputName, finalAnswer);
@@ -872,7 +963,8 @@ public class AgentRuntimeService {
             modelContent,
             toolCallSummaries,
             tokenUsage,
-            reasoningContents
+            reasoningContents,
+            chronologicalProcessSteps
         ));
         if (!modelCallLogIds.isEmpty()) {
             outputs.put("modelCallLogId", modelCallLogIds.getLast());

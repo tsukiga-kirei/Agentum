@@ -151,22 +151,22 @@ export function extractResultSummary(step: AgentExecutionStep): string | null {
   try {
     const data = JSON.parse(detail);
     if (data && typeof data === "object") {
-      // 1. rowCount 提取（金融明细与数据集取数核心场景）
+      // 1. rowCount 提取（金融明细与数据集取数核心场景）：使用不间断空格杜绝折行
       if (typeof data.rowCount === "number") {
-        return `共 ${data.rowCount.toLocaleString("zh-CN")} 条明细`;
+        return `共\u00A0${data.rowCount.toLocaleString("zh-CN")}\u00A0条明细`;
       }
       if (typeof data.matchedCount === "number") {
-        return `匹配 ${data.matchedCount.toLocaleString("zh-CN")} 条记录`;
+        return `匹配\u00A0${data.matchedCount.toLocaleString("zh-CN")}\u00A0条记录`;
       }
       // 2. 数组长度（如 results, items, documents, rows）
       const list = data.results || data.items || data.documents || data.rows || data.chunks;
       if (Array.isArray(list)) {
-        return `获取 ${list.length} 条记录`;
+        return `获取\u00A0${list.length}\u00A0条记录`;
       }
       // 3. 分块数
       if (typeof data.total_chunks === "number") {
         const fetched = typeof data.fetched_chunks === "number" ? `${data.fetched_chunks} / ` : "";
-        return `读取 ${fetched}${data.total_chunks} 个分块`;
+        return `读取\u00A0${fetched}${data.total_chunks}\u00A0个分块`;
       }
       // 4. 退出码
       if (data.exit_code !== undefined) {
@@ -178,7 +178,7 @@ export function extractResultSummary(step: AgentExecutionStep): string | null {
     // 非 JSON 格式，尝试正则从文本提取
     const rowMatch = detail.match(/"rowCount"\s*:\s*(\d+)/);
     if (rowMatch) {
-      return `共 ${Number(rowMatch[1]).toLocaleString("zh-CN")} 条明细`;
+      return `共\u00A0${Number(rowMatch[1]).toLocaleString("zh-CN")}\u00A0条明细`;
     }
   }
 

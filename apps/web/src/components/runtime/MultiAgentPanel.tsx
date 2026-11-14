@@ -865,40 +865,24 @@ function buildAgentExecutionSteps(agent: DrawerAgent): AgentExecutionStep[] {
   const conversationSteps = (agent.conversationHistory ?? []).flatMap((message) =>
     message.role === "assistant" ? (message.processSteps ?? []) : [],
   );
-  const historyToolSteps = conversationSteps.filter((step) => step.kind === "tool");
-  const historyReasoning = conversationSteps.find((step) => step.kind === "reasoning");
-  const historyOutput = conversationSteps.find(
-    (step) => step.kind === "model_output" || step.kind === "final_answer",
-  );
 
-  const toolSteps: AgentExecutionStep[] = historyToolSteps.length > 0
-    ? historyToolSteps.map((step, index) => ({
-        ...step,
-        id: step.id || `cluster-history-tool-${agent.index}-${index}`,
-        status: step.status === "error" ? "error" : "done",
-      }))
-    : (agent.toolCalls ?? [])
-      .filter((tool): tool is RuntimeCapabilityItem & { kind: "mcp" | "skill" } => tool.kind === "mcp" || tool.kind === "skill")
-      .map((tool) => ({
-        id: `cluster-tool-${agent.index}-${tool.id}`,
-        kind: "tool" as const,
-        title: tool.kind === "skill" ? `读取 Skill：${tool.name}` : `调用 MCP：${tool.name}`,
-        summary: tool.resultSummary || tool.statusLabel,
-        status: tool.status === "error" ? "error" as const : tool.status === "running" ? "running" as const : "done" as const,
-        durationMs: tool.durationMs,
-        detail: tool.resultSummary,
-        toolType: tool.kind,
-      }));
+  // 若已有历史对话沉淀的完整过程步骤，直接按天然时序原样返回，严禁重新拆解或错序
+  if (conversationSteps.length > 0) {
+    return conversationSteps.map((step, index) => ({
+      ...step,
+      id: step.id || `cluster-history-step-${agent.index}-${index}`,
+      status: step.status === "error" ? "error" : "done",
+    }));
+  }
 
+  // 运行态动态装配：严格按 思考推理 -> 前置分析规划 -> 工具调用 的天然时间轴顺序组装
+  const steps: AgentExecutionStep[] = [];
   const liveReasoning = agent.reasoningText?.trim() ?? "";
   const isRunning = agent.status === "running";
-  // 以 reasoningActive / answerActive 为准，保证阶段切换后文案从「…中 / 正在生成」收成完成态。
   const reasoningRunning = isRunning && agent.reasoningActive === true;
-  const answerRunning = isRunning && agent.answerActive === true;
 
-  // 同一子智能体只保留一条推理、一条答案：运行中优先 live，完成态优先历史，避免恢复/回放重叠。
   if (liveReasoning) {
-    toolSteps.push({
+    steps.push({
       id: `cluster-reasoning-${agent.index}`,
       kind: "reasoning",
       title: reasoningRunning ? "深度推理中" : "深度推理",
@@ -907,34 +891,44 @@ function buildAgentExecutionSteps(agent: DrawerAgent): AgentExecutionStep[] {
       detail: liveReasoning,
       toolType: "reasoning",
     });
-  } else if (historyReasoning?.detail?.trim()) {
-    toolSteps.push({
-      ...historyReasoning,
-      id: `cluster-reasoning-${agent.index}`,
-      kind: "reasoning",
-      title: "深度推理",
-      summary: "可展开查看推理过程",
-      status: "done",
-      detail: historyReasoning.detail.trim(),
-      toolType: "reasoning",
-    });
   }
 
-  const answerDetail = isRunning
-    ? outputText
-    : (historyOutput?.detail?.trim() || outputText);
-  if (answerDetail && (toolSteps.length > 0 || isRunning || agent.status === "completed" || agent.status === "failed")) {
-    toolSteps.push({
-      id: `cluster-model-output-${agent.index}`,
+  const toolCalls = (agent.toolCalls ?? []).filter(
+    (tool): tool is RuntimeCapabilityItem & { kind: "mcp" | "skill" } =>
+      tool.kind === "mcp" || tool.kind === "skill",
+  );
+
+  // 若工具调用前产生了分析/规划说明（如“请按规则执行。”），在时间线上严格排在工具之前
+  if (outputText.trim() && toolCalls.length > 0) {
+    const raw = outputText.trim();
+    const lines = raw.split("\n");
+    const firstLine = lines.find((l) => l.trim().length > 0)?.trim() || "";
+    const title = firstLine.length > 45 ? `${firstLine.slice(0, 45)}...` : (firstLine || "思考与分析");
+    steps.push({
+      id: `cluster-preamble-${agent.index}`,
       kind: "model_output",
-      title: agent.status === "failed" ? "生成失败原因" : "最终回答",
-      summary: answerRunning ? "正在生成…" : "可展开查看",
-      status: answerRunning ? "running" : agent.status === "failed" ? "error" : "done",
-      detail: agent.status === "failed" ? formatRuntimeErrorMessage(undefined, answerDetail) : answerDetail,
+      title,
+      summary: isRunning ? "可展开查看" : "完成",
+      status: "done",
+      detail: raw,
       toolType: "model",
     });
   }
-  return toolSteps;
+
+  for (const tool of toolCalls) {
+    steps.push({
+      id: `cluster-tool-${agent.index}-${tool.id}`,
+      kind: "tool" as const,
+      title: tool.kind === "skill" ? `读取 Skill：${tool.name}` : `调用 MCP：${tool.name}`,
+      summary: tool.resultSummary || tool.statusLabel,
+      status: tool.status === "error" ? "error" as const : tool.status === "running" ? "running" as const : "done" as const,
+      durationMs: tool.durationMs,
+      detail: tool.resultSummary,
+      toolType: tool.kind,
+    });
+  }
+
+  return steps;
 }
 
 function buildAgentDetailStep(

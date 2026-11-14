@@ -2184,7 +2184,7 @@ function readMessageProcessSteps(value: unknown, prefix: string): AgentExecution
       return {
         id: `${prefix}-step-${index}`,
         kind,
-        title: stringifyValue(item?.title || (kind === "tool" ? "工具调用" : kind === "reasoning" ? "深度推理" : "过渡说明")),
+        title: stringifyValue(item?.title || (kind === "tool" ? "工具调用" : kind === "reasoning" ? "深度推理" : "思考与分析")),
         summary: stringifyValue(item?.summary || ""),
         status,
         detail: stringifyValue(item?.detail || ""),

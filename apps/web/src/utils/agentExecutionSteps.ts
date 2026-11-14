@@ -194,11 +194,8 @@ export function mergeExecutionSteps(
     const extraPersistedTools = persisted.filter(
       (step) => step.kind === "tool" && !liveToolTitles.has(step.title),
     );
-    // 时序规范：思考推理及前置分析说明先于工具调用发生，工具紧随其后，杜绝工具强行抢占在说明前面
-    const livePreambles = live.filter((s) => s.kind === "reasoning" || s.kind === "model_output");
-    const liveTools = live.filter((s) => s.kind === "tool");
-    const otherLive = live.filter((s) => s.kind !== "reasoning" && s.kind !== "model_output" && s.kind !== "tool");
-    return [...livePreambles, ...liveTools, ...extraPersistedTools, ...otherLive];
+    // 时序规范：严格保持 live 执行记录的自然发生顺序，仅将缺失的持久化工具追加到末尾
+    return [...live, ...extraPersistedTools];
   }
   if (persisted.length > 0) {
     return persisted;
@@ -219,12 +216,6 @@ export function readFinalAnswer(step: RuntimePreviewStep, streamingText = ""): s
   const latestAssistant = assistantMessages[assistantMessages.length - 1]?.content;
   if (latestAssistant?.trim()) {
     return latestAssistant;
-  }
-  const fallbackField = outputs.find((field) =>
-    ["model_content", "modelContent", "raw_content", "rawContent", "response_content", "responseContent", "content", "responseBody"].includes(field.label)
-  );
-  if (fallbackField?.value?.trim()) {
-    return fallbackField.value.trim();
   }
   return "";
 }
@@ -428,18 +419,61 @@ export function upsertModelOutputStep(
   }
   // 进入答案生成即结束本轮推理转圈（推理→答案）；推理→工具路径由 tool_call / tool_calling 收尾。
   const withoutDraft = completeReasoningStep(steps).filter((step) => step.id !== "live-model-output");
+  const trimmed = content.trim();
+  const lines = trimmed.split("\n");
+  const firstLine = lines.find((l) => l.trim().length > 0)?.trim() || "";
+  const maxLen = 45;
+  const title = firstLine
+    ? (firstLine.length > maxLen ? `${firstLine.slice(0, maxLen)}...` : firstLine)
+    : (existing?.title && existing.title !== "过渡说明" ? existing.title : "思考与分析");
   return [
     ...withoutDraft,
     {
       id: "live-model-output",
       kind: "model_output",
-      title: "过渡说明",
+      title,
       summary: streaming ? "正在生成…" : "可展开查看",
       status: streaming ? "running" : "done",
-      detail: content.trim() ? content : existing?.detail,
+      detail: trimmed ? content : existing?.detail,
       toolType: "model",
     },
   ];
+}
+
+/**
+ * 当大模型在调用工具前产生了分析/规划文本，或者在提交最终答案前输出了总结说明时，
+ * 将其作为独立的完成态思考分析步骤沉淀入时间线，严格保留其在工具调用之前或之间的天然时序。
+ */
+export function commitCurrentPreambleStep(
+  steps: AgentExecutionStep[],
+  content: string,
+): AgentExecutionStep[] {
+  const trimmed = content.trim();
+  if (!trimmed) {
+    return steps;
+  }
+  const alreadyExists = steps.some(
+    (s) => s.kind === "model_output" && (s.detail?.trim() === trimmed || s.title === trimmed),
+  );
+  if (alreadyExists) {
+    return steps;
+  }
+  const lines = trimmed.split("\n");
+  const firstLine = lines.find((l) => l.trim().length > 0)?.trim() || "";
+  const maxLen = 45;
+  const title = firstLine
+    ? (firstLine.length > maxLen ? `${firstLine.slice(0, maxLen)}...` : firstLine)
+    : "思考与分析";
+  const newStep: AgentExecutionStep = {
+    id: `preamble-${Date.now()}-${steps.length}`,
+    kind: "model_output",
+    title,
+    summary: "可展开查看",
+    status: "done",
+    detail: trimmed,
+    toolType: "model",
+  };
+  return [...steps, newStep];
 }
 
 export function finalizeFinalAnswerStep(steps: AgentExecutionStep[]): AgentExecutionStep[] {
