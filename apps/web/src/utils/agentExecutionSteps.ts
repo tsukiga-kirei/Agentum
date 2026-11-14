@@ -194,7 +194,11 @@ export function mergeExecutionSteps(
     const extraPersistedTools = persisted.filter(
       (step) => step.kind === "tool" && !liveToolTitles.has(step.title),
     );
-    return extraPersistedTools.length > 0 ? [...extraPersistedTools, ...live] : live;
+    // 时序规范：思考推理及前置分析说明先于工具调用发生，工具紧随其后，杜绝工具强行抢占在说明前面
+    const livePreambles = live.filter((s) => s.kind === "reasoning" || s.kind === "model_output");
+    const liveTools = live.filter((s) => s.kind === "tool");
+    const otherLive = live.filter((s) => s.kind !== "reasoning" && s.kind !== "model_output" && s.kind !== "tool");
+    return [...livePreambles, ...liveTools, ...extraPersistedTools, ...otherLive];
   }
   if (persisted.length > 0) {
     return persisted;
@@ -429,7 +433,7 @@ export function upsertModelOutputStep(
     {
       id: "live-model-output",
       kind: "model_output",
-      title: "生成最终答案",
+      title: "过渡说明",
       summary: streaming ? "正在生成…" : "可展开查看",
       status: streaming ? "running" : "done",
       detail: content.trim() ? content : existing?.detail,

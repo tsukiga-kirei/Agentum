@@ -268,10 +268,15 @@ function mergeTurnProcessSteps(messageSteps: AgentExecutionStep[], runtimeSteps:
   const persistedToolTitles = new Set(
     messageSteps.filter((step) => step.kind === "tool").map((step) => step.title),
   );
-  return [
+  const combined = [
     ...messageSteps,
     ...runtimeSteps.filter((step) => step.kind !== "tool" || !persistedToolTitles.has(step.title)),
   ];
+  // 严格还原 ReAct 时序：深度推理与前置过渡说明排在工具调用前，已触发的工具调用按时序紧随其后
+  const preambles = combined.filter((s) => s.kind === "reasoning" || s.kind === "model_output");
+  const tools = combined.filter((s) => s.kind === "tool");
+  const others = combined.filter((s) => s.kind !== "reasoning" && s.kind !== "model_output" && s.kind !== "tool");
+  return [...preambles, ...tools, ...others];
 }
 
 function AgentInterruptedState({ scope }: { scope: "default" | "clusterDrawer" }) {
@@ -480,7 +485,11 @@ export function SingleAgentPanel({
       }
       return true;
     });
-    return dedupeProcessSteps([...visibleSteps, ...modelOutputSteps]);
+    // 严格遵循时序：前置说明与推理分析在工具执行前发生，工具调用紧随其后
+    const preambles = [...modelOutputSteps, ...visibleSteps.filter((s) => s.kind === "reasoning" || s.kind === "model_output")];
+    const tools = visibleSteps.filter((s) => s.kind === "tool");
+    const others = visibleSteps.filter((s) => s.kind !== "reasoning" && s.kind !== "model_output" && s.kind !== "tool");
+    return dedupeProcessSteps([...preambles, ...tools, ...others]);
   }, [activeStep, finalAnswer, showRunningHero, steps]);
   const processSteps = useMemo(() => {
     return normalizeTurnSteps(dedupeProcessSteps(rawProcessSteps), {

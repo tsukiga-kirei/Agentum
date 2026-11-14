@@ -798,6 +798,18 @@ public class AgentRuntimeService {
             step.put("toolType", "reasoning");
             steps.add(step);
         }
+        // 当存在工具调用时，模型的前置过渡说明（如取数规划）作为过程分析记入思维链，按时序排在工具调用前
+        if (modelContent != null && !modelContent.isBlank() && toolCallSummaries != null && !toolCallSummaries.isEmpty()) {
+            Map<String, Object> preambleStep = new LinkedHashMap<>();
+            preambleStep.put("kind", "model_output");
+            String firstLine = modelContent.lines().findFirst().orElse("").trim();
+            preambleStep.put("title", !firstLine.isBlank() && firstLine.length() <= 60 ? firstLine : "过渡说明");
+            preambleStep.put("summary", "可展开查看");
+            preambleStep.put("status", "done");
+            preambleStep.put("detail", modelContent);
+            preambleStep.put("toolType", "model");
+            steps.add(preambleStep);
+        }
         for (Map<String, Object> tool : toolCallSummaries == null ? List.<Map<String, Object>>of() : toolCallSummaries) {
             String toolType = stringValue(tool.get("toolType"));
             if (!"mcp".equals(toolType) && !"skill".equals(toolType)) {
@@ -814,7 +826,7 @@ public class AgentRuntimeService {
             step.put("toolType", toolType);
             steps.add(step);
         }
-        // 过程步骤仅保留真实的深度推理与工具调用（Skill/MCP）；
+        // 过程步骤完整记录真实的深度推理、前置说明与工具调用（Skill/MCP）；
         // 模型的最终答案正文由消息 content 和 outputs.final_answer 负责承载并在主回复区流式渲染，
         // 避免在过程区伪造名为“生成最终答案”的冗余工具步骤。
         return steps;

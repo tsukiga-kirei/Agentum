@@ -24,13 +24,14 @@ final class OpenAiStreamSupport {
                 return;
             }
             for (JsonNode item : toolCallsDelta) {
-                int index = item.path("index").asInt(calls.size());
+                // OpenAI 兼容流式规范：若未显式提供 index 字段，默认为首个工具调用 (0)
+                int index = item.has("index") ? item.get("index").asInt(0) : 0;
                 PartialToolCall partial = calls.computeIfAbsent(index, ignored -> new PartialToolCall());
-                if (item.hasNonNull("id")) {
+                if (item.hasNonNull("id") && !item.get("id").asText("").isBlank()) {
                     partial.id = item.get("id").asText("");
                 }
                 JsonNode function = item.path("function");
-                if (function.hasNonNull("name")) {
+                if (function.hasNonNull("name") && !function.get("name").asText("").isBlank()) {
                     partial.name = function.get("name").asText("");
                 }
                 if (function.has("arguments") && !function.get("arguments").isNull()) {
@@ -58,6 +59,13 @@ final class OpenAiStreamSupport {
             for (PartialToolCall partial : calls.values()) {
                 if ("final_answer".equals(partial.name)) {
                     return partial.arguments.toString();
+                }
+            }
+            // 兼容部分网关只在首个或结尾 chunk 传递 name，单工具且 arguments 持续增加时持续透传
+            if (calls.size() == 1) {
+                PartialToolCall single = calls.values().iterator().next();
+                if (single.arguments.length() > 0 && (single.name == null || single.name.isBlank() || "final_answer".equals(single.name))) {
+                    return single.arguments.toString();
                 }
             }
             return "";
@@ -95,10 +103,14 @@ final class OpenAiStreamSupport {
             return "";
         }
         int answerKey = rawArguments.indexOf("\"answer\"");
+        int keyLength = 8;
         if (answerKey < 0) {
-            return "";
+            answerKey = rawArguments.indexOf("'answer'");
+            if (answerKey < 0) {
+                return "";
+            }
         }
-        int colon = rawArguments.indexOf(':', answerKey + 8);
+        int colon = rawArguments.indexOf(':', answerKey + keyLength);
         if (colon < 0) {
             return "";
         }
@@ -106,7 +118,11 @@ final class OpenAiStreamSupport {
         while (cursor < rawArguments.length() && Character.isWhitespace(rawArguments.charAt(cursor))) {
             cursor++;
         }
-        if (cursor >= rawArguments.length() || rawArguments.charAt(cursor) != '"') {
+        if (cursor >= rawArguments.length()) {
+            return "";
+        }
+        char quote = rawArguments.charAt(cursor);
+        if (quote != '"' && quote != '\'') {
             return "";
         }
         cursor++;
@@ -123,7 +139,8 @@ final class OpenAiStreamSupport {
                 escaping = true;
                 continue;
             }
-            if (ch == '"') {
+            if (ch == quote) {
+                // 遇到字符串闭合引号退出
                 break;
             }
             answer.append(ch);

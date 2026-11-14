@@ -927,7 +927,7 @@ function buildAgentExecutionSteps(agent: DrawerAgent): AgentExecutionStep[] {
     toolSteps.push({
       id: `cluster-model-output-${agent.index}`,
       kind: "model_output",
-      title: agent.status === "failed" ? "生成失败原因" : "生成最终答案",
+      title: agent.status === "failed" ? "生成失败原因" : "最终回答",
       summary: answerRunning ? "正在生成…" : "可展开查看",
       status: answerRunning ? "running" : agent.status === "failed" ? "error" : "done",
       detail: agent.status === "failed" ? formatRuntimeErrorMessage(undefined, answerDetail) : answerDetail,

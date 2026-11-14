@@ -233,8 +233,16 @@ export function ChatActivityTimeline({
 
   let label = "思考与工具调用完成";
   if (running) {
-    if (activeStep?.title) {
-      label = `正在执行：${formatFriendlyToolName(activeStep.title)}`;
+    if (activeStep) {
+      if (activeStep.kind === "reasoning") {
+        label = "正在深度推理分析...";
+      } else if (activeStep.kind === "model_output") {
+        label = "正在整理分析与说明...";
+      } else if (activeStep.title) {
+        label = `正在执行：${formatFriendlyToolName(activeStep.title)}`;
+      } else {
+        label = "正在执行工具调用...";
+      }
     } else if (doneCount > 0) {
       label = `正在执行，已完成 ${doneCount} 个步骤`;
     } else {
