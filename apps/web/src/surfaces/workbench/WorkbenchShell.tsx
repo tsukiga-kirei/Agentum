@@ -637,6 +637,7 @@ export function WorkbenchShell() {
         const cached = JSON.parse(sessionStorage.getItem(resumeKey) || "null");
         if (cached?.runId === targetRunId) sessionStorage.removeItem(resumeKey);
       } catch { /* 缓存不可用不影响离开失效页面。 */ }
+      setTemporaryResume(null);
       navigate(paths.workbench.tasks, { replace: true });
     } finally {
       setOpenedRunLoading(false);
@@ -702,6 +703,19 @@ export function WorkbenchShell() {
     try {
       await workbenchApi.deleteRun(tenantId, token, runId);
       allowLeaveRef.current = true;
+      // 任务已删除，同步清理浏览器中记录的临时任务缓存，避免返回工作台仍提示待恢复任务
+      try {
+        const cached = JSON.parse(sessionStorage.getItem(resumeKey) || "null");
+        if (cached?.runId === runId) {
+          sessionStorage.removeItem(resumeKey);
+        }
+      } catch {
+        /* 无缓存时无需清理。 */
+      }
+      if (temporaryResume?.runId === runId || openedRunDetail?.id === runId) {
+        try { sessionStorage.removeItem(resumeKey); } catch { /* 无缓存时无需清理。 */ }
+        setTemporaryResume(null);
+      }
       if (openedRunDetail?.id === runId) {
         setOpenedRunDetail(null);
         if (closeWorkspace) {
@@ -715,6 +729,27 @@ export function WorkbenchShell() {
       const reason = error instanceof AgentumApiError ? error.message : "任务删除失败";
       console.warn("[workbench] 任务删除失败", { code: error instanceof AgentumApiError ? error.code : "unknown" });
       messageApi.error(reason);
+    }
+  }
+
+  async function handleDiscardTemporaryResume() {
+    if (!tenantId || !token || !temporaryResume) return;
+    const targetRunId = temporaryResume.runId;
+    try {
+      await workbenchApi.discardTemporaryRun(tenantId, token, targetRunId);
+      messageApi.info("已放弃并清理临时任务");
+    } catch (error) {
+      // 若后端已因超时自动清理或已被删除，此时仍然清理本地标记
+      if (error instanceof AgentumApiError && ["WORKBENCH_RUN_NOT_FOUND", "WORKBENCH_RUN_ALREADY_SAVED"].includes(error.code)) {
+        messageApi.info(error.code === "WORKBENCH_RUN_ALREADY_SAVED" ? "任务已保存" : "临时任务已清理");
+      } else {
+        messageApi.warning("清理临时任务：" + (error instanceof AgentumApiError ? error.message : "请刷新重试"));
+      }
+    } finally {
+      try { sessionStorage.removeItem(resumeKey); } catch { /* 忽略错误 */ }
+      setTemporaryResume(null);
+      void loadSummary();
+      void loadActiveTasks(activeTasksPage, activeTasksKeyword, activeTasksStateFilter, taskSourceFilter);
     }
   }
 
@@ -850,10 +885,30 @@ export function WorkbenchShell() {
         badge="任务运行"
         description="面向业务用户的任务入口：从总览进入任务创建、待办处理和任务续办；全部开放智能体流程可查看，有创建范围的流程才可发起任务。"
       >
-        {temporaryResume ? <div className="sys-card mb-4 flex items-center justify-between gap-4 p-4">
-          <span>当前浏览器有一个尚未保存的临时任务，断连超过两分钟将自动清理。</span>
-          <button className="sys-btn sys-btn--default" onClick={() => navigate(paths.workbench.run(temporaryResume.runId))}>返回临时任务</button>
-        </div> : null}
+        {temporaryResume ? (
+          <div className="sys-card mb-4 flex items-center justify-between gap-4 p-4 border-amber-200/80 bg-amber-50/50 dark:border-amber-900/40 dark:bg-amber-950/20">
+            <div className="flex items-center gap-2.5 text-sm text-[var(--color-text-primary)]">
+              <Clock3 size={16} className="text-amber-500 shrink-0" aria-hidden="true" />
+              <span>当前浏览器有一个尚未保存的临时任务，断连超过两分钟将自动清理。</span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                className="sys-btn sys-btn--default sys-btn--sm"
+                onClick={() => void handleDiscardTemporaryResume()}
+              >
+                放弃临时任务
+              </button>
+              <button
+                type="button"
+                className="sys-btn sys-btn--primary sys-btn--sm"
+                onClick={() => navigate(paths.workbench.run(temporaryResume.runId))}
+              >
+                返回临时任务
+              </button>
+            </div>
+          </div>
+        ) : null}
         <div className="system-mgmt-module-switch mb-5">
           <div className="system-mgmt-segmented-scroll">
             <Segmented<WorkbenchTab>

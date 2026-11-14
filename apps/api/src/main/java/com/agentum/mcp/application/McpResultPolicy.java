@@ -60,9 +60,16 @@ public final class McpResultPolicy {
             }
             if (!"direct".equals(p.getOrDefault("mode", "direct"))) {
                 String key = Objects.toString(p.getOrDefault("datasetKey", tool));
-                if (!key.matches("[A-Za-z_][A-Za-z0-9_]{0,159}") || !resultKeys.add(key)) throw error("同一 MCP 的结果名称须有效且不能重复");
+                if (!key.matches("[A-Za-z_][A-Za-z0-9_]{0,159}")) {
+                    throw error("同一 MCP 的结果名称须为有效标识符（仅支持英文字母、数字和下划线，且须以字母或下划线开头，不能包含中文）");
+                }
+                if (!resultKeys.add(key)) {
+                    throw error("同一 MCP 的结果名称不能重复：" + key);
+                }
             }
-            if (p.containsKey("datasetKey") && !p.get("datasetKey").toString().matches("[A-Za-z_][A-Za-z0-9_]{0,99}")) throw error("数据集标识只能使用字母、数字和下划线");
+            if (p.containsKey("datasetKey") && !p.get("datasetKey").toString().matches("[A-Za-z_][A-Za-z0-9_]{0,99}")) {
+                throw error("数据集标识只能使用英文字母、数字和下划线，且长度不超过 100 字符");
+            }
         });
         return policies;
     }

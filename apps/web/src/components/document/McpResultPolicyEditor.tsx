@@ -20,7 +20,29 @@ export function McpResultPolicyEditor({ value, tools = [], onChange, onDiscover 
       {copyFrom === name && <div className="grid gap-3"><p className="sys-field-hint">选择尚未配置的目标工具，复制后可继续修改结果名称、字段和分页参数。原规则保留。</p><div className="flex flex-wrap gap-2"><TemplateSelect value={copyTarget || undefined} options={tools.filter(item => !(item.name in policies)).map(item => ({ value: item.name, label: item.name }))} placeholder="选择复制到的工具" onChange={setCopyTarget} /><button type="button" className="sys-btn sys-btn--primary" disabled={!copyTarget || copyTarget in policies} onClick={() => { update(copyMcpResultPolicy(policies, name, copyTarget)); setCopyFrom(""); setCopyTarget(""); }}>确认复制</button><button type="button" className="sys-btn sys-btn--default" onClick={() => setCopyFrom("")}>取消</button></div>{!tools.some(item => !(item.name in policies)) && <p className="sys-field-hint">暂无未配置工具，请先获取 / 刷新工具列表。</p>}</div>}
       <TemplateSelect value={String(p.mode ?? "direct")} options={[{ value: "direct", label: "完整返回给模型" }, { value: "dataset", label: "保存数据集，返回受限预览" }, { value: "auto", label: "小结果直接返回，大结果保存" }]} onChange={mode => patch(name, { mode })} />
       {p.mode !== "direct" && <>
-        <TemplateInput label="结果名称（用于流程绑定）" value={String(p.datasetKey ?? name)} onChange={datasetKey => patch(name, { datasetKey })} />
+        {(() => {
+          const currentDatasetKey = String(p.datasetKey ?? name);
+          const isKeyValid = /^[A-Za-z_][A-Za-z0-9_]{0,99}$/.test(currentDatasetKey);
+          return (
+            <div>
+              <TemplateInput
+                label="结果名称（用于流程绑定）"
+                value={currentDatasetKey}
+                placeholder="例如 interbank_details，用于流程和交付绑定"
+                onChange={datasetKey => patch(name, { datasetKey })}
+              />
+              {!isKeyValid ? (
+                <p className="sys-field-hint mt-1 text-rose-500 font-medium">
+                  结果名称仅支持英文字母、数字和下划线，且须以字母或下划线开头（不能包含中文、空格或特殊字符）。
+                </p>
+              ) : (
+                <p className="sys-field-hint mt-1">
+                  供下游流程及交付模板引用的变量标识，仅支持英文字母、数字和下划线。
+                </p>
+              )}
+            </div>
+          );
+        })()}
         <TemplateSelect value={String(p.source ?? "structuredContent")} options={[{ value: "structuredContent", label: "MCP 结构化内容" }, { value: "response", label: "整个 MCP 响应对象" }, { value: "text_json", label: "唯一文本块中的 JSON" }]} onChange={source => patch(name, { source })} />
         <TemplateInput label="明细所在位置" value={String(p.rowsPath ?? "$.rows")} onChange={rowsPath => patch(name, { rowsPath })} /><p className="sys-field-hint">例如返回 {'{"data":{"rows":[...]}}'} 时填写 $.data.rows；直接返回数组时填写 $。路径相对于上方选定的结果来源。</p>
         <TemplateInput label="结果字段（选填，用于绑定时选择）" value={Array.isArray(p.columns) ? p.columns.join(", ") : ""} onChange={columns => patch(name, { columns: columns.split(/[,，]/).map(value => value.trim()).filter(Boolean) })} placeholder="例如 account_no, amount, start_date" />
