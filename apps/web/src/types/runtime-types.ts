@@ -482,6 +482,8 @@ export type RunStreamState = {
     outputSummary: string;
     errorMessage?: string;
     toolCalls: RuntimeCapabilityItem[];
+    /** 子智能体实时执行时序步骤（工具、思考说明自然混排） */
+    executionSteps?: AgentExecutionStep[];
   }>;
   /** 智能体集群意图分派分类器实时状态 */
   clusterIntent: {

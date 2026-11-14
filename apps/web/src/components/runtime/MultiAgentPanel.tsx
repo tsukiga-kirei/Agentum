@@ -41,6 +41,7 @@ type DrawerAgent = {
   outputSummary: string;
   errorMessage?: string;
   toolCalls: RunStreamState["clusterAgents"][number]["toolCalls"];
+  executionSteps?: AgentExecutionStep[];
   systemPrompt: string;
   userPrompt: string;
   modelName: string;
@@ -861,12 +862,11 @@ function resolveClusterAgentPreview(agent: {
 }
 
 function buildAgentExecutionSteps(agent: DrawerAgent): AgentExecutionStep[] {
-  const outputText = resolveClusterAgentPreview(agent);
   const conversationSteps = (agent.conversationHistory ?? []).flatMap((message) =>
     message.role === "assistant" ? (message.processSteps ?? []) : [],
   );
 
-  // 若已有历史对话沉淀的完整过程步骤，直接按天然时序原样返回，严禁重新拆解或错序
+  // 1. 若已有历史对话沉淀的完整过程步骤（完成态回放/刷新），严格按天然时序原样返回
   if (conversationSteps.length > 0) {
     return conversationSteps.map((step, index) => ({
       ...step,
@@ -875,7 +875,13 @@ function buildAgentExecutionSteps(agent: DrawerAgent): AgentExecutionStep[] {
     }));
   }
 
-  // 运行态动态装配：严格按 思考推理 -> 前置分析规划 -> 工具调用 的天然时间轴顺序组装
+  // 2. 实时流式运行态：严格使用随流式事件天然时序记录的 executionSteps
+  // 工具与中间过渡思考/分析按发生先后自然交织，绝不再生硬地把说明一刀切置顶
+  if (agent.executionSteps && agent.executionSteps.length > 0) {
+    return agent.executionSteps;
+  }
+
+  // 3. 兜底回退：仅组装当前已知信息
   const steps: AgentExecutionStep[] = [];
   const liveReasoning = agent.reasoningText?.trim() ?? "";
   const isRunning = agent.status === "running";
@@ -897,23 +903,6 @@ function buildAgentExecutionSteps(agent: DrawerAgent): AgentExecutionStep[] {
     (tool): tool is RuntimeCapabilityItem & { kind: "mcp" | "skill" } =>
       tool.kind === "mcp" || tool.kind === "skill",
   );
-
-  // 若工具调用前产生了分析/规划说明（如“请按规则执行。”），在时间线上严格排在工具之前
-  if (outputText.trim() && toolCalls.length > 0) {
-    const raw = outputText.trim();
-    const lines = raw.split("\n");
-    const firstLine = lines.find((l) => l.trim().length > 0)?.trim() || "";
-    const title = firstLine.length > 45 ? `${firstLine.slice(0, 45)}...` : (firstLine || "思考与分析");
-    steps.push({
-      id: `cluster-preamble-${agent.index}`,
-      kind: "model_output",
-      title,
-      summary: isRunning ? "可展开查看" : "完成",
-      status: "done",
-      detail: raw,
-      toolType: "model",
-    });
-  }
 
   for (const tool of toolCalls) {
     steps.push({

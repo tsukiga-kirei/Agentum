@@ -485,36 +485,39 @@ export function useRunStream(
         }
         setCurrentPhase("tool_calling");
         // 转入外部 Skill/MCP：若工具前有模型输出的思考/规划分析，将其作为时间线步骤沉淀，严格保持天然时序
-        if (streamingTextRef.current.trim()) {
-          const preamble = streamingTextRef.current.trim();
-          setExecutionSteps((prev) => commitCurrentPreambleStep(prev, preamble));
-        }
+        const preambleText = streamingTextRef.current.trim();
         streamingTextRef.current = "";
         setStreamingText("");
-        // 推理与（若有）中间正文的进行中文案一并收尾。
-        setExecutionSteps((prev) => completeModelOutputStep(completeReasoningStep(prev)));
+
+        const updatedTool: RuntimeCapabilityItem = {
+          id: toolName,
+          name: toolName,
+          kind: toolType,
+          status: status === "started" ? "running" : status === "completed" ? "done" : "error",
+          statusLabel: status === "started" ? "调用中" : status === "completed" ? "调用完成" : "调用失败",
+          summary: status === "started" ? `正在调用 ${toolName}...` : status === "completed" ? `调用成功` : `调用失败`,
+          durationMs,
+          resultSummary: result,
+        };
+
+        // 将 preamble 沉淀、推理收尾与当前工具步骤在一个更新器内原子执行，杜绝 React 状态竞态与时序错位
+        setExecutionSteps((prev) => {
+          let next = prev;
+          if (preambleText) {
+            next = commitCurrentPreambleStep(next, preambleText);
+          }
+          next = completeModelOutputStep(completeReasoningStep(next));
+          return upsertToolStep(next, updatedTool);
+        });
 
         setToolCalls((prev) => {
           const existingIdx = prev.findIndex((t) => t.name === toolName);
-          const updated: RuntimeCapabilityItem = {
-            id: toolName,
-            name: toolName,
-            kind: toolType,
-            status: status === "started" ? "running" : status === "completed" ? "done" : "error",
-            statusLabel: status === "started" ? "调用中" : status === "completed" ? "调用完成" : "调用失败",
-            summary: status === "started" ? `正在调用 ${toolName}...` : status === "completed" ? `调用成功` : `调用失败`,
-            durationMs,
-            resultSummary: result,
-          };
-
           if (existingIdx >= 0) {
             const copy = [...prev];
-            copy[existingIdx] = updated;
-            setExecutionSteps((steps) => upsertToolStep(steps, updated));
+            copy[existingIdx] = updatedTool;
             return copy;
           }
-          setExecutionSteps((steps) => upsertToolStep(steps, updated));
-          return [...prev, updated];
+          return [...prev, updatedTool];
         });
         break;
       }
@@ -552,6 +555,7 @@ export function useRunStream(
               streamingText: "",
               outputSummary: "",
               toolCalls: [],
+              executionSteps: [],
             };
             copy.push(agent);
             copy.sort((a, b) => a.index - b.index);
@@ -566,12 +570,16 @@ export function useRunStream(
             agent.outputSummary = "";
             agent.errorMessage = undefined;
             agent.toolCalls = [];
+            agent.executionSteps = [];
           } else if (eventType === "phase") {
             agent.status = "running";
             // 进入 tool_calling / 校验完成：结束进行中文案。
             if (phase === "tool_calling" || phase === "validating" || phase === "completed") {
               agent.reasoningActive = false;
               agent.answerActive = false;
+              if (agent.executionSteps?.length) {
+                agent.executionSteps = completeModelOutputStep(completeReasoningStep(agent.executionSteps));
+              }
             }
           } else if (eventType === "streaming" && accumulatedContent && streamKind === "reasoning") {
             agent.status = "running";
@@ -582,11 +590,21 @@ export function useRunStream(
             agent.reasoningText = accumulatedContent;
             agent.reasoningActive = true;
             agent.answerActive = false;
+            agent.executionSteps = upsertReasoningStep(agent.executionSteps ?? [], accumulatedContent, true);
           } else if (eventType === "streaming" && accumulatedContent) {
             agent.status = "running";
-            agent.streamingText = accumulatedContent;
             agent.reasoningActive = false;
             agent.answerActive = true;
+            if (streamKind === "final_answer") {
+              const currentText = agent.streamingText.trim();
+              if (currentText && !accumulatedContent.startsWith(currentText)) {
+                agent.executionSteps = commitCurrentPreambleStep(agent.executionSteps ?? [], currentText);
+              }
+            }
+            agent.streamingText = accumulatedContent;
+            if (agent.executionSteps?.length) {
+              agent.executionSteps = completeReasoningStep(agent.executionSteps);
+            }
           } else if (eventType === "completed") {
             agent.status = "completed";
             agent.reasoningActive = false;
@@ -599,12 +617,18 @@ export function useRunStream(
             );
             agent.outputSummary = bestText;
             agent.streamingText = bestText;
+            if (agent.executionSteps?.length) {
+              agent.executionSteps = finalizeFinalAnswerStep(agent.executionSteps);
+            }
           } else if (eventType === "failed") {
             agent.status = "failed";
             agent.reasoningActive = false;
             agent.answerActive = false;
             agent.errorMessage = formatRuntimeErrorMessage(errorCode, errorMessage);
             agent.outputSummary = agent.errorMessage;
+            if (agent.executionSteps?.length) {
+              agent.executionSteps = finalizeFinalAnswerStep(agent.executionSteps);
+            }
           } else if (eventType === "tool_call" && toolName) {
             agent.reasoningActive = false;
             agent.answerActive = false;
@@ -625,6 +649,15 @@ export function useRunStream(
             } else {
               agent.toolCalls.push(updatedTool);
             }
+
+            // 时序核心：若调用该工具前智能体输出了中间分析说明，将其沉淀为 preamble 步骤，严格保持在工具之前
+            let currentSteps = agent.executionSteps ?? [];
+            if (agent.streamingText.trim()) {
+              currentSteps = commitCurrentPreambleStep(currentSteps, agent.streamingText.trim());
+              agent.streamingText = "";
+            }
+            currentSteps = completeModelOutputStep(completeReasoningStep(currentSteps));
+            agent.executionSteps = upsertToolStep(currentSteps, updatedTool);
           }
 
           return copy;

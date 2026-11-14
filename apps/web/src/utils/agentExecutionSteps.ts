@@ -174,6 +174,12 @@ export function buildModelOutputSteps(step: RuntimePreviewStep, finalAnswer: str
   return steps;
 }
 
+function normalizeToolKey(title: string): string {
+  const withoutPrefix = title.replace(/^调用\s*MCP\s*：|^读取\s*Skill\s*：/, "").trim();
+  const parts = withoutPrefix.split("/");
+  return (parts[parts.length - 1] || withoutPrefix).trim().toLowerCase();
+}
+
 export function mergeExecutionSteps(
   persisted: AgentExecutionStep[],
   live: AgentExecutionStep[],
@@ -188,11 +194,11 @@ export function mergeExecutionSteps(
     (step) => step.kind === "reasoning" || step.kind === "model_output" || step.kind === "final_answer",
   );
   if (liveHasProcess) {
-    const liveToolTitles = new Set(
-      live.filter((step) => step.kind === "tool").map((step) => step.title),
+    const liveToolKeys = new Set(
+      live.filter((step) => step.kind === "tool").map((step) => normalizeToolKey(step.title)),
     );
     const extraPersistedTools = persisted.filter(
-      (step) => step.kind === "tool" && !liveToolTitles.has(step.title),
+      (step) => step.kind === "tool" && !liveToolKeys.has(normalizeToolKey(step.title)),
     );
     // 时序规范：严格保持 live 执行记录的自然发生顺序，仅将缺失的持久化工具追加到末尾
     return [...live, ...extraPersistedTools];
