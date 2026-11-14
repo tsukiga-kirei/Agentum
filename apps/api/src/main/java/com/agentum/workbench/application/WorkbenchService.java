@@ -140,7 +140,7 @@ public class WorkbenchService {
 
         long pendingTodoTotal = principal == null ? 0L : workbenchRuntimeService.countVisibleOpenTodos(tenantId, principal);
         long runningRunTotal = principal == null ? 0L : workbenchRuntimeService.countVisibleRunningRuns(tenantId, principal);
-        List<WorkbenchApi.PendingTodoRow> pendingTodos = principal == null ? List.of() : workbenchRuntimeService.listPendingTodos(tenantId, principal, 5);
+        List<WorkbenchApi.PendingTodoRow> pendingTodos = principal == null ? List.of() : workbenchRuntimeService.listPendingTodos(tenantId, principal, 6);
         List<WorkbenchApi.RecentRunRow> recentRuns = principal == null ? List.of() : workbenchRuntimeService.listRecentRuns(tenantId, principal, 6);
 
         WorkbenchApi.WorkbenchMetrics metrics = new WorkbenchApi.WorkbenchMetrics(

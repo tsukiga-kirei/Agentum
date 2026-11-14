@@ -2530,6 +2530,7 @@ public class WorkbenchRuntimeService {
             run.getProgressPercent(),
             run.getCompletedNodeCount(),
             run.getTotalNodeCount(),
+            run.getTriggerSource(),
             run.getUpdatedAt()
         );
     }
@@ -2551,6 +2552,7 @@ public class WorkbenchRuntimeService {
             run.getProgressPercent(),
             run.getCompletedNodeCount(),
             run.getTotalNodeCount(),
+            run.getTriggerSource(),
             todo.getCreatedAt()
         );
     }

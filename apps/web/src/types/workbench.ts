@@ -29,6 +29,7 @@ export type WorkbenchPendingTodoRow = {
   progressPercent: number;
   completedNodeCount: number;
   totalNodeCount: number;
+  triggerSource?: string;
   updatedAt: string;
 };
 
@@ -43,6 +44,7 @@ export type WorkbenchRecentRunRow = {
   ownerName: string;
   completedNodeCount: number;
   totalNodeCount: number;
+  triggerSource?: string;
   updatedAt: string;
 };
 

@@ -202,6 +202,16 @@ export function WorkbenchShell() {
   const [openedRunDetail, setOpenedRunDetail] = useState<WorkbenchRunDetail | null>(null);
   const resumeKey = `agentum-temporary:${tenantId}:${user?.id}`;
   const [temporaryResume, setTemporaryResume] = useState<{ runId: string; expiresAt: number } | null>(null);
+  const [overviewAsideTab, setOverviewAsideTab] = useState<"pending" | "recent">("pending");
+  useEffect(() => {
+    if (summary) {
+      if ((summary.pendingTodos?.length ?? 0) > 0) {
+        setOverviewAsideTab("pending");
+      } else if ((summary.recentRuns?.length ?? 0) > 0) {
+        setOverviewAsideTab("recent");
+      }
+    }
+  }, [summary]);
   useEffect(() => {
     const readResume = () => {
       try {
@@ -564,6 +574,30 @@ export function WorkbenchShell() {
   }, [activeWorkbenchTab, taskCenterTab, taskRunsPage, historyKeyword, taskSourceFilter, loadTaskRuns]);
 
   useEffect(() => {
+    if (activeWorkbenchTab !== "overview" || !tenantId || !token || !hasWorkbenchPermission) {
+      return;
+    }
+    // 处于总览页时，若有运行中的任务则每 8 秒刷新一次以同步步骤与进度；无运行中任务时每 20 秒轻量刷新一次以感知定时任务
+    const runningCount = summary?.metrics?.runningRunTotal ?? 0;
+    const intervalMs = runningCount > 0 ? 8000 : 20000;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void loadSummary();
+      }
+    }, intervalMs);
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        void loadSummary();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [activeWorkbenchTab, tenantId, token, hasWorkbenchPermission, summary?.metrics?.runningRunTotal, loadSummary]);
+
+  useEffect(() => {
     if (!runId || !tenantId || !token) {
       setOpenedRunDetail(null);
       return;
@@ -835,6 +869,9 @@ export function WorkbenchShell() {
     ];
   }, [summary]);
 
+  const pendingTodos = summary?.pendingTodos ?? [];
+  const runningTasks = pendingTodos.filter((t) => t.state === "running");
+  const activeRunningTask = runningTasks[0];
   const recentRuns = summary?.recentRuns ?? [];
 
   if (runId) {
@@ -906,6 +943,50 @@ export function WorkbenchShell() {
               >
                 返回临时任务
               </button>
+            </div>
+          </div>
+        ) : null}
+        {activeRunningTask ? (
+          <div className="sys-card mb-4 flex items-center justify-between gap-4 p-4 border-sky-200/90 bg-sky-50/60 dark:border-sky-900/40 dark:bg-sky-950/25">
+            <div className="flex items-center gap-2.5 text-sm text-[var(--color-text-primary)] min-w-0">
+              <span className="relative flex h-2.5 w-2.5 shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-sky-500" />
+              </span>
+              <div className="flex items-center gap-2 truncate">
+                <span className="font-semibold text-sky-800 dark:text-sky-300 shrink-0">
+                  {activeRunningTask.triggerSource === "schedule" ? "定时任务自动运行中：" : "后台任务自动执行中："}
+                </span>
+                <span className="font-semibold text-[var(--color-text-primary)] truncate">
+                  {activeRunningTask.title}
+                </span>
+                <span className="text-xs text-[var(--color-text-secondary)] shrink-0 hidden md:inline">
+                  · 当前步骤：{activeRunningTask.currentNodeName} ({activeRunningTask.completedNodeCount}/{activeRunningTask.totalNodeCount} · {activeRunningTask.progressPercent}%)
+                </span>
+                {runningTasks.length > 1 ? (
+                  <span className="agent-tag agent-tag--info text-[11px] shrink-0">
+                    共 {runningTasks.length} 个任务运行中
+                  </span>
+                ) : null}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                className="sys-btn sys-btn--primary sys-btn--sm"
+                onClick={() => navigate(paths.workbench.run(activeRunningTask.runId))}
+              >
+                点进去看
+              </button>
+              {runningTasks.length > 1 ? (
+                <button
+                  type="button"
+                  className="sys-btn sys-btn--default sys-btn--sm"
+                  onClick={() => navigateTaskCenterWithTab("active")}
+                >
+                  全部待办
+                </button>
+              ) : null}
             </div>
           </div>
         ) : null}
@@ -1000,12 +1081,36 @@ export function WorkbenchShell() {
                           </section>
 
                           <aside className="sys-preview-card">
-                            <div className="sys-preview-card-title"><History size={16} /> 最近完成</div>
-                            {recentRuns.length === 0 ? (
+                            <div className="flex items-center justify-between gap-2 mb-3">
+                              <div className="sys-preview-card-title mb-0">
+                                {overviewAsideTab === "pending" ? <ListTodo size={16} /> : <History size={16} />}
+                                {overviewAsideTab === "pending" ? "进行中任务" : "最近完成"}
+                              </div>
+                              <Segmented<"pending" | "recent">
+                                size="small"
+                                value={overviewAsideTab}
+                                onChange={(value) => setOverviewAsideTab(value)}
+                                options={[
+                                  { value: "pending", label: `进行中 (${pendingTodos.length})` },
+                                  { value: "recent", label: `已完成 (${recentRuns.length})` },
+                                ]}
+                              />
+                            </div>
+                            {overviewAsideTab === "pending" ? (
+                              pendingTodos.length === 0 ? (
+                                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无进行中或待办任务" />
+                              ) : (
+                                <div className="space-y-2">
+                                  {pendingTodos.slice(0, 5).map((record, index) => (
+                                    <PendingTodoListItem key={record.id} record={record} onOpen={() => navigate(paths.workbench.run(record.runId))} index={index} />
+                                  ))}
+                                </div>
+                              )
+                            ) : recentRuns.length === 0 ? (
                               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无已完成任务" />
                             ) : (
                               <div className="space-y-2">
-                                {recentRuns.slice(0, 4).map((record, index) => (
+                                {recentRuns.slice(0, 5).map((record, index) => (
                                   <RecentRunListItem key={record.id} record={record} onOpen={() => navigate(paths.workbench.run(record.id))} index={index} />
                                 ))}
                               </div>
@@ -1766,6 +1871,40 @@ function ActiveTaskListItem({
         </button>
         <button type="button" className="sys-btn sys-btn--danger sys-btn--sm" onClick={onDelete}>
           删除
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function PendingTodoListItem({
+  record,
+  onOpen,
+  index,
+}: {
+  record: import("../../types/workbench").WorkbenchPendingTodoRow;
+  onOpen: () => void;
+  index?: number;
+}) {
+  const Icon = record.state === "running" || record.stateLabel === "运行中" ? Activity : record.state === "paused" || record.stateLabel === "已暂停" ? PauseCircle : ListTodo;
+  const updatedLabel = record.updatedAt ? new Date(record.updatedAt).toLocaleString("zh-CN", { hour12: false }) : "—";
+  return (
+    <div className="sys-preview-item sys-card-enter" style={index !== undefined ? { animationDelay: `${index * 40}ms` } : undefined}>
+      <div className="sys-preview-item-left">
+        <span className={`sys-preview-item-icon ${record.state === "running" ? "sys-card-avatar--primary" : "sys-card-avatar--cap"}`}>
+          <Icon size={16} aria-hidden="true" className={record.state === "running" ? "animate-pulse" : undefined} />
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{record.title} · {record.runNumber}</p>
+          <p className="truncate text-xs text-[var(--color-text-secondary)]">{record.workflowName} · {record.currentNodeName}</p>
+          <p className="truncate text-[11px] text-[var(--color-text-tertiary)]">{record.completedNodeCount}/{record.totalNodeCount} · {record.progressPercent}% · 更新于 {updatedLabel}</p>
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <TriggerSourceBadge triggerSource={record.triggerSource} />
+        <RunStateLabelBadge label={record.stateLabel} />
+        <button type="button" className="agent-button h-7 px-2 text-xs" onClick={onOpen}>
+          {record.hasOpenTodo ? "去处理" : "查看"}
         </button>
       </div>
     </div>

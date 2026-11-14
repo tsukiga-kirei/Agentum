@@ -87,6 +87,7 @@ public final class WorkbenchApi {
         int progressPercent,
         int completedNodeCount,
         int totalNodeCount,
+        String triggerSource,
         Instant updatedAt
     ) {
     }
