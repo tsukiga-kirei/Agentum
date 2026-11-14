@@ -602,6 +602,9 @@ export function WorkbenchShell() {
       setOpenedRunDetail(null);
       return;
     }
+    if (openedRunDetail && openedRunDetail.id !== runId) {
+      setOpenedRunDetail(null);
+    }
     void handleOpenRun(runId);
     // runId 变化时重新加载运行详情
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -649,6 +652,14 @@ export function WorkbenchShell() {
 
   async function handleOpenRun(targetRunId: string) {
     if (!tenantId || !token) {
+      return;
+    }
+    if (!targetRunId || targetRunId === "undefined" || targetRunId === "null") {
+      console.warn("[workbench] 试图打开无效的任务标识", { targetRunId });
+      messageApi.warning("任务标识无效，已返回任务中心");
+      setOpenedRunLoading(false);
+      setOpenedRunDetail(null);
+      navigate(paths.workbench.tasks, { replace: true });
       return;
     }
     setOpenedRunLoading(true);
@@ -974,7 +985,15 @@ export function WorkbenchShell() {
               <button
                 type="button"
                 className="sys-btn sys-btn--primary sys-btn--sm"
-                onClick={() => navigate(paths.workbench.run(activeRunningTask.runId))}
+                onClick={() => {
+                  const targetId = activeRunningTask.id || activeRunningTask.runId;
+                  if (targetId) {
+                    navigate(paths.workbench.run(targetId));
+                  } else {
+                    messageApi.warning("未能获取任务标识，正在刷新状态");
+                    void loadSummary();
+                  }
+                }}
               >
                 点进去看
               </button>
@@ -1102,7 +1121,20 @@ export function WorkbenchShell() {
                               ) : (
                                 <div className="space-y-2">
                                   {pendingTodos.slice(0, 5).map((record, index) => (
-                                    <PendingTodoListItem key={record.id} record={record} onOpen={() => navigate(paths.workbench.run(record.runId))} index={index} />
+                                    <PendingTodoListItem
+                                      key={record.id}
+                                      record={record}
+                                      onOpen={() => {
+                                        const targetId = record.id || record.runId;
+                                        if (targetId) {
+                                          navigate(paths.workbench.run(targetId));
+                                        } else {
+                                          messageApi.warning("未能获取任务标识，正在刷新状态");
+                                          void loadSummary();
+                                        }
+                                      }}
+                                      index={index}
+                                    />
                                   ))}
                                 </div>
                               )
