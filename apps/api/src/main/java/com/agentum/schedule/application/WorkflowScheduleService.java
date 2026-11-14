@@ -183,7 +183,7 @@ public class WorkflowScheduleService {
         auditService.recordOperationLog(
             tenantId,
             principal.userId(),
-            principal.username(),
+            resolveOperatorName(principal),
             "CREATE_WORKFLOW_SCHEDULE",
             "WORKFLOW_SCHEDULE",
             schedule.getId().toString(),
@@ -226,7 +226,7 @@ public class WorkflowScheduleService {
         auditService.recordOperationLog(
             tenantId,
             principal.userId(),
-            principal.username(),
+            resolveOperatorName(principal),
             "UPDATE_WORKFLOW_SCHEDULE",
             "WORKFLOW_SCHEDULE",
             schedule.getId().toString(),
@@ -250,7 +250,7 @@ public class WorkflowScheduleService {
         auditService.recordOperationLog(
             tenantId,
             principal.userId(),
-            principal.username(),
+            resolveOperatorName(principal),
             "UPDATE_WORKFLOW_SCHEDULE_STATUS",
             "WORKFLOW_SCHEDULE",
             schedule.getId().toString(),
@@ -271,7 +271,7 @@ public class WorkflowScheduleService {
         auditService.recordOperationLog(
             tenantId,
             principal.userId(),
-            principal.username(),
+            resolveOperatorName(principal),
             "DELETE_WORKFLOW_SCHEDULE",
             "WORKFLOW_SCHEDULE",
             schedule.getId().toString(),
@@ -327,7 +327,7 @@ public class WorkflowScheduleService {
         auditService.recordOperationLog(
             tenantId,
             principal.userId(),
-            principal.username(),
+            resolveOperatorName(principal),
             "TRIGGER_WORKFLOW_SCHEDULE",
             "WORKFLOW_SCHEDULE",
             refreshed.getId().toString(),
@@ -794,6 +794,18 @@ public class WorkflowScheduleService {
 
     private static String stringValue(Object value) {
         return value == null ? "" : String.valueOf(value).trim();
+    }
+
+    private String resolveOperatorName(CurrentUserPrincipal principal) {
+        if (principal == null) {
+            return "System";
+        }
+        if (principal.userId() != null) {
+            return userAccountRepository.findById(principal.userId())
+                .map(u -> (u.getDisplayName() != null && !u.getDisplayName().isBlank()) ? u.getDisplayName() : u.getUsername())
+                .orElse(principal.username() != null ? principal.username() : "System");
+        }
+        return principal.username() != null ? principal.username() : "System";
     }
 
     private static String firstNonBlank(String... values) {

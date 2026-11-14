@@ -1253,7 +1253,26 @@ export function WorkflowEditorPage({ workflow, onBack, onDraftSaved }: WorkflowE
                     value: model.providerId,
                     label: `${model.providerName} · ${model.modelName}${model.reasoningModel ? " · 推理模型" : ""}`,
                   }))}
-                  optionRender={(option) => <span className="template-select-option" title={String(option.label ?? "")}>{option.label}</span>}
+                  optionRender={(option) => {
+                    const label = String(option.label ?? "");
+                    const parts = label.split(" · ");
+                    if (parts.length > 1) {
+                      return (
+                        <div className="template-select-structured-option">
+                          <div className="template-select-option-target">{parts[1]}</div>
+                          <div className="template-select-option-breadcrumbs">
+                            <span className="template-select-crumb-item">{parts[0]}</span>
+                            {parts.slice(2).map((tag, idx) => (
+                              <span key={idx} className="template-select-crumb-item font-semibold text-[var(--color-primary)]">
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    }
+                    return <span className="template-select-option">{label}</span>;
+                  }}
                   onChange={setBatchProviderId}
                 />
               </label>

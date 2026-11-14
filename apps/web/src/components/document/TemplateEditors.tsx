@@ -71,35 +71,89 @@ export function TemplateFieldLocations({ field, column, spec, onChange }: { fiel
 
 const templateSelectSuffix = <ChevronDown size={16} aria-hidden="true" />;
 
+function renderTemplateOptionContent(label: string) {
+  const arrowParts = label.split(" → ").map((s) => s.trim()).filter(Boolean);
+  if (arrowParts.length > 1) {
+    const target = arrowParts[arrowParts.length - 1];
+    const breadcrumbs = arrowParts.slice(0, arrowParts.length - 1);
+    return (
+      <div className="template-select-structured-option">
+        <div className="template-select-option-target">{target}</div>
+        <div className="template-select-option-breadcrumbs">
+          {breadcrumbs.map((crumb, idx) => (
+            <span key={idx} className="template-select-crumb-item">
+              {crumb}
+              {idx < breadcrumbs.length - 1 && <span className="template-select-crumb-sep">/</span>}
+            </span>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  const dotParts = label.split(" · ").map((s) => s.trim()).filter(Boolean);
+  if (dotParts.length > 1) {
+    const title = dotParts[0];
+    const rest = dotParts.slice(1);
+    return (
+      <div className="template-select-structured-option">
+        <div className="template-select-option-target">{title}</div>
+        <div className="template-select-option-breadcrumbs">
+          {rest.map((tag, idx) => (
+            <span key={idx} className="template-select-crumb-item">
+              {tag}
+            </span>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return <span className="template-select-option">{label}</span>;
+}
+
+function renderTemplateLabelContent(label: string) {
+  const arrowParts = label.split(" → ").map((s) => s.trim()).filter(Boolean);
+  if (arrowParts.length > 1) {
+    const target = arrowParts[arrowParts.length - 1];
+    const parent = arrowParts[arrowParts.length - 2];
+    return (
+      <span className="template-select-chosen-value">
+        <span className="template-select-chosen-target">{target}</span>
+        <span className="template-select-chosen-parent">（{parent}）</span>
+      </span>
+    );
+  }
+  return <span className="template-select-option">{label}</span>;
+}
+
 export function TemplateSelect<T extends string | number>({
   value,
   options,
   onChange,
   placeholder,
   disabled,
+  popupMatchSelectWidth = false,
 }: {
   value?: T;
   options: { value: T; label: string }[];
   onChange: (value: T) => void;
   placeholder?: string;
   disabled?: boolean;
+  popupMatchSelectWidth?: boolean;
 }) {
   return (
     <Select
       className="agent-admin-select w-full"
       classNames={{ popup: { root: "agent-select-dropdown agent-admin-select-dropdown" } }}
-      popupMatchSelectWidth
+      popupMatchSelectWidth={popupMatchSelectWidth}
       suffixIcon={templateSelectSuffix}
       showSearch
       optionFilterProp="label"
       value={value}
       options={options}
-      optionRender={(option) => (
-        <span className="template-select-option" title={String(option.label ?? "")}>{option.label}</span>
-      )}
-      labelRender={(option) => (
-        <span className="template-select-option" title={String(option.label ?? "")}>{option.label}</span>
-      )}
+      optionRender={(option) => renderTemplateOptionContent(String(option.label ?? ""))}
+      labelRender={(option) => renderTemplateLabelContent(String(option.label ?? ""))}
       onChange={onChange}
       placeholder={placeholder}
       disabled={disabled}

@@ -380,17 +380,28 @@ public class AuditService {
 
         Page<AuditLogEntity> logs = auditLogRepository.findWithFilters(tenantId, filterAction, operatorId, pageable);
 
-        Page<AuditOperationLogDto> dtos = logs.map(entity -> new AuditOperationLogDto(
-            entity.getId(),
-            entity.getOperatorName(),
-            entity.getActionType(),
-            entity.getTargetType(),
-            entity.getTargetName(),
-            entity.getDescription(),
-            entity.getPayload(),
-            entity.getClientIp(),
-            entity.getCreatedAt()
-        ));
+        // 统一解析操作人中文姓名，避免历史记录或部分接口因传入用户名导致中英文混杂
+        Set<UUID> opUserIds = logs.getContent().stream()
+            .map(AuditLogEntity::getOperatorId)
+            .filter(java.util.Objects::nonNull)
+            .collect(Collectors.toSet());
+        Map<UUID, String> operatorNames = getOperatorNames(opUserIds);
+
+        Page<AuditOperationLogDto> dtos = logs.map(entity -> {
+            String resolvedName = entity.getOperatorId() != null ? operatorNames.get(entity.getOperatorId()) : null;
+            String finalOperatorName = (resolvedName != null && !resolvedName.isBlank()) ? resolvedName : entity.getOperatorName();
+            return new AuditOperationLogDto(
+                entity.getId(),
+                finalOperatorName,
+                entity.getActionType(),
+                entity.getTargetType(),
+                entity.getTargetName(),
+                entity.getDescription(),
+                entity.getPayload(),
+                entity.getClientIp(),
+                entity.getCreatedAt()
+            );
+        });
 
         return PageResponse.from(dtos);
     }
@@ -419,8 +430,18 @@ public class AuditService {
                 // 忽略转换错误
             }
         }
+        // 优先使用用户的真实姓名（中文），保持全平台审计日志操作人显示一致
+        String effectiveOperatorName = operatorName;
+        if (operatorId != null) {
+            effectiveOperatorName = userAccountRepository.findById(operatorId)
+                .map(u -> (u.getDisplayName() != null && !u.getDisplayName().isBlank()) ? u.getDisplayName() : u.getUsername())
+                .orElse(operatorName != null && !operatorName.isBlank() ? operatorName : "System");
+        } else if (effectiveOperatorName == null || effectiveOperatorName.isBlank()) {
+            effectiveOperatorName = "System";
+        }
+
         AuditLogEntity log = AuditLogEntity.record(
-            tenantId, operatorId, operatorName, actionType, targetType, targetId, targetName, description, payloadJson, clientIp
+            tenantId, operatorId, effectiveOperatorName, actionType, targetType, targetId, targetName, description, payloadJson, clientIp
         );
         auditLogRepository.save(log);
     }

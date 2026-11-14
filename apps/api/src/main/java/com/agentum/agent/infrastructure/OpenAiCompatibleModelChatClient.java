@@ -47,9 +47,15 @@ public class OpenAiCompatibleModelChatClient implements ModelChatClient {
     private final ObjectMapper objectMapper;
 
     public OpenAiCompatibleModelChatClient(ObjectMapper objectMapper) {
+        this(objectMapper, new com.agentum.agent.application.AgentRuntimeProperties());
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public OpenAiCompatibleModelChatClient(ObjectMapper objectMapper, com.agentum.agent.application.AgentRuntimeProperties properties) {
+        long timeoutSeconds = properties != null ? properties.getModelTimeoutSeconds() : 1800L;
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(Duration.ofSeconds(10));
-        requestFactory.setReadTimeout(Duration.ofSeconds(1800));
+        requestFactory.setReadTimeout(Duration.ofSeconds(timeoutSeconds));
         this.restClient = RestClient.builder()
             .requestFactory(requestFactory)
             .defaultHeader(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)

@@ -155,10 +155,14 @@ export function GrantPrincipalPicker({ value, overview, disabled = false, onChan
         className={`tenant-principal-picker-trigger ${disabled ? "tenant-principal-picker-trigger--disabled" : ""}`}
         disabled={disabled}
         onClick={handleOpen}
+        title={disabled ? "当前为只读状态，仅流程负责人可调整对象权限" : "点击打开窗口选择角色、部门或人员"}
+        aria-label={disabled ? "分配对象（只读，仅流程负责人可调整）" : "选择分配对象（支持按角色、部门、人员）"}
       >
         <span className="tenant-principal-picker-trigger-icon"><UserRoundCog size={17} aria-hidden="true" /></span>
         {value.length === 0 ? (
-          <span className="tenant-principal-picker-trigger-placeholder">选择角色、部门或人员</span>
+          <span className="tenant-principal-picker-trigger-placeholder">
+            {disabled ? "未配置读取对象（只读）" : "选择角色、部门或人员（点击展开）"}
+          </span>
         ) : (
           <span className="tenant-principal-picker-trigger-value">
             <strong>已选择 {value.length} 个对象</strong>
@@ -167,7 +171,7 @@ export function GrantPrincipalPicker({ value, overview, disabled = false, onChan
             </small>
           </span>
         )}
-        <span className="tenant-principal-picker-trigger-action">选择</span>
+        <span className="tenant-principal-picker-trigger-action">{disabled ? "只读" : "选择"}</span>
       </button>
 
       {open ? (

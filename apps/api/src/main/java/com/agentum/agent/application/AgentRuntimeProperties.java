@@ -24,6 +24,10 @@ public class AgentRuntimeProperties {
     @Min(1)
     private int maxIterationsPerTurn;
 
+    /** 单次模型调用与流式响应等待超时秒数，默认 1800 秒。 */
+    @Min(10)
+    private long modelTimeoutSeconds = 1800;
+
     public int getSuggestedIterationsPerTurn() {
         return suggestedIterationsPerTurn;
     }
@@ -38,5 +42,13 @@ public class AgentRuntimeProperties {
 
     public void setMaxIterationsPerTurn(int maxIterationsPerTurn) {
         this.maxIterationsPerTurn = maxIterationsPerTurn;
+    }
+
+    public long getModelTimeoutSeconds() {
+        return modelTimeoutSeconds;
+    }
+
+    public void setModelTimeoutSeconds(long modelTimeoutSeconds) {
+        this.modelTimeoutSeconds = modelTimeoutSeconds;
     }
 }
