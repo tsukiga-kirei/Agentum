@@ -361,7 +361,6 @@ function ConversationTurnBlock({
             steps={turn.toolSteps}
             running={running && !showFinalAnswerBody}
             elapsedLabel={elapsedLabel}
-            headerActions={headerActions}
           />
         ) : null}
 
@@ -386,6 +385,7 @@ function ConversationTurnBlock({
                   <Copy size={13} />
                   <span>复制</span>
                 </button>
+                {headerActions}
               </div>
               <div className="ai-message-attribution">
                 {turn.tokenUsage ? (
@@ -643,16 +643,16 @@ export function SingleAgentPanel({
     !showRunningHero && (canFollowUp || (canEditAnswer && hasAnswerContent)) ? (
       <>
         {canFollowUp ? (
-          <button type="button" className="sys-btn sys-btn--default sys-btn--sm" onClick={() => setFollowUpModalOpen(true)}>
-            <MessageSquarePlus size={14} aria-hidden="true" />
-            追问
+          <button type="button" className="ai-action-btn" onClick={() => setFollowUpModalOpen(true)} title="向智能体追问">
+            <MessageSquarePlus size={13} aria-hidden="true" />
+            <span>追问</span>
           </button>
         ) : null}
 
         {canEditAnswer && hasAnswerContent ? (
-          <button type="button" className="sys-btn sys-btn--default sys-btn--sm" onClick={() => setEditModalOpen(true)}>
-            <PencilLine size={14} aria-hidden="true" />
-            修改
+          <button type="button" className="ai-action-btn" onClick={() => setEditModalOpen(true)} title="修改最终答案">
+            <PencilLine size={13} aria-hidden="true" />
+            <span>修改</span>
           </button>
         ) : null}
       </>

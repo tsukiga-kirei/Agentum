@@ -24,8 +24,10 @@ import {
   Hash,
   Layers3,
   ListChecks,
+  MessageSquarePlus,
   PackageCheck,
   Palette,
+  PencilLine,
   Pin,
   Plus,
   Rows3,
@@ -34,6 +36,7 @@ import {
   ServerCog,
   Settings2,
   Sigma,
+  Sparkles,
   Tag,
   TextCursorInput,
   Type,
@@ -5306,13 +5309,17 @@ function AgentConfigSplitPanel<SectionId extends string,>({
 function AgentConfigCapsuleToggle({
   label,
   checked,
+  icon: Icon,
+  tooltip,
   onChange,
 }: {
   label: string;
   checked: boolean;
+  icon?: typeof Bot;
+  tooltip?: string;
   onChange: (checked: boolean) => void;
 }) {
-  return (
+  const button = (
     <button
       type="button"
       role="switch"
@@ -5320,8 +5327,17 @@ function AgentConfigCapsuleToggle({
       className={`workflow-agent-capsule-toggle ${checked ? "is-active" : ""}`}
       onClick={() => onChange(!checked)}
     >
-      {label}
+      {Icon ? <Icon size={13} className="shrink-0" /> : null}
+      <span>{label}</span>
     </button>
+  );
+
+  return tooltip ? (
+    <Tooltip title={tooltip} mouseEnterDelay={0.3}>
+      {button}
+    </Tooltip>
+  ) : (
+    button
   );
 }
 
@@ -5347,6 +5363,8 @@ function AgentBehaviorCapsules({
       {showThinking ? (
         <AgentConfigCapsuleToggle
           label="深度推理"
+          icon={Sparkles}
+          tooltip="启用大模型深度思考模式（思维链），输出推理过程，适合复杂研判任务"
           checked={!!enableThinking}
           onChange={(checked) => onChange({ enableThinking: checked })}
         />
@@ -5354,6 +5372,8 @@ function AgentBehaviorCapsules({
       {showAllowUserEdit ? (
         <AgentConfigCapsuleToggle
           label="允许修改"
+          icon={PencilLine}
+          tooltip="流程运行至此步后，允许业务人员在工作台人工编辑修正最终结果"
           checked={allowUserEdit}
           onChange={(checked) => onChange({ allowUserEdit: checked })}
         />
@@ -5361,6 +5381,8 @@ function AgentBehaviorCapsules({
       {showAllowQuestion ? (
         <AgentConfigCapsuleToggle
           label="允许追问"
+          icon={MessageSquarePlus}
+          tooltip="流程运行至此步后，允许业务人员在回答下方继续追加提问与多轮交互"
           checked={allowQuestion}
           onChange={(checked) => onChange({ allowQuestion: checked })}
         />
@@ -6561,10 +6583,7 @@ function toEditorNode(
       outputMode: readLiteral(config.outputMode, ["一次性输出", "追问确认"], fallback.outputMode),
       toolCount: readNumber(config.toolCount, fallback.toolCount),
       allowQuestion: readBoolean(config.allowQuestion, fallback.allowQuestion),
-      allowUserEdit: readBoolean(
-        config.allowUserEdit,
-        config.outputMode === "追问确认" ? true : fallback.allowUserEdit,
-      ),
+      allowUserEdit: readBoolean(config.allowUserEdit, fallback.allowUserEdit),
       rawConfig: { ...config, brickType },
     },
   };

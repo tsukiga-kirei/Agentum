@@ -12,3 +12,5 @@ __pycache__
 .env
 .env.*
 !.env.example
+!apps/api/build/libs/*.jar
+!apps/web/dist

@@ -812,17 +812,9 @@ public class AgentRuntimeService {
             step.put("toolType", toolType);
             steps.add(step);
         }
-        boolean shouldKeepModelContentStep = !steps.isEmpty() || "final_answer_tool".equals(finalAnswerSource);
-        if (shouldKeepModelContentStep && !firstNonBlank(modelContent).isBlank()) {
-            Map<String, Object> step = new LinkedHashMap<>();
-            step.put("kind", "model_output");
-            step.put("title", "生成最终答案");
-            step.put("summary", "可展开查看");
-            step.put("status", "done");
-            step.put("detail", modelContent);
-            step.put("toolType", "model");
-            steps.add(step);
-        }
+        // 过程步骤仅保留真实的深度推理与工具调用（Skill/MCP）；
+        // 模型的最终答案正文由消息 content 和 outputs.final_answer 负责承载并在主回复区流式渲染，
+        // 避免在过程区伪造名为“生成最终答案”的冗余工具步骤。
         return steps;
     }
 

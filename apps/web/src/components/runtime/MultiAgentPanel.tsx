@@ -712,17 +712,17 @@ function readBoolean(value: unknown): boolean {
 }
 
 function readAgentEditAllowed(agentConfig: Record<string, unknown> | undefined, parentConfig: Record<string, unknown> | undefined): boolean {
-  if (agentConfig && ("allowUserEdit" in agentConfig || "outputMode" in agentConfig)) {
-    return readBoolean(agentConfig.allowUserEdit) || agentConfig.outputMode === "追问确认";
+  if (agentConfig && "allowUserEdit" in agentConfig) {
+    return readBoolean(agentConfig.allowUserEdit);
   }
-  return readBoolean(parentConfig?.allowUserEdit) || parentConfig?.outputMode === "追问确认";
+  return readBoolean(parentConfig?.allowUserEdit);
 }
 
 function readAgentFollowUpAllowed(agentConfig: Record<string, unknown> | undefined, parentConfig: Record<string, unknown> | undefined): boolean {
-  if (agentConfig && ("allowQuestion" in agentConfig || "outputMode" in agentConfig)) {
-    return readBoolean(agentConfig.allowQuestion) || agentConfig.outputMode === "追问确认";
+  if (agentConfig && "allowQuestion" in agentConfig) {
+    return readBoolean(agentConfig.allowQuestion);
   }
-  return readBoolean(parentConfig?.allowQuestion) || parentConfig?.outputMode === "追问确认";
+  return readBoolean(parentConfig?.allowQuestion);
 }
 
 function readAgentConversationHistory(

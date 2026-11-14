@@ -1837,11 +1837,9 @@ public class WorkbenchRuntimeService {
         if (config == null || config.isEmpty()) {
             return false;
         }
+        // 严格以配置的 allowUserEdit 为准，不再由历史 outputMode 隐式开通修改权限
         Object allowUserEdit = config.get("allowUserEdit");
-        if (Boolean.TRUE.equals(allowUserEdit) || "true".equals(String.valueOf(allowUserEdit))) {
-            return true;
-        }
-        return "追问确认".equals(String.valueOf(config.get("outputMode")));
+        return Boolean.TRUE.equals(allowUserEdit) || "true".equalsIgnoreCase(String.valueOf(allowUserEdit));
     }
 
     private static boolean isClusterAgentEditAllowed(Map<String, Object> config, int agentIndex) {
@@ -1852,12 +1850,9 @@ public class WorkbenchRuntimeService {
         if (rawAgents instanceof List<?> agents && agentIndex >= 0 && agentIndex < agents.size()) {
             Object rawAgent = agents.get(agentIndex);
             if (rawAgent instanceof Map<?, ?> agentConfig) {
-                if (agentConfig.containsKey("allowUserEdit") || agentConfig.containsKey("outputMode")) {
+                if (agentConfig.containsKey("allowUserEdit")) {
                     Object allowUserEdit = agentConfig.get("allowUserEdit");
-                    if (Boolean.TRUE.equals(allowUserEdit) || "true".equals(String.valueOf(allowUserEdit))) {
-                        return true;
-                    }
-                    return "追问确认".equals(String.valueOf(agentConfig.get("outputMode")));
+                    return Boolean.TRUE.equals(allowUserEdit) || "true".equalsIgnoreCase(String.valueOf(allowUserEdit));
                 }
             }
         }
@@ -1872,12 +1867,9 @@ public class WorkbenchRuntimeService {
         if (rawAgents instanceof List<?> agents && agentIndex >= 0 && agentIndex < agents.size()) {
             Object rawAgent = agents.get(agentIndex);
             if (rawAgent instanceof Map<?, ?> agentConfig) {
-                if (agentConfig.containsKey("allowQuestion") || agentConfig.containsKey("outputMode")) {
+                if (agentConfig.containsKey("allowQuestion")) {
                     Object allowQuestion = agentConfig.get("allowQuestion");
-                    if (Boolean.TRUE.equals(allowQuestion) || "true".equals(String.valueOf(allowQuestion))) {
-                        return true;
-                    }
-                    return "追问确认".equals(String.valueOf(agentConfig.get("outputMode")));
+                    return Boolean.TRUE.equals(allowQuestion) || "true".equalsIgnoreCase(String.valueOf(allowQuestion));
                 }
             }
         }
@@ -1888,11 +1880,9 @@ public class WorkbenchRuntimeService {
         if (config == null || config.isEmpty()) {
             return false;
         }
+        // 严格以配置的 allowQuestion 为准，不再由历史 outputMode 隐式开通追问权限
         Object allowQuestion = config.get("allowQuestion");
-        if (Boolean.TRUE.equals(allowQuestion) || "true".equals(String.valueOf(allowQuestion))) {
-            return true;
-        }
-        return "追问确认".equals(String.valueOf(config.get("outputMode")));
+        return Boolean.TRUE.equals(allowQuestion) || "true".equalsIgnoreCase(String.valueOf(allowQuestion));
     }
 
     @SuppressWarnings("unchecked")

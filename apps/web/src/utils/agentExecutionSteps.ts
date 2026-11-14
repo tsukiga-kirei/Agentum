@@ -156,27 +156,7 @@ export function buildPersistedExecutionSteps(step: RuntimePreviewStep): AgentExe
 }
 
 export function buildModelOutputSteps(step: RuntimePreviewStep, finalAnswer: string): AgentExecutionStep[] {
-  const normalizedFinalAnswer = normalizeContent(finalAnswer);
-  const seen = new Set<string>();
   const steps: AgentExecutionStep[] = [];
-
-  function appendOutput(id: string, title: string, content: string, options?: { allowSameAsFinalAnswer?: boolean }) {
-    const normalized = normalizeContent(content);
-    if (!normalized || (!options?.allowSameAsFinalAnswer && normalized === normalizedFinalAnswer) || seen.has(normalized)) {
-      return;
-    }
-    seen.add(normalized);
-      steps.push({
-        id,
-        kind: "model_output",
-        title,
-        summary: "可展开查看",
-        status: "done",
-        detail: content.trim(),
-        toolType: "model",
-    });
-  }
-
   const outputs = step.outputs ?? [];
   const reasoning = outputs.find((field) => field.label === "reasoning_content" || field.label === "reasoningContext")?.value;
   if (reasoning?.trim()) {
@@ -190,14 +170,7 @@ export function buildModelOutputSteps(step: RuntimePreviewStep, finalAnswer: str
       toolType: "reasoning",
     });
   }
-  const rawOutputLabels = ["model_content", "modelContent", "raw_content", "rawContent", "response_content", "responseContent", "content", "responseBody"];
-  rawOutputLabels.forEach((label) => {
-    const value = outputs.find((field) => field.label === label)?.value;
-    if (value) {
-      appendOutput(`persisted-output-${label}`, "生成最终答案", value, { allowSameAsFinalAnswer: label === "model_content" || label === "modelContent" });
-    }
-  });
-
+  // 最终回复正文由主回复区负责渲染，不在此处重复包装成名为“生成最终答案”的步骤卡片
   return steps;
 }
 
@@ -270,7 +243,7 @@ export function readAgentPermissions(config: Record<string, unknown> | undefined
 } {
   return {
     allowQuestion: readBoolean(config?.allowQuestion),
-    allowUserEdit: readBoolean(config?.allowUserEdit) || String(config?.outputMode ?? "") === "追问确认",
+    allowUserEdit: readBoolean(config?.allowUserEdit),
   };
 }
 

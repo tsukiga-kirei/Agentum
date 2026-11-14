@@ -450,16 +450,11 @@ export function useRunStream(
         if (streamKind === "reasoning") {
           // 多轮 ReAct：工具观察后可能再次进入推理，此时重新标为 running。
           setExecutionSteps((prev) => upsertReasoningStep(prev, accumulatedContent, true));
-        } else if (streamKind === "model_content") {
-          // 离开推理阶段的路径之一：开始输出模型正文。
-          setExecutionSteps((prev) => upsertModelOutputStep(prev, accumulatedContent, true));
         } else {
-          // final_answer 与 model_content 一样写入过程区「生成最终答案」框内流式展示。
-          // streamingText 仍保留供完成后落库/回读，但运行中不在下方回复区渲染，避免看起来像最终回复已出框。
+          // 模型正文/最终答案直接在主界面最终回复区流式打字渲染，
+          // 不再伪造名为“生成最终答案”的步骤卡片塞入过程区。
           setStreamingText(accumulatedContent);
-          setExecutionSteps((prev) =>
-            upsertModelOutputStep(completeReasoningStep(prev), accumulatedContent, true),
-          );
+          setExecutionSteps((prev) => completeReasoningStep(prev));
         }
         break;
       }

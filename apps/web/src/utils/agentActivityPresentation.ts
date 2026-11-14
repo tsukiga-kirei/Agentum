@@ -98,6 +98,8 @@ export function getToolSemanticAppearance(step: AgentExecutionStep): ToolAppeara
     };
   }
 
+  // 工具类型规范化：统一显示为规范的 MCP 或 Skill，明细结果由右侧胶囊标签呈现，不再按正则随机变幻标签
+  const defaultBadge = step.toolType === "skill" ? "Skill" : "MCP";
   const rawName = (step.title || "").toLowerCase();
   const detailStr = (step.detail || "").toLowerCase();
 
@@ -110,7 +112,7 @@ export function getToolSemanticAppearance(step: AgentExecutionStep): ToolAppeara
     return {
       Icon: Database,
       label: "数据查询",
-      badgeLabel: step.toolType === "mcp" ? "MCP 数据" : "数据",
+      badgeLabel: defaultBadge,
       tone: "data",
     };
   }
@@ -120,7 +122,7 @@ export function getToolSemanticAppearance(step: AgentExecutionStep): ToolAppeara
     return {
       Icon: Globe,
       label: "联网检索",
-      badgeLabel: "网络",
+      badgeLabel: defaultBadge,
       tone: "knowledge",
     };
   }
@@ -130,7 +132,7 @@ export function getToolSemanticAppearance(step: AgentExecutionStep): ToolAppeara
     return {
       Icon: Search,
       label: "检索资料",
-      badgeLabel: "检索",
+      badgeLabel: defaultBadge,
       tone: "knowledge",
     };
   }
@@ -140,7 +142,7 @@ export function getToolSemanticAppearance(step: AgentExecutionStep): ToolAppeara
     return {
       Icon: FileText,
       label: "参考资料",
-      badgeLabel: step.toolType === "skill" ? "Skill" : "文档",
+      badgeLabel: "Skill",
       tone: "knowledge",
     };
   }
@@ -150,7 +152,7 @@ export function getToolSemanticAppearance(step: AgentExecutionStep): ToolAppeara
     return {
       Icon: Code2,
       label: "执行工具",
-      badgeLabel: "执行",
+      badgeLabel: defaultBadge,
       tone: "code",
     };
   }
@@ -159,7 +161,7 @@ export function getToolSemanticAppearance(step: AgentExecutionStep): ToolAppeara
   return {
     Icon: Wrench,
     label: "工具调用",
-    badgeLabel: step.toolType === "mcp" ? "MCP" : "工具",
+    badgeLabel: defaultBadge,
     tone: "tool",
   };
 }

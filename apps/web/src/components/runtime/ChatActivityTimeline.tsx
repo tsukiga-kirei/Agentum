@@ -29,9 +29,14 @@ interface ChatActivityTimelineProps {
   defaultExpanded?: boolean;
 }
 
-function ProcessIcon({ state }: { state: "running" | "error" | "done" }) {
+function ProcessIcon({ state, expanded }: { state: "running" | "error" | "done"; expanded?: boolean }) {
   if (state === "running") {
-    return <Loader2 className="animate-spin text-blue-500" size={14} />;
+    // 展开状态下头部无需旋转，视觉重心聚焦到步骤列表内正在执行的具体节点上
+    return expanded ? (
+      <Sparkles className="text-blue-500" size={14} />
+    ) : (
+      <Loader2 className="animate-spin text-blue-500" size={14} />
+    );
   }
   if (state === "error") {
     return <AlertCircle className="text-rose-500" size={14} />;
@@ -46,16 +51,25 @@ function resolveStepAppearance(step: AgentExecutionStep) {
       title: "思考与研判",
       badgeLabel: "思考",
       tone: "thinking" as const,
+      hasMoreDetail: Boolean(step.detail?.trim()),
+      displayDetail: step.detail?.trim() || "",
     };
   }
   if (step.kind === "model_output") {
     const raw = (step.detail || step.title || "").trim();
-    const shortPreamble = raw.length > 0 && raw.length <= 40 && !raw.includes("\n");
+    const lines = raw.split("\n");
+    const firstLine = lines[0]?.trim() || "";
+    const shortPreamble = firstLine.length > 0 && firstLine.length <= 60;
+    const title = shortPreamble ? firstLine : (step.title || "过渡说明");
+    // 如果首行被作为标题展示，展开后仅展示剩余的正文内容，避免首行引子与展开内容重复
+    const remaining = shortPreamble ? lines.slice(1).join("\n").trim() : raw;
     return {
       Icon: Bot,
-      title: shortPreamble ? raw : (step.title || "过渡说明"),
+      title,
       badgeLabel: "说明",
       tone: "thinking" as const,
+      hasMoreDetail: Boolean(remaining),
+      displayDetail: remaining,
     };
   }
   const semantic = getToolSemanticAppearance(step);
@@ -65,6 +79,8 @@ function resolveStepAppearance(step: AgentExecutionStep) {
     title: friendly,
     badgeLabel: semantic.badgeLabel,
     tone: semantic.tone,
+    hasMoreDetail: Boolean(step.detail?.trim()),
+    displayDetail: step.detail || "",
   };
 }
 
@@ -78,8 +94,8 @@ function ActivityStepItem({
   onToggle: () => void;
 }) {
   const dataset = step.kind === "tool" ? parseMcpResult(step.detail) : null;
-  const hasDetail = Boolean(step.detail?.trim()) || Boolean(dataset);
-  const { Icon, title, badgeLabel, tone } = resolveStepAppearance(step);
+  const { Icon, title, badgeLabel, tone, hasMoreDetail, displayDetail } = resolveStepAppearance(step);
+  const hasDetail = step.kind === "tool" ? Boolean(step.detail?.trim()) || Boolean(dataset) : hasMoreDetail;
   const resultSummary = extractResultSummary(step);
   const isRunning = step.status === "running";
   const isError = step.status === "error";
@@ -171,11 +187,11 @@ function ActivityStepItem({
               <McpResultView result={dataset} />
             ) : step.kind === "reasoning" ? (
               <pre className="ai-activity-reasoning-body">
-                {step.detail || "正在深入分析业务约束与输入参数..."}
+                {displayDetail || "正在深入分析业务约束与输入参数..."}
               </pre>
             ) : step.kind === "model_output" ? (
               <div className="ai-activity-preamble-body">
-                <MarkdownRenderer content={step.detail || ""} compact />
+                <MarkdownRenderer content={displayDetail} compact />
               </div>
             ) : (
               <details className="ai-activity-data" open>
@@ -262,7 +278,7 @@ export function ChatActivityTimeline({
           onClick={() => setManualExpanded(!expanded)}
         >
           <span className="ai-process-status" aria-hidden="true">
-            <ProcessIcon state={state} />
+            <ProcessIcon state={state} expanded={expanded} />
           </span>
           <span className="ai-process-label">{label}</span>
           {metrics ? <span className="ai-process-metrics">{metrics}</span> : null}
@@ -289,12 +305,14 @@ export function ChatActivityTimeline({
                   onToggle={() => toggleStep(step.id)}
                 />
               ))}
-              <li className="ai-activity-terminal">
-                <span className="ai-activity-node" aria-hidden="true">
-                  <ProcessIcon state={state} />
-                </span>
-                <span>{running ? "处理中…" : "完成"}</span>
-              </li>
+              {!running ? (
+                <li className="ai-activity-terminal">
+                  <span className="ai-activity-node" aria-hidden="true">
+                    <CheckCircle2 size={14} className="text-emerald-500" />
+                  </span>
+                  <span>完成</span>
+                </li>
+              ) : null}
             </ol>
           </div>
         </div>

@@ -1,5 +1,6 @@
 pluginManagement {
     repositories {
+        maven { url = java.net.URI("https://mirrors.cloud.tencent.com/nexus/repository/maven-public/") }
         maven { url = java.net.URI("https://maven.aliyun.com/repository/public") }
         gradlePluginPortal()
         mavenCentral()
@@ -9,6 +10,7 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
+        maven { url = java.net.URI("https://mirrors.cloud.tencent.com/nexus/repository/maven-public/") }
         maven { url = java.net.URI("https://maven.aliyun.com/repository/public") }
         mavenCentral()
     }
@@ -18,4 +20,3 @@ rootProject.name = "agentum"
 
 include("apps:api")
 include("workers:document-worker")
-
