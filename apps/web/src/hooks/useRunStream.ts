@@ -464,8 +464,13 @@ export function useRunStream(
           break;
         }
         const { toolName, toolType, status, result, durationMs } = event.data;
+        // final_answer 是系统约定的终结收卷工具，其实际正文由 agent_streaming 管道在主回复区逐字打字渲染，
+        // 绝不能当成普通外部执行工具清空 streamingText，更不能塞进待执行工具列表锁死正文区。
+        if (toolName === "final_answer") {
+          break;
+        }
         setCurrentPhase("tool_calling");
-        // 转入 Skill/MCP：清空可能在工具执行前产生的过渡说明，避免被误当做最终答案提前渲染
+        // 转入外部 Skill/MCP：清空可能在工具执行前产生的临时前置引子，避免被误当做最终答案提前渲染
         setStreamingText("");
         // 推理与（若有）中间正文的进行中文案一并收尾。
         setExecutionSteps((prev) => completeModelOutputStep(completeReasoningStep(prev)));

@@ -85,6 +85,35 @@ function normalizeForCompare(value: string | undefined): string {
   return (value ?? "").replace(/\s+/g, " ").trim();
 }
 
+/** 兼容内网 HTTP 与非安全环境的剪贴板复制兜底工具 */
+async function safeCopyText(text: string): Promise<boolean> {
+  if (!text) return false;
+  try {
+    if (typeof navigator !== "undefined" && navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // 权限受限或非 HTTPS 环境，降级到 textarea execCommand
+  }
+  try {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.style.position = "fixed";
+    textarea.style.left = "-9999px";
+    textarea.style.top = "-9999px";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    const success = document.execCommand("copy");
+    document.body.removeChild(textarea);
+    return success;
+  } catch {
+    return false;
+  }
+}
+
 function hasToolResultStep(steps: AgentExecutionStep[]): boolean {
   return steps.some((step) => step.kind === "tool" && !!firstNonBlank(step.detail, step.summary, step.title));
 }
@@ -200,7 +229,6 @@ function dedupeProcessSteps(steps: AgentExecutionStep[]): AgentExecutionStep[] {
   const result: AgentExecutionStep[] = [];
   const seenToolKeys = new Set<string>();
   let reasoningIndex = -1;
-  let modelOutputIndex = -1;
 
   for (const step of steps) {
     if (step.kind === "reasoning") {
@@ -213,10 +241,17 @@ function dedupeProcessSteps(steps: AgentExecutionStep[]): AgentExecutionStep[] {
       continue;
     }
     if (step.kind === "model_output" || step.kind === "final_answer") {
-      if (modelOutputIndex >= 0) {
-        result[modelOutputIndex] = preferUniqueStep(result[modelOutputIndex], step, "model_output");
+      const stepDetail = (step.detail || step.title || "").trim();
+      // 仅当已有完全相同的步骤（如流式进行中更新同一个步骤）时才做就地更新；
+      // 模型在不同时间发出的多条不同过渡分析，按真实时序完整保留，绝不再粗暴覆盖或丢弃。
+      const existingIdx = result.findIndex(
+        (r) =>
+          (r.kind === "model_output" || r.kind === "final_answer") &&
+          (r.id === step.id || (stepDetail && (r.detail || r.title || "").trim() === stepDetail)),
+      );
+      if (existingIdx >= 0) {
+        result[existingIdx] = preferUniqueStep(result[existingIdx], step, "model_output");
       } else {
-        modelOutputIndex = result.length;
         result.push(step);
       }
       continue;
@@ -268,15 +303,11 @@ function mergeTurnProcessSteps(messageSteps: AgentExecutionStep[], runtimeSteps:
   const persistedToolTitles = new Set(
     messageSteps.filter((step) => step.kind === "tool").map((step) => step.title),
   );
-  const combined = [
+  // 保留真实时序：按照发生历史先后顺序合并，绝不再机械地把说明一刀切置顶
+  return [
     ...messageSteps,
     ...runtimeSteps.filter((step) => step.kind !== "tool" || !persistedToolTitles.has(step.title)),
   ];
-  // 严格还原 ReAct 时序：深度推理与前置过渡说明排在工具调用前，已触发的工具调用按时序紧随其后
-  const preambles = combined.filter((s) => s.kind === "reasoning" || s.kind === "model_output");
-  const tools = combined.filter((s) => s.kind === "tool");
-  const others = combined.filter((s) => s.kind !== "reasoning" && s.kind !== "model_output" && s.kind !== "tool");
-  return [...preambles, ...tools, ...others];
 }
 
 function AgentInterruptedState({ scope }: { scope: "default" | "clusterDrawer" }) {
@@ -344,7 +375,7 @@ function ConversationTurnBlock({
   resultAction?: React.ReactNode;
 }) {
   const running = turn.current && showRunningHero;
-  const hasActiveTool = turn.toolSteps.some((s) => s.status === "running");
+  const hasActiveTool = turn.toolSteps.some((s) => s.status === "running" && s.title !== "final_answer" && s.kind === "tool");
   const showFinalAnswerBody = Boolean(turn.finalAnswer.trim()) && (!running || !hasActiveTool);
   const hasActivities = turn.toolSteps.length > 0 || (running && !showFinalAnswerBody);
   const waitingForAnswer = running && !showFinalAnswerBody && turn.toolSteps.length === 0;
@@ -375,36 +406,43 @@ function ConversationTurnBlock({
             <div ref={answerBodyRef} className="ai-answer">
               <MarkdownRenderer content={turn.finalAnswer} compact />
             </div>
-            <footer className="ai-message-footer">
-              <div className="ai-message-actions">
-                <button
-                  type="button"
-                  className="ai-action-btn"
-                  onClick={() => {
-                    void navigator.clipboard.writeText(turn.finalAnswer)
-                      .then(() => message.success("回答已复制"))
-                      .catch(() => message.error("复制失败"));
-                  }}
-                  title="复制回答"
-                >
-                  <Copy size={13} />
-                  <span>复制</span>
-                </button>
-                {headerActions}
-              </div>
-              <div className="ai-message-attribution">
-                {turn.tokenUsage ? (
-                  <span className="ai-token-badge" title="本轮包含智能体为完成回答发起的全部模型调用">
-                    <Sigma size={12} />
-                    <span>本轮 {turn.tokenUsage.totalTokens.toLocaleString("zh-CN")} tokens</span>
-                    <span className="opacity-60">
-                      （输入 {turn.tokenUsage.inputTokens.toLocaleString("zh-CN")} · 输出 {turn.tokenUsage.outputTokens.toLocaleString("zh-CN")}）
+            {/* 仅在整轮任务真正收官完成（非流式运行打字中）后，才在正文下方展示复制操作栏与标记 */}
+            {!running ? (
+              <footer className="ai-message-footer">
+                <div className="ai-message-actions">
+                  <button
+                    type="button"
+                    className="ai-action-btn"
+                    onClick={() => {
+                      void safeCopyText(turn.finalAnswer).then((ok) => {
+                        if (ok) {
+                          message.success("回答已复制");
+                        } else {
+                          message.error("复制失败，请手动选中文本复制");
+                        }
+                      });
+                    }}
+                    title="复制回答"
+                  >
+                    <Copy size={13} />
+                    <span>复制</span>
+                  </button>
+                  {headerActions}
+                </div>
+                <div className="ai-message-attribution">
+                  {turn.tokenUsage ? (
+                    <span className="ai-token-badge" title="本轮包含智能体为完成回答发起的全部模型调用">
+                      <Sigma size={12} />
+                      <span>本轮 {turn.tokenUsage.totalTokens.toLocaleString("zh-CN")} tokens</span>
+                      <span className="opacity-60">
+                        （输入 {turn.tokenUsage.inputTokens.toLocaleString("zh-CN")} · 输出 {turn.tokenUsage.outputTokens.toLocaleString("zh-CN")}）
+                      </span>
                     </span>
-                  </span>
-                ) : null}
-                <span className="ai-badge-generated">AI 生成</span>
-              </div>
-            </footer>
+                  ) : null}
+                  <span className="ai-badge-generated">AI 生成</span>
+                </div>
+              </footer>
+            ) : null}
           </>
         ) : waitingForAnswer ? (
           <div className="flex items-center gap-2 py-3 text-xs text-[var(--color-text-tertiary)]">
@@ -453,7 +491,7 @@ export function SingleAgentPanel({
   const hasFollowUp = (activeStep.chatMessages ?? []).filter(m => m.role === "assistant").length > 1;
   const selectedResult = readStepOutput(activeStep, ["selectedResultMessageIndex"]);
   const latestChat = [...(activeStep.chatMessages ?? [])].reverse().find(m => m.role === "assistant");
-  const hasRunningTools = steps.some(s => s.kind === "tool" && s.status === "running");
+  const hasRunningTools = steps.some(s => s.kind === "tool" && s.status === "running" && s.title !== "final_answer");
   const finalAnswer = isStreaming
     ? (hasRunningTools ? "" : streamingText)
     : latestChat?.content || formalAnswer;
@@ -485,11 +523,8 @@ export function SingleAgentPanel({
       }
       return true;
     });
-    // 严格遵循时序：前置说明与推理分析在工具执行前发生，工具调用紧随其后
-    const preambles = [...modelOutputSteps, ...visibleSteps.filter((s) => s.kind === "reasoning" || s.kind === "model_output")];
-    const tools = visibleSteps.filter((s) => s.kind === "tool");
-    const others = visibleSteps.filter((s) => s.kind !== "reasoning" && s.kind !== "model_output" && s.kind !== "tool");
-    return dedupeProcessSteps([...preambles, ...tools, ...others]);
+    // 严格遵循天然时间线：步骤按真实发生的先后顺序自然呈现，调工具前说的在先，调工具后说的在后
+    return dedupeProcessSteps([...modelOutputSteps, ...visibleSteps]);
   }, [activeStep, finalAnswer, showRunningHero, steps]);
   const processSteps = useMemo(() => {
     return normalizeTurnSteps(dedupeProcessSteps(rawProcessSteps), {

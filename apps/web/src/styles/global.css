@@ -7750,6 +7750,8 @@ html:not(.dark) .agent-tool-step-detail {
 .ai-activity-toggle {
   display: inline-flex;
   align-items: center;
+  flex-wrap: nowrap;
+  max-width: 100%;
   gap: 0.5rem;
   padding: 0.2rem 0.4rem;
   margin-left: -0.4rem;
@@ -7769,7 +7771,10 @@ html:not(.dark) .agent-tool-step-detail {
 }
 
 .ai-activity-title {
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 28rem;
 }
 
 .ai-activity-result-pill {
@@ -7783,12 +7788,22 @@ html:not(.dark) .agent-tool-step-detail {
   color: #0284c7;
   background: rgba(2, 132, 199, 0.1);
   border: 1px solid rgba(2, 132, 199, 0.2);
+  white-space: nowrap;
+  flex-shrink: 0;
+  word-break: keep-all;
 }
 
 html.dark .ai-activity-result-pill {
   color: #38bdf8;
   background: rgba(2, 132, 199, 0.18);
   border-color: rgba(2, 132, 199, 0.3);
+}
+
+.ai-activity-status-text {
+  font-size: 0.75rem;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .ai-activity-tool-name {

@@ -58,18 +58,19 @@ function resolveStepAppearance(step: AgentExecutionStep) {
   if (step.kind === "model_output") {
     const raw = (step.detail || step.title || "").trim();
     const lines = raw.split("\n");
-    const firstLine = lines[0]?.trim() || "";
-    const shortPreamble = firstLine.length > 0 && firstLine.length <= 60;
-    const title = shortPreamble ? firstLine : (step.title || "过渡说明");
-    // 如果首行被作为标题展示，展开后仅展示剩余的正文内容，避免首行引子与展开内容重复
-    const remaining = shortPreamble ? lines.slice(1).join("\n").trim() : raw;
+    const firstLine = lines.find((l) => l.trim().length > 0)?.trim() || "";
+    // 统一规则：始终提取非空第一行作为展示标题，限制在 45 个字以内，超出部分追加省略号，彻底杜绝生硬的“过渡说明”
+    const maxLen = 45;
+    const title = firstLine
+      ? (firstLine.length > maxLen ? `${firstLine.slice(0, maxLen)}...` : firstLine)
+      : (step.title && step.title !== "过渡说明" ? step.title : "思考与分析");
     return {
       Icon: Bot,
       title,
-      badgeLabel: "说明",
+      badgeLabel: "分析",
       tone: "thinking" as const,
-      hasMoreDetail: Boolean(remaining),
-      displayDetail: remaining,
+      hasMoreDetail: Boolean(raw),
+      displayDetail: raw,
     };
   }
   const semantic = getToolSemanticAppearance(step);
