@@ -15,6 +15,7 @@ export type WorkbenchMetrics = {
 
 export type WorkbenchPendingTodoRow = {
   id: string;
+  // 运行详情按运行实例标识打开，摘要行标识用于列表渲染。
   runId: string;
   openTodoId: string | null;
   title: string;

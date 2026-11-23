@@ -453,6 +453,15 @@ export function WorkbenchShell() {
     }
   }, [hasWorkbenchPermission, tenantId, token]);
 
+  function navigateToRun(targetRunId: string) {
+    if (!targetRunId || targetRunId === "undefined" || targetRunId === "null") {
+      messageApi.warning("未能获取任务标识，正在刷新状态");
+      void loadSummary();
+      return;
+    }
+    navigate(paths.workbench.run(targetRunId));
+  }
+
   const loadAvailableWorkflows = useCallback(async (page: number, keyword: string) => {
     if (!tenantId || !token) {
       setAvailableWorkflows([]);
@@ -985,15 +994,7 @@ export function WorkbenchShell() {
               <button
                 type="button"
                 className="sys-btn sys-btn--primary sys-btn--sm"
-                onClick={() => {
-                  const targetId = activeRunningTask.id || activeRunningTask.runId;
-                  if (targetId) {
-                    navigate(paths.workbench.run(targetId));
-                  } else {
-                    messageApi.warning("未能获取任务标识，正在刷新状态");
-                    void loadSummary();
-                  }
-                }}
+                onClick={() => navigateToRun(activeRunningTask.runId)}
               >
                 点进去看
               </button>
@@ -1124,15 +1125,7 @@ export function WorkbenchShell() {
                                     <PendingTodoListItem
                                       key={record.id}
                                       record={record}
-                                      onOpen={() => {
-                                        const targetId = record.id || record.runId;
-                                        if (targetId) {
-                                          navigate(paths.workbench.run(targetId));
-                                        } else {
-                                          messageApi.warning("未能获取任务标识，正在刷新状态");
-                                          void loadSummary();
-                                        }
-                                      }}
+                                      onOpen={() => navigateToRun(record.runId)}
                                       index={index}
                                     />
                                   ))}
@@ -1356,7 +1349,7 @@ export function WorkbenchShell() {
                                 <ActiveTaskListItem
                                   key={record.id}
                                   record={record}
-                                  onOpen={() => navigate(paths.workbench.run(record.id))}
+                                  onOpen={() => navigateToRun(record.id)}
                                   onDelete={() => void handleDeleteRun(record.id)}
                                   index={index}
                                 />
