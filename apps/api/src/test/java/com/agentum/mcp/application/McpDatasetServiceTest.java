@@ -27,7 +27,7 @@ class McpDatasetServiceTest {
         when(storage.read(any())).thenAnswer(inv -> objects.get(inv.getArgument(0)));
         when(repository.save(any())).thenAnswer(inv -> { McpDatasetEntity e = inv.getArgument(0); records.put(e.id, e); return e; });
         when(repository.findByIdAndTenantIdAndRunId(any(), any(), any())).thenAnswer(inv -> Optional.ofNullable(records.get(inv.getArgument(0))).filter(e -> e.tenantId.equals(inv.getArgument(1)) && e.runId.equals(inv.getArgument(2))));
-        when(assets.canUseSystemCapabilityReference(tenant, user, cap, "mcp")).thenReturn(true);
+        when(assets.isSystemCapabilityOpenToTenant(tenant, cap, "mcp")).thenReturn(true);
         var request = new McpRuntimeRequest(run, node, Map.of(), Map.of(), user);
         var response = service.save(request, cap, UUID.randomUUID(), "credit", List.of(Map.of("no", "001", "private", "hidden"), Map.of("no", "002", "private", "secret")), Map.of("fields", List.of("no"), "preview", "head", "previewRows", 1));
         assertThat(response.toString()).doesNotContain("hidden", "secret", "private");
@@ -40,6 +40,7 @@ class McpDatasetServiceTest {
         var page = service.query(request, Set.of(cap), Map.of("datasetId", response.get("datasetId"), "limit", 1));
         assertThat(page).containsEntry("hasMore", true); assertThat(page.toString()).doesNotContain("hidden", "secret");
         assertThatThrownBy(() -> service.query(request, Set.of(cap), Map.of("datasetId", response.get("datasetId"), "fields", List.of("private")))).hasMessageContaining("可见范围");
+        assertThatThrownBy(() -> service.readRows(UUID.randomUUID(), runId, nodeId, user, response)).hasMessageContaining("本次运行");
         assertThatThrownBy(() -> service.readRows(tenant, UUID.randomUUID(), nodeId, user, response)).hasMessageContaining("本次运行");
         assertThatThrownBy(() -> service.readRows(tenant, runId, UUID.randomUUID(), user, response)).hasMessageContaining("来源节点");
         assertThatThrownBy(() -> service.query(request, Set.of(), Map.of("datasetId", response.get("datasetId")))).hasMessageContaining("未授权");
@@ -51,5 +52,38 @@ class McpDatasetServiceTest {
         later.cleanup(); verify(repository, never()).delete(any());
         when(repository.findOrphanedRunResults()).thenReturn(new ArrayList<>(records.values()));
         later.cleanup(); verify(repository).delete(any()); verify(storage).delete(any());
+    }
+
+    @Test void downloadRequiresSubjectGrantAndRunReadsStopWhenTenantGrantIsRevoked() {
+        UUID tenantId = UUID.randomUUID(), runId = UUID.randomUUID(), nodeId = UUID.randomUUID(), userId = UUID.randomUUID();
+        var entity = new McpDatasetEntity();
+        entity.tenantId = tenantId;
+        entity.runId = runId;
+        entity.nodeRunId = nodeId;
+        entity.id = UUID.randomUUID();
+        entity.capabilityId = UUID.randomUUID();
+        entity.storageKey = "dataset.json";
+        when(repository.findByIdAndTenantIdAndRunId(entity.id, tenantId, runId)).thenReturn(Optional.of(entity));
+        when(assets.isSystemCapabilityOpenToTenant(tenantId, entity.capabilityId, "mcp")).thenReturn(false);
+        when(assets.canUseSystemCapabilityReference(tenantId, userId, entity.capabilityId, "mcp")).thenReturn(false);
+
+        var run = mock(WorkflowRunEntity.class);
+        var node = mock(WorkflowNodeRunEntity.class);
+        when(run.getId()).thenReturn(runId);
+        when(run.getTenantId()).thenReturn(tenantId);
+        var request = new McpRuntimeRequest(run, node, Map.of(), Map.of(), userId);
+        var reference = Map.<String, Object>of("datasetId", entity.id.toString());
+
+        assertThatThrownBy(() -> service.readRows(tenantId, runId, nodeId, userId, reference)).hasMessageContaining("未对当前租户启用");
+        assertThatThrownBy(() -> service.query(request, Set.of(entity.capabilityId), reference)).hasMessageContaining("未对当前租户启用");
+
+        when(assets.isSystemCapabilityOpenToTenant(tenantId, entity.capabilityId, "mcp")).thenReturn(true);
+        assertThatThrownBy(() -> service.download(tenantId, runId, userId, entity.id.toString())).hasMessageContaining("当前用户未获授权");
+        verifyNoInteractions(storage);
+
+        when(assets.canUseSystemCapabilityReference(tenantId, userId, entity.capabilityId, "mcp")).thenReturn(true);
+        byte[] stored = "[{\"no\":\"001\"}]".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        when(storage.read(entity.storageKey)).thenReturn(stored);
+        assertThat(service.download(tenantId, runId, userId, entity.id.toString())).isEqualTo(stored);
     }
 }

@@ -138,12 +138,20 @@ public class AssetManagementService {
 
     @Transactional(readOnly = true)
     public boolean canUseSystemCapabilityReference(UUID tenantId, UUID operatorUserId, UUID capabilityId, String expectedType) {
-        if (!resolveAssignedCapabilityIds(tenantId, operatorUserId).contains(capabilityId)) {
-            return false;
-        }
-        return loadTenantOpenCapabilities(tenantId).stream()
-            .map(SystemCapabilityAsset::capability)
-            .anyMatch(capability -> capability.getId().equals(capabilityId) && expectedType.equals(capability.getCapabilityType()));
+        return resolveAssignedCapabilityIds(tenantId, operatorUserId).contains(capabilityId)
+            && isSystemCapabilityOpenToTenant(tenantId, capabilityId, expectedType);
+    }
+
+    /** 已通过流程授权的运行只复核能力在租户池中的当前状态，资产引用和原始结果下载仍校验主体分配。 */
+    @Transactional(readOnly = true)
+    public boolean isSystemCapabilityOpenToTenant(UUID tenantId, UUID capabilityId, String expectedType) {
+        return tenantCapabilityGrantRepository.findByTenantIdAndCapabilityId(tenantId, capabilityId)
+            .filter(grant -> "enabled".equals(grant.getStatus()))
+            .flatMap(grant -> systemCapabilityRepository.findById(capabilityId))
+            .filter(capability -> ACTIVE_STATUS.equals(capability.getStatus()))
+            .filter(capability -> SYSTEM_CAPABILITY_TYPES.contains(capability.getCapabilityType()))
+            .filter(capability -> expectedType.equals(capability.getCapabilityType()))
+            .isPresent();
     }
 
     @Transactional(readOnly = true)

@@ -1,5 +1,6 @@
 package com.agentum.mcp.application;
 
+import com.agentum.asset.application.AssetManagementService;
 import com.agentum.attachment.application.AttachmentObjectStorage;
 import com.agentum.mcp.domain.McpDatasetEntity;
 import com.agentum.mcp.infrastructure.McpDatasetRepository;
@@ -20,8 +21,8 @@ public class McpDatasetService {
     private final AttachmentObjectStorage storage;
     private final ObjectMapper mapper;
     private final Clock clock;
-    private final com.agentum.asset.application.AssetManagementService assets;
-    public McpDatasetService(McpDatasetRepository repository, AttachmentObjectStorage storage, ObjectMapper mapper, Clock clock, com.agentum.asset.application.AssetManagementService assets) {
+    private final AssetManagementService assets;
+    public McpDatasetService(McpDatasetRepository repository, AttachmentObjectStorage storage, ObjectMapper mapper, Clock clock, AssetManagementService assets) {
         this.repository = repository; this.storage = storage; this.mapper = mapper; this.clock = clock; this.assets = assets;
     }
     public Map<String, Object> save(McpRuntimeRequest request, UUID capabilityId, UUID callId, String key,
@@ -54,11 +55,16 @@ public class McpDatasetService {
         Map<String, Object> ref = McpResultPolicy.map(reference);
         var entity = require(tenant, run, Objects.toString(ref.get("datasetId"), ""));
         if (!entity.nodeRunId.equals(sourceNode)) throw McpResultPolicy.error("数据集与绑定的来源节点不匹配");
-        authorize(entity, userId);
+        authorizeRunRead(entity, userId);
         return load(entity);
     }
     public byte[] download(UUID tenant, UUID run, UUID user, String id) {
-        var entity = require(tenant, run, id); authorize(entity, user);
+        var entity = require(tenant, run, id);
+        // 下载会把完整原始结果交给用户，需在流程查看权限之外复核账号的来源能力分配。
+        if (!assets.canUseSystemCapabilityReference(entity.tenantId, user, entity.capabilityId, "mcp")) {
+            logAccessDenied(entity, user, "download");
+            throw McpResultPolicy.error("数据集来源能力已收回或当前用户未获授权");
+        }
         log.info("下载流程 MCP 完整结果 tenantId={} userId={} runId={} datasetId={} requestId={}", tenant, user, run, entity.id, RequestIds.current());
         return encode(load(entity));
     }
@@ -67,7 +73,7 @@ public class McpDatasetService {
         var entity = require(request.run().getTenantId(), request.run().getId(), Objects.toString(args.get("datasetId"), ""));
         // 只能查询当前智能体已授权的 MCP 来源，不能借运行内引用扩大可用能力范围。
         if (!allowedCapabilities.contains(entity.capabilityId)) throw McpResultPolicy.error("当前智能体未授权访问该数据集来源");
-        authorize(entity, request.operatorUserId());
+        authorizeRunRead(entity, request.operatorUserId());
         List<Map<String, Object>> rows = load(entity);
         if ("describe".equals(args.get("action"))) return view(entity, rows);
         List<String> allowed = fields(entity.policy, rows);
@@ -92,11 +98,16 @@ public class McpDatasetService {
         log.info("MCP 数据集查询完成 tenantId={} userId={} runId={} datasetId={} returned={} requestId={}", entity.tenantId, request.operatorUserId(), entity.runId, entity.id, page.size(), RequestIds.current());
         return Map.of("datasetId", entity.id.toString(), "rows", page, "matchedCount", filtered.size(), "nextOffset", cursor, "hasMore", cursor < filtered.size());
     }
-    private void authorize(McpDatasetEntity entity, UUID user) {
-        if (!assets.canUseSystemCapabilityReference(entity.tenantId, user, entity.capabilityId, "mcp")) {
-            log.warn("MCP 数据集访问被拒绝 tenantId={} userId={} datasetId={} requestId={}", entity.tenantId, user, entity.id, RequestIds.current());
-            throw McpResultPolicy.error("数据集来源能力已收回或当前用户未获授权");
+    private void authorizeRunRead(McpDatasetEntity entity, UUID user) {
+        // 查询和交付已限定在授权的运行及节点范围内，读取数据集沿用流程取数的租户能力池边界。
+        if (!assets.isSystemCapabilityOpenToTenant(entity.tenantId, entity.capabilityId, "mcp")) {
+            logAccessDenied(entity, user, "run_read");
+            throw McpResultPolicy.error("数据集来源 MCP 能力已停用或未对当前租户启用");
         }
+    }
+    private void logAccessDenied(McpDatasetEntity entity, UUID user, String action) {
+        log.warn("MCP 数据集访问被拒绝 tenantId={} userId={} runId={} capabilityId={} datasetId={} action={} requestId={}",
+            entity.tenantId, user, entity.runId, entity.capabilityId, entity.id, action, RequestIds.current());
     }
     private McpDatasetEntity require(UUID tenant, UUID run, String id) {
         UUID uuid;

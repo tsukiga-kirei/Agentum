@@ -4,9 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.agentum.delivery.infrastructure.DeliveryRecordRepository;
+import com.agentum.delivery.template.DeliveryTemplateService;
 import com.agentum.shared.api.ApiException;
 import com.agentum.system.domain.SystemCapabilityEntity;
 import com.agentum.system.domain.TenantCapabilityGrantEntity;
@@ -166,6 +168,23 @@ class DeliveryRuntimeServiceTest {
             .isInstanceOf(Map.class)
             .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.MAP)
             .containsEntry("adapter", "word_document");
+    }
+
+    @Test
+    void shouldRejectFileTemplateDeliveryWhenTenantCapabilityIsDisabled() {
+        var templateService = mock(DeliveryTemplateService.class);
+        service.setTemplateService(templateService);
+        var capability = SystemCapabilityEntity.create("delivery", "Excel 交付", "excel_delivery", "v1", "", "low", "active",
+            Map.of("documentKind", "excel"), NOW);
+        when(systemCapabilityRepository.findById(capability.getId())).thenReturn(Optional.of(capability));
+        when(tenantCapabilityGrantRepository.findByTenantIdAndCapabilityId(TENANT_ID, capability.getId()))
+            .thenReturn(Optional.of(TenantCapabilityGrantEntity.create(TENANT_ID, capability.getId(), "disabled", NOW)));
+        var request = buildRequest(Map.of("generationMode", "file_template", "documentKind", "excel",
+            "deliveryCapabilityId", capability.getId().toString(), "templateVersionId", UUID.randomUUID().toString()), Map.of());
+
+        assertThatThrownBy(() -> service.execute(request)).isInstanceOfSatisfying(ApiException.class, exception ->
+            assertThat(exception.getCode()).isEqualTo("DELIVERY_CAPABILITY_NOT_ASSIGNED"));
+        verifyNoInteractions(templateService);
     }
 
     @Test

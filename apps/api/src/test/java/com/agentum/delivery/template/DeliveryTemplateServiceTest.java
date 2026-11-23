@@ -138,8 +138,6 @@ class DeliveryTemplateServiceTest {
     @Test void bindsOneAgentByNodeIdentityAndDoesNotUseShadowedGlobalValue() throws Exception {
         template.status = "published";
         var capability = SystemCapabilityEntity.create("delivery", "Word", "word", "v1", "", "low", "active", Map.of("documentKind", "word", "retentionPolicy", "permanent"), now);
-        when(capabilities.findById(capability.getId())).thenReturn(Optional.of(capability));
-        when(assets.canUseSystemCapabilityReference(tenant, owner, capability.getId(), "delivery")).thenReturn(true);
         var run = WorkflowRunEntity.create(tenant, UUID.randomUUID(), UUID.randomUUID(), 1, "测试", "流程", owner, 4, "RUN-1", now);
         var a = node(run, "a", 1); a.complete(Map.of("data", Map.of("summary", "来自 A")), now);
         var b = node(run, "b", 2); b.complete(Map.of("data", Map.of("summary", "来自 B")), now);
@@ -157,7 +155,24 @@ class DeliveryTemplateServiceTest {
         a.resetToPending(now);
         assertThatThrownBy(() -> service.generate(new DeliveryRuntimeRequest(run, delivery, config, Map.of(), owner), UUID.randomUUID(), capability, config, Map.of())).hasMessageContaining("尚未完成");
     }
-    @Test void datasetDatesAcceptBothDocumentedFormatsPreserveEmptySlotsAndRejectInvalidDates() throws Exception {
+    @Test void runtimeRejectsDraftCrossTenantAndMismatchedTemplateCapabilities() {
+        UUID operator = UUID.randomUUID();
+        var word = SystemCapabilityEntity.create("delivery", "Word", "word", "v1", "", "low", "active", Map.of("documentKind", "word"), now);
+        var excel = SystemCapabilityEntity.create("delivery", "Excel", "excel", "v1", "", "low", "active", Map.of("documentKind", "excel"), now);
+        var run = WorkflowRunEntity.create(tenant, UUID.randomUUID(), UUID.randomUUID(), 1, "测试", "流程", operator, 1, "RUN-1", now);
+        var otherRun = WorkflowRunEntity.create(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), 1, "测试", "流程", operator, 1, "RUN-2", now);
+        Map<String, Object> config = Map.of("templateVersionId", template.id.toString(), "documentKind", "word",
+            "templateBindings", List.of(Map.of("field", "summary", "constant", true, "value", "测试")));
+        var request = new DeliveryRuntimeRequest(run, node(run, "delivery", 1), config, Map.of(), operator);
+        var crossTenant = new DeliveryRuntimeRequest(otherRun, node(otherRun, "delivery", 1), config, Map.of(), operator);
+
+        assertThatThrownBy(() -> service.generate(request, UUID.randomUUID(), word, config, Map.of())).hasMessageContaining("已发布模板");
+        template.status = "published";
+        assertThatThrownBy(() -> service.generate(crossTenant, UUID.randomUUID(), word, config, Map.of())).hasMessageContaining("不存在或不可访问");
+        assertThatThrownBy(() -> service.generate(request, UUID.randomUUID(), excel, config, Map.of())).hasMessageContaining("模板文件类型不一致");
+        verifyNoInteractions(storage);
+    }
+    @Test void excelDeliveryUsesPinnedPrivateTemplateWithoutOperatorGrantsAndRendersDatasetRows() throws Exception {
         try (var book = new org.apache.poi.xssf.usermodel.XSSFWorkbook(); var out = new ByteArrayOutputStream()) {
             var sheet = book.createSheet("日期"); sheet.createRow(0).createCell(0).setCellValue("开始日期");
             sheet.createRow(1).createCell(0).setCellValue("{{items[].start_date}}");
@@ -172,18 +187,20 @@ class DeliveryTemplateServiceTest {
         var table = new TemplateModels.Field("items", "日期明细", "table", true, 20000, 100000, "", List.of(date, amount));
         template.spec = mapper.convertValue(new TemplateModels.Spec(List.of(table), inspected.locations(), Map.of(), Map.of(), inspected.excelRegions(), List.of(new TemplateModels.FormatGroup("amount", "金额", "amount", List.of("items.amount"), Map.of("numberFormat", "#,##0.00")))), Map.class);
         var capability = SystemCapabilityEntity.create("delivery", "Excel", "excel", "v1", "", "low", "active", Map.of("documentKind", "excel", "retentionPolicy", "permanent"), now);
-        when(capabilities.findById(capability.getId())).thenReturn(Optional.of(capability));
-        when(assets.canUseSystemCapabilityReference(tenant, owner, capability.getId(), "delivery")).thenReturn(true);
-        var run = WorkflowRunEntity.create(tenant, UUID.randomUUID(), UUID.randomUUID(), 1, "测试", "流程", owner, 2, "RUN-DATE", now);
+        UUID operator = UUID.randomUUID();
+        var run = WorkflowRunEntity.create(tenant, UUID.randomUUID(), UUID.randomUUID(), 1, "测试", "流程", operator, 2, "RUN-DATE", now);
         Map<String, Object> reference = Map.of("datasetId", UUID.randomUUID().toString());
         var source = node(run, "source", 1); source.complete(Map.of("mcp_datasets", Map.of("dates", reference)), now);
         var delivery = node(run, "delivery", 2);
         when(nodes.findByRunIdOrderBySortOrderAsc(run.getId())).thenReturn(List.of(source, delivery));
         Map<String, Object> binding = Map.of("field", "items", "sourceNodeId", "source", "variable", "mcp_datasets", "path", "dates", "constant", false, "columnMappings", Map.of("start_date", "raw_date", "amount", "raw_amount"));
         Map<String, Object> config = Map.of("templateVersionId", template.id.toString(), "documentKind", "excel", "templateBindings", List.of(binding));
+        service.validateReference(tenant, owner, config);
+        assertThatThrownBy(() -> service.validateReference(tenant, operator, config)).hasMessageContaining("没有该模板的访问权限");
+        assertThatThrownBy(() -> service.original(tenant, operator, template.id)).hasMessageContaining("没有该模板的访问权限");
         Map<String, Object> missing = new LinkedHashMap<>(); missing.put("raw_date", null);
         List<Map<String, Object>> rows = List.of(Map.of("raw_date", "20260513", "raw_amount", "1234.567890000000"), missing, Map.of("raw_date", "2026-05-14", "raw_amount", "0.000000000000"), Map.of("raw_date", 20240229, "raw_amount", "10.000000000000"));
-        when(datasets.readRows(eq(tenant), eq(run.getId()), eq(source.getId()), eq(owner), eq(reference))).thenReturn(rows);
+        when(datasets.readRows(eq(tenant), eq(run.getId()), eq(source.getId()), eq(operator), eq(reference))).thenReturn(rows);
         when(storage.store(eq(tenant), any(), anyString(), anyString(), any())).thenAnswer(call -> {
             byte[] bytes = call.getArgument(4);
             try (var book = new org.apache.poi.xssf.usermodel.XSSFWorkbook(new ByteArrayInputStream(bytes))) {
@@ -200,11 +217,13 @@ class DeliveryTemplateServiceTest {
             }
             return new DocumentDeliveryArtifact("日期.xlsx", "safe-key", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", bytes.length);
         });
-        var request = new DeliveryRuntimeRequest(run, delivery, config, Map.of(), owner);
-        service.generate(request, UUID.randomUUID(), capability, config, Map.of());
+        var request = new DeliveryRuntimeRequest(run, delivery, config, Map.of(), operator);
+        assertThat(service.generate(request, UUID.randomUUID(), capability, config, Map.of()))
+            .containsEntry("templateVersionId", template.id.toString()).containsEntry("fileName", "日期.xlsx");
+        verifyNoInteractions(assets);
         assertThat(rows.getFirst().get("raw_date")).isEqualTo("20260513");
         for (String invalid : List.of("20260230", "2026-02-30", "bad-date")) {
-            when(datasets.readRows(eq(tenant), eq(run.getId()), eq(source.getId()), eq(owner), eq(reference))).thenReturn(List.of(Map.of("raw_date", invalid)));
+            when(datasets.readRows(eq(tenant), eq(run.getId()), eq(source.getId()), eq(operator), eq(reference))).thenReturn(List.of(Map.of("raw_date", invalid)));
             assertThatThrownBy(() -> service.generate(request, UUID.randomUUID(), capability, config, Map.of())).hasMessageContaining("有效的 yyyy-MM-dd 或 yyyyMMdd");
         }
         verify(storage, times(1)).store(eq(tenant), any(), anyString(), anyString(), any());

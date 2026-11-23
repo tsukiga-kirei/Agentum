@@ -171,12 +171,17 @@ public class DeliveryTemplateService {
     @Transactional(readOnly = true)
     public void validateReference(UUID tenant, UUID user, Map<String, Object> config) {
         var entity = read(tenant, user, uuid(config.get("templateVersionId")), true);
+        validateTemplateBindings(entity, config);
+    }
+
+    private void validateTemplateBindings(DeliveryTemplateEntity entity, Map<String, Object> config) {
         String kind = Objects.toString(config.get("documentKind"), "word_document".equals(config.get("deliveryType")) ? "word" : "excel");
         if (!entity.kind.equals(kind)) throw StructuredContent.error("模板文件类型与交付类型不一致");
+        var templateSpec = spec(entity);
         var bindings = bindings(config);
         Set<String> fields = new HashSet<>();
         for (var binding : bindings) {
-            if (!fields.add(binding.field()) || spec(entity).fields().stream().noneMatch(it -> it.key().equals(binding.field()))) throw StructuredContent.error("模板绑定字段重复或不存在");
+            if (!fields.add(binding.field()) || templateSpec.fields().stream().noneMatch(it -> it.key().equals(binding.field()))) throw StructuredContent.error("模板绑定字段重复或不存在");
             if (!binding.constant()) for (var source : sources(binding)) {
                 if (source.variable() == null || !source.variable().matches("[a-z][a-zA-Z0-9_]*") || source.sourceNodeId() == null || source.sourceNodeId().isBlank()) throw StructuredContent.error("请选择字段来源节点和变量");
                 validatePath(source.path());
@@ -184,15 +189,22 @@ public class DeliveryTemplateService {
             }
             if (binding.columnMappings() != null) binding.columnMappings().values().forEach(DeliveryTemplateService::validatePath);
         }
-        for (var field : spec(entity).fields()) if (field.required() && !fields.contains(field.key())) throw StructuredContent.error("必填字段尚未绑定：" + field.label());
-        validateOverrides(spec(entity), overrides(config));
+        for (var field : templateSpec.fields()) if (field.required() && !fields.contains(field.key())) throw StructuredContent.error("必填字段尚未绑定：" + field.label());
+        validateOverrides(templateSpec, overrides(config));
     }
     @Transactional(readOnly = true)
     public Map<String, Object> generate(DeliveryRuntimeRequest request, UUID recordId, SystemCapabilityEntity capability,
         Map<String, Object> config, Map<String, Object> variables) {
-        validateReference(request.run().getTenantId(), request.operatorUserId(), config);
-        var entity = read(request.run().getTenantId(), request.operatorUserId(), uuid(config.get("templateVersionId")), true);
-        capability(request.run().getTenantId(), request.operatorUserId(), capability.getId(), entity.kind);
+        // 运行器从发布快照读取固定模板版本，并已复核交付能力的租户授权。模板库访问范围用于选用模板，不参与流程执行。
+        var entity = findTemplate(request.run().getTenantId(), uuid(config.get("templateVersionId")));
+        if (!"published".equals(entity.status) || !supportsTemplateKind(capability, entity.kind)) {
+            log.warn("模板交付被拒绝：模板版本或交付类型不可用 tenantId={} userId={} runId={} nodeRunId={} templateVersionId={} capabilityId={} requestId={}",
+                request.run().getTenantId(), request.operatorUserId(), request.run().getId(), request.nodeRun().getId(),
+                entity.id, capability.getId(), RequestIds.current());
+            if (!"published".equals(entity.status)) throw StructuredContent.error("流程只能使用已发布模板");
+            throw new ApiException(HttpStatus.FORBIDDEN, "DELIVERY_TEMPLATE_CAPABILITY_DENIED", "交付能力未启用或与模板文件类型不一致");
+        }
+        validateTemplateBindings(entity, config);
         Map<String, Object> values = new LinkedHashMap<>();
         var upstream = nodes.findByRunIdOrderBySortOrderAsc(request.run().getId());
         for (var binding : bindings(config)) {
@@ -287,14 +299,18 @@ public class DeliveryTemplateService {
     }
     private Map<String, Map<String, Object>> overrides(Map<String, Object> config) { return mapper.convertValue(config.getOrDefault("templateLocationStyles", Map.of()), new TypeReference<>() {}); }
     private DeliveryTemplateEntity read(UUID tenant, UUID user, UUID id, boolean published) {
-        var entity = repository.findByIdAndTenantId(id, tenant).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "DELIVERY_TEMPLATE_NOT_FOUND", "模板不存在或不可访问"));
-        // 草稿仅创建者可读；共享只开放发布版本，禁止通过流程跨租户或借用他人私有模板。
+        var entity = findTemplate(tenant, id);
+        // 草稿仅创建者可读；共享只开放发布版本。设计者必须先有模板访问权限才可引用。
         if (!entity.createdBy.equals(user) && !("published".equals(entity.status) && "all".equals(entity.readScope))) {
             event("模板资源访问被拒绝", entity, user);
             throw new ApiException(HttpStatus.FORBIDDEN, "DELIVERY_TEMPLATE_ACCESS_DENIED", "没有该模板的访问权限");
         }
         if (published && !"published".equals(entity.status)) throw StructuredContent.error("流程只能使用已发布模板");
         return entity;
+    }
+    private DeliveryTemplateEntity findTemplate(UUID tenant, UUID id) {
+        return repository.findByIdAndTenantId(id, tenant)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "DELIVERY_TEMPLATE_NOT_FOUND", "模板不存在或不可访问"));
     }
     private DeliveryTemplateEntity owned(UUID tenant, UUID user, UUID id) {
         var entity = read(tenant, user, id, false);
@@ -378,9 +394,12 @@ public class DeliveryTemplateService {
     }
     private SystemCapabilityEntity capability(UUID tenant, UUID user, UUID id, String kind) {
         var capability = capabilities.findById(id).orElseThrow(() -> StructuredContent.error("交付能力不存在"));
-        String configuredKind = Objects.toString(capability.getConfig().get("documentKind"), "word");
-        if (!"active".equals(capability.getStatus()) || !"delivery".equals(capability.getCapabilityType()) || !kind.equals(configuredKind) || !assets.canUseSystemCapabilityReference(tenant, user, id, "delivery")) throw new ApiException(HttpStatus.FORBIDDEN, "DELIVERY_TEMPLATE_CAPABILITY_DENIED", "当前账号没有对应的文件交付能力");
+        if (!supportsTemplateKind(capability, kind) || !assets.canUseSystemCapabilityReference(tenant, user, id, "delivery")) throw new ApiException(HttpStatus.FORBIDDEN, "DELIVERY_TEMPLATE_CAPABILITY_DENIED", "当前账号没有对应的文件交付能力");
         return capability;
+    }
+    private boolean supportsTemplateKind(SystemCapabilityEntity capability, String kind) {
+        return "active".equals(capability.getStatus()) && "delivery".equals(capability.getCapabilityType())
+            && kind.equals(Objects.toString(capability.getConfig().get("documentKind"), "word"));
     }
     private void enforceSize(SystemCapabilityEntity capability, int size) {
         int limit = capability.getConfig().get("maxFileSizeMb") instanceof Number n ? n.intValue() : 20;

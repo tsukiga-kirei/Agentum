@@ -101,6 +101,30 @@ class AssetManagementServiceTest {
     }
 
     @Test
+    void shouldCheckTenantPoolIndependentlyOfSubjectAssignment() {
+        var service = newService();
+        var capability = SystemCapabilityEntity.create("mcp", "数据查询", "data_query", "v1", "", "low", "active", Map.of(), NOW);
+        UUID capabilityId = capability.getId();
+        var enabled = TenantCapabilityGrantEntity.create(TENANT_ID, capabilityId, "enabled", NOW);
+        var disabled = TenantCapabilityGrantEntity.create(TENANT_ID, capabilityId, "disabled", NOW);
+        when(tenantCapabilityGrantRepository.findByTenantIdAndCapabilityId(TENANT_ID, capabilityId)).thenReturn(Optional.of(enabled));
+        when(systemCapabilityRepository.findById(capabilityId)).thenReturn(Optional.of(capability));
+
+        assertThat(service.isSystemCapabilityOpenToTenant(TENANT_ID, capabilityId, "mcp")).isTrue();
+        assertThat(service.canUseSystemCapabilityReference(TENANT_ID, USER_ID, capabilityId, "mcp")).isFalse();
+        assertThat(service.isSystemCapabilityOpenToTenant(TENANT_ID, capabilityId, "skill")).isFalse();
+        var inactive = mock(SystemCapabilityEntity.class);
+        when(inactive.getStatus()).thenReturn("disabled");
+        when(inactive.getCapabilityType()).thenReturn("mcp");
+        when(systemCapabilityRepository.findById(capabilityId)).thenReturn(Optional.of(inactive));
+        assertThat(service.isSystemCapabilityOpenToTenant(TENANT_ID, capabilityId, "mcp")).isFalse();
+
+        when(systemCapabilityRepository.findById(capabilityId)).thenReturn(Optional.of(capability));
+        when(tenantCapabilityGrantRepository.findByTenantIdAndCapabilityId(TENANT_ID, capabilityId)).thenReturn(Optional.of(disabled));
+        assertThat(service.isSystemCapabilityOpenToTenant(TENANT_ID, capabilityId, "mcp")).isFalse();
+    }
+
+    @Test
     void shouldCreateMyAssetAsDraft() {
         AssetManagementService service = newService();
         TenantAssetCapabilityEntity saved = TenantAssetCapabilityEntity.create(
